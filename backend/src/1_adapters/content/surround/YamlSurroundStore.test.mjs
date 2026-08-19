@@ -4,44 +4,62 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlSurroundStore } from './YamlSurroundStore.mjs';
 
-let root;
+let root;      // performance-sidecar tree (old rootDir)
+let library;   // knowledge-corpus tree (new libraryDir)
 const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() });
 
 function writeFixture() {
   mkdirSync(path.join(root, '_surrounds'), { recursive: true });
   mkdirSync(path.join(root, 'classical/beethoven'), { recursive: true });
+  mkdirSync(path.join(library, 'classical/beethoven'), { recursive: true });
   writeFileSync(path.join(root, '_surrounds/concert-hall.yml'),
     'id: concert-hall\nregions:\n  right: { width: 20%, module: composer-card }\n  bottom:\n    - { module: movement-map, height: 60 }\ncollapse: { footerFloor: 90 }\n');
-  writeFileSync(path.join(root, 'classical/beethoven/_composer.yml'),
+  writeFileSync(path.join(library, 'classical/beethoven/_composer.yml'),
     'name: Ludwig van Beethoven\nborn: 1770\ndied: 1827\nbirthplace: Bonn\nportrait: beethoven/portrait.jpg\n');
+  writeFileSync(path.join(library, 'classical/beethoven/symphony-3-eroica.yml'),
+    'title: Symphony No. 3\nopus: Op. 55\nmovements:\n  - { n: 1, name: Allegro con brio }\n');
   writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
-    'surround: concert-hall\nmatch:\n  contentId: plex:663134\n  title: "Beethoven: 3. Sinfonie"\npiece:\n  title: Symphony No. 3\n  opus: Op. 55\nmovements:\n  - { n: 1, name: Allegro con brio, start: 0 }\ncomposer:\n  birthplace: Bonn (Electorate of Cologne)\n');
+    'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch:\n  contentId: plex:663134\n  title: "Beethoven: 3. Sinfonie"\nstarts: [0]\ncomposer:\n  birthplace: Bonn (Electorate of Cologne)\n');
 }
 
-// Add a file to the fixture tree before constructing the store under test.
+// Add a file to the performance-sidecar fixture tree.
 function write(relPath, body) {
   const full = path.join(root, relPath);
   mkdirSync(path.dirname(full), { recursive: true });
   writeFileSync(full, body);
 }
 
-beforeEach(() => { root = mkdtempSync(path.join(tmpdir(), 'surround-')); writeFixture(); });
-afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+// Add a file to the knowledge-corpus fixture tree.
+function writeLib(relPath, body) {
+  const full = path.join(library, relPath);
+  mkdirSync(path.dirname(full), { recursive: true });
+  writeFileSync(full, body);
+}
+
+beforeEach(() => {
+  root = mkdtempSync(path.join(tmpdir(), 'surround-'));
+  library = mkdtempSync(path.join(tmpdir(), 'library-'));
+  writeFixture();
+});
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+  rmSync(library, { recursive: true, force: true });
+});
 
 describe('YamlSurroundStore exact lookup', () => {
   it('returns a resolved payload for an exact contentId match', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663134', 'anything');
     expect(r).not.toBeNull();
     expect(r.id).toBe('concert-hall');
     expect(r.definition.regions.right.module).toBe('composer-card');
     expect(r.piece.title).toBe('Symphony No. 3');
     expect(r.movements).toHaveLength(1);
-    expect(r.assetBase).toBe('surround/classical');
+    expect(r.assetBase).toBe('library/classical');
   });
 
   it('merges _composer.yml under the piece composer block, piece winning per key', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663134', '');
     expect(r.composer.name).toBe('Ludwig van Beethoven');
     expect(r.composer.born).toBe(1770);
@@ -49,7 +67,7 @@ describe('YamlSurroundStore exact lookup', () => {
   });
 
   it('returns exactly null for a miss', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:999999', 'Nothing')).toBeNull();
   });
 });
@@ -60,7 +78,7 @@ describe('YamlSurroundStore totality', () => {
     for (const rootDir of [undefined, null, '', '/definitely/not/here', filePath]) {
       const logger = makeLogger();
       let store;
-      expect(() => { store = new YamlSurroundStore({ rootDir, logger }); }).not.toThrow();
+      expect(() => { store = new YamlSurroundStore({ rootDir, libraryDir: library, logger }); }).not.toThrow();
       expect(store.lookup('plex:663134', 'Eroica')).toBeNull();
       expect(logger.info).toHaveBeenCalledWith('surround.index.built',
         expect.objectContaining({ pieces: 0 }));
@@ -69,13 +87,13 @@ describe('YamlSurroundStore totality', () => {
 
   it('constructs with a logger that has no info method', () => {
     let store;
-    expect(() => { store = new YamlSurroundStore({ rootDir: root, logger: {} }); }).not.toThrow();
+    expect(() => { store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: {} }); }).not.toThrow();
     expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
   });
 
   it('emits surround.index.built with the documented payload', () => {
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.info).toHaveBeenCalledTimes(1);
     const [event, payload] = logger.info.mock.calls[0];
     expect(event).toBe('surround.index.built');
@@ -85,20 +103,24 @@ describe('YamlSurroundStore totality', () => {
 
   it('keeps indexing after a malformed sidecar', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663134', '')).not.toBeNull();
   });
 });
 
 describe('YamlSurroundStore reserved names', () => {
   it('never indexes _-prefixed domains, composers, piece files, or _composer.yml', () => {
-    const piece = (id) => `surround: concert-hall\nmatch:\n  contentId: ${id}\npiece:\n  title: Trap\n`;
+    // Every trap is a sidecar that would resolve if it were walked — a real work
+    // ref, a real definition — so the only reason it stays out of the index is
+    // the reserved-name rule under test.
+    const piece = (id) =>
+      `work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch:\n  contentId: ${id}\n  title: Trap\n`;
     write('_surrounds/fake-composer/trap.yml', piece('plex:trap-domain'));
     write('classical/_draft/wip.yml', piece('plex:trap-composer'));
     write('classical/beethoven/_scratch.yml', piece('plex:trap-file'));
     write('classical/haydn/_composer.yml', piece('plex:trap-composer-file'));
 
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     for (const id of ['plex:trap-domain', 'plex:trap-composer', 'plex:trap-file', 'plex:trap-composer-file']) {
       expect(store.lookup(id, '')).toBeNull();
     }
@@ -108,7 +130,7 @@ describe('YamlSurroundStore reserved names', () => {
 
 describe('YamlSurroundStore payload isolation', () => {
   it('does not let a caller mutate the index through a returned payload', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const first = store.lookup('plex:663134', '');
     first.movements.push({ n: 99 });
     first.piece.title = 'mutated';
@@ -117,9 +139,10 @@ describe('YamlSurroundStore payload isolation', () => {
   });
 
   it('does not leak a definition edit into another piece sharing that definition', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: Spring\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     store.lookup('plex:663134', '').definition.regions.right.width = '99%';
     expect(store.lookup('plex:663146', '').definition.regions.right.width).toBe('20%');
   });
@@ -127,11 +150,12 @@ describe('YamlSurroundStore payload isolation', () => {
 
 describe('YamlSurroundStore field resolution', () => {
   it('deep-merges nested composer blocks instead of replacing them', () => {
-    write('classical/haydn/_composer.yml',
+    writeLib('classical/haydn/_composer.yml',
       'name: Joseph Haydn\nlinks: { wiki: base-wiki, imslp: base-imslp }\n');
+    writeLib('classical/haydn/symphony-94.yml', 'title: Surprise\n');
     write('classical/haydn/symphony-94.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:94\npiece:\n  title: Surprise\ncomposer:\n  links: { wiki: piece-wiki }\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: haydn/symphony-94\nsurround: concert-hall\nmatch:\n  contentId: plex:94\n  title: Surprise\ncomposer:\n  links: { wiki: piece-wiki }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:94', '');
     expect(r.composer.links.wiki).toBe('piece-wiki');
     expect(r.composer.links.imslp).toBe('base-imslp');
@@ -139,30 +163,36 @@ describe('YamlSurroundStore field resolution', () => {
   });
 
   it('coerces a numeric match.contentId to a string key', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: 663146\npiece:\n  title: Spring\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: 663146\n  title: Spring\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('663146', '').piece.title).toBe('Spring');
   });
 
   it('coerces wrong-typed list and object fields to safe empties', () => {
+    // The malformed fields sit on whichever side now owns them: movements and
+    // facts are corpus-level, cues/composer/piece stay on the performance.
+    writeLib('classical/vivaldi/spring.yml', 'movements: not a list\nfacts: { a: 1 }\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece: just a string\nmovements: not a list\ncues: 5\nfacts: { a: 1 }\ncomposer: nope\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: Spring\npiece: just a string\ncues: 5\ncomposer: nope\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663146', '');
     expect(r.movements).toEqual([]);
     expect(r.cues).toEqual([]);
     expect(r.facts).toEqual([]);
+    // The work authors no piece fields and the wrong-typed override is ignored.
     expect(r.piece).toEqual({});
     expect(r.composer).toEqual({});
   });
 
   it('defaults optional blocks to empty when absent', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: Spring\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663146', '');
-    expect(r).toMatchObject({ movements: [], cues: [], facts: [], composer: {}, assetBase: 'surround/classical' });
+    expect(r).toMatchObject({ movements: [], cues: [], facts: [], composer: {}, assetBase: 'library/classical' });
   });
 });
 
@@ -184,7 +214,7 @@ describe('YamlSurroundStore logging identity', () => {
 
   it('claims its own context.app so surround events are filterable on their own', () => {
     const parent = makeContextLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger: parent });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: parent });
     store.lookup('plex:missing', '');
 
     expect(parent.child).toHaveBeenCalledWith({ app: 'surround', module: 'surround-store' });
@@ -198,30 +228,30 @@ describe('YamlSurroundStore logging identity', () => {
   it('falls back to a logger without child(), such as bare console', () => {
     const bare = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
     let store;
-    expect(() => { store = new YamlSurroundStore({ rootDir: root, logger: bare }); }).not.toThrow();
+    expect(() => { store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: bare }); }).not.toThrow();
     expect(bare.info).toHaveBeenCalledWith('surround.index.built', expect.any(Object));
     expect(store.lookup('plex:663134', '')).not.toBeNull();
   });
 
   it('logs a lookup miss at debug with the contentId that was asked for', () => {
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:999999', 'Nothing')).toBeNull();
     expect(logger.debug).toHaveBeenCalledWith('surround.lookup.miss', { contentId: 'plex:999999' });
   });
 
   it('does not log a miss on a hit', () => {
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger }).lookup('plex:663134', '');
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger }).lookup('plex:663134', '');
     expect(logger.debug).not.toHaveBeenCalled();
   });
 
   it('counts rejected piece files as skipped in the index line', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     write('classical/beethoven/no-definition.yml',
-      'surround: does-not-exist\nmatch:\n  contentId: plex:1\npiece:\n  title: Orphan\n');
+      'work: beethoven/symphony-3-eroica\nsurround: does-not-exist\nmatch:\n  contentId: plex:1\n  title: Orphan\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.info).toHaveBeenCalledWith('surround.index.built',
       expect.objectContaining({ pieces: 1, skipped: 2 }));
   });
@@ -230,7 +260,7 @@ describe('YamlSurroundStore logging identity', () => {
 describe('YamlSurroundStore title rebind', () => {
   it('matches a real Plex title with an orchestra suffix when the contentId is stale', () => {
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const r = store.lookup('plex:999999', 'Beethoven: 3. Sinfonie (»Eroica«) ∙ hr-Sinfonieorchester ∙ Andrés Orozco-Estrada');
     expect(r).not.toBeNull();
     expect(r.piece.title).toBe('Symphony No. 3');
@@ -240,13 +270,13 @@ describe('YamlSurroundStore title rebind', () => {
   });
 
   it('does not rebind an unrelated title', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:999999', 'Vivaldi: Spring')).toBeNull();
   });
 
   it('names the sidecar file and the live contentId in the rebound warning', () => {
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger })
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger })
       .lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester');
     const [, data] = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.rebound');
     expect(data.file).toContain('symphony-3-eroica.yml');
@@ -255,7 +285,7 @@ describe('YamlSurroundStore title rebind', () => {
   });
 
   it('returns a clone on the rebind path too, so the index cannot be mutated', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const live = 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester';
     store.lookup('plex:999999', live).movements.push({ n: 99 });
     store.lookup('plex:999999', live).piece.title = 'mutated';
@@ -265,7 +295,7 @@ describe('YamlSurroundStore title rebind', () => {
 
   it('survives a non-string or absent title without throwing', () => {
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     for (const title of [null, undefined, 123, '', {}, [], NaN]) {
       expect(() => store.lookup('plex:999999', title)).not.toThrow();
       expect(store.lookup('plex:999999', title)).toBeNull();
@@ -274,10 +304,11 @@ describe('YamlSurroundStore title rebind', () => {
   });
 
   it('leaves a sidecar without match.title indexed but unrebindable', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n');
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     // The build warns `missing-match-title` about this very file; what must stay
     // silent is the lookup, which treats the piece as merely unrebindable.
     const afterBuild = logger.warn.mock.calls.length;
@@ -287,14 +318,15 @@ describe('YamlSurroundStore title rebind', () => {
   });
 
   it('rebinds when the authored title is the longer side', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: "Vivaldi: The Four Seasons ∙ Spring ∙ Concerto in E major"\npiece:\n  title: Spring\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: "Vivaldi: The Four Seasons ∙ Spring ∙ Concerto in E major"\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:000000', 'Vivaldi: The Four Seasons').piece.title).toBe('Spring');
   });
 
   it('normalizes away case, guillemets, interpuncts, and stray whitespace', () => {
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:999999', '  BEETHOVEN:  »3.«  ∙   sinfonie  ');
     expect(r).not.toBeNull();
     expect(r.piece.title).toBe('Symphony No. 3');
@@ -302,7 +334,7 @@ describe('YamlSurroundStore title rebind', () => {
 
   it('does not warn about a rebind when the contentId matched exactly', () => {
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:663134', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
       .toBe('Symphony No. 3');
     expect(logger.warn).not.toHaveBeenCalled();
@@ -314,16 +346,18 @@ describe('YamlSurroundStore rebind ambiguity', () => {
   // Two sidecars that both match one live title. Whichever the walk reaches first
   // is an accident of the filesystem, so the store must refuse rather than pick.
   const twoSeasons = () => {
+    writeLib('classical/vivaldi/four-seasons.yml', 'title: The Four Seasons\n');
+    writeLib('classical/vivaldi/seasons-alt.yml', 'title: Alt\n');
     write('classical/vivaldi/four-seasons.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:1\n  title: "Vivaldi: The Four Seasons"\npiece:\n  title: The Four Seasons\n');
+      'work: vivaldi/four-seasons\nsurround: concert-hall\nmatch:\n  contentId: plex:1\n  title: "Vivaldi: The Four Seasons"\n');
     write('classical/vivaldi/seasons-alt.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:2\n  title: The Four Seasons\npiece:\n  title: Alt\n');
+      'work: vivaldi/seasons-alt\nsurround: concert-hall\nmatch:\n  contentId: plex:2\n  title: The Four Seasons\n');
   };
 
   it('refuses to rebind when two sidecars match the same live title', () => {
     twoSeasons();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:999999', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico')).toBeNull();
     expect(logger.warn).not.toHaveBeenCalledWith('surround.match.rebound', expect.anything());
     const [, data] = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.ambiguous');
@@ -338,12 +372,14 @@ describe('YamlSurroundStore rebind ambiguity', () => {
   it('refuses a short authored title that over-matches a real Four Seasons title', () => {
     // The PoC corpus: one sidecar authored sloppily as `Spring`, which is a
     // substring of every live title carrying that word.
+    writeLib('classical/vivaldi/spring-short.yml', 'title: Spring (short)\n');
+    writeLib('classical/vivaldi/spring-full.yml', 'title: Spring (full)\n');
     write('classical/vivaldi/spring-short.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:3\n  title: Spring\npiece:\n  title: Spring (short)\n');
+      'work: vivaldi/spring-short\nsurround: concert-hall\nmatch:\n  contentId: plex:3\n  title: Spring\n');
     write('classical/vivaldi/spring-full.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:4\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\npiece:\n  title: Spring (full)\n');
+      'work: vivaldi/spring-full\nsurround: concert-hall\nmatch:\n  contentId: plex:4\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\n');
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring')).toBeNull();
     const warned = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.ambiguous');
     expect(warned).toBeDefined();
@@ -352,7 +388,7 @@ describe('YamlSurroundStore rebind ambiguity', () => {
 
   it('still rebinds, and does not cry ambiguity, when exactly one sidecar matches', () => {
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
       .toBe('Symphony No. 3');
     expect(logger.warn.mock.calls.map((c) => c[0])).toEqual(['surround.match.rebound']);
@@ -361,7 +397,7 @@ describe('YamlSurroundStore rebind ambiguity', () => {
   it('leaves the exact-contentId fast path untouched by an ambiguous title', () => {
     twoSeasons();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     // The build already pre-warned `surround.titles.ambiguous` about this pair;
     // the assertion is that the fast path itself adds nothing.
     const afterBuild = logger.warn.mock.calls.length;
@@ -374,7 +410,7 @@ describe('YamlSurroundStore rebind ambiguity', () => {
   it('logs ambiguity instead of a plain miss, so the refusal is not mistaken for no sidecar', () => {
     twoSeasons();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger }).lookup('plex:999999', 'The Four Seasons');
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger }).lookup('plex:999999', 'The Four Seasons');
     expect(logger.debug).not.toHaveBeenCalled();
   });
 });
@@ -388,7 +424,7 @@ describe('YamlSurroundStore sidecar validation', () => {
   it('warns with the offending file and a reason when the YAML will not parse', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(invalidWarns(logger)).toEqual([
       { file: 'classical/beethoven/broken.yml', reason: 'yaml-unparseable', reasons: ['yaml-unparseable'] }
     ]);
@@ -397,7 +433,7 @@ describe('YamlSurroundStore sidecar validation', () => {
   it('still indexes the siblings of a malformed sidecar', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
     expect(invalidWarns(logger)).toHaveLength(1);
   });
@@ -405,20 +441,22 @@ describe('YamlSurroundStore sidecar validation', () => {
   it('warns when a sidecar parses to something that is not a mapping', () => {
     write('classical/beethoven/scalar.yml', 'just a bare string\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(invalidWarns(logger)).toContainEqual(
       expect.objectContaining({ file: 'classical/beethoven/scalar.yml', reason: 'not-a-mapping' }));
   });
 
+  // Every body carries a work ref that resolves, so the named reason is the only
+  // thing wrong with the file.
   it.each([
-    ['missing-surround', 'nosurround.yml', 'match:\n  contentId: plex:1\n  title: T\npiece: { title: X }\n'],
-    ['missing-match', 'nomatch.yml', 'surround: concert-hall\npiece: { title: X }\n'],
-    ['match-not-a-mapping', 'strmatch.yml', 'surround: concert-hall\nmatch: plex:1\npiece: { title: X }\n'],
-    ['missing-match-contentId', 'noid.yml', 'surround: concert-hall\nmatch:\n  title: T\npiece: { title: X }\n']
+    ['missing-surround', 'nosurround.yml', 'work: beethoven/symphony-3-eroica\nmatch:\n  contentId: plex:1\n  title: T\n'],
+    ['missing-match', 'nomatch.yml', 'work: beethoven/symphony-3-eroica\nsurround: concert-hall\n'],
+    ['match-not-a-mapping', 'strmatch.yml', 'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: plex:1\n'],
+    ['missing-match-contentId', 'noid.yml', 'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch:\n  title: T\n']
   ])('warns %s and drops the piece', (reason, file, body) => {
     write(`classical/beethoven/${file}`, body);
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(invalidWarns(logger)).toContainEqual(
       expect.objectContaining({ file: `classical/beethoven/${file}`, reason }));
     // Empty live title, so the rebind lane cannot answer for the dropped piece.
@@ -428,10 +466,11 @@ describe('YamlSurroundStore sidecar validation', () => {
   });
 
   it('warns about a missing match.title but still indexes the piece', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch:\n  contentId: plex:663146\n');
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:663146', '').piece.title).toBe('Spring');
     expect(invalidWarns(logger)).toContainEqual(
       expect.objectContaining({ file: 'classical/vivaldi/spring.yml', reason: 'missing-match-title' }));
@@ -439,58 +478,62 @@ describe('YamlSurroundStore sidecar validation', () => {
       expect.objectContaining({ pieces: 2, skipped: 0 }));
   });
 
+  // Only the fields the performance sidecar still owns. `movements` and `facts`
+  // moved to the corpus, where the same silent coercion is reported as
+  // surround.work.invalid instead (see the library-resolution block).
   it.each([
-    ['missing-piece', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\n'],
-    ['piece-not-a-mapping', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: a string\n'],
-    ['movements-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\nmovements: nope\n'],
-    ['cues-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\ncues: 5\n'],
-    ['facts-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\nfacts: { a: 1 }\n'],
-    ['composer-not-a-mapping', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\ncomposer: nope\n']
+    ['piece-not-a-mapping', 'work: vivaldi/odd\nsurround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: a string\n'],
+    ['starts-not-a-list', 'work: vivaldi/odd\nsurround: concert-hall\nmatch: { contentId: plex:9, title: T }\nstarts: nope\n'],
+    ['cues-not-a-list', 'work: vivaldi/odd\nsurround: concert-hall\nmatch: { contentId: plex:9, title: T }\ncues: 5\n'],
+    ['composer-not-a-mapping', 'work: vivaldi/odd\nsurround: concert-hall\nmatch: { contentId: plex:9, title: T }\ncomposer: nope\n']
   ])('warns %s without dropping the piece, since the coercion is silent data loss', (reason, body) => {
+    writeLib('classical/vivaldi/odd.yml', 'title: Odd\n');
     write('classical/vivaldi/odd.yml', body);
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:9', '')).not.toBeNull();
     expect(invalidWarns(logger)).toContainEqual(
       expect.objectContaining({ file: 'classical/vivaldi/odd.yml', reason }));
   });
 
   it('does not warn about optional blocks that are simply absent', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(invalidWarns(logger)).toEqual([]);
   });
 
   it('reports every problem in one warning, leading with the first', () => {
+    writeLib('classical/vivaldi/messy.yml', 'title: Messy\n');
     write('classical/vivaldi/messy.yml',
-      'surround: concert-hall\nmatch:\n  contentId: plex:9\nmovements: nope\ncues: 5\n');
+      'work: vivaldi/messy\nsurround: concert-hall\nmatch:\n  contentId: plex:9\nstarts: nope\ncues: 5\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const [warned, ...rest] = invalidWarns(logger);
     expect(rest).toEqual([]);
     expect(warned.file).toBe('classical/vivaldi/messy.yml');
     expect(warned.reason).toBe('missing-match-title');
     expect(warned.reasons).toEqual(
-      ['missing-match-title', 'missing-piece', 'movements-not-a-list', 'cues-not-a-list']);
+      ['missing-match-title', 'starts-not-a-list', 'cues-not-a-list']);
   });
 
   it('reports only the blocking problem when the file is rejected outright', () => {
-    write('classical/vivaldi/messy.yml', 'match: { title: T }\nmovements: nope\n');
+    write('classical/vivaldi/messy.yml', 'match: { title: T }\nstarts: nope\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(invalidWarns(logger)).toEqual([{
       file: 'classical/vivaldi/messy.yml',
       reason: 'missing-surround',
-      reasons: ['missing-surround', 'missing-match-contentId']
+      reasons: ['missing-surround', 'missing-work', 'missing-match-contentId']
     }]);
   });
 
   it('warns once per build, not once per lookup', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const afterBuild = logger.warn.mock.calls.length;
     for (let i = 0; i < 5; i += 1) store.lookup('plex:663134', 'Beethoven: 3. Sinfonie');
     expect(logger.warn.mock.calls.length).toBe(afterBuild);
@@ -498,27 +541,31 @@ describe('YamlSurroundStore sidecar validation', () => {
 });
 
 describe('YamlSurroundStore missing definition', () => {
-  const orphan = () => write('classical/vivaldi/spring.yml',
-    'surround: does-not-exist\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+  // The work ref resolves; only the definition is missing.
+  const orphan = () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
+    write('classical/vivaldi/spring.yml',
+      'work: vivaldi/spring\nsurround: does-not-exist\nmatch: { contentId: plex:663146, title: Spring }\n');
+  };
 
   it('names the definition id and the file that asked for it', () => {
     orphan();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.warn).toHaveBeenCalledWith('surround.definition.missing',
       { id: 'does-not-exist', file: 'classical/vivaldi/spring.yml' });
   });
 
   it('excludes the piece entirely rather than shipping a half payload', () => {
     orphan();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663146', '')).toBeNull();
     expect(store.lookup('plex:000', 'Spring')).toBeNull();
   });
 
   it('does not fire for a piece whose definition exists', () => {
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.warn).not.toHaveBeenCalledWith('surround.definition.missing', expect.anything());
   });
 });
@@ -528,16 +575,18 @@ describe('YamlSurroundStore duplicate contentIds', () => {
   // non-deterministic across machines. Resolution stays as it was; the
   // collision just stops being invisible.
   const duplicates = () => {
+    writeLib('classical/vivaldi/first.yml', 'title: First\n');
+    writeLib('classical/vivaldi/second.yml', 'title: Second\n');
     write('classical/vivaldi/a-first.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:dup, title: First }\npiece: { title: First }\n');
+      'work: vivaldi/first\nsurround: concert-hall\nmatch: { contentId: plex:dup, title: First }\n');
     write('classical/vivaldi/b-second.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:dup, title: Second }\npiece: { title: Second }\n');
+      'work: vivaldi/second\nsurround: concert-hall\nmatch: { contentId: plex:dup, title: Second }\n');
   };
 
   it('names both the kept and the dropped file', () => {
     duplicates();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.duplicate', {
       contentId: 'plex:dup',
       keptFile: 'classical/vivaldi/b-second.yml',
@@ -547,15 +596,16 @@ describe('YamlSurroundStore duplicate contentIds', () => {
 
   it('keeps last-wins resolution unchanged', () => {
     duplicates();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:dup', '').piece.title).toBe('Second');
   });
 
   it('does not fire when every contentId is unique', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.duplicate', expect.anything());
   });
 });
@@ -567,16 +617,18 @@ describe('YamlSurroundStore index-time title ambiguity', () => {
     logger.warn.mock.calls.filter((c) => c[0] === 'surround.titles.ambiguous').map((c) => c[1]);
 
   const twoSeasons = () => {
+    writeLib('classical/vivaldi/four-seasons.yml', 'title: The Four Seasons\n');
+    writeLib('classical/vivaldi/seasons-alt.yml', 'title: Alt\n');
     write('classical/vivaldi/four-seasons.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:1, title: "Vivaldi: The Four Seasons" }\npiece: { title: The Four Seasons }\n');
+      'work: vivaldi/four-seasons\nsurround: concert-hall\nmatch: { contentId: plex:1, title: "Vivaldi: The Four Seasons" }\n');
     write('classical/vivaldi/seasons-alt.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:2, title: The Four Seasons }\npiece: { title: Alt }\n');
+      'work: vivaldi/seasons-alt\nsurround: concert-hall\nmatch: { contentId: plex:2, title: The Four Seasons }\n');
   };
 
   it('warns once for the colliding group, naming every file and title', () => {
     twoSeasons();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const warns = ambiguousWarns(logger);
     expect(warns).toHaveLength(1);
     expect(warns[0].candidates.map((c) => c.file).sort())
@@ -587,10 +639,11 @@ describe('YamlSurroundStore index-time title ambiguity', () => {
 
   it('groups a three-way collision into a single warning', () => {
     twoSeasons();
+    // A third performance of a work the corpus already carries.
     write('classical/vivaldi/seasons-third.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:3, title: "Vivaldi: The Four Seasons ∙ complete" }\npiece: { title: Third }\n');
+      'work: vivaldi/four-seasons\nsurround: concert-hall\nmatch: { contentId: plex:3, title: "Vivaldi: The Four Seasons ∙ complete" }\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const warns = ambiguousWarns(logger);
     expect(warns).toHaveLength(1);
     expect(warns[0].candidates).toHaveLength(3);
@@ -599,23 +652,24 @@ describe('YamlSurroundStore index-time title ambiguity', () => {
   it('warns separately for two independent colliding groups', () => {
     twoSeasons();
     write('classical/beethoven/eroica-alt.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:4, title: "Beethoven: 3. Sinfonie ∙ alternate cut" }\npiece: { title: Alt Eroica }\n');
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:4, title: "Beethoven: 3. Sinfonie ∙ alternate cut" }\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(ambiguousWarns(logger)).toHaveLength(2);
   });
 
   it('stays silent for a corpus of unrelated titles', () => {
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\n');
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(ambiguousWarns(logger)).toEqual([]);
   });
 
   it('changes no lookup behavior: the unambiguous piece still resolves both ways', () => {
     twoSeasons();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
     expect(store.lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
       .toBe('Symphony No. 3');
@@ -625,7 +679,7 @@ describe('YamlSurroundStore index-time title ambiguity', () => {
   it('fires at build time, not on the lookup that trips the rebind lane', () => {
     twoSeasons();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(ambiguousWarns(logger)).toHaveLength(1);
     store.lookup('plex:999999', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico');
     expect(ambiguousWarns(logger)).toHaveLength(1);
@@ -637,13 +691,15 @@ describe('YamlSurroundStore warning totality', () => {
   // Every new warning runs through the same optional-call guard as the old ones,
   // so a logger that predates warn() cannot take the index build down with it.
   const brokenCorpus = () => {
+    writeLib('classical/vivaldi/orphan.yml', 'title: Orphan\n');
+    writeLib('classical/vivaldi/four-seasons.yml', 'title: The Four Seasons\n');
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     write('classical/vivaldi/orphan.yml',
-      'surround: does-not-exist\nmatch: { contentId: plex:5, title: Orphan }\npiece: {}\n');
+      'work: vivaldi/orphan\nsurround: does-not-exist\nmatch: { contentId: plex:5, title: Orphan }\n');
     write('classical/vivaldi/a-dup.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:dup, title: "Vivaldi: The Four Seasons" }\npiece: {}\n');
+      'work: vivaldi/four-seasons\nsurround: concert-hall\nmatch: { contentId: plex:dup, title: "Vivaldi: The Four Seasons" }\n');
     write('classical/vivaldi/b-dup.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:dup, title: The Four Seasons }\npiece: {}\n');
+      'work: vivaldi/four-seasons\nsurround: concert-hall\nmatch: { contentId: plex:dup, title: The Four Seasons }\n');
   };
 
   it.each([
@@ -654,7 +710,7 @@ describe('YamlSurroundStore warning totality', () => {
   ])('builds and looks up with a logger that has %s', (_label, logger) => {
     brokenCorpus();
     let store;
-    expect(() => { store = new YamlSurroundStore({ rootDir: root, logger }); }).not.toThrow();
+    expect(() => { store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger }); }).not.toThrow();
     expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
     expect(store.lookup('plex:dup', '')).not.toBeNull();
     expect(store.lookup('plex:5', '')).toBeNull();
@@ -663,360 +719,13 @@ describe('YamlSurroundStore warning totality', () => {
   it('emits every warning family for one broken corpus', () => {
     brokenCorpus();
     const logger = makeLogger();
-    new YamlSurroundStore({ rootDir: root, logger });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(new Set(logger.warn.mock.calls.map((c) => c[0]))).toEqual(new Set([
       'surround.sidecar.invalid',
       'surround.definition.missing',
       'surround.sidecar.duplicate',
       'surround.titles.ambiguous'
     ]));
-  });
-});
-
-describe('YamlSurroundStore work references', () => {
-  // The two-file shape: a WORK file holds everything true of the music, a
-  // RECORDING stub holds everything true of one performance of it. The merged
-  // payload must be indistinguishable from the flat shape the frontend was
-  // written against — that equivalence is what lets both coexist.
-  const invalidWarns = (logger) =>
-    logger.warn.mock.calls.filter((c) => c[0] === 'surround.sidecar.invalid').map((c) => c[1]);
-
-  const WORK = [
-    'piece:',
-    '  title: Symphony No. 3 in E-flat major',
-    '  opus: Op. 55',
-    'movements:',
-    '  - { n: 1, name: Allegro con brio, translation: "Fast, with spirit", listen: ["Two hammered chords."] }',
-    '  - { n: 2, name: Marcia funebre, translation: "Funeral march" }',
-    'cues:',
-    '  - { at: 976, render: docked, text: The funeral march begins. }',
-    'facts:',
-    '  - He tore the title page in half.',
-    ''
-  ].join('\n');
-
-  const STUB = [
-    'work: beethoven/symphony-3-eroica',
-    'surround: concert-hall',
-    'match: { contentId: plex:hr2016, title: "Beethoven: 3. Sinfonie" }',
-    'performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada"',
-    'starts: [0, 976]',
-    'musicEndsAt: 2955',
-    ''
-  ].join('\n');
-
-  const composed = (stub = STUB) => {
-    write('classical/beethoven/works/symphony-3-eroica.yml', WORK);
-    write('classical/beethoven/eroica.hr-2016.yml', stub);
-  };
-
-  it('zips the work movements against the recording starts, index by index', () => {
-    composed();
-    const logger = makeLogger();
-    const r = new YamlSurroundStore({ rootDir: root, logger }).lookup('plex:hr2016', '');
-    expect(r.movements).toEqual([
-      { n: 1, name: 'Allegro con brio', translation: 'Fast, with spirit', listen: ['Two hammered chords.'], start: 0 },
-      { n: 2, name: 'Marcia funebre', translation: 'Funeral march', start: 976 }
-    ]);
-    expect(invalidWarns(logger)).toEqual([]);
-  });
-
-  it('takes piece, cues and facts from the work and musicEndsAt from the recording', () => {
-    composed();
-    const r = new YamlSurroundStore({ rootDir: root, logger: makeLogger() }).lookup('plex:hr2016', '');
-    expect(r.piece).toEqual({
-      title: 'Symphony No. 3 in E-flat major', opus: 'Op. 55', musicEndsAt: 2955
-    });
-    expect(r.cues).toEqual([{ at: 976, render: 'docked', text: 'The funeral march begins.' }]);
-    expect(r.facts).toEqual(['He tore the title page in half.']);
-  });
-
-  it('takes id, definition, match and composer identity from the recording side', () => {
-    // A title of its own, so the rebind assertion is not answered by the flat
-    // Eroica fixture that ships in every fixture tree here.
-    composed(STUB.replace('Beethoven: 3. Sinfonie', 'Eroica ∙ Alte Oper'));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    const r = store.lookup('plex:hr2016', '');
-    expect(r.id).toBe('concert-hall');
-    expect(r.definition.regions.right.module).toBe('composer-card');
-    expect(r.composer.name).toBe('Ludwig van Beethoven');
-    expect(r.assetBase).toBe('surround/classical');
-    // And the rebind lane works off the stub's title exactly as for a flat file.
-    expect(store.lookup('plex:000', 'Eroica ∙ Alte Oper ∙ 11 February 2016').piece.opus).toBe('Op. 55');
-  });
-
-  it('passes performance through to the payload, and omits it when unauthored', () => {
-    composed();
-    write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '').performance)
-      .toBe('hr-Sinfonieorchester · Andrés Orozco-Estrada');
-    expect(store.lookup('plex:663146', '')).not.toHaveProperty('performance');
-  });
-
-  it('passes performance through on a flat sidecar too', () => {
-    write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\nperformance: Il Giardino Armonico\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:663146', '').performance).toBe('Il Giardino Armonico');
-  });
-
-  it('serves one work to many recordings, each with its own timings', () => {
-    composed();
-    write('classical/beethoven/eroica.karajan-1962.yml', [
-      'work: beethoven/symphony-3-eroica',
-      'surround: concert-hall',
-      'match: { contentId: plex:kar62, title: "Eroica ∙ Karajan" }',
-      'starts: [0, 900]',
-      'musicEndsAt: 2800',
-      ''
-    ].join('\n'));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    const a = store.lookup('plex:hr2016', '');
-    const b = store.lookup('plex:kar62', '');
-    expect(a.piece.title).toBe(b.piece.title);
-    expect(a.movements.map((m) => m.start)).toEqual([0, 976]);
-    expect(b.movements.map((m) => m.start)).toEqual([0, 900]);
-    expect(b.movements[1].translation).toBe('Funeral march');
-  });
-
-  it('resolves a bare work name under the recording\'s own composer folder', () => {
-    write('classical/beethoven/works/symphony-3-eroica.yml', WORK);
-    write('classical/beethoven/eroica.yml', STUB.replace('work: beethoven/', 'work: '));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '').piece.opus).toBe('Op. 55');
-  });
-
-  it('resolves a work under another composer, for a work the folders disagree about', () => {
-    write('classical/beethoven/works/symphony-3-eroica.yml', WORK);
-    write('classical/vivaldi/borrowed.yml', STUB.replace('plex:hr2016', 'plex:borrowed'));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:borrowed', '').piece.opus).toBe('Op. 55');
-  });
-
-  it('excludes the recording and names the resolved path when the work is missing', () => {
-    write('classical/beethoven/eroica.hr-2016.yml', STUB);
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-    expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ Alte Oper').piece.title)
-      .toBe('Symphony No. 3');   // the flat fixture, not the excluded stub
-
-    new YamlSurroundStore({ rootDir: root, logger });
-    expect(invalidWarns(logger)).toContainEqual({
-      file: 'classical/beethoven/eroica.hr-2016.yml',
-      reason: 'work-not-found',
-      reasons: ['work-not-found'],
-      work: 'classical/beethoven/works/symphony-3-eroica.yml'
-    });
-    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
-      expect.objectContaining({ pieces: 1, skipped: 1 }));
-  });
-
-  it('excludes the recording when the work file is unparseable', () => {
-    write('classical/beethoven/works/symphony-3-eroica.yml', 'piece: [unclosed\n');
-    write('classical/beethoven/eroica.hr-2016.yml', STUB);
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-    expect(invalidWarns(logger)).toContainEqual(expect.objectContaining({ reason: 'work-not-found' }));
-  });
-
-  it('excludes the recording when starts and movements disagree in length', () => {
-    composed(STUB.replace('starts: [0, 976]', 'starts: [0, 976, 1925]'));
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    // Fail closed: a mis-timed movement puts the wrong text against the music,
-    // which is worse than no surround at all.
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-    expect(invalidWarns(logger)).toContainEqual({
-      file: 'classical/beethoven/eroica.hr-2016.yml',
-      reason: 'starts-length-mismatch',
-      reasons: ['starts-length-mismatch'],
-      work: 'classical/beethoven/works/symphony-3-eroica.yml',
-      movements: 2,
-      starts: 3
-    });
-  });
-
-  it('treats a recording with no starts at all as a length mismatch', () => {
-    composed(STUB.replace('starts: [0, 976]\n', ''));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-  });
-
-  it('accepts a work with no movements and a recording with no starts', () => {
-    write('classical/beethoven/works/overture.yml', 'piece: { title: Overture }\n');
-    write('classical/beethoven/overture.live.yml',
-      'work: beethoven/overture\nsurround: concert-hall\nmatch: { contentId: plex:ov, title: Overture live }\n');
-    const logger = makeLogger();
-    const r = new YamlSurroundStore({ rootDir: root, logger }).lookup('plex:ov', '');
-    expect(r.piece.title).toBe('Overture');
-    expect(r.movements).toEqual([]);
-    expect(invalidWarns(logger)).toEqual([]);
-  });
-
-  it.each([
-    ['work-not-a-string', 'work: { name: eroica }\nsurround: concert-hall\nmatch: { contentId: plex:w, title: T }\n'],
-    ['work-not-a-string', 'work: "   "\nsurround: concert-hall\nmatch: { contentId: plex:w, title: T }\n']
-  ])('warns %s and drops a recording whose work reference is not a name', (reason, body) => {
-    write('classical/beethoven/odd.yml', body);
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    expect(store.lookup('plex:w', '')).toBeNull();
-    expect(invalidWarns(logger)).toContainEqual(expect.objectContaining({ reason }));
-  });
-
-  it('refuses a work reference that climbs out of the tree', () => {
-    write('classical/beethoven/escape.yml',
-      'work: ../../../../etc/passwd\nsurround: concert-hall\nmatch: { contentId: plex:esc, title: Escape }\n');
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    expect(store.lookup('plex:esc', '')).toBeNull();
-    expect(invalidWarns(logger)).toContainEqual(expect.objectContaining({ reason: 'work-not-found' }));
-  });
-
-  it('warns that inline blocks beside a work reference are ignored, and ignores them', () => {
-    composed(`${STUB}piece: { title: Stale copy }\nfacts: [stale]\n`);
-    const logger = makeLogger();
-    const r = new YamlSurroundStore({ rootDir: root, logger }).lookup('plex:hr2016', '');
-    expect(r.piece.title).toBe('Symphony No. 3 in E-flat major');
-    expect(r.facts).toEqual(['He tore the title page in half.']);
-    expect(invalidWarns(logger)).toContainEqual(expect.objectContaining({
-      reason: 'inline-blocks-ignored',
-      work: 'classical/beethoven/works/symphony-3-eroica.yml'
-    }));
-  });
-
-  it('prefixes reasons with work- when the wrong-typed block is in the work file', () => {
-    write('classical/beethoven/works/symphony-3-eroica.yml',
-      'piece: a string\nmovements: []\ncues: 5\nfacts: { a: 1 }\n');
-    write('classical/beethoven/eroica.hr-2016.yml', STUB.replace('starts: [0, 976]', 'starts: []'));
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    expect(store.lookup('plex:hr2016', '')).not.toBeNull();
-    expect(invalidWarns(logger)).toContainEqual(expect.objectContaining({
-      reasons: ['work-piece-not-a-mapping', 'work-cues-not-a-list', 'work-facts-not-a-list']
-    }));
-  });
-
-  it('never indexes a work file as a recording of its own', () => {
-    composed();
-    // A work file that would be a perfectly good sidecar if it were walked.
-    write('classical/beethoven/works/trap.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:trap, title: Trap }\npiece: { title: Trap }\n');
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    expect(store.lookup('plex:trap', '')).toBeNull();
-    expect(store.lookup('plex:000', 'Trap')).toBeNull();
-    // And, the point of the exclusion: the work files are silent, not skipped
-    // with a missing-match warning apiece.
-    expect(invalidWarns(logger).map((w) => w.file)).toEqual([]);
-    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
-      expect.objectContaining({ pieces: 2, skipped: 0, works: 1 }));
-  });
-
-  it('never treats a domain-level works folder as a composer', () => {
-    write('classical/works/trap.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:trap2, title: Trap2 }\npiece: { title: Trap2 }\n');
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:trap2', '')).toBeNull();
-  });
-
-  it('leaves the flat shape resolving exactly as before, beside a composed one', () => {
-    composed();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    const flat = store.lookup('plex:663134', '');
-    expect(flat.piece.title).toBe('Symphony No. 3');
-    expect(flat.movements).toEqual([{ n: 1, name: 'Allegro con brio', start: 0 }]);
-    expect(flat.composer.birthplace).toBe('Bonn (Electorate of Cologne)');
-    expect(store.lookup('plex:hr2016', '').piece.title).toBe('Symphony No. 3 in E-flat major');
-  });
-
-  it('does not leak a work edit between the recordings that share it', () => {
-    composed();
-    write('classical/beethoven/eroica.karajan-1962.yml',
-      STUB.replace('plex:hr2016', 'plex:kar62').replace('Beethoven: 3. Sinfonie', 'Eroica ∙ Karajan'));
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    store.lookup('plex:hr2016', '').movements[0].name = 'mutated';
-    store.lookup('plex:hr2016', '').facts.push('injected');
-    expect(store.lookup('plex:kar62', '').movements[0].name).toBe('Allegro con brio');
-    expect(store.lookup('plex:kar62', '').facts).toEqual(['He tore the title page in half.']);
-  });
-});
-
-describe('YamlSurroundStore work-file freshness', () => {
-  // A work file is an input to every recording that names it, so the mtime watch
-  // has to reach into works/ as well — otherwise the one edit that changes the
-  // most payloads is the one the store never notices.
-  afterEach(() => { vi.useRealTimers(); });
-  const touchAhead = (rel) => {
-    const when = new Date(Date.now() + 3000);
-    utimesSync(path.join(root, rel), when, when);
-  };
-
-  const compose = () => {
-    write('classical/beethoven/works/eroica.yml',
-      'piece: { title: Original }\nmovements: [{ n: 1, name: First }]\n');
-    write('classical/beethoven/eroica.hr-2016.yml',
-      'work: beethoven/eroica\nsurround: concert-hall\nmatch: { contentId: plex:hr2016, title: Eroica HR }\nstarts: [0]\n');
-  };
-
-  it('rebuilds when a work file is edited, with the recording untouched', () => {
-    compose();
-    vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '').piece.title).toBe('Original');
-
-    writeFileSync(path.join(root, 'classical/beethoven/works/eroica.yml'),
-      'piece: { title: Revised }\nmovements: [{ n: 1, name: First revised }]\n');
-    touchAhead('classical/beethoven/works/eroica.yml');
-    vi.advanceTimersByTime(3000);
-
-    const r = store.lookup('plex:hr2016', '');
-    expect(r.piece.title).toBe('Revised');
-    expect(r.movements).toEqual([{ n: 1, name: 'First revised', start: 0 }]);
-  });
-
-  it('rebuilds when a work file is added after the index was built', () => {
-    write('classical/beethoven/eroica.hr-2016.yml',
-      'work: beethoven/eroica\nsurround: concert-hall\nmatch: { contentId: plex:hr2016, title: Eroica HR }\nstarts: []\n');
-    vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-
-    write('classical/beethoven/works/eroica.yml', 'piece: { title: Arrived }\n');
-    touchAhead('classical/beethoven/works/eroica.yml');
-    vi.advanceTimersByTime(3000);
-
-    expect(store.lookup('plex:hr2016', '').piece.title).toBe('Arrived');
-  });
-
-  it('stops resolving a recording whose work file was deleted', () => {
-    compose();
-    vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:hr2016', '')).not.toBeNull();
-
-    rmSync(path.join(root, 'classical/beethoven/works/eroica.yml'));
-    // A deletion leaves no file to stat; the works/ directory mtime is the record.
-    touchAhead('classical/beethoven/works');
-    vi.advanceTimersByTime(3000);
-
-    expect(store.lookup('plex:hr2016', '')).toBeNull();
-  });
-
-  it('does not rebuild while the works folder is unchanged', () => {
-    compose();
-    vi.useFakeTimers();
-    const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
-    for (let i = 0; i < 5; i += 1) {
-      vi.advanceTimersByTime(3000);
-      expect(store.lookup('plex:hr2016', '').piece.title).toBe('Original');
-    }
-    expect(logger.info.mock.calls.filter((c) => c[0] === 'surround.index.built')).toHaveLength(1);
   });
 });
 
@@ -1037,17 +746,19 @@ describe('YamlSurroundStore freshness', () => {
     utimesSync(path.join(root, rel), when, when);
   };
 
+  // The edit an author actually makes in this loop is a movement timing, which
+  // lives in the performance sidecar as `starts`.
   it('picks up an edited sidecar after the guard window without a restart', () => {
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
-    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(0);
 
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
-      'surround: concert-hall\nmatch: { contentId: plex:663134 }\npiece: { title: Edited Title }\n');
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\nstarts: [42]\n');
     touchAhead('classical/beethoven/symphony-3-eroica.yml');
     vi.advanceTimersByTime(3000);   // past the 2s guard
 
-    expect(store.lookup('plex:663134', '').piece.title).toBe('Edited Title');
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(42);
     vi.useRealTimers();
   });
 
@@ -1058,7 +769,7 @@ describe('YamlSurroundStore freshness', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
     vi.useFakeTimers();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const warnsAfterBuild = logger.warn.mock.calls.length;
     expect(warnsAfterBuild).toBeGreaterThan(0);
 
@@ -1074,27 +785,30 @@ describe('YamlSurroundStore freshness', () => {
   it('holds an edit until the window expires, rather than stat-ing every lookup', () => {
     vi.useFakeTimers();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
-      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\npiece: { title: Edited Title }\n');
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\nstarts: [42]\n');
     touchAhead('classical/beethoven/symphony-3-eroica.yml');
 
     vi.advanceTimersByTime(1000);
-    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(0);
     expect(logger.info.mock.calls).toHaveLength(1);
 
     vi.advanceTimersByTime(1500);
-    expect(store.lookup('plex:663134', '').piece.title).toBe('Edited Title');
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(42);
     expect(logger.info.mock.calls).toHaveLength(2);
   });
 
   it('picks up a sidecar file that did not exist when the index was built', () => {
+    // The corpus already carries the work; what appears mid-run is the
+    // performance that points at it.
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663146', '')).toBeNull();
 
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\n');
     touchAhead('classical/vivaldi/spring.yml');
     vi.advanceTimersByTime(3000);
 
@@ -1104,7 +818,7 @@ describe('YamlSurroundStore freshness', () => {
 
   it('stops resolving a sidecar that was deleted from the tree', () => {
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:663134', '')).not.toBeNull();
 
     rmSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'));
@@ -1118,15 +832,16 @@ describe('YamlSurroundStore freshness', () => {
 
   it('re-warns about a file that is still broken after a rebuild', () => {
     write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    writeLib('classical/vivaldi/spring.yml', 'title: Spring\n');
     vi.useFakeTimers();
     const logger = makeLogger();
-    const store = new YamlSurroundStore({ rootDir: root, logger });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     const invalid = () => logger.warn.mock.calls.filter((c) => c[0] === 'surround.sidecar.invalid');
     const before = invalid().length;
 
     // A different file changes; the broken one is untouched and still broken.
     write('classical/vivaldi/spring.yml',
-      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+      'work: vivaldi/spring\nsurround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\n');
     touchAhead('classical/vivaldi/spring.yml');
     vi.advanceTimersByTime(3000);
     store.lookup('plex:663134', '');
@@ -1137,7 +852,7 @@ describe('YamlSurroundStore freshness', () => {
 
   it('keeps serving the last good index when the tree vanishes under it', () => {
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     rmSync(root, { recursive: true, force: true });
     vi.advanceTimersByTime(3000);
 
@@ -1148,7 +863,7 @@ describe('YamlSurroundStore freshness', () => {
 
   it('survives rootDir being replaced by a regular file, and recovers when the tree returns', () => {
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     rmSync(root, { recursive: true, force: true });
     writeFileSync(root, 'not a directory\n');
     vi.advanceTimersByTime(3000);
@@ -1163,21 +878,24 @@ describe('YamlSurroundStore freshness', () => {
     rmSync(root, { force: true });
     writeFixture();
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
-      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\npiece: { title: Restored }\n');
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134, title: "Beethoven: 3. Sinfonie" }\nstarts: [42]\n');
     touchAhead('classical/beethoven/symphony-3-eroica.yml');
     vi.advanceTimersByTime(3000);
 
-    expect(store.lookup('plex:663134', '').piece.title).toBe('Restored');
+    // Resolving against the corpus again, with the restored tree's own timings.
+    expect(store.lookup('plex:663134', '').movements[0].start).toBe(42);
   });
 
   it('swaps the contentId lane and the title lane together', () => {
+    writeLib('classical/mozart/jupiter.yml', 'title: Jupiter\n');
     vi.useFakeTimers();
-    const store = new YamlSurroundStore({ rootDir: root, logger: makeLogger() });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
       .toBe('Symphony No. 3');
 
+    // The sidecar is re-pointed at a different work, and re-titled with it.
     writeFileSync(path.join(root, 'classical/beethoven/symphony-3-eroica.yml'),
-      'surround: concert-hall\nmatch: { contentId: plex:663134, title: "Mozart: Jupiter" }\npiece: { title: Jupiter }\n');
+      'work: mozart/jupiter\nsurround: concert-hall\nmatch: { contentId: plex:663134, title: "Mozart: Jupiter" }\n');
     touchAhead('classical/beethoven/symphony-3-eroica.yml');
     vi.advanceTimersByTime(3000);
 
@@ -1186,5 +904,186 @@ describe('YamlSurroundStore freshness', () => {
     // ...and the rebind lane with it: the old title is gone, the new one answers.
     expect(store.lookup('plex:000', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester')).toBeNull();
     expect(store.lookup('plex:000', 'Mozart: Jupiter ∙ live').piece.title).toBe('Jupiter');
+  });
+});
+
+describe('YamlSurroundStore library resolution', () => {
+  it('resolves a performance sidecar by merging composer, work, and performance', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r).not.toBeNull();
+    expect(r.piece.title).toBe('Symphony No. 3');
+    expect(r.piece.opus).toBe('Op. 55');
+    expect(r.movements).toHaveLength(1);
+    expect(r.movements[0]).toMatchObject({ n: 1, name: 'Allegro con brio', start: 0 });
+    expect(r.composer.name).toBe('Ludwig van Beethoven');
+    expect(r.composer.birthplace).toBe('Bonn (Electorate of Cologne)'); // performance override wins
+    expect(r.assetBase).toBe('library/classical');
+  });
+
+  it('excludes a sidecar whose work: ref does not resolve, and logs surround.work.missing', () => {
+    write('classical/beethoven/ghost.yml',
+      'work: beethoven/does-not-exist\nsurround: concert-hall\nmatch: { contentId: plex:ghost }\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(store.lookup('plex:ghost', '')).toBeNull();
+    // `expected` names the corpus file the walk would have keyed, so the author
+    // reads the fix out of the warning instead of re-deriving it from the ref.
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.missing', {
+      work: 'beethoven/does-not-exist',
+      expected: 'classical/beethoven/does-not-exist.yml',
+      file: 'classical/beethoven/ghost.yml'
+    });
+  });
+
+  it('rejects a sidecar with no work: ref as invalid, blocking', () => {
+    write('classical/beethoven/noref.yml', 'surround: concert-hall\nmatch: { contentId: plex:noref }\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(store.lookup('plex:noref', '')).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({ file: 'classical/beethoven/noref.yml', reason: 'missing-work' }));
+  });
+
+  it('pairs starts positionally with movements and synthesizes cues from movement notes', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One }\n  - { n: 2, name: Two, note: "Second movement begins." }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0, 976]\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.movements.map((m) => m.start)).toEqual([0, 976]);
+    expect(r.cues).toEqual([{ at: 976, render: 'docked', text: 'Second movement begins.' }]);
+  });
+
+  it('appends explicit sidecar cues after synthesized movement cues, sorted by time', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One, note: "First." }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0]\ncues:\n  - { at: 500, render: docked, text: "Extra." }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.cues.map((c) => c.text)).toEqual(['First.', 'Extra.']);
+  });
+
+  it('warns surround.starts.mismatch when starts length differs from movement count, but still resolves', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One }\n  - { n: 2, name: Two }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0]\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:663134', '');
+    expect(r).not.toBeNull();
+    expect(r.movements[1].start).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith('surround.starts.mismatch',
+      { file: 'classical/beethoven/symphony-3-eroica.yml', starts: 1, movements: 2 });
+  });
+
+  it('resolves a sidecar with no starts at all — Tier B, media not yet timed', () => {
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:663134', '');
+    expect(r).not.toBeNull();
+    expect(r.movements[0].start).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.starts.mismatch', expect.anything());
+  });
+
+  it('lets the work-level composer block override the shared _composer.yml', () => {
+    writeLib('classical/beethoven/_composer.yml', 'name: Ludwig van Beethoven\nbirthplace: A\n');
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: []\ncomposer:\n  birthplace: B\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.composer.birthplace).toBe('B');
+    expect(r.composer.name).toBe('Ludwig van Beethoven'); // untouched keys still inherit
+  });
+
+  it('lets the performance composer block override both the work and the shared composer', () => {
+    writeLib('classical/beethoven/_composer.yml', 'name: Ludwig van Beethoven\nbirthplace: A\n');
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: []\ncomposer:\n  birthplace: B\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\ncomposer:\n  birthplace: C\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.composer.birthplace).toBe('C');
+    expect(r.composer.name).toBe('Ludwig van Beethoven');
+  });
+
+  it('drops a negative, null, or non-numeric start and warns starts-entry-invalid', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One, note: "First." }\n  - { n: 2, name: Two, note: "Second." }\n'
+      + '  - { n: 3, name: Three, note: "Third." }\n  - { n: 4, name: Four, note: "Fourth." }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [-30, null, "12:00", 900]\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:663134', '');
+
+    // Garbage never reaches the payload verbatim; positions are preserved, so the
+    // one good start still lands on the movement it was authored for.
+    expect(r.movements.map((m) => m.start)).toEqual([undefined, undefined, undefined, 900]);
+    // ...and no cue is synthesized at a dropped index.
+    expect(r.cues).toEqual([{ at: 900, render: 'docked', text: 'Fourth.' }]);
+    expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({
+        file: 'classical/beethoven/symphony-3-eroica.yml',
+        reasons: expect.arrayContaining(['starts-entry-invalid'])
+      }));
+  });
+
+  it('keeps a zero start, which is a valid offset and not a dropped one', () => {
+    // Every real work's first movement starts at 0, so a falsy check anywhere in
+    // the coercion would break the primary case while every edge-case test above
+    // still passed. The cue assertion matters as much as the start: the cue
+    // filter is a second place a zero could be dropped as falsy.
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One, note: "Opens here." }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\nstarts: [0]\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:663134', '');
+    expect(r.movements[0].start).toBe(0);
+    expect(r.cues).toEqual([{ at: 0, render: 'docked', text: 'Opens here.' }]);
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({ reasons: expect.arrayContaining(['starts-entry-invalid']) }));
+  });
+
+  it('warns surround.work.invalid when a corpus work has a non-list movements or facts', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements: { n: 1 }\nfacts: not-a-list\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.invalid', {
+      file: 'classical/beethoven/symphony-3-eroica.yml',
+      reason: 'movements-not-a-list',
+      reasons: ['movements-not-a-list', 'facts-not-a-list']
+    });
+    // Warn-then-continue: the work still indexes, with the bad lists coerced empty.
+    const r = store.lookup('plex:663134', '');
+    expect(r).not.toBeNull();
+    expect(r.movements).toEqual([]);
+    expect(r.facts).toEqual([]);
+  });
+
+  it('rebuilds when only the library tree changes, not just the performance tree', () => {
+    vi.useFakeTimers();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+
+    writeLib('classical/beethoven/symphony-3-eroica.yml', 'title: Retitled\nmovements: []\n');
+    const when = new Date(Date.now() + 3000);
+    utimesSync(path.join(library, 'classical/beethoven/symphony-3-eroica.yml'), when, when);
+    vi.advanceTimersByTime(3000);
+
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Retitled');
+    vi.useRealTimers();
   });
 });

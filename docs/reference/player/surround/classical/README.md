@@ -13,60 +13,125 @@ in `docs/_wip/plans/2026-08-18-player-surround-*.md`.
 
 ## Structure
 
-Two parallel trees: data in the content corpus, pixels in the media tree.
+Knowledge and performance live in **separate trees**, and the pixels in a third.
+The split is deliberate: the corpus is subject-neutral reference data that a future
+School music-appreciation projection reads on the same terms the player does, and
+one work commonly has more than one recording. See
+`docs/_wip/plans/2026-08-19-classical-library-corpus-design.md` for the rationale.
 
 ```text
-data/content/surround/                       media/img/surround/
-  _surrounds/                                  classical/
-    concert-hall.yml                             beethoven/
-  classical/                                       portrait.jpg
-    beethoven/                                     vienna.jpg
-      _composer.yml                              vivaldi/
-      works/                                       portrait.jpg
-        symphony-3-eroica.yml                    _maps/
-      symphony-3-eroica.hr-2016.yml                europe.geo.json
-    vivaldi/
-      _composer.yml
-      works/
-        four-seasons-spring.yml
-      four-seasons-spring.plex663146.yml
+data/content/library/classical/            THE CORPUS — knowledge only
+  beethoven/
+    _composer.yml                          bio, dates, map, portrait refs, facts
+    symphony-3-eroica.yml                  the WORK: movements, listen notes, facts, themes
+  vivaldi/
+    _composer.yml
+    four-seasons-spring.yml
+
+data/content/surround/classical/           PERFORMANCES — owned by the player
+  beethoven/
+    symphony-3-eroica.hr-2016.yml          work ref + match + timings
+  vivaldi/
+    four-seasons-spring.plex663146.yml
+
+data/content/surround/_surrounds/          presentation definitions (chrome)
+  concert-hall.yml
+
+media/img/library/classical/<composer>/    corpus assets (portrait.jpg, <city>.jpg)
+media/img/library/_maps/europe.geo.json    shared geodata
 ```
 
-Three levels of authoring, each holding what is true at exactly that level:
+- Both trees use the same shape — `<domain>/<composer>/<file>.yml` — and the same
+  rule: `_`-prefixed files and folders are never walked as composer folders or as
+  work/performance files. `_composer.yml` and `_surrounds/` are reserved by name.
+- **A work with no performance sidecar is valid.** Most works will be authored
+  before any recording is ingested; the corpus never mentions Plex.
+- Assets are referenced relative to `assetBase`, which the store sets to
+  `library/<domain>` (so, `library/classical`), and served by the generic static
+  image route: `/api/v1/static/img/library/classical/beethoven/portrait.jpg`.
+  That route is generic over the media image tree — nothing hardcodes a surround
+  prefix. A missing asset renders an empty slot; it never breaks the surround.
 
-| File | Holds | True of |
-|---|---|---|
-| `_composer.yml` | portrait, dates, birthplace, map pin, composer facts | every piece the composer wrote |
-| `works/<work>.yml` | title, opus, movement names, cues, facts | every recording of that piece of music |
-| `<recording>.yml` | `match`, `starts`, `musicEndsAt`, `performance` | one performance, one video |
+### The work file
 
-- The folder under the domain is the **composer slug**; `_`-prefixed files and
-  folders are never treated as composer folders or piece files, and `works/` is
-  never walked for sidecars.
-- A recording inherits its work by naming it, and its composer by living in the
-  folder. Overrides run outward-in: `_composer.yml` ← work ← recording, per key.
-- Assets are referenced relative to `assetBase` (`surround/classical`) and served
-  by the existing static route: `/api/v1/static/img/surround/classical/...`.
-  A missing asset renders an empty slot; it never breaks the surround.
-
-### Composer file
+`library/classical/<composer>/<work-slug>.yml` — everything true about the music,
+independent of any recording. Abridged from the real Eroica file:
 
 ```yaml
-# classical/beethoven/_composer.yml
+title: Symphony No. 3 in E-flat major, "Eroica"
+opus: Op. 55                          # or BWV / K. / RV / HWV — whatever the catalog uses
+composed: 1803-1804
+year: 1804
+period: "Classical to Romantic"
+period_note: "Written at the hinge — Classical forms stretched to Romantic scale and feeling."
+city: Vienna
+premiered: Theater an der Wien, 7 April 1805
+set: symphonies                       # groups works into a cycle
+set_index: 3
+tier: flagship                        # flagship | key | catalog
+movements:
+  - n: 1
+    name: "Allegro con brio"
+    translation: "Fast, with spirit"
+    listen:                           # per-movement appreciation bullets
+      - "Two hammered E-flat chords, then the cellos sing the heroic theme — built from a plain broken chord."
+      - "Huge off-beat chords batter against the bar line — the music fighting its own meter."
+  - n: 2
+    name: "Marcia funebre. Adagio assai"
+    translation: "Funeral march — very slow"
+    listen:
+      - "Basses mutter like muffled drums beneath the violins' grief — a state funeral in sound."
+    note: "The funeral march. Beethoven puts a death at the centre of a symphony — nobody had done that before."
+facts:                                # untimed pool about the WORK
+  - "Beethoven meant to dedicate this symphony to Napoleon. When his secretary brought word that Napoleon had declared himself Emperor, Beethoven tore the title page in half and threw it on the floor."
+themes: [heroism, napoleon, deafness] # cross-work threads for future curricula
+```
+
+Notes that save a debugging pass:
+
+- **No `start:` on a movement.** Timings are a property of a recording, not of the
+  music, and live in the performance sidecar's `starts:` array. The store writes
+  `start` onto each movement at resolve time.
+- **`note:` becomes a cue.** A movement with a `note` and a paired start second is
+  synthesized into a docked cue at that second. That is the whole mechanism —
+  there is no per-movement cue syntax.
+- **A movement reaches the payload whole**, so `translation:` and `listen:` are
+  read by the player: `MovementMap` sets the translation as a gloss under the
+  movement's name, and `CueTicker` cycles that movement's `listen` bullets in the
+  "now" zone while it is playing, falling back to the work's `facts` for a
+  movement nobody has written notes for yet.
+- **Work-level fields are allowlisted, and `themes:`, `set:`, `set_index:` and
+  `tier:` are not on the list.** They are corpus fields, authored now for the
+  School projection. `piece` is exactly the store's `PIECE_FIELDS` (`title`,
+  `opus`, `composed`, `year`, `period`, `period_note`, `city`, `premiered`), plus
+  `movements`, `facts` and an optional `composer:` override block. **Adding a
+  work-level field and not adding it to that allowlist is silent** — the region
+  simply renders without it. Movement-level fields need no allowlist.
+- A `movements:` or `facts:` key that is present but not a list logs
+  `surround.work.invalid` and is coerced to empty; the rest of the work still
+  indexes.
+
+### The composer file
+
+`library/classical/<composer>/_composer.yml` — identity shared by every work that
+composer wrote. Author it once and all 41 Beethoven works have it.
+
+```yaml
 name: Ludwig van Beethoven
 born: 1770
 died: 1827
 birthplace: Bonn
+period: Classical
+period_note: "Clear forms and balanced phrases — the Classical style prized proportion above display."
 portrait: beethoven/portrait.jpg
 city_image: beethoven/vienna.jpg
-map: { country: Austria, city: Vienna, lat: 48.21, lon: 16.37 }
+map: { country: Austria, city: Vienna, lat: 48.21, lon: 16.37, caption: "Vienna — his adopted city from the age of twenty-one" }
 facts:
   - "Beethoven said his hearing loss began in 1798, during a heated argument with a singer."
 ```
 
-Everything here is inherited by **every piece that composer wrote** — author it once,
-and all 41 Beethoven pieces have it. A piece may override any key via its own
-`composer:` block (piece wins per key).
+The composer slug is taken from the sidecar's `work:` ref (the segment before the
+slash), so a performance always inherits the composer of the work it names.
 
 Two fields worth calling out:
 
@@ -75,95 +140,107 @@ Two fields worth calling out:
   coprime with the footer ticker's 20 s, so the two panels coincide once every nine
   minutes instead of swapping in lockstep, which reads as a glitch. The rotation is
   time-driven, not playhead-driven: seeking does not reset it.
-- **`map`** supplies the place-carousel's map slide (and the standalone `country-map`
-  module, for definitions that use it directly — see "Modules" below). Give it the
-  country name **exactly as the geodata spells it** (`United Kingdom`, `Czechia`)
-  plus the city and its coordinates. An optional **`map.caption`** authors the
-  sentence shown under the place-carousel's city photograph — e.g. "Venice — his
-  lifelong home" — set as prose, not the tracked small-caps label a bare place name
-  gets. Omit it and the caption falls back to `map.city` alone, set as a label.
+- **`map`** supplies the place-carousel's map slide (and the standalone
+  `country-map` module, for definitions that use it directly — see "Modules").
+  Give it the country name **exactly as the geodata spells it** (`United Kingdom`,
+  `Czechia`) plus the city and its coordinates. An optional **`map.caption`**
+  authors the sentence under the carousel's city photograph — "Venice — his
+  lifelong home" — set as prose, not the tracked small-caps label a bare place
+  name gets. Omit it and the caption falls back to `map.city` alone, as a label.
 
-### Work file
+### The performance sidecar
 
-The music itself. Everything here is recording-independent, so it is written once
-however many performances of the piece the library holds. **Movements carry no
-`start`** — a timing belongs to a recording, not to a work.
+`surround/classical/<composer>/<work-slug>.<performance-tag>.yml` — one file per
+recording, meaningless without a video, and it never restates the work's content.
+The filename and the composer folder are convention only — nothing parses them.
+`work:` is what binds the file to the corpus (the composer slug is read from the
+ref, not from the folder), so the performance tag can be whatever identifies the
+recording: `hr-2016`, `plex663146`. The **domain** folder does matter — it is what
+sets `assetBase` to `library/<domain>`. The real Eroica sidecar in full:
 
 ```yaml
-# classical/beethoven/works/symphony-3-eroica.yml
-piece:
-  title: Symphony No. 3 in E-flat major, "Eroica"
-  opus: Op. 55
-  composed: 1803-1804
-  year: 1804
-  city: Vienna
-  premiered: Theater an der Wien, 7 April 1805
-  period: "Classical to Romantic"
-  period_note: "Written at the hinge — Classical forms stretched to Romantic scale."
-movements:
-  - n: 1
-    name: "Allegro con brio"
-    translation: "Fast, with spirit"          # optional
-    listen:                                   # optional — what to listen for
-      - "Two hammered E-flat chords, then the cellos sing the heroic theme."
-  - { n: 2, name: "Marcia funebre. Adagio assai", translation: "Funeral march — very slow" }
-cues:                               # optional, timed
-  - { at: 976, render: docked, text: "The funeral march begins." }
-facts:                              # optional, untimed pool
-  - "The published title page reads: composed to celebrate the memory of a great man."
+work: beethoven/symphony-3-eroica     # required — corpus ref, <composer>/<work-slug>
+surround: concert-hall                # required — definition id in _surrounds/
+match:                                # required
+  contentId: plex:663134              # exact-match fast path
+  title: "Beethoven: 3. Sinfonie"     # rebind fallback (normalized substring)
+performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
+starts: [0, 976, 1925, 2278]          # movement start seconds, positional
+musicEndsAt: 2955                     # where the music stops and the applause starts
 ```
+
+| Key | Required | Meaning |
+|---|---|---|
+| `work` | yes | Corpus ref. A ref that does not resolve logs `surround.work.missing` and the sidecar is excluded. |
+| `surround` | yes | Definition stem in `_surrounds/`. Missing definition logs `surround.definition.missing`. |
+| `match.contentId` | yes | See "Why `match` has two keys" below. |
+| `match.title` | soft | Absent logs `surround.sidecar.invalid` with reason `missing-match-title` and gives up the rebind lane; the sidecar still works by id. |
+| `performance` | no | Free-text performers/venue/date. Reaches the payload as `piece.performance`; no shipped module renders it yet. |
+| `starts` | no | Seconds from the top of the media, positional — `starts[i]` is `movements[i]`'s start. |
+| `musicEndsAt` | no | Reaches the payload as `piece.musicEndsAt`; `MovementMap` uses it so the last movement's bar stops at the music rather than running to `duration`. |
+| `cues` | no | Performance-specific extras only, `{ at, render, text }`. Movement notes already produce their own. |
+| `composer` / `piece` | no | Per-key overrides applied last. Use sparingly — an override that belongs to the music belongs in the corpus. |
+
+A `starts` entry that is not a non-negative finite number (a quoted timestamp, a
+placeholder `null`, a negative from arithmetic against the wrong reference) is
+dropped to `undefined` and logs the soft reason `starts-entry-invalid`. Positions
+are preserved rather than compacted, so one bad entry costs one movement's timing
+instead of shifting every later movement by one.
 
 `render: docked` draws into the ticker region. `render: overlay` is reserved for
 phase two (pop-up-video style, over the video) and needs no schema change.
 
-### Recording sidecar
+### How the two resolve
 
-One video. It names its work and adds what only this performance can supply: the
-Plex match, the measured movement starts, where the music stops, who played it.
+`YamlSurroundStore` loads the corpus first (composers and works, keyed
+`<composer>/<work-slug>`), then walks the performance tree. For each sidecar:
 
-```yaml
-# classical/beethoven/symphony-3-eroica.hr-2016.yml
-work: beethoven/symphony-3-eroica    # <composer>/<work>, or a bare <work> in this folder
-surround: concert-hall               # required — definition id in _surrounds/
-match:                               # required
-  contentId: plex:663134             # exact-match fast path
-  title: "Beethoven: 3. Sinfonie"    # rebind fallback (normalized substring)
-performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
-starts: [0, 976, 1925, 2278]         # one per movement, measured (see below)
-musicEndsAt: 2955                    # last chord; applause follows
-```
+- **Precedence is composer ← work ← performance**, later wins per key, applied
+  separately to the `composer` block and the `piece` block. So `_composer.yml`
+  supplies the base identity, a work's optional `composer:` block narrows it, and
+  the sidecar's optional `composer:` block wins. The merge is deep, so a `map:`
+  override can supply just `caption:` and keep the inherited coordinates — but
+  **lists are replaced wholesale, and `key: null` cannot clear an inherited
+  value** (it reads as absent). To suppress an inherited fact list, override it
+  with an empty list.
+- `piece` is the work's allowlisted fields, then `performance` and `musicEndsAt`
+  from the sidecar, then any `piece:` override block.
+- `movements` are the work's, each gaining `start: starts[i]`.
+- `cues` are the synthesized movement-note cues plus the sidecar's explicit `cues`,
+  the whole list sorted by `at`.
+- `facts` in the payload are the **work's** facts. Composer facts stay under
+  `composer.facts`; the two rotate in different panels. A `facts:` key on a
+  performance sidecar is ignored.
+- `assetBase` is `library/<domain>`.
 
-`work: beethoven/symphony-3-eroica` reads as
-`classical/beethoven/works/symphony-3-eroica.yml`. A reference with no slash
-resolves under the sidecar's own composer folder, which is the usual case;
-naming another composer is legal, for a work the folders disagree about.
+The resolved payload shape is unchanged from before the corpus split, which is why
+the frontend modules needed no edits. The mtime watcher covers both trees, so
+edit-and-refresh authoring works on a work file exactly as it does on a sidecar.
 
-**`starts` and the work's `movements` are zipped index by index**, so they must
-be the same length. They disagree only when one file was edited and the other was
-not — exactly the situation that would put movement 2's text against movement 3's
-music — so a mismatch excludes the recording and says so
-(`starts-length-mismatch`). Nothing is ever mis-timed quietly.
+### Authoring ahead of Plex
 
-### The simple form: one file
-
-A work with one recording does not need two files. Omit `work:` and author
-`piece`, `movements` (with `start` on each), `cues` and `facts` inline, exactly as
-before. The store produces the identical payload either way, and the two shapes
-sit side by side in the same composer folder — split a work only when a second
-recording of it arrives.
+Most works will be written before any recording is ingested. The work file alone is
+complete and valid — write it and stop. When you want the sidecar in place first
+(so the performance tag, `surround:` and `work:` ref are already reviewed), give
+`match.contentId` a placeholder of the form `pending:<slug>`:
 
 ```yaml
-# classical/vivaldi/four-seasons-spring.yml — the flat shape, still supported
+work: beethoven/symphony-5
 surround: concert-hall
-match: { contentId: plex:663146, title: "Vivaldi: Spring" }
-piece: { title: "Violin Concerto in E major, \"Spring\"", opus: Op. 8 No. 1 }
-movements:
-  - { n: 1, name: Allegro, start: 0 }
+match:
+  contentId: pending:beethoven-symphony-5
+  title: "Beethoven: 5. Sinfonie"
 ```
 
-Inline `piece`/`movements`/`cues`/`facts` **beside** a `work:` key are ignored —
-the work wins — and the store warns `inline-blocks-ignored` so a half-finished
-migration cannot lose an edit in silence.
+It passes validation — `contentId` only has to be present — and no live item will
+ever carry that id, so the fast path never fires until a real `plex:NNNNNN`
+replaces it. Nothing else in the file needs to change at that point.
+
+Note the one thing a placeholder does *not* suppress: the sidecar is still indexed
+in the title lane described below, so if the recording lands and its live title
+overlaps the authored `match.title`, the surround appears anyway and logs
+`surround.match.rebound` naming the placeholder as the stale id. That is the
+signal to go fill in the real id.
 
 ### Why `match` has two keys
 
@@ -237,29 +314,37 @@ Measured for the two reference pieces:
 | Vivaldi, Spring (`plex:663146`) | 628 s | 0, 225, 385 | 3m45 / 2m40 / 4m03 | ~613 s |
 | Beethoven, Eroica (`plex:663134`) | 3223 s | 0, 976, 1925, 2278 | 15m26 / 15m06 / 5m33 / 11m17 | ~2955 s |
 
-The measured numbers go in the **recording** file, as `starts` and `musicEndsAt`.
-Re-measure per recording: two orchestras never take the same tempo, and the
-whole reason work and recording are separate files is that only the timings
-differ between them.
+Those numbers are a property of the recording, so they go in the **performance
+sidecar** — the movement starts as `starts:` in movement order, the applause point
+as `musicEndsAt:`. A second recording of the same work gets its own sidecar with
+its own `starts:` and reuses the work file untouched.
 
-### 3. Write the sidecar and assets
+### 3. Write the work file, the sidecar, and the assets
+
+Two YAML files, in that order, plus the images. The work file is the slow one —
+movement names, `listen:` bullets, `note:` lines, facts — and it is what a second
+performance later reuses. The sidecar is six lines.
 
 Portraits and city images: Wikimedia Commons for public-domain composers (the
-repo has a `wikimedia-commons-images` skill). Re-encode as **baseline** JPEG, not
-progressive — progressive files render blocky in the kiosk Firefox.
+repo has a `wikimedia-commons-images` skill). They belong to the composer, so they
+land under `media/img/library/classical/<composer>/` and are referenced from
+`_composer.yml` relative to `assetBase` (`beethoven/portrait.jpg`, not a full
+path). Re-encode as **baseline** JPEG, not progressive — progressive files render
+blocky in the kiosk Firefox.
 
 ### 4. Verify without restarting anything
 
-The store watches mtimes and rebuilds within ~2 s of an edit — sidecars,
-`works/`, and `_composer.yml` alike — so authoring is edit-and-refresh. Check
-that it took:
+The store watches mtimes and rebuilds within ~2 s of an edit, so authoring is
+edit-and-refresh. Check that it took:
 
 ```bash
 curl -s "http://{host}:{backend_port}/api/v1/play/plex:663146" | jq '.surround.id'
 ```
 
-`null` means no sidecar matched. Look at the warnings before touching code —
-they name the file and the reason:
+`null` means no sidecar matched. `surround.index.built` (info) is the other quick
+check: it carries `pieces`, `skipped`, `composers` and `definitions`, so a corpus
+folder that failed to load shows up as a count that is one too low. Look at the
+warnings before touching code — they name the file and the reason:
 
 ```bash
 curl -s https://logs.kckern.net/select/logsql/query \
@@ -268,24 +353,16 @@ curl -s https://logs.kckern.net/select/logsql/query \
 
 | Event | Meaning |
 |---|---|
-| `surround.sidecar.invalid` | Malformed YAML or a missing required key. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Work-resolution problems also carry `work`, the path that was looked for. |
+| `surround.sidecar.invalid` | Malformed YAML or a missing required key in a performance sidecar. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Blocking reasons: `yaml-unparseable`, `not-a-mapping`, `missing-surround`, `missing-work`, `missing-match`, `match-not-a-mapping`, `missing-match-contentId`. Soft ones (the sidecar still loads): `missing-match-title`, `starts-not-a-list`, `starts-entry-invalid`, `cues-not-a-list`, `composer-not-a-mapping`, `piece-not-a-mapping`. |
+| `surround.work.missing` | The sidecar's `work:` ref names no file in the corpus. The sidecar is excluded. Carries the ref, the sidecar `file`, and `expected` — the corpus path that was looked for — so the fix is either to create that file or to correct the slug, without re-deriving the path. Usually a typo, or a work file that never got written. |
+| `surround.work.invalid` | A **corpus** work file has a present-but-non-array `movements` or `facts` — a mapping written where a list belongs. Warn and continue: the key is coerced to empty and the work still indexes. |
+| `surround.starts.mismatch` | `starts` length ≠ movement count. The sidecar still resolves; the unpaired movements get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
 | `surround.sidecar.duplicate` | Two sidecars claim one contentId. Names both files; last one walked wins. |
 | `surround.titles.ambiguous` | Two authored titles could match the same live title. Emitted at index time so you learn before a playback trips it. |
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
+| `surround.match.ambiguous` | The title lane matched more than one sidecar at lookup time, so the store refused. Names the live title and every candidate file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
-
-The `reason` vocabulary for the two-file shape:
-
-| Reason | Meaning | Effect |
-|---|---|---|
-| `work-not-found` | The `work:` reference resolved to a path that does not exist or will not parse. `work` names it. | Recording excluded |
-| `starts-length-mismatch` | `starts` and the work's `movements` differ in length. Payload names both counts. | Recording excluded |
-| `work-not-a-string` | `work:` is a mapping, a list, or blank. | Recording excluded |
-| `inline-blocks-ignored` | `piece`/`movements`/`cues`/`facts` authored beside a `work:`. | Work wins; recording indexes |
-| `starts-not-a-list` | `starts:` is not a list — usually an indentation slip. | Reads as zero starts |
-| `work-*-not-a-list`, `work-piece-not-a-mapping` | The wrong-typed block is in the **work** file, not the sidecar the warning names. | Coerced to empty |
-| `missing-piece` | A sidecar with neither `work:` nor `piece:` — nothing to say about the music. | Indexes, renders empty |
 
 ---
 
@@ -298,28 +375,28 @@ The `concert-hall` definition's regions resolve to named modules from
 |---|---|---|
 | `work-placard` | top | The floating stone plate: piece title, composer, opus, premiere. |
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
-| `place-carousel` | right (rail) | The foot of the rail: the composer's city photograph and the regional map, one at a time. See below. |
+| `place-carousel` | right (rail) | The foot of the rail: the composer's city photograph and the regional map, one at a time. |
 | `country-map` | right, bottom | The regional map component itself (see below). |
-| `movement-map` | bottom | The engraved-score progress band. |
-| `cue-ticker` | bottom | The docked cue/fact ticker under the movement map. |
+| `movement-map` | bottom | The engraved-score progress band, with each movement's translation glossed under its name. |
+| `cue-ticker` | bottom | The docked ticker: the playing movement's `listen` notes on one side, cues and facts on the other. |
 
 The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
 rail: the map is one of the carousel's two slides, so a piece's regional map and
 its city photograph share one slot and one dwell cycle instead of each getting a
-cramped half-column. The `country-map` **registration stays live** — it is a
+cramped half-column. The `country-map` registration stays live — it is a
 legitimate module for any definition that wants a bare, non-cycling map in a
 region of its own, and `place-carousel` shares its payload-to-props step
 (`mapPinFrom`) rather than re-deriving the pin.
 
 ## The country map
 
-`country-map` draws an inline SVG map, highlights the composer's country, and
-stars their city. It is **data-driven and auto-framing**: it computes the
-bounding box of the highlighted landmass and derives the viewBox from it, so
-Finland fills the frame exactly as well as Austria does with no per-country
-configuration and no per-composer asset.
+`country-map` is a surround module that draws an inline SVG map, highlights the
+composer's country, and stars their city. It is **data-driven and auto-framing**:
+it computes the bounding box of the highlighted landmass and derives the viewBox
+from it, so Finland fills the frame exactly as well as Austria does with no
+per-country configuration and no per-composer asset.
 
-Geodata: `media/img/surround/_maps/europe.geo.json` — Natural Earth 1:110m, public
+Geodata: `media/img/library/_maps/europe.geo.json` — Natural Earth 1:110m, public
 domain, trimmed to Europe plus Mediterranean/Caucasus neighbours, 41 KB, fetched
 lazily and cached at module scope. No mapping library is used; the Mercator
 projection is about fifteen lines.
@@ -373,3 +450,9 @@ The Slow TV classical library is roughly 100 pieces across seven composers (Bach
 31, Beethoven 41, Mozart 11, Sibelius 7, Wagner 5, Handel 4, Vivaldi 4). The
 composer folder is the natural unit of work: one command, one review pass, one
 commit per composer, rather than one 100-piece batch.
+
+The corpus is sized for more than that. Only media-backed works get a performance
+sidecar; work files are written for the long tail too, so the composer count under
+`library/classical/` grows well past the seven with recordings. That asymmetry is
+the point of the split — a composer folder with no video in the house is still
+worth authoring.

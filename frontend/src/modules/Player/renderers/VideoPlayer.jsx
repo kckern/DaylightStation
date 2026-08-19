@@ -4,6 +4,7 @@ import 'dash-video-element';
 import { useCommonMediaController } from '../hooks/useCommonMediaController.js';
 import { ProgressBar } from '../components/ProgressBar.jsx';
 import { useUpscaleEffects } from '../hooks/useUpscaleEffects.js';
+import { useCrtShader } from '../hooks/useCrtShader.js';
 import { useRenderFpsMonitor } from '../hooks/useRenderFpsMonitor.js';
 import { useEndOfContentWatchdog } from '../hooks/useEndOfContentWatchdog.js';
 import { getLogger } from '../../../lib/logging/Logger.js';
@@ -231,6 +232,18 @@ export function VideoPlayer({
     mediaRef: containerRef,
     preset: upscaleEffects
   });
+
+  // WebGL CRT path. useUpscaleEffects still owns the decision (<=480p source,
+  // stabilized, not looping); this only swaps how the effect is drawn. The CSS
+  // overlay stays as the fallback for no-WebGL and refused texture uploads.
+  const crtCanvasRef = useRef(null);
+  const crt = useCrtShader({
+    canvasRef: crtCanvasRef,
+    mediaRef: containerRef,
+    enabled: overlayProps.showCRT
+  });
+  const crtShaderActive = overlayProps.showCRT && crt.active;
+  const crtOverlayFallback = overlayProps.showCRT && crt.fellBack;
 
   // --- Content filter (opt-in via ?filter=1) ---
   const filterContentId = (isPlex && CONTENT_FILTER_ENABLED)
@@ -904,24 +917,31 @@ export function VideoPlayer({
         <dash-video
           key={dashElementKey}
           ref={containerRef}
-          class={`video-element ${displayReady ? 'show' : ''}`}
+          class={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={mediaUrl}
           autoplay=""
-          style={effectStyles}
+          style={crtShaderActive ? undefined : effectStyles}
         />
       ) : (
         <video
           key={dashElementKey}
           autoPlay
           ref={containerRef}
-          className={`video-element ${displayReady ? 'show' : ''}`}
+          className={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={isHls ? undefined : mediaUrl}
-          style={effectStyles}
+          style={crtShaderActive ? undefined : effectStyles}
           onCanPlay={() => setDisplayReady(true)}
           onPlaying={() => setDisplayReady(true)}
         />
       )}
       {overlayProps.showCRT && (
+        <canvas
+          ref={crtCanvasRef}
+          className={`upscale-crt-canvas ${crtShaderActive ? 'active' : ''}`}
+          aria-hidden="true"
+        />
+      )}
+      {crtOverlayFallback && (
         <div className={overlayProps.className} />
       )}
       {CONTENT_FILTER_ENABLED && filterData?.edl && (

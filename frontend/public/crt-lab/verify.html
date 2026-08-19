@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CRT verify — shipped renderer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #stage { position: relative; width: 100vw; height: 100vh; }
+  video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  video { object-fit: contain; opacity: 0; }
+  #status {
+    position: absolute; top: 8px; left: 8px; z-index: 9; color: #4fd1c5;
+    font: 12px/1.5 ui-monospace, Menlo, monospace; background: rgba(0,0,0,.7);
+    padding: 6px 9px; border-radius: 3px; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<!--
+  Dev-only. Loads the SHIPPED renderer from modules/Player straight out of Vite's
+  module graph, so what renders here is the production code path rather than the
+  lab's own copy. Only works against the dev server (the /src/ import is not part
+  of any build).
+-->
+<div id="stage">
+  <video id="v" src="media/real-sd.mp4" muted loop playsinline autoplay></video>
+  <canvas id="c"></canvas>
+  <div id="status">booting…</div>
+</div>
+<script type="module">
+  const status = document.getElementById('status');
+  const video = document.getElementById('v');
+  const canvas = document.getElementById('c');
+  try {
+    const mod = await import('/src/modules/Player/lib/crtRenderer.js');
+    const { createCrtRenderer, CRT_GEOM_PRESET, DEFAULT_PRE_FILTER, resolveParams } = mod;
+    await video.play().catch(() => {});
+    await new Promise(r => video.readyState >= 2 ? r() : video.addEventListener('loadeddata', r, { once: true }));
+
+    const logger = {
+      debug: (e, d) => console.log('debug', e, d),
+      info: (e, d) => console.log('info', e, d),
+      warn: (e, d) => console.log('warn', e, d),
+      error: (e, d) => console.log('error', e, d)
+    };
+    const r = createCrtRenderer({ canvas, video, logger });
+    window.__crt = r;
+    if (!r.supported) {
+      status.textContent = 'UNSUPPORTED: ' + r.reason;
+    } else {
+      r.start();
+      const p = resolveParams(await (await fetch('/src/modules/Player/shaders/crt-geom.glsl?raw')).text().catch(() => ''), CRT_GEOM_PRESET);
+      status.textContent = [
+        'shipped module OK',
+        'source ' + video.videoWidth + '×' + video.videoHeight,
+        'canvas ' + canvas.width + '×' + canvas.height,
+        'preset CRTgamma=' + CRT_GEOM_PRESET.CRTgamma + ' R=' + CRT_GEOM_PRESET.R,
+        'preblur ' + DEFAULT_PRE_FILTER.blurRadiusSourcePx + 'px'
+      ].join('\n');
+      window.__ready = true;
+    }
+  } catch (e) {
+    status.textContent = 'THREW: ' + e.message;
+    window.__error = e.message;
+  }
+</script>
+</body>
+</html>
