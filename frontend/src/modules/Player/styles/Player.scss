@@ -568,7 +568,33 @@
   transition: filter 400ms ease;
 }
 
-// CRT overlay container
+// WebGL CRT canvas. The picture is painted here; the <video> keeps decoding
+// underneath but stops painting (see .video-element.crt-source). Fades in on the
+// same 400ms curve the CSS overlay used, so the swap is not a hard cut.
+.upscale-crt-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  z-index: var(--player-layer-crt, 36);
+  opacity: 0;
+  transition: opacity 400ms ease;
+
+  &.active {
+    opacity: 1;
+  }
+}
+
+// Source video while the shader owns the picture. Not display:none — the element
+// has to stay laid out and decoding to keep feeding texImage2D.
+.video-element.crt-source {
+  opacity: 0;
+}
+
+// CRT overlay container — retained as the fallback when WebGL is unavailable or
+// the texture upload is refused.
 .upscale-crt-overlay {
   position: absolute;
   inset: 0;

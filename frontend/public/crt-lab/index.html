@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CRT Lab — libretro shaders over video</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --panel-2: #1b2027;
+    --line: #2a323c;
+    --ink: #e8edf2;
+    --ink-dim: #93a1b0;
+    --accent: #4fd1c5;
+    --warn: #f6ad55;
+    --bad: #fc8181;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+    overflow: hidden;
+  }
+  #app { display: flex; height: 100%; }
+
+  /* ---- stage ---- */
+  #stage {
+    position: relative; flex: 1 1 auto; min-width: 0;
+    background: #000; display: flex; align-items: center; justify-content: center;
+  }
+  #gl { display: block; width: 100%; height: 100%; }
+  #video { display: none; }
+
+
+  #splitHandle {
+    position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent);
+    left: var(--split, 50%); display: none; cursor: ew-resize; z-index: 5;
+    box-shadow: 0 0 12px rgba(79,209,197,.8);
+  }
+  #splitHandle.on { display: block; }
+  #splitHandle::after {
+    content: 'RAW  |  SHADER'; position: absolute; top: 12px; left: 50%;
+    transform: translateX(-50%); white-space: nowrap; font-size: 11px;
+    letter-spacing: .12em; background: rgba(0,0,0,.7); padding: 3px 8px;
+    border-radius: 3px; color: var(--accent);
+  }
+
+  /* current-implementation CSS overlay, replicated from Player.scss */
+  #cssOverlay { position: absolute; inset: 0; pointer-events: none; display: none; }
+  #cssOverlay.on { display: block; }
+  #cssOverlay::before {
+    content: ''; position: absolute; inset: 0;
+    background: repeating-linear-gradient(to bottom,
+      rgba(255,255,255,.08) 0, rgba(255,255,255,.08) 1px,
+      transparent 5px, transparent 10px);
+    mix-blend-mode: overlay; opacity: .4;
+    animation: crt-scanline-scroll 2s linear infinite;
+  }
+  #cssOverlay::after {
+    content: ''; position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 256px 256px; opacity: .06; mix-blend-mode: screen;
+    animation: crt-noise-flicker 150ms steps(4) infinite;
+  }
+  @keyframes crt-scanline-scroll { to { background-position: 0 10px; } }
+  @keyframes crt-noise-flicker { to { background-position: 256px 256px; } }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: absolute; top: 10px; left: 10px; z-index: 6;
+    background: rgba(0,0,0,.66); border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 10px; font-size: 12px; line-height: 1.55; font-variant-numeric: tabular-nums;
+    pointer-events: none; min-width: 210px;
+  }
+  #hud b { color: var(--accent); font-weight: 600; }
+  #hud .bad { color: var(--bad); }
+  #hud .warn { color: var(--warn); }
+  #err {
+    position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 7;
+    background: rgba(80,10,10,.92); border: 1px solid var(--bad); border-radius: 4px;
+    padding: 10px; font-family: ui-monospace, Menlo, monospace; font-size: 11px;
+    white-space: pre-wrap; max-height: 40%; overflow: auto; display: none;
+  }
+
+  /* ---- panel ---- */
+  #panel {
+    flex: 0 0 330px; background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 12px 14px 60px;
+  }
+  #panel.hidden { display: none; }
+  h1 { font-size: 15px; margin: 0 0 2px; letter-spacing: .04em; }
+  .sub { font-size: 11px; color: var(--ink-dim); margin: 0 0 14px; }
+  fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 0 0 12px; padding: 10px; }
+  legend { font-size: 11px; color: var(--ink-dim); letter-spacing: .1em; text-transform: uppercase; padding: 0 5px; }
+  label.row { display: block; margin: 0 0 9px; font-size: 12px; }
+  label.row > span.name { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+  label.row > span.name em { font-style: normal; color: var(--accent); font-variant-numeric: tabular-nums; }
+  select, input[type=text], button {
+    width: 100%; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 3px; padding: 6px 7px; font: inherit; font-size: 12px;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  button { cursor: pointer; margin-top: 6px; }
+  button:hover { border-color: var(--accent); }
+  .btn-row { display: flex; gap: 6px; }
+  .chk { display: flex; align-items: center; gap: 7px; font-size: 12px; margin-bottom: 8px; }
+  .chk input { accent-color: var(--accent); }
+  .hint { font-size: 11px; color: var(--ink-dim); margin-top: 8px; line-height: 1.5; }
+  kbd {
+    background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 3px; padding: 0 4px; font-size: 10px; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <div id="cssOverlay"></div>
+    <div id="splitHandle"></div>
+    <div id="hud"></div>
+    <div id="err"></div>
+  </div>
+
+  <div id="panel">
+    <h1>CRT Lab</h1>
+    <p class="sub">libretro CRT shaders over a live <code>&lt;video&gt;</code> texture. Public-domain / GPL shader sources, unmodified.</p>
+
+    <fieldset>
+      <legend>Source</legend>
+      <select id="srcSelect">
+        <option value="media/real-sd.mp4">Real SD footage — 640×360</option>
+        <option value="media/testcard-480.mp4">Test card — 640×480</option>
+        <option value="media/motion-480.mp4">Motion pattern — 640×480</option>
+        <option value="__plex">Plex item (real content)…</option>
+        <option value="__url">Custom URL…</option>
+        <option value="__file">Local file…</option>
+      </select>
+      <input type="text" id="srcPlex" placeholder="Plex rating key, e.g. 2465" style="display:none;margin-top:6px">
+      <input type="text" id="srcUrl" placeholder="https://… or /path (mp4/webm/mpd)" style="display:none;margin-top:6px">
+      <input type="file" id="srcFile" accept="video/*" style="display:none;margin-top:6px">
+      <div class="hint" id="srcInfo"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Renderer</legend>
+      <select id="shaderSelect">
+        <option value="crt-lottes">crt-lottes — Timothy Lottes (mask + bloom)</option>
+        <option value="crt-easymode">crt-easymode — cheap, sharp, aperture grille</option>
+        <option value="crt-aperture">crt-aperture — mask colors + halation</option>
+        <option value="crt-pi">crt-pi — written for weak GPUs</option>
+        <option value="crt-geom">crt-geom — curved tube geometry</option>
+        <option value="__none">none — raw video through the canvas</option>
+        <option value="__css">CURRENT — the CSS overlay we ship today</option>
+      </select>
+      <label class="row" style="margin-top:9px">
+        <span class="name">Render scale <em id="scaleVal">1.00×</em></span>
+        <input type="range" id="renderScale" min="0.5" max="2" step="0.05" value="1">
+      </label>
+      <div class="hint">The phosphor mask is drawn in <b>output</b> pixels, so this is both the look control and the main perf lever. 1.0 = CSS pixels; on a 4K panel try 2.0 for a true 1:1 mask.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Pre-filter — before the CRT</legend>
+      <label class="row">
+        <span class="name">Source blur radius <em id="preBlurVal">0.00 px</em></span>
+        <input type="range" id="preBlur" min="0" max="4" step="0.05" value="0">
+      </label>
+      <label class="row">
+        <span class="name">Blur mix <em id="preMixVal">1.00</em></span>
+        <input type="range" id="preMix" min="0" max="1" step="0.02" value="1">
+      </label>
+      <div class="hint">A separable gaussian run on the source at <b>its own</b> resolution, so
+        the radius is in source pixels. It takes the hard edges off blocking and DCT artifacts
+        before the CRT resamples, rather than smearing the phosphor mask the way a blur applied
+        after the shader would. 0 bypasses both passes entirely.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Compare</legend>
+      <select id="compareMode">
+        <option value="shader">Shader only</option>
+        <option value="split">Split screen (drag divider)</option>
+        <option value="raw">Raw video only</option>
+      </select>
+      <div class="hint">Hold <kbd>space</kbd> anywhere to flash the raw video.</div>
+    </fieldset>
+
+    <fieldset id="paramsBox">
+      <legend>Shader parameters</legend>
+      <div id="params"></div>
+      <div class="btn-row">
+        <button id="resetParams">Reset</button>
+        <button id="copyParams">Copy JSON</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Session</legend>
+      <div class="chk"><input type="checkbox" id="showHud" checked><label for="showHud">Show stats HUD</label></div>
+      <button id="fsBtn">Fullscreen stage</button>
+      <div class="hint">Press <kbd>h</kbd> to hide this panel, <kbd>f</kbd> for fullscreen. Settings persist in localStorage; the URL updates so you can send the exact look to another screen.</div>
+    </fieldset>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('gl'), video = document.createElement('video');
+  const hud = $('hud'), errBox = $('err');
+
+  video.muted = true; video.loop = true; video.playsInline = true;
+  video.setAttribute('playsinline', ''); video.crossOrigin = 'anonymous';
+  video.preload = 'auto';
+
+  const state = {
+    src: 'media/real-sd.mp4',
+    shader: 'crt-lottes',
+    scale: 1,
+    compare: 'shader',
+    params: {},          // per-shader: { shaderName: { param: value } }
+    split: 50,
+    pre: { radius: 0, mix: 1 }
+  };
+
+  // ---------------------------------------------------------------- persistence
+  const STORE = 'crt-lab-v1';
+  function load() {
+    try { Object.assign(state, JSON.parse(localStorage.getItem(STORE) || '{}')); } catch (e) { /* first run */ }
+    const q = new URLSearchParams(location.search);
+    if (q.get('src')) state.src = q.get('src');
+    if (q.get('shader')) state.shader = q.get('shader');
+    if (q.get('scale')) state.scale = parseFloat(q.get('scale'));
+    if (q.get('blur')) state.pre.radius = parseFloat(q.get('blur'));
+    if (q.get('blurmix')) state.pre.mix = parseFloat(q.get('blurmix'));
+    if (q.get('params')) { try { state.params[state.shader] = JSON.parse(atob(q.get('params'))); } catch (e) {} }
+  }
+  function save() {
+    localStorage.setItem(STORE, JSON.stringify(state));
+    const q = new URLSearchParams();
+    q.set('src', state.src); q.set('shader', state.shader); q.set('scale', String(state.scale));
+    if (state.pre.radius > 0) { q.set('blur', String(state.pre.radius)); q.set('blurmix', String(state.pre.mix)); }
+    if (state.params[state.shader]) q.set('params', btoa(JSON.stringify(state.params[state.shader])));
+    history.replaceState(null, '', '?' + q.toString());
+  }
+
+  function fail(msg) { errBox.style.display = 'block'; errBox.textContent = msg; }
+  function clearFail() { errBox.style.display = 'none'; errBox.textContent = ''; }
+
+  // ---------------------------------------------------------------- WebGL setup
+  const gl = canvas.getContext('webgl', {
+    alpha: false, antialias: false, depth: false, stencil: false,
+    premultipliedAlpha: false, preserveDrawingBuffer: false,
+    powerPreference: 'high-performance'
+  });
+  if (!gl) { fail('WebGL is unavailable in this browser. Nothing else in this page will work.'); return; }
+
+  const glInfo = (() => {
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    return dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  })();
+
+  // Full-screen quad. Libretro vertex shaders read VertexCoord/TexCoord/COLOR
+  // and transform by MVPMatrix, so we hand them clip-space corners + identity.
+  const quadPos = new Float32Array([-1,-1,0,1,  1,-1,0,1,  -1,1,0,1,  1,1,0,1]);
+  const quadTex = new Float32Array([ 0, 0,0,0,  1, 0,0,0,   0,1,0,0,  1,1,0,0]);
+  const quadCol = new Float32Array([ 1, 1,1,1,  1, 1,1,1,   1,1,1,1,  1,1,1,1]);
+  const IDENTITY = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+
+  function buffer(data) {
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    return b;
+  }
+  const bufPos = buffer(quadPos), bufTex = buffer(quadTex), bufCol = buffer(quadCol);
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+  // ------------------------------------------------------- libretro glsl loader
+  // A .glsl from libretro/glsl-shaders holds both stages in one file, selected by
+  // `#if defined(VERTEX)` / `#elif defined(FRAGMENT)`. Parameters collapse to
+  // hard-coded #defines unless PARAMETER_UNIFORM is defined, so we define it.
+  const PRAGMA = /^#pragma parameter\s+(\w+)\s+"([^"]*)"\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/;
+
+  function parseParams(src) {
+    return src.split('\n').map(l => l.match(PRAGMA)).filter(Boolean).map(m => ({
+      name: m[1], label: m[2],
+      def: parseFloat(m[3]), min: parseFloat(m[4]), max: parseFloat(m[5]), step: parseFloat(m[6])
+    }));
+  }
+
+  function compile(type, src, tag) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(s);
+      gl.deleteShader(s);
+      throw new Error(tag + ' shader failed to compile:\n' + log);
+    }
+    return s;
+  }
+
+  function build(src) {
+    // Strip the pragmas — they are metadata for RetroArch, and some drivers
+    // are noisy about unrecognised pragmas.
+    const body = src.split('\n').filter(l => !PRAGMA.test(l)).join('\n');
+    const vs = compile(gl.VERTEX_SHADER, '#define VERTEX\n#define PARAMETER_UNIFORM\n' + body, 'vertex');
+    const fs = compile(gl.FRAGMENT_SHADER, '#define FRAGMENT\n#define PARAMETER_UNIFORM\n' + body, 'fragment');
+    const p = gl.createProgram();
+    gl.attachShader(p, vs); gl.attachShader(p, fs); gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      throw new Error('link failed:\n' + gl.getProgramInfoLog(p));
+    }
+    gl.deleteShader(vs); gl.deleteShader(fs);
+    return {
+      program: p,
+      attr: {
+        VertexCoord: gl.getAttribLocation(p, 'VertexCoord'),
+        TexCoord: gl.getAttribLocation(p, 'TexCoord'),
+        COLOR: gl.getAttribLocation(p, 'COLOR')
+      },
+      uni: (name) => gl.getUniformLocation(p, name)
+    };
+  }
+
+  // Passthrough, used for the "none" renderer so we still exercise the
+  // video-to-texture path (that is the part with a perf cost).
+  const PASSTHROUGH = `
+#if defined(VERTEX)
+attribute vec4 VertexCoord; attribute vec4 TexCoord;
+varying vec2 vT; uniform mat4 MVPMatrix;
+void main(){ gl_Position = MVPMatrix * VertexCoord; vT = TexCoord.xy; }
+#elif defined(FRAGMENT)
+precision mediump float; varying vec2 vT; uniform sampler2D Texture;
+void main(){ gl_FragColor = texture2D(Texture, vT); }
+#endif`;
+
+  // Separable gaussian over the source, in source-pixel units. Written in the same
+  // two-stage layout as the libretro files so it goes through the same build().
+  const PREBLUR = `
+#if defined(VERTEX)
+attribute vec4 VertexCoord; attribute vec4 TexCoord;
+varying vec2 vT; uniform mat4 MVPMatrix;
+void main(){ gl_Position = MVPMatrix * VertexCoord; vT = TexCoord.xy; }
+#elif defined(FRAGMENT)
+precision highp float;
+varying vec2 vT;
+uniform sampler2D Texture;      // what this pass blurs
+uniform sampler2D TextureOrig;  // untouched source, for the mix on the final pass
+uniform vec2 uTexel;
+uniform vec2 uDir;
+uniform float uRadius;
+uniform float uMix;
+uniform float uFinal;
+void main(){
+  vec4 acc = vec4(0.0);
+  float wsum = 0.0;
+  // Nine taps spanning +/- uRadius, gaussian-weighted in tap-index space.
+  for (int i = -4; i <= 4; i++) {
+    float fi = float(i);
+    float w = exp(-0.5 * fi * fi / 4.0);
+    acc += texture2D(Texture, vT + uDir * uTexel * (fi * uRadius * 0.25)) * w;
+    wsum += w;
+  }
+  vec4 blurred = acc / wsum;
+  gl_FragColor = (uFinal > 0.5) ? mix(texture2D(TextureOrig, vT), blurred, uMix) : blurred;
+}
+#endif`;
+
+  // Two source-sized render targets for the horizontal and vertical blur passes.
+  const rt = [null, null];
+  let blurProg = null;
+
+  function ensureTargets(w, h) {
+    for (let i = 0; i < 2; i++) {
+      if (rt[i] && rt[i].w === w && rt[i].h === h) continue;
+      if (rt[i]) { gl.deleteTexture(rt[i].tex); gl.deleteFramebuffer(rt[i].fb); }
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      rt[i] = { tex, fb, w, h };
+    }
+  }
+
+  // Runs both blur passes and returns the texture the CRT shader should sample.
+  function runPreFilter(vw, vh) {
+    ensureTargets(vw, vh);
+    const { program, attr, uni } = blurProg;
+    gl.useProgram(program);
+
+    const bind = (loc, buf, size) => {
+      if (loc < 0) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+    };
+    bind(attr.VertexCoord, bufPos, 4);
+    bind(attr.TexCoord, bufTex, 4);
+
+    gl.uniformMatrix4fv(uni('MVPMatrix'), false, IDENTITY);
+    gl.uniform2f(uni('uTexel'), 1 / vw, 1 / vh);
+    gl.uniform1f(uni('uRadius'), state.pre.radius);
+    gl.uniform1f(uni('uMix'), state.pre.mix);
+    gl.uniform1i(uni('Texture'), 0);
+    gl.uniform1i(uni('TextureOrig'), 1);
+    gl.viewport(0, 0, vw, vh);
+    gl.disable(gl.SCISSOR_TEST);
+
+    // pass 1 — horizontal, straight blur
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rt[0].fb);
+    gl.uniform2f(uni('uDir'), 1, 0);
+    gl.uniform1f(uni('uFinal'), 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // pass 2 — vertical, and blend back toward the untouched source
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rt[1].fb);
+    gl.uniform2f(uni('uDir'), 0, 1);
+    gl.uniform1f(uni('uFinal'), 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, rt[0].tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return rt[1].tex;
+  }
+
+  let current = null;      // active renderer entry
+  let passEntry = null;    // passthrough program, always available for raw/split
+  const shaderCache = new Map();
+
+  async function shaderEntry(name) {
+    if (shaderCache.has(name)) return shaderCache.get(name);
+
+    let src;
+    if (name === 'raw-passthrough') src = PASSTHROUGH;
+    else {
+      const res = await fetch('shaders/' + name + '.glsl');
+      if (!res.ok) throw new Error('could not fetch shaders/' + name + '.glsl (' + res.status + ')');
+      src = await res.text();
+    }
+    const entry = { name, prog: build(src), params: parseParams(src) };
+    shaderCache.set(name, entry);
+    return entry;
+  }
+
+  async function loadShader(name) {
+    clearFail();
+    if (name === '__css' || name === '__none') name = 'raw-passthrough';
+    if (!passEntry) passEntry = await shaderEntry('raw-passthrough');
+    if (!blurProg) blurProg = build(PREBLUR);
+    current = await shaderEntry(name);
+    return current;
+  }
+
+  // Tuned starting points, so a fresh browser opens on a known-good look rather
+  // than the shader's own defaults.
+  // crt-geom, settled 2026-08-18. Only the deltas from the shader's own defaults.
+  const PRESETS = {
+    'crt-geom': { CRTgamma: 1.9, INV: 1, R: 1.8, cornersize: 0.041 }
+  };
+
+  function paramValuesFor(entry) {
+    const bag = state.params[entry.name] || (state.params[entry.name] = {});
+    const preset = PRESETS[entry.name] || {};
+    for (const p of entry.params) {
+      if (bag[p.name] === undefined) bag[p.name] = (preset[p.name] !== undefined) ? preset[p.name] : p.def;
+    }
+    return bag;
+  }
+  function paramValues() { return paramValuesFor(current); }
+
+  // ---------------------------------------------------------------- param UI
+  function buildParamUI() {
+    const host = $('params');
+    host.innerHTML = '';
+    if (!current || !current.params.length) {
+      host.innerHTML = '<div class="hint">This renderer exposes no parameters.</div>';
+      return;
+    }
+    const bag = paramValues();
+    for (const p of current.params) {
+      const wrap = document.createElement('label');
+      wrap.className = 'row';
+      const name = document.createElement('span');
+      name.className = 'name';
+      const readout = document.createElement('em');
+      readout.textContent = Number(bag[p.name]).toFixed(3).replace(/\.?0+$/, '');
+      name.append(document.createTextNode(p.label), readout);
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = p.min; slider.max = p.max; slider.step = p.step; slider.value = bag[p.name];
+      slider.addEventListener('input', () => {
+        bag[p.name] = parseFloat(slider.value);
+        readout.textContent = Number(bag[p.name]).toFixed(3).replace(/\.?0+$/, '');
+        save();
+      });
+      wrap.append(name, slider);
+      host.appendChild(wrap);
+    }
+  }
+
+  // ---------------------------------------------------------------- sizing
+  let view = { x: 0, y: 0, w: 1, h: 1 };
+  function resize() {
+    const stage = $('stage').getBoundingClientRect();
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const px = Math.round(stage.width * dpr * state.scale);
+    const py = Math.round(stage.height * dpr * state.scale);
+    if (canvas.width !== px || canvas.height !== py) { canvas.width = px; canvas.height = py; }
+
+    // Letterbox the source inside the canvas so the mask stays square with the
+    // output grid and the aspect ratio is honest.
+    const vw = video.videoWidth || 4, vh = video.videoHeight || 3;
+    const srcAspect = vw / vh, dstAspect = px / py;
+    let w, h;
+    if (srcAspect > dstAspect) { w = px; h = Math.round(px / srcAspect); }
+    else { h = py; w = Math.round(py * srcAspect); }
+    view = { x: Math.round((px - w) / 2), y: Math.round((py - h) / 2), w, h };
+  }
+
+  // ---------------------------------------------------------------- draw loop
+  let frameCount = 0, lastT = performance.now(), fpsAvg = 0;
+  const drawTimes = [];
+
+  // Draw one entry over the letterboxed viewport, optionally clipped to a
+  // horizontal band so shader and raw can share a frame in split mode.
+  function drawEntry(entry, scissor, srcTex) {
+    const { program, attr, uni } = entry.prog;
+    gl.useProgram(program);
+
+    const bind = (loc, buf, size) => {
+      if (loc < 0) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+    };
+    bind(attr.VertexCoord, bufPos, 4);
+    bind(attr.TexCoord, bufTex, 4);
+    bind(attr.COLOR, bufCol, 4);
+
+    const vw = video.videoWidth, vh = video.videoHeight;
+    gl.uniformMatrix4fv(uni('MVPMatrix'), false, IDENTITY);
+    gl.uniform1i(uni('Texture'), 0);
+    gl.uniform1i(uni('FrameDirection'), 1);
+    gl.uniform1i(uni('FrameCount'), frameCount);
+    gl.uniform2f(uni('TextureSize'), vw, vh);
+    gl.uniform2f(uni('InputSize'), vw, vh);
+    gl.uniform2f(uni('OutputSize'), view.w, view.h);
+
+    if (entry.params.length) {
+      const bag = paramValuesFor(entry);
+      for (const p of entry.params) {
+        const loc = uni(p.name);
+        if (loc) gl.uniform1f(loc, bag[p.name]);
+      }
+    }
+
+    if (scissor) { gl.enable(gl.SCISSOR_TEST); gl.scissor(scissor[0], 0, scissor[1], canvas.height); }
+    else gl.disable(gl.SCISSOR_TEST);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.SCISSOR_TEST);
+  }
+
+  function draw() {
+    if (!current || !passEntry || video.readyState < 2) return;
+    const t0 = performance.now();
+
+    if (canvas.width === 0 || view.w === 0) resize();
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    } catch (e) {
+      fail('texImage2D from the video failed. This is what a DRM/tainted source looks like:\n' + e.message);
+      return;
+    }
+
+    // Pre-filter first, at source resolution, so the CRT shader samples softened
+    // pixels. Skipped entirely at radius 0 — no render targets are touched.
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const processed = (state.pre.radius > 0.001 && blurProg && vw > 0)
+      ? runPreFilter(vw, vh)
+      : texture;
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.viewport(view.x, view.y, view.w, view.h);
+
+    // Everything renders through this one canvas off a single decode, so a
+    // comparison never costs a second Plex transcode session.
+    const holdingRaw = document.body.dataset.holdRaw === '1';
+    const wantRaw = state.compare === 'raw' || holdingRaw || state.shader === '__none' || state.shader === '__css';
+
+    if (state.compare === 'split' && !holdingRaw) {
+      // Left half stays the untouched source, so the split shows original
+      // against the full pipeline, pre-filter included.
+      const cut = Math.round(canvas.width * (state.split / 100));
+      drawEntry(passEntry, [0, cut], texture);
+      drawEntry(current, [cut, canvas.width - cut], processed);
+    } else {
+      drawEntry(wantRaw ? passEntry : current, null, wantRaw && holdingRaw ? texture : processed);
+    }
+
+    frameCount++;
+    drawTimes.push(performance.now() - t0);
+    if (drawTimes.length > 120) drawTimes.shift();
+  }
+
+  function pump() {
+    draw();
+    const now = performance.now();
+    const dt = now - lastT; lastT = now;
+    if (dt > 0 && dt < 1000) fpsAvg = fpsAvg ? fpsAvg * 0.9 + (1000 / dt) * 0.1 : 1000 / dt;
+    schedule();
+  }
+
+  function schedule() {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(pump);
+    else requestAnimationFrame(pump);
+  }
+
+  // ---------------------------------------------------------------- HUD
+  function updateHud() {
+    if (!$('showHud').checked) { hud.style.display = 'none'; return; }
+    hud.style.display = 'block';
+    const q = video.getVideoPlaybackQuality ? video.getVideoPlaybackQuality() : null;
+    const sorted = drawTimes.slice().sort((a, b) => a - b);
+    const p95 = sorted.length ? sorted[Math.floor(sorted.length * 0.95)] : 0;
+    const mean = drawTimes.length ? drawTimes.reduce((a, b) => a + b, 0) / drawTimes.length : 0;
+    const vw = video.videoWidth || 0, vh = video.videoHeight || 0;
+    const ratio = vw ? (view.w / vw) : 0;
+    const fps = fpsAvg.toFixed(1);
+    const fpsClass = fpsAvg < 20 ? 'bad' : (fpsAvg < 27 ? 'warn' : '');
+    hud.innerHTML = [
+      'renderer <b>' + (current ? current.name : '—') + '</b>',
+      'source <b>' + vw + '×' + vh + '</b>  →  output <b>' + view.w + '×' + view.h + '</b>',
+      'upscale <b>' + ratio.toFixed(2) + '×</b>   canvas <b>' + canvas.width + '×' + canvas.height + '</b>',
+      'pre-blur <b>' + (state.pre.radius > 0.001
+          ? state.pre.radius.toFixed(2) + ' px @ mix ' + state.pre.mix.toFixed(2)
+          : 'off') + '</b>',
+      'fps <span class="' + fpsClass + '"><b>' + fps + '</b></span>',
+      'cpu submit <b>' + mean.toFixed(2) + ' ms</b>  p95 <b>' + p95.toFixed(2) + ' ms</b>',
+      q ? 'dropped frames <b>' + q.droppedVideoFrames + '</b> of ' + q.totalVideoFrames : '',
+      '<span style="color:var(--ink-dim)">cpu submit excludes GPU time — judge by fps + drops</span>',
+      '<span style="color:var(--ink-dim)">' + glInfo + '</span>'
+    ].filter(Boolean).join('<br>');
+  }
+  setInterval(updateHud, 400);
+
+  // ---------------------------------------------------------------- compare
+  function applyCompare() {
+    const holdingRaw = document.body.dataset.holdRaw === '1';
+    const split = state.compare === 'split' && !holdingRaw;
+    $('splitHandle').classList.toggle('on', split);
+
+    // The CSS mode reproduces what ships today: the picture blurred, with the
+    // gradient scanline overlay on top. Same single decode, so it is a fair A/B.
+    const isCss = state.shader === '__css' && !holdingRaw;
+    $('cssOverlay').classList.toggle('on', isCss);
+    canvas.style.filter = isCss ? 'blur(1.5px)' : '';
+  }
+
+  // ---------------------------------------------------------------- source
+  // Plex serves DASH through the app's same-origin proxy, so anything with an
+  // .mpd needs an MSE player. Shaka is loaded only when a DASH source is picked.
+  let shakaReady = null;
+  function loadShaka() {
+    if (shakaReady) return shakaReady;
+    shakaReady = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'vendor/shaka.js';
+      s.onload = () => { window.shaka.polyfill.installAll(); resolve(window.shaka); };
+      s.onerror = () => reject(new Error('failed to load vendor/shaka.js'));
+      document.head.appendChild(s);
+    });
+    return shakaReady;
+  }
+
+  // Exactly one player. A second one loading the same Plex URL mints a second
+  // transcode session and the two race each other into 404s on the init segment.
+  const players = { main: null };
+  async function detachShaka() {
+    if (players.main) { try { await players.main.destroy(); } catch (e) {} players.main = null; }
+  }
+
+  // Resolve a lab source spec into a real media URL.
+  //   plex:<ratingKey>  → ask the app what it would play, same as the Player does
+  async function resolveSource(spec) {
+    if (spec.startsWith('plex:')) {
+      const id = spec.slice(5).trim();
+      const res = await fetch('/api/v1/play/plex/' + encodeURIComponent(id));
+      if (!res.ok) throw new Error('/api/v1/play/plex/' + id + ' returned ' + res.status);
+      const j = await res.json();
+      if (!j.mediaUrl) throw new Error('the play API returned no mediaUrl for plex:' + id);
+      const m = (j.metadata && j.metadata.Media && j.metadata.Media[0]) || {};
+      $('srcInfo').textContent =
+        (j.title || '') + ' — ' + (m.width || '?') + '×' + (m.height || '?') +
+        ' ' + (m.videoCodec || '') + ' via ' + (j.format || 'unknown');
+      return { url: j.mediaUrl, dash: /dash/i.test(j.format || '') || /\.mpd(\?|$)/.test(j.mediaUrl) };
+    }
+    $('srcInfo').textContent = '';
+    return { url: spec, dash: /\.mpd(\?|$)/.test(spec) };
+  }
+
+  async function setSource(spec) {
+    clearFail();
+    state.src = spec;
+    await detachShaka();
+
+    let resolved;
+    try { resolved = await resolveSource(spec); }
+    catch (e) { fail(e.message); return; }
+
+    const { url, dash } = resolved;
+
+    if (dash) {
+      try {
+        const shaka = await loadShaka();
+        if (!shaka.Player.isBrowserSupported()) throw new Error('shaka reports this browser unsupported');
+        players.main = new shaka.Player();
+        await players.main.attach(video);
+        players.main.addEventListener('error', (ev) => fail('shaka error: ' + JSON.stringify(ev.detail)));
+        await players.main.load(url);
+      } catch (e) {
+        fail('DASH load failed: ' + (e && (e.message || JSON.stringify(e))));
+        return;
+      }
+    } else {
+      video.src = url;
+    }
+
+    try {
+      await video.play();
+    } catch (e) {
+      fail('video.play() was rejected: ' + e.message +
+           '\nThis page keeps the video muted, so a rejection here means the browser is blocking even muted autoplay.');
+    }
+    await new Promise(r => {
+      if (video.readyState >= 2) return r();
+      video.addEventListener('loadeddata', r, { once: true });
+    });
+    resize();
+  }
+
+  // ---------------------------------------------------------------- wiring
+  async function selectShader(name) {
+    state.shader = name;
+    try {
+      await loadShader(name);
+      buildParamUI();
+      clearFail();
+    } catch (e) {
+      fail(e.message);
+      current = null;
+    }
+    applyCompare();
+    save();
+  }
+
+  $('srcSelect').addEventListener('change', (e) => {
+    const v = e.target.value;
+    $('srcPlex').style.display = v === '__plex' ? 'block' : 'none';
+    $('srcUrl').style.display = v === '__url' ? 'block' : 'none';
+    $('srcFile').style.display = v === '__file' ? 'block' : 'none';
+    if (!['__plex', '__url', '__file'].includes(v)) setSource(v).then(save);
+  });
+  $('srcPlex').addEventListener('change', (e) => {
+    const key = e.target.value.trim().replace(/^plex:/, '');
+    if (key) setSource('plex:' + key).then(save);
+  });
+  $('srcUrl').addEventListener('change', (e) => { if (e.target.value) setSource(e.target.value).then(save); });
+  $('srcFile').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) setSource(URL.createObjectURL(f));
+  });
+  $('shaderSelect').addEventListener('change', (e) => selectShader(e.target.value));
+  $('compareMode').addEventListener('change', (e) => { state.compare = e.target.value; applyCompare(); save(); });
+  $('renderScale').addEventListener('input', (e) => {
+    state.scale = parseFloat(e.target.value);
+    $('scaleVal').textContent = state.scale.toFixed(2) + '×';
+    resize(); save();
+  });
+  $('resetParams').addEventListener('click', () => {
+    if (!current) return;
+    delete state.params[current.name];
+    buildParamUI(); save();
+  });
+  $('copyParams').addEventListener('click', async () => {
+    const payload = JSON.stringify({
+      shader: current && current.name,
+      params: paramValues(),
+      preFilter: { blurRadiusSourcePx: state.pre.radius, blurMix: state.pre.mix },
+      renderScale: state.scale
+    }, null, 2);
+    try { await navigator.clipboard.writeText(payload); $('copyParams').textContent = 'Copied'; }
+    catch (e) { $('copyParams').textContent = 'Clipboard blocked'; console.log(payload); }
+    setTimeout(() => { $('copyParams').textContent = 'Copy JSON'; }, 1400);
+  });
+  const syncPreLabels = () => {
+    $('preBlurVal').textContent = state.pre.radius.toFixed(2) + ' px';
+    $('preMixVal').textContent = state.pre.mix.toFixed(2);
+  };
+  $('preBlur').addEventListener('input', (e) => {
+    state.pre.radius = parseFloat(e.target.value); syncPreLabels(); save();
+  });
+  $('preMix').addEventListener('input', (e) => {
+    state.pre.mix = parseFloat(e.target.value); syncPreLabels(); save();
+  });
+  $('showHud').addEventListener('change', updateHud);
+  $('fsBtn').addEventListener('click', () => $('stage').requestFullscreen && $('stage').requestFullscreen());
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && document.body.dataset.holdRaw !== '1') {
+      document.body.dataset.holdRaw = '1'; applyCompare(); e.preventDefault();
+    }
+    if (e.key === 'h') $('panel').classList.toggle('hidden');
+    if (e.key === 'f') $('stage').requestFullscreen && $('stage').requestFullscreen();
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') { document.body.dataset.holdRaw = '0'; applyCompare(); }
+  });
+
+  // split divider drag
+  let dragging = false;
+  const handle = $('splitHandle');
+  const setSplit = (clientX) => {
+    const r = $('stage').getBoundingClientRect();
+    state.split = Math.min(98, Math.max(2, ((clientX - r.left) / r.width) * 100));
+    canvas.style.setProperty('--split', state.split + '%');
+    handle.style.setProperty('--split', state.split + '%');
+  };
+  handle.addEventListener('pointerdown', (e) => { dragging = true; handle.setPointerCapture(e.pointerId); });
+  handle.addEventListener('pointermove', (e) => { if (dragging) setSplit(e.clientX); });
+  handle.addEventListener('pointerup', () => { dragging = false; save(); });
+
+  window.addEventListener('resize', resize);
+  video.addEventListener('loadedmetadata', resize);
+
+  // ---------------------------------------------------------------- boot
+  (async function boot() {
+    load();
+    if (['media/real-sd.mp4', 'media/testcard-480.mp4', 'media/motion-480.mp4'].includes(state.src)) {
+      $('srcSelect').value = state.src;
+    } else if (state.src.startsWith('plex:')) {
+      $('srcSelect').value = '__plex';
+      $('srcPlex').style.display = 'block';
+      $('srcPlex').value = state.src.slice(5);
+    } else {
+      $('srcSelect').value = '__url';
+      $('srcUrl').style.display = 'block';
+      $('srcUrl').value = state.src;
+    }
+    $('shaderSelect').value = state.shader;
+    $('compareMode').value = state.compare;
+    $('renderScale').value = state.scale;
+    $('scaleVal').textContent = state.scale.toFixed(2) + '×';
+    canvas.style.setProperty('--split', state.split + '%');
+    handle.style.setProperty('--split', state.split + '%');
+    $('preBlur').value = state.pre.radius;
+    $('preMix').value = state.pre.mix;
+    syncPreLabels();
+
+    await selectShader(state.shader);
+    await setSource(state.src);
+    resize();
+    schedule();
+  })();
+})();
+</script>
+</body>
+</html>
