@@ -255,6 +255,25 @@ describe('createMediaClock', () => {
     clock.stop();
   });
 
+  it('routes events to an injected logger so SurroundHost sessionLog is inherited', () => {
+    const injected = {
+      debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
+    };
+    const el = makeMediaEl({ withRvfc: false });
+    const clock = createMediaClock({ getMediaEl: () => el, contentId: 'piece-1', logger: injected });
+    clock.start();
+
+    expect(injected.debug).toHaveBeenCalledWith(
+      'surround.clock.driver', expect.objectContaining({ driver: 'timeupdate' }),
+    );
+    expect(log.debug).not.toHaveBeenCalledWith('surround.clock.driver', expect.anything());
+
+    vi.advanceTimersByTime(6000);
+    expect(injected.warn).toHaveBeenCalledWith('surround.clock.stalled', expect.anything());
+    expect(log.warn).not.toHaveBeenCalled();
+    clock.stop();
+  });
+
   it('emits sampled surround.clock.health with the driver and tick rate', () => {
     const el = makeMediaEl({ withRvfc: false });
     const clock = createMediaClock({ getMediaEl: () => el, contentId: 'piece-1' });
