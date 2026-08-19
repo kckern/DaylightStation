@@ -14,65 +14,97 @@ const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
 });
 
+// Vivaldi/Spring, matching the fixture WorkPlacard.test.jsx already uses for the
+// piece half of this same programme — the rail card below tests the PERSON side:
+// composer identity, portrait, and (new in this task) a city photo. `piece` stays
+// on the fixture because the payload still carries it end to end; the card itself
+// must not render any of it (the top placard owns that now).
 const DATA = {
-  contentId: 'plex:663134',
+  contentId: 'plex:663146',
   assetBase: 'surround/classical',
   composer: {
-    name: 'Ludwig van Beethoven',
-    born: 1770,
-    died: 1827,
-    birthplace: 'Bonn (Electorate of Cologne)',
-    portrait: 'beethoven/portrait.jpg',
+    name: 'Antonio Vivaldi',
+    born: 1678,
+    died: 1741,
+    birthplace: 'Venice, Republic of Venice',
+    portrait: 'vivaldi/portrait.jpg',
+    city_image: 'vivaldi/venice.jpg',
+    map: { country: 'Italy', city: 'Venice', lat: 45.44, lon: 12.33 },
   },
   piece: {
-    title: 'Symphony No. 3 in E-flat major, "Eroica"',
-    opus: 'Op. 55',
-    composed: '1803-1804',
-    city: 'Vienna',
-    premiered: '1805, Theater an der Wien',
+    title: 'Violin Concerto in E major, "Spring"',
+    opus: 'Op. 8 No. 1, RV 269',
+    composed: 'by 1725',
+    city: 'Venice',
+    premiered: 'Published Amsterdam, 1725',
   },
 };
 
-const renderCard = ({ data = DATA, logger = makeLogger(), position = 0 } = {}) => {
+// `composer` is a shorthand for tests that only need to swap the identity block
+// (e.g. "no city authored") without hand-building the rest of the payload.
+const renderCard = ({ data, composer, logger = makeLogger(), position = 0 } = {}) => {
+  const payload = data ?? (composer ? { ...DATA, composer } : DATA);
   const props = (p) => ({
     position: p, duration: 3223, playing: true, seeking: false,
-    data, region: { module: 'composer-card', width: '20%' }, logger,
+    data: payload, region: { module: 'composer-card', width: '20%' }, logger,
   });
   const view = render(<ComposerCard {...props(position)} />);
   return { ...view, logger, at: (p) => view.rerender(<ComposerCard {...props(p)} />) };
-};
-
-const datum = (container, label) => {
-  const dt = [...container.querySelectorAll('.surround-composer-card__label')]
-    .find((el) => el.textContent.toLowerCase() === label.toLowerCase());
-  return dt ? dt.parentElement.querySelector('.surround-composer-card__value')?.textContent : null;
 };
 
 describe('ComposerCard', () => {
   it('renders the composer identity inherited from _composer.yml', () => {
     const { getByTestId, container } = renderCard();
     expect(getByTestId('surround-composer-card')).toBeInTheDocument();
-    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Ludwig van Beethoven');
-    expect(container.querySelector('.surround-composer-card__dates')).toHaveTextContent('1770');
-    expect(container.querySelector('.surround-composer-card__dates')).toHaveTextContent('1827');
+    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Antonio Vivaldi');
+    expect(container.querySelector('.surround-composer-card__dates')).toHaveTextContent('1678');
+    expect(container.querySelector('.surround-composer-card__dates')).toHaveTextContent('1741');
     expect(container.querySelector('.surround-composer-card__birthplace'))
-      .toHaveTextContent('Bonn (Electorate of Cologne)');
+      .toHaveTextContent('Venice, Republic of Venice');
   });
 
-  it('renders the piece identity beneath the brass hairline', () => {
+  // The top placard (a sibling module, out of scope here) now owns every piece.*
+  // field. This is the new contract for the rail card, not a hole in coverage —
+  // it replaces the old "renders the piece identity beneath the brass hairline"
+  // assertion, which asserted the opposite.
+  it('no longer prints the piece — the placard owns it', () => {
+    const { container } = renderCard();          // fixture includes piece
+    expect(container.querySelector('.surround-composer-card__piece-title')).toBeNull();
+    expect(container.textContent).not.toContain('Violin Concerto');
+    expect(container.textContent).not.toContain('RV 269');
+  });
+
+  it('sets the name on the brass nameplate', () => {
     const { container } = renderCard();
-    expect(container.querySelector('.surround-composer-card__piece-title'))
-      .toHaveTextContent('Symphony No. 3 in E-flat major, "Eroica"');
-    expect(datum(container, 'Opus')).toBe('Op. 55');
-    expect(datum(container, 'Composed')).toBe('1803-1804');
-    expect(datum(container, 'City')).toBe('Vienna');
-    expect(datum(container, 'Premiered')).toBe('1805, Theater an der Wien');
+    const plate = container.querySelector('.surround-composer-card__nameplate');
+    expect(plate).toBeTruthy();
+    expect(plate.textContent).toContain('Antonio Vivaldi');
   });
 
   it('builds the portrait URL from assetBase through the static image route', () => {
     const { getByTestId } = renderCard();
     expect(getByTestId('surround-portrait').getAttribute('src'))
-      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/beethoven/portrait.jpg`);
+      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/vivaldi/portrait.jpg`);
+  });
+
+  it('shows the city photo when authored, captioned with the city', () => {
+    const { container } = renderCard();          // fixture: city_image + map.city 'Venice'
+    const fig = container.querySelector('.surround-composer-card__city');
+    expect(fig).toBeTruthy();
+    expect(fig.querySelector('img').getAttribute('src')).toContain('venice');
+    expect(fig.textContent).toContain('Venice');
+  });
+
+  it('builds the city image URL through the same static route as the portrait', () => {
+    const { container } = renderCard();
+    const img = container.querySelector('.surround-composer-card__city img');
+    expect(img.getAttribute('src'))
+      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/vivaldi/venice.jpg`);
+  });
+
+  it('renders no city figure when none is authored', () => {
+    const { container } = renderCard({ composer: { name: 'X', facts: [] } });
+    expect(container.querySelector('.surround-composer-card__city')).toBeNull();
   });
 
   it('hides a broken portrait without breaking the layout, and warns', () => {
@@ -82,13 +114,13 @@ describe('ComposerCard', () => {
 
     expect(img.style.display).toBe('none');
     // The rest of the card is untouched.
-    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Ludwig van Beethoven');
-    expect(container.querySelector('.surround-composer-card__piece-title')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Antonio Vivaldi');
+    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
 
     const warned = logger.warn.mock.calls.find((c) => c[0] === 'surround.asset.missing');
     expect(warned).toBeDefined();
-    expect(warned[1]).toMatchObject({ contentId: 'plex:663134', ref: 'beethoven/portrait.jpg' });
-    expect(warned[1].src).toContain('surround/classical/beethoven/portrait.jpg');
+    expect(warned[1]).toMatchObject({ contentId: 'plex:663146', ref: 'vivaldi/portrait.jpg' });
+    expect(warned[1].src).toContain('surround/classical/vivaldi/portrait.jpg');
   });
 
   it('caps asset-missing warnings so a broken path cannot flood the log store', () => {
@@ -99,22 +131,18 @@ describe('ComposerCard', () => {
       .toHaveLength(ASSET_WARN_PER_MINUTE);
   });
 
-  it('still composes the card when the piece has no opus and no premiere', () => {
-    const data = { ...DATA, piece: { title: 'Spring', composed: '1725' } };
-    const { container } = renderCard({ data });
-    expect(container.querySelector('.surround-composer-card__piece-title')).toHaveTextContent('Spring');
-    expect(datum(container, 'Composed')).toBe('1725');
-    expect(datum(container, 'Opus')).toBeNull();
-    expect(datum(container, 'Premiered')).toBeNull();
-    expect(datum(container, 'City')).toBeNull();
-  });
+  // Piece fields (opus/composed/premiered/title) left this card for the top
+  // placard in this task — there is no longer a resilience case to cover here;
+  // see "no longer prints the piece" above for the card's actual contract.
 
   it('still composes the card when there is no portrait', () => {
     const data = { ...DATA, composer: { ...DATA.composer, portrait: undefined } };
     const { container, queryByTestId } = renderCard({ data });
     expect(queryByTestId('surround-portrait')).toBeNull();
-    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Ludwig van Beethoven');
-    expect(container.querySelector('.surround-composer-card__piece-title')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Antonio Vivaldi');
+    // The rest of the identity — nameplate and city photo — is untouched.
+    expect(container.querySelector('.surround-composer-card__nameplate')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
   });
 
   it('omits the portrait when the payload names no assetBase', () => {
@@ -127,8 +155,8 @@ describe('ComposerCard', () => {
   it('reads a life span with only a birth year as an open one', () => {
     const data = { ...DATA, composer: { ...DATA.composer, died: undefined } };
     const { container } = renderCard({ data });
-    expect(container.querySelector('.surround-composer-card__dates').textContent).toContain('1770');
-    expect(container.querySelector('.surround-composer-card__dates').textContent).not.toContain('1827');
+    expect(container.querySelector('.surround-composer-card__dates').textContent).toContain('1678');
+    expect(container.querySelector('.surround-composer-card__dates').textContent).not.toContain('1741');
   });
 
   it('omits the dates line entirely when neither year is known', () => {
@@ -138,11 +166,16 @@ describe('ComposerCard', () => {
     expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Anon.');
   });
 
-  it('renders the piece alone when no composer block was authored', () => {
+  // The card is wholly the person now, so with no composer block there is
+  // nothing to identify — the old assertion here (the piece rendering "alone")
+  // no longer applies, since the piece never renders in this card at all.
+  it('renders an empty identity, without throwing, when no composer block was authored', () => {
     const data = { ...DATA, composer: undefined };
     const { container } = renderCard({ data });
     expect(container.querySelector('.surround-composer-card__name')).toBeNull();
-    expect(container.querySelector('.surround-composer-card__piece-title')).toHaveTextContent('Symphony No. 3');
+    expect(container.querySelector('.surround-composer-card__nameplate')).toBeNull();
+    expect(container.querySelector('.surround-composer-card__city')).toBeNull();
+    expect(container.querySelector('.surround-composer-card__piece-title')).toBeNull();
   });
 
   it('renders an empty card, without throwing, when the payload is missing', () => {
@@ -200,14 +233,17 @@ describe('ComposerCard composer facts', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('shows the first composer fact as quiet supporting text under the piece data', () => {
+  // Updated: the piece title (h3) no longer lives in this card at all, so the
+  // ordering check below only has the name (h2) and the fact (p) left to assert
+  // — the old ['h2', 'h3', 'p'] expectation asserted an element that is gone.
+  it('shows the first composer fact as quiet supporting text at the foot of the rail', () => {
     const view = renderFacts({ data: withFacts(FACTS) });
     expect(view.text()).toBe(FACTS[0]);
-    // Quiet: the composer name and the piece title stay the loud things in the rail.
+    // Quiet: the composer name stays the loud thing in the rail.
     const card = view.getByTestId('surround-composer-card');
     const order = [...card.querySelectorAll('h2, h3, [data-testid="surround-composer-fact"]')]
       .map((el) => el.tagName.toLowerCase());
-    expect(order).toEqual(['h2', 'h3', 'p']);
+    expect(order).toEqual(['h2', 'p']);
   });
 
   it('cycles the facts on its own timer, wrapping back to the first', () => {
@@ -283,10 +319,11 @@ describe('ComposerCard composer facts', () => {
       expect(view.fact()).toBeNull();
       expect(view.container.querySelector('.surround-composer-card__fact')).toBeNull();
       expect(view.container.querySelector('.surround-composer-card__fact-rule')).toBeNull();
-      // ...and the card is still composed around it.
+      // ...and the card is still composed around it. The piece-title check that
+      // used to sit here is gone for good — this card never renders piece.* now.
       expect(view.container.querySelector('.surround-composer-card__name'))
-        .toHaveTextContent('Ludwig van Beethoven');
-      expect(view.container.querySelector('.surround-composer-card__piece-title')).not.toBeNull();
+        .toHaveTextContent('Antonio Vivaldi');
+      expect(view.container.querySelector('.surround-composer-card__piece-title')).toBeNull();
       view.unmount();
     }
   });
@@ -307,12 +344,12 @@ describe('ComposerCard composer facts', () => {
     const shown = () => view.logger.debug.mock.calls.filter((c) => c[0] === 'surround.composer-fact.shown');
 
     expect(shown()).toHaveLength(1);
-    expect(shown()[0][1]).toEqual({ contentId: 'plex:663134', index: 0 });
+    expect(shown()[0][1]).toEqual({ contentId: 'plex:663146', index: 0 });
 
     tick(COMPOSER_FACT_INTERVAL_MS);
     tick(COMPOSER_FACT_FADE_MS);
     expect(shown()).toHaveLength(2);
-    expect(shown()[1][1]).toEqual({ contentId: 'plex:663134', index: 1 });
+    expect(shown()[1][1]).toEqual({ contentId: 'plex:663146', index: 1 });
   });
 
   it('logs nothing when there is no fact to show', () => {
