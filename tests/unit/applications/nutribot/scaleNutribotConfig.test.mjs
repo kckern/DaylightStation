@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeScaleNutribotConfig } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
+import { normalizeScaleNutribotConfig, DEFAULT_DENSITY_LEVELS } from '#apps/nutribot/lib/scaleNutribotConfig.mjs';
 
 describe('normalizeScaleNutribotConfig — density macros', () => {
   it('carries macros and per_100g through to the normalized level', () => {
@@ -17,11 +17,18 @@ describe('normalizeScaleNutribotConfig — density macros', () => {
     expect(cfg.densityLevels[0].per_100g).toEqual({ fiber_g: 2, sugar_g: 3, sodium_mg: 40 });
   });
 
-  it('leaves macros absent when the row omits them, rather than fabricating a split', () => {
+  // Superseded by the "macros backfill" describe block below: omitting macros
+  // for a level the code defaults DO cover now borrows that level's split
+  // instead of leaving it absent — that silent-absence behavior is exactly
+  // what let an icon-only override disable the whole scan feature. This case
+  // now pins the backfill instead of the old omission.
+  it('backfills macros from the code default when the row omits them for a known level', () => {
     const cfg = normalizeScaleNutribotConfig({
       nutribot: { density_levels: [{ level: 1, kcal_per_g: 0.2 }] },
     });
-    expect(cfg.densityLevels[0].macros).toBeUndefined();
+    expect(cfg.densityLevels[0].macros).toEqual(
+      DEFAULT_DENSITY_LEVELS.find((d) => d.level === 1).macros,
+    );
   });
 });
 
@@ -53,5 +60,42 @@ describe('normalizeScaleNutribotConfig — icon passthrough', () => {
     });
     expect(cfg.densityLevels[0].icon).toBeNull();
     expect(cfg.containers.items[0].icon).toBeNull();
+  });
+});
+
+describe('normalizeScaleNutribotConfig — macros backfill', () => {
+  // Attaching a cosmetic field must never cost a required one. The live
+  // scales.yml overrode this table purely to add `icon:` and dropped `macros`,
+  // which disabled every ct:/dl:/rs: scan in the house for weeks.
+  it('fills macros from the code defaults when a row omits them', () => {
+    const cfg = normalizeScaleNutribotConfig({
+      nutribot: {
+        density_levels: [
+          { level: 4, label: 'Mixed', kcal_per_g: 1.4, icon: 'food/rice-bowl' },
+        ],
+      },
+    });
+    const row = cfg.densityLevels.find((r) => r.level === 4);
+    expect(row.icon).toBe('food/rice-bowl');
+    expect(row.macros).toEqual(
+      DEFAULT_DENSITY_LEVELS.find((d) => d.level === 4).macros,
+    );
+  });
+
+  it('leaves explicit macros alone', () => {
+    const macros = { fat_pct: 50, carb_pct: 30, protein_pct: 20 };
+    const cfg = normalizeScaleNutribotConfig({
+      nutribot: { density_levels: [{ level: 4, label: 'Mixed', kcal_per_g: 1.4, macros }] },
+    });
+    expect(cfg.densityLevels.find((r) => r.level === 4).macros).toEqual(macros);
+  });
+
+  // A level with no default to borrow from must still fail loudly downstream
+  // rather than be invented.
+  it('does not invent macros for a level the defaults do not have', () => {
+    const cfg = normalizeScaleNutribotConfig({
+      nutribot: { density_levels: [{ level: 42, label: 'Odd', kcal_per_g: 2.0 }] },
+    });
+    expect(cfg.densityLevels.find((r) => r.level === 42).macros).toBeUndefined();
   });
 });

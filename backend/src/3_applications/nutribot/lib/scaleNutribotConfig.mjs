@@ -34,6 +34,19 @@ export const DEFAULT_DENSITY_LEVELS = [
 
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback);
 
+const DEFAULT_MACROS_BY_LEVEL = new Map(
+  DEFAULT_DENSITY_LEVELS.map((d) => [d.level, d.macros]),
+);
+
+// Attaching a cosmetic field (an `icon:`) must not cost a required one. An
+// override that omits `macros` borrows the default for its LEVEL rather than
+// disabling nutriscan wholesale, which is what dropping them used to do.
+// A level with no default keeps `undefined` so validateScanConfig still
+// refuses it by name.
+const withMacros = (row) => (
+  row.macros ? row : { ...row, macros: DEFAULT_MACROS_BY_LEVEL.get(row.level) }
+);
+
 export function normalizeScaleNutribotConfig(raw = {}) {
   const nb = (raw && raw.nutribot) || {};
 
@@ -83,6 +96,7 @@ export function normalizeScaleNutribotConfig(raw = {}) {
           if (l.per_100g !== undefined) out.per_100g = l.per_100g;
           return out;
         })
+        .map(withMacros)
     : DEFAULT_DENSITY_LEVELS;
 
   // Common-foods list for the printed fridge sheet. There is NO default table:
