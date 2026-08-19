@@ -14,10 +14,6 @@ import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
 const DEFINITIONS_DIR = '_surrounds';
 const COMPOSER_FILE = '_composer';
-// Works live one level below the composer, in a folder of their own. A work file
-// describes the music; a sidecar beside it describes one recording of that music
-// and points at the work by name. Nothing under here is ever a sidecar.
-const WORKS_DIR = 'works';
 // How long a lookup trusts the index without stat-ing the tree. Authoring a
 // surround is an edit-refresh loop, and every content adapter here caches at
 // startup, so without this each timing tweak costs a backend restart. Playback
@@ -40,6 +36,17 @@ const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
 // An absent key is authoring intent (the block is optional); a present key of
 // the wrong shape is a mistake the type guards quietly paper over.
 const isPresent = (v) => v !== undefined && v !== null;
+// Work-level fields that surface as payload.piece, disjoint from
+// performance-level fields (performance, musicEndsAt) the sidecar supplies.
+// An allowlist, so it must be kept in sync with the corpus schema: a field
+// added to a library work YAML and not added here never reaches the payload,
+// and the only symptom is the region rendering without it.
+const PIECE_FIELDS = ['title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+const pick = (obj, keys) => {
+  const out = {};
+  for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
+  return out;
+};
 
 /**
  * Index of authored surround sidecars.
@@ -48,14 +55,6 @@ const isPresent = (v) => v !== undefined && v !== null;
  * identity in <composer>/_composer.yml and region layouts in _surrounds/.
  * A surround is enrichment attached to playback responses, not playable
  * content, so this is a plain store — it is not registered as a content source.
- *
- * A sidecar is a *recording*. One piece of music can be recorded many times, so
- * everything recording-independent — title, movement names, teaching text, cues,
- * facts — may live once in <composer>/works/<work>.yml and be named by a sidecar's
- * `work:` key. The sidecar then carries only what is true of that performance:
- * the match, the measured `starts`, `musicEndsAt`, the players. The merged result
- * is byte-for-byte the payload a single flat sidecar produces, so both shapes
- * coexist and the frontend never learns which one an author used.
  */
 export class YamlSurroundStore extends ISurroundStore {
   #byContentId = new Map();
@@ -67,12 +66,14 @@ export class YamlSurroundStore extends ISurroundStore {
 
   /**
    * @param {Object} options
-   * @param {string} options.rootDir - Root of the sidecar tree (data/content/surround)
+   * @param {string} options.rootDir - Root of the performance-sidecar tree (data/content/surround)
+   * @param {string} options.libraryDir - Root of the knowledge corpus (data/content/library)
    * @param {Object} options.logger - Structured logger
    */
-  constructor({ rootDir, logger }) {
+  constructor({ rootDir, libraryDir, logger }) {
     super();
     this.rootDir = rootDir;
+    this.libraryDir = libraryDir;
     // The composed logger arrives as the content router's child (app: 'api'), which
     // would bury surround events among all other content logging. Claim our own
     // `context.app` so the log store can filter this subsystem on its own. The
@@ -183,10 +184,6 @@ export class YamlSurroundStore extends ISurroundStore {
    * exactly as #build walks them, so a rename into or out of `_`-prefixed
    * scaffolding still registers via the parent directory.
    *
-   * `works/` is stat-ed too. A work file is an input to every recording that
-   * names it, so an edit there changes several payloads at once — the case where
-   * an author would most notice a store that only watched the file they had open.
-   *
    * @returns {number} 0 when nothing could be stat-ed, which reads as "unchanged"
    * @private
    */
@@ -207,23 +204,30 @@ export class YamlSurroundStore extends ISurroundStore {
       consider(path.join(definitionsDir, file));
     }
 
+    consider(this.libraryDir);
+    for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
+      const domainDir = path.join(this.libraryDir, domain);
+      consider(domainDir);
+      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
+        const composerDir = path.join(domainDir, composer);
+        consider(composerDir);
+        for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
+          consider(path.join(composerDir, file));
+        }
+      }
+    }
+
     for (const domain of listDirs(this.rootDir).filter((d) => !isReserved(d))) {
       const domainDir = path.join(this.rootDir, domain);
       consider(domainDir);
 
-      for (const composer of this.#composerDirs(domainDir)) {
+      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
         const composerDir = path.join(domainDir, composer);
         consider(composerDir);
         // Unfiltered: _composer.yml is shared identity, and editing it changes
         // every piece under the folder.
         for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
           consider(path.join(composerDir, file));
-        }
-
-        const worksDir = path.join(composerDir, WORKS_DIR);
-        consider(worksDir);
-        for (const file of listYamlFiles(worksDir, { stripExtension: false })) {
-          consider(path.join(worksDir, file));
         }
       }
     }
@@ -270,30 +274,22 @@ export class YamlSurroundStore extends ISurroundStore {
     const titles = [];
     // contentId -> the file that claimed it, so a collision can name both sides.
     const claimedBy = new Map();
-    let composers = 0;
     // Piece candidates read but rejected. A malformed definition shows up here too,
     // as every piece naming it is rejected in turn.
     let skipped = 0;
     let definitions = new Map();
-    // Work files read this build, by path relative to rootDir. Sharing one work
-    // across many recordings is the whole point of the split, so it is read once
-    // however many sidecars name it — and a missing one is remembered as null.
-    const works = new Map();
+    let library = { composers: new Map(), works: new Map() };
 
     try {
       definitions = this.#loadDefinitions();
+      library = this.#loadLibrary();
 
       for (const domain of listDirs(this.rootDir).filter((d) => !isReserved(d))) {
         const domainDir = path.join(this.rootDir, domain);
 
-        for (const composer of this.#composerDirs(domainDir)) {
+        for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
           const composerDir = path.join(domainDir, composer);
-          const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
-          if (isPlainObject(composerBase)) composers += 1;
 
-          // Only the composer folder itself is listed, never `works/` below it:
-          // a work file has no `match`, so walking it would mean a
-          // `missing-match` warning per work file on every build.
           const files = listYamlFiles(composerDir, { stripExtension: false })
             .filter((f) => !isReserved(f));
 
@@ -301,8 +297,7 @@ export class YamlSurroundStore extends ISurroundStore {
             // Relative to rootDir, because that is how the author knows the file.
             // Every warning below is addressed to whoever wrote the sidecar.
             const relFile = path.join(domain, composer, file);
-            const resolved = this.#resolvePiece(path.join(composerDir, file), relFile,
-              { domain, composer, composerBase, definitions, works });
+            const resolved = this.#resolvePerformance(path.join(composerDir, file), domain, definitions, library, relFile);
             if (!resolved) { skipped += 1; continue; }
 
             // Last write wins, as before — walk order decides. That is an
@@ -350,64 +345,10 @@ export class YamlSurroundStore extends ISurroundStore {
     this.logger.info('surround.index.built', {
       pieces: index.size,
       skipped,
-      composers,
+      composers: library.composers.size,
       definitions: definitions.size,
-      works: [...works.values()].filter(Boolean).length,
       ms: Date.now() - startedAt
     });
-  }
-
-  /**
-   * Composer folders under a domain.
-   *
-   * `works/` is excluded here as well as under each composer: a folder by that
-   * name holds works, at any depth, and is never itself a composer.
-   *
-   * @param {string} domainDir
-   * @returns {string[]}
-   * @private
-   */
-  #composerDirs(domainDir) {
-    return listDirs(domainDir).filter((d) => !isReserved(d) && d !== WORKS_DIR);
-  }
-
-  /**
-   * Turn a sidecar's `work:` reference into a path relative to rootDir.
-   *
-   * `beethoven/symphony-3-eroica` resolves to
-   * `<domain>/beethoven/works/symphony-3-eroica.yml`; a bare `symphony-3-eroica`
-   * resolves under the sidecar's own composer, which is the common case. The
-   * containment check is what stops `../../../etc/passwd` from being a work.
-   *
-   * @returns {string|null} null when the reference cannot name a file in the tree
-   * @private
-   */
-  #workPath(ref, domain, composer) {
-    try {
-      const clean = String(ref).trim().replace(/\.(yml|yaml)$/, '');
-      const dir = path.posix.dirname(clean);
-      const base = path.posix.basename(clean);
-      if (!base || base === '.' || base === '..') return null;
-
-      const rel = path.join(domain, dir === '.' ? composer : dir, WORKS_DIR, `${base}.yml`);
-      const root = path.resolve(this.rootDir);
-      if (!path.resolve(this.rootDir, rel).startsWith(root + path.sep)) return null;
-      return rel;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Read a work file once per build, remembering misses as null.
-   * @private
-   */
-  #loadWork(relPath, works) {
-    if (works.has(relPath)) return works.get(relPath);
-    const doc = loadYamlFromPath(path.join(this.rootDir, relPath));
-    const value = isPlainObject(doc) ? doc : null;
-    works.set(relPath, value);
-    return value;
   }
 
   /**
@@ -427,6 +368,63 @@ export class YamlSurroundStore extends ISurroundStore {
       out.set(file.replace(/\.(yml|yaml)$/, ''), parsed);
     }
     return out;
+  }
+
+  /**
+   * Load the knowledge corpus: composers and works, keyed the same way a
+   * performance sidecar references them (`<composer>/<work-slug>`).
+   *
+   * Mirrors #build's own walk (same domain/composer/*.yml shape, same
+   * reserved-name rule) but over libraryDir instead of rootDir, since the two
+   * trees are independent and a performance sidecar may reference a work whose
+   * media doesn't exist under the same domain folder name coincidentally — they
+   * just happen to share the convention today.
+   *
+   * @returns {{ composers: Map<string, Object>, works: Map<string, Object> }}
+   * @private
+   */
+  #loadLibrary() {
+    const composers = new Map();
+    const works = new Map();
+    if (!dirExists(this.libraryDir)) return { composers, works };
+
+    for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
+      const domainDir = path.join(this.libraryDir, domain);
+
+      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
+        const composerDir = path.join(domainDir, composer);
+        const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
+        if (isPlainObject(composerBase)) composers.set(composer, composerBase);
+
+        const files = listYamlFiles(composerDir, { stripExtension: false }).filter((f) => !isReserved(f));
+        for (const file of files) {
+          const work = loadYamlFromPath(path.join(composerDir, file));
+          if (!isPlainObject(work)) continue;
+
+          // The corpus gets the same visibility a sidecar gets. `asArray` below
+          // flattens a mapping written where a list belongs, and without this the
+          // author's only symptom is a movement map that renders empty. Warn and
+          // keep going: a work with one bad list is still worth indexing.
+          const reasons = [];
+          for (const key of ['movements', 'facts']) {
+            if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
+          }
+          if (reasons.length) {
+            // Relative to libraryDir, because that is how the author knows the file.
+            this.logger?.warn?.('surround.work.invalid', {
+              file: path.join(domain, composer, file),
+              reason: reasons[0],
+              reasons
+            });
+          }
+
+          const slug = file.replace(/\.(yml|yaml)$/, '');
+          works.set(`${composer}/${slug}`, work);
+        }
+      }
+    }
+
+    return { composers, works };
   }
 
   /**
@@ -477,116 +475,113 @@ export class YamlSurroundStore extends ISurroundStore {
    *
    * @param {string} file - Path relative to rootDir
    * @param {string[]} reasons - Ordered, most blocking first
-   * @param {Object} [extra] - Context the reason alone cannot carry, e.g. the
-   *   resolved `work` path, so a `work-not-found` says which file it looked for
    * @private
    */
-  #invalid(file, reasons, extra) {
-    this.logger?.warn?.('surround.sidecar.invalid', { file, reason: reasons[0], reasons, ...(extra ?? {}) });
+  #invalid(file, reasons) {
+    this.logger?.warn?.('surround.sidecar.invalid', { file, reason: reasons[0], reasons });
   }
 
   /**
-   * Read one piece sidecar and resolve it into the payload the API attaches verbatim.
+   * Read one performance sidecar and resolve it against the knowledge corpus
+   * into the payload the API attaches verbatim.
    *
-   * Validation is warning-only: what is rejected here is exactly what was
-   * rejected before, and every coercion still coerces. The difference is that
-   * a dropped or flattened sidecar now says so, since failing soft otherwise
-   * makes an authoring typo indistinguishable from an unauthored item.
-   *
-   * A sidecar naming a `work:` is resolved against that file here, and the merge
-   * is the whole contract: movement names come from the work and their `start`s
-   * from this recording's `starts`, index by index. That zip is the one place the
-   * split can go quietly wrong — a work that gained a movement while a recording
-   * kept its old timings would put every later movement's text against the wrong
-   * music — so unequal lengths reject the piece rather than mis-time it.
+   * Precedence, per the design doc: composer <- work <- performance, applied
+   * separately to the composer block and the piece block. Movements and cues
+   * come from the work; `starts` pairs with them positionally (starts[i] is
+   * movements[i]'s start second), which is also how a movement's `note` becomes
+   * a synthesized, movement-anchored cue.
    *
    * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null}
    * @private
    */
-  #resolvePiece(filePath, file, { domain, composer, composerBase, definitions, works }) {
+  #resolvePerformance(filePath, domain, definitions, library, file) {
     const doc = loadYamlFromPath(filePath);
     if (!isPlainObject(doc)) {
-      // The file came from a directory listing, so it exists. FileIO folds a
-      // syntax error into the same null it returns for an absent file — here,
-      // only the former is possible.
       this.#invalid(file, [isPresent(doc) ? 'not-a-mapping' : 'yaml-unparseable']);
       return null;
     }
 
-    // Blocking problems short-circuit: there is nothing useful to say about
-    // `match.title` in a file that has no `match` block.
     const blocking = [];
     if (!doc.surround) blocking.push('missing-surround');
+    if (typeof doc.work !== 'string' || !doc.work.trim()) blocking.push('missing-work');
     if (!isPlainObject(doc.match)) blocking.push(isPresent(doc.match) ? 'match-not-a-mapping' : 'missing-match');
     else if (!doc.match.contentId) blocking.push('missing-match-contentId');
-    const namesWork = isPresent(doc.work);
-    if (namesWork && (typeof doc.work !== 'string' || !doc.work.trim())) blocking.push('work-not-a-string');
     if (blocking.length) { this.#invalid(file, blocking); return null; }
 
     const definition = definitions.get(doc.surround);
     if (!definition) {
-      // Its own event, not a sidecar problem: the sidecar may be perfect and the
-      // definition file the thing that was renamed or never written.
       this.logger?.warn?.('surround.definition.missing', { id: doc.surround, file });
       return null;
     }
 
-    // The work is what this recording is a recording of. Failing to find it means
-    // there is no title, no movement names, no cues — nothing to shrink the
-    // player for — so the piece is excluded, and the warning names the path that
-    // was looked for rather than the reference that was written.
-    const workFile = namesWork ? this.#workPath(doc.work, domain, composer) : null;
-    const work = workFile ? this.#loadWork(workFile, works) : null;
-    if (namesWork && !work) {
-      this.#invalid(file, ['work-not-found'], { work: workFile ?? doc.work });
+    const work = library.works.get(doc.work);
+    if (!work) {
+      // Both halves of the miss, because the two trees are edited separately and
+      // the reference alone does not say where the corpus was searched. `expected`
+      // is the file the walk in #loadLibrary would have keyed — relative to
+      // libraryDir, the way `file` is relative to rootDir — so the fix is to
+      // create that path or correct the ref, without anyone re-deriving it.
+      this.logger?.warn?.('surround.work.missing', {
+        work: doc.work,
+        expected: path.join(domain, `${doc.work}.yml`),
+        file
+      });
       return null;
     }
+    // The composer slug is the path segment before the work slug — the same
+    // convention the sidecar's own folder placement already implies.
+    const composerSlug = doc.work.split('/')[0];
+    const composerBase = library.composers.get(composerSlug);
 
-    // Non-blocking, so the piece still indexes exactly as it did before. Each of
-    // these is a silent loss the author would otherwise only notice as a region
-    // that renders empty: no title means no rebind when the ratingKeys churn,
-    // and a wrong-typed list is flattened to nothing by the guards below.
     const soft = [];
     if (typeof doc.match.title !== 'string' || !doc.match.title.trim()) soft.push('missing-match-title');
-
-    const source = work ?? doc;
-    // Reasons are prefixed when the fault is in the work file, because the
-    // warning names the sidecar and the two files are edited separately.
-    const at = work ? 'work-' : '';
-    if (!work && !isPresent(doc.piece)) soft.push('missing-piece');
-    else if (isPresent(source.piece) && !isPlainObject(source.piece)) soft.push(`${at}piece-not-a-mapping`);
-    for (const key of ['movements', 'cues', 'facts']) {
-      if (isPresent(source[key]) && !Array.isArray(source[key])) soft.push(`${at}${key}-not-a-list`);
-    }
-    if (work && isPresent(doc.starts) && !Array.isArray(doc.starts)) soft.push('starts-not-a-list');
-    // Inline blocks beside a `work:` are a half-finished migration: the work wins,
-    // and without this the author's edits to the sidecar copy would vanish silently.
-    if (work && ['piece', 'movements', 'cues', 'facts'].some((k) => isPresent(doc[k]))) {
-      soft.push('inline-blocks-ignored');
-    }
+    if (isPresent(doc.starts) && !Array.isArray(doc.starts)) soft.push('starts-not-a-list');
+    if (isPresent(doc.cues) && !Array.isArray(doc.cues)) soft.push('cues-not-a-list');
     if (isPresent(doc.composer) && !isPlainObject(doc.composer)) soft.push('composer-not-a-mapping');
+    if (isPresent(doc.piece) && !isPlainObject(doc.piece)) soft.push('piece-not-a-mapping');
 
-    // Shapes are guarded, not trusted: an indentation slip that turns `movements`
-    // into a string would otherwise reach a module's .map() and throw in render,
-    // taking the player subtree down with it.
-    const starts = asArray(doc.starts);
-    let movements = asArray(source.movements);
-    if (work) {
-      if (movements.length !== starts.length) {
-        this.#invalid(file, ['starts-length-mismatch', ...soft],
-          { work: workFile, movements: movements.length, starts: starts.length });
-        return null;
-      }
-      movements = movements.map((m, i) => ({ ...(isPlainObject(m) ? m : {}), start: starts[i] }));
+    // A start is an offset in seconds from the top of the media, so the only
+    // usable value is a non-negative finite number. Anything else — a quoted
+    // timestamp, a stray null holding a place, a negative from arithmetic
+    // against the wrong reference point — is dropped to undefined rather than
+    // passed through, the same way every other wrong-typed field here is
+    // flattened by a guard. Positions are preserved (map, not filter): starts
+    // pairs with movements positionally, so dropping an entry outright would
+    // silently shift every later movement's timing by one.
+    const rawStarts = Array.isArray(doc.starts) ? doc.starts : [];
+    const starts = rawStarts.map((v) => (Number.isFinite(v) && v >= 0 ? v : undefined));
+    if (starts.some((v) => v === undefined)) soft.push('starts-entry-invalid');
+    if (soft.length) this.#invalid(file, soft);
+
+    const movements = asArray(work.movements);
+    // Length, not content: an author who timed the wrong number of movements has
+    // a different problem from one who mistyped a single value, and a dropped
+    // entry above still counts toward the length it was authored at.
+    if (starts.length && starts.length !== movements.length) {
+      this.logger?.warn?.('surround.starts.mismatch', { file, starts: starts.length, movements: movements.length });
     }
-    if (soft.length) this.#invalid(file, soft, work ? { work: workFile } : undefined);
 
-    // The recording measures where the music stops; the work cannot know it.
-    let piece = isPlainObject(source.piece) ? source.piece : {};
-    if (isPresent(doc.musicEndsAt)) piece = { ...piece, musicEndsAt: doc.musicEndsAt };
+    const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
+    const movementCues = movements
+      .map((m, i) => ({ at: starts[i], text: m.note }))
+      .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
+      .map((c) => ({ at: c.at, render: 'docked', text: c.text }));
+    const explicitCues = asArray(doc.cues);
+    const cues = [...movementCues, ...explicitCues].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+
+    const workPiece = pick(work, PIECE_FIELDS);
+    const performancePiece = pick(doc, ['performance', 'musicEndsAt']);
+    const piece = deepMerge(
+      deepMerge(workPiece, performancePiece),
+      isPlainObject(doc.piece) ? doc.piece : {}
+    );
+
+    const composer = deepMerge(
+      deepMerge(isPlainObject(composerBase) ? composerBase : {}, isPlainObject(work.composer) ? work.composer : {}),
+      isPlainObject(doc.composer) ? doc.composer : {}
+    );
 
     return {
-      // YAML parses a bare `contentId: 663134` as a number; keys are always strings.
       contentId: String(doc.match.contentId),
       title: typeof doc.match.title === 'string' ? doc.match.title : '',
       normalized: normalizeTitle(doc.match.title),
@@ -594,23 +589,11 @@ export class YamlSurroundStore extends ISurroundStore {
         id: doc.surround,
         definition: { regions: definition.regions, collapse: definition.collapse },
         piece,
-        movements,
-        cues: asArray(source.cues),
-        facts: asArray(source.facts),
-        // Piece-level `composer:` overrides the shared _composer.yml, key by key;
-        // a recording may override the work in turn, for the rare case where the
-        // performance itself changes what should be said about the composer.
-        composer: deepMerge(
-          deepMerge(
-            isPlainObject(composerBase) ? composerBase : {},
-            isPlainObject(work?.composer) ? work.composer : {}
-          ),
-          isPlainObject(doc.composer) ? doc.composer : {}
-        ),
-        // Who played it, on this recording only. Absent on the flat shape and on
-        // works that were never performed by anyone in particular.
-        ...(isPresent(doc.performance) ? { performance: doc.performance } : {}),
-        assetBase: `surround/${domain}`
+        movements: resolvedMovements,
+        cues,
+        facts: asArray(work.facts),
+        composer,
+        assetBase: `library/${domain}`
       }
     };
   }

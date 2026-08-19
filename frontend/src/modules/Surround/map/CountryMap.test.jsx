@@ -454,7 +454,7 @@ describe('CountryMap', () => {
   it('asks the static media route for the shared geodata', async () => {
     await renderMap({ country: 'Alpha' });
     expect(String(fetchMock.mock.calls[0][0]))
-      .toContain('/api/v1/static/img/surround/_maps/europe.geo.json');
+      .toContain('/api/v1/static/img/library/_maps/europe.geo.json');
   });
 });
 

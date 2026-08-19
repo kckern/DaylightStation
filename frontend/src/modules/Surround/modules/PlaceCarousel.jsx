@@ -78,7 +78,7 @@ function resolveLogger(logger) {
   return logger.child?.({ app: 'surround', component: 'place-carousel' }) ?? logger;
 }
 
-/** `vivaldi/venice.jpg` + `surround/classical` -> /api/v1/static/img/... */
+/** `vivaldi/venice.jpg` + `library/classical` -> /api/v1/static/img/... */
 function assetUrl(assetBase, ref) {
   if (!assetBase || !ref) return null;
   const base = String(assetBase).replace(/^\/|\/$/g, '');
