@@ -153,6 +153,46 @@ export function createScaleNutribotBridge({
     // no way back except answering it by hand.
     const live = s.live;
     s.live = null;
+
+    // APPLY THE DENSITY FIRST — this is where the CALORIES come from.
+    //
+    // `LogFoodFromScale` persists the item as `{ label: 'Unknown', grams: net,
+    // calories: 0 }`, and `AcceptFoodLog` never touches calories. The
+    // multiplication lives only in `SelectScaleDensity` — the use case behind the
+    // Telegram density button. Committing straight to accept therefore filed a
+    // 0 kcal "Unknown" entry AND, by auto-accepting, took away the button that
+    // would have computed it: worse than the stranding this feature fixes.
+    //
+    // Reused rather than reimplemented, so the arithmetic has one home. Note
+    // `item0.grams` is ALREADY net — `LogFoodFromScale` applied the container
+    // tare at post time — so the tare must not be subtracted a second time.
+    const applyDensity = nutribotContainer.getSelectScaleDensity?.();
+    if (!applyDensity) {
+      s.live = live;
+      logger.warn?.('scaleNutribot.commit.skipped', { id, reason: 'no-density-usecase' });
+      return;
+    }
+    let applied;
+    try {
+      applied = await applyDensity.execute({
+        userId, conversationId, logUuid: live.logUuid,
+        level: snapshot.density, messageId: live.messageId,
+      });
+    } catch (err) {
+      s.live = live;
+      throw err;
+    }
+    // A refusal ('unknown level', 'log not found', 'already processed') means the
+    // entry has no calories, so accepting it would write exactly the wrong data.
+    // Stand down and leave the prompt live — the human can still answer it.
+    if (!applied?.success) {
+      s.live = live;
+      logger.warn?.('scaleNutribot.commit.skipped', {
+        id, reason: 'density-failed', level: snapshot.density, error: applied?.error ?? null,
+      });
+      return;
+    }
+
     try {
       await uc.execute({ userId, conversationId, logUuid: live.logUuid, messageId: live.messageId });
     } catch (err) {

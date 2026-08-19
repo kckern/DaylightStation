@@ -23,8 +23,11 @@
 // about the arithmetic, so nothing on the composition path is stubbed.
 //
 // DOUBLED: only the Telegram-facing use cases — `LogFoodFromScale`,
-// `AcceptFoodLog`, `RetractScaleLog`. Those own message rendering and history
-// persistence and have their own suites.
+// `SelectScaleDensity`, `AcceptFoodLog`, `RetractScaleLog`. Those own message
+// rendering and history persistence and have their own suites. `SelectScaleDensity`
+// is the one that writes the CALORIES, so the commit path is asserted to call it,
+// with the buffered level, BEFORE it accepts — see `derive()` below for the
+// arithmetic itself, which runs through the real production helpers.
 //
 // TIME is driven by hand via an injected scheduler (same shape as
 // `scaleNutribotQuietCommit.test.mjs`); `vi.useFakeTimers()` interleaves badly
@@ -46,10 +49,10 @@ import { createScanDispatch } from '#composition/modules/scanDispatch.mjs';
 const SCALE = 'kitchen-food-scale';
 const DEVICE = 'nutribot-upc';
 
-// Let every queued microtask AND the awaited AcceptFoodLog settle. A single
-// `await Promise.resolve()` is not enough: `commitNow` awaits the accept before
-// it consumes the composition, so the post-commit state is only observable
-// after a real turn of the loop.
+// Let every queued microtask AND both awaited use cases settle. A single
+// `await Promise.resolve()` is not enough: `commitNow` awaits SelectScaleDensity
+// and then AcceptFoodLog before it consumes the composition, so the post-commit
+// state is only observable after a real turn of the loop.
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 // The container table the incident's sheet was printed from. `ct:60` carries the
@@ -91,7 +94,17 @@ function makeIncidentHarness() {
   // Telegram-facing doubles. A create is told from an edit by `existingLogUuid`,
   // and an edit MUST answer `edited: true` or the bridge treats the dispatch as
   // failed and bails before it buffers the weight (and so before it arms).
-  const accept = { execute: vi.fn().mockResolvedValue({ success: true }) };
+  // Order across the two commit-path use cases. `SelectScaleDensity` is what
+  // writes the calories (`LogFoodFromScale` persists 0 kcal / 'Unknown', and
+  // `AcceptFoodLog` never touches them), so a commit that accepted first would
+  // close the log before its calories existed.
+  const calls = [];
+  const accept = {
+    execute: vi.fn(async () => { calls.push('accept'); return { success: true }; }),
+  };
+  const selectDensity = {
+    execute: vi.fn(async () => { calls.push('density'); return { success: true, calories: 578 }; }),
+  };
   const retract = { execute: vi.fn().mockResolvedValue({ success: true, retracted: true }) };
   const logFromScale = {
     execute: vi.fn(async (input) => (input.existingLogUuid
@@ -119,6 +132,7 @@ function makeIncidentHarness() {
     nutribotContainer: {
       getLogFoodFromScale: () => logFromScale,
       getAcceptFoodLog: () => accept,
+      getSelectScaleDensity: () => selectDensity,
       getRetractScaleLog: () => retract,
     },
     userId: 'kckern',
@@ -155,8 +169,8 @@ function makeIncidentHarness() {
   });
 
   return {
-    bridge, accept, retract, logFromScale, compositionStore, applyScanToComposition,
-    scheduler, publish, scan, scanDispatch, committed,
+    bridge, accept, selectDensity, calls, retract, logFromScale, compositionStore,
+    applyScanToComposition, scheduler, publish, scan, scanDispatch, committed,
   };
 }
 
@@ -224,6 +238,16 @@ describe('the 12:31 incident', () => {
       { id: SCALE, logUuid: 'L1', grams: 473, density: 4, container: 'tupperware' },
     ]);
 
+    // The buffered density was APPLIED before the entry closed. Without this step
+    // the commit files `{ label: 'Unknown', calories: 0 }` — and by auto-accepting
+    // it also takes away the density button that would have computed the calories,
+    // which is worse than the stranding this feature exists to fix.
+    expect(h.selectDensity.execute).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1',
+      level: 4, messageId: 'm1',
+    }));
+    expect(h.calls).toEqual(['density', 'accept']);
+
     // And the placement is over: the slots are consumed, so the next food on the
     // pan cannot inherit this tare and density.
     expect(h.compositionStore.read(SCALE).active).toBe(false);
@@ -272,6 +296,13 @@ describe('the 12:31 incident', () => {
 
     expect(resolution.net).toBe(413);
     expect(nutrition.calories).toBe(578);
+
+    // The level the bridge handed SelectScaleDensity is the level this derivation
+    // used, so the 578 kcal above is the figure the commit path actually asks for
+    // rather than a number this test computed beside it. SelectScaleDensity
+    // performs `round(item0.grams x kcal_per_g)` on the stored NET grams — the
+    // same multiplication, in the one place that owns it.
+    expect(h.selectDensity.execute.mock.calls[0][0].level).toBe(level.level);
 
     h.bridge.dispose();
   });
