@@ -14,6 +14,12 @@ const DEFINITIONS_DIR = '_surrounds';
 const COMPOSER_FILE = '_composer';
 
 const isReserved = (name) => name.startsWith('_');
+// Titles are compared on letters and digits only. Everything else — guillemets
+// (»«), interpuncts (∙), colons, hyphens, whitespace runs — is separator noise
+// that the Plex title carries and the sidecar's authored title does not. The
+// \p{L}/\p{N} classes are Unicode-aware, so `Andrés` survives intact.
+const normalizeTitle = (v) =>
+  (typeof v === 'string' ? v : '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -27,6 +33,8 @@ const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
  */
 export class SurroundStore {
   #byContentId = new Map();
+  // Parallel to #byContentId: the rebind lane, walked only after an id miss.
+  #byTitle = [];
 
   /**
    * @param {Object} options
@@ -49,6 +57,11 @@ export class SurroundStore {
    * Never throws: a miss, an unreadable tree, or a broken sidecar all yield null
    * so the caller attaches nothing and playback is unaffected.
    *
+   * The contentId is the fast path. A Plex rescan mints fresh ratingKeys, which
+   * would otherwise orphan every sidecar at once with no symptom but a missing
+   * frame, so a miss falls back to matching the authored `match.title` against
+   * the live one. The warn it logs is how anyone learns the ids went stale.
+   *
    * Returns a fresh clone each call. The payload is attached verbatim to play
    * and queue responses, where callers may decorate it (asset URLs, defaults);
    * handing out the indexed object would let one such edit persist into every
@@ -61,16 +74,48 @@ export class SurroundStore {
   lookup(contentId, title) {
     try {
       const payload = this.#byContentId.get(String(contentId));
-      if (!payload) {
-        // The only trace an authoring mistake leaves: failing soft means a wrong
-        // contentId is otherwise indistinguishable from an unauthored item.
-        this.logger?.debug?.('surround.lookup.miss', { contentId });
-        return null;
+      if (payload) return structuredClone(payload);
+
+      const rebound = this.#rebind(title);
+      if (rebound) {
+        // Warn, not info: the sidecar still works, but its contentId is wrong and
+        // the message carries everything needed to fix the file by hand.
+        this.logger?.warn?.('surround.match.rebound', {
+          staleContentId: contentId,
+          matchedTitle: rebound.title,
+          file: rebound.file,
+          contentId: rebound.contentId
+        });
+        return structuredClone(rebound.payload);
       }
-      return structuredClone(payload);
+
+      // The only trace an authoring mistake leaves: failing soft means a wrong
+      // contentId is otherwise indistinguishable from an unauthored item.
+      this.logger?.debug?.('surround.lookup.miss', { contentId });
+      return null;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Find a piece whose authored title matches the live one, ids having gone stale.
+   *
+   * Substring, not equality, and in both directions: the live Plex title usually
+   * appends the orchestra and conductor to the authored one, but an authored title
+   * may equally be the more specific of the two. An empty normalization (a missing
+   * or non-string title on either side) matches nothing rather than everything.
+   *
+   * @param {string} title - Live item title
+   * @returns {{ title: string, file: string, contentId: string, payload: Object }|null}
+   * @private
+   */
+  #rebind(title) {
+    const live = normalizeTitle(title);
+    if (!live) return null;
+
+    return this.#byTitle.find(({ normalized }) =>
+      normalized.includes(live) || live.includes(normalized)) ?? null;
   }
 
   /**
@@ -80,6 +125,7 @@ export class SurroundStore {
   #build() {
     const startedAt = Date.now();
     const index = new Map();
+    const titles = [];
     let composers = 0;
     // Piece candidates read but rejected. A malformed definition shows up here too,
     // as every piece naming it is rejected in turn.
@@ -102,8 +148,20 @@ export class SurroundStore {
 
           for (const file of files) {
             const resolved = this.#resolvePiece(path.join(composerDir, file), domain, composerBase, definitions);
-            if (resolved) index.set(resolved.contentId, resolved.payload);
-            else skipped += 1;
+            if (!resolved) { skipped += 1; continue; }
+            index.set(resolved.contentId, resolved.payload);
+            // Only pieces that authored a title are rebindable; the rest are
+            // reachable by contentId alone. The path is relative so the log line
+            // names the file the way the author knows it.
+            if (resolved.normalized) {
+              titles.push({
+                normalized: resolved.normalized,
+                title: resolved.title,
+                file: path.join(domain, composer, file),
+                contentId: resolved.contentId,
+                payload: resolved.payload
+              });
+            }
           }
         }
       }
@@ -112,6 +170,7 @@ export class SurroundStore {
     }
 
     this.#byContentId = index;
+    this.#byTitle = titles;
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
       pieces: index.size,
@@ -143,7 +202,7 @@ export class SurroundStore {
 
   /**
    * Read one piece sidecar and resolve it into the payload the API attaches verbatim.
-   * @returns {{ contentId: string, payload: Object }|null}
+   * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null}
    * @private
    */
   #resolvePiece(filePath, domain, composerBase, definitions) {
@@ -160,6 +219,8 @@ export class SurroundStore {
     return {
       // YAML parses a bare `contentId: 663134` as a number; keys are always strings.
       contentId: String(doc.match.contentId),
+      title: typeof doc.match.title === 'string' ? doc.match.title : '',
+      normalized: normalizeTitle(doc.match.title),
       payload: {
         id: doc.surround,
         definition: { regions: definition.regions, collapse: definition.collapse },

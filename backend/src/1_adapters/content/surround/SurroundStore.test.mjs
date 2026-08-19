@@ -226,3 +226,83 @@ describe('SurroundStore logging identity', () => {
       expect.objectContaining({ pieces: 1, skipped: 2 }));
   });
 });
+
+describe('SurroundStore title rebind', () => {
+  it('matches a real Plex title with an orchestra suffix when the contentId is stale', () => {
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    const r = store.lookup('plex:999999', 'Beethoven: 3. Sinfonie (»Eroica«) ∙ hr-Sinfonieorchester ∙ Andrés Orozco-Estrada');
+    expect(r).not.toBeNull();
+    expect(r.piece.title).toBe('Symphony No. 3');
+    const warned = logger.warn.mock.calls.find(c => c[0] === 'surround.match.rebound');
+    expect(warned).toBeDefined();
+    expect(warned[1].staleContentId).toBe('plex:999999');
+  });
+
+  it('does not rebind an unrelated title', () => {
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:999999', 'Vivaldi: Spring')).toBeNull();
+  });
+
+  it('names the sidecar file and the live contentId in the rebound warning', () => {
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger })
+      .lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester');
+    const [, data] = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.rebound');
+    expect(data.file).toContain('symphony-3-eroica.yml');
+    expect(data.matchedTitle).toBe('Beethoven: 3. Sinfonie');
+    expect(data.contentId).toBe('plex:663134');
+  });
+
+  it('returns a clone on the rebind path too, so the index cannot be mutated', () => {
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const live = 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester';
+    store.lookup('plex:999999', live).movements.push({ n: 99 });
+    store.lookup('plex:999999', live).piece.title = 'mutated';
+    expect(store.lookup('plex:663134', '').movements).toHaveLength(1);
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+  });
+
+  it('survives a non-string or absent title without throwing', () => {
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    for (const title of [null, undefined, 123, '', {}, [], NaN]) {
+      expect(() => store.lookup('plex:999999', title)).not.toThrow();
+      expect(store.lookup('plex:999999', title)).toBeNull();
+    }
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('leaves a sidecar without match.title indexed but unrebindable', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:663146', '').piece.title).toBe('Spring');
+    expect(store.lookup('plex:999999', 'Vivaldi: Spring ∙ Concerto No. 1')).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('rebinds when the authored title is the longer side', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:663146\n  title: "Vivaldi: The Four Seasons ∙ Spring ∙ Concerto in E major"\npiece:\n  title: Spring\n');
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:000000', 'Vivaldi: The Four Seasons').piece.title).toBe('Spring');
+  });
+
+  it('normalizes away case, guillemets, interpuncts, and stray whitespace', () => {
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    const r = store.lookup('plex:999999', '  BEETHOVEN:  »3.«  ∙   sinfonie  ');
+    expect(r).not.toBeNull();
+    expect(r.piece.title).toBe('Symphony No. 3');
+  });
+
+  it('does not warn about a rebind when the contentId matched exactly', () => {
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:663134', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
+      .toBe('Symphony No. 3');
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+});
