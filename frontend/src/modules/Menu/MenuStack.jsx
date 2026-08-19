@@ -7,6 +7,7 @@ import { PlexMenuRouter } from './PlexMenuRouter';
 import { getLogger } from '../../lib/logging/Logger.js';
 import { getActionBus } from '../../screen-framework/input/ActionBus.js';
 import { artSceneIdFromDisplay } from './displaySelection.js';
+import SurroundHost from '../Surround/SurroundHost.jsx';
 
 // Lazy load components that may be rendered from the stack
 const Player = lazy(() => import('../Player/Player').then(m => ({ default: m.default || m.Player })));
@@ -248,9 +249,14 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       );
 
     case 'player':
+      // Menu-selected playback is a SECOND player seam — it does not go through
+      // ScreenPlayer. Wrapping only that one would leave every living-room menu
+      // selection unframed.
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} ref={playerRef} clear={exitToHome} />
+          <SurroundHost getPlayerHandle={() => playerRef?.current ?? null}>
+            <Player {...props} ref={playerRef} clear={exitToHome} />
+          </SurroundHost>
         </Suspense>
       );
 
@@ -258,7 +264,9 @@ export function MenuStack({ rootMenu, playerRef, MENU_TIMEOUT = 0 }) {
       // Composed presentation with visual + audio tracks
       return (
         <Suspense fallback={<LoadingFallback />}>
-          <Player {...props} ref={playerRef} clear={exitToHome} />
+          <SurroundHost getPlayerHandle={() => playerRef?.current ?? null}>
+            <Player {...props} ref={playerRef} clear={exitToHome} />
+          </SurroundHost>
         </Suspense>
       );
 
