@@ -264,6 +264,19 @@ describe('SurroundHost', () => {
     expect(identities.size).toBe(1);
   });
 
+  it('does not re-render the frame on a poll tick that changes nothing', async () => {
+    const media = new FakeMedia();
+    const player = makePlayer({ item: { id: 'plex:663134', surround: SURROUND }, media });
+    renderHost({ getPlayerHandle: player.get, logger });
+
+    const before = recorded.length;
+    // Three idle polls. A host that setStates on every tick (instead of only on a
+    // real item change) would re-render the whole frame at 1Hz for 54 minutes.
+    await act(async () => { vi.advanceTimersByTime(3000); });
+
+    expect(recorded.length).toBe(before);
+  });
+
   it('polls repeatedly rather than reading the handle once', async () => {
     const getPlayerHandle = vi.fn(() => null);
     renderHost({ getPlayerHandle, logger });
