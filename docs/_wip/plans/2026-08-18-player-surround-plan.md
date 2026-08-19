@@ -101,6 +101,29 @@ curl -s https://logs.kckern.net/select/logsql/query -d 'query=context.app:surrou
 
 ---
 
+## DDD conformance (read before Tasks 5-7)
+
+Per `docs/reference/core/layers-of-abstraction/ddd-reference.md`.
+
+**A surround is not playable content.** It decorates an item some other source already resolved. So it must NOT get a `manifest.mjs` and must NOT register with the ContentSourceRegistry — unlike `1_adapters/content/filesystem/`, whose manifest declares `capability: 'content'` precisely because it serves playable items. Keep that line firm; it is the reason this store is shaped differently from its neighbours.
+
+**Ports, not concrete adapters.** The reference's Use Case Rules require applications to receive abstract dependencies. `3_applications/content/ports/ISurroundStore.mjs` now defines the contract, exported from that folder's `index.mjs`:
+
+- `lookup(contentId, title) -> payload | null`, **synchronous**, never throws.
+- Sync is deliberate and precedented: `IListStore` is a synchronous port over YAML file I/O, and `PlayResponseService.toPlayResponse` (`:56`) is itself synchronous. Making this async would force await through a sync projection for no gain.
+- The exact parallel to copy is `IListStore` (port, `3_applications/content/ports/`) ← `YamlListDatastore` (implementation, `1_adapters/`).
+
+**Therefore:**
+- `SurroundStore extends ISurroundStore`, imported as `#apps/content/ports/ISurroundStore.mjs`. This import is legal in the dependency rule — `1_adapters` may import `3_applications` **ports only** — and `npm run audit:layers` enforces it, so run that gate after wiring.
+- `PlayResponseService` and the queue router document their `surroundStore` dependency as `ISurroundStore`, not as the concrete class. They must not import from `1_adapters/`; the composition root (`contentApi.mjs`) is the only place the concrete implementation is named.
+- Use `isSurroundStore(obj)` for duck-typed validation where a guard is warranted, matching `isStreamResolver` / `validateMediaProgressMemory`.
+
+**Ubiquitous language.** "surround", "piece", "movement", "cue", "composer" are the domain vocabulary — in code, log event names, and payload fields alike. Do not drift to "item", "data", "thing", or "config" for these concepts.
+
+**Naming note (judgment call, flag if you disagree):** the class stays `SurroundStore` rather than `YamlSurroundStore`. The codebase prefixes the storage format where an alternative backing store is plausible (`YamlAmbientStateStore`, `YamlListDatastore`) but not universally (`PresenceStore`, `ArchiveManifestStore`). The `content/surround/` folder already scopes it, and renaming after three tasks depend on the name is churn for no rule violation.
+
+---
+
 ## Task 1: SurroundStore — index, inheritance, exact match
 
 **Files:**

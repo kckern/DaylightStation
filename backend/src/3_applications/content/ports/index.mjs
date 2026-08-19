@@ -9,3 +9,4 @@ export { IRemoteProgressProvider, validateRemoteProgressProvider } from './IRemo
 export { IListStore } from './IListStore.mjs';
 export { ISyncSource, isSyncSource, assertSyncSource, createNoOpSyncSource } from './ISyncSource.mjs';
 export { IStreamResolver, isStreamResolver } from './IStreamResolver.mjs';
+export { ISurroundStore, isSurroundStore } from './ISurroundStore.mjs';
