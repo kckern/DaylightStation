@@ -18,6 +18,21 @@
 //
 // `PanelRenderer` is deliberately not used to resolve regions: it renders static
 // YAML props, and every module here is driven by a 10 Hz clock.
+//
+// CONSTANT DEPTH — WHY THE SHELL IS ALWAYS RENDERED
+// ------------------------------------------------
+// The frame is mounted for EVERY item, enriched or not. `children` (the player)
+// therefore sit at the same depth in the React tree in both states, and React
+// never re-parents them. Re-parenting is a remount, and remounting a <video>
+// reloads it: that was one audible restart a second into every enriched item,
+// because the host only learns an item is enriched after its first 1 Hz poll.
+//
+// When inactive the shell elements carry `display: contents`, no class and no
+// attributes, so they generate no box: an un-enriched page lays out exactly as a
+// bare player does. The old contract was "no wrapper element at all"; the new one
+// is "a wrapper that generates no box". `display: contents` also removes the
+// element from the accessibility tree in some engines — which is why the inactive
+// shell carries no role, no aria and no semantics for anything to lose.
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
@@ -26,6 +41,9 @@ import { getSurroundRegistry } from './registry.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
+
+/** The inactive shell: present in the tree, absent from the box tree. */
+const NO_BOX = Object.freeze({ display: 'contents' });
 const DEFAULT_FOOTER_FLOOR = 90;
 
 /** Lazy module-level child. Used only when no host logger was threaded down. */
@@ -54,8 +72,41 @@ function normalizeRegions(value, slot) {
     .map((r, i) => ({ ...r, slot, key: `${slot}:${i}:${r.module}` }));
 }
 
+/**
+ * Per-module error boundary. It wraps ONE module and nothing else — deliberately.
+ * React tears down the entire subtree beneath a boundary that catches, so a
+ * boundary wrapping the player would remount (and reload) the video on any module
+ * error. Here the blast radius is the module; the frame reacts to `onError` by
+ * collapsing to its inactive shell, which is the "bare children" fallback the
+ * contract asks for, reached without moving the player.
+ */
+class SurroundModuleBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error, info) {
+    this.props.onError?.(error, info);
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
+SurroundModuleBoundary.propTypes = {
+  onError: PropTypes.func,
+  children: PropTypes.node,
+};
+
 export default function SurroundFrame({
   data = null,
+  active = true,
   contentId = null,
   position = 0,
   duration = 0,
@@ -63,9 +114,24 @@ export default function SurroundFrame({
   seeking = false,
   logger = null,
   className = '',
+  onModuleError = null,
   children = null,
 }) {
   const log = useMemo(() => childLogger(logger, 'surround-frame'), [logger]);
+
+  // A module that threw takes the frame off for THIS item only; the next
+  // contentId gets a fresh attempt because the failure belonged to the old
+  // payload. Storing the failing id (rather than a boolean plus a reset effect)
+  // makes that reset a pure render-time comparison.
+  const [failedFor, setFailedFor] = useState(undefined);
+  const failed = failedFor !== undefined && failedFor === String(contentId);
+  const enabled = active !== false && !!data && !failed;
+
+  const handleModuleError = (error) => {
+    setFailedFor(String(contentId));
+    if (onModuleError) onModuleError(error);
+    else log.error('surround.render.error', { contentId, surroundId: data?.id ?? null, error: String(error?.message ?? error) });
+  };
 
   const definition = data?.definition ?? null;
   const railWidth = definition?.regions?.right?.width ?? DEFAULT_RAIL_WIDTH;
@@ -98,6 +164,8 @@ export default function SurroundFrame({
   // One observer watching both boxes: the media box drives the footer's width,
   // the footer's own height drives the collapse rule.
   useLayoutEffect(() => {
+    // An un-enriched item observes nothing: no boxes to measure, nothing to collapse.
+    if (!enabled) return undefined;
     if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver((entries) => {
       entries.forEach((entry) => {
@@ -116,7 +184,7 @@ export default function SurroundFrame({
     if (mediaRef.current) observer.observe(mediaRef.current);
     if (footerRef.current) observer.observe(footerRef.current);
     return () => observer.disconnect();
-  }, [footerFloor, footerRegions.length]);
+  }, [enabled, footerFloor, footerRegions.length]);
 
   // Report collapse transitions only — not the steady state on every render.
   const prevCollapsed = useRef(collapsed);
@@ -150,14 +218,16 @@ export default function SurroundFrame({
   }, [allRegions, resolved, contentId, log]);
 
   useEffect(() => {
+    // The component itself is now mounted for every item, so the pair tracks the
+    // frame being ON — which is what the log reader cares about.
+    if (!enabled) return undefined;
     log.debug('surround.frame.mount', {
       contentId,
       surroundId: data?.id ?? null,
       regions: allRegions.map((r) => r.module),
     });
     return () => { log.debug('surround.frame.unmount', { contentId, surroundId: data?.id ?? null }); };
-    // Mount/unmount only: a definition swap remounts through SurroundHost's key.
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const visibleFooterRegions = collapsed
     ? footerRegions.filter((r) => r.collapse !== 'first')
@@ -174,15 +244,17 @@ export default function SurroundFrame({
         style={style}
       >
         {Module ? (
-          <Module
-            position={position}
-            duration={duration}
-            playing={playing}
-            seeking={seeking}
-            data={payload}
-            region={region}
-            logger={logger}
-          />
+          <SurroundModuleBoundary onError={handleModuleError}>
+            <Module
+              position={position}
+              duration={duration}
+              playing={playing}
+              seeking={seeking}
+              data={payload}
+              region={region}
+              logger={logger}
+            />
+          </SurroundModuleBoundary>
         ) : null}
       </div>
     );
@@ -191,22 +263,31 @@ export default function SurroundFrame({
   const rootClass = ['surround-frame', collapsed && 'surround-frame--collapsed', className]
     .filter(Boolean).join(' ');
 
+  // EVERY element on the path down to `children` is rendered in both states, in
+  // the same order, so React sees the player at one fixed position for the whole
+  // session. Only the styling and the surrounding regions change.
   return (
-    <div className={rootClass} data-testid="surround-frame">
-      <div className="surround-frame__main">
-        <div className="surround-frame__stage">
+    <div
+      className={enabled ? rootClass : undefined}
+      data-testid={enabled ? 'surround-frame' : undefined}
+      style={enabled ? undefined : NO_BOX}
+    >
+      <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>
+        <div className={enabled ? 'surround-frame__stage' : undefined} style={enabled ? undefined : NO_BOX}>
           {/* 16:9 lock lives inline so no outer cascade can stretch the video. */}
           <div
-            className="surround-frame__media"
-            data-testid="surround-media"
+            className={enabled ? 'surround-frame__media' : undefined}
+            data-testid={enabled ? 'surround-media' : undefined}
             ref={mediaRef}
-            style={{ aspectRatio: '16 / 9', maxWidth: '100%', maxHeight: '100%' }}
+            style={enabled
+              ? { aspectRatio: '16 / 9', maxWidth: '100%', maxHeight: '100%' }
+              : NO_BOX}
           >
             {children}
           </div>
         </div>
 
-        {footerRegions.length > 0 && (
+        {enabled && footerRegions.length > 0 && (
           <div
             className="surround-frame__footer"
             data-testid="surround-footer"
@@ -218,7 +299,7 @@ export default function SurroundFrame({
         )}
       </div>
 
-      {rightRegions.length > 0 && (
+      {enabled && rightRegions.length > 0 && (
         <aside
           className="surround-frame__rail"
           data-testid="surround-rail"
@@ -229,13 +310,15 @@ export default function SurroundFrame({
       )}
 
       {/* Reserved for phase-two overlay cues. Inert until something is declared. */}
-      <div
-        className="surround-frame__overlay"
-        data-testid="surround-overlay"
-        style={{ pointerEvents: 'none' }}
-      >
-        {overlayRegions.map(renderRegion)}
-      </div>
+      {enabled && (
+        <div
+          className="surround-frame__overlay"
+          data-testid="surround-overlay"
+          style={{ pointerEvents: 'none' }}
+        >
+          {overlayRegions.map(renderRegion)}
+        </div>
+      )}
     </div>
   );
 }
@@ -243,6 +326,8 @@ export default function SurroundFrame({
 SurroundFrame.propTypes = {
   /** Resolved surround payload: { id, definition, piece, movements, cues, facts, composer, assetBase }. */
   data: PropTypes.object,
+  /** False renders the no-box shell around `children` and no regions at all. */
+  active: PropTypes.bool,
   /** Content id of the item being played — correlates every surround log event. */
   contentId: PropTypes.string,
   position: PropTypes.number,
@@ -252,6 +337,10 @@ SurroundFrame.propTypes = {
   /** Host logger (carries sessionLog). Falls back to a module-level child. */
   logger: PropTypes.object,
   className: PropTypes.string,
+  /** Called when a module throws, so the host can log it as `surround-host`. */
+  onModuleError: PropTypes.func,
   /** The player. Rendered inside the aspect-locked media box. */
   children: PropTypes.node,
 };
+
+export { SurroundModuleBoundary };

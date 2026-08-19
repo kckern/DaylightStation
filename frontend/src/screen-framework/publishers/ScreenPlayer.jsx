@@ -28,10 +28,15 @@ export function ScreenPlayer(props) {
   );
 
   // SurroundHost reads the same imperative handle the session binding polls. It
-  // renders `children` untouched — no wrapper element — unless the now-playing
-  // item carries a `surround` payload AND the screen's setting allows it.
+  // wraps `children` in a shell that generates no box — layout-identical to a
+  // bare player — unless the now-playing item carries a `surround` payload AND
+  // the screen's setting allows it. `contentId` is the seam's own hint at what
+  // was asked for, used to correlate logs before the first poll resolves.
   return (
-    <SurroundHost getPlayerHandle={() => playerRef.current}>
+    <SurroundHost
+      getPlayerHandle={() => playerRef.current}
+      contentId={props.play ?? props.queue ?? null}
+    >
       <Player {...props} ref={playerRef} />
     </SurroundHost>
   );

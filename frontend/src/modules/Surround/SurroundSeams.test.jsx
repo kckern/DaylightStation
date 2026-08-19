@@ -100,7 +100,15 @@ describe('surround seams', () => {
       await settle();
 
       expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
-      expect(container.innerHTML).toBe('<video data-testid="the-player"></video>');
+      // The shell is always in the tree (constant depth keeps the player from
+      // remounting when a frame engages), but it generates no box, so an
+      // un-enriched item lays out exactly like a bare player.
+      const video = container.querySelector('[data-testid="the-player"]');
+      expect(video).toBeTruthy();
+      for (let el = video.parentElement; el && el !== container; el = el.parentElement) {
+        expect(el.style.display).toBe('contents');
+        expect(el.className).toBe('');
+      }
     });
   });
 
