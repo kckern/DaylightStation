@@ -37,8 +37,14 @@ import { FRONTEND_URL, BACKEND_URL } from '#fixtures/runtime/urls.mjs';
 
 /** Vivaldi, "Spring" (Slow TV S01E01). Authored sidecar: classical/vivaldi/four-seasons-spring.yml */
 const ENRICHED_ID = 'plex:663146';
-/** The season the enriched item lives in — the menu the second seam is driven through. */
-const SEASON_ID = 'plex:663145';
+/**
+ * The show the enriched item lives under — the menu the second seam is driven
+ * through. `?list=` opens a menu at ITS OWN level, and only a season SELECTED
+ * from a show carries `type: 'season'`, which is what makes MenuStack push the
+ * episode grid. Opening the season id (plex:663145) directly lands a level too
+ * low — it lists itself — so the seam is driven from the show above it.
+ */
+const SHOW_ID = 'plex:663144';
 /** Vivaldi, "Summer" (S01E02). Same show, same library, deliberately NOT authored. */
 const PLAIN_ID = 'plex:663147';
 
@@ -52,8 +58,21 @@ const CUE_DWELL_S = 12;
 const FIRST_CUE_SNIPPET = 'Spring has arrived';
 
 const HD = { width: 1920, height: 1080 };
-/** dash_video is the format for these items; accept a bare <video> too. */
+/**
+ * What "the media mounted" looks like in the DOM. dash playback renders a
+ * <dash-video> CUSTOM ELEMENT that carries the real <video> inside its SHADOW
+ * ROOT, so this selector matches TWO nodes for one video — Playwright's engine
+ * pierces open shadow roots, and counts both the host and the element inside it.
+ * Use it to WAIT for playback to exist; never to count playable elements.
+ */
 const MEDIA_SEL = 'video, dash-video';
+/**
+ * The one real HTMLMediaElement. `document.querySelector('video')` inside
+ * page.evaluate CANNOT see it — script in the page does not pierce shadow roots,
+ * which is why the transport helpers below drive it through a Playwright locator
+ * instead of through a document query.
+ */
+const PLAYABLE_SEL = 'video';
 
 // ---------------------------------------------------------------------------
 // Preflight — resolved once, asserted loudly.
@@ -155,11 +174,17 @@ function expectedPlayheadPct(position) {
   return frac * 100;
 }
 
-/** Seek the real transport and (re)start it. Returns the video's currentTime afterwards. */
+/**
+ * Seek the real transport and (re)start it. Returns the video's currentTime.
+ *
+ * Driven through a LOCATOR, not `page.evaluate` + `document.querySelector`: the
+ * <video> lives in the <dash-video> shadow root, so a document query in page
+ * script returns null and the seek silently becomes a no-op. That is exactly how
+ * cases 2 and 3 failed — not because the clock was desynced, but because nobody
+ * ever moved it.
+ */
 async function seekTo(page, seconds) {
-  return page.evaluate(async (t) => {
-    const v = document.querySelector('video');
-    if (!v) return null;
+  return page.locator(PLAYABLE_SEL).first().evaluate(async (v, t) => {
     v.currentTime = t;
     try { await v.play(); } catch (_) { /* autoplay policy is relaxed by the launch flags */ }
     return v.currentTime;
@@ -167,7 +192,38 @@ async function seekTo(page, seconds) {
 }
 
 async function currentTime(page) {
-  return page.evaluate(() => document.querySelector('video')?.currentTime ?? null);
+  return page.locator(PLAYABLE_SEL).first().evaluate((v) => v.currentTime);
+}
+
+/**
+ * Wait until the transport can actually be DRIVEN, not merely until it exists.
+ *
+ * `waitForSelector(MEDIA_SEL)` resolves the moment the <dash-video> HOST is in
+ * the DOM, which is well before dash.js has an initialised stream behind it. A
+ * `currentTime` written into that gap is silently discarded — readyState is 0
+ * and duration NaN — and playback then starts from its own resume point, tens of
+ * seconds away from where the test asked it to go. That is exactly how case 2
+ * read "the playhead never moved to the sought position": the clock was fine,
+ * nothing had moved it.
+ */
+async function waitForTransport(page) {
+  const video = page.locator(PLAYABLE_SEL).first();
+  await expect
+    .poll(async () => video.evaluate((v) => v.readyState >= 3 && v.duration > 0), {
+      timeout: 60000,
+      message: 'the transport never became seekable — dash.js has no initialised stream',
+    })
+    .toBe(true);
+
+  // ...and it is RUNNING. A stalled element accepts a seek and then sits there,
+  // which would make case 3's "the playhead passed the dwell" unprovable.
+  const started = await video.evaluate((v) => v.currentTime);
+  await expect
+    .poll(async () => video.evaluate((v) => v.currentTime), {
+      timeout: 30000,
+      message: 'the transport loaded but never advanced — playback is not running',
+    })
+    .toBeGreaterThan(started);
 }
 
 /** Load an item through the URL-autoplay seam and wait for the media element. */
@@ -200,7 +256,10 @@ test.describe('Surround — PoC runtime gate', () => {
     // The video must be INSIDE the aspect-locked box, not merely on the page.
     const media = page.locator('[data-testid="surround-media"]');
     await expect(media).toHaveCount(1);
-    await expect(media.locator(MEDIA_SEL)).toHaveCount(1);
+    // Exactly ONE playable element, and it is inside the aspect-locked box.
+    // (`MEDIA_SEL` would read 2 here — the <dash-video> host plus the <video>
+    // in its shadow root — which says nothing about how many videos are playing.)
+    await expect(media.locator(PLAYABLE_SEL)).toHaveCount(1);
 
     // The quality floor of the whole feature: 16:9 ±1% on the media box.
     const box = await media.boundingBox();
@@ -217,11 +276,29 @@ test.describe('Surround — PoC runtime gate', () => {
 
   test('2. seeking the transport moves the MovementMap cursor with the playhead', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
+    await waitForTransport(page);
     await page.waitForSelector('[data-testid="surround-playhead"]', { timeout: 20000 });
 
     // Somewhere in movement II (225–385) — far from both ends of the rule, so a
     // cursor stuck at 0 or pinned at 100% cannot accidentally satisfy this.
     const TARGET = 300;
+    // Inside movement I, far below TARGET.
+    const ORIGIN = 30;
+
+    // PARK THE TRANSPORT FIRST. Playback RESUMES where it last stopped, and this
+    // gate is what last stopped it — after one run the fixture's saved position
+    // can already be past TARGET, and "the cursor moved forward" then reads
+    // false for a reason that has nothing to do with the map. Seeking to a known
+    // origin makes `before` ours instead of a leftover, so the forward-motion
+    // assertion below can stay exactly as strong as it was written.
+    await seekTo(page, ORIGIN);
+    await expect
+      .poll(async () => playheadPct(page), {
+        timeout: 20000,
+        message: 'the transport never parked at the origin — it is not accepting seeks at all',
+      })
+      .toBeLessThan(expectedPlayheadPct(ORIGIN) + 3);
+
     const before = await playheadPct(page);
     expect(before, 'playhead has no left offset before the seek').not.toBeNull();
 
@@ -256,6 +333,7 @@ test.describe('Surround — PoC runtime gate', () => {
 
   test('3. the cue ticker advances off the opening cue as the playhead passes its dwell', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
+    await waitForTransport(page);
     await page.waitForSelector('[data-testid="surround-ticker-text"]', { timeout: 20000 });
 
     const ticker = page.locator('[data-testid="surround-cue-ticker"]');
@@ -321,17 +399,36 @@ test.describe('Surround — PoC runtime gate', () => {
   test('5. menu-selected playback gets the same frame (the second seam)', async ({ page }) => {
     // This is the case the original design would have failed: it wrapped
     // ScreenPlayer only, so every menu selection played unframed.
-    await page.goto(`${FRONTEND_URL}/tv?list=${encodeURIComponent(SEASON_ID)}`, {
+    await page.goto(`${FRONTEND_URL}/tv?list=${encodeURIComponent(SHOW_ID)}`, {
       waitUntil: 'domcontentloaded',
       timeout: 45000,
     });
 
-    const cards = page.locator('.episode-grid-card');
+    // SCOPE EVERY SELECTOR TO THE OVERLAY. The screen's own full-screen menu
+    // WIDGET and the MenuStack overlay share one MenuNavigationContext, so a
+    // push in the overlay drives the widget's stack to the same level too: the
+    // season grid exists TWICE in the page, at identical coordinates, and an
+    // unscoped `.first()` resolves to the widget's copy — which the overlay then
+    // covers, so the click never lands. The overlay is also the only copy this
+    // case is about: MenuStack IS the second seam.
+    const overlay = page.locator('.screen-overlay--fullscreen');
+
+    // MenuStack's root is the SHOW's menu: its seasons. Selecting one carries
+    // `type: 'season'`, which is what pushes the episode grid.
+    const season = overlay.locator('.menu-item').filter({ hasText: 'Season 1' }).first();
+    await expect(season, 'the show menu never rendered').toBeVisible({ timeout: 45000 });
+    await season.click();
+
+    const cards = overlay.locator('.episode-grid-card');
     await expect(cards.first(), 'the season menu never rendered').toBeVisible({ timeout: 45000 });
 
     const spring = cards.filter({ hasText: 'Spring' }).first();
     await expect(spring, 'the enriched episode is not in this menu').toBeVisible({ timeout: 15000 });
-    await spring.click();
+    // Click the TITLE, not the card's centre: the card's own one-line
+    // description covers that centre, and Playwright refuses a click whose
+    // target is not the element that would receive it. The handler is on the
+    // card, so a click on any child still selects the episode.
+    await spring.locator('.episode-grid-card__title').click();
 
     // MenuStack mounts the player through a lazy chunk, and SurroundHost reads
     // the imperative handle on a 1 Hz poll — so the frame is at most one poll
@@ -339,15 +436,21 @@ test.describe('Surround — PoC runtime gate', () => {
     await page.waitForSelector(MEDIA_SEL, { timeout: 60000 });
     await page.waitForTimeout(1500);
 
-    const frame = page.locator('[data-testid="surround-frame"]');
+    // Still scoped to the overlay, and for the same reason: the shared nav stack
+    // means the screen's menu widget mounts its OWN player alongside this one, so
+    // the page carries two frames. Counting them page-wide would assert the
+    // framework's duplication rather than this seam's contract; counting inside
+    // the overlay asserts exactly what case 5 exists to prove — the player
+    // MenuStack mounted is wrapped, exactly once.
+    const frame = overlay.locator('[data-testid="surround-frame"]');
     await expect(
       frame,
       'menu-selected playback rendered unframed — the MenuStack seam is not wrapped',
     ).toHaveCount(1, { timeout: 20000 });
 
     // Same contract as the URL path, asserted the same way.
-    const media = page.locator('[data-testid="surround-media"]');
-    await expect(media.locator(MEDIA_SEL)).toHaveCount(1);
+    const media = overlay.locator('[data-testid="surround-media"]');
+    await expect(media.locator(PLAYABLE_SEL)).toHaveCount(1);
     const box = await media.boundingBox();
     expect(box).not.toBeNull();
     const ratio = box.width / box.height;
@@ -385,7 +488,16 @@ test.describe('Surround — composed layout gate', () => {
       expect(b, `${sel} has no box`).not.toBeNull();
       return b;
     };
-    const viewport = page.viewportSize();
+    // THE FRAME IS THE MEASURING STICK, NOT THE BROWSER WINDOW. A screen route
+    // renders into a fixed-resolution `screen-root` (the living-room screen is a
+    // 960x540 CSS viewport at 2x DPR) letterboxed inside whatever window it is
+    // given, so the frame here is 960x540 in a 1920x1080 page. "A third of the
+    // rail" and "not clipped off-screen" are claims about THAT box: measured
+    // against the window they are both weaker than intended — a third of the
+    // frame reads as a sixth, and everything trivially clears a bottom edge
+    // 270px below the frame's own.
+    const frame = await box('.surround-frame');
+    const bottomEdge = frame.y + frame.height;
 
     // 1. The placard is mounted and STRADDLES the video's top edge — part on the
     //    dark hall above, part over the picture, like a plate pinned to a
@@ -470,7 +582,7 @@ test.describe('Surround — composed layout gate', () => {
       const count = await page.locator(sel).count();
       expect(count, `${sel} did not mount`).toBeGreaterThanOrEqual(1);
       const b = await box(sel);
-      expect(b.y + b.height, `${sel} clipped off-screen`).toBeLessThanOrEqual(viewport.height + 1);
+      expect(b.y + b.height, `${sel} clipped below the frame`).toBeLessThanOrEqual(bottomEdge + 1);
     }
 
     // 4b. THE HEADER ROW (design wave 3). The portrait and the nameplate are
@@ -504,13 +616,13 @@ test.describe('Surround — composed layout gate', () => {
     const factCount = await page.locator('.surround-composer-card__fact').count();
     if (factCount > 0) {
       const factBox = await box('.surround-composer-card__fact');
-      expect(factBox.y + factBox.height, 'fact clipped off-screen').toBeLessThanOrEqual(viewport.height + 1);
+      expect(factBox.y + factBox.height, 'fact clipped below the frame').toBeLessThanOrEqual(bottomEdge + 1);
     }
 
     // 5. The rail is on the LEFT, not the right — the recomposed contract.
     // `regions.right[0].side: 'left'` moves it; the region KEY stays `right`.
     // (`rail` was read above, for the header-row containment check.)
     expect(rail.x + rail.width, 'rail is not entirely left of the video').toBeLessThanOrEqual(media.x + 2);
-    expect(rail.width / viewport.width, 'rail is a fifth, not a third').toBeGreaterThan(0.30);
+    expect(rail.width / frame.width, 'rail is a fifth, not a third').toBeGreaterThan(0.30);
   });
 });

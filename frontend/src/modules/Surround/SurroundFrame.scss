@@ -68,13 +68,26 @@
   height: 100%;
 }
 
-/* The darkened house. The video is TOP-anchored now: `flex: 0 1 auto` sizes the
-   stage to the media box itself, so there is no slack inside it at all — every
-   spare pixel falls through to the footer, which is where the design wants it
-   (a band with room to breathe, not a letterbox hole).
-   `padding-top` is the strip of dark hall the floating placard straddles. */
+/* The darkened house. The video is TOP-anchored: the stage is sized to the media
+   box itself, so there is no slack inside it at all — every spare pixel falls
+   through to the footer, which is where the design wants it (a band with room to
+   breathe, not a letterbox hole).
+   `padding-top` is the strip of dark hall the floating placard straddles.
+
+   FLEX-SHRINK IS 0, AND THAT IS THE 16:9 LOCK'S LAST LINE OF DEFENCE.
+   The media box is `width: 100%` + `aspect-ratio: 16/9` + `max-height: 100%`.
+   Those three agree only while the stage is tall enough to hold the ratio: the
+   moment the column overflows, `max-height` clamps the box's HEIGHT and nothing
+   pulls its WIDTH down with it, so the picture stretches. With a shrink factor
+   of 1 the footer could cause exactly that overflow, and did — a 960x540
+   living-room screen-root gave a 643x349 media box (ratio 1.845) because the
+   band's natural height was 13px more than the column had left.
+   `flex: 0 0 auto` is what makes this comment's own claim true — "footer never
+   squeezing the stage out of its aspect box". A band that cannot fit shrinks
+   itself instead, and if it shrinks past `collapse.footerFloor` the frame drops
+   its first region, which is the designed degradation path. */
 .surround-frame__stage {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
   padding-top: var(--placard-inset);
   display: flex;
