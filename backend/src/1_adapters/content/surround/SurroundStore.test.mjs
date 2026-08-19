@@ -278,9 +278,12 @@ describe('SurroundStore title rebind', () => {
       'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
     const logger = makeLogger();
     const store = new SurroundStore({ rootDir: root, logger });
+    // The build warns `missing-match-title` about this very file; what must stay
+    // silent is the lookup, which treats the piece as merely unrebindable.
+    const afterBuild = logger.warn.mock.calls.length;
     expect(store.lookup('plex:663146', '').piece.title).toBe('Spring');
     expect(store.lookup('plex:999999', 'Vivaldi: Spring ∙ Concerto No. 1')).toBeNull();
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.length).toBe(afterBuild);
   });
 
   it('rebinds when the authored title is the longer side', () => {
@@ -359,9 +362,12 @@ describe('SurroundStore rebind ambiguity', () => {
     twoSeasons();
     const logger = makeLogger();
     const store = new SurroundStore({ rootDir: root, logger });
+    // The build already pre-warned `surround.titles.ambiguous` about this pair;
+    // the assertion is that the fast path itself adds nothing.
+    const afterBuild = logger.warn.mock.calls.length;
     const r = store.lookup('plex:1', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico');
     expect(r.piece.title).toBe('The Four Seasons');
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.warn.mock.calls.length).toBe(afterBuild);
     expect(logger.debug).not.toHaveBeenCalled();
   });
 
@@ -370,5 +376,299 @@ describe('SurroundStore rebind ambiguity', () => {
     const logger = makeLogger();
     new SurroundStore({ rootDir: root, logger }).lookup('plex:999999', 'The Four Seasons');
     expect(logger.debug).not.toHaveBeenCalled();
+  });
+});
+
+describe('SurroundStore sidecar validation', () => {
+  // Every one of these files is dropped or coerced today with no signal at all.
+  // The assertions are on the warning, because the drop itself is invisible.
+  const invalidWarns = (logger) =>
+    logger.warn.mock.calls.filter((c) => c[0] === 'surround.sidecar.invalid').map((c) => c[1]);
+
+  it('warns with the offending file and a reason when the YAML will not parse', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(invalidWarns(logger)).toEqual([
+      { file: 'classical/beethoven/broken.yml', reason: 'yaml-unparseable', reasons: ['yaml-unparseable'] }
+    ]);
+  });
+
+  it('still indexes the siblings of a malformed sidecar', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    expect(invalidWarns(logger)).toHaveLength(1);
+  });
+
+  it('warns when a sidecar parses to something that is not a mapping', () => {
+    write('classical/beethoven/scalar.yml', 'just a bare string\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(invalidWarns(logger)).toContainEqual(
+      expect.objectContaining({ file: 'classical/beethoven/scalar.yml', reason: 'not-a-mapping' }));
+  });
+
+  it.each([
+    ['missing-surround', 'nosurround.yml', 'match:\n  contentId: plex:1\n  title: T\npiece: { title: X }\n'],
+    ['missing-match', 'nomatch.yml', 'surround: concert-hall\npiece: { title: X }\n'],
+    ['match-not-a-mapping', 'strmatch.yml', 'surround: concert-hall\nmatch: plex:1\npiece: { title: X }\n'],
+    ['missing-match-contentId', 'noid.yml', 'surround: concert-hall\nmatch:\n  title: T\npiece: { title: X }\n']
+  ])('warns %s and drops the piece', (reason, file, body) => {
+    write(`classical/beethoven/${file}`, body);
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(invalidWarns(logger)).toContainEqual(
+      expect.objectContaining({ file: `classical/beethoven/${file}`, reason }));
+    // Empty live title, so the rebind lane cannot answer for the dropped piece.
+    expect(store.lookup('plex:1', '')).toBeNull();
+    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
+      expect.objectContaining({ pieces: 1, skipped: 1 }));
+  });
+
+  it('warns about a missing match.title but still indexes the piece', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:663146\npiece:\n  title: Spring\n');
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:663146', '').piece.title).toBe('Spring');
+    expect(invalidWarns(logger)).toContainEqual(
+      expect.objectContaining({ file: 'classical/vivaldi/spring.yml', reason: 'missing-match-title' }));
+    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
+      expect.objectContaining({ pieces: 2, skipped: 0 }));
+  });
+
+  it.each([
+    ['missing-piece', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\n'],
+    ['piece-not-a-mapping', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: a string\n'],
+    ['movements-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\nmovements: nope\n'],
+    ['cues-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\ncues: 5\n'],
+    ['facts-not-a-list', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\nfacts: { a: 1 }\n'],
+    ['composer-not-a-mapping', 'surround: concert-hall\nmatch: { contentId: plex:9, title: T }\npiece: {}\ncomposer: nope\n']
+  ])('warns %s without dropping the piece, since the coercion is silent data loss', (reason, body) => {
+    write('classical/vivaldi/odd.yml', body);
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:9', '')).not.toBeNull();
+    expect(invalidWarns(logger)).toContainEqual(
+      expect.objectContaining({ file: 'classical/vivaldi/odd.yml', reason }));
+  });
+
+  it('does not warn about optional blocks that are simply absent', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(invalidWarns(logger)).toEqual([]);
+  });
+
+  it('reports every problem in one warning, leading with the first', () => {
+    write('classical/vivaldi/messy.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:9\nmovements: nope\ncues: 5\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    const [warned, ...rest] = invalidWarns(logger);
+    expect(rest).toEqual([]);
+    expect(warned.file).toBe('classical/vivaldi/messy.yml');
+    expect(warned.reason).toBe('missing-match-title');
+    expect(warned.reasons).toEqual(
+      ['missing-match-title', 'missing-piece', 'movements-not-a-list', 'cues-not-a-list']);
+  });
+
+  it('reports only the blocking problem when the file is rejected outright', () => {
+    write('classical/vivaldi/messy.yml', 'match: { title: T }\nmovements: nope\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(invalidWarns(logger)).toEqual([{
+      file: 'classical/vivaldi/messy.yml',
+      reason: 'missing-surround',
+      reasons: ['missing-surround', 'missing-match-contentId']
+    }]);
+  });
+
+  it('warns once per build, not once per lookup', () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    const afterBuild = logger.warn.mock.calls.length;
+    for (let i = 0; i < 5; i += 1) store.lookup('plex:663134', 'Beethoven: 3. Sinfonie');
+    expect(logger.warn.mock.calls.length).toBe(afterBuild);
+  });
+});
+
+describe('SurroundStore missing definition', () => {
+  const orphan = () => write('classical/vivaldi/spring.yml',
+    'surround: does-not-exist\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+
+  it('names the definition id and the file that asked for it', () => {
+    orphan();
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.definition.missing',
+      { id: 'does-not-exist', file: 'classical/vivaldi/spring.yml' });
+  });
+
+  it('excludes the piece entirely rather than shipping a half payload', () => {
+    orphan();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:663146', '')).toBeNull();
+    expect(store.lookup('plex:000', 'Spring')).toBeNull();
+  });
+
+  it('does not fire for a piece whose definition exists', () => {
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.definition.missing', expect.anything());
+  });
+});
+
+describe('SurroundStore duplicate contentIds', () => {
+  // Walk order is a filesystem accident, so a silent last-write-wins is
+  // non-deterministic across machines. Resolution stays as it was; the
+  // collision just stops being invisible.
+  const duplicates = () => {
+    write('classical/vivaldi/a-first.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:dup, title: First }\npiece: { title: First }\n');
+    write('classical/vivaldi/b-second.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:dup, title: Second }\npiece: { title: Second }\n');
+  };
+
+  it('names both the kept and the dropped file', () => {
+    duplicates();
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.duplicate', {
+      contentId: 'plex:dup',
+      keptFile: 'classical/vivaldi/b-second.yml',
+      droppedFile: 'classical/vivaldi/a-first.yml'
+    });
+  });
+
+  it('keeps last-wins resolution unchanged', () => {
+    duplicates();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:dup', '').piece.title).toBe('Second');
+  });
+
+  it('does not fire when every contentId is unique', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:663146, title: Spring }\npiece: { title: Spring }\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.sidecar.duplicate', expect.anything());
+  });
+});
+
+describe('SurroundStore index-time title ambiguity', () => {
+  // A pre-warning. Once #byTitle is built the collision is knowable, so nobody
+  // should have to play the video to discover the rebind lane will refuse.
+  const ambiguousWarns = (logger) =>
+    logger.warn.mock.calls.filter((c) => c[0] === 'surround.titles.ambiguous').map((c) => c[1]);
+
+  const twoSeasons = () => {
+    write('classical/vivaldi/four-seasons.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:1, title: "Vivaldi: The Four Seasons" }\npiece: { title: The Four Seasons }\n');
+    write('classical/vivaldi/seasons-alt.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:2, title: The Four Seasons }\npiece: { title: Alt }\n');
+  };
+
+  it('warns once for the colliding group, naming every file and title', () => {
+    twoSeasons();
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    const warns = ambiguousWarns(logger);
+    expect(warns).toHaveLength(1);
+    expect(warns[0].candidates.map((c) => c.file).sort())
+      .toEqual(['classical/vivaldi/four-seasons.yml', 'classical/vivaldi/seasons-alt.yml']);
+    expect(warns[0].candidates.map((c) => c.title).sort())
+      .toEqual(['The Four Seasons', 'Vivaldi: The Four Seasons']);
+  });
+
+  it('groups a three-way collision into a single warning', () => {
+    twoSeasons();
+    write('classical/vivaldi/seasons-third.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:3, title: "Vivaldi: The Four Seasons ∙ complete" }\npiece: { title: Third }\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    const warns = ambiguousWarns(logger);
+    expect(warns).toHaveLength(1);
+    expect(warns[0].candidates).toHaveLength(3);
+  });
+
+  it('warns separately for two independent colliding groups', () => {
+    twoSeasons();
+    write('classical/beethoven/eroica-alt.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:4, title: "Beethoven: 3. Sinfonie ∙ alternate cut" }\npiece: { title: Alt Eroica }\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(ambiguousWarns(logger)).toHaveLength(2);
+  });
+
+  it('stays silent for a corpus of unrelated titles', () => {
+    write('classical/vivaldi/spring.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:663146, title: "Vivaldi: Spring" }\npiece: { title: Spring }\n');
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(ambiguousWarns(logger)).toEqual([]);
+  });
+
+  it('changes no lookup behavior: the unambiguous piece still resolves both ways', () => {
+    twoSeasons();
+    const store = new SurroundStore({ rootDir: root, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    expect(store.lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
+      .toBe('Symphony No. 3');
+    expect(store.lookup('plex:1', '').piece.title).toBe('The Four Seasons');
+  });
+
+  it('fires at build time, not on the lookup that trips the rebind lane', () => {
+    twoSeasons();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(ambiguousWarns(logger)).toHaveLength(1);
+    store.lookup('plex:999999', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico');
+    expect(ambiguousWarns(logger)).toHaveLength(1);
+    expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.match.ambiguous')).toHaveLength(1);
+  });
+});
+
+describe('SurroundStore warning totality', () => {
+  // Every new warning runs through the same optional-call guard as the old ones,
+  // so a logger that predates warn() cannot take the index build down with it.
+  const brokenCorpus = () => {
+    write('classical/beethoven/broken.yml', 'surround: concert-hall\nmatch: [unclosed\n');
+    write('classical/vivaldi/orphan.yml',
+      'surround: does-not-exist\nmatch: { contentId: plex:5, title: Orphan }\npiece: {}\n');
+    write('classical/vivaldi/a-dup.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:dup, title: "Vivaldi: The Four Seasons" }\npiece: {}\n');
+    write('classical/vivaldi/b-dup.yml',
+      'surround: concert-hall\nmatch: { contentId: plex:dup, title: The Four Seasons }\npiece: {}\n');
+  };
+
+  it.each([
+    ['no warn method', { info: () => {}, debug: () => {}, error: () => {} }],
+    ['no methods at all', {}],
+    ['absent', undefined],
+    ['null', null]
+  ])('builds and looks up with a logger that has %s', (_label, logger) => {
+    brokenCorpus();
+    let store;
+    expect(() => { store = new SurroundStore({ rootDir: root, logger }); }).not.toThrow();
+    expect(store.lookup('plex:663134', '').piece.title).toBe('Symphony No. 3');
+    expect(store.lookup('plex:dup', '')).not.toBeNull();
+    expect(store.lookup('plex:5', '')).toBeNull();
+  });
+
+  it('emits every warning family for one broken corpus', () => {
+    brokenCorpus();
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger });
+    expect(new Set(logger.warn.mock.calls.map((c) => c[0]))).toEqual(new Set([
+      'surround.sidecar.invalid',
+      'surround.definition.missing',
+      'surround.sidecar.duplicate',
+      'surround.titles.ambiguous'
+    ]));
   });
 });
