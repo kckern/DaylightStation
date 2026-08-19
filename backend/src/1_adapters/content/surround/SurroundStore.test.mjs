@@ -306,3 +306,69 @@ describe('SurroundStore title rebind', () => {
     expect(logger.debug).not.toHaveBeenCalled();
   });
 });
+
+describe('SurroundStore rebind ambiguity', () => {
+  // Two sidecars that both match one live title. Whichever the walk reaches first
+  // is an accident of the filesystem, so the store must refuse rather than pick.
+  const twoSeasons = () => {
+    write('classical/vivaldi/four-seasons.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:1\n  title: "Vivaldi: The Four Seasons"\npiece:\n  title: The Four Seasons\n');
+    write('classical/vivaldi/seasons-alt.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:2\n  title: The Four Seasons\npiece:\n  title: Alt\n');
+  };
+
+  it('refuses to rebind when two sidecars match the same live title', () => {
+    twoSeasons();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:999999', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico')).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.match.rebound', expect.anything());
+    const [, data] = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.ambiguous');
+    expect(data.staleContentId).toBe('plex:999999');
+    expect(data.liveTitle).toBe('Vivaldi: The Four Seasons ∙ Il Giardino Armonico');
+    expect(data.candidates.map((c) => c.file).sort())
+      .toEqual(['classical/vivaldi/four-seasons.yml', 'classical/vivaldi/seasons-alt.yml']);
+    expect(data.candidates.map((c) => c.title).sort())
+      .toEqual(['The Four Seasons', 'Vivaldi: The Four Seasons']);
+  });
+
+  it('refuses a short authored title that over-matches a real Four Seasons title', () => {
+    // The PoC corpus: one sidecar authored sloppily as `Spring`, which is a
+    // substring of every live title carrying that word.
+    write('classical/vivaldi/spring-short.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:3\n  title: Spring\npiece:\n  title: Spring (short)\n');
+    write('classical/vivaldi/spring-full.yml',
+      'surround: concert-hall\nmatch:\n  contentId: plex:4\n  title: "Violin Concerto No. 1 in E Major, RV 269 Spring"\npiece:\n  title: Spring (full)\n');
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:999999', 'Violin Concerto No. 1 in E Major, RV 269 Spring')).toBeNull();
+    const warned = logger.warn.mock.calls.find((c) => c[0] === 'surround.match.ambiguous');
+    expect(warned).toBeDefined();
+    expect(warned[1].candidates).toHaveLength(2);
+  });
+
+  it('still rebinds, and does not cry ambiguity, when exactly one sidecar matches', () => {
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    expect(store.lookup('plex:999999', 'Beethoven: 3. Sinfonie ∙ hr-Sinfonieorchester').piece.title)
+      .toBe('Symphony No. 3');
+    expect(logger.warn.mock.calls.map((c) => c[0])).toEqual(['surround.match.rebound']);
+  });
+
+  it('leaves the exact-contentId fast path untouched by an ambiguous title', () => {
+    twoSeasons();
+    const logger = makeLogger();
+    const store = new SurroundStore({ rootDir: root, logger });
+    const r = store.lookup('plex:1', 'Vivaldi: The Four Seasons ∙ Il Giardino Armonico');
+    expect(r.piece.title).toBe('The Four Seasons');
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+
+  it('logs ambiguity instead of a plain miss, so the refusal is not mistaken for no sidecar', () => {
+    twoSeasons();
+    const logger = makeLogger();
+    new SurroundStore({ rootDir: root, logger }).lookup('plex:999999', 'The Four Seasons');
+    expect(logger.debug).not.toHaveBeenCalled();
+  });
+});
