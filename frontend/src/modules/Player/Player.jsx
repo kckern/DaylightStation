@@ -119,7 +119,8 @@ const Player = forwardRef(function Player(props, ref) {
     maxResolution,
     plexClientSession: externalPlexClientSession,
     onError,
-    mediaLoadTimeoutMs
+    mediaLoadTimeoutMs,
+    forceShader
   } = props || {};
 
   // Override playback rate if passed in via menu selection
@@ -1079,9 +1080,16 @@ const Player = forwardRef(function Player(props, ref) {
                    (!isQueue && singlePlayerProps?.continuous);
   // Once the user manually cycles the shader (ArrowUp/ArrowDown), their choice takes
   // precedence over item-level and queue-level metadata until the queue resets.
-  const effectiveShader = shaderUserCycled
-    ? queueShader
-    : explicitShader || (willLoop ? 'focused' : queueShader);
+  //
+  // `forceShader` sits above all of that: it is how SurroundHost enforces "an
+  // enriched item always plays focused" — the frame owns the chrome, so it wins
+  // over an explicit dispatch, the queue/item metadata AND a manual shader
+  // cycle. Nothing inside Player can opt back out of it; only the surround seam
+  // decides when it applies (see SurroundHost.jsx).
+  const effectiveShader = forceShader
+    || (shaderUserCycled
+      ? queueShader
+      : explicitShader || (willLoop ? 'focused' : queueShader));
 
   // Create appropriate advance function for single continuous items
   const singleAdvance = useCallback(() => {
@@ -1478,7 +1486,14 @@ Player.propTypes = {
   maxVideoBitrate: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   maxResolution: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   /** External Plex client session ID for multi-player isolation */
-  plexClientSession: PropTypes.string
+  plexClientSession: PropTypes.string,
+  /**
+   * Highest-priority shader override. Set by SurroundHost (via cloneElement)
+   * while the surround frame is active for the current item — it beats an
+   * explicit dispatch, queue/item metadata, and a manual shader cycle. Not
+   * meant to be set by any other caller.
+   */
+  forceShader: PropTypes.string
 };
 
 export default Player;
