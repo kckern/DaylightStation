@@ -154,6 +154,49 @@ describe('surround builtins in the frame', () => {
   });
 
   /**
+   * THE TWO HALVES MEASURE ELAPSED TIME FROM THE SAME PLACE (review finding I3,
+   * reopened by wave 8's own §5 fix and closed here).
+   *
+   * `elapsedFraction` is single-sourced, but it is only as single as its inputs:
+   * the rail took `first` from the movements it could PLACE while the band took
+   * it from `movements[0]` with a `Number(x) || 0` coercion. When the first
+   * movement is the unplaceable one those are different numbers, and with
+   * `nowSide: dynamic` the two halves of one shape resolve opposite sides —
+   * the NOW panel on the right, the rail's connector reaching left, each pinned
+   * by its own hysteresis and nothing anywhere reporting it.
+   *
+   * TO GO RED: `const pieceFirst = movements.length ? (Number(movements[0]?.start) || 0) : 0`.
+   * At 1900s the rail then measures (1900-976)/(2955-976) = 0.467 and picks
+   * `left` while the band measures 1900/2955 = 0.643 and picks `right`.
+   */
+  it('puts both halves of the bond on the same side when the first movement is unplaceable', () => {
+    const late = {
+      ...EROICA,
+      definition: { ...CONCERT_HALL, band: { nowSide: 'dynamic' } },
+      movements: [
+        { n: 1, name: 'Allegro con brio', start: undefined, listen: ['A.'] },
+        { n: 2, name: 'Marcia funebre. Adagio assai', start: 976, listen: ['B.'] },
+        { n: 3, name: 'Scherzo. Allegro vivace', start: 1925 },
+        { n: 4, name: 'Finale. Allegro molto', start: 2278 },
+      ],
+    };
+    render(
+      <SurroundFrame data={late} contentId="plex:663134" position={1900} duration={3223} playing seeking={false}>
+        <video />
+      </SurroundFrame>,
+    );
+    const rail = document.querySelector('[data-testid="surround-movement-map"]').getAttribute('data-now-side');
+    const band = document.querySelector('[data-testid="surround-cue-ticker"]').getAttribute('data-now-side');
+    expect(
+      band,
+      `the rail's bond reaches ${rail} while the band's NOW register sits ${band} — the two halves of one shape are pointing at opposite sides of the screen`,
+    ).toBe(rail);
+    // ...and it is the answer measured from the first PLACED movement, not from
+    // second zero: (1900-976)/(2955-976) = 0.467, which is under half way.
+    expect(rail).toBe('left');
+  });
+
+  /**
    * A MOVEMENT THE RECORDING CANNOT PLACE IS NOT A MOVEMENT AT SECOND ZERO.
    * The store ships `start: undefined` for a `starts` entry it refused and warns
    * about it; both halves of the band then coerced that with `Number(x) || 0`,

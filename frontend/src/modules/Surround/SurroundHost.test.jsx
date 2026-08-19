@@ -195,6 +195,11 @@ describe('SurroundHost', () => {
     const mounts = eventsNamed(logger, 'surround.mount');
     expect(mounts).toHaveLength(1);
     expect(mounts[0][1]).toMatchObject({ contentId: 'plex:663134', surroundId: 'concert-hall', mode: 'auto' });
+    // THE EVENT ITSELF, not just the helper behind it. The one line that broke
+    // for six waves is the one that couples `surround.mount` to the definition,
+    // and a pure test of `definitionModules` leaves it unasserted: reverting the
+    // payload to `regions.right?.module` would keep every other spec green.
+    expect(mounts[0][1].modules).toEqual(['test-card', 'test-map']);
   });
 
   it('renders bare children when the mode is off, even for an enriched item', () => {

@@ -323,6 +323,53 @@ export const SEGMENT_FLOOR_PX = 72;
 const EPS = 1e-6;
 
 /**
+ * How much wider than its own text column a box has to overflow before the
+ * accordion is allowed to open for it.
+ *
+ * Review finding (minor 3): on a `nowrap` + `overflow: hidden` box that is NOT
+ * overflowing, `scrollWidth === clientWidth`, so a bare `need > cellW` was true
+ * by a rounding hair and the rail quietly took a pixel off every neighbour for a
+ * name that already fitted. Half a pixel is below anything a viewer can see and
+ * above anything sub-pixel layout produces.
+ */
+export const ACCORDION_OVERFLOW_EPS_PX = 0.5;
+
+/**
+ * The width the SOUNDING segment would have to be drawn at for neither its
+ * heading nor its gloss to be cut.
+ *
+ * PURE, AND SHARED WITH THE SPEC THAT MEASURES IT. The DOM reads stay in
+ * `MovementMap` (only a rendered rail knows how wide a string is in this face at
+ * this size), but the arithmetic on top of them lives here, once. It used to
+ * live in the component and be transcribed into the measurement harness —
+ * which is precisely the class of copy that harness exists to abolish: drop the
+ * half-pixel threshold or the rounding margin in the component and a spec
+ * carrying its own copy would keep measuring the old way and stay green.
+ *
+ * The chrome around the text column — the numeral's gutter and the text insets —
+ * is `segW - cellW`, a CONSTANT at every screen because it is built entirely
+ * from `em`/`ch` of one rem-fixed size. That is what keeps `desired` independent
+ * of the width the accordion is about to set, so it cannot feed back into itself.
+ *
+ * @param {object} args
+ * @param {number} args.segW the segment's current rendered width, px.
+ * @param {number} args.cellW its text column's current width, px.
+ * @param {number} args.need the widest of the heading's and the gloss's full
+ *   single-line width (`scrollWidth` on a `nowrap` box), px.
+ * @returns {number} the ideal width in px, or 0 for "nothing to open for" —
+ *   an unmeasured rail, a text column too small to subtract from, or a segment
+ *   whose text already fits.
+ */
+export function desiredWidth({ segW, cellW, need }) {
+  if (!Number.isFinite(segW) || !Number.isFinite(cellW) || !Number.isFinite(need)) return 0;
+  // Below ~1px of cell there is nothing to subtract from and the reading would
+  // be garbage.
+  if (!(cellW > 1) || !(segW > cellW)) return 0;
+  if (!(need > cellW + ACCORDION_OVERFLOW_EPS_PX)) return 0;
+  return Math.ceil((segW - cellW) + need) + 1;
+}
+
+/**
  * Solve the rail's rendered segment widths.
  *
  * THE RULE THE USER SET. Everything is one line with an ellipsis when inactive;
