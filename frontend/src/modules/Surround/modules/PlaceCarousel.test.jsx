@@ -1,0 +1,435 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, act, waitFor, fireEvent } from '@testing-library/react';
+import * as sass from 'sass-embedded';
+import PlaceCarousel, { PLACE_SLIDE_MS, PLACE_FADE_MS } from './PlaceCarousel.jsx';
+import { COMPOSER_FACT_FADE_MS } from './ComposerCard.jsx';
+import { CUE_FADE_MS } from './CueTicker.jsx';
+import { DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS } from '../dissolve.js';
+import { __resetMapCache } from '../map/CountryMap.jsx';
+import { registerSurroundBuiltins, SURROUND_BUILTIN_MODULES } from '../builtins.js';
+import { getSurroundRegistry, resetSurroundRegistry } from '../registry.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const makeLogger = () => ({
+  debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
+});
+
+/** Two squares, so the map slide has something to draw and a neighbour to name. */
+const square = (name, lon0, lat0, lon1, lat1) => ({
+  type: 'Feature',
+  properties: { name },
+  geometry: {
+    type: 'Polygon',
+    coordinates: [[[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1], [lon0, lat0]]],
+  },
+});
+const GEO = {
+  type: 'FeatureCollection',
+  features: [square('Italy', 7, 37, 18, 47), square('Austria', 9, 46, 17, 49)],
+};
+
+// Vivaldi again — the same fixture the card and the placard are written against,
+// so the three modules are demonstrably reading one payload.
+const DATA = {
+  contentId: 'plex:663146',
+  assetBase: 'surround/classical',
+  composer: {
+    name: 'Antonio Vivaldi',
+    portrait: 'vivaldi/portrait.jpg',
+    city_image: 'vivaldi/venice.jpg',
+    map: { country: 'Italy', city: 'Venice', lat: 45.44, lon: 12.33 },
+  },
+};
+
+const withComposer = (composer) => ({ ...DATA, composer });
+
+let fetchMock;
+
+beforeEach(() => {
+  __resetMapCache();
+  resetSurroundRegistry();
+  registerSurroundBuiltins();
+  fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(GEO) }));
+  global.fetch = fetchMock;
+});
+afterEach(() => { resetSurroundRegistry(); __resetMapCache(); });
+
+const props = (data, logger, position = 0) => ({
+  position, duration: 3223, playing: true, seeking: false,
+  data, region: { module: 'place-carousel', height: 300 }, logger,
+});
+
+const renderCarousel = ({ data = DATA, logger = makeLogger(), position = 0 } = {}) => {
+  const view = render(<PlaceCarousel {...props(data, logger, position)} />);
+  return {
+    ...view,
+    logger,
+    at: (p) => view.rerender(<PlaceCarousel {...props(data, logger, p)} />),
+    slide: () => view.container.querySelector('[data-testid="surround-place-slide"]'),
+    kind: () => view.container.querySelector('[data-testid="surround-place-carousel"]')?.getAttribute('data-slide') ?? null,
+    caption: () => view.container.querySelector('[data-testid="surround-place-caption"]'),
+  };
+};
+
+/**
+ * `CountryMap` fires its fetch from inside a promise chain, so an assertion made
+ * straight after render ("asked for no geodata") would pass even if the map HAD
+ * mounted. Drain the microtask queue first or the assertion is vacuous.
+ */
+const settle = async () => {
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+};
+
+describe('PlaceCarousel — registration', () => {
+  it('is registered under the name the sidecar authors, for the rail', () => {
+    expect(getSurroundRegistry().has('place-carousel')).toBe(true);
+    expect(SURROUND_BUILTIN_MODULES).toContain('place-carousel');
+    expect(getSurroundRegistry().getMeta('place-carousel')).toEqual({ regions: ['right'] });
+    // Alongside, not instead of, everything already there — including the
+    // standalone `country-map`, which stays registered for definitions that
+    // want a bare map in a region of its own.
+    for (const name of ['composer-card', 'country-map', 'cue-ticker', 'movement-map', 'work-placard']) {
+      expect(getSurroundRegistry().has(name)).toBe(true);
+    }
+  });
+
+  it('renders through the fixed module contract, from the registry', () => {
+    const Module = getSurroundRegistry().get('place-carousel');
+    const { container } = render(<Module {...props(DATA, makeLogger())} />);
+    expect(container.querySelector('[data-testid="surround-place-carousel"]')).toBeTruthy();
+  });
+});
+
+describe('PlaceCarousel — the slides', () => {
+  it('opens on the city photograph, built through the static image route', () => {
+    const view = renderCarousel();
+    expect(view.kind()).toBe('photo');
+    expect(view.getByTestId('surround-place-photo').getAttribute('src'))
+      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/vivaldi/venice.jpg`);
+  });
+
+  it('captions the photograph with the city name, set as a label', () => {
+    const view = renderCarousel();                 // fixture: map.city, no caption
+    expect(view.caption().textContent).toBe('Venice');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+  });
+
+  it('prefers an authored caption, and sets it as prose', () => {
+    const composer = {
+      ...DATA.composer,
+      map: { ...DATA.composer.map, caption: 'Venice — his lifelong home' },
+    };
+    const view = renderCarousel({ data: withComposer(composer) });
+    expect(view.caption().textContent).toBe('Venice — his lifelong home');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--sentence');
+  });
+
+  it('treats a blank caption as unauthored rather than printing an empty line', () => {
+    const composer = { ...DATA.composer, map: { ...DATA.composer.map, caption: '   ' } };
+    const view = renderCarousel({ data: withComposer(composer) });
+    expect(view.caption().textContent).toBe('Venice');
+  });
+
+  it('captions nothing when the photograph has neither caption nor city', () => {
+    const composer = { ...DATA.composer, map: { country: 'Italy' } };
+    const view = renderCarousel({ data: withComposer(composer) });
+    expect(view.kind()).toBe('photo');
+    expect(view.caption()).toBeNull();
+  });
+
+  it('shows the map as its second slide, captioned with city and country', () => {
+    // Drive to the map slide the way the dwell would, without waiting 12s.
+    vi.useFakeTimers();
+    try {
+      const view = renderCarousel();
+      act(() => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
+      act(() => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS); });
+      expect(view.kind()).toBe('map');
+      expect(view.caption().textContent).toBe('Venice, Italy');
+      expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('captions the map with the country alone when no city is pinned', async () => {
+    const composer = { ...DATA.composer, city_image: undefined, map: { country: 'Italy' } };
+    const view = renderCarousel({ data: withComposer(composer) });
+    await waitFor(() => expect(view.kind()).toBe('map'));
+    expect(view.caption().textContent).toBe('Italy');
+  });
+
+  it('draws the real map, not a placeholder, on the map slide', async () => {
+    const composer = { ...DATA.composer, city_image: undefined };
+    const { container } = renderCarousel({ data: withComposer(composer) });
+    await waitFor(() => expect(container.querySelector('[data-country="Italy"]')).toBeTruthy());
+    expect(container.querySelector('[data-country="Italy"]').getAttribute('data-role')).toBe('highlight');
+    expect(container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Venice');
+  });
+
+  it('hides a broken photograph and warns, without taking the slot down with it', () => {
+    const view = renderCarousel();
+    const img = view.getByTestId('surround-place-photo');
+    fireEvent.error(img);
+    expect(img.style.display).toBe('none');
+    expect(view.caption().textContent).toBe('Venice');
+    const warned = view.logger.warn.mock.calls.find((c) => c[0] === 'surround.asset.missing');
+    expect(warned).toBeDefined();
+    expect(warned[1]).toMatchObject({ contentId: 'plex:663146', ref: 'vivaldi/venice.jpg' });
+  });
+});
+
+/**
+ * The module contract's null discipline, which this module has more chances to
+ * break than most: it has TWO optional sources and could plausibly render a mat
+ * with nothing in it, or a caption with no picture. It renders nothing at all.
+ */
+describe('PlaceCarousel — nothing to show', () => {
+  it('renders no element, and asks for no geodata, when the composer has neither', async () => {
+    const cases = [
+      withComposer({ name: 'Anon.' }),                                   // no image, no map
+      withComposer({ name: 'Anon.', map: { city: 'Nowhere' } }),         // a city, but no country
+      { ...DATA, composer: undefined },
+      null,
+    ];
+    for (const data of cases) {
+      let view;
+      expect(() => { view = renderCarousel({ data }); }).not.toThrow();
+      expect(view.container.innerHTML).toBe('');
+      await settle();
+      expect(view.container.innerHTML).toBe('');
+      view.unmount();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('renders no element when the payload names no assetBase and no country', async () => {
+    const data = { ...DATA, assetBase: undefined, composer: { ...DATA.composer, map: { city: 'Venice' } } };
+    const view = renderCarousel({ data });
+    await settle();
+    expect(view.container.innerHTML).toBe('');
+  });
+});
+
+/**
+ * The dwell. The rail is IDENTITY, not progress: it cycles whether or not the
+ * transport is running, and the clock props it is handed change nothing.
+ */
+describe('PlaceCarousel — the dwell', () => {
+  const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('holds each slide for the dwell, then dissolves to the next and wraps', () => {
+    const view = renderCarousel();
+    expect(view.kind()).toBe('photo');
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('map');
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('photo');
+  });
+
+  it('dissolves through the dark: the old slide holds, hidden, before the swap', () => {
+    const view = renderCarousel();
+
+    tick(PLACE_SLIDE_MS);
+    // Mid-choreography: the OLD slide is still mounted and faded out. The slot
+    // has not gone empty and nothing has resized.
+    expect(view.kind()).toBe('photo');
+    expect(view.slide().className).toContain('surround-place-carousel__slide--hidden');
+
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('map');
+    expect(view.slide().className).not.toContain('surround-place-carousel__slide--hidden');
+  });
+
+  it('drives the CSS fade from the same constant as the JS timer', () => {
+    const view = renderCarousel();
+    expect(view.slide().style.transition).toBe(`opacity ${PLACE_FADE_MS}ms ease`);
+  });
+
+  // The brief's "single-source the constant": this module, the rail's fact
+  // rotation and the band's cue line must play ONE dissolve. Asserting the
+  // numbers are equal is weaker than asserting they are the same constant, so
+  // both are checked — equality here, identity via the shared import.
+  it('plays the same dissolve as the composer fact and the cue line', () => {
+    expect(PLACE_FADE_MS).toBe(DISSOLVE_FADE_MS);
+    expect(COMPOSER_FACT_FADE_MS).toBe(DISSOLVE_FADE_MS);
+    expect(CUE_FADE_MS).toBe(DISSOLVE_FADE_MS);
+  });
+
+  it('does not cycle when there is only one slide to show', () => {
+    // Photo only.
+    const photoOnly = renderCarousel({
+      data: withComposer({ ...DATA.composer, map: { city: 'Venice' } }),
+    });
+    expect(photoOnly.kind()).toBe('photo');
+    expect(vi.getTimerCount()).toBe(0);
+    tick(PLACE_SLIDE_MS * 5);
+    expect(photoOnly.kind()).toBe('photo');
+    photoOnly.unmount();
+
+    // Map only.
+    const mapOnly = renderCarousel({
+      data: withComposer({ ...DATA.composer, city_image: undefined }),
+    });
+    expect(mapOnly.kind()).toBe('map');
+    tick(PLACE_SLIDE_MS * 5);
+    expect(mapOnly.kind()).toBe('map');
+  });
+
+  it('is time-driven, not playhead-driven — position changes never advance it', () => {
+    const view = renderCarousel();
+    for (const p of [12, 400, 976, 1925, 2278, 3000]) view.at(p);
+    expect(view.kind()).toBe('photo');
+
+    // The same component, with the clock frozen, does advance on its own timer.
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(view.kind()).toBe('map');
+  });
+
+  it('keeps cycling while the transport is paused — the rail is identity', () => {
+    const logger = makeLogger();
+    const paused = { ...props(DATA, logger), playing: false };
+    const view = render(<PlaceCarousel {...paused} />);
+    const kind = () => view.container.querySelector('[data-testid="surround-place-carousel"]').getAttribute('data-slide');
+
+    expect(kind()).toBe('photo');
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(kind()).toBe('map');
+  });
+
+  it('leaves no timer armed after unmount', () => {
+    const view = renderCarousel();
+    tick(PLACE_SLIDE_MS);                          // a fade timer is now pending too
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stands still under prefers-reduced-motion, with nothing armed at all', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn(() => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
+    try {
+      const view = renderCarousel();
+      expect(view.kind()).toBe('photo');
+      expect(vi.getTimerCount()).toBe(0);          // no dwell interval, no fade timeout
+      tick(PLACE_SLIDE_MS * 4);
+      expect(view.kind()).toBe('photo');
+      expect(view.slide().className).not.toContain('surround-place-carousel__slide--hidden');
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it('logs each slide it shows', () => {
+    const view = renderCarousel();
+    const shown = () => view.logger.debug.mock.calls.filter((c) => c[0] === 'surround.place-slide.shown');
+    expect(shown()).toHaveLength(1);
+    expect(shown()[0][1]).toMatchObject({ contentId: 'plex:663146', kind: 'photo', of: 2 });
+
+    tick(PLACE_SLIDE_MS);
+    tick(DISSOLVE_COMMIT_MS);
+    expect(shown()[1][1]).toMatchObject({ kind: 'map', of: 2 });
+  });
+});
+
+/**
+ * The slot must not move when the slide changes — the same reserve contract the
+ * fact rotations keep. Two things could break it: the two media having different
+ * aspect ratios, and the caption's two registers having different heights.
+ * Both are pinned against the SHIPPED stylesheet (compiled here rather than
+ * hand-typed) because the vitest config runs `css: false`, so a plain render
+ * would read UA defaults and pass whatever the SCSS said.
+ */
+describe('PlaceCarousel — the slot never moves', () => {
+  let injectedStyle = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'PlaceCarousel.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+    return compiled.css;
+  };
+  afterEach(() => { injectedStyle?.remove(); injectedStyle = null; });
+
+  it('gives both slides the same 5:3 mat, so the swap is a dissolve not a resize', () => {
+    withStyles();
+    const { container } = renderCarousel();
+    const mat = window.getComputedStyle(container.querySelector('.surround-place-carousel__mat'));
+    expect(mat.getPropertyValue('aspect-ratio')).toBe('5 / 3');
+    expect(mat.getPropertyValue('width')).toBe('100%');
+  });
+
+  it('reserves one caption box for both registers', () => {
+    withStyles();
+    const label = renderCarousel();                       // 'VENICE' — label register
+    const sentence = renderCarousel({
+      data: withComposer({
+        ...DATA.composer,
+        map: { ...DATA.composer.map, caption: 'Venice, where he was born and wrote for the orphanage orchestra' },
+      }),
+    });
+    const box = (view) => {
+      const s = window.getComputedStyle(view.caption());
+      return [s.getPropertyValue('min-height'), s.getPropertyValue('max-height')];
+    };
+    expect(parseFloat(box(label)[0])).toBeGreaterThan(0);
+    expect(box(label)).toEqual(box(sentence));
+  });
+
+  it("bans cover from the carousel's pictures outright", () => {
+    // Comments survive compilation and could name the banned value, so strip
+    // them before the search — otherwise this fails on its own rationale.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).not.toMatch(/object-fit:\s*cover/);
+    expect(css).toMatch(/object-fit:\s*contain/);
+  });
+
+  // The photograph is a reproduction and gets real paper — the un-remapped
+  // `--programme` token, which the rail deliberately leaves alone so exactly
+  // this mat stays paper. The map does NOT: it is engraved in the rail's own
+  // ink (`--ink`/`--ink-soft`, which the rail re-maps to parchment FOR THE
+  // MAROON), and printing it on cream would be parchment lines on parchment.
+  // Measured in the headless harness: on paper the subject country's wash
+  // vanished. Same box either way — that is what keeps the swap a dissolve.
+  it('gives the photograph paper and the map the rail itself', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/\.surround-place-carousel__mat--photo \{[^}]*var\(--programme,/);
+    expect(css).toMatch(/\.surround-place-carousel__mat--map \{[^}]*background: transparent/);
+    // The shared box carries the geometry and no ground at all.
+    expect(css).not.toMatch(/\.surround-place-carousel__mat \{[^}]*background:/);
+  });
+
+  it('marks which ground each slide is on, so the mat variant follows the slide', () => {
+    const view = renderCarousel();
+    expect(view.container.querySelector('.surround-place-carousel__mat').className)
+      .toContain('surround-place-carousel__mat--photo');
+
+    vi.useFakeTimers();
+    try {
+      const v = renderCarousel();
+      act(() => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
+      act(() => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS); });
+      expect(v.container.querySelector('.surround-place-carousel__mat').className)
+        .toContain('surround-place-carousel__mat--map');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('kills the dissolve entirely under prefers-reduced-motion', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[^}]*__slide \{ transition: none/);
+  });
+});

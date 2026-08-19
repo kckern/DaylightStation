@@ -81,6 +81,10 @@ const renderMap = async (props = {}) => {
 
 const svgOf = (container) => container.querySelector('[data-testid="country-map"]');
 const pathOf = (container, name) => container.querySelector(`[data-country="${name}"]`);
+/** The `<g>` carrying a country's NAME, if the map decided to write it. */
+const labelFor = (container, name) => container.querySelector(`[data-country-label="${name}"]`);
+const labelNames = (container) => [...container.querySelectorAll('[data-country-label]')]
+  .map((el) => el.getAttribute('data-country-label'));
 
 /** viewBox attribute -> { x, y, w, h }. */
 const viewBoxOf = (container) => {
@@ -100,20 +104,42 @@ const extentOf = (pathEl) => {
 };
 
 describe('CountryMap', () => {
-  it('fills the highlighted country and mutes every other one', async () => {
+  // WAVE 3. Engraved, not filled. Wave 1 painted the subject a solid `--velvet`
+  // and the context solid `--programme-edge`, which on the dark rail was two
+  // stickers; the rail had to re-map `--velvet` just to keep them visible. Now
+  // every shape is drawn in the frame's own ink family with washes faint enough
+  // to tint rather than fill, and the line does the drawing — so the map is
+  // restyled by the region it sits in and needs no token re-map at all.
+  it('draws every country as an ink hairline over a wash, never a solid fill', async () => {
     const { container } = await renderMap({ country: 'Beta' });
     await waitFor(() => expect(pathOf(container, 'Beta')).toBeTruthy());
 
     const beta = pathOf(container, 'Beta');
     expect(beta.getAttribute('data-role')).toBe('highlight');
-    expect(beta.getAttribute('fill')).toContain('--velvet');
+    expect(beta.getAttribute('fill')).toContain('--ink');
+    expect(beta.getAttribute('stroke')).toContain('--ink');
+    // The subject is the loudest line and the strongest wash — and the wash is
+    // still a wash: a fill opacity anywhere near 1 is the sticker coming back.
+    const betaWash = Number(beta.getAttribute('fill-opacity'));
+    expect(betaWash).toBeGreaterThan(0);
+    expect(betaWash).toBeLessThan(0.3);
 
     for (const other of ['Alpha', 'Gamma']) {
       const el = pathOf(container, other);
       expect(el.getAttribute('data-role')).toBe('context');
-      expect(el.getAttribute('fill')).toContain('--programme-edge');
-      expect(el.getAttribute('stroke')).toContain('--programme');
+      expect(el.getAttribute('stroke')).toContain('--ink-soft');
+      // Quieter than the subject in both registers, so the eye sorts subject
+      // from context before it reads a single label.
+      expect(Number(el.getAttribute('fill-opacity'))).toBeLessThan(betaWash);
+      expect(Number(el.getAttribute('stroke-width')))
+        .toBeLessThan(Number(beta.getAttribute('stroke-width')));
     }
+  });
+
+  it('reads no --velvet anywhere: the rail re-map that propped it up is retired', async () => {
+    const { container } = await renderMap({ country: 'Beta' });
+    await waitFor(() => expect(pathOf(container, 'Beta')).toBeTruthy());
+    expect(svgOf(container).outerHTML).not.toContain('--velvet');
   });
 
   it('draws context countries beneath the highlight, and the marker above both', async () => {
@@ -145,7 +171,16 @@ describe('CountryMap', () => {
     expect(Math.abs(vbBig.x - vbSmall.x)).toBeGreaterThan(1);
   });
 
-  it('auto-frames: the highlighted country fills a large share of its frame', async () => {
+  /**
+   * WAVE 3, and the whole point of the redesign. The user's verdict on the old
+   * framing was "Austria with Vienna, no country name, no neighbours, no
+   * context" — a share of ~0.8 answered "what shape is this country?" and
+   * refused "where is it?". The subject now spans about HALF its frame: still
+   * unmistakably the subject, with the other half available for the countries
+   * around it. Both bounds are load-bearing — the upper one is the defect this
+   * wave fixes, the lower one stops a later tweak from losing the subject.
+   */
+  it('auto-frames at regional zoom: the subject is about half its frame, not all of it', async () => {
     for (const name of ['Alpha', 'Beta', 'Gamma']) {
       __resetMapCache();
       global.fetch = okFetch();
@@ -155,9 +190,29 @@ describe('CountryMap', () => {
       const vb = viewBoxOf(container);
       const ext = extentOf(pathOf(container, name));
       const share = Math.max(ext.w / vb.w, ext.h / vb.h);
-      expect(share).toBeGreaterThan(0.7);
-      expect(share).toBeLessThanOrEqual(1);
+      expect(share, `${name} fills ${share} of its frame — no room for neighbours`)
+        .toBeLessThan(0.7);
+      expect(share, `${name} fills only ${share} of its frame — it is not the subject`)
+        .toBeGreaterThan(0.35);
     }
+  });
+
+  it('shows the neighbours: a country adjacent to the subject lands inside the frame', async () => {
+    // Alpha (0..2 lon) with Epsilon starting 1° east of it. At wave 1's PAD the
+    // frame stopped at ~2.25 and Epsilon was off-screen entirely; at regional
+    // zoom it is drawn AND named.
+    __resetMapCache();
+    global.fetch = okFetch({
+      type: 'FeatureCollection',
+      features: [square('Alpha', 0, -1, 2, 1), square('Epsilon', 3, -1, 5, 1)],
+    });
+    fetchMock = global.fetch;
+    const { container } = await renderMap({ country: 'Alpha' });
+    await waitFor(() => expect(pathOf(container, 'Alpha')).toBeTruthy());
+
+    const vb = viewBoxOf(container);
+    expect(vb.x + vb.w, 'the frame does not reach the neighbour at all').toBeGreaterThan(4);
+    expect(labelFor(container, 'Epsilon'), 'the visible neighbour went unnamed').toBeTruthy();
   });
 
   it('preserves aspect ratio: a square country stays square', async () => {
@@ -181,10 +236,17 @@ describe('CountryMap', () => {
     expect(centred.container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Middle');
     expect(centred.container.querySelector('[data-testid="country-map-label"]').getAttribute('text-anchor')).toBe('start');
 
+    // At regional zoom the frame is much wider than the country, so "near the
+    // right edge" is a property of the FRAME, not of Beta. Read the frame the
+    // first render produced and put the second city at 80% across it, rather
+    // than hard-coding a longitude that PAD would invalidate.
+    const vb = viewBoxOf(centred.container);
     __resetMapCache();
     global.fetch = okFetch();
     fetchMock = global.fetch;
-    const rightEdge = await renderMap({ country: 'Beta', city: 'Eastward', lat: 20, lon: 29.5 });
+    const rightEdge = await renderMap({
+      country: 'Beta', city: 'Eastward', lat: 20, lon: vb.x + vb.w * 0.8,
+    });
     await waitFor(() => expect(rightEdge.container.querySelector('[data-testid="country-map-label"]')).toBeTruthy());
     expect(rightEdge.container.querySelector('[data-testid="country-map-label"]').getAttribute('text-anchor')).toBe('end');
   });
@@ -279,5 +341,107 @@ describe('CountryMap', () => {
     await renderMap({ country: 'Alpha' });
     expect(String(fetchMock.mock.calls[0][0]))
       .toContain('/api/v1/static/img/surround/_maps/europe.geo.json');
+  });
+});
+
+/**
+ * WAVE 3 — the map names what it draws.
+ *
+ * "No country name, no neighbours, no context" was three quarters of the user's
+ * verdict on the old render. Zooming out (above) supplies the neighbours;
+ * these specs are the naming. Two registers, one voice: the subject loud, the
+ * neighbours quiet, and neither ever below the 0.72rem ten-foot floor.
+ */
+describe('CountryMap labels', () => {
+  it('names the subject country as the map\'s primary label', async () => {
+    const { container } = await renderMap({ country: 'Beta' });
+    await waitFor(() => expect(labelFor(container, 'Beta')).toBeTruthy());
+
+    const label = labelFor(container, 'Beta');
+    expect(label.getAttribute('data-role')).toBe('subject');
+    expect(label.querySelector('text').textContent).toBe('Beta');
+    expect(label.querySelector('text').getAttribute('fill')).toContain('--ink');
+  });
+
+  it('names visible neighbours more quietly than the subject', async () => {
+    __resetMapCache();
+    global.fetch = okFetch({
+      type: 'FeatureCollection',
+      features: [square('Alpha', 0, -1, 2, 1), square('Epsilon', 3, -1, 5, 1)],
+    });
+    fetchMock = global.fetch;
+    const { container } = await renderMap({ country: 'Alpha' });
+    await waitFor(() => expect(labelFor(container, 'Epsilon')).toBeTruthy());
+
+    const subject = labelFor(container, 'Alpha').querySelector('text');
+    const neighbour = labelFor(container, 'Epsilon').querySelector('text');
+    expect(labelFor(container, 'Epsilon').getAttribute('data-role')).toBe('neighbour');
+    // Quieter means COLOUR and weight, not smaller type...
+    expect(neighbour.getAttribute('fill')).toContain('--ink-soft');
+    expect(Number(neighbour.getAttribute('font-size')))
+      .toBeLessThan(Number(subject.getAttribute('font-size')));
+    // ...and never below the design's ten-foot floor.
+    expect(Number(neighbour.getAttribute('font-size'))).toBeGreaterThanOrEqual(0.72 * 16);
+  });
+
+  it('leaves a country that is barely in the frame drawn but unnamed', async () => {
+    // Zeta is a 0.2° sliver at the far edge: visible enough to draw, far too
+    // small to carry its own name at rail size.
+    __resetMapCache();
+    global.fetch = okFetch({
+      type: 'FeatureCollection',
+      features: [square('Alpha', 0, -1, 2, 1), square('Zeta', 3.7, 0.9, 3.9, 1.0)],
+    });
+    fetchMock = global.fetch;
+    const { container } = await renderMap({ country: 'Alpha' });
+    await waitFor(() => expect(pathOf(container, 'Zeta')).toBeTruthy());
+
+    expect(pathOf(container, 'Zeta')).toBeTruthy();       // drawn
+    expect(labelFor(container, 'Zeta')).toBeNull();       // not named
+  });
+
+  it('never names a country that is off the frame entirely', async () => {
+    const { container } = await renderMap({ country: 'Gamma' });   // 1°, far west
+    await waitFor(() => expect(labelFor(container, 'Gamma')).toBeTruthy());
+    // Beta is 20° x 20° starting 15° east of Gamma's frame — nowhere near it.
+    expect(labelNames(container)).not.toContain('Beta');
+  });
+
+  it('scales every label in pixel space, so the type holds at any zoom', async () => {
+    const { container } = await renderMap({ country: 'Beta' });
+    await waitFor(() => expect(labelFor(container, 'Beta')).toBeTruthy());
+    const vb = viewBoxOf(container);
+    const scale = Number(labelFor(container, 'Beta').getAttribute('transform').match(/scale\(([-\d.]+)\)/)[1]);
+    expect(scale).toBeCloseTo(vb.w / RENDER_W, 2);
+  });
+
+  it('moves the subject\'s name clear of the city marker rather than moving the star', async () => {
+    const { container } = await renderMap({ country: 'Beta', city: 'Betaville', lat: 20, lon: 20 });
+    await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
+
+    const at = (el) => {
+      const m = el.getAttribute('transform').match(/translate\((-?[\d.]+) (-?[\d.]+)\)/);
+      return { x: Number(m[1]), y: Number(m[2]) };
+    };
+    const star = at(container.querySelector('[data-testid="country-map-marker"]'));
+    const name = at(labelFor(container, 'Beta'));
+
+    // The star is the fact: it stays on the city's own coordinate.
+    expect(star.x).toBeCloseTo(20, 3);
+    expect(star.y).toBeCloseTo(-20.419, 2);          // Mercator y of lat 20
+    // The name moved out from under it. (SVG y grows downward: below the star.)
+    expect(name.y).toBeGreaterThan(star.y);
+  });
+
+  it('names no country when the geodata has no names to give', async () => {
+    __resetMapCache();
+    global.fetch = okFetch({
+      type: 'FeatureCollection',
+      features: [{ ...square('', 0, -1, 2, 1), properties: {} }],
+    });
+    fetchMock = global.fetch;
+    const { container } = await renderMap({ country: 'Alpha' });
+    await waitFor(() => expect(svgOf(container)).toBeTruthy());
+    expect(labelNames(container)).toEqual([]);
   });
 });

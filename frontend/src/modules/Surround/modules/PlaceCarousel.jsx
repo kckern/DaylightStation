@@ -1,0 +1,256 @@
+// frontend/src/modules/Surround/modules/PlaceCarousel.jsx
+//
+// THE PLACE, at the foot of the rail. The composer card above is the person; this
+// is where they were. It owns every piece of place imagery in the frame — the
+// city photograph and the map — and shows them one at a time.
+//
+// Why a carousel rather than both at once. The rail is one column wide. A city
+// photograph and a regional map stacked in it are each half the size they need
+// to be: the photograph stops being a view and the map's neighbour labels fall
+// through the 0.72rem ten-foot floor. Shown in turn, each gets the whole width
+// and its own dwell — the same trade a printed programme makes when it gives a
+// plate a full page instead of two thumbnails.
+//
+// The slides are derived from the composer payload as it already stands; there
+// is no new schema here:
+//
+//   1. CITY PHOTO  `composer.city_image`, captioned by `composer.map.caption`,
+//      falling back to `composer.map.city`. Matted in real paper, never cropped.
+//   2. MAP         `CountryMap` on `composer.map`, captioned with city and
+//      country. The payload -> props decision is `mapPinFrom`, shared with the
+//      standalone `country-map` module rather than copied.
+//
+// A composer with neither renders NOTHING — not an empty frame, not a mat with a
+// hole in it. That is the module contract's null discipline, the same one
+// `CountryMapModule` keeps.
+//
+// The transition between slides is the house dissolve (`../dissolve.js`): fade
+// out to the rail's own dark ground, hold it empty for a beat, fade in. The same
+// language and the same constants as the composer fact rotating above it and the
+// cue line in the band below — one transition in the whole frame.
+//
+// The clock props arrive because the module contract is fixed, and are ignored.
+// The rail is IDENTITY: it cycles at 0:00 and at 53:00, paused or playing. The
+// dwell is this module's own interval, cleaned up on unmount.
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import PropTypes from 'prop-types';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+import getLogger from '../../../lib/logging/Logger.js';
+import CountryMap from '../map/CountryMap.jsx';
+import { mapPinFrom } from './CountryMapModule.jsx';
+import {
+  DISSOLVE_FADE_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
+} from '../dissolve.js';
+import './PlaceCarousel.scss';
+
+/**
+ * How long one slide holds the foot of the rail.
+ *
+ * 12 s: long enough to look at a photograph properly, short enough that a viewer
+ * who glances up twice in a movement sees both slides. Deliberately NOT coprime
+ * with the fact rotations the way those are with each other — there are only two
+ * slides here, so the pattern a viewer could notice is "the picture changed",
+ * not "everything changed at once", and 12 against 27 and 20 already never lands
+ * three swaps in one instant.
+ */
+export const PLACE_SLIDE_MS = 12000;
+/** Each half of the dissolve — the house duration, shared with both fact rotations. */
+export const PLACE_FADE_MS = DISSOLVE_FADE_MS;
+
+let moduleLogger = null;
+function fallbackLogger() {
+  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'place-carousel' });
+  return moduleLogger;
+}
+function resolveLogger(logger) {
+  if (!logger) return fallbackLogger();
+  return logger.child?.({ app: 'surround', component: 'place-carousel' }) ?? logger;
+}
+
+/** `vivaldi/venice.jpg` + `surround/classical` -> /api/v1/static/img/... */
+function assetUrl(assetBase, ref) {
+  if (!assetBase || !ref) return null;
+  const base = String(assetBase).replace(/^\/|\/$/g, '');
+  const path = String(ref).replace(/^\//, '');
+  return DaylightMediaPath(`media/img/${base}/${path}`);
+}
+
+const trimmed = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+
+export default function PlaceCarousel({
+  // The clock arrives because the module contract is fixed. This module ignores
+  // it: the rail is identity, and identity does not have a playhead.
+  // eslint-disable-next-line no-unused-vars
+  position = 0,
+  // eslint-disable-next-line no-unused-vars
+  duration = 0,
+  // eslint-disable-next-line no-unused-vars
+  playing = false,
+  // eslint-disable-next-line no-unused-vars
+  seeking = false,
+  data = null,
+  // eslint-disable-next-line no-unused-vars
+  region = null,
+  logger = null,
+}) {
+  const log = useMemo(() => resolveLogger(logger), [logger]);
+  const contentId = data?.contentId ?? null;
+  const composer = data?.composer ?? null;
+
+  const slides = useMemo(() => {
+    const built = [];
+    const map = composer?.map ?? null;
+    const city = trimmed(map?.city);
+
+    const photoSrc = assetUrl(data?.assetBase, composer?.city_image);
+    if (photoSrc) {
+      // Two registers for one slot. An authored caption is a human sentence —
+      // "Venice — his lifelong home" — and is set as prose; a bare city name is a
+      // label and keeps the tracked small caps. A sentence in tracked uppercase
+      // reads as shouting; a one-word place name in sentence case reads as an
+      // unfinished caption.
+      const authored = trimmed(map?.caption);
+      built.push({
+        key: 'photo',
+        kind: 'photo',
+        src: photoSrc,
+        ref: composer.city_image,
+        alt: city ? `View of ${city}` : 'The composer\'s city',
+        caption: authored ?? city,
+        captionKind: authored ? 'sentence' : 'label',
+      });
+    }
+
+    const pin = mapPinFrom(data);
+    if (pin) {
+      built.push({
+        key: 'map',
+        kind: 'map',
+        pin,
+        // City AND country: the map draws both, but the caption is what a
+        // viewer reads first, and "VENICE, ITALY" answers the slide's question
+        // without making them find the star.
+        caption: pin.city ? `${pin.city}, ${pin.country}` : pin.country,
+        captionKind: 'label',
+      });
+    }
+
+    return built;
+  }, [composer, data]);
+
+  const [index, setIndex] = useState(0);
+  const reduced = prefersReducedMotion();
+
+  // One slide is not a carousel, and reduced motion asks for the first slide to
+  // stand still — in both cases nothing is armed at all.
+  useEffect(() => {
+    if (slides.length < 2 || reduced) return undefined;
+    const id = setInterval(() => setIndex((i) => i + 1), PLACE_SLIDE_MS);
+    return () => clearInterval(id);
+  }, [slides.length, reduced]);
+
+  const next = useMemo(() => {
+    if (!slides.length) return null;
+    const i = ((index % slides.length) + slides.length) % slides.length;
+    return slides[i];
+  }, [slides, index]);
+
+  const [shown, setShown] = useState(() => next);
+  const [hidden, setHidden] = useState(false);
+  const timers = useRef([]);
+  const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
+
+  useEffect(() => {
+    // The slide SET can change under us (a new item, a different composer), not
+    // only the index — comparing keys covers both.
+    if ((next?.key ?? null) === (shown?.key ?? null)) return;
+    clearTimers();
+    if (!shown || reduced) {
+      setShown(next);
+      setHidden(false);
+      return;
+    }
+    setHidden(true);
+    timers.current.push(setTimeout(() => {
+      setShown(next);
+      setHidden(false);
+    }, DISSOLVE_COMMIT_MS));
+  }, [next, shown, reduced]);
+
+  useEffect(() => () => clearTimers(), []);
+
+  useEffect(() => {
+    if (!shown) return;
+    log.debug('surround.place-slide.shown', { contentId, kind: shown.kind, of: slides.length });
+  }, [shown, slides.length, contentId, log]);
+
+  const onPhotoError = (event) => {
+    const el = event?.currentTarget;
+    if (el) el.style.display = 'none';
+    log.warn('surround.asset.missing', {
+      contentId,
+      ref: shown?.ref ?? null,
+      src: el?.getAttribute?.('src') ?? null,
+      assetBase: data?.assetBase ?? null,
+    });
+  };
+
+  // Nothing authored: no element at all. A mat with nothing in it is worse than
+  // an absence — it is an absence the viewer has to look at.
+  if (!slides.length || !shown) return null;
+
+  return (
+    <div
+      className="surround-place-carousel"
+      data-testid="surround-place-carousel"
+      data-slide={shown.kind}
+      data-slides={slides.length}
+    >
+      <figure
+        className={`surround-place-carousel__slide${hidden ? ' surround-place-carousel__slide--hidden' : ''}`}
+        data-testid="surround-place-slide"
+        style={{ transition: `opacity ${PLACE_FADE_MS}ms ease` }}
+      >
+        <div className={`surround-place-carousel__mat surround-place-carousel__mat--${shown.kind}`}>
+          {shown.kind === 'photo' ? (
+            <img
+              className="surround-place-carousel__photo"
+              data-testid="surround-place-photo"
+              src={shown.src}
+              alt={shown.alt}
+              onError={onPhotoError}
+            />
+          ) : (
+            <CountryMap
+              className="surround-place-carousel__map"
+              country={shown.pin.country}
+              city={shown.pin.city}
+              lat={shown.pin.lat}
+              lon={shown.pin.lon}
+              logger={logger}
+            />
+          )}
+        </div>
+        {shown.caption && (
+          <figcaption
+            className={`surround-place-carousel__caption surround-place-carousel__caption--${shown.captionKind}`}
+            data-testid="surround-place-caption"
+          >
+            {shown.caption}
+          </figcaption>
+        )}
+      </figure>
+    </div>
+  );
+}
+
+PlaceCarousel.propTypes = {
+  position: PropTypes.number,
+  duration: PropTypes.number,
+  playing: PropTypes.bool,
+  seeking: PropTypes.bool,
+  data: PropTypes.object,
+  region: PropTypes.object,
+  logger: PropTypes.object,
+};

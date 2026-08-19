@@ -360,12 +360,13 @@ test.describe('Surround — PoC runtime gate', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The composed-layout gate — the recomposition as it stands after design wave 2:
+// The composed-layout gate — the recomposition as it stands after design wave 3:
 // the placard FLOATS, straddling the video's top edge as a content-width museum
 // plate; the dark band sits flush under the video and slightly over it; the rail
-// is LEFT at 33% width via `regions.right[0].side: 'left'`. Nothing here can be
-// seen by the jsdom unit suites; this is the only gate that pins real, measured
-// geometry.
+// is LEFT at 33% width via `regions.right[0].side: 'left'`, and inside it the
+// composer card's header row runs PORTRAIT | NAMEPLATE side by side above a
+// place carousel. Nothing here can be seen by the jsdom unit suites; this is the
+// only gate that pins real, measured geometry.
 // ---------------------------------------------------------------------------
 
 test.describe('Surround — composed layout gate', () => {
@@ -455,19 +456,43 @@ test.describe('Surround — composed layout gate', () => {
     ).toBeGreaterThanOrEqual(1);
 
     // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
-    //    The nameplate and the country-map are NOT optional for this fixture:
-    //    the nameplate always renders in a composer-card rail, and the
-    //    country-map is authored in the enriched fixture's live definition —
-    //    for both, count===0 is a mount failure, not an absent-content case,
-    //    so it must fail loudly rather than be skipped.
+    //    The nameplate and the place-carousel are NOT optional for this fixture:
+    //    the nameplate always renders in a composer-card rail, and the carousel
+    //    is authored in the enriched fixture's live definition (design wave 3
+    //    replaced the standalone `country-map` region with it — the map is one
+    //    of the carousel's slides now). For both, count===0 is a mount failure,
+    //    not an absent-content case, so it must fail loudly rather than be
+    //    skipped.
     for (const sel of [
       '.surround-composer-card__nameplate',
-      '.surround-frame__region[data-module="country-map"]',
+      '.surround-frame__region[data-module="place-carousel"]',
     ]) {
       const count = await page.locator(sel).count();
       expect(count, `${sel} did not mount`).toBeGreaterThanOrEqual(1);
       const b = await box(sel);
       expect(b.y + b.height, `${sel} clipped off-screen`).toBeLessThanOrEqual(viewport.height + 1);
+    }
+
+    // 4b. THE HEADER ROW (design wave 3). The portrait and the nameplate are
+    //     SIDE BY SIDE, not stacked: the picture's right edge does not pass the
+    //     nameplate's left edge. This is the one thing about the new anatomy no
+    //     jsdom test can see — the components render the same DOM whether the
+    //     row lays out as a row or wraps into a column.
+    const rail = await box('.surround-frame__rail');
+    const portraitBox = await box('.surround-composer-card__plate');
+    const nameplateBox = await box('.surround-composer-card__nameplate');
+    expect(
+      portraitBox.x + portraitBox.width,
+      `portrait ends at ${portraitBox.x + portraitBox.width} but the nameplate starts at `
+      + `${nameplateBox.x} — the header row is stacked, not side by side`,
+    ).toBeLessThanOrEqual(nameplateBox.x + 2);
+    //     ...and both are inside the rail, not spilling into the picture.
+    for (const [name, b] of [['portrait', portraitBox], ['nameplate', nameplateBox]]) {
+      expect(b.x, `${name} starts left of the rail`).toBeGreaterThanOrEqual(rail.x - 1);
+      expect(
+        b.x + b.width,
+        `${name} ends at ${b.x + b.width}, past the rail's right edge ${rail.x + rail.width}`,
+      ).toBeLessThanOrEqual(rail.x + rail.width + 1);
     }
 
     // The fact is the ONE genuinely optional child: a composer without an
@@ -480,7 +505,7 @@ test.describe('Surround — composed layout gate', () => {
 
     // 5. The rail is on the LEFT, not the right — the recomposed contract.
     // `regions.right[0].side: 'left'` moves it; the region KEY stays `right`.
-    const rail = await box('.surround-frame__rail');
+    // (`rail` was read above, for the header-row containment check.)
     expect(rail.x + rail.width, 'rail is not entirely left of the video').toBeLessThanOrEqual(media.x + 2);
     expect(rail.width / viewport.width, 'rail is a fifth, not a third').toBeGreaterThan(0.30);
   });

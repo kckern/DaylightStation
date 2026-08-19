@@ -1,38 +1,44 @@
 // frontend/src/modules/Surround/modules/ComposerCard.jsx
 //
-// The identity half of the printed programme, in the full-height right rail. The
-// piece — title, opus, composed/premiered dates — now lives entirely in the top
-// placard; this card is wholly the PERSON: name, portrait, and where they were
-// from. The rail carries identity, not progress, so this module takes the clock
-// props from the module contract and ignores them — it renders the same thing at
-// 0:00 and at 53:00.
+// The identity half of the printed programme, in the full-height rail. The piece
+// — title, opus, composed/premiered dates — lives entirely in the top placard;
+// this card is wholly the PERSON. The rail carries identity, not progress, so
+// this module takes the clock props from the module contract and ignores them —
+// it renders the same thing at 0:00 and at 53:00.
 //
-// Order top to bottom: an engraved brass nameplate (ArtMode's plaque recipe,
-// borrowed at a whisper and without its screws — this is a rail card, not a
-// framed gallery plate), the portrait plate, a city photo captioned from the
-// composer's `map.city`, then the composer-fact rotation at the foot. Labels
-// (where any remain) are letterspaced small caps of the display face, the way a
-// concert programme sets section headers; there is no third typeface.
+// ANATOMY (wave 3). Two zones, and only two:
+//
+//   HEADER ROW  portrait in its parchment mat on the LEFT at ~45% of the rail's
+//               width; the brass nameplate carrying the name, with the dates and
+//               the birthplace stacked under it, in the column to its RIGHT.
+//               Side by side — a mounted print with its plate beside it, which is
+//               how the picture and the name read as ONE object rather than as
+//               two stacked panels.
+//   FACT        the dissolving bio fact, centred in whatever card height the
+//               header leaves (`margin: auto 0`) rather than parked at the foot.
+//
+// The city photo LEFT this card in wave 3: place imagery — the city and the map
+// — belongs to the `place-carousel` module in the rail region below. A card that
+// carried the person AND the place had no room to give either of them a size.
 //
 // The card cycles COMPOSER-level facts — the ones the sidecar inherits from
 // `_composer.yml`, about the person rather than the piece. They are quiet
 // supporting text on their own timer: the card stays position-independent, and
 // the beat deliberately does not line up with the footer ticker's (see
-// COMPOSER_FACT_INTERVAL_MS).
+// COMPOSER_FACT_INTERVAL_MS). The dissolve itself is the house one, imported
+// from `../dissolve.js` — one transition for the whole frame.
 //
-// Every asset degrades to an empty slot: a missing portrait or city photo hides
-// itself and the card stays composed. The warning is capped so a broken path
-// cannot flood the log store once per render.
-//
-// Hard content budget: this card measured its bio facts off-screen once already
-// (bottom at 742px on a 720px viewport) when it also carried the piece. Now that
-// it holds a portrait AND a city figure, every child is capped — see the height
-// budget in ComposerCard.scss — so nothing can bleed past the viewport again.
+// Every asset degrades to an empty slot: a missing portrait hides itself and the
+// card stays composed. The warning is capped so a broken path cannot flood the
+// log store once per render.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
+import {
+  DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
+} from '../dissolve.js';
 import './ComposerCard.scss';
 
 /** At most this many surround.asset.missing warnings per card per minute. */
@@ -48,9 +54,9 @@ const ASSET_WARN_WINDOW_MS = 60000;
  */
 export const COMPOSER_FACT_INTERVAL_MS = 27000;
 /** Each half of the dissolve — the house duration, shared with the ticker. */
-export const COMPOSER_FACT_FADE_MS = 320;
+export const COMPOSER_FACT_FADE_MS = DISSOLVE_FADE_MS;
 /** The beat of empty ground between the two halves ("through black"). */
-export const COMPOSER_FACT_HOLD_MS = 160;
+export const COMPOSER_FACT_HOLD_MS = DISSOLVE_HOLD_MS;
 
 const NO_FACT = Object.freeze({ key: 'empty', index: null, text: '' });
 
@@ -62,14 +68,6 @@ function fallbackLogger() {
 function resolveLogger(logger) {
   if (!logger) return fallbackLogger();
   return logger.child?.({ app: 'surround', component: 'composer-card' }) ?? logger;
-}
-
-function prefersReducedMotion() {
-  try {
-    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
-  } catch (_) {
-    return false;
-  }
 }
 
 /** `beethoven/portrait.jpg` + `surround/classical` -> /api/v1/static/img/... */
@@ -113,27 +111,6 @@ export default function ComposerCard({
   const portraitSrc = useMemo(
     () => assetUrl(data?.assetBase, portraitRef), [data, portraitRef],
   );
-
-  // Same resolution mechanism as the portrait — `assetBase` + a composer-relative
-  // ref, through the static image route. No second path-join invented here.
-  const cityRef = composer?.city_image ?? null;
-  const citySrc = useMemo(
-    () => assetUrl(data?.assetBase, cityRef), [data, cityRef],
-  );
-  const cityName = typeof composer?.map?.city === 'string' && composer.map.city.trim()
-    ? composer.map.city
-    : null;
-
-  // The figure's caption. An authored `map.caption` is a human sentence —
-  // "Venice — his lifelong home" — and is set as one: sentence case, up to two
-  // lines. With none authored the city name stands in, and it is set as what it
-  // is: a label, in letterspaced small caps on one line. Same slot, two
-  // registers, because a sentence in tracked uppercase reads as shouting and a
-  // one-word place name in sentence case reads as an unfinished caption.
-  const cityCaption = typeof composer?.map?.caption === 'string' && composer.map.caption.trim()
-    ? composer.map.caption.trim()
-    : null;
-  const captionText = cityCaption ?? cityName;
 
   // Per-card budget. `logger.sampled` would cap the rate but downgrade the event
   // to info; the spec calls for a warn, so the window is kept here instead.
@@ -209,7 +186,7 @@ export default function ComposerCard({
     fadeTimers.current.push(setTimeout(() => {
       setShownFact(nextFact);
       setFactHidden(false);
-    }, COMPOSER_FACT_FADE_MS + COMPOSER_FACT_HOLD_MS));
+    }, DISSOLVE_COMMIT_MS));
   }, [nextFact, shownFact]);
 
   useEffect(() => () => clearFadeTimers(), []);
@@ -221,54 +198,45 @@ export default function ComposerCard({
 
   const dates = lifeSpan(composer);
   const hasIdentity = Boolean(composer?.name || dates || composer?.birthplace);
+  // The header row is a row only when it has two things to put side by side.
+  // With one of them missing the survivor takes the whole width rather than
+  // sitting in a column beside an empty one.
+  const hasHeader = hasIdentity || Boolean(portraitSrc);
 
   return (
     <div className="surround-composer-card" data-testid="surround-composer-card">
-      {hasIdentity && (
-        <div className="surround-composer-card__nameplate">
-          {composer?.name && (
-            <h2 className="surround-composer-card__name">{composer.name}</h2>
+      {hasHeader && (
+        <div className="surround-composer-card__header" data-testid="surround-composer-header">
+          {portraitSrc && (
+            <div className="surround-composer-card__plate" data-testid="surround-portrait-plate">
+              <img
+                className="surround-composer-card__portrait"
+                data-testid="surround-portrait"
+                src={portraitSrc}
+                alt={composer?.name ? `Portrait of ${composer.name}` : 'Composer portrait'}
+                onError={(e) => onAssetError(e, portraitRef)}
+              />
+            </div>
           )}
-          {dates && <p className="surround-composer-card__dates">{dates}</p>}
-          {composer?.birthplace && (
-            <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
+
+          {hasIdentity && (
+            <div className="surround-composer-card__identity" data-testid="surround-composer-identity">
+              {composer?.name && (
+                <div className="surround-composer-card__nameplate">
+                  <h2 className="surround-composer-card__name">{composer.name}</h2>
+                </div>
+              )}
+              {dates && <p className="surround-composer-card__dates">{dates}</p>}
+              {composer?.birthplace && (
+                <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
+              )}
+            </div>
           )}
         </div>
-      )}
-
-      {portraitSrc && (
-        <div className="surround-composer-card__plate">
-          <img
-            className="surround-composer-card__portrait"
-            data-testid="surround-portrait"
-            src={portraitSrc}
-            alt={composer?.name ? `Portrait of ${composer.name}` : 'Composer portrait'}
-            onError={(e) => onAssetError(e, portraitRef)}
-          />
-        </div>
-      )}
-
-      {citySrc && (
-        <figure className="surround-composer-card__city">
-          <img
-            data-testid="surround-city-image"
-            src={citySrc}
-            alt={cityName ? `View of ${cityName}` : 'Composer city'}
-            onError={(e) => onAssetError(e, cityRef)}
-          />
-          {captionText && (
-            <figcaption
-              className={`surround-composer-card__city-caption surround-composer-card__city-caption--${cityCaption ? 'sentence' : 'label'}`}
-              data-testid="surround-city-caption"
-            >
-              {captionText}
-            </figcaption>
-          )}
-        </figure>
       )}
 
       {shownFact.text && (
-        <>
+        <div className="surround-composer-card__fact-zone" data-testid="surround-composer-fact-zone">
           <hr className="surround-composer-card__fact-rule" />
           <p
             className={`surround-composer-card__fact${factHidden ? ' surround-composer-card__fact--hidden' : ''}`}
@@ -277,7 +245,7 @@ export default function ComposerCard({
           >
             {shownFact.text}
           </p>
-        </>
+        </div>
       )}
     </div>
   );

@@ -93,65 +93,61 @@ describe('ComposerCard', () => {
       .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/vivaldi/portrait.jpg`);
   });
 
-  it('shows the city photo when authored, captioned with the city', () => {
-    const { container } = renderCard();          // fixture: city_image + map.city 'Venice'
-    const fig = container.querySelector('.surround-composer-card__city');
-    expect(fig).toBeTruthy();
-    expect(fig.querySelector('img').getAttribute('src')).toContain('venice');
-    expect(fig.textContent).toContain('Venice');
-  });
-
-  it('builds the city image URL through the same static route as the portrait', () => {
-    const { container } = renderCard();
-    const img = container.querySelector('.surround-composer-card__city img');
-    expect(img.getAttribute('src'))
-      .toBe(`${window.location.origin}/api/v1/static/img/surround/classical/vivaldi/venice.jpg`);
-  });
-
-  it('renders no city figure when none is authored', () => {
-    const { container } = renderCard({ composer: { name: 'X', facts: [] } });
-    expect(container.querySelector('.surround-composer-card__city')).toBeNull();
-  });
-
-  // The figure's caption: a human sentence when the sidecar authors one, the
-  // bare city name when it does not. The controller authors `map.caption` after
-  // this lands, so BOTH paths are pinned here rather than only the live one.
-  it('prints the authored caption under the city figure', () => {
+  // WAVE 3 CONTRACT. The city figure LEFT this card — place imagery belongs to
+  // `place-carousel` in the rail region below. Asserted as an absence the same
+  // way the piece block's departure was, so a re-introduction fails here rather
+  // than silently giving the rail two competing pictures. The fixture still
+  // carries `city_image` and `map.caption`: the card must ignore both.
+  it('no longer prints the city figure — the place carousel owns it', () => {
     const composer = {
       ...DATA.composer,
       map: { ...DATA.composer.map, caption: 'Venice — his lifelong home' },
     };
-    const { getByTestId } = renderCard({ composer });
-    const caption = getByTestId('surround-city-caption');
-    expect(caption.textContent).toBe('Venice — his lifelong home');
-    // Set as prose, not as a tracked-uppercase label.
-    expect(caption.className).toContain('surround-composer-card__city-caption--sentence');
-  });
-
-  it('falls back to the city name, set as a label, when no caption is authored', () => {
-    const { getByTestId } = renderCard();          // fixture has map.city, no caption
-    const caption = getByTestId('surround-city-caption');
-    expect(caption.textContent).toBe('Venice');
-    expect(caption.className).toContain('surround-composer-card__city-caption--label');
-  });
-
-  it('treats a blank caption as unauthored rather than printing an empty line', () => {
-    const composer = { ...DATA.composer, map: { ...DATA.composer.map, caption: '   ' } };
-    const { getByTestId } = renderCard({ composer });
-    expect(getByTestId('surround-city-caption').textContent).toBe('Venice');
-  });
-
-  it('prints the caption even when the map block names no city', () => {
-    const composer = { ...DATA.composer, map: { country: 'Italy', caption: 'The lagoon he never left' } };
-    const { getByTestId } = renderCard({ composer });
-    expect(getByTestId('surround-city-caption').textContent).toBe('The lagoon he never left');
-  });
-
-  it('captions nothing when neither a caption nor a city is authored', () => {
-    const composer = { ...DATA.composer, map: { country: 'Italy' } };
     const { container, queryByTestId } = renderCard({ composer });
-    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__city')).toBeNull();
+    expect(queryByTestId('surround-city-image')).toBeNull();
     expect(queryByTestId('surround-city-caption')).toBeNull();
+    expect(container.textContent).not.toContain('his lifelong home');
+    // The portrait — the card's own picture — is untouched by that departure.
+    expect(queryByTestId('surround-portrait')).not.toBeNull();
+  });
+
+  it('asks for no city asset at all, even when one is authored', () => {
+    const { container } = renderCard();          // fixture: city_image vivaldi/venice.jpg
+    const srcs = [...container.querySelectorAll('img')].map((el) => el.getAttribute('src'));
+    expect(srcs).toHaveLength(1);
+    expect(srcs[0]).toContain('portrait.jpg');
+    expect(srcs.some((s) => s.includes('venice'))).toBe(false);
+  });
+
+  // The header row: portrait LEFT, the identity column RIGHT, side by side. The
+  // DOM order is the reading order, and the geometry that makes them adjacent
+  // rather than stacked is the runtime gate's job (jsdom has no layout).
+  it('puts the portrait and the identity column side by side in one header row', () => {
+    const { getByTestId, container } = renderCard();
+    const header = getByTestId('surround-composer-header');
+    const plate = container.querySelector('.surround-composer-card__plate');
+    const identity = getByTestId('surround-composer-identity');
+
+    expect(plate.parentElement).toBe(header);
+    expect(identity.parentElement).toBe(header);
+    // Portrait first: the picture is on the left.
+    expect([...header.children].indexOf(plate)).toBeLessThan([...header.children].indexOf(identity));
+  });
+
+  it('stacks the nameplate, the dates and the birthplace in the identity column', () => {
+    const { getByTestId } = renderCard();
+    const identity = getByTestId('surround-composer-identity');
+    const classes = [...identity.children].map((el) => el.className);
+    expect(classes).toEqual([
+      'surround-composer-card__nameplate',
+      'surround-composer-card__dates',
+      'surround-composer-card__birthplace',
+    ]);
+    // The brass carries the NAME. Dates and birthplace are rail voice below it,
+    // not two more engraved lines on the metal.
+    expect(identity.querySelector('.surround-composer-card__nameplate').textContent)
+      .toBe('Antonio Vivaldi');
   });
 
   it('hides a broken portrait without breaking the layout, and warns', () => {
@@ -162,7 +158,7 @@ describe('ComposerCard', () => {
     expect(img.style.display).toBe('none');
     // The rest of the card is untouched.
     expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Antonio Vivaldi');
-    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__nameplate')).not.toBeNull();
 
     const warned = logger.warn.mock.calls.find((c) => c[0] === 'surround.asset.missing');
     expect(warned).toBeDefined();
@@ -187,9 +183,11 @@ describe('ComposerCard', () => {
     const { container, queryByTestId } = renderCard({ data });
     expect(queryByTestId('surround-portrait')).toBeNull();
     expect(container.querySelector('.surround-composer-card__name')).toHaveTextContent('Antonio Vivaldi');
-    // The rest of the identity — nameplate and city photo — is untouched.
+    // The header row survives with one column: the identity takes the width the
+    // missing picture would have had rather than sitting beside an empty box.
     expect(container.querySelector('.surround-composer-card__nameplate')).not.toBeNull();
-    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
+    expect(queryByTestId('surround-composer-header')).not.toBeNull();
+    expect(container.querySelector('.surround-composer-card__plate')).toBeNull();
   });
 
   it('omits the portrait when the payload names no assetBase', () => {
@@ -262,7 +260,7 @@ describe('ComposerCard hard content budget — long text', () => {
     injectedStyle = null;
   });
 
-  it('caps the name to 2 lines and ellipsizes the birthplace and city caption to 1', () => {
+  it('caps the name to 2 lines and ellipsizes the birthplace to 1', () => {
     const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
     injectedStyle = document.createElement('style');
     injectedStyle.textContent = compiled.css;
@@ -290,12 +288,25 @@ describe('ComposerCard hard content budget — long text', () => {
     expect(birthplaceStyle.getPropertyValue('white-space')).toBe('nowrap');
     expect(birthplaceStyle.getPropertyValue('text-overflow')).toBe('ellipsis');
     expect(birthplaceStyle.getPropertyValue('overflow')).toBe('hidden');
+  });
 
-    const caption = container.querySelector('.surround-composer-card__city figcaption');
-    const captionStyle = window.getComputedStyle(caption);
-    expect(captionStyle.getPropertyValue('white-space')).toBe('nowrap');
-    expect(captionStyle.getPropertyValue('text-overflow')).toBe('ellipsis');
-    expect(captionStyle.getPropertyValue('overflow')).toBe('hidden');
+  // The header row's split. 45% is the sketch's proportion, and it lives on the
+  // MAT's column so the mat itself can still hug the picture — a contained
+  // picture in a 45%-wide mat would be a pool of paper, which wave 2 removed.
+  it('gives the portrait 45% of the card and the identity column the rest', () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+
+    const { container, getByTestId } = renderCard();
+    const plate = window.getComputedStyle(container.querySelector('.surround-composer-card__plate'));
+    expect(plate.getPropertyValue('max-width')).toBe('45%');
+    expect(plate.getPropertyValue('flex-basis')).toBe('45%');
+
+    const header = window.getComputedStyle(getByTestId('surround-composer-header'));
+    expect(header.getPropertyValue('display')).toBe('flex');
+    expect(header.getPropertyValue('flex-direction')).toBe('row');
   });
 
   // Dates are numeric and short ("1678 – 1741") with a bounded vocabulary — they
@@ -612,14 +623,6 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     expect(style.getPropertyValue('object-position')).toBe('center');
   });
 
-  it('shrinks the city photo the same way', () => {
-    withStyles();
-    const { getByTestId } = renderCard();
-    const style = window.getComputedStyle(getByTestId('surround-city-image'));
-    expect(style.getPropertyValue('object-fit')).toBe('contain');
-    expect(style.getPropertyValue('height')).toBe('auto');
-  });
-
   it("bans cover from the rail's pictures outright", () => {
     // Comments survive compilation and one of them NAMES the banned value, so
     // strip them before the search — otherwise this fails on its own rationale.
@@ -655,12 +658,28 @@ describe('ComposerCard — pictures whole, fact slot still', () => {
     expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
   });
 
-  it('keeps real paper under both pictures, so the mats survive the dark rail', () => {
+  it('keeps real paper under the portrait, so the mat survives the dark rail', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    // Both the portrait plate and the city figure read the un-remapped
-    // `--programme` token — that is what makes them read as mats rather than as
-    // two more dark rectangles.
+    // The portrait plate reads the un-remapped `--programme` token — that is
+    // what makes it a mat rather than one more dark rectangle. (The carousel's
+    // mat below it makes the same move; see PlaceCarousel.test.jsx.)
     expect(css).toMatch(/\.surround-composer-card__plate \{[^}]*var\(--programme,/);
-    expect(css).toMatch(/\.surround-composer-card__city \{[^}]*var\(--programme,/);
+  });
+
+  // Wave 3: the fact moved from the foot of the card to its middle. `margin:
+  // auto 0` on a flex-column child is what centres it in the height the header
+  // leaves — the rule that used to carry the `auto` was the fact RULE's
+  // `margin-top`, which parked the pair at the bottom instead.
+  it('centres the fact zone in the height the header leaves', () => {
+    withStyles();
+    const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: ['A fact.'] } });
+    const zone = window.getComputedStyle(getByTestId('surround-composer-fact-zone'));
+    expect(zone.getPropertyValue('margin-top')).toBe('auto');
+    expect(zone.getPropertyValue('margin-bottom')).toBe('auto');
+
+    const rule = window.getComputedStyle(
+      getByTestId('surround-composer-fact-zone').querySelector('.surround-composer-card__fact-rule'),
+    );
+    expect(rule.getPropertyValue('margin-top')).not.toBe('auto');
   });
 });

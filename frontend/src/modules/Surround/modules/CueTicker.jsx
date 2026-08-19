@@ -24,15 +24,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '../../../lib/logging/Logger.js';
+import {
+  DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_SWAP_MS, DISSOLVE_COMMIT_MS,
+  prefersReducedMotion,
+} from '../dissolve.js';
 import './CueTicker.scss';
 
-/** Each half of the dissolve: the old line out, then the new line in. */
-export const CUE_FADE_MS = 320;
+/** Each half of the dissolve: the old line out, then the new line in.
+ *  ALIASES of the house dissolve (`../dissolve.js`) — the number lives there, so
+ *  the ticker, the rail fact and the place carousel cannot drift apart. */
+export const CUE_FADE_MS = DISSOLVE_FADE_MS;
 /** The beat of empty ground between them — the "through black" of the dissolve. */
-export const CUE_HOLD_MS = 160;
+export const CUE_HOLD_MS = DISSOLVE_HOLD_MS;
 /** Out + held ground + in. The CSS duration is set inline from CUE_FADE_MS, so
  *  the stylesheet and this timer cannot drift apart. */
-export const CUE_SWAP_MS = CUE_FADE_MS + CUE_HOLD_MS + CUE_FADE_MS;
+export const CUE_SWAP_MS = DISSOLVE_SWAP_MS;
 /** How long a timed cue holds the panel when it names no dwell of its own. */
 export const CUE_DWELL_S = 12;
 /** Fact rotation. Slow: this plays behind music. */
@@ -48,14 +54,6 @@ function fallbackLogger() {
 function resolveLogger(logger) {
   if (!logger) return fallbackLogger();
   return logger.child?.({ app: 'surround', component: 'cue-ticker' }) ?? logger;
-}
-
-function prefersReducedMotion() {
-  try {
-    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
-  } catch (_) {
-    return false;
-  }
 }
 
 export default function CueTicker({
@@ -142,7 +140,7 @@ export default function CueTicker({
     timers.current.push(setTimeout(() => {
       setShown(next);
       setHidden(false);
-    }, CUE_FADE_MS + CUE_HOLD_MS));
+    }, DISSOLVE_COMMIT_MS));
   }, [next, shown]);
 
   useEffect(() => () => clearTimers(), []);
