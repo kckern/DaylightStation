@@ -17,14 +17,33 @@
 
 .surround-cue-ticker {
   position: relative;
-  /* No height at all: the band's regions are content-sized, and the frame
+  /* No declared height: the band's regions are content-sized, and the frame
      stretches this module into whatever slack the band has (see
      `.surround-frame__region--bottom`). A percentage height here would ask a
-     circular question and get clipped for an answer. */
+     circular question and get clipped for an answer.
+
+     IT IS A SIZE CONTAINER (design wave 5), which is what lets the note below
+     size itself against the ZONE it was actually given rather than against a
+     guess. The band grew when the rule row moved to its top, and a note set for
+     the old band read as a caption lost in a field of black.
+     `container-type: size` means this box's own contents no longer contribute
+     to its height — safe here because the shipped definition gives the ticker
+     `height: fill` (the region claims the band's slack, so the height comes
+     from outside), and `min-height` below is the guard for any definition that
+     does not: under size containment an unconstrained box would compute to
+     zero, and this floor is what stops the module vanishing instead of
+     shrinking. */
+  container-type: size;
+  min-height: 3.4rem;
+  /* The floor is the PANEL, padding included. Without this the floor is the
+     content box and the module is 3.4rem + 0.8rem of padding — measured at
+     67px against a 57px zone on the gate's screen-root, i.e. 10px of the note
+     clipped by the region for no reason anyone declared. */
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.7rem 1.6rem;
+  padding: 0.4rem 1.6rem;
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
 }
@@ -32,27 +51,39 @@
 .surround-cue-ticker__text {
   margin: 0;
   width: 100%;
+  /* TYPE THAT FILLS ITS ROOM (design wave 5). `cqh` is 1% of the ticker's own
+     height, so the note is large in the tall band a 1080p frame gives it and
+     steps down — rather than overflowing — in the ~59px the gate's 960x540
+     screen-root leaves. The clamp's ends are the design's, not the container's:
+     0.95rem is the ten-foot floor, 1.5rem is the point at which a programme note
+     starts competing with the work's own title on the plate. Measured in the
+     harness across 960x540 / 1280x720 / 1920x1080. */
+  font-size: clamp(0.95rem, 19cqh, 1.5rem);
+  line-height: 1.35;
   /* The reserve: two lines at this line-height, always — a floor AND a
      ceiling, so the box can neither collapse under the flex algorithm nor
-     grow past it. `-webkit-box` + `-webkit-line-clamp` computes to
-     `flow-root` in current Chromium, which is not a height at all; the clamp
-     stays for the ellipsis where an engine honours it, but the box itself is
-     guaranteed by these two explicit heights, the same contract the rail
-     fact's `.surround-composer-card__fact` uses. `em` keeps both tied to the
-     type rather than to a pixel guess. */
+     grow past it. `em` keeps both tied to the type, so the reserve follows the
+     clamp above instead of having to be re-derived per screen. */
   min-height: 2.7em;
   max-height: 2.7em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* CENTRED IN THE RESERVE, not parked at its top. A one-line note in a
+     two-line box used to hang from the ceiling and leave the whole spare line
+     beneath it, which is the top-heavy gap the design review named. `grid` +
+     `align-content: center` is what actually centres wrapped text vertically:
+     `-webkit-box-pack` does not (the box idiom computes to `flow-root` in
+     current Chromium — wave 2, flag 4 — and takes its own alignment with it),
+     which is why the clamp idiom is gone from this rule entirely. The cost is
+     the ellipsis: a note too long for two lines is now cut by `overflow` rather
+     than ellipsized. The cue pool is authored and the reserve grew, so that is
+     a bound, not a behaviour anyone sees. */
+  display: grid;
+  align-content: center;
   overflow: hidden;
   text-align: center;
   /* Progressive: browsers without it simply wrap as before. A note that breaks
      one word onto its own second line looks like a mistake at this size. */
   text-wrap: balance;
-  font-size: 1.15rem;
   font-weight: 500;
-  line-height: 1.35;
   color: var(--ink, #2a1d07);
   opacity: 1;
 }
@@ -70,7 +101,7 @@
 .surround-cue-ticker--cue::before {
   content: "";
   position: absolute;
-  top: 0.5rem;
+  top: 0.3rem;
   left: 50%;
   width: 2.4rem;
   height: 1px;

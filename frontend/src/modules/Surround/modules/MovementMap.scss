@@ -23,13 +23,18 @@
   /* NOT `height: 100%`. The band region is content-sized now, so a percentage
      height here would be circular — the frame stretches this module into its
      region instead (see `.surround-frame__region--bottom`).
-     The band's own floor. The sidecar's `height` is a floor too (the frame reads
-     it as min-height), but the real constraint is typographic: two lines of
-     movement name plus the rule lane. 5.75rem lands the band at 92px — the
-     middle of the range the recomposed footer has room for — and it is a
-     border-box floor, so the padding is inside the number rather than added to
-     it (content-box would have made the band 102px without saying so). */
-  min-height: 5.75rem;
+     The band's own floor, and it is TYPOGRAPHIC: the rule lane, the clearance
+     under it, two lines of movement name, and the padding below. That comes to
+     ~61px, so 3.9rem (62.4px) is the floor and nothing more.
+     Wave 4 set it at 5.75rem to leave "breathing room before the ticker". That
+     room turned out to be the defect: this region is `flex: 0 0 auto` and the
+     ticker's is the one that claims the band's slack, so 30px of floor the names
+     did not need was 30px of dead black between them and the note — the
+     top-heavy gap the design review named. Sized to its content, the slack all
+     falls to the ticker, which centres its note in it.
+     Border-box, so the padding is inside the number rather than added to it
+     (content-box would have made the band 10px taller without saying so). */
+  min-height: 3.9rem;
   box-sizing: border-box;          /* the floor is the BAND, padding included */
   /* NO TOP PADDING. The rule row has to sit tight against the video's bottom
      edge — the footer already rides up over it by `--band-overlap`, and any
@@ -72,15 +77,24 @@
    the gap, defeating the check even when the text reads clean of the playhead.
    Margin sits outside the box, so the box starts exactly at the text and the
    gap is still there visually.
-   Two lines, because a short movement gets a narrow segment and "Marcia
-   funebre. Adagio assai" simply does not fit one — a single clamped line
-   ellipsized every interesting title away. */
+   WRAP, OR ELLIPSIS — NEVER BOTH (design wave 5). Two lines, because a short
+   movement gets a narrow segment and "Marcia funebre. Adagio assai" simply does
+   not fit one; a single clamped line ellipsized every interesting title away.
+   The mechanism is the LINE CLAMP and nothing else: it wraps to two lines and,
+   only when the name genuinely needs a third, ellipsizes at the end of line two.
+   `text-overflow: ellipsis` is gone — it is the single-line truncation idiom,
+   it does not apply to a wrapping box in any engine that matters, and having it
+   here alongside a clamp was the "both mechanisms" the review saw. `max-height`
+   is the box guarantee behind the clamp (wave 2, flag 4: the clamp's own
+   `display` computes to `flow-root`, so the HEIGHT must be stated even where the
+   clamp does its job), not a second truncation: at two lines of this
+   line-height the two numbers are the same number. */
 .surround-movement-map__heading {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  max-height: 2.3em;               /* 2 lines at line-height 1.15 */
   line-height: 1.15;
   margin-top: 0.55em;              /* the rule lane's clearance — see above */
   padding: 0 0.5em 0 0.55em;       /* text inset, off the rule */
@@ -130,14 +144,20 @@
 /* The elapsed fill. This is where progress is read; 120ms linear is one clock
    tick, so the 10 Hz steps arrive as a sweep rather than as a stutter. Full
    `--ink` (parchment on the band) so "done" is unmistakably brighter than the
-   dim lane it is drawn over — the two are the same 2px otherwise. */
+   dim lane it is drawn over — the two are the same 2px otherwise.
+   IT GLIDES BECAUSE IT IS A TRANSFORM (design wave 5) — see the playhead below
+   for why `width` could not. `scaleX` from the left edge is exactly a width on a
+   solid bar with nothing inside it to distort. */
 .surround-movement-map__bar-fill {
   position: absolute;
   left: 0;
   top: 0;
+  width: 100%;
   height: 2px;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left center;
   background: var(--ink, #2a1d07);
-  transition: width 120ms linear;
+  transition: transform 120ms linear;
 }
 
 /* Future — the lane alone, and a name the viewer can actually read. It is
@@ -200,16 +220,47 @@
    BELOW it now, box and all. The playhead never enters the text band — it is a
    barline, not a cursor.
    It GLIDES: positions arrive at 10 Hz, and 120ms linear (one tick) carries it
-   between them without ever running ahead of the clock. */
+   between them without ever running ahead of the clock.
+
+   WHY IT IS A FULL-WIDTH BOX WITH THE MARK ON ITS RIGHT EDGE (design wave 5)
+   -------------------------------------------------------------------------
+   Waves 2-4 positioned this with `left: N%` and transitioned `left`. The
+   transition was there and it did not help, because the property was wrong:
+   Chromium PIXEL-SNAPS a painted box's position, so a 2px bar at `left:
+   25.13%` of 400px paints fully opaque on columns 101-102 and nowhere else.
+   Measured in the harness — at `translateX` the same bar paints 98/99/100 at
+   123/255/133, i.e. antialiased across the pixel boundary. On a 54-minute
+   piece the cursor advances ~0.5px per second, so snapping means it stands
+   still for two seconds and then jumps a whole pixel. That is the "creeps one
+   pixel at a time" of the review, and no transition on `left` can fix it: the
+   value was already continuous, the PAINT was not.
+   A transform can carry sub-pixel offsets, but `translateX(%)` resolves
+   against the element's OWN width — useless for a 2px mark that has to travel
+   the rule. So the element IS the rule's width, it is translated by
+   `(head - 1) x 100%` (at head=1 its right edge is the rule's right edge), and
+   the visible hairline is its `::after`, pinned to that right edge. One
+   compositor-friendly property, sub-pixel all the way, and the box the runtime
+   gate measures for the clearance law keeps the same top and the same height.
+   `--head` is 0..1, published by the component. */
 .surround-movement-map__playhead {
   position: absolute;
   top: 0;
-  width: 2px;
+  left: 0;
+  width: 100%;
   height: 0.55em;                  /* box-clears the heading's margin gap */
-  margin-left: -1px;
-  background: var(--brass-lit, #f6e3a0);
+  transform: translateX(calc((var(--head, 0) - 1) * 100%));
   pointer-events: none;
-  transition: left 120ms linear;
+  transition: transform 120ms linear;
+}
+
+.surround-movement-map__playhead::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -1px;
+  width: 2px;
+  height: 100%;
+  background: var(--brass-lit, #f6e3a0);
 }
 
 /* Reduced motion: nothing glides. The fill and the playhead still show the

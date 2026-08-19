@@ -12,19 +12,20 @@
 //
 //   1. A hand-rolled Mercator. Fifteen lines, no dependency — this repo has no
 //      d3-geo and is not gaining one for a static map of Europe.
-//   2. Auto-framing at REGIONAL zoom. The highlighted country's own bounding
-//      box, padded generously and then widened to the render box's aspect, IS
-//      the viewBox. Finland frames exactly as well as Austria does, with zero
-//      per-country config.
+//   2. Auto-framing, from one of two ZOOM PRESETS. The highlighted country's own
+//      bounding box, padded and then widened to the render box's aspect, IS the
+//      viewBox. Finland frames exactly as well as Austria does, with zero
+//      per-country config. The preset also decides whether the city is marked
+//      at all — see `ZOOM_PRESETS`.
 //   3. Labels, chosen from the frame. The subject country is named; so is every
 //      neighbour with enough of itself inside the frame to be worth naming.
 //
 // WHAT THIS MAP IS FOR (and why it is drawn the way it is). A shape with a star
 // in it answers nothing — "Austria, with Vienna in it" is exactly as informative
 // to a viewer who cannot place Austria as a blank rectangle would be. Context is
-// the whole content: the subject sits at about half the frame's span, its
-// neighbours are drawn and NAMED around it, and the viewer reads the position
-// rather than being told it. That is why PAD is what it is.
+// the whole content: at REGIONAL zoom the subject is a quarter of its frame,
+// several neighbours are visible whole and NAMED around it, and the viewer reads
+// the position rather than being told it. That is why the pads are what they are.
 //
 // It is drawn in the programme's engraved language and nothing else: parchment
 // ink-lines on whatever ground it is placed over, hairline borders, and washes
@@ -62,27 +63,44 @@ export const RENDER_H = 252;
 const ASPECT = RENDER_W / RENDER_H;
 
 /**
- * Breathing room around the highlighted country, as a fraction of its own span —
- * one number per ZOOM, because the carousel now shows this map twice and the two
- * slides are answering different questions.
+ * The two zooms, and what each one is FOR. The carousel shows this map twice and
+ * the two slides answer different questions; wave 5 made them look as different
+ * as they read, because at 0.9 / 0.12 they were two crops of the same picture.
  *
- * `region` (0.9, not wave 1's 0.25). At 0.25 the subject filled ~80% of the
- * frame and the map answered a question nobody asked ("what shape is Austria?")
- * while refusing the one they did ("where IS that?"). At 0.9 the subject spans
- * about half the frame — still unmistakably the subject — and the half around it
- * is its neighbours, which is the content. Bounded on both sides: much below and
- * the context disappears again; much above and the subject stops being subject.
+ * `region` — "where is AUSTRIA?". Continental context: `pad: 2.2` puts the
+ *   subject at 31% of its frame's span (wave 3's 0.9 put it at 53%, which is
+ *   why the two map slides read as the same picture twice). Measured against
+ *   the real Natural Earth data: at 2.2 an Austria frame is 24° wide with
+ *   Hungary, Switzerland, Slovenia, Slovakia, Czechia and Belgium inside it
+ *   WHOLE and France, Italy, Germany, Poland and Romania named around them —
+ *   a Central-Europe view, which is the context the slide exists to give. Much
+ *   past this and the subject stops being the subject (at 2.6 Italy's frame
+ *   reaches Libya); much below it and the zoom-out is not visible. And
+ *   `showCity: false`: a star and a city name on this slide is the NEXT slide's
+ *   answer given away, and it drags the eye down to a 6px mark on a map whose
+ *   whole point is the shape one country makes among the others. The country's
+ *   own label carries it.
  *
- * `city` (0.12). Having established WHERE, the second map answers WHERE IN IT:
- * the country's own shape fills the frame and the star lands on it legibly. The
- * neighbours are not excluded by rule — they simply mostly fall outside the
- * frame at this zoom, and the label-share floor drops the slivers that do not.
- * That is the brief's "neighbours optional at that zoom", achieved by the
- * framing rather than by a second code path.
+ * `city` — "and where in it is VIENNA?". `pad: 0.12`: the country's own shape
+ *   fills the frame and the star lands on it legibly, with `showCity: true` for
+ *   the marker and its name. Neighbours are not excluded by rule — they simply
+ *   mostly fall outside the frame at this zoom, and the label-share floor drops
+ *   the slivers that do not.
+ *
+ * Both dimensions live HERE rather than at the carousel: which star belongs on
+ * which framing is geography, and the carousel's job is to ask for a slide. The
+ * `showCity` prop overrides the preset for a caller with its own reason — the
+ * standalone `country-map` module draws ONE map, so "where the composer worked"
+ * has to carry the star at regional zoom; the carousel, which draws two, does
+ * not.
  */
-export const ZOOM_PAD = { region: 0.9, city: 0.12 };
-export const ZOOMS = Object.keys(ZOOM_PAD);
+export const ZOOM_PRESETS = Object.freeze({
+  region: { pad: 2.2, showCity: false },
+  city: { pad: 0.12, showCity: true },
+});
+export const ZOOMS = Object.keys(ZOOM_PRESETS);
 const DEFAULT_ZOOM = 'region';
+const presetFor = (zoom) => ZOOM_PRESETS[zoom] ?? ZOOM_PRESETS[DEFAULT_ZOOM];
 /** Floor on a frame's span in degrees, so a sliver of a country cannot divide by ~0. */
 const MIN_SPAN = 0.75;
 
@@ -259,7 +277,7 @@ function framingBox(geometry, point) {
  * frame: the country keeps its true shape and the surplus is filled with
  * neighbours instead of with stretch.
  */
-function frameFor(bbox, pad = ZOOM_PAD[DEFAULT_ZOOM]) {
+function frameFor(bbox, pad = ZOOM_PRESETS[DEFAULT_ZOOM].pad) {
   const cx = (bbox.minX + bbox.maxX) / 2;
   const cy = (bbox.minY + bbox.maxY) / 2;
   let w = Math.max(bbox.maxX - bbox.minX, MIN_SPAN) * (1 + pad);
@@ -376,12 +394,19 @@ export default function CountryMap({
   lat = null,
   lon = null,
   /**
-   * `region` (default) frames the subject at about half its frame with its
-   * neighbours around it; `city` frames the subject's own shape nearly edge to
-   * edge, for the carousel's second, zoomed-in map slide. Anything else falls
-   * back to `region` rather than producing an undefined pad.
+   * `region` (default) frames the subject in continental context and draws NO
+   * city marker; `city` frames the subject's own shape nearly edge to edge and
+   * carries the marker and its label. Anything else falls back to `region`
+   * rather than producing an undefined pad. See `ZOOM_PRESETS`.
    */
   zoom = DEFAULT_ZOOM,
+  /**
+   * Draw the city marker and its label? `null` (default) takes the zoom
+   * preset's answer; `true`/`false` overrides it. It never invents a marker
+   * out of nothing: without a city and a coordinate there is no marker to draw
+   * either way.
+   */
+  showCity: showCityProp = null,
   className = '',
   logger = null,
 }) {
@@ -437,7 +462,8 @@ export default function CountryMap({
   // Frame the highlight when there is one. Failing that, a city still gives us
   // somewhere to look; failing even that, a Europe overview. An unrecognised
   // country shows a map, never a hole.
-  const pad = ZOOM_PAD[zoom] ?? ZOOM_PAD[DEFAULT_ZOOM];
+  const preset = presetFor(zoom);
+  const { pad } = preset;
   const frame = useMemo(() => {
     if (!features.length) return null;
     if (highlight) {
@@ -465,9 +491,18 @@ export default function CountryMap({
   // zoom the auto-framing can produce.
   const unitsPerPx = frame ? frame.w / RENDER_W : 1;
 
-  /** Where the city's own label hangs off its star, and which way. */
+  /**
+   * Where the city's own label hangs off its star, and which way. Null when the
+   * zoom does not show a city at all — the regional slide answers "where is this
+   * country", and it answers it without pointing at a town. `point` still exists
+   * and is still used for FRAMING (it picks which landmass of a multi-part
+   * country to frame on); it is only the drawn star and its name that go.
+   */
+  const showCity = showCityProp === null || showCityProp === undefined
+    ? preset.showCity
+    : !!showCityProp;
   const marker = useMemo(() => {
-    if (!point || !frame) return null;
+    if (!point || !frame || !showCity) return null;
     const fracX = (point.x - frame.x) / frame.w;
     const flip = fracX > FLIP_AT;
     return {
@@ -476,7 +511,7 @@ export default function CountryMap({
       // Near the top edge the label drops below the star instead of off the frame.
       dy: (point.y - frame.y) / frame.h < 0.1 ? LABEL_PX * 1.1 : LABEL_PX * 0.36,
     };
-  }, [point, frame]);
+  }, [point, frame, showCity]);
 
   /**
    * Who gets named.
@@ -531,8 +566,8 @@ export default function CountryMap({
         // (`taken` can only be non-empty here — before any neighbour is
         // considered — if the city label was placed, which itself requires a
         // point, so gating the whole relocation on `point` loses nothing.)
-        const onTheStar = point && Math.hypot(spot.x - point.x, y - point.y) < clearance;
-        if (point && (onTheStar || taken.some((t) => overlaps(t, box)))) {
+        const onTheStar = point && marker && Math.hypot(spot.x - point.x, y - point.y) < clearance;
+        if (point && marker && (onTheStar || taken.some((t) => overlaps(t, box)))) {
           y = point.y + COUNTRY_LABEL_PX * 2.4 * unitsPerPx;
           box = labelBox({
             x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
@@ -585,7 +620,7 @@ export default function CountryMap({
       className={`surround-country-map ${className}`.trim()}
       data-testid="country-map"
       viewBox={viewBox}
-      data-zoom={ZOOM_PAD[zoom] ? zoom : DEFAULT_ZOOM}
+      data-zoom={ZOOM_PRESETS[zoom] ? zoom : DEFAULT_ZOOM}
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={city && country ? `${city}, ${country}` : (country || 'map')}
@@ -670,6 +705,7 @@ CountryMap.propTypes = {
   lat: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   lon: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   zoom: PropTypes.oneOf(ZOOMS),
+  showCity: PropTypes.bool,
   className: PropTypes.string,
   logger: PropTypes.object,
 };

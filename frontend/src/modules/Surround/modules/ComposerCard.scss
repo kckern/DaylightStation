@@ -34,6 +34,12 @@
 
 .surround-composer-card {
   height: 100%;
+  /* A SIZE CONTAINER (design wave 5), so the fact below can size itself against
+     the card it was actually given. Safe: the card's height is `100%` of a rail
+     region whose own height is definite, so nothing about this box was ever
+     decided by its contents — size containment takes away a contribution it
+     never made. */
+  container-type: size;
   padding: 1rem 1rem 1.1rem;
   box-sizing: border-box;
   display: flex;
@@ -278,23 +284,37 @@
    collapsing into the hole. (Precedent: the piano platform's `pg-slot`.) */
 .surround-composer-card__fact {
   margin: 0;
-  /* Exactly three lines: a floor AND a ceiling, so the slot can neither collapse
-     under the flex algorithm nor grow when a longer fact comes round. The line
-     clamp stays for the ellipsis where an engine honours it, but the box is
-     guaranteed by the two heights, not by the clamp. */
   flex: 0 0 auto;
+  /* TYPE THAT FILLS ITS ROOM (design wave 5). `cqh` is 1% of the CARD's height,
+     which is what the rail actually hands this panel; the fact was set at a flat
+     0.95rem and read as fine print in the tall card a 1080p rail gives it. The
+     clamp's ends are the design's: 0.85rem is the ten-foot floor, 1.35rem is
+     where a bio fact would start out-shouting the composer's own name on the
+     brass above it. Derived in the harness at 960x540 / 1280x720 / 1920x1080. */
+  font-size: clamp(0.85rem, 5.4cqh, 1.35rem);
+  line-height: 1.35;
+  /* Exactly three lines: a floor AND a ceiling, so the slot can neither collapse
+     under the flex algorithm nor grow when a longer fact comes round. In `em`,
+     so the reserve tracks the clamp above rather than being re-derived. */
   min-height: 4.05em;              /* 3 lines at line-height 1.35 */
   max-height: 4.05em;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  /* CENTRED IN THE RESERVE. A one- or two-line fact used to hang from the top of
+     a three-line box, leaving the spare line as dead space below it and, once
+     the zone's own `margin: auto` had centred the box, an off-centre text block
+     in a card that looked top-heavy. `grid` + `align-content: center` centres
+     the lines themselves; the `-webkit-box` clamp idiom cannot (it computes to
+     `flow-root` in current Chromium — wave 2, flag 4 — and its `box-pack`
+     alignment goes with it), so it is gone from this rule. The trade is the
+     ellipsis: a fact too long for three lines is cut by `overflow` rather than
+     ellipsized — the same trade the composer's own name already makes, and the
+     fact pool is authored against this reserve. */
+  display: grid;
+  align-content: center;
   overflow: hidden;
   text-align: center;
   text-wrap: balance;              /* progressive; wraps as before without it */
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 0.95rem;
   font-weight: 500;
-  line-height: 1.35;
   color: var(--ink-soft, #6b6152);
   opacity: 1;
 }

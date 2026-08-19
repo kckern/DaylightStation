@@ -329,6 +329,63 @@ describe('CueTicker — reserved height and centred setting', () => {
     expect(style.getPropertyValue('text-wrap')).toBe('balance');
   });
 
+  /**
+   * Design wave 5 — CENTRED IN THE RESERVE, not hung from its ceiling.
+   *
+   * The band grew when the rule row moved to its top, and a one-line note in a
+   * two-line reserve sat at the top of the box with the spare line beneath it:
+   * top-heavy, in a zone that is now the tallest thing in the band.
+   * `grid` + `align-content: center` is what centres wrapped text vertically —
+   * `-webkit-box-pack` does not (measured: in a 62px box, one line lands at
+   * y=1 under the box idiom and y=22 under grid), which is why the clamp
+   * declaration is gone from the rule rather than merely inert beside it.
+   */
+  it('centres the note in its reserve rather than hanging it from the top', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const view = mount('A fact.');
+    const style = window.getComputedStyle(view.container.querySelector('[data-testid="surround-ticker-text"]'));
+    expect(style.getPropertyValue('display')).toBe('grid');
+    expect(style.getPropertyValue('align-content')).toBe('center');
+    const rule = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    expect(rule, 'the line-clamp idiom is still fighting the grid').not.toContain('-webkit-line-clamp');
+  });
+
+  /**
+   * Design wave 5 — TYPE THAT FILLS ITS ROOM. `cqh` is 1% of the TICKER's own
+   * height, so the note is large in the tall band a 1080p frame gives it and
+   * steps down rather than overflowing in the ~59px the gate's 960x540
+   * screen-root leaves. The floor on the module itself is what makes the
+   * container safe: `container-type: size` removes a box's own contribution to
+   * its height, so a definition that did NOT give the ticker `height: fill`
+   * would otherwise compute it to zero.
+   */
+  it('sizes the note against the zone it was given, with a floor under the container', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const panel = css.match(/\.surround-cue-ticker \{[^}]*\}/)[0];
+    expect(panel, 'the ticker is not a container, so cqh would resolve against the viewport')
+      .toContain('container-type: size');
+    const floor = panel.match(/min-height: ([\d.]+)rem/);
+    expect(floor, 'a size container with no floor collapses to nothing').not.toBeNull();
+
+    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    const clamp = text.match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/);
+    expect(clamp, 'the note is set at a fixed size again').not.toBeNull();
+    const [, min, per, max] = clamp.map(Number);
+    expect(min, 'below the ten-foot floor').toBeGreaterThanOrEqual(0.95);
+    expect(max, 'a programme note as loud as the work title on the plate').toBeLessThanOrEqual(1.6);
+    expect(max).toBeGreaterThan(min);
+    // Two lines at the floor size, plus the panel's own padding, have to fit
+    // inside that floor — otherwise the reserve overflows its own container on
+    // the smallest screen in the fleet.
+    const padRem = Number(panel.match(/padding: ([\d.]+)rem/)[1]) * 2;
+    expect(min * 2.7 + padRem).toBeLessThanOrEqual(Number(floor[1]));
+    // ...and the coefficient bites between the zones the fleet actually
+    // produces (~59px on the gate's screen-root, ~118px on the 1280x720 kiosk).
+    const at = (zonePx) => Math.min(Math.max(per * zonePx / 100, min * 16), max * 16);
+    expect(at(118)).toBeGreaterThan(at(59));
+    expect(at(118), 'the note is no bigger than the one this wave replaced').toBeGreaterThan(1.15 * 16);
+  });
+
   it('keeps an instant swap under prefers-reduced-motion', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)/);

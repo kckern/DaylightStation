@@ -16,9 +16,10 @@
 //
 //   1. CITY PHOTO  `composer.city_image`, captioned by `composer.map.caption`,
 //      falling back to `composer.map.city`. Matted, never cropped.
-//   2. COUNTRY MAP `CountryMap` at regional zoom on `composer.map`, captioned
-//      with city and country. The payload -> props decision is `mapPinFrom`,
-//      shared with the standalone `country-map` module rather than copied.
+//   2. COUNTRY MAP `CountryMap` at regional zoom on `composer.map` — the country
+//      in continental context, no star, no city name — captioned by the country
+//      alone. The payload -> props decision is `mapPinFrom`, shared with the
+//      standalone `country-map` module rather than copied.
 //   3. CITY MAP    the SAME `CountryMap` at `zoom="city"` — the country's own
 //      shape nearly filling the frame, with the star and the city's name on it,
 //      captioned by the city alone. Two questions, asked in order: where is
@@ -133,10 +134,11 @@ export default function PlaceCarousel({
         kind: 'map',
         pin,
         zoom: 'region',
-        // City AND country: the map draws both, but the caption is what a
-        // viewer reads first, and "VENICE, ITALY" answers the slide's question
-        // without making them find the star.
-        caption: pin.city ? `${pin.city}, ${pin.country}` : pin.country,
+        // COUNTRY-SCOPED, because the slide is. At regional zoom the map draws
+        // no star and no city name (`ZOOM_PRESETS.region.showCity`), so a
+        // caption naming the city would be answering the NEXT slide's question
+        // over this one's picture.
+        caption: pin.country,
         captionKind: 'label',
       });
       // The zoomed map: having shown WHERE the country is, show where in it.

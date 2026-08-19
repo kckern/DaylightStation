@@ -140,7 +140,7 @@ describe('PlaceCarousel — the slides', () => {
     expect(view.caption()).toBeNull();
   });
 
-  it('shows the map as its second slide, captioned with city and country', () => {
+  it('shows the map as its second slide, captioned by the country alone', () => {
     // Drive to the map slide the way the dwell would, without waiting 12s.
     vi.useFakeTimers();
     try {
@@ -148,7 +148,10 @@ describe('PlaceCarousel — the slides', () => {
       act(() => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
       act(() => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS); });
       expect(view.kind()).toBe('map');
-      expect(view.caption().textContent).toBe('Venice, Italy');
+      // Design wave 5: COUNTRY-SCOPED. The regional slide draws no star and no
+      // city name, so a caption naming the city would answer the NEXT slide's
+      // question over this one's picture.
+      expect(view.caption().textContent).toBe('Italy');
       expect(view.caption().className).toContain('surround-place-carousel__caption--label');
     } finally {
       vi.useRealTimers();
@@ -167,7 +170,10 @@ describe('PlaceCarousel — the slides', () => {
     const { container } = renderCarousel({ data: withComposer(composer) });
     await waitFor(() => expect(container.querySelector('[data-country="Italy"]')).toBeTruthy());
     expect(container.querySelector('[data-country="Italy"]').getAttribute('data-role')).toBe('highlight');
-    expect(container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Venice');
+    // The COUNTRY's own name carries the regional slide; the city's star and
+    // label belong to the slide after it (design wave 5).
+    expect(container.querySelector('[data-country-label="Italy"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="country-map-label"]')).toBeNull();
   });
 
   /**
@@ -217,9 +223,32 @@ describe('PlaceCarousel — the slides', () => {
     expect(city.getAttribute('data-zoom')).toBe('city');
 
     // Not merely a different label: the city slide is genuinely tighter. The
-    // viewBox's third number IS the frame's span in degrees.
+    // viewBox's third number IS the frame's span in degrees. Design wave 5
+    // widened the regional frame (the city frame is now 35% of it, where it
+    // used to be 59%) precisely because the old difference was one the viewer
+    // could not see — this bound fails against wave 4's pads.
     const span = (svg) => parseFloat(svg.getAttribute('viewBox').split(/\s+/)[2]);
-    expect(span(city)).toBeLessThan(span(region) * 0.75);
+    expect(span(city)).toBeLessThan(span(region) * 0.45);
+  });
+
+  /**
+   * Design wave 5 — THE TWO SLIDES GET DISTINCT JOBS. Seen live with Vienna,
+   * the two maps read as the same picture twice. They are now answering
+   * visibly different questions, and the star is the clearest tell: the
+   * regional slide draws none at all, the city slide draws one with the city's
+   * name beside it. Asserted on the same payload, so only the SLIDE differs.
+   */
+  it('points at no city on the regional slide, and at one on the city slide', async () => {
+    const region = await stepped(1);
+    expect(
+      region.container.querySelector('[data-testid="country-map-marker"]'),
+      'the regional slide is pointing at Venice — that is the next slide\'s answer',
+    ).toBeNull();
+    expect(region.container.querySelector('[data-testid="country-map-label"]')).toBeNull();
+
+    const city = await stepped(2);
+    expect(city.container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy();
+    expect(city.container.querySelector('[data-testid="country-map-label"]').textContent).toBe('Venice');
   });
 
   it('skips the city map when no city is pinned — it would be the country slide again', async () => {

@@ -45,10 +45,22 @@ const states = (container) =>
   [...container.querySelectorAll('[data-testid="surround-movement"]')]
     .map((el) => el.getAttribute('data-state'));
 
-/** How full each movement's rule reads, in percent. */
+/**
+ * How full each movement's rule reads, in percent.
+ *
+ * Design wave 5 moved the fill from `width: N%` to `transform: scaleX(--fill)`
+ * — the stylesheet explains why (a painted box's size is pixel-snapped, a
+ * transform's is not, and at a movement-per-few-hundred-pixels that is the
+ * difference between a glide and a crawl). The FRACTION the component computes
+ * is unchanged; only where it is published moved, so these specs read the
+ * custom property the same way they used to read the width.
+ */
 const fills = (container) =>
   [...container.querySelectorAll('[data-testid="surround-movement-fill"]')]
-    .map((el) => parseFloat(el.style.width));
+    .map((el) => parseFloat(el.style.getPropertyValue('--fill')) * 100);
+
+/** Where the cursor is, in percent — see `fills` above for the property move. */
+const headPct = (el) => parseFloat(el.style.getPropertyValue('--head')) * 100;
 
 describe('MovementMap', () => {
   it('lays out segments proportional to each movement’s real duration', () => {
@@ -98,7 +110,7 @@ describe('MovementMap', () => {
   it('moves the playhead in the same render as a seek', () => {
     const { container, rerender } = renderMap({ position: 0 });
     const head = () => container.querySelector('[data-testid="surround-playhead"]');
-    expect(parseFloat(head().style.left)).toBeCloseTo(0, 6);
+    expect(headPct(head())).toBeCloseTo(0, 6);
 
     rerender(
       <MovementMap
@@ -107,12 +119,12 @@ describe('MovementMap', () => {
         data={EROICA} region={{ module: 'movement-map' }} logger={makeLogger()}
       />,
     );
-    expect(parseFloat(head().style.left)).toBeCloseTo((1477 / 2955) * 100, 3);
+    expect(headPct(head())).toBeCloseTo((1477 / 2955) * 100, 3);
   });
 
   it('clamps the playhead to the end of the rule during the applause', () => {
     const { container } = renderMap({ position: 3200 });
-    expect(parseFloat(container.querySelector('[data-testid="surround-playhead"]').style.left))
+    expect(headPct(container.querySelector('[data-testid="surround-playhead"]')))
       .toBeCloseTo(100, 6);
   });
 
@@ -266,7 +278,43 @@ describe('MovementMap — the band’s shipped design', () => {
     withStyles();
     const { container } = renderMap({ position: 1450 });
     const head = container.querySelector('[data-testid="surround-playhead"]');
-    expect(window.getComputedStyle(head).getPropertyValue('transition')).toBe('left 120ms linear');
+    expect(window.getComputedStyle(head).getPropertyValue('transition')).toBe('transform 120ms linear');
+  });
+
+  /**
+   * Design wave 5 — THE RAMP IS ON THE PROPERTY THAT ACTUALLY MOVES.
+   *
+   * Waves 2-4 shipped `transition: left/width 120ms linear` and the cursor still
+   * crept: the value was continuous but the PAINT was not, because Chromium
+   * pixel-snaps a painted box's position and size (measured: a 2px bar at
+   * `left: 25.13%` of 400px paints opaque on columns 101-102 and nowhere else,
+   * while the same bar at `translateX` paints 98/99/100 at 123/255/133). A
+   * transition declared on a property the engine then snaps is a transition that
+   * does nothing a viewer can see.
+   *
+   * So this asserts the PAIRING, not just the presence of a ramp: the animated
+   * property is a transform, the transform is the one that moves the mark, and
+   * the old snapped properties are not being animated any more. Without the
+   * pairing a later wave could satisfy "there is a transition" while moving the
+   * element with `left` again.
+   */
+  it('animates the two moving marks on the transform each of them actually uses', () => {
+    const css = withStyles();
+    const ruleFor = (sel) => {
+      const m = css.match(new RegExp(`\\${sel}\\s*\\{[^}]*\\}`));
+      expect(m, `no ${sel} rule in the compiled sheet`).not.toBeNull();
+      return m[0];
+    };
+    const head = ruleFor('.surround-movement-map__playhead');
+    expect(head).toMatch(/transform:\s*translateX\(/);
+    expect(head).toMatch(/transition:\s*transform 120ms linear/);
+    expect(head, 'the playhead is back on a pixel-snapped `left`').not.toMatch(/transition:[^;]*\bleft\b/);
+
+    const fill = ruleFor('.surround-movement-map__bar-fill');
+    expect(fill).toMatch(/transform:\s*scaleX\(/);
+    expect(fill).toMatch(/transform-origin:\s*left/);
+    expect(fill).toMatch(/transition:\s*transform 120ms linear/);
+    expect(fill, 'the fill is back on a pixel-snapped `width`').not.toMatch(/transition:[^;]*\bwidth\b/);
   });
 
   it('gives the playhead no glow — no shadow, no lit tip', () => {
@@ -283,11 +331,11 @@ describe('MovementMap — the band’s shipped design', () => {
     withStyles();
     const { container } = renderMap({ position: 1450 });
     const fill = container.querySelector('[data-testid="surround-movement-fill"]');
-    expect(window.getComputedStyle(fill).getPropertyValue('transition')).toBe('width 120ms linear');
+    expect(window.getComputedStyle(fill).getPropertyValue('transition')).toBe('transform 120ms linear');
   });
 
   it('lets a movement name wrap to two lines instead of ellipsizing on one', () => {
-    withStyles();
+    const css = withStyles();
     const { container } = renderMap();
     const heading = container.querySelector('.surround-movement-map__heading');
     const style = window.getComputedStyle(heading);
@@ -295,19 +343,45 @@ describe('MovementMap — the band’s shipped design', () => {
     expect(style.getPropertyValue('-webkit-box-orient')).toBe('vertical');
     // The single-line cap is what made short movements unreadable.
     expect(style.getPropertyValue('white-space')).not.toBe('nowrap');
+    // Design wave 5: WRAP **OR** ELLIPSIS, NEVER BOTH. `text-overflow` is the
+    // single-line truncation idiom; declared alongside a line clamp it is the
+    // second mechanism the review saw, and it belongs to neither behaviour the
+    // heading is allowed to have. The clamp gives the end-of-line-2 ellipsis;
+    // `max-height` is the box behind it (the clamp's own `display` computes to
+    // `flow-root` in current Chromium, so the height has to be stated), and at
+    // this line-height two lines and the cap are the same number.
+    const rule = css.match(/\.surround-movement-map__heading\s*\{[^}]*\}/);
+    expect(rule, 'no heading rule in the compiled sheet').not.toBeNull();
+    expect(rule[0], 'the heading still declares text-overflow').not.toMatch(/text-overflow/);
+    const cap = rule[0].match(/max-height:\s*([\d.]+)em/);
+    expect(cap, 'the heading declares no max-height').not.toBeNull();
+    const lineHeight = parseFloat(rule[0].match(/line-height:\s*([\d.]+)/)[1]);
+    expect(parseFloat(cap[1])).toBeCloseTo(lineHeight * 2, 2);
   });
 
   // Read off the compiled sheet rather than off computed style: happy-dom does
   // not resolve `rem` in getComputedStyle, and a NaN comparison is the kind of
   // assertion that passes for the wrong reason.
-  it('claims a band tall enough for those two lines', () => {
+  it('claims a band tall enough for those two lines — and not a pixel of dead slack', () => {
     const css = withStyles();
     const rule = css.match(/\.surround-movement-map\s*\{[^}]*\}/);
     expect(rule, 'no .surround-movement-map rule in the compiled sheet').not.toBeNull();
     const declared = rule[0].match(/min-height:\s*([\d.]+)(rem|px)/);
     expect(declared, 'the band declares no min-height').not.toBeNull();
     const px = declared[2] === 'rem' ? parseFloat(declared[1]) * 16 : parseFloat(declared[1]);
-    expect(px).toBeGreaterThanOrEqual(88);
+
+    // The floor is TYPOGRAPHIC and both bounds are load-bearing.
+    // Lower: the lane (4px) + the heading's clearance (0.55em of 1.05rem) + two
+    // lines of heading (2 x 1.05rem x 1.15) + the module's own bottom padding
+    // (0.55rem) — anything less clips the second line of "Marcia funebre.
+    // Adagio assai" against `overflow: hidden`.
+    const floor = 4 + (0.55 * 1.05 * 16) + (2 * 1.05 * 1.15 * 16) + (0.55 * 16);
+    expect(px, 'the band cannot hold two lines of movement name').toBeGreaterThanOrEqual(floor);
+    // Upper: this region is `flex: 0 0 auto` and the CUE TICKER's is the one
+    // that claims the band's slack, so every pixel of floor the names do not
+    // need becomes dead black between them and the note — the top-heavy gap
+    // design wave 5 removes. Wave 4's 5.75rem (92px) fails this deliberately.
+    expect(px, 'the band hoards slack the ticker should have').toBeLessThan(88);
   });
 
   /**
