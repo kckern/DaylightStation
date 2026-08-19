@@ -22,6 +22,12 @@ const normalizeTitle = (v) =>
   (typeof v === 'string' ? v : '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+// One relation, used by both the lookup-time rebind and the index-time
+// pre-warning, so the warning can never disagree with the behavior it predicts.
+const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
+// An absent key is authoring intent (the block is optional); a present key of
+// the wrong shape is a mistake the type guards quietly paper over.
+const isPresent = (v) => v !== undefined && v !== null;
 
 /**
  * Index of authored surround sidecars.
@@ -134,8 +140,7 @@ export class SurroundStore {
     const live = normalizeTitle(title);
     if (!live) return [];
 
-    return this.#byTitle.filter(({ normalized }) =>
-      normalized.includes(live) || live.includes(normalized));
+    return this.#byTitle.filter(({ normalized }) => titlesOverlap(normalized, live));
   }
 
   /**
@@ -146,6 +151,8 @@ export class SurroundStore {
     const startedAt = Date.now();
     const index = new Map();
     const titles = [];
+    // contentId -> the file that claimed it, so a collision can name both sides.
+    const claimedBy = new Map();
     let composers = 0;
     // Piece candidates read but rejected. A malformed definition shows up here too,
     // as every piece naming it is rejected in turn.
@@ -167,17 +174,32 @@ export class SurroundStore {
             .filter((f) => !isReserved(f));
 
           for (const file of files) {
-            const resolved = this.#resolvePiece(path.join(composerDir, file), domain, composerBase, definitions);
+            // Relative to rootDir, because that is how the author knows the file.
+            // Every warning below is addressed to whoever wrote the sidecar.
+            const relFile = path.join(domain, composer, file);
+            const resolved = this.#resolvePiece(path.join(composerDir, file), domain, composerBase, definitions, relFile);
             if (!resolved) { skipped += 1; continue; }
+
+            // Last write wins, as before — walk order decides. That is an
+            // accident of the filesystem, so name both files rather than
+            // letting one sidecar vanish under another without a trace.
+            const priorFile = claimedBy.get(resolved.contentId);
+            if (priorFile) {
+              this.logger?.warn?.('surround.sidecar.duplicate', {
+                contentId: resolved.contentId,
+                keptFile: relFile,
+                droppedFile: priorFile
+              });
+            }
+            claimedBy.set(resolved.contentId, relFile);
             index.set(resolved.contentId, resolved.payload);
             // Only pieces that authored a title are rebindable; the rest are
-            // reachable by contentId alone. The path is relative so the log line
-            // names the file the way the author knows it.
+            // reachable by contentId alone.
             if (resolved.normalized) {
               titles.push({
                 normalized: resolved.normalized,
                 title: resolved.title,
-                file: path.join(domain, composer, file),
+                file: relFile,
                 contentId: resolved.contentId,
                 payload: resolved.payload
               });
@@ -191,6 +213,7 @@ export class SurroundStore {
 
     this.#byContentId = index;
     this.#byTitle = titles;
+    this.#warnAmbiguousTitles(titles);
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
       pieces: index.size,
@@ -221,17 +244,109 @@ export class SurroundStore {
   }
 
   /**
+   * Warn about authored titles that can never be told apart at rebind time.
+   *
+   * Once the index is built the collision is already knowable, so nobody should
+   * have to play the video and read `surround.match.ambiguous` to discover the
+   * rebind lane will refuse. Groups are transitive — three titles nesting inside
+   * one another are one authoring problem, not three — and this changes no
+   * lookup behavior at all; it only says the same thing earlier.
+   *
+   * @param {Array<{ normalized: string, title: string, file: string }>} titles
+   * @private
+   */
+  #warnAmbiguousTitles(titles) {
+    const grouped = new Set();
+
+    for (let i = 0; i < titles.length; i += 1) {
+      if (grouped.has(i)) continue;
+      grouped.add(i);
+
+      const group = [];
+      const queue = [i];
+      while (queue.length) {
+        const seed = queue.shift();
+        group.push(seed);
+        for (let j = 0; j < titles.length; j += 1) {
+          if (grouped.has(j)) continue;
+          if (!titlesOverlap(titles[seed].normalized, titles[j].normalized)) continue;
+          grouped.add(j);
+          queue.push(j);
+        }
+      }
+
+      if (group.length < 2) continue;
+      this.logger?.warn?.('surround.titles.ambiguous', {
+        candidates: group.map((k) => ({ file: titles[k].file, title: titles[k].title }))
+      });
+    }
+  }
+
+  /**
+   * Report a sidecar the author needs to fix.
+   *
+   * `reason` is the single problem to act on first and stays stable enough to
+   * aggregate on in the log store; `reasons` carries everything found in the
+   * file so one editing pass fixes it rather than one restart per mistake.
+   *
+   * @param {string} file - Path relative to rootDir
+   * @param {string[]} reasons - Ordered, most blocking first
+   * @private
+   */
+  #invalid(file, reasons) {
+    this.logger?.warn?.('surround.sidecar.invalid', { file, reason: reasons[0], reasons });
+  }
+
+  /**
    * Read one piece sidecar and resolve it into the payload the API attaches verbatim.
+   *
+   * Validation is warning-only: what is rejected here is exactly what was
+   * rejected before, and every coercion still coerces. The difference is that
+   * a dropped or flattened sidecar now says so, since failing soft otherwise
+   * makes an authoring typo indistinguishable from an unauthored item.
+   *
    * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null}
    * @private
    */
-  #resolvePiece(filePath, domain, composerBase, definitions) {
+  #resolvePiece(filePath, domain, composerBase, definitions, file) {
     const doc = loadYamlFromPath(filePath);
-    if (!doc || typeof doc !== 'object') return null;
-    if (!doc.surround || !doc.match?.contentId) return null;
+    if (!isPlainObject(doc)) {
+      // The file came from a directory listing, so it exists. FileIO folds a
+      // syntax error into the same null it returns for an absent file — here,
+      // only the former is possible.
+      this.#invalid(file, [isPresent(doc) ? 'not-a-mapping' : 'yaml-unparseable']);
+      return null;
+    }
+
+    // Blocking problems short-circuit: there is nothing useful to say about
+    // `match.title` in a file that has no `match` block.
+    const blocking = [];
+    if (!doc.surround) blocking.push('missing-surround');
+    if (!isPlainObject(doc.match)) blocking.push(isPresent(doc.match) ? 'match-not-a-mapping' : 'missing-match');
+    else if (!doc.match.contentId) blocking.push('missing-match-contentId');
+    if (blocking.length) { this.#invalid(file, blocking); return null; }
 
     const definition = definitions.get(doc.surround);
-    if (!definition) return null;
+    if (!definition) {
+      // Its own event, not a sidecar problem: the sidecar may be perfect and the
+      // definition file the thing that was renamed or never written.
+      this.logger?.warn?.('surround.definition.missing', { id: doc.surround, file });
+      return null;
+    }
+
+    // Non-blocking, so the piece still indexes exactly as it did before. Each of
+    // these is a silent loss the author would otherwise only notice as a region
+    // that renders empty: no title means no rebind when the ratingKeys churn,
+    // and a wrong-typed list is flattened to nothing by the guards below.
+    const soft = [];
+    if (typeof doc.match.title !== 'string' || !doc.match.title.trim()) soft.push('missing-match-title');
+    if (!isPresent(doc.piece)) soft.push('missing-piece');
+    else if (!isPlainObject(doc.piece)) soft.push('piece-not-a-mapping');
+    for (const key of ['movements', 'cues', 'facts']) {
+      if (isPresent(doc[key]) && !Array.isArray(doc[key])) soft.push(`${key}-not-a-list`);
+    }
+    if (isPresent(doc.composer) && !isPlainObject(doc.composer)) soft.push('composer-not-a-mapping');
+    if (soft.length) this.#invalid(file, soft);
 
     // Shapes are guarded, not trusted: an indentation slip that turns `movements`
     // into a string would otherwise reach a module's .map() and throw in render,
