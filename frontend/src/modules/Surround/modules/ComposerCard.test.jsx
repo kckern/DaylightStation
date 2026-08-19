@@ -7,6 +7,7 @@ import ComposerCard, {
   ASSET_WARN_PER_MINUTE,
   COMPOSER_FACT_INTERVAL_MS,
   COMPOSER_FACT_FADE_MS,
+  COMPOSER_FACT_HOLD_MS,
 } from './ComposerCard.jsx';
 import { FACT_INTERVAL_MS } from './CueTicker.jsx';
 import { __resetMapCache } from '../map/CountryMap.jsx';
@@ -110,6 +111,47 @@ describe('ComposerCard', () => {
   it('renders no city figure when none is authored', () => {
     const { container } = renderCard({ composer: { name: 'X', facts: [] } });
     expect(container.querySelector('.surround-composer-card__city')).toBeNull();
+  });
+
+  // The figure's caption: a human sentence when the sidecar authors one, the
+  // bare city name when it does not. The controller authors `map.caption` after
+  // this lands, so BOTH paths are pinned here rather than only the live one.
+  it('prints the authored caption under the city figure', () => {
+    const composer = {
+      ...DATA.composer,
+      map: { ...DATA.composer.map, caption: 'Venice — his lifelong home' },
+    };
+    const { getByTestId } = renderCard({ composer });
+    const caption = getByTestId('surround-city-caption');
+    expect(caption.textContent).toBe('Venice — his lifelong home');
+    // Set as prose, not as a tracked-uppercase label.
+    expect(caption.className).toContain('surround-composer-card__city-caption--sentence');
+  });
+
+  it('falls back to the city name, set as a label, when no caption is authored', () => {
+    const { getByTestId } = renderCard();          // fixture has map.city, no caption
+    const caption = getByTestId('surround-city-caption');
+    expect(caption.textContent).toBe('Venice');
+    expect(caption.className).toContain('surround-composer-card__city-caption--label');
+  });
+
+  it('treats a blank caption as unauthored rather than printing an empty line', () => {
+    const composer = { ...DATA.composer, map: { ...DATA.composer.map, caption: '   ' } };
+    const { getByTestId } = renderCard({ composer });
+    expect(getByTestId('surround-city-caption').textContent).toBe('Venice');
+  });
+
+  it('prints the caption even when the map block names no city', () => {
+    const composer = { ...DATA.composer, map: { country: 'Italy', caption: 'The lagoon he never left' } };
+    const { getByTestId } = renderCard({ composer });
+    expect(getByTestId('surround-city-caption').textContent).toBe('The lagoon he never left');
+  });
+
+  it('captions nothing when neither a caption nor a city is authored', () => {
+    const composer = { ...DATA.composer, map: { country: 'Italy' } };
+    const { container, queryByTestId } = renderCard({ composer });
+    expect(container.querySelector('.surround-composer-card__city')).not.toBeNull();
+    expect(queryByTestId('surround-city-caption')).toBeNull();
   });
 
   it('hides a broken portrait without breaking the layout, and warns', () => {
@@ -289,6 +331,8 @@ describe('ComposerCard composer facts', () => {
 
   /** One act() per step — batching several into one collapses the renders. */
   const tick = (ms) => act(() => { vi.advanceTimersByTime(ms); });
+  /** The dissolve commits after the fade-out AND the held beat of empty ground. */
+  const SWAP_MS = COMPOSER_FACT_FADE_MS + COMPOSER_FACT_HOLD_MS;
 
   const renderFacts = ({ data, logger = makeLogger(), position = 0 } = {}) => {
     const props = (p) => ({
@@ -326,15 +370,15 @@ describe('ComposerCard composer facts', () => {
     const view = renderFacts({ data: withFacts(FACTS) });
 
     tick(COMPOSER_FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[1]);
 
     tick(COMPOSER_FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[2]);
 
     tick(COMPOSER_FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[0]);
   });
 
@@ -348,7 +392,7 @@ describe('ComposerCard composer facts', () => {
     // And behaviourally: the card is still on fact one when the ticker swaps.
     const view = renderFacts({ data: withFacts(FACTS) });
     tick(FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[0]);
   });
 
@@ -360,7 +404,7 @@ describe('ComposerCard composer facts', () => {
     expect(view.text()).toBe(FACTS[0]);
     expect(view.fact().className).toContain('surround-composer-card__fact--hidden');
 
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[1]);
     expect(view.fact().className).not.toContain('surround-composer-card__fact--hidden');
   });
@@ -384,7 +428,7 @@ describe('ComposerCard composer facts', () => {
     const view = renderFacts({ data: withFacts([FACTS[0]]) });
     expect(view.text()).toBe(FACTS[0]);
     tick(COMPOSER_FACT_INTERVAL_MS * 5);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[0]);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -411,7 +455,7 @@ describe('ComposerCard composer facts', () => {
 
     // The same component, with the clock frozen, does advance on its own timer.
     tick(COMPOSER_FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(view.text()).toBe(FACTS[1]);
   });
 
@@ -423,7 +467,7 @@ describe('ComposerCard composer facts', () => {
     expect(shown()[0][1]).toEqual({ contentId: 'plex:663146', index: 0 });
 
     tick(COMPOSER_FACT_INTERVAL_MS);
-    tick(COMPOSER_FACT_FADE_MS);
+    tick(SWAP_MS);
     expect(shown()).toHaveLength(2);
     expect(shown()[1][1]).toEqual({ contentId: 'plex:663146', index: 1 });
   });
@@ -539,5 +583,84 @@ describe('country-map surround module', () => {
     const { container } = renderModule(withMap({ country: 'Beta' }));
     await waitFor(() => expect(container.querySelector('[data-country="Beta"]')).toBeTruthy());
     expect(container.querySelector('[data-testid="country-map-marker"]')).toBeNull();
+  });
+});
+
+/**
+ * Design wave 2: the rail's pictures are never cropped, and the fact slot never
+ * moves. Same compiled-SCSS injection as the content-budget suite above — the
+ * assertions are about the shipped stylesheet, not about a stand-in string.
+ */
+describe('ComposerCard — pictures whole, fact slot still', () => {
+  let injectedStyle = null;
+  const withStyles = () => {
+    const compiled = sass.compile(path.join(__dirname, 'ComposerCard.scss'));
+    injectedStyle = document.createElement('style');
+    injectedStyle.textContent = compiled.css;
+    document.head.appendChild(injectedStyle);
+    return compiled.css;
+  };
+  afterEach(() => { injectedStyle?.remove(); injectedStyle = null; });
+
+  it('shrinks the portrait inside its mat instead of cropping it', () => {
+    withStyles();
+    const { getByTestId } = renderCard();
+    const style = window.getComputedStyle(getByTestId('surround-portrait'));
+    expect(style.getPropertyValue('object-fit')).toBe('contain');
+    expect(style.getPropertyValue('object-fit')).not.toBe('cover');
+    expect(style.getPropertyValue('height')).toBe('auto');
+    expect(style.getPropertyValue('object-position')).toBe('center');
+  });
+
+  it('shrinks the city photo the same way', () => {
+    withStyles();
+    const { getByTestId } = renderCard();
+    const style = window.getComputedStyle(getByTestId('surround-city-image'));
+    expect(style.getPropertyValue('object-fit')).toBe('contain');
+    expect(style.getPropertyValue('height')).toBe('auto');
+  });
+
+  it("bans cover from the rail's pictures outright", () => {
+    // Comments survive compilation and one of them NAMES the banned value, so
+    // strip them before the search — otherwise this fails on its own rationale.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).not.toMatch(/object-fit:\s*cover/);
+  });
+
+  it('reserves three lines for the fact so rotation never walks the rail', () => {
+    withStyles();
+    const short = renderCard({ composer: { ...DATA.composer, facts: ['Short.'] } });
+    const long = renderCard({
+      composer: {
+        ...DATA.composer,
+        facts: ['A much longer fact about the composer that will certainly run to three full lines at the rail measure, and then some.'],
+      },
+    });
+    // `container.querySelector`, not `getByTestId`: both cards are mounted in the
+    // same document here, and a body-scoped query would find two.
+    const reserve = (view) => window.getComputedStyle(
+      view.container.querySelector('[data-testid="surround-composer-fact"]'),
+    ).getPropertyValue('min-height');
+
+    expect(parseFloat(reserve(short))).toBeGreaterThan(0);
+    expect(reserve(short)).toBe(reserve(long));
+  });
+
+  it('sets the fact centred and balanced', () => {
+    withStyles();
+    const { getByTestId } = renderCard({ composer: { ...DATA.composer, facts: ['A fact.'] } });
+    const style = window.getComputedStyle(getByTestId('surround-composer-fact'));
+    expect(style.getPropertyValue('text-align')).toBe('center');
+    expect(style.getPropertyValue('text-wrap')).toBe('balance');
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('3');
+  });
+
+  it('keeps real paper under both pictures, so the mats survive the dark rail', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    // Both the portrait plate and the city figure read the un-remapped
+    // `--programme` token — that is what makes them read as mats rather than as
+    // two more dark rectangles.
+    expect(css).toMatch(/\.surround-composer-card__plate \{[^}]*var\(--programme,/);
+    expect(css).toMatch(/\.surround-composer-card__city \{[^}]*var\(--programme,/);
   });
 });

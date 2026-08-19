@@ -47,8 +47,10 @@ const ASSET_WARN_WINDOW_MS = 60000;
  * swap. A shared or harmonic beat makes the whole surround look like it blinked.
  */
 export const COMPOSER_FACT_INTERVAL_MS = 27000;
-/** Old line out / new line in — the house 280 ms, as ArtPlacards and the ticker. */
-export const COMPOSER_FACT_FADE_MS = 280;
+/** Each half of the dissolve — the house duration, shared with the ticker. */
+export const COMPOSER_FACT_FADE_MS = 320;
+/** The beat of empty ground between the two halves ("through black"). */
+export const COMPOSER_FACT_HOLD_MS = 160;
 
 const NO_FACT = Object.freeze({ key: 'empty', index: null, text: '' });
 
@@ -122,6 +124,17 @@ export default function ComposerCard({
     ? composer.map.city
     : null;
 
+  // The figure's caption. An authored `map.caption` is a human sentence —
+  // "Venice — his lifelong home" — and is set as one: sentence case, up to two
+  // lines. With none authored the city name stands in, and it is set as what it
+  // is: a label, in letterspaced small caps on one line. Same slot, two
+  // registers, because a sentence in tracked uppercase reads as shouting and a
+  // one-word place name in sentence case reads as an unfinished caption.
+  const cityCaption = typeof composer?.map?.caption === 'string' && composer.map.caption.trim()
+    ? composer.map.caption.trim()
+    : null;
+  const captionText = cityCaption ?? cityName;
+
   // Per-card budget. `logger.sampled` would cap the rate but downgrade the event
   // to info; the spec calls for a warn, so the window is kept here instead.
   const budget = useRef({ windowStart: 0, count: 0, skipped: 0 });
@@ -189,11 +202,14 @@ export default function ComposerCard({
       setFactHidden(false);
       return;
     }
+    // The same dissolve the ticker plays: out to the dark rail ground, a beat of
+    // empty ground, then in. The rail's reserved fact height (see the SCSS) is
+    // what keeps the card still while the ground is empty.
     setFactHidden(true);
     fadeTimers.current.push(setTimeout(() => {
       setShownFact(nextFact);
       setFactHidden(false);
-    }, COMPOSER_FACT_FADE_MS));
+    }, COMPOSER_FACT_FADE_MS + COMPOSER_FACT_HOLD_MS));
   }, [nextFact, shownFact]);
 
   useEffect(() => () => clearFadeTimers(), []);
@@ -240,7 +256,14 @@ export default function ComposerCard({
             alt={cityName ? `View of ${cityName}` : 'Composer city'}
             onError={(e) => onAssetError(e, cityRef)}
           />
-          {cityName && <figcaption>{cityName}</figcaption>}
+          {captionText && (
+            <figcaption
+              className={`surround-composer-card__city-caption surround-composer-card__city-caption--${cityCaption ? 'sentence' : 'label'}`}
+              data-testid="surround-city-caption"
+            >
+              {captionText}
+            </figcaption>
+          )}
         </figure>
       )}
 

@@ -360,18 +360,24 @@ test.describe('Surround — PoC runtime gate', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The composed-layout gate — this plan's recomposition (work-placard header,
-// rail moved LEFT at 33% width via `regions.right[0].side: 'left'`, dark
-// bottom band, capped rail content). Nothing here can be seen by the jsdom
-// unit suites; this is the only gate that pins real, measured geometry.
+// The composed-layout gate — the recomposition as it stands after design wave 2:
+// the placard FLOATS, straddling the video's top edge as a content-width museum
+// plate; the dark band sits flush under the video and slightly over it; the rail
+// is LEFT at 33% width via `regions.right[0].side: 'left'`. Nothing here can be
+// seen by the jsdom unit suites; this is the only gate that pins real, measured
+// geometry.
 // ---------------------------------------------------------------------------
 
 test.describe('Surround — composed layout gate', () => {
   test.use({ viewport: HD });
 
-  test('the composed layout: nothing clips, nothing overlaps, nothing floats, rail is on the left', async ({ page }) => {
+  test('the composed layout: the plate straddles, the band overlaps, nothing clips, rail is on the left', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
     await page.waitForSelector('[data-testid="surround-frame"]', { timeout: 20000 });
+    // The entrance is a ~400ms staggered transition on the rail, the band and
+    // the plate. Measuring mid-flight would read a transformed box, so let the
+    // choreography finish before taking any geometry.
+    await page.waitForTimeout(1200);
 
     const box = async (sel) => {
       const b = await page.locator(sel).first().boundingBox();
@@ -380,20 +386,67 @@ test.describe('Surround — composed layout gate', () => {
     };
     const viewport = page.viewportSize();
 
-    // 1. The placard is mounted, above the video, matching its width (±2px).
+    // 1. The placard is mounted and STRADDLES the video's top edge — part on the
+    //    dark hall above, part over the picture, like a plate pinned to a
+    //    painting. (Was: a full-width band sitting entirely above the video.)
     const placard = await box('.surround-frame__header');
     const media = await box('.surround-frame__media');
-    expect(placard.y + placard.height).toBeLessThanOrEqual(media.y + 2);
-    expect(Math.abs(placard.width - media.width)).toBeLessThanOrEqual(2);
+    expect(
+      placard.y + placard.height,
+      'the plate does not reach the video — it is a band again, not a plate',
+    ).toBeGreaterThan(media.y);
+    expect(
+      placard.y,
+      'the plate starts below the video top — it is not straddling the edge',
+    ).toBeLessThan(media.y);
 
-    // 2. The video touches its timeline: gap ≤ 4px (was 19px of letterbox).
+    //    Content-width: a plate is narrower than the painting it is pinned to.
+    expect(
+      placard.width,
+      `plate is ${placard.width}px against a ${media.width}px video — it is still a band`,
+    ).toBeLessThan(media.width);
+
+    //    ...and centred on the video's axis.
+    const placardCentre = placard.x + placard.width / 2;
+    const mediaCentre = media.x + media.width / 2;
+    expect(
+      Math.abs(placardCentre - mediaCentre),
+      `plate centre ${placardCentre} vs video centre ${mediaCentre}`,
+    ).toBeLessThanOrEqual(8);
+
+    // 2. The band does not merely touch the video, it OVERLAPS it: its top edge
+    //    rides over the video's last few pixels, with the join softened by a
+    //    gradient. The overlap is bounded so it can never eat the picture.
     const footer = await box('.surround-frame__footer');
-    expect(footer.y - (media.y + media.height)).toBeLessThanOrEqual(4);
+    const mediaBottom = media.y + media.height;
+    expect(
+      footer.y,
+      `band starts ${footer.y - mediaBottom}px BELOW the video — the gap is back`,
+    ).toBeLessThanOrEqual(mediaBottom);
+    expect(
+      footer.y,
+      `band overlaps the video by ${mediaBottom - footer.y}px — too much of the picture`,
+    ).toBeGreaterThanOrEqual(mediaBottom - 16);
 
-    // 3. The playhead never enters the text band.
+    // 3. The playhead never enters the text band. Movement names may now wrap to
+    //    two lines, so this reads the heading's REAL box rather than assuming a
+    //    single line's height.
     const heading = await box('.surround-movement-map__heading');
     const playhead = await box('.surround-movement-map__playhead');
-    expect(playhead.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+    expect(
+      playhead.y,
+      `playhead top ${playhead.y} is inside the heading box (ends ${heading.y + heading.height})`,
+    ).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+
+    //    ...and the lit tip is gone for good: progress is read from the fill.
+    expect(
+      await page.locator('.surround-movement-map__playhead-edge').count(),
+      'the glowing playhead tip is back',
+    ).toBe(0);
+    expect(
+      await page.locator('[data-testid="surround-movement-fill"]').count(),
+      'no elapsed fill on the band — progress has nothing to be read from',
+    ).toBeGreaterThanOrEqual(1);
 
     // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
     //    The nameplate and the country-map are NOT optional for this fixture:
