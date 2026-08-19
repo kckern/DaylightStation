@@ -129,6 +129,15 @@
   overflow: hidden;
 }
 
+/* Rail side is definition-driven (`regions.right.side` / `regions.right[0].side`,
+   default 'right'). The root carries the modifier — same shape as
+   `--collapsed` — rather than a per-rail inline order, because the flip is a
+   frame-level layout decision, not a rail-local one: `__main` keeps `order: 0`
+   either way, only the rail's position in the row swaps. */
+.surround-frame--rail-left .surround-frame__rail {
+  order: -1;
+}
+
 /* Programme stock. One paper ground and a 1px edge rule — no drop shadow per
    element; the design calls for one plate, not a gallery. */
 .surround-frame__region {
