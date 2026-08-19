@@ -11,6 +11,11 @@
 // The map is identity, not progress, so the clock props arrive and are ignored.
 // A composer with no `map` block renders nothing at all: no element, and no
 // geodata request either, so an unmapped composer costs nothing.
+//
+// PLACEMENT CONSTRAINT: the SVG is fluid, but `CountryMap` sizes its city label
+// in the view units implied by RENDER_W x RENDER_H (~420 x 260). Painted much
+// narrower than the rail it was drawn for, that label falls through the design's
+// 0.72rem ten-foot floor. Give this module roughly rail width or more.
 
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
