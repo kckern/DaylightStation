@@ -9,11 +9,12 @@
 // ANATOMY (wave 3). Two zones, and only two:
 //
 //   HEADER ROW  portrait in its parchment mat on the LEFT at ~45% of the rail's
-//               width; the brass nameplate carrying the name, with the dates and
-//               the birthplace stacked under it, in the column to its RIGHT.
-//               Side by side — a mounted print with its plate beside it, which is
-//               how the picture and the name read as ONE object rather than as
-//               two stacked panels.
+//               width; the brass nameplate carrying the name AND the dates
+//               (museum convention: a plate reads name, then dates, engraved
+//               together), with the birthplace stacked under it in parchment,
+//               in the column to its RIGHT. Side by side — a mounted print with
+//               its plate beside it, which is how the picture and the name read
+//               as ONE object rather than as two stacked panels.
 //   FACT        the dissolving bio fact, centred in whatever card height the
 //               header leaves (`margin: auto 0`) rather than parked at the foot.
 //
@@ -229,12 +230,14 @@ export default function ComposerCard({
 
           {hasIdentity && (
             <div className="surround-composer-card__identity" data-testid="surround-composer-identity">
-              {composer?.name && (
+              {(composer?.name || dates) && (
+                // Museum convention (settled 2026-08-19): the brass reads name,
+                // then dates, engraved together — the dates are NOT rail voice.
                 <div className="surround-composer-card__nameplate">
-                  <h2 className="surround-composer-card__name">{composer.name}</h2>
+                  {composer?.name && <h2 className="surround-composer-card__name">{composer.name}</h2>}
+                  {dates && <p className="surround-composer-card__dates">{dates}</p>}
                 </div>
               )}
-              {dates && <p className="surround-composer-card__dates">{dates}</p>}
               {composer?.birthplace && (
                 <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
               )}

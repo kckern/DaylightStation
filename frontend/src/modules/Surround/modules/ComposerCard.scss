@@ -4,8 +4,9 @@
  * WAVE 3 ANATOMY. Two zones and no more:
  *
  *   HEADER ROW   portrait (in its parchment mat) LEFT at 45% of the card's
- *                content width; the brass nameplate carrying the name, with
- *                dates and birthplace stacked under it, in the column RIGHT.
+ *                content width; the brass nameplate carrying the name AND the
+ *                dates, engraved together — museum convention — with the
+ *                birthplace stacked under it in parchment, in the column RIGHT.
  *   FACT ZONE    the dissolving bio fact, CENTRED in the height the header
  *                leaves (`margin: auto 0`), not parked at the foot.
  *
@@ -123,10 +124,19 @@
 
 /* Engraved brass nameplate — ArtMode's plaque recipe (ArtMode.css:157-239) at a
    whisper: same brass photo + gradient + edge sheen, screws omitted (a rail
-   card, not a framed gallery plate). It carries the NAME alone now and shrinks
-   to its column; the dates and the birthplace read better as rail voice below
-   it than as two more engraved lines on the metal. */
+   card, not a framed gallery plate). Museum convention (settled 2026-08-19):
+   a plate reads name, THEN dates, both engraved on the metal — the birthplace
+   is the one line that reads better as rail voice below it, in parchment.
+   `width: fit-content` (like the portrait mat above) so the plate hugs its
+   widest line — always the name — rather than stretching to the identity
+   column's full width; the dates ("1678 – 1741") are short and numeric and
+   must never be what sizes the plate. `align-self: center` re-centres it in
+   the column now that it no longer stretches. */
 .surround-composer-card__nameplate {
+  align-self: center;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0.4rem 0.6rem 0.45rem;
   text-align: center;
   border: 1px solid #5d4514;
@@ -143,8 +153,11 @@
     inset 0 -1px 0 rgba(78, 56, 18, 0.75);
 }
 
-/* Engraved: multiply lets the metal grain show through the letters. */
-.surround-composer-card__nameplate .surround-composer-card__name {
+/* Engraved: multiply lets the metal grain show through the letters. Both lines
+   on the plate get it — the name AND the dates now beneath it — so the dates
+   read as more engraving, not a sticker on top of the brass. */
+.surround-composer-card__nameplate .surround-composer-card__name,
+.surround-composer-card__nameplate .surround-composer-card__dates {
   color: #2a1d07;
   mix-blend-mode: multiply;
   text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
@@ -165,20 +178,25 @@
   line-height: 1.1;
 }
 
-/* Dates and birthplace sit on the rail ground, under the plate — the rail's own
-   voice rather than more engraving. Centred under the plate they belong to. */
+/* Small, engraved, beneath the name — ON the brass now (museum convention),
+   not rail voice. The colour set here is academic: the more specific
+   `.surround-composer-card__nameplate .surround-composer-card__dates` rule
+   above always wins and applies the actual engraved (multiply-blend) colour;
+   this base rule only carries the sizing and spacing. */
 .surround-composer-card__dates {
-  margin: 0.4rem 0 0;
+  margin: 0.2rem 0 0;
   text-align: center;
-  font-size: 0.92rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--ink-soft, #6b6152);
+  letter-spacing: 0.02em;
   font-variant-numeric: lining-nums;
 }
 
-/* Single line, ellipsized — part of the hard content budget. */
+/* Birthplace stays OUTSIDE the plate, on the rail ground below it — parchment
+   voice, not engraving. Single line, ellipsized — part of the hard content
+   budget. */
 .surround-composer-card__birthplace {
-  margin: 0.12rem 0 0;
+  margin: 0.4rem 0 0;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
