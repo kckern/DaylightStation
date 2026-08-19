@@ -197,11 +197,16 @@ timing says. The band then **declines to draw** that movement on the rule
 (`surround.movements.unplaceable`) rather than anchoring it to second zero, so
 one bad entry costs a segment and never an out-of-order rail.
 
-A first movement that starts late — a transfer that opens on tuning or an
-announcement, `starts: [45, …]` — is a supported recording. Until that second
-the rail draws every movement as still to come and the listening band's header
-says `Listen for`: both halves read the same derivation, and neither claims music
-is sounding before it is.
+A first movement that starts late — a transfer that opens on the conductor's
+walk-on, applause and a settling hall, `starts: [45, …]` — is a supported and
+expected recording; so is the applause after the last chord, which `musicEndsAt`
+puts outside every movement. **Nothing sounding is a designed state, not a gap.**
+In it the rail draws every movement as still to come (before the first) or as
+played (after the last), no segment carries the sounding state, the bond is out
+on both halves at once, and the NOW register is blank — no movement name, no
+borrowed fact. It borrows nothing because that register is about what is playing,
+and nothing is. The band does not change height for it: every box in it is
+reserved, so the state is quiet rather than visible as a reflow.
 
 `render: docked` draws into the ticker region. `render: overlay` is reserved for
 phase two (pop-up-video style, over the video) and needs no schema change.
@@ -442,6 +447,57 @@ The `concert-hall` definition's regions resolve to named modules from
 | `country-map` | right, bottom | The regional map component itself (see below). |
 | `movement-map` | bottom | The engraved-score progress band, with each movement's translation glossed under its name. |
 | `cue-ticker` | bottom | The docked ticker: the playing movement's `listen` notes on one side, cues and facts on the other. |
+
+### The band's notes are never cut
+
+There is no ellipsis in the listening band, at any screen size, ever. A television
+has no "read more", no scroll and no pointer, so a note that stops mid-sentence is
+a claim the viewer cannot complete.
+
+The note's box is whatever vertical run its register has left over — a constant,
+because it does not depend on which note is showing — and the TYPE is fitted to
+the text by measurement. The ladder, in order: tighten the leading toward its
+floor, then step the size down toward its floor. Both floors are derived against
+the vendored face's own metrics and neither is crossed. The fit is solved once per
+piece, against every string either register can ever show (all the work's facts,
+every placed movement's `listen` notes, every docked cue), so it cannot change at
+a movement boundary and the two registers are always set in one size.
+
+| Bound | Value | Why |
+|---|---|---|
+| Prose size floor | `0.88rem` | The frame's ten-foot floor for LABELS is `0.72rem`; a label is a short tracked small-cap string read as a shape, and continuous prose is read glyph by glyph. EB Garamond's x-height is 0.42em, so this buys 5.91px of x-height against the label floor's 4.84px on a fleet running at device pixel ratio 1. |
+| Prose size ceiling | `1.5rem` | Where a programme note starts competing with the work's own title on the plate. |
+| Leading floor | `1.25` | EB Garamond's ink extent is exactly 1.00em ascender-to-descender, so this leaves a quarter of the type size of clear air between lines — 80% of what the face's own `line-height: normal` (1.31) reserves. Below it the failure is line tracking at distance, not collision. |
+| Leading, loose | `1.35` | What the band is set at wherever it can afford it. |
+
+**A note that cannot be set whole at both floors is an authoring failure, not a
+render problem.** It is dropped from the rotation and logged as
+`surround.note.unfittable` with the register, the character count, the character
+budget and the measured overflow — everything needed to shorten it. The band shows
+only the notes it can show whole; it never truncates one and never sets one below
+the floors. Author facts to the budget of the smallest band they must appear on.
+
+### The bond, and the band's two design rules
+
+The sounding movement's panel on the rail, a thin waist along the band's seam, and
+the NOW register's panel are ONE shape in one colour — that is what lets the
+register stop reprinting the movement name the rail set six inches above it. The
+waist spans the HULL of the segment and the panel, so the panel's whole top edge
+and the segment's whole bottom edge are both welded along a real interval; the
+parts never meet at a corner. When the segment already sits over the panel the
+waist collapses onto it and the two simply merge.
+
+- **Borders: nothing in the band is edged.** The two registers are divided by the
+  bond's own silhouette — a lit ground against an unlit one — not by a rule drawn
+  on it. The score's barlines and the frame's region seams are not borders.
+- **Corners: one radius token.** Every corner on the outside of the bond's
+  silhouette carries it; every corner where two of its parts weld is square, so
+  the joins are invisible. Nothing else in the band is rounded.
+
+The whole shape moves on ONE clock: the segment widths, the playhead, the bond and
+its waist are all published from a single interpolated vector in a single render,
+so a movement boundary is one move rather than a resize followed by a slide. Under
+`prefers-reduced-motion` the vector commits in one frame.
 
 The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
 rail: the map is one of the carousel's four slides, so a piece's regional map and

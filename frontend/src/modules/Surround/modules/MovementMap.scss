@@ -29,6 +29,12 @@
  * if it is ever rendered outside the frame.
  */
 
+/* The band's shared literals - the bond's ground and the band's one radius.
+   See `_tokens.scss`: the frame publishes both as custom properties on the
+   band's region, and these are the fallbacks that keep this module honest when
+   it is rendered outside the frame. One literal, one file. */
+@use "../tokens" as *;
+
 .surround-movement-map {
   /* NOT `height: 100%`. The band region is content-sized now, so a percentage
      height here would be circular — the frame stretches this module into its
@@ -148,24 +154,28 @@
   bottom: calc(var(--band-pad-bottom) * -1);
   left: var(--bond-left, 0%);
   width: var(--bond-width, 0%);
-  background: var(--bond-ground, #241c15);
-  /* Rounded at the TOP only. The bottom edge is not an edge — it is where this
-     panel becomes the connector and then the register's panel, and a radius
-     there would draw a seam across the middle of one shape. */
-  border-radius: 5px 5px 0 0;
+  background: var(--bond-ground, #{$bond-ground});
+  /* Rounded at the TOP only — the band's ONE radius token, and the rule it
+     belongs to: every corner on the OUTSIDE of the bond's silhouette carries
+     `--bond-radius`, every corner where two of its parts weld is square.
+     The bottom edge is not an edge: it is where this panel becomes the waist and
+     then the register's panel, and a radius there would draw a seam across the
+     middle of one shape. */
+  border-radius: var(--bond-radius) var(--bond-radius) 0 0;
   pointer-events: none;
-  /* THIS one keeps a CSS clock, and the difference from the segments above is
-     real rather than an oversight. A segment's width has to agree with the
-     playhead frame by frame, so it is interpolated in JS. The bond does not
-     TRACK a segment across a boundary — it TRAVELS from the old segment to the
-     new one, which is a different journey from either segment's own, and only
-     its endpoints have to be right. They are: it is published from the same
-     interpolated array, so wherever it starts and lands is exactly where the
-     segments are. Same duration, same easing, so it moves with them. */
-  transition:
-    left var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
-    width var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
-    opacity var(--accordion-ms, 420ms) linear;
+  /* THERE IS NO `transition` ON `left` OR `width` HERE, and its absence is the
+     fix (design wave 9). Wave 7 kept one, reasoning that the bond TRAVELS
+     between segments rather than tracking one, so only its endpoints had to be
+     right. They were, and the journey was not: the segment widths eased in JS
+     from the first frame while this box did not begin moving until React had
+     committed the new `left`, so the eye read one move as two — the rail
+     right-sizing, and then the highlight sliding into it. The bond's start and
+     width now ride in the same interpolated vector as the shares
+     (`../band.js`, `useEasedVector`), so this element is repositioned every
+     animation frame by the one clock the rest of the rail already moves on.
+     Only the FADE is still a CSS transition, because "nothing is sounding" is a
+     state change rather than a move. */
+  transition: opacity var(--accordion-ms, 420ms) linear;
 }
 
 /* Nothing is sounding — the applause after the final chord. The bond has nothing
@@ -175,10 +185,12 @@
   opacity: 0;
 }
 
-/* The connector. A shoulder running along the seam from the active segment
-   across to the NOW panel. It is the same ground and it squares off at both
-   ends: a taper or a radius here would read as a decorative flourish rather
-   than as the two panels being one thing.
+/* THE WAIST. The thin middle of the shape, running along the seam and spanning
+   the HULL of the sounding segment and the NOW panel (`bondConnector` in
+   ../band.js) — so the panel's whole top edge and the segment's whole bottom
+   edge are both welded to it, and there is no point-contact anywhere in the
+   bond. Wave 7 ran it only as far as the panel's near edge, which left the two
+   lit areas as diagonal neighbours touching at a corner.
    ITS HEIGHT IS MEASURED, AND IT IS NOT THE BOTTOM PADDING. The first draft
    was exactly `--band-pad-bottom` (5.6px), which is the least that reaches the
    seam — and rendered, it did not read: at ten feet a 5.6px strip of a ground
@@ -187,20 +199,32 @@
    empty run below the gloss's baseline (measured: gloss bottom at 49.11px in a
    64px band), so 10px is a shoulder that reads with 4.9px still clear of the
    type above it.
-   Where the active segment already sits over the panel its width is zero
-   (`bondConnector` in ../band.js) and there is nothing to draw — that is the
-   "they simply touch" case, and it needs no mark at all. */
+   THE RADII ARE PER-CORNER AND COMPUTED, which is the band's one corner rule
+   applied to the one part of the shape whose corners are not fixed: at each end
+   of the waist either the segment continues upward or the panel continues
+   downward, and the corner that neither continues into is the one on the outside
+   of the silhouette. The component publishes the four; a `0` is a weld.
+   NO `transition` HERE either — it is repositioned every frame from the same
+   interpolated vector the bond and the segments are (design wave 9). */
 .surround-movement-map__bond-connector {
   position: absolute;
   bottom: calc(var(--band-pad-bottom) * -1);
   height: var(--bond-shoulder);
   left: var(--connector-left, 0%);
   width: var(--connector-width, 0%);
-  background: var(--bond-ground, #241c15);
+  background: var(--bond-ground, #{$bond-ground});
+  border-radius:
+    var(--connector-tl, 0) var(--connector-tr, 0)
+    var(--connector-br, 0) var(--connector-bl, 0);
   pointer-events: none;
-  transition:
-    left var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
-    width var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1));
+  transition: opacity var(--accordion-ms, 420ms) linear;
+}
+
+/* Nothing sounding — the applause after the final chord, or the tuning before
+   the first note. There is nothing to bond, so the whole shape goes: the panel,
+   the waist and (in the band below) the NOW register's own panel. */
+.surround-movement-map__bond-connector[data-bonded="false"] {
+  opacity: 0;
 }
 
 /* ---------------------------------------------------------------------------

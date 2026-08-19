@@ -1,7 +1,7 @@
 // frontend/src/modules/Surround/modules/CueTicker.jsx
 //
 // The band's text zone. Since design wave 6 it is TWO REGISTERS side by side,
-// divided by a hairline, and the division is editorial rather than decorative:
+// and the division is editorial rather than decorative:
 //
 //   LEFT — THE PIECE. Untimed `data.facts` about the work itself, rotating on a
 //     slow timer. This is the programme note: it is true at 0:00 and at 53:00,
@@ -70,11 +70,20 @@
 // of it while the other half reorders underneath would read as a glitch rather
 // than as a move. One blink, once, for a change the viewer is meant to notice.
 //
-// The reserved heights in the SCSS are what make all of this safe: neither
-// zone's box changes, whether its line is one line, two, or momentarily nothing
-// at all.
+// THE NOTE IS NEVER CUT (design wave 9)
+// --------------------------------------
+// There is no ellipsis in this band. The note's box is whatever vertical run its
+// zone has left over — a constant, because it does not depend on the note — and
+// the TYPE is sized to the text by measurement (`../fit.js`): leading tightened
+// first, then size, never below either floor. A note that cannot be set whole at
+// the floors is an authoring failure; it is dropped from the rotation and warned
+// about with its character budget rather than cut. The fit is solved once per
+// piece, against every string either register can ever show, so it cannot change
+// at a movement boundary — which is the reserved-height law, kept.
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect, useLayoutEffect, useMemo, useRef, useState,
+} from 'react';
 import PropTypes from 'prop-types';
 import {
   DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_SWAP_MS, useDissolve,
@@ -85,6 +94,7 @@ import {
   resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeMovementIndex,
   placedMovements, roman, ACCORDION_MS,
 } from '../band.js';
+import { bandPools, fitBand, fitStyle } from '../fit.js';
 import './CueTicker.scss';
 
 /** Each half of the dissolve: the old line out, then the new line in.
@@ -143,6 +153,18 @@ export function phaseDelay(sinceLastPieceSwap, periodMs = FACT_INTERVAL_MS) {
 
 const EMPTY = Object.freeze({ key: 'empty', kind: null, at: null, text: '' });
 
+/**
+ * A line of nothing that still occupies a line.
+ *
+ * The NOW header is blank when nothing is sounding (design wave 9), and blank
+ * has to mean BLANK rather than absent: an element that disappears gives its
+ * height back to the note's box, which changes the room the fit was solved
+ * against, which resizes the type of both registers on a movement boundary. The
+ * reserved-height law is the same law it has always been; this is what keeps it
+ * true through a state the band did not use to have.
+ */
+const BLANK_LINE = ' ';
+
 /** A dissolving line is only worth fading out of when it has words in it. */
 const hasLine = (value) => Boolean(value?.text);
 
@@ -170,7 +192,12 @@ export function urgentNowEdge(next, shown) {
   const isNowZone = next?.mv !== undefined || shown?.mv !== undefined;
   const activating = isNowZone && next?.kind === 'cue' && shown?.kind !== 'cue';
   const boundary = next?.mv !== undefined && shown?.mv !== undefined && next.mv !== shown.mv;
-  return activating || boundary;
+  // A RE-FIT (design wave 9), in BOTH registers. The band has just decided what
+  // it can and cannot set whole, and a note it has withdrawn must leave at once:
+  // softening the change plays a 320ms fade of the exact note the fit refused,
+  // which is the ellipsis defect wearing a cross-fade.
+  const refit = next?.pool !== undefined && shown?.pool !== undefined && next.pool !== shown.pool;
+  return activating || boundary || refit;
 }
 
 /** The house dissolve, configured for a band line. One object, never re-made. */
@@ -263,15 +290,148 @@ export default function CueTicker({
   );
 
   /**
-   * NEVER EMPTY PAPER. A movement nobody has written listening notes for still
-   * gets its header — the header is the answer to "what is playing", which does
-   * not depend on anyone having authored anything — and the piece pool is
+   * NEVER EMPTY PAPER — WHILE SOMETHING IS SOUNDING. A movement nobody has
+   * written listening notes for still gets its header, and the piece pool is
    * borrowed beneath it. Two zones showing from the same pool, half a period
-   * apart, is a weaker band than two pools; it is a far better band than a
-   * blank half.
+   * apart, is a weaker band than two pools; it is a far better band than a blank
+   * half.
+   *
+   * WITH NOTHING SOUNDING THE REGISTER IS BLANK, and that is the opposite rule
+   * for the opposite reason (design wave 9). This register is about what is
+   * playing NOW. Before the first movement — the conductor's walk-on, the
+   * applause, the settling — and after the last chord, nothing is, and there is
+   * no note about the sounding movement to show because there is no sounding
+   * movement. Borrowing a piece fact there would put a claim about 1804 under a
+   * lit panel that says "this is what you are hearing", and duplicate the left
+   * register while it did so. Blank is the honest answer, and blank does not
+   * move the band: the box is still there and still exactly as tall.
    */
-  const borrowed = split && listen.length === 0;
-  const nowPool = listen.length ? listen : facts;
+  const borrowed = split && movement !== null && listen.length === 0;
+  const nowPool = useMemo(() => {
+    if (!movement) return [];
+    return listen.length ? listen : facts;
+  }, [movement, listen, facts]);
+
+  /* ---- THE FIT (design wave 9) --------------------------------------------
+   * The band's type is sized so that no note is ever cut. `../fit.js` holds the
+   * ladder and the floors and does the measuring; this is the wiring.
+   *
+   * THE POOLS ARE THE WHOLE PIECE'S, not this instant's. The fit has to be a
+   * constant of the piece, or the type would resize at a movement boundary and
+   * the reserved-height law would be broken by the mechanism that replaced it —
+   * so what is measured is EVERY string either register can ever show: all the
+   * facts, every placed movement's listening notes, every docked cue, and the
+   * facts again in the NOW register if any movement will borrow them.
+   */
+  const fitPools = useMemo(() => {
+    // CURLED, because that is what is painted. Every authored string this band
+    // prints goes through one curl at its render seam, and a measurement of the
+    // straight-quoted original would be measuring a string the screen never
+    // shows. `facts` is already curled where it was derived.
+    const raw = bandPools({
+      facts, movements: placed.map((p) => p.movement), cues,
+    });
+    return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
+  }, [facts, placed, cues]);
+
+  const rootRef = useRef(null);
+  const [fit, setFit] = useState(null);
+  /** Re-measure ticks: the band resized, or the display faces finally landed. */
+  const [layoutTick, setLayoutTick] = useState(0);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => setLayoutTick((n) => n + 1));
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
+  // The vendored faces land after the first layout, and a note measured in the
+  // fallback serif is measured against the wrong metrics — the same reason the
+  // rail waits for them before solving the accordion.
+  useEffect(() => {
+    let live = true;
+    document?.fonts?.ready?.then?.(() => { if (live) setLayoutTick((n) => n + 1); });
+    return () => { live = false; };
+  }, []);
+
+  // LAYOUT EFFECT, so the fit is committed before the browser paints: the first
+  // frame is already the fitted one and there is no flash of the fallback size.
+  useLayoutEffect(() => {
+    const next = fitBand(rootRef.current, fitPools);
+    if (!next) return;
+    setFit((prev) => (
+      prev
+      && prev.fontPx === next.fontPx
+      && prev.leading === next.leading
+      && prev.rejected.length === next.rejected.length
+      && prev.rejected.every((r, i) => r.text === next.rejected[i].text)
+        ? prev : next
+    ));
+  }, [fitPools, layoutTick]);
+
+  /**
+   * A note that cannot be set whole at the floors is an AUTHORING failure, and
+   * this is where it is reported. It is a `warn` rather than a `debug` because
+   * it is actionable by a person and by nobody else: the fix is in the corpus.
+   * The payload carries what the author needs — which register, how long the
+   * note is, how long it may be, and by how much it overflowed — so the budget
+   * can be read straight out of the log store.
+   */
+  const rejected = fit?.rejected ?? null;
+  useEffect(() => {
+    if (!rejected?.length) return;
+    rejected.forEach((r) => {
+      log.warn('surround.note.unfittable', {
+        contentId,
+        zone: r.zone,
+        chars: r.chars,
+        budget: r.budget,
+        cut: r.chars - r.budget,
+        overflowPx: r.overflowPx,
+        text: r.text,
+      });
+    });
+  }, [rejected, contentId, log]);
+
+  /**
+   * WHAT THE SCREEN DOES WITH ONE. It does not show it. The two alternatives
+   * are to cut it (an ellipsis — the defect this wave exists to remove) or to
+   * set it below the floors (unreadable at ten feet, which is the same defect in
+   * smaller type). Omitting it is the only option that never puts a false or
+   * unreadable claim on the screen: the band shows the notes it can show whole
+   * and says nothing about the one it cannot, while the warn above says it
+   * loudly to the only party who can fix it. If a whole pool is unfittable the
+   * register simply carries no note — its standing label stays, the box stays
+   * exactly as tall, and nothing on the band moves.
+   */
+  const fittable = useMemo(() => {
+    if (!rejected?.length) return null;
+    const by = { piece: new Set(), now: new Set() };
+    rejected.forEach((r) => by[r.zone]?.add(r.text));
+    return by;
+  }, [rejected]);
+  /**
+   * THE FIT'S IDENTITY, carried on every rotating payload the dissolve sees.
+   *
+   * A re-fit changes what each register may show, and that is not a content
+   * ROTATION — it is the band correcting itself. Softening it plays a 320ms
+   * fade of the very note the fit has just refused, which is the ellipsis defect
+   * wearing a cross-fade. `urgentNowEdge` reads this and commits instantly. It
+   * changes only when the fit does: once, a frame after mount, and again on a
+   * real resize.
+   */
+  const fitGen = fit ? `${fit.fontPx}:${fit.leading}:${fit.rejected.length}` : 'unfitted';
+
+  const pieceFacts = useMemo(
+    () => (fittable ? facts.filter((f) => !fittable.piece.has(f)) : facts),
+    [facts, fittable],
+  );
+  const nowNotes = useMemo(
+    () => (fittable ? nowPool.filter((n) => !fittable.now.has(n)) : nowPool),
+    [nowPool, fittable],
+  );
 
   // Latest cue whose dwell window contains the playhead. Derived from `position`,
   // so a seek — forwards or backwards — re-evaluates with no extra machinery.
@@ -329,7 +489,7 @@ export default function CueTicker({
     // zone — so its timer is the one clean, unbroken beat in the band, and
     // must survive a cue landing or lifting in the OTHER zone untouched.
     if (!split) return undefined;
-    if (facts.length < 2) return undefined;
+    if (pieceFacts.length < 2) return undefined;
     pieceSwappedAt.current = Date.now();
     // The NOW register is phased against this clock, so a fresh arm has to tell
     // it the clock moved. `setState` with an unchanged value bails out, so this
@@ -340,18 +500,18 @@ export default function CueTicker({
       setFactIndex((i) => i + 1);
     }, FACT_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [split, facts.length]);
+  }, [split, pieceFacts.length]);
 
   useEffect(() => {
     // Unsplit, this IS the panel a cue preempts, and the rotation holds still
     // behind it so no fact goes unseen (the behaviour since wave 2) — so this
     // branch legitimately depends on `activeCue`.
     if (split) return undefined;
-    if (facts.length < 2) return undefined;
+    if (pieceFacts.length < 2) return undefined;
     if (activeCue) return undefined;
     const id = setInterval(() => setFactIndex((i) => i + 1), FACT_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [split, activeCue, facts.length]);
+  }, [split, activeCue, pieceFacts.length]);
 
   const pieceNext = useMemo(() => {
     // Unsplit: this single zone carries the cues too.
@@ -359,12 +519,23 @@ export default function CueTicker({
       const at = Number(activeCue.at);
       return { key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)) };
     }
-    if (facts.length) {
-      const i = ((factIndex % facts.length) + facts.length) % facts.length;
-      return { key: `fact:${i}`, kind: 'fact', at: null, text: facts[i] };
+    if (pieceFacts.length) {
+      const i = ((factIndex % pieceFacts.length) + pieceFacts.length) % pieceFacts.length;
+      // KEYED BY THE TEXT, NOT BY THE INDEX (design wave 9). The dissolve treats
+      // two payloads with the same key as the same content and does nothing —
+      // and the pool is no longer a constant: the fit lands a frame after mount
+      // and withdraws any note it cannot set whole. Under an index key, dropping
+      // the first fact left the register showing that same fact for ever at
+      // `fact:0`, which is the exact note the fit had just refused. Measured on
+      // the office screen before this fix: the 224-character Napoleon note, set
+      // in 89.8px of a 39px box. The content IS the identity here, so the key is
+      // the content — and `pieceFacts`, not `facts`, is what this depends on.
+      return {
+        key: `fact:${pieceFacts[i]}`, kind: 'fact', at: null, text: pieceFacts[i], pool: fitGen,
+      };
     }
     return EMPTY;
-  }, [split, activeCue, facts, factIndex]);
+  }, [split, activeCue, pieceFacts, factIndex, fitGen]);
 
   const [pieceShown, pieceHidden] = useDissolve(pieceNext, LINE_DISSOLVE);
 
@@ -377,7 +548,7 @@ export default function CueTicker({
   useEffect(() => { setListenIndex(0); }, [movementIndex, contentId]);
 
   useEffect(() => {
-    if (!split || nowPool.length < 2) return undefined;
+    if (!split || nowNotes.length < 2) return undefined;
     // A cue owns this zone for its dwell; the rotation holds still behind it so
     // the note it interrupted is not skipped.
     if (activeCue) return undefined;
@@ -398,10 +569,13 @@ export default function CueTicker({
     return () => { clearTimeout(phase); if (interval) clearInterval(interval); };
     // `pieceArm` is in the list for its identity alone: it is how the OTHER
     // register says "my clock restarted, re-measure your offset against it".
-  }, [split, activeCue, movementIndex, nowPool.length, pieceArm]);
+  }, [split, activeCue, movementIndex, nowNotes.length, pieceArm]);
 
   const nowNext = useMemo(() => {
-    if (!split) return EMPTY;
+    // BLANK WHEN NOTHING IS SOUNDING (design wave 9) — including through a cue.
+    // A cue is a claim about what is sounding right now, so with nothing
+    // sounding it has no subject either.
+    if (!split || !movement) return EMPTY;
     if (activeCue) {
       const at = Number(activeCue.at);
       // `mv` rides along even on a cue line: fix round 1 (review finding I2)
@@ -412,13 +586,17 @@ export default function CueTicker({
         key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)), mv: movementIndex,
       };
     }
-    if (nowPool.length) {
-      const i = ((listenIndex % nowPool.length) + nowPool.length) % nowPool.length;
+    if (nowNotes.length) {
+      const i = ((listenIndex % nowNotes.length) + nowNotes.length) % nowNotes.length;
       return {
-        key: `${borrowed ? 'borrowed' : 'listen'}:${movementIndex}:${i}`,
+        // Keyed by the movement AND the text — see `pieceNext` for why the index
+        // will not do. The movement stays in the key because the same borrowed
+        // fact under a different header is different content.
+        key: `${borrowed ? 'borrowed' : 'listen'}:${movementIndex}:${nowNotes[i]}`,
         kind: borrowed ? 'fact' : 'listen',
         at: null,
-        text: nowPool[i],
+        text: nowNotes[i],
+        pool: fitGen,
         // Fix round 1 (review finding I2): which movement this line belongs
         // to. `useDissolve` compares this against the currently-SHOWN line's
         // `mv` to detect a movement boundary and commit instantly instead of
@@ -429,7 +607,7 @@ export default function CueTicker({
       };
     }
     return EMPTY;
-  }, [split, activeCue, nowPool, listenIndex, borrowed, movementIndex]);
+  }, [split, movement, activeCue, nowNotes, listenIndex, borrowed, movementIndex, fitGen]);
 
   const [nowShown, nowHidden] = useDissolve(nowNext, LINE_DISSOLVE);
 
@@ -519,14 +697,35 @@ export default function CueTicker({
    */
   const shortTitle = smartQuotes(trimmed(data?.piece?.short_title));
 
+  /**
+   * DOES THE NOW HEADER RESERVE A LINE FOR THE GLOSS?
+   *
+   * It is a property of the PIECE, not of the sounding movement, and that is
+   * what keeps the header's height constant: a work where some movements are
+   * glossed and some are not would otherwise give the note's box a different
+   * run in different movements, and the fit is solved once for the whole piece.
+   * Where no movement is glossed at all, no line is reserved and nothing is
+   * spent.
+   */
+  const glossed = useMemo(
+    () => placed.some(({ movement: m }) => Boolean(trimmed(m?.translation))),
+    [placed],
+  );
+
   return (
     <div
+      ref={rootRef}
       className={`surround-cue-ticker surround-cue-ticker--${rootKind}${split ? ' surround-cue-ticker--split' : ''}${split && renderedSide === 'left' ? ' surround-cue-ticker--now-left' : ''}${split && !nowHeading ? ' surround-cue-ticker--no-now-heading' : ''}`}
       data-testid="surround-cue-ticker"
       data-kind={rootKind}
       data-split={split ? 'true' : 'false'}
       data-now-side={split ? side : null}
-      style={{ '--accordion-ms': `${ACCORDION_MS}ms`, '--cue-fade-ms': `${CUE_FADE_MS}ms` }}
+      data-sounding={split && movement ? 'true' : 'false'}
+      style={{
+        '--accordion-ms': `${ACCORDION_MS}ms`,
+        '--cue-fade-ms': `${CUE_FADE_MS}ms`,
+        ...fitStyle(fit),
+      }}
     >
       <div className={`surround-cue-ticker__zones${sideSwapping ? ' surround-cue-ticker__zones--swapping' : ''}`}>
         {/* THE NOW PANEL'S GROUND — the band's half of the bond (design wave 7).
@@ -547,6 +746,11 @@ export default function CueTicker({
             className="surround-cue-ticker__ground"
             data-testid="surround-ticker-ground"
             data-side={side}
+            // NOTHING SOUNDING, NOTHING LIT (design wave 9). The bond is what is
+            // sounding; before the first movement and after the last there is
+            // nothing for it to be, so this panel fades exactly as the rail's
+            // does and the register above it is blank.
+            data-bonded={movement ? 'true' : 'false'}
             style={{ '--now-left': side === 'left' ? '0%' : '50%' }}
             aria-hidden="true"
           />
@@ -573,15 +777,17 @@ export default function CueTicker({
             data-testid="surround-ticker-text"
             style={{ transition: `opacity ${CUE_FADE_MS}ms ease` }}
           >
-            {/* Fix round 1 (review finding, wave 5): the reserve (grid +
-                align-content) and the ellipsis (the line clamp) are two jobs,
-                and Chromium will not let one element do both —
-                `-webkit-line-clamp` needs `display: -webkit-box`, which
-                computes to `flow-root` and drags `align-content` off with it
-                (wave 2, flag 4). Splitting them across two elements lets BOTH
-                survive: this span clamps to two lines with an ellipsis, and the
-                `<p>` around it centres whatever height that clamp produces. */}
+            {/* Two elements, because the box and the thing centred in it cannot
+                be the same element: the `<p>` is the grid that centres, this
+                span is the line. (It used to be the CLAMP as well — wave 5's
+                fix, because `-webkit-line-clamp` needs `display: -webkit-box`,
+                which drags `align-content` off with it. There is no clamp any
+                more: the type is fitted so nothing is cut.) */}
             <span className="surround-cue-ticker__line">{pieceShown.text}</span>
+            {/* THE RULER (design wave 9) — see `../fit.js`. Rendered, never
+                conditional, so the tree's depth is constant and the measurement
+                inherits every typographic property from the box it measures. */}
+            <span className="surround-cue-ticker__probe" aria-hidden="true" />
           </p>
         </div>
 
@@ -606,23 +812,28 @@ export default function CueTicker({
             <p
               className="surround-cue-ticker__now"
               data-testid="surround-ticker-now"
+              data-sounding={movement ? 'true' : 'false'}
             >
-              {movementName ? (
-                <>
-                  <span className="surround-cue-ticker__now-head">
+              {/* NOTHING SOUNDING IS BLANK (design wave 9). It used to print
+                  "Listen for" over the applause and over the walk-on, which is
+                  a header for a note that is not there — the register has no
+                  subject in that state, and inventing one is the frame talking
+                  when it has nothing to say. The lines are still RESERVED
+                  (blank, not absent): an element that disappeared would hand its
+                  height to the note's box below, change the room the fit was
+                  solved against, and resize the whole band's type on a movement
+                  boundary. */}
+              <span className="surround-cue-ticker__now-head">
+                {movementName ? (
+                  <>
                     {numeral && <span className="surround-cue-ticker__now-numeral">{numeral}</span>}
                     <span className="surround-cue-ticker__now-name">{movementName}</span>
-                  </span>
-                  {movementTranslation && (
-                    <span className="surround-cue-ticker__now-translation">{movementTranslation}</span>
-                  )}
-                </>
-              ) : (
-                // Between the last chord and the end of the file there is no
-                // movement sounding. The header says so rather than holding the
-                // final movement's name over the applause.
-                <span className="surround-cue-ticker__now-head">
-                  <span className="surround-cue-ticker__now-name">Listen for</span>
+                  </>
+                ) : BLANK_LINE}
+              </span>
+              {glossed && (
+                <span className="surround-cue-ticker__now-translation">
+                  {movementTranslation || BLANK_LINE}
                 </span>
               )}
             </p>
@@ -633,6 +844,7 @@ export default function CueTicker({
               style={{ transition: `opacity ${CUE_FADE_MS}ms ease` }}
             >
               <span className="surround-cue-ticker__line">{nowShown.text}</span>
+              <span className="surround-cue-ticker__probe" aria-hidden="true" />
             </p>
           </div>
         )}

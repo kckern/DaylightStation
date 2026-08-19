@@ -59,6 +59,10 @@ import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import { accordionShares, desiredWidth, SEGMENT_FLOOR_PX } from './band.js';
+import {
+  bandPools, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
+} from './fit.js';
+import { smartQuotesAll } from './typography.js';
 import './builtins.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -156,6 +160,120 @@ const EROICA = Object.freeze({
   facts: [NAPOLEON],
 });
 
+/**
+ * THE OTHER SHIPPED PIECE, verbatim from `data/content/library/classical/vivaldi/
+ * four-seasons-spring.yml`. Three movements against the Eroica's four, a third of
+ * the duration, and much shorter facts — which is exactly why it is here: a fit
+ * ladder that only ever sees one corpus proves nothing about the ladder.
+ */
+const SPRING = Object.freeze({
+  id: 'concert-hall',
+  contentId: 'plex:spring',
+  definition: DEFINITION,
+  assetBase: 'library/classical',
+  piece: {
+    title: 'Violin Concerto in E major, "Spring"',
+    short_title: "Vivaldi's Spring",
+    opus: 'Op. 8 No. 1, RV 269',
+    composed: 'by 1725',
+    year: 1725,
+    premiered: 'Published Amsterdam, 1725',
+    musicEndsAt: 610,
+  },
+  composer: {
+    name: 'Antonio Vivaldi', born: 1678, died: 1741, birthplace: 'Venice', period: 'Baroque',
+    facts: ['Vivaldi was ordained a priest and was known as il Prete Rosso, the Red Priest.'],
+  },
+  movements: [
+    {
+      n: 1,
+      name: 'Allegro',
+      translation: 'Fast and lively',
+      listen: [
+        'Three solo violins trade birdcalls in the opening — each bird its own figure.',
+        'A soft murmuring in the violins is the brook; the storm breaks in with tremolo and racing scales.',
+        'The opening theme keeps returning between episodes — count its comebacks.',
+      ],
+      start: 0,
+    },
+    {
+      n: 2,
+      name: 'Largo e pianissimo sempre',
+      translation: 'Slow, and always very soft',
+      listen: [
+        'The solo violin is the sleeping goatherd; the murmuring violins are leaves in the breeze.',
+        "The violas bark twice a bar, all the way through — Vivaldi marked the part 'the dog that barks'.",
+      ],
+      start: 205,
+    },
+    {
+      n: 3,
+      name: 'Allegro pastorale',
+      translation: 'Fast, in a pastoral style',
+      listen: [
+        'A drone in the low strings imitates bagpipes under the dance — a rustic musette.',
+        'The solo violin leads the country dance — nymphs and shepherds celebrating the season.',
+      ],
+      start: 383,
+    },
+  ],
+  cues: [],
+  facts: [
+    'Spring opened Il cimento dell\u2019armonia e dell\u2019inventione — The Contest of Harmony and Invention — the 1725 collection that made the Four Seasons famous.',
+    'Each of the Four Seasons was published alongside a sonnet describing the scene. Vivaldi may have written the poems himself.',
+    'The score is marked with the things it depicts: birdsong, a thunderstorm, a barking dog.',
+  ],
+});
+
+/**
+ * The Eroica's WHOLE fact pool, verbatim from the corpus — not just the Napoleon
+ * note. The wave-8 fixture carried one fact because one tier was being proved;
+ * the fit is solved against every string the band can show, so every string the
+ * band can show is what the fixture has to hold.
+ */
+const EROICA_FULL = Object.freeze({
+  ...EROICA,
+  facts: [
+    NAPOLEON,
+    'It is twice as long as a symphony by Haydn or Mozart. The first movement alone runs about as long as a whole Classical symphony.',
+    'The published title page reads: composed to celebrate the memory of a great man.',
+    'A surviving copy of the score still shows the dedication to Bonaparte scratched out — twice, in two languages.',
+    'The second movement was played at state funerals for more than a century after his death.',
+  ],
+  movements: EROICA.movements.map((m, i) => ({
+    ...m,
+    listen: [
+      m.listen[0],
+      ...(i === 0 ? [
+        'The theme slides onto a strange note almost at once — that small wrongness powers the whole movement.',
+        'Before the main theme returns, a lone horn sneaks it in early over hushed strings — early audiences thought the player had miscounted.',
+        'Huge off-beat chords batter against the bar line — the music fighting its own meter.',
+      ] : []),
+    ],
+  })),
+  cues: [
+    { at: 976, render: 'docked', text: 'The funeral march. Beethoven puts a death at the centre of a symphony — nobody had done that before.' },
+    { at: 1925, render: 'docked', text: 'The scherzo. Its trio uses three horns — the first time that had ever happened in a symphony.' },
+    { at: 2278, render: 'docked', text: 'The finale takes a tune Beethoven had already used three times before, and builds a set of variations on it.' },
+  ],
+});
+
+/** The two pieces this frame actually ships, by the name the failure prints. */
+const SHIPPED = Object.freeze([
+  { piece: "Beethoven's Eroica", data: EROICA_FULL, sounding: 1200 },
+  { piece: "Vivaldi's Spring", data: SPRING, sounding: 300 },
+]);
+
+/** Every string the band can show, exactly as `CueTicker` derives them. */
+const poolsFor = (data) => {
+  const raw = bandPools({
+    facts: data.facts,
+    movements: data.movements,
+    cues: data.cues,
+  });
+  return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
+};
+
 /** Movement II is sounding: the longest heading and the longest gloss on the rail. */
 const POSITION = 1200;
 
@@ -189,6 +307,29 @@ async function compileSheet() {
   });
 }
 
+/**
+ * `fit.js`, LOADED INTO THE PAGE AND RUN THERE.
+ *
+ * The band's type is chosen by a SEARCH whose every step is a measurement, so
+ * unlike the accordion it cannot be split into "DOM reads here, arithmetic
+ * there" — the loop is the load-bearing part and it has to be inside the layout
+ * engine. Transcribing it into this spec would be the exact defect this whole
+ * file exists to abolish, so the shipped source is injected instead: `fit.js`
+ * has no imports precisely so that stripping its `export` keywords yields a
+ * runnable classic script. The functions this spec calls are the functions
+ * `CueTicker` calls, byte for byte.
+ */
+async function injectFit(page) {
+  const src = fs.readFileSync(path.join(HERE, 'fit.js'), 'utf8')
+    .replace(/^export default .*$/m, '')
+    .replace(/^export /gm, '');
+  await page.addScriptTag({
+    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
+  });
+  const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function');
+  expect(ok, 'fit.js did not load into the page — the injection stripped something it needed').toBe(true);
+}
+
 /* -------------------------------------------------------------------------- */
 /* The page                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -198,6 +339,7 @@ async function compileSheet() {
  * the browser has it after the frame's own effects have run once.
  */
 async function layout(page, css, { width, height, data = EROICA, position = POSITION }) {
+  const pools = poolsFor(data);
   const markup = renderToStaticMarkup(
     <SurroundFrame
       data={data}
@@ -260,7 +402,42 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
     }
   }, DEFINITION.collapse.footerFloor);
 
-  return page;
+  // EFFECT 3 — `CueTicker`'s fit, reproduced by calling it. The component runs
+  // `fitBand(root, pools)` in a layout effect and publishes what it returns as
+  // two custom properties; both halves happen here, with the SAME functions.
+  await injectFit(page);
+  const fit = await page.evaluate((p) => {
+    const root = document.querySelector('.surround-cue-ticker');
+    if (!root) return null;
+    const solved = window.__fit.fitBand(root, p);
+    if (!solved) return null;
+    const style = window.__fit.fitStyle(solved);
+    Object.entries(style).forEach(([k, v]) => root.style.setProperty(k, v));
+
+    // EFFECT 4 — THE ROTATION SHOWS ONLY WHAT FITS. `CueTicker` filters each
+    // register's pool by the fit's rejections before rotating (a note that
+    // cannot be set whole at the floors is an authoring failure, warned about
+    // and not shown). `renderToStaticMarkup` ran no effects, so the markup on
+    // this page still carries the FIRST authored fact whether or not it fits;
+    // without this the spec would sweep a string the component would never
+    // paint, and would be red for the corpus rather than for the code.
+    [['piece', 'surround-ticker-text'], ['now', 'surround-ticker-listen']].forEach(([key, id]) => {
+      const line = document.querySelector(`[data-testid="${id}"] .surround-cue-ticker__line`);
+      if (!line) return;
+      const painted = line.textContent;
+      // ONLY where the painted note is one the component would have dropped.
+      // A blank register (nothing sounding) stays blank, and a note that fits
+      // stays exactly where the server render put it.
+      if (!solved.rejected.some((r) => r.zone === key && r.text === painted)) return;
+      const shown = (p[key] ?? []).filter(
+        (t) => !solved.rejected.some((r) => r.zone === key && r.text === t),
+      );
+      line.textContent = shown[0] ?? '';
+    });
+    return solved;
+  }, pools);
+
+  return { page, fit, pools };
 }
 
 /**
@@ -324,63 +501,84 @@ async function runAccordion(page) {
 }
 
 /**
- * THE NOTE, AS SET — measured off the element that actually holds line boxes.
+ * IS THIS NOTE CUT? — measured on the element that actually holds line boxes.
  *
  * The first version of this divided `.surround-cue-ticker__text`'s height by its
- * line-height. That box has `min-height == max-height` in every tier, so the
- * division was `max-height ÷ line-height`: a ratio of two compiled CSS values,
- * evaluated in a browser. It proved which container-query tier matched — worth
- * having, and it needs real box heights — but it observed no text at all, which
- * is the exact defect class this whole file exists to eliminate.
+ * line-height. That box had `min-height == max-height` in every tier, so the
+ * division was `max-height / line-height`: a ratio of two compiled CSS values,
+ * evaluated in a browser. It observed no text at all, which is the exact defect
+ * class this whole file exists to eliminate.
  *
- * `.surround-cue-ticker__line` is the element that truncates
- * (`display: -webkit-box; -webkit-line-clamp: N; overflow: hidden`) and it
- * carries NO height constraint of its own, so its rendered height is the number
- * of line boxes the clamp actually allowed, times one line. That is painted
- * text. Lifting the clamp and the reserve and re-measuring gives the height the
- * note WANTED — the same technique the name-measure test below uses — and the
- * difference between the two is what the ellipsis ate.
+ * What is measured now is the thing the law is about. `__line` carries the text
+ * and no height constraint, so its rendered height is the height the note SETS
+ * in this measure at this size. `__text` is the room it has. Cut is the
+ * difference, and it must be zero — for every note, at every screen, forever.
  *
- * @returns painted/natural/reserve, in both px and lines, plus the clamp count.
+ * `setText` puts a specific string in the line first, because the rotation shows
+ * one at a time and the law is about all of them.
  */
-async function noteMeasure(page) {
-  return page.locator('[data-testid="surround-ticker-text"]').first().evaluate((box) => {
+async function noteCut(page, { zone = 'text', text = null } = {}) {
+  const testid = zone === 'now' ? 'surround-ticker-listen' : 'surround-ticker-text';
+  return page.locator(`[data-testid="${testid}"]`).first().evaluate((box, next) => {
     const line = box.querySelector('.surround-cue-ticker__line');
-    const lh = parseFloat(getComputedStyle(box).lineHeight);
-    const clamp = Number(getComputedStyle(line).webkitLineClamp
-      ?? getComputedStyle(line).getPropertyValue('-webkit-line-clamp'));
-    const reservePx = box.getBoundingClientRect().height;
-    const paintedPx = line.getBoundingClientRect().height;
-
-    const prev = {
-      clamp: line.style.webkitLineClamp,
-      min: box.style.minHeight,
-      max: box.style.maxHeight,
-    };
-    line.style.webkitLineClamp = 'unset';
-    box.style.minHeight = '0';
-    box.style.maxHeight = 'none';
-    const naturalPx = line.getBoundingClientRect().height;
-    line.style.webkitLineClamp = prev.clamp;
-    box.style.minHeight = prev.min;
-    box.style.maxHeight = prev.max;
-
+    if (next !== null) line.textContent = next;
+    const cs = getComputedStyle(box);
+    const lh = parseFloat(cs.lineHeight);
+    const roomPx = box.clientHeight;
+    const setPx = line.getBoundingClientRect().height;
     const px = (n) => Number(n.toFixed(2));
     return {
+      text: line.textContent,
+      chars: line.textContent.length,
+      fontSize: px(parseFloat(cs.fontSize)),
       lineHeight: px(lh),
-      fontSize: getComputedStyle(box).fontSize,
-      clampLines: Number.isFinite(clamp) ? clamp : null,
-      reservePx: px(reservePx),
-      reserveLines: Math.round(reservePx / lh),
-      paintedPx: px(paintedPx),
-      paintedLines: Math.round(paintedPx / lh),
-      naturalPx: px(naturalPx),
-      naturalLines: Math.round(naturalPx / lh),
+      leading: Number((lh / parseFloat(cs.fontSize)).toFixed(3)),
+      roomPx: px(roomPx),
+      setPx: px(setPx),
+      lines: Math.round(setPx / lh),
+      cutPx: px(Math.max(0, setPx - roomPx)),
+      // The truncation machinery, read back off the paint. Both must be inert:
+      // this band has no ellipsis at any size.
+      // `none` and `''` are the inert readings; a NUMBER means a clamp is armed.
+      clamp: Number.parseInt(getComputedStyle(line).getPropertyValue('-webkit-line-clamp'), 10) || null,
+      overflowRule: cs.textOverflow,
+      scrollOver: box.scrollHeight - box.clientHeight,
+    };
+  }, text);
+}
+
+/**
+ * THE BOND, AS PAINTED — the three boxes that have to be ONE region.
+ *
+ * Returns each part's horizontal extent in page pixels, so a join can be checked
+ * as an INTERVAL rather than by eye. A point-contact — the defect this wave
+ * removes — is an overlap of zero, and reads as such here.
+ */
+async function bondBoxes(page) {
+  return page.evaluate(() => {
+    const rect = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return {
+        x: r.x, right: r.right, y: r.y, bottom: r.bottom, w: r.width, h: r.height,
+        opacity: Number(cs.opacity),
+        bg: cs.backgroundColor,
+        radius: cs.borderRadius,
+      };
+    };
+    return {
+      segment: rect('[data-testid="surround-bond"]'),
+      waist: rect('[data-testid="surround-bond-connector"]'),
+      panel: rect('[data-testid="surround-ticker-ground"]'),
+      rule: rect('.surround-movement-map__rule'),
+      zones: rect('.surround-cue-ticker__zones'),
     };
   });
 }
 
-/** The ticker's own content box — what a `@container ticker (min-height: N)` sees. */
+/** The ticker's own content box — what the surviving `@container` query sees. */
 async function tickerContentBox(page) {
   return page.locator('.surround-cue-ticker').first().evaluate((el) => {
     const cs = getComputedStyle(el);
@@ -406,23 +604,22 @@ describe('the band, measured against the shipped stylesheet', () => {
   afterAll(async () => { await browser?.close(); });
 
   /**
-   * THE LAW THE `overflow: hidden` HIDES. Every reserve in the ticker is a
-   * `min-height`/`max-height` pair on a box that clips, so an over-budget tier
-   * does not look broken — it silently eats the last line of the note.
+   * THE LAW THE `overflow: hidden` HIDES. Every box in the ticker clips, so an
+   * over-budget layout does not look broken — it silently eats the last line of
+   * the note.
    *
-   * `.surround-cue-ticker__line` is NOT in this sweep, and that is deliberate
-   * rather than an oversight: it is the clamped element, so on any note longer
-   * than its tier it overflows BY DESIGN — measured, `scrollHeight` 122 against
-   * `clientHeight` 98 at 1280x720, which is the ellipsis doing its job on a
-   * genuine overflow. Including it here would make this case red on shipped,
-   * correct output. What must be true of that element is asserted in the next
-   * case instead, where it belongs: every line the clamp PAINTS has to fit
-   * inside the reserve.
+   * `.surround-cue-ticker__line` IS in this sweep now, and its arrival is the
+   * whole of design wave 9. Under the tier lattice it was the CLAMPED element,
+   * so on any note longer than its tier it overflowed BY DESIGN — measured,
+   * `scrollHeight` 122 against `clientHeight` 98 at 1280x720, the ellipsis doing
+   * its job on a genuine overflow — and including it would have made this case
+   * red on shipped, correct output. There is no clamp any more and no note is
+   * ever cut, so the element that used to be the exception is now the point.
    */
-  it.each(FLEET)('$name — the ticker never overflows its own reserve', async ({ width, height }) => {
-    await layout(page, css, { width, height });
+  it.each(FLEET)('$name — nothing in the ticker overflows the box that clips it', async ({ width, height }) => {
+    await layout(page, css, { width, height, data: EROICA_FULL });
     const boxes = await page.evaluate(() => [...document.querySelectorAll(
-      '.surround-cue-ticker, .surround-cue-ticker__text, .surround-cue-ticker__zone',
+      '.surround-cue-ticker, .surround-cue-ticker__text, .surround-cue-ticker__zone, .surround-cue-ticker__line',
     )].map((el) => ({
       cls: el.className,
       scrollHeight: el.scrollHeight,
@@ -432,103 +629,258 @@ describe('the band, measured against the shipped stylesheet', () => {
     const overflowing = boxes.filter((b) => b.scrollHeight > b.clientHeight);
     expect(
       overflowing,
-      `boxes overflowing their reserve: ${JSON.stringify(overflowing)}`,
+      `boxes overflowing the box that clips them: ${JSON.stringify(overflowing)}`,
     ).toEqual([]);
   }, 60000);
 
   /**
-   * THE TIER LATTICE, asserted as PAINTED LINE BOXES — text that a viewer can
-   * count on the screen — rather than as the presence of a CSS rule or as a
-   * ratio of two compiled CSS values.
+   * ============================================================================
+   * NO ELLIPSIS. ANYWHERE. EVER.
+   * ============================================================================
    *
-   * Three things are asserted together, because each one alone is escapable:
+   * The headline law of design wave 9, and the reason the tier lattice was
+   * deleted. A television has no "read more", no scroll and no pointer: a note
+   * that stops mid-sentence with three dots is a claim the viewer cannot
+   * complete, and it is worse than no note at all.
    *
-   *   1. THE TIER. `paintedLines` is `.surround-cue-ticker__line`'s own height
-   *      over one line's; that element has no height constraint, so its height
-   *      IS the number of line boxes the clamp allowed.
-   *   2. THE RESERVE AND THE CLAMP AGREE. Every tier's reserve is derived from
-   *      the line-height (`4.05em` is 3 x 1.35em, `5.4em` is 4 x 1.35em) and
-   *      nothing but a comment says so. Raise the line-height without moving the
-   *      reserve and the clamp still allows four lines into a box that now holds
-   *      three; the parent's `overflow: hidden` swallows the fourth in silence.
-   *      Asserting the two counts against the MEASURED line-height is what sees
-   *      that. (The painted height cannot exceed the reserve — the grid area
-   *      bounds it — so asserting that would be an assertion that cannot fail.)
-   *   3. THE MEASUREMENT IS NOT VACUOUS. The fact used has to genuinely NEED at
-   *      least the tier's line count, or "four lines were painted" would be
-   *      satisfied by any short string and prove nothing about the tier. That is
-   *      why the 224-character Napoleon fact is the fixture.
+   * Every string the band can show is put in the register in turn and measured
+   * against the room it has. `cutPx` is the height the note SET minus the height
+   * it was GIVEN, so zero is the law and anything else is the defect, reported
+   * with the size, the leading, the line count and the overflow.
    *
-   * The expected counts are the design's own, stated in `CueTicker.scss`:
-   * 960x540 stays on the single-line tier; 1280x720 and 1920x1080 both reach
-   * four. (1280x720 gets there through the 108px `--no-now-heading` tier, not
-   * the 161px one — the rail names the movement, so the NOW register spends no
-   * height on a heading. See that tier's own derivation.)
+   * TO GO RED: restore `-webkit-line-clamp` on `.surround-cue-ticker__line`
+   * (with the reserve tiers, the shipped notes overflow it at 960x540 and
+   * 1280x720 — see the wave-8 spec this replaces, which asserted the ellipsis as
+   * correct behaviour); or raise `PROSE_CEILING_PX`; or delete the rejection
+   * pass in `fitBand`, which is what keeps an unfittable note off the screen
+   * instead of clipped inside it.
    */
-  const tierCase = async ({ width, height, lines, threshold, data }) => {
-    await layout(page, css, { width, height, ...(data ? { data } : null) });
-    const container = await tickerContentBox(page);
-    const m = await noteMeasure(page);
-    const where = `tier ${threshold}; ticker content box ${container}px, reserve ${m.reservePx}px, line-height ${m.lineHeight}px at ${m.fontSize}; the note sets ${m.naturalLines} lines (${m.naturalPx}px) and ${m.paintedLines} are painted (${m.paintedPx}px)`;
+  describe.each(SHIPPED)('$piece — the note is never cut', ({ data, sounding }) => {
+    it.each(FLEET)('$name', async ({ width, height, name }) => {
+      const { fit, pools } = await layout(page, css, {
+        width, height, data, position: sounding,
+      });
+      expect(fit, 'the band was never laid out, so nothing was fitted').not.toBeNull();
 
-    expect(m.paintedLines, `expected ${lines} painted line(s), got ${m.paintedLines} — ${where}`)
-      .toBe(lines);
+      const shown = pools.piece.filter((t) => !fit.rejected.some((r) => r.zone === 'piece' && r.text === t));
+      const cuts = [];
+      for (const text of shown) {
+        // eslint-disable-next-line no-await-in-loop -- one layout at a time, on purpose
+        const m = await noteCut(page, { text });
+        if (m.cutPx > 0 || m.clamp || m.overflowRule === 'ellipsis') cuts.push({ ...m, at: name });
+      }
+      expect(
+        cuts,
+        `${cuts.length} of the ${shown.length} facts the piece register shows at ${name} are cut or `
+        + `clamped: ${JSON.stringify(cuts.map((c) => ({
+          chars: c.chars, set: c.setPx, room: c.roomPx, cut: c.cutPx, clamp: c.clamp,
+        })))}`,
+      ).toEqual([]);
+
+      // ...and the same for the NOW register, whose rotation is the case the
+      // brief asked to be argued rather than assumed. Its pool is per-movement
+      // and its room is the same box, so the fit covers it by the same solve.
+      const shownNow = pools.now.filter((t) => !fit.rejected.some((r) => r.zone === 'now' && r.text === t));
+      const nowCuts = [];
+      for (const text of shownNow) {
+        // eslint-disable-next-line no-await-in-loop
+        const m = await noteCut(page, { zone: 'now', text });
+        if (m.cutPx > 0 || m.clamp) nowCuts.push(m);
+      }
+      expect(
+        nowCuts,
+        `the NOW register cuts ${nowCuts.length} of its ${shownNow.length} notes at ${name}`,
+      ).toEqual([]);
+    }, 90000);
+  });
+
+  /**
+   * THE FLOORS ARE FLOORS. The ladder may tighten the leading and step the size
+   * down, and it may not go past either bound — below them the note is
+   * unreadable at ten feet, which is the same defect in smaller type. Both are
+   * derived in `fit.js` against the vendored face's own metrics; this asserts
+   * that what is PAINTED honours them.
+   *
+   * TO GO RED: return anything outside [floor, ceiling] from `largestPassing`,
+   * or let the rejection pass fall through to a smaller size instead of
+   * dropping the note.
+   */
+  it.each(FLEET)('$name — the fitted type stays inside the ladder’s floors', async ({ width, height, name }) => {
+    const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
+    const m = await noteCut(page);
     expect(
-      m.reserveLines,
-      `the clamp allows ${m.clampLines} lines and the reserve is ${m.reservePx}px, which is ${m.reserveLines} lines at the measured ${m.lineHeight}px — so the clamp's last ${m.clampLines - m.reserveLines} line(s) are clipped by the parent, with nothing on screen to say so. Every tier's reserve is derived from this line-height (4.05em is 3 x 1.35em, 5.4em is 4 x 1.35em); this is the assertion that notices when one moves and the other does not. ${where}`,
-    ).toBe(m.clampLines);
+      m.fontSize,
+      `the note is set at ${m.fontSize}px at ${name}, below the ${PROSE_FLOOR_PX}px prose floor — `
+      + 'an x-height of ' + (m.fontSize * 0.42).toFixed(2) + 'px against the 5.91px the floor buys',
+    ).toBeGreaterThanOrEqual(PROSE_FLOOR_PX - 0.01);
+    expect(m.fontSize, 'the note is louder than the work’s own title on the plate')
+      .toBeLessThanOrEqual(PROSE_CEILING_PX + 0.01);
     expect(
-      m.naturalLines,
-      `the fixture note only needs ${m.naturalLines} lines, so painting ${lines} proves nothing about this tier — ${where}`,
-    ).toBeGreaterThanOrEqual(lines);
-    return m;
+      m.leading,
+      `the note is leaded at ${m.leading} at ${name}; EB Garamond's ink extent is 1.00em, so that `
+      + `leaves ${(m.leading - 1).toFixed(2)}em between one line's descenders and the next line's `
+      + `ascenders — the floor is ${LEADING_FLOOR}`,
+    ).toBeGreaterThanOrEqual(LEADING_FLOOR - 0.001);
+    expect(m.leading, 'the note is leaded looser than the design sets it')
+      .toBeLessThanOrEqual(LEADING_MAX + 0.001);
+    expect(fit.fontPx).toBeCloseTo(m.fontSize, 1);
+  }, 60000);
+
+  /**
+   * THE SCREEN THAT HAS TO BE RIGHT. 1280x720 is the office kiosk's real
+   * screen-root; 960x540 and 1920x1080 are the fleet's other two. At the office
+   * screen EVERY authored fact and EVERY listening note of BOTH shipped pieces
+   * must fit — nothing rejected, nothing dropped from a rotation.
+   *
+   * TO GO RED: lengthen any shipped fact past its budget, or narrow the band.
+   * The failure prints the budget, so the corpus can be fixed from the message.
+   */
+  it.each(SHIPPED)('1280x720 — every one of $piece’s notes fits, with none dropped', async ({ data, sounding }) => {
+    const { fit } = await layout(page, css, {
+      ...FLEET[1], data, position: sounding,
+    });
+    expect(
+      fit.rejected,
+      `${fit.rejected.length} note(s) cannot be set whole at the office screen even at the `
+      + `floors, so the band will not show them at all. Re-author to the budget:\n`
+      + fit.rejected.map((r) => `  [${r.zone}] ${r.chars} chars, budget ${r.budget} `
+        + `(cut ${r.chars - r.budget}), overflow ${r.overflowPx}px: ${r.text.slice(0, 60)}...`).join('\n'),
+    ).toEqual([]);
+  }, 90000);
+
+  /**
+   * ============================================================================
+   * THE BOND IS ONE CONNECTED REGION — no point-contacts, anywhere.
+   * ============================================================================
+   *
+   * The defect the user found: the lit segment, the waist and the lit NOW panel
+   * met at a CORNER — "kitty corner", diagonal neighbours touching at a point.
+   * Two regions joined at a point are two regions, in every sense a viewer has.
+   *
+   * Asserted as geometry, over every movement of both shipped pieces and both
+   * `nowSide` settings, because "it looked joined at 1200s on the Eroica" is
+   * exactly the kind of evidence that let this ship in the first place:
+   *
+   *   1. the waist and the segment overlap along a REAL interval (the segment's
+   *      own full width), and touch vertically with no gap;
+   *   2. the waist covers the panel's ENTIRE width — the brief's own wording,
+   *      and the thing a corner-join fails;
+   *   3. all three are painted in the same ground, or they are not one shape
+   *      however they are joined.
+   *
+   * TO GO RED: return `{ start: b, width: panelStart - b }` from `bondConnector`
+   * — wave 7's version, which stops at the panel's near edge.
+   */
+  const bondCase = async ({ width, height, data, sounding, movementIndex, side, name }) => {
+    const withSide = { ...data, definition: { ...DEFINITION, band: { nowSide: side } } };
+    const at = data.movements[movementIndex].start
+      + Math.max(1, ((data.movements[movementIndex + 1]?.start ?? data.piece.musicEndsAt)
+        - data.movements[movementIndex].start) / 2);
+    await layout(page, css, { width, height, data: withSide, position: at });
+    const b = await bondBoxes(page);
+    const where = `${name}, movement ${movementIndex + 1} at ${Math.round(at)}s, nowSide ${side}`;
+    expect(b.segment, `no bond on the rail — ${where}`).not.toBeNull();
+    expect(b.panel, `no panel in the register — ${where}`).not.toBeNull();
+    expect(Number(b.segment.opacity), `the bond is faded out while a movement is sounding — ${where}`).toBe(1);
+
+    const overlap = (a, c) => Math.min(a.right, c.right) - Math.max(a.x, c.x);
+
+    // 1. THE LOWER JOIN — the defect itself, asserted first because it is the
+    //    one the user saw. THE WAIST MUST COVER THE PANEL'S WHOLE TOP EDGE.
+    const welded = overlap(b.waist, b.panel);
+    expect(
+      Number(welded.toFixed(2)),
+      `the waist welds ${welded.toFixed(2)}px of the NOW panel's ${b.panel.w.toFixed(2)}px top `
+      + `edge — ${welded <= 1 ? 'a POINT CONTACT: the two lit areas are kitty corner, joined at nothing'
+        : 'a partial weld, so the panel is pinched at one end'}`
+      + ` — ${where}`,
+    ).toBeCloseTo(Number(b.panel.w.toFixed(2)), 1);
+    expect(
+      b.panel.y - b.waist.bottom,
+      `${(b.panel.y - b.waist.bottom).toFixed(2)}px of band ground between the waist and the panel — ${where}`,
+    ).toBeCloseTo(0, 1);
+
+    // 2. THE UPPER JOIN. Same law, one storey up: the waist must contain the
+    //    segment's whole width, and their boxes must touch vertically.
+    expect(
+      Number(overlap(b.segment, b.waist).toFixed(2)),
+      `the waist overlaps the sounding segment by ${overlap(b.segment, b.waist).toFixed(2)}px of `
+      + `its ${b.segment.w.toFixed(2)}px width — ${where}`,
+    ).toBeCloseTo(Number(b.segment.w.toFixed(2)), 1);
+    expect(
+      b.waist.bottom - b.segment.bottom,
+      `the waist's foot is ${(b.waist.bottom - b.segment.bottom).toFixed(2)}px off the segment's — ${where}`,
+    ).toBeCloseTo(0, 1);
+
+    // 3. ONE GROUND.
+    expect([b.segment.bg, b.waist.bg], `the three parts are painted ${b.segment.bg} / ${b.waist.bg} / ${b.panel.bg} — ${where}`)
+      .toEqual([b.panel.bg, b.panel.bg]);
   };
 
-  it.each([
-    { ...FLEET[0], lines: 1, threshold: 'below 88px — the single-line tier' },
-    { ...FLEET[1], lines: 4, threshold: '108px — the no-now-heading four-line tier' },
-    { ...FLEET[2], lines: 4, threshold: '161px — the four-line tier' },
-  ])('$name — the note is set in $lines painted line(s)', tierCase, 60000);
-
-  /**
-   * THE FOURTH LINE PAYS FOR ITSELF AT THE TOP OF THE FLEET, and this is the
-   * thinnest margin in the whole design: the shipped 224-character fact sets
-   * WHOLE at 1920x1080 — the reason the four-line tier was added at all — with
-   * about a thirtieth of a pixel to spare. Any widening of the display face, any
-   * rise in the clamp's ceiling, any change to the line-height, and the note
-   * starts ellipsizing on the largest screen in the house.
-   *
-   * It is asserted only here, and deliberately not at the smaller sizes: at
-   * 1280x720 the same fact's fifth line IS ellipsized, and the stylesheet says
-   * so in as many words ("the fourth line — for this one fact, on this one
-   * measure — still ellipsizes, which is the wrap-or-ellipsis law doing exactly
-   * its job on a genuine overflow"). A blanket "the note is always whole" would
-   * be asserting a law the design does not hold.
-   */
-  it('1920x1080 — the shipped fact sets whole, with nothing ellipsized', async () => {
-    await layout(page, css, FLEET[2]);
-    const m = await noteMeasure(page);
-    expect(
-      m.naturalPx,
-      `the note wants ${m.naturalPx}px (${m.naturalLines} lines at ${m.lineHeight}px) and the four-line reserve is ${m.reservePx}px, so ${m.naturalLines - m.paintedLines} line(s) are being ellipsized on the largest screen in the fleet — the tier exists precisely so this fact is whole here`,
-    ).toBeLessThanOrEqual(m.reservePx + 0.5);
-    expect(m.naturalLines, 'the fixture stopped exercising the four-line tier').toBe(4);
-  }, 60000);
-
-  /**
-   * THE THREE-LINE TIER still has to work — it is what a band configured
-   * `nowHeading: always` gets at the office screen's size, and it is the tier
-   * whose 88px crossover carries the thinnest margin in the design ("0.58px of
-   * air"). Asserted where it actually binds rather than left underived.
-   */
-  it('1280x720 with the NOW heading printed — the note is set in 3 painted lines', async () => {
-    const data = { ...EROICA, definition: { ...DEFINITION, band: { nowHeading: 'always' } } };
-    await tierCase({
-      ...FLEET[1], data, lines: 3, threshold: '88px crossover, below the 161px ceiling',
+  describe.each(SHIPPED)('$piece — the bond is one shape', ({ piece, data }) => {
+    const cases = [];
+    data.movements.forEach((m, movementIndex) => {
+      for (const side of ['right', 'left']) {
+        cases.push({
+          ...FLEET[1], piece, data, movementIndex, side, sounding: m.start,
+        });
+      }
     });
-    const heading = await page.locator('[data-testid="surround-ticker-now"]').count();
-    expect(heading, 'nowHeading: always did not print the heading this tier is derived around').toBe(1);
+    it.each(cases)('movement $movementIndex, nowSide $side', bondCase, 60000);
+  });
+
+  /** ...and at the other two sizes, for the movement most likely to pinch. */
+  it.each(FLEET)('$name — the bond still welds along the panel’s whole edge', async ({ width, height, name }) => {
+    // Movement I of the Eroica: a third of the rule, far from a right-hand
+    // panel — the longest waist the shipped corpus produces, and the case the
+    // user was looking at when they found the corner.
+    await bondCase({
+      width, height, name, data: EROICA_FULL, sounding: 0, movementIndex: 0, side: 'right',
+    });
   }, 60000);
+
+  /**
+   * NOTHING SOUNDING IS A DESIGNED STATE (design wave 9). Before the first
+   * movement — the walk-on, the applause, the settling — and after the last
+   * chord, no segment is active, the bond is out on both halves at once, and the
+   * NOW register is blank. The band does NOT change height for it.
+   *
+   * TO GO RED: light the panel with no movement sounding, or let the NOW
+   * register borrow a piece fact there (which is what it used to do).
+   */
+  it.each([
+    { when: 'before the first movement starts', position: 20, first: 45 },
+    { when: 'after the last movement ends', position: 3000, first: 0 },
+  ])('1280x720 — nothing sounding, $when: blank, unlit, and the same height', async ({ position, first }) => {
+    const sounding = await layout(page, css, { ...FLEET[1], data: EROICA_FULL, position: 1200 });
+    const soundingH = await tickerContentBox(page);
+    expect(sounding.fit).not.toBeNull();
+
+    const late = {
+      ...EROICA_FULL,
+      movements: EROICA_FULL.movements.map((m, i) => (i === 0 ? { ...m, start: first } : m)),
+    };
+    await layout(page, css, { ...FLEET[1], data: late, position });
+    const b = await bondBoxes(page);
+    const state = await page.evaluate(() => ({
+      states: [...document.querySelectorAll('[data-testid="surround-movement"]')]
+        .map((el) => el.getAttribute('data-state')),
+      note: document.querySelector('[data-testid="surround-ticker-listen"]').textContent.trim(),
+      bonded: document.querySelector('[data-testid="surround-ticker-ground"]').getAttribute('data-bonded'),
+    }));
+
+    expect(state.states, `a segment is still lit with nothing sounding: ${JSON.stringify(state.states)}`)
+      .not.toContain('active');
+    expect(state.note, 'the NOW register is showing a note with nothing sounding').toBe('');
+    expect(state.bonded, 'the NOW panel is lit with nothing to bond to').toBe('false');
+    expect(Number(b.segment.opacity), 'the rail’s panel is still lit').toBe(0);
+    expect(Number(b.waist.opacity), 'the waist is still lit').toBe(0);
+    expect(Number(b.panel.opacity), 'the register’s panel is still lit').toBe(0);
+    expect(
+      await tickerContentBox(page),
+      'the band changed height when the music stopped — the reserve is not reserved',
+    ).toBeCloseTo(soundingH, 1);
+  }, 90000);
 
   /**
    * THE ACCORDION'S WHOLE PURPOSE. The sounding movement widens until neither

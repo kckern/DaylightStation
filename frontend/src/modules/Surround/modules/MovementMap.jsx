@@ -66,7 +66,7 @@ import PropTypes from 'prop-types';
 import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import {
-  resolveBandConfig, useNowSide, useEasedShares, accordionShares, playheadFraction,
+  resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeMovementIndex, placedMovements, roman,
   desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX,
 } from '../band.js';
@@ -284,13 +284,44 @@ export default function MovementMap({
     floorPx: SEGMENT_FLOOR_PX,
   }), [segments, activeIndex, railPx, desiredPx]);
 
-  // ONE CLOCK (review finding I2). The widths are interpolated HERE, in JS, and
-  // everything positional below — the segment widths, the playhead, the bond
-  // and its connector — is derived from the array this returns in the same
-  // render. The stylesheet animates none of it. Two clocks (a CSS `transition:
-  // width` and the playhead's own ramp) is what let the cursor reach the
-  // widened solution while the painted boundary was still 300ms away from it.
-  const { shares, moving } = useEasedShares(targetShares, ACCORDION_MS);
+  // ---- the bond's target, on the SAME vector as the widths ------------------
+  // Design wave 9. The bond used to be derived from the interpolated shares and
+  // then animated AGAIN by a CSS transition on its own `left`/`width`, because
+  // `activeIndex` jumps at a boundary and its derived left edge jumps with it.
+  // Two clocks: the rail right-sized itself under a highlight that had not
+  // started moving, and the user saw a resize followed by a slide where the
+  // design promises one move. So the bond's own start and width are appended to
+  // the vector the shares ride in and interpolated with them — one clock, one
+  // array, one render, exactly as the playhead already is.
+  const lastBond = useRef([0, 0]);
+  const bondTarget = useMemo(() => {
+    // NOTHING SOUNDING holds the bond's geometry where it was rather than
+    // collapsing it to zero. The bond is faded out in that state (see the
+    // stylesheet), and a fade is a fade — sliding an invisible box back to the
+    // origin only means it has to slide out again when the music resumes.
+    if (activeIndex < 0 || !targetShares.length) return lastBond.current;
+    let start = 0;
+    for (let i = 0; i < activeIndex; i += 1) start += targetShares[i] ?? 0;
+    return [start, targetShares[activeIndex] ?? 0];
+  }, [activeIndex, targetShares]);
+  useEffect(() => {
+    if (activeIndex >= 0) lastBond.current = bondTarget;
+  }, [bondTarget, activeIndex]);
+
+  const geometry = useMemo(
+    () => [...targetShares, bondTarget[0], bondTarget[1]],
+    [targetShares, bondTarget],
+  );
+
+  // ONE CLOCK (review finding I2; extended to the bond in design wave 9). The
+  // whole geometry is interpolated HERE, in JS, and everything positional below
+  // — the segment widths, the playhead, the bond and its waist — is read out of
+  // the vector this returns in the same render. The stylesheet animates none of
+  // it. Two clocks (a CSS `transition: width` and the playhead's own ramp) is
+  // what let the cursor reach the widened solution while the painted boundary
+  // was still 300ms away from it.
+  const { shares: vector, moving } = useEasedVector(geometry, ACCORDION_MS);
+  const shares = useMemo(() => vector.slice(0, targetShares.length), [vector, targetShares.length]);
 
   // Review finding I5: the degrade branch. When the sounding movement's name
   // cannot have the width it needs without starving its neighbours past the
@@ -323,13 +354,15 @@ export default function MovementMap({
   // opposite sides of the screen.
   const side = useNowSide(config, elapsedFraction({ position, first, end }), log);
 
+  // READ OUT OF THE INTERPOLATED VECTOR, not recomputed from the shares. The two
+  // agree at rest and only the vector is right mid-flight, which is the whole
+  // point of putting the bond in it.
   const bond = useMemo(() => {
-    if (activeIndex < 0 || !shares.length) return null;
-    let start = 0;
-    for (let i = 0; i < activeIndex; i += 1) start += shares[i] ?? 0;
-    const width = shares[activeIndex] ?? 0;
+    if (activeIndex < 0 || vector.length < targetShares.length + 2) return null;
+    const start = vector[targetShares.length] ?? 0;
+    const width = vector[targetShares.length + 1] ?? 0;
     return { start, width, connector: bondConnector({ segStart: start, segEnd: start + width, side }) };
-  }, [activeIndex, shares, side]);
+  }, [activeIndex, vector, targetShares.length, side]);
 
   const lastLogged = useRef(null);
   useEffect(() => {
@@ -397,18 +430,32 @@ export default function MovementMap({
             : { '--bond-left': '0%', '--bond-width': '0%' }}
           aria-hidden="true"
         />
-        {/* The connector: a shoulder in the same ground running along the band's
-            seam, from the active segment across to the NOW panel. Zero-width —
-            and so invisible — whenever the segment already sits over the panel,
-            which is the "they simply touch" case. */}
+        {/* THE WAIST (design wave 9). The same ground, running along the band's
+            seam, spanning the HULL of the sounding segment and the NOW panel —
+            so the panel's whole top edge is welded to it and the segment's whole
+            bottom edge is too. It used to stop at the panel's near edge, which
+            left the two lit areas meeting at one point ("kitty corner"); a
+            region joined at a point is two regions.
+            The four radius flags say which of the waist's own corners are on the
+            OUTSIDE of the silhouette — at every other corner one of the other
+            two parts continues, and a radius there would cut a notch in the
+            middle of one shape. `bondConnector` decides; the stylesheet draws. */}
         <span
           className="surround-movement-map__bond-connector"
           data-testid="surround-bond-connector"
-          data-bridging={bond && bond.connector.width > 0 ? 'true' : 'false'}
+          data-bonded={bond ? 'true' : 'false'}
+          data-corners={bond
+            ? Object.entries(bond.connector.corners)
+              .filter(([, on]) => on).map(([k]) => k).join(' ') || 'none'
+            : 'none'}
           style={bond
             ? {
               '--connector-left': `${bond.connector.start * 100}%`,
               '--connector-width': `${bond.connector.width * 100}%`,
+              '--connector-tl': bond.connector.corners.tl ? 'var(--bond-radius)' : '0',
+              '--connector-tr': bond.connector.corners.tr ? 'var(--bond-radius)' : '0',
+              '--connector-bl': bond.connector.corners.bl ? 'var(--bond-radius)' : '0',
+              '--connector-br': bond.connector.corners.br ? 'var(--bond-radius)' : '0',
             }
             : { '--connector-left': '0%', '--connector-width': '0%' }}
           aria-hidden="true"

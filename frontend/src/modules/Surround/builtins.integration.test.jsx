@@ -148,9 +148,17 @@ describe('surround builtins in the frame', () => {
     expect(states).toEqual(['future', 'future']);
     expect(document.querySelector('[data-testid="surround-bond"]').getAttribute('data-bonded'))
       .toBe('false');
-    // The band: the same answer, in words.
-    expect(document.querySelector('[data-testid="surround-ticker-now"]').textContent)
-      .toBe('Listen for');
+    // The band: the same answer, as BLANK (design wave 9). Nothing is sounding,
+    // so the NOW register has no subject — it prints no name, borrows no fact,
+    // and its panel is unlit. The header element is still there and still
+    // exactly as tall, because the note's box below it must not change size.
+    const nowHead = document.querySelector('[data-testid="surround-ticker-now"]');
+    expect(nowHead.getAttribute('data-sounding')).toBe('false');
+    expect(nowHead.textContent.trim()).toBe('');
+    expect(document.querySelector('[data-testid="surround-ticker-listen"]').textContent.trim())
+      .toBe('');
+    expect(document.querySelector('[data-testid="surround-ticker-ground"]').getAttribute('data-bonded'))
+      .toBe('false');
   });
 
   /**
