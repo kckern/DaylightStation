@@ -8,6 +8,7 @@ import CueTicker, {
   LISTEN_INTERVAL_MS, phaseDelay,
 } from './CueTicker.jsx';
 import { ACCORDION_MS } from '../band.js';
+import { PROSE_FLOOR_PX } from '../fit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -290,182 +291,105 @@ describe('CueTicker — reserved height and centred setting', () => {
     />,
   );
 
-  it('reserves two lines of height whatever is showing, so rotation never shifts layout', () => {
-    withStyles();
+  /**
+   * THE BOX IS THE ZONE'S LEFTOVER RUN (design wave 9).
+   *
+   * The reserve used to be a `min-height`/`max-height` pair in `em`, re-derived
+   * per container-query tier. It is now `flex: 1 1 0%` in a column zone, which
+   * is the same contract expressed structurally: the box takes every pixel the
+   * headers did not, and its own content never enters that calculation, so one
+   * line and five lines occupy the identical box and a rotation cannot shift the
+   * layout. What the pair used to do by arithmetic the flex algorithm now does
+   * by construction — and unlike the pair it cannot be one tier out of date.
+   */
+  it('gives the note the zone\u2019s whole leftover run, so rotation never shifts layout', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    expect(rule, 'the note box is content-sized again — a long note would now move the band')
+      .toMatch(/flex: 1 1 0%/);
+    expect(rule, 'a flex item with no min-height floor refuses to shrink below its content')
+      .toMatch(/min-height: 0/);
+    // ...and NOT by a fixed reserve, which is what would have to be re-derived.
+    expect(rule).not.toMatch(/max-height:/);
+
     const short = mount('A fact.');
     const long = mount('A considerably longer programme note that will certainly wrap onto a second line at this measure.');
-
-    const reserve = (view) => window.getComputedStyle(
-      view.container.querySelector('[data-testid="surround-ticker-text"]'),
-    ).getPropertyValue('min-height');
-
-    expect(parseFloat(reserve(short))).toBeGreaterThan(0);
-    expect(reserve(short)).toBe(reserve(long));   // one line and two: same box
-  });
-
-  // `-webkit-line-clamp` alone is not a ceiling: in current Chromium
-  // `display: -webkit-box` computes to `flow-root`, so a shrinkable flex item
-  // relying on the clamp for its box height can still collapse (this is what
-  // happened to the rail fact — see ComposerCard.scss). The real ceiling is
-  // the explicit `max-height`, so that is what this asserts, not the clamp
-  // declaration (kept only for the ellipsis, and covered separately below).
-  it('caps the panel with an explicit ceiling, not just the clamp', () => {
-    withStyles();
-    const view = mount('A fact.');
-    const style = window.getComputedStyle(view.container.querySelector('[data-testid="surround-ticker-text"]'));
-    // happy-dom resolves `em` off the default 16px root rather than the
-    // element's own cascaded font-size, so 1.35em reads back as 21.6px here —
-    // the point of the assertion is that a NUMBER exists at all (a ceiling),
-    // not the clamp declaration, which happy-dom would happily report even
-    // with no box height behind it.
-    // Design wave 6: the BASE reserve is ONE line, because the base rule is
-    // the layout for the tightest band in the fleet (measured: 37.4px of
-    // content on the 960x540 screen-root, once the movement names have wrapped
-    // and the translation line has been paid for). Two lines is what the
-    // container query below promotes it to wherever the band can afford it.
-    expect(style.getPropertyValue('max-height')).toBe('21.6px');
-    expect(style.getPropertyValue('min-height')).toBe('21.6px');
-    expect(style.getPropertyValue('overflow')).toBe('hidden');
+    const box = (view) => view.container.querySelector('[data-testid="surround-ticker-text"]');
+    expect(window.getComputedStyle(box(short)).getPropertyValue('flex'))
+      .toBe(window.getComputedStyle(box(long)).getPropertyValue('flex'));
   });
 
   /**
-   * Fix round 1 (review finding C1) — THE RESERVE IS THREE LINES WHERE THE
-   * BAND CAN PAY FOR IT, not two. Wave 6 shipped two, and a real authored fact
-   * (the Eroica's 232-character Napoleon note) still ellipsized at every
-   * screen in the fleet — a two-line box only ever showed 44-90 of it.
+   * NO CLAMP, ANYWHERE, EVER (design wave 9). This is the wave's headline law:
+   * a television has no "read more" and no scroll, so a note that stops
+   * mid-sentence with three dots is a claim the viewer cannot complete. The
+   * three container-query tiers that used to set a clamp count are gone with it.
    *
-   * happy-dom does not evaluate `@container`, so this reads the compiled sheet:
-   * the query exists, it is on the ticker's own container name, its threshold
-   * is at least the right zone's own three-line arithmetic, and inside it the
-   * reserve and the clamp both go to three while the now-header's translation
-   * appears.
+   * TO GO RED: put `-webkit-line-clamp` back on `__line`, or restore any of the
+   * 88px/108px/161px reserve tiers.
    */
-  it('promotes the reserve, the clamp and the translation in a band with room', () => {
-    const css = withStyles().replace(/\s+/g, ' ');
-    const panel = css.match(/\.surround-cue-ticker \{[^}]*\}/)[0];
-    expect(panel, 'the container has no name for the query to target')
-      .toContain('container-name: ticker');
-
-    const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{(.*?)\} \}/);
-    expect(q, 'no container query — the band cannot adapt to the room it has').not.toBeNull();
-    const threshold = Number(q[1]);
-    // The right zone in the three-line layout owes: the now-header's two
-    // lines (0.78rem x 1.2 + 0.1rem + 0.72rem x 1.2 = 30.4px) plus three
-    // lines of note at the clamp's FLOOR (3 x 0.88rem x 1.35 = 57.0px). A
-    // threshold below that promotes a layout the zone cannot hold, which is
-    // an overflow the region then clips — and this IS the same arithmetic
-    // that overflowed at wave 6's 19cqh coefficient, which is why the
-    // coefficient itself changed alongside the line count (see the SCSS).
-    expect(threshold, 'the query promotes a layout the right zone cannot hold')
-      .toBeGreaterThanOrEqual(30.4 + (3 * 0.88 * 16 * 1.35));
-
-    const inside = q[2];
-    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*min-height: 4\.05em/);
-    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*max-height: 4\.05em/);
-    expect(inside).toMatch(/\.surround-cue-ticker__line \{[^}]*-webkit-line-clamp: 3/);
-    expect(inside).toMatch(/__now-translation \{[^}]*display: block/);
+  it('carries no line clamp and no truncation tier at all', () => {
+    // Comments stripped: the stylesheet SAYS the word "clamp" a great deal now,
+    // explaining why there is not one, and a sweep that matched prose would be
+    // green only until someone edited a paragraph.
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(css, 'the ellipsis is back in the band').not.toContain('-webkit-line-clamp');
+    expect(css, 'the note box is being truncated by a text-overflow rule')
+      .not.toMatch(/\.surround-cue-ticker__(text|line) \{[^}]*text-overflow/);
+    const tiers = [...css.matchAll(/@container ticker \(min-height: ([\d.]+)px\)/g)]
+      .map((m) => Number(m[1]));
+    // ONE query survives, and it is not a truncation tier: it decides whether
+    // the NOW header prints the movement's translation, which is an editorial
+    // decision no fit can make.
+    expect(tiers, `the truncation lattice is back: ${JSON.stringify(tiers)}`).toHaveLength(1);
+    const q = css.match(/@container ticker \(min-height: [\d.]+px\) \{(.*?)\} \}/);
+    expect(q[1]).toMatch(/__now-translation \{[^}]*display: block/);
+    expect(q[1], 'the surviving query still sets a reserve').not.toMatch(/min-height|max-height/);
   });
 
   /**
-   * Fix round 1 (review finding C1) — the three-line reserve must not overflow
-   * the ticker's OWN box at the container height the fleet actually produces.
-   * This is the arithmetic that broke at wave 6's 19cqh coefficient (measured:
-   * 104.9px of header+note needed against a 96.8px budget at 1280x720) and is
-   * why the coefficient dropped to 16 alongside the line count. Proved here
-   * algebraically rather than re-measured in a browser: at the container
-   * query's own threshold (floor font, the worst case — see the SCSS comment)
-   * the now-zone's header-plus-three-lines must fit inside the threshold
-   * itself, and past the threshold the reserve grows more slowly than the
-   * container does, so the margin only widens.
+   * THE TYPE IS PUBLISHED, NOT COMPUTED IN CSS. `--note-size` and
+   * `--note-leading` come from `../fit.js`, which measures. The stylesheet's job
+   * is to read them and to degrade sanely when nothing has measured yet.
    */
-  it('does not budget more for the three-line now-zone than the threshold itself holds', () => {
+  it('sizes the note from the measured fit, with readable fallbacks', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{(.*?)\} \}/);
-    const threshold = Number(q[1]);
-    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
-    const [, , coefStr] = text.match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/);
-    const coef = Number(coefStr) / 100;
-    const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
-    const headerLineHeight = Number(header.match(/font-size: ([\d.]+)rem/)[1])
-      * Number(header.match(/line-height: ([\d.]+)/)[1]) * 16;
-    const translation = css.match(/\.surround-cue-ticker__now-translation \{[^}]*\}/)[0];
-    const translationLineHeight = Number(translation.match(/font-size: ([\d.]+)rem/)[1])
-      * Number(translation.match(/line-height: ([\d.]+)/)[1]) * 16;
-    const nowBox = css.match(/\.surround-cue-ticker__now \{[^}]*\}/)[0];
-    const margin = Number(nowBox.match(/margin: [\d.]+ 0 ([\d.]+)rem/)[1]) * 16;
-    const headerBudget = headerLineHeight + margin + translationLineHeight;
-
-    const noteAt = (h) => Math.min(Math.max(coef * h, 0.88 * 16), 1.5 * 16);
-    const budgetAt = (h) => headerBudget + (3 * 1.35 * noteAt(h));
-    // At the threshold itself (the worst case: font still at or near the
-    // floor) the now-zone's own arithmetic must not exceed the room the
-    // query just granted it.
-    expect(budgetAt(threshold), 'the promoted layout overflows the container that promoted it')
-      .toBeLessThanOrEqual(threshold);
-    // ...and past it, real fleet sizes stay comfortably inside their own room.
-    expect(budgetAt(96.8), '1280x720 overflows the ticker').toBeLessThanOrEqual(96.8);
-    expect(budgetAt(215.6), '1920x1080 overflows the ticker').toBeLessThanOrEqual(215.6);
+    const rule = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    expect(rule, 'the note is sized by a container-query coefficient again')
+      .not.toContain('cqh');
+    const size = rule.match(/font-size: var\(--note-size, ([^)]+)\)/);
+    const leading = rule.match(/line-height: var\(--note-leading, ([\d.]+)\)/);
+    expect(size, 'the note does not read the fitted size').not.toBeNull();
+    expect(leading, 'the note does not read the fitted leading').not.toBeNull();
+    // The fallback is what an unlaid-out tree gets. It must be inside the
+    // ladder's own bounds — a fallback above the ceiling would paint one frame
+    // of a note too big for the band.
+    expect(parseFloat(size[1])).toBeLessThanOrEqual(1.5);
+    expect(Number(leading[1])).toBeGreaterThanOrEqual(1.25);
   });
 
   /**
-   * Live defect 2 (2026-08-19) — A FOURTH LINE, wherever the arithmetic
-   * actually clears itself. Fix round 1 got the Eroica's 232-character
-   * Napoleon note from 44-90 shown characters to ~174 of 232 (three of the
-   * four lines it needs). Re-measured against the LIVE sidecar (224
-   * characters, verbatim from `GET /api/v1/play/plex:663134`), three lines
-   * at 1280x720 shows ~185 of 224; a fourth line, where it fits, shows every
-   * one of them.
+   * THE RULER IS RENDERED, AND IT IS INSIDE THE BOX IT MEASURES. `../fit.js`
+   * sets its width, size and leading and reads back a height; being a child of
+   * `__text` is what makes it inherit the face, the weight, the tracking and
+   * `text-wrap: balance` from the element the note is actually painted in, so a
+   * measurement cannot drift from the paint by a property nobody copied.
    */
-  it('promotes to a fourth line where the container clears the crossover', () => {
+  it('renders the fit probe inside the note box, out of flow and invisible', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const q = css.match(/@container ticker \(min-height: (\d+)px\) \{ \.surround-cue-ticker__text \{ min-height: ([\d.]+)em[^}]*max-height: \2em; \} \.surround-cue-ticker__line \{ -webkit-line-clamp: 4/);
-    expect(q, 'no four-line container query — the ticker cannot promote further').not.toBeNull();
-    const threshold = Number(q[1]);
-    expect(Number(q[2])).toBeCloseTo(5.4, 5); // 4 lines at line-height 1.35
+    const rule = css.match(/\.surround-cue-ticker__probe \{[^}]*\}/);
+    expect(rule, 'no probe rule — the fit has nothing to measure with').not.toBeNull();
+    expect(rule[0]).toContain('position: absolute');
+    // `visibility: hidden`, NOT `display: none`: a box with no display has no
+    // layout, and layout is the entire question being asked.
+    expect(rule[0]).toContain('visibility: hidden');
+    expect(rule[0], 'a probe with no layout cannot measure anything')
+      .not.toContain('display: none');
 
-    // THE THRESHOLD MUST CLEAR ITS OWN CROSSOVER TO THE FONT'S CEILING. Naively
-    // reusing the three-line tier's floor-font arithmetic (header + 4 lines at
-    // 0.88rem) UNDER-counts: past the three-line tier's own 88px crossover the
-    // clamp's `16cqh` coefficient keeps climbing (not pinned to the floor)
-    // until it hits its 1.5rem ceiling at 24 / 0.16 = 150px of content. This
-    // threshold has to be past THAT crossover, or the note it promotes to
-    // would still be smaller than 1.5rem and the arithmetic below would be
-    // checking the wrong number.
-    const CEIL_PX = 1.5 * 16;
-    const COEF = 0.16;
-    const ceilCrossover = CEIL_PX / COEF;
-    expect(threshold, 'the four-line tier fires before the font reaches its ceiling')
-      .toBeGreaterThan(ceilCrossover);
-
-    // SELF-CONSISTENCY AT THE CEILING (the worst case past the crossover: the
-    // note is fixed at 1.5rem and does not grow with the container, so the
-    // four-line budget is CONSTANT past this point — solving budgetAt(T) <= T
-    // with the note pinned at ceiling gives the true minimum threshold).
-    const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
-    const headerLineHeight = Number(header.match(/font-size: ([\d.]+)rem/)[1])
-      * Number(header.match(/line-height: ([\d.]+)/)[1]) * 16;
-    const translation = css.match(/\.surround-cue-ticker__now-translation \{[^}]*\}/)[0];
-    const translationLineHeight = Number(translation.match(/font-size: ([\d.]+)rem/)[1])
-      * Number(translation.match(/line-height: ([\d.]+)/)[1]) * 16;
-    const nowBox = css.match(/\.surround-cue-ticker__now \{[^}]*\}/)[0];
-    const margin = Number(nowBox.match(/margin: [\d.]+ 0 ([\d.]+)rem/)[1]) * 16;
-    const headerBudget = headerLineHeight + margin + translationLineHeight;
-    const budgetAtCeiling = headerBudget + (4 * 1.35 * CEIL_PX);
-
-    expect(threshold, 'the four-line tier overflows the container that promotes it')
-      .toBeGreaterThanOrEqual(budgetAtCeiling);
-    // ...and it is the MINIMUM such threshold, not an arbitrarily generous
-    // one — the fourth line is only worth taking where the fleet actually
-    // has the room, and a threshold far past the true minimum would just be
-    // the three-line tier again with extra steps.
-    expect(threshold - budgetAtCeiling, 'far more margin than the 88px tier’s own precedent (0.58px)')
-      .toBeLessThan(10);
-
-    // The real fleet: 1920x1080's content (measured ~221.8px after this
-    // round's padding trim) clears the threshold; 1280x720's (~89px) does
-    // not, so it stays on the three-line tier above.
-    expect(threshold).toBeLessThan(221.8);
-    expect(threshold).toBeGreaterThan(89);
+    const view = mount('A fact.');
+    const box = view.container.querySelector('[data-testid="surround-ticker-text"]');
+    expect(box.querySelector('.surround-cue-ticker__probe'), 'the probe is not inside the box it measures')
+      .not.toBeNull();
   });
 
   it('sets the note centred and balanced', () => {
@@ -499,45 +423,28 @@ describe('CueTicker — reserved height and centred setting', () => {
   });
 
   /**
-   * Design wave 5 — TYPE THAT FILLS ITS ROOM. `cqh` is 1% of the TICKER's own
-   * height, so the note is large in the tall band a 1080p frame gives it and
-   * steps down rather than overflowing in the ~59px the gate's 960x540
-   * screen-root leaves. The floor on the module itself is what makes the
-   * container safe: `container-type: size` removes a box's own contribution to
-   * its height, so a definition that did NOT give the ticker `height: fill`
-   * would otherwise compute it to zero.
+   * THE MODULE IS STILL A SIZE CONTAINER WITH A FLOOR — the one thing the fit
+   * cannot supply for itself. `container-type: size` removes a box's own
+   * contribution to its height, so a definition that did NOT give the ticker
+   * `height: fill` would compute it to zero; the floor is what stops the module
+   * vanishing instead of shrinking, and it is the room the fit is solved
+   * against on the tightest screen in the fleet.
    */
-  it('sizes the note against the zone it was given, with a floor under the container', () => {
+  it('stays a size container with a floor under it', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const panel = css.match(/\.surround-cue-ticker \{[^}]*\}/)[0];
-    expect(panel, 'the ticker is not a container, so cqh would resolve against the viewport')
+    expect(panel, 'the ticker is not a container, so the surviving query cannot target it')
       .toContain('container-type: size');
+    expect(panel).toContain('container-name: ticker');
     const floor = panel.match(/min-height: ([\d.]+)rem/);
     expect(floor, 'a size container with no floor collapses to nothing').not.toBeNull();
-
-    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
-    const clamp = text.match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/);
-    expect(clamp, 'the note is set at a fixed size again').not.toBeNull();
-    const [, min, per, max] = clamp.map(Number);
-    expect(min, 'below the ten-foot floor').toBeGreaterThanOrEqual(0.85);
-    expect(max, 'a programme note as loud as the work title on the plate').toBeLessThanOrEqual(1.6);
-    expect(max).toBeGreaterThan(min);
-    // The BASE layout — one line of note under one line of now-header — plus
-    // the panel's own padding has to fit inside that floor, otherwise the
-    // module overflows its own container on the smallest screen in the fleet.
-    // (Wave 5 did this arithmetic for two lines; wave 6's base reserve is one,
-    // and the header is what took the other line.)
+    // One line of note at the fit's own floor, plus the panel's padding, has to
+    // fit inside that floor — otherwise the module overflows its own container
+    // on the smallest band the fleet produces.
     const padRem = Number(panel.match(/--ticker-pad-y: ([\d.]+)rem/)[1]) * 2;
-    const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
-    const headerRem = Number(header.match(/font-size: ([\d.]+)rem/)[1])
-      * Number(header.match(/line-height: ([\d.]+)/)[1]);
-    expect(min * 1.35 + headerRem + padRem).toBeLessThanOrEqual(Number(floor[1]));
-    // ...and the coefficient bites between the zones the fleet actually
-    // produces (~59px on the gate's screen-root, ~118px on the 1280x720 kiosk).
-    const at = (zonePx) => Math.min(Math.max(per * zonePx / 100, min * 16), max * 16);
-    expect(at(118)).toBeGreaterThan(at(59));
-    expect(at(118), 'the note is no bigger than the one this wave replaced').toBeGreaterThan(1.15 * 16);
+    expect((0.88 * 1.35) + padRem).toBeLessThanOrEqual(Number(floor[1]));
   });
+
 
   it('keeps an instant swap under prefers-reduced-motion', () => {
     const css = withStyles().replace(/\s+/g, ' ');
@@ -546,35 +453,18 @@ describe('CueTicker — reserved height and centred setting', () => {
   });
 
   /**
-   * Fix round 1 (review finding, CRITICAL). Grid centring and the line clamp
-   * cannot share one element — `-webkit-line-clamp` needs `display:
-   * -webkit-box`, `align-content: center` needs `display: grid`, and CSS keeps
-   * only the last `display` written. Wave 5 resolved the conflict by deleting
-   * the clamp, which centred the reserve but left an overflowing note cut by
-   * `overflow: hidden` mid-glyph rather than ellipsized — live sidecar facts do
-   * overflow this reserve (the Eroica piece fact alone is 226 characters against
-   * this ~180-character two-line box). The fix restores the clamp on a SEPARATE
-   * inner element (`__line`), so `__text` keeps doing the centring and `__line`
-   * does the truncating.
+   * TWO ELEMENTS, ONE JOB EACH. `__text` is the grid that centres; `__line` is
+   * the thing centred in it. One element cannot be both (wave 5's finding, for
+   * the opposite reason — the clamp idiom's `display` fought the grid's), and
+   * the split survives the clamp's removal because the centring still needs it.
    */
-  it('clamps the line to two, with an ellipsis, on the inner element the outer box centres', () => {
+  it('sets the line as a plain block inside the box that centres it', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const rule = css.match(/\.surround-cue-ticker__line \{[^}]*\}/);
-    expect(rule, 'no .surround-cue-ticker__line rule — the clamp was not restored').not.toBeNull();
-    expect(rule[0]).toContain('display: -webkit-box');
-    // ONE line in the base rule (wave 6's tight-band layout); the container
-    // query promotes it to two — asserted in its own spec above.
-    expect(rule[0]).toContain('-webkit-line-clamp: 1');
-    expect(rule[0]).toContain('-webkit-box-orient: vertical');
-    expect(rule[0]).toContain('overflow: hidden');
+    expect(rule, 'no .surround-cue-ticker__line rule').not.toBeNull();
+    expect(rule[0], 'the clamp idiom is back, and with it the ellipsis')
+      .not.toContain('-webkit-box');
 
-    // The clamp lives on `__line`, not back on `__text` — reviving it there
-    // would reintroduce the exact `display` conflict this fix removes.
-    const outer = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
-    expect(outer).not.toContain('-webkit-line-clamp');
-
-    // ...and the markup actually nests them: `__line` is what `__text`'s grid
-    // centres, not a sibling or a stand-in class that never renders.
     const view = mount('A fact.');
     const outerEl = view.container.querySelector('[data-testid="surround-ticker-text"]');
     const lineEl = outerEl.querySelector('.surround-cue-ticker__line');
@@ -582,24 +472,20 @@ describe('CueTicker — reserved height and centred setting', () => {
     expect(lineEl.textContent).toBe('A fact.');
   });
 
-  // A fact well past what two lines of this reserve can hold — jsdom cannot
-  // measure where Chromium would actually paint the ellipsis, but the honest
-  // pin is that the clamp declaration is on the element carrying the overflow
-  // text, alongside the reserve that bounds it. That pairing is what makes the
-  // cut-off a trailing ellipsis instead of a mid-word chop.
-  it('carries the clamp on an overflowing fact, not just a short one', () => {
+  /**
+   * A LONG FACT IS NOT TRUNCATED — it is SET WHOLE. jsdom has no layout, so what
+   * is pinned here is that no truncation machinery touches it at any length; the
+   * measurement that proves the paint is `band.measure.test.jsx`, in Chromium.
+   */
+  it('sets an over-long fact whole, with nothing clamping it', () => {
     withStyles();
-    const longFact = 'A. '.repeat(100).trim(); // 300 characters, well past the two-line reserve
+    const longFact = 'A. '.repeat(100).trim(); // 300 characters
     const view = mount(longFact);
     const lineEl = view.container.querySelector('.surround-cue-ticker__line');
+    expect(lineEl.textContent).toBe(longFact);
     const style = window.getComputedStyle(lineEl);
-    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('1');
-    expect(style.getPropertyValue('overflow')).toBe('hidden');
-    // The reserve above it is unchanged by the overflow — same box, longer text.
-    const reserve = window.getComputedStyle(
-      view.container.querySelector('[data-testid="surround-ticker-text"]'),
-    ).getPropertyValue('max-height');
-    expect(reserve).toBe('21.6px');
+    expect(style.getPropertyValue('-webkit-line-clamp')).toBe('');
+    expect(style.getPropertyValue('text-overflow')).toBe('');
   });
 });
 
@@ -793,11 +679,47 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.listen()).toBe('Two hammered chords, then the cellos.');
   });
 
-  it('says so when there is no movement sounding at all, rather than holding the last one', () => {
+  /**
+   * NOTHING SOUNDING IS BLANK (design wave 9), and it is a designed state rather
+   * than a fallback. It used to print "Listen for" over a borrowed piece fact,
+   * which is a header for a note that is not there and a second copy of the left
+   * register beneath it. The applause after the last chord and the walk-on
+   * before the first are the same state and get the same answer: no header text,
+   * no note, and no lit panel — but the boxes are all still exactly as tall.
+   */
+  it('goes blank when no movement is sounding, rather than borrowing the piece pool', () => {
     const view = renderSplit({ position: 3000 });   // past musicEndsAt: applause
     expect(view.header()).not.toContain('Finale');
     expect(view.header()).not.toContain('Scherzo');
-    expect(view.listen()).toBe('Beethoven tore the page.');
+    expect(view.header(), 'the header invented a subject it does not have')
+      .not.toContain('Listen for');
+    expect(view.listen(), 'the NOW register borrowed a piece fact with nothing sounding')
+      .toBe('');
+  });
+
+  it('unlights the NOW panel when nothing is sounding, and lights it when something is', () => {
+    const ground = (v) => v.container.querySelector('[data-testid="surround-ticker-ground"]')
+      .getAttribute('data-bonded');
+    expect(ground(renderSplit({ position: 3000 })), 'a lit panel under a blank register').toBe('false');
+    expect(ground(renderSplit({ position: 500 }))).toBe('true');
+  });
+
+  /**
+   * THE BLANK HEADER STILL RESERVES ITS LINES. An element that disappeared would
+   * hand its height to the note's box below, change the room the fit was solved
+   * against, and resize the whole band's type on a movement boundary — the
+   * reserved-height law broken by the state that was supposed to be quiet.
+   */
+  it('reserves the header\u2019s lines while it is blank', () => {
+    const sounding = renderSplit({ position: 500 });
+    const silent = renderSplit({ position: 3000 });
+    const head = (v) => v.container.querySelector('[data-testid="surround-ticker-now"]');
+    expect(head(silent), 'the header element vanished with the movement').not.toBeNull();
+    expect(head(silent).getAttribute('data-sounding')).toBe('false');
+    expect(head(sounding).getAttribute('data-sounding')).toBe('true');
+    const lines = (v) => [...head(v).children].length;
+    expect(lines(silent), 'the blank header reserves a different number of lines')
+      .toBe(lines(sounding));
   });
 
   it('logs the listening note it shows, with the movement it belongs to', () => {
@@ -912,31 +834,39 @@ describe('CueTicker — the split band’s shipped design', () => {
     expect(zone).toContain('min-width: 0');
   });
 
-  it('divides them with the bond panel’s own edge rule — ONE mark, not two', () => {
-    // Design wave 7 supersedes wave 6's free-standing hairline. The NOW
-    // register now carries a lifted panel ground, and that panel's edge IS the
-    // division; a separate hairline beside it would be the same statement made
-    // twice, six pixels apart. The edge is still the frame's own hairline
-    // token, so the line a viewer reads is unchanged in colour and weight.
-    const css = withStyles().replace(/\s+/g, ' ');
+  /**
+   * THE BAND'S BORDER RULE, IN ONE SENTENCE: nothing in it is edged.
+   *
+   * Wave 6 divided the registers with a free-standing hairline; wave 7 moved
+   * that hairline onto the NOW panel's inner edge. The user read the result as
+   * "a left border with the bottom-left curvature — inconsistent with everything
+   * else", and it was: no other surface in the band carries one. The division is
+   * now the panel's own silhouette — a lit ground against an unlit one, which is
+   * a far stronger edge at ten feet than a 26%-alpha rule was.
+   *
+   * TO GO RED: put any `border` or edge `box-shadow` back on the ground, the
+   * zones or the note boxes.
+   */
+  it('divides the two registers with the panel\u2019s silhouette and no border at all', () => {
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
     expect(css, 'the superseded free-standing hairline is still in the sheet')
       .not.toMatch(/--split \.surround-cue-ticker__zone--now::before/);
 
     const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/);
     expect(ground, 'the NOW register has no panel to divide with').not.toBeNull();
-    expect(ground[0], 'the divider is not the frame’s hairline token')
-      .toMatch(/box-shadow: inset 1px 0 0 var\(--programme-edge,/);
+    expect(ground[0], 'the panel is edged again — the band has no borders')
+      .not.toMatch(/box-shadow|border(-(left|right|top|bottom))?:/);
     // The panel is exactly half the band, on the side the config names.
     expect(ground[0]).toMatch(/width: 50%/);
     expect(ground[0]).toMatch(/left: var\(--now-left, 50%\)/);
-    // With the register on the LEFT the same rule sits on its other edge.
-    // Sass normalises the attribute selector's quotes away.
-    const mirrored = css.match(/\.surround-cue-ticker__ground\[data-side="?left"?\] \{[^}]*\}/);
-    expect(mirrored, 'the divider does not follow the register across the band').not.toBeNull();
-    expect(mirrored[0]).toMatch(/box-shadow: inset -1px 0 0 var\(--programme-edge,/);
-    // ...and it is NOT a border on the zone, which would box the text.
-    const zone = css.match(/\.surround-cue-ticker__zone \{[^}]*\}/)[0];
-    expect(zone).not.toMatch(/\bborder(-(left|right|top|bottom))?:/);
+
+    // ...and no surface in the band is edged, not just this one.
+    for (const sel of ['__zone', '__text', '__line', '__zones', '__piece-head', '__now']) {
+      const rule = css.match(new RegExp(`\\.surround-cue-ticker${sel} \\{[^}]*\\}`));
+      if (!rule) continue;
+      expect(rule[0], `${sel} carries a border — the band's rule is that nothing does`)
+        .not.toMatch(/\bborder(-(left|right|top|bottom|color|style))?: (?!none)/);
+    }
   });
 
   it('sets the now-header in the display face and its translation in the annotation face', () => {
@@ -954,13 +884,28 @@ describe('CueTicker — the split band’s shipped design', () => {
       'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
   });
 
-  it('marks a cue over the register the cue is actually in', () => {
-    const css = withStyles().replace(/\s+/g, ' ');
-    const rule = css.match(/\.surround-cue-ticker__zone--cue::after \{[^}]*\}/);
-    expect(rule, 'the cue accent no longer marks a zone').not.toBeNull();
-    expect(rule[0]).toMatch(/background: var\(--brass,/);
+  /**
+   * THE CUE ACCENT IS GONE (design wave 9). It was a 2.4rem brass hairline at
+   * the top of whichever register a timed cue was in — and it is what the user
+   * saw as "a little yellow horizontal line towards the top border" of the NOW
+   * panel, out of place and connected to nothing they could name. It was: the
+   * distinction it drew (a cue, as against a rotating note) is one no viewer can
+   * act on, because both are one sentence about the music in the same voice in
+   * the same box. On this corpus the cues are synthesised from each movement's
+   * `note` field at that movement's own start, so the mark appeared for twelve
+   * seconds at every boundary and meant nothing. The band's rule is that nothing
+   * in it is edged or ruled; this was the last exception.
+   *
+   * The STATE is still marked, because it is real and the gate reads it — it
+   * simply has no paint of its own.
+   */
+  it('marks which register a cue is in as state, and draws no accent for it', () => {
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+    expect(css, 'the stray brass rule is back in the band')
+      .not.toMatch(/__zone--cue::after|--cue \.surround-cue-ticker__zone--piece::after/);
+    expect(css, 'something in the ticker paints in brass again')
+      .not.toMatch(/background: var\(--brass/);
 
-    // ...and the mark is on the NOW zone while a cue is up.
     const view = mountSplit(500);
     const now = view.container.querySelector('[data-testid="surround-ticker-zone-now"]');
     expect(now.className).toContain('surround-cue-ticker__zone--cue');
@@ -1045,8 +990,12 @@ describe('CueTicker — the bond, the header and the standing label (design wave
     const css = withStyles().replace(/\s+/g, ' ');
     const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/)[0];
     expect(ground).toMatch(/background: var\(--bond-ground,/);
-    // Square at the top (it continues the rail's panel), rounded at the foot.
-    expect(ground).toMatch(/border-radius: 0 0 5px 5px/);
+    // THE BAND'S ONE CORNER RULE (design wave 9): square at the top, because
+    // that edge is where this panel continues the waist's and a radius there
+    // would draw a seam across the middle of one shape; `--bond-radius` at the
+    // foot, which is a real exterior edge. The token is the same one the rail's
+    // panel takes at its head — see `_tokens.scss`.
+    expect(ground).toMatch(/border-radius: 0 0 var\(--bond-radius, [^)]*\) var\(--bond-radius, [^)]*\)/);
     // It bleeds over the panel's own vertical padding so it meets the rail's
     // connector at the region seam with no band ground between them.
     expect(ground).toMatch(/top: calc\(var\(--ticker-pad-y\) \* -1\)/);
@@ -1089,9 +1038,10 @@ describe('CueTicker — the bond, the header and the standing label (design wave
     const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
     const labelRem = Number(label.match(/font-size: ([\d.]+)rem/)[1]);
     expect(labelRem, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
-    const note = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
-    const noteFloor = Number(note.match(/font-size: clamp\(([\d.]+)rem/)[1]);
-    expect(labelRem, 'the label competes with the note it labels').toBeLessThan(noteFloor);
+    // Quieter than the SMALLEST the note can ever be set at — the fit ladder's
+    // own floor, imported rather than re-stated.
+    expect(labelRem * 16, 'the label competes with the note it labels')
+      .toBeLessThan(PROSE_FLOOR_PX);
     // A standing label, not a headline: tracked small caps in the soft ink.
     expect(label).toMatch(/font-variant-caps: all-small-caps/);
     expect(label).toMatch(/color: var\(--ink-soft,/);
@@ -1196,60 +1146,6 @@ describe('CueTicker — which side the NOW register sits on (design wave 7)', ()
     const root = view.container.querySelector('[data-testid="surround-cue-ticker"]');
     expect(root.style.getPropertyValue('--accordion-ms')).toBe(`${ACCORDION_MS}ms`);
     expect(root.style.getPropertyValue('--cue-fade-ms')).toBe(`${CUE_FADE_MS}ms`);
-  });
-});
-
-describe('CueTicker — the fourth line, without a now-header (design wave 7)', () => {
-  let injected = null;
-  const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
-    injected = document.createElement('style');
-    injected.textContent = compiled.css;
-    document.head.appendChild(injected);
-    return compiled.css;
-  };
-  afterEach(() => { injected?.remove(); injected = null; });
-
-  it('promotes to four lines EARLIER when the header’s 30.4px is not being spent', () => {
-    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
-    const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{ \.surround-cue-ticker--no-now-heading (.*?)\} \}/);
-    expect(q, 'no heading-less four-line tier — the office screen keeps three').not.toBeNull();
-    const threshold = Number(q[1]);
-
-    // SELF-CONSISTENCY, re-derived from the compiled sheet rather than restated.
-    // The binding zone is the PIECE register: its standing label plus four
-    // lines of note at whatever size the clamp gives a container of exactly
-    // this height must fit inside that height.
-    const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
-    const labelPx = Number(label.match(/font-size: ([\d.]+)rem/)[1]) * 16
-      * Number(label.match(/line-height: ([\d.]+)/)[1])
-      + Number(label.match(/margin: 0 0 ([\d.]+)rem/)[1]) * 16;
-    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
-    const [, minRem, per, maxRem] = text
-      .match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/).map(Number);
-    const lh = Number(text.match(/line-height: ([\d.]+)/)[1]);
-    const noteAt = (t) => Math.min(Math.max(per * t / 100, minRem * 16), maxRem * 16);
-    const budgetAt = (t) => labelPx + 4 * lh * noteAt(t);
-    expect(budgetAt(threshold), 'the tier overflows itself at its own threshold')
-      .toBeLessThanOrEqual(threshold);
-    // ...and it is not so conservative that the office screen misses it: that
-    // band has 113.2px of ticker content, measured in the harness.
-    expect(threshold, 'the tier never fires on the screen it was derived for')
-      .toBeLessThanOrEqual(113.2);
-
-    const inside = q[2];
-    expect(inside).toMatch(/max-height: 5\.4em/);
-    expect(css).toMatch(/--no-now-heading \.surround-cue-ticker__line \{ -webkit-line-clamp: 4/);
-  });
-
-  it('keeps the headed tier at its own, higher threshold', () => {
-    // A band configured `nowHeading: always` genuinely cannot afford four lines
-    // at 113px — the header costs twice what the label does — so the two
-    // thresholds are different numbers rather than one relaxed one.
-    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
-    const headed = [...css.matchAll(/@container ticker \(min-height: ([\d.]+)px\) \{ \.surround-cue-ticker__text/g)]
-      .map((m) => Number(m[1]));
-    expect(headed, 'the headed four-line tier lost its own, higher threshold').toContain(161);
   });
 });
 

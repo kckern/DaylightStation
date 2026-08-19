@@ -301,27 +301,96 @@ describe('playheadFraction — the law the accordion must not break', () => {
   });
 });
 
+/**
+ * THE WAIST IS THE HULL (design wave 9).
+ *
+ * It used to run from the segment's near edge only as far as the panel's NEAR
+ * edge, so the two lit areas met at one point — the waist's bottom corner
+ * against the panel's top corner, which the user called "kitty corner" and which
+ * is not a shape at all. It now spans from the leftmost of (segment, panel) to
+ * the rightmost, which welds the panel's WHOLE top edge and the segment's WHOLE
+ * bottom edge by construction.
+ *
+ * These are asserted as the two properties rather than as coordinates, because
+ * the coordinates are what changed and the properties are what must hold.
+ */
 describe('bondConnector', () => {
-  it('needs no bridge when the active segment already sits over the panel', () => {
-    expect(bondConnector({ segStart: 0.6, segEnd: 0.8, side: 'right' }).width).toBe(0);
-    expect(bondConnector({ segStart: 0.1, segEnd: 0.3, side: 'left' }).width).toBe(0);
+  const PANEL = { right: [0.5, 1], left: [0, 0.5] };
+  const overlap = ([a, b], [c, d]) => Math.min(b, d) - Math.max(a, c);
+
+  it('always spans the NOW panel entirely, wherever the segment is', () => {
+    for (const side of ['left', 'right']) {
+      for (let a = 0; a <= 0.9; a += 0.05) {
+        const c = bondConnector({ segStart: a, segEnd: a + 0.1, side });
+        const waist = [c.start, c.start + c.width];
+        expect(
+          overlap(waist, PANEL[side]),
+          `side ${side}, segment [${a.toFixed(2)}, ${(a + 0.1).toFixed(2)}]: the waist covers `
+          + `${overlap(waist, PANEL[side]).toFixed(4)} of the panel's ${NOW_PANEL_SHARE} width`,
+        ).toBeCloseTo(NOW_PANEL_SHARE, 9);
+      }
+    }
   });
 
-  it('needs no bridge when the segment merely overlaps the panel’s edge', () => {
-    expect(bondConnector({ segStart: 0.4, segEnd: 0.6, side: 'right' }).width).toBe(0);
+  it('always spans the sounding segment entirely, so the join above it is an interval too', () => {
+    for (const side of ['left', 'right']) {
+      for (let a = 0; a <= 0.9; a += 0.05) {
+        const seg = [a, a + 0.1];
+        const c = bondConnector({ segStart: seg[0], segEnd: seg[1], side });
+        expect(
+          overlap([c.start, c.start + c.width], seg),
+          `side ${side}, segment [${a.toFixed(2)}, ${(a + 0.1).toFixed(2)}]`,
+        ).toBeCloseTo(0.1, 9);
+      }
+    }
   });
 
-  it('bridges rightwards from a segment that ends before the right panel', () => {
+  it('collapses onto the panel when the segment already sits over it', () => {
+    const c = bondConnector({ segStart: 0.6, segEnd: 0.8, side: 'right' });
+    expect(c.start).toBeCloseTo(0.5, 9);
+    expect(c.width).toBeCloseTo(0.5, 9);
+    const l = bondConnector({ segStart: 0.1, segEnd: 0.3, side: 'left' });
+    expect(l.start).toBeCloseTo(0, 9);
+    expect(l.width).toBeCloseTo(0.5, 9);
+  });
+
+  it('reaches back to a segment on the far side of the band', () => {
     const c = bondConnector({ segStart: 0.05, segEnd: 0.2, side: 'right' });
-    expect(c.start).toBeCloseTo(0.2, 9);
-    expect(c.width).toBeCloseTo(0.3, 9);
-    expect(c.start + c.width).toBeCloseTo(1 - NOW_PANEL_SHARE, 9);
+    expect(c.start).toBeCloseTo(0.05, 9);
+    expect(c.start + c.width).toBeCloseTo(1, 9);
+    const l = bondConnector({ segStart: 0.8, segEnd: 0.95, side: 'left' });
+    expect(l.start).toBeCloseTo(0, 9);
+    expect(l.start + l.width).toBeCloseTo(0.95, 9);
   });
 
-  it('bridges leftwards from a segment that starts after the left panel', () => {
-    const c = bondConnector({ segStart: 0.8, segEnd: 0.95, side: 'left' });
-    expect(c.start).toBeCloseTo(NOW_PANEL_SHARE, 9);
-    expect(c.width).toBeCloseTo(0.3, 9);
+  /**
+   * THE CORNER RULE, as geometry. A waist corner takes the radius only where
+   * neither of the other two parts continues past that end — anywhere else a
+   * radius would cut a notch out of the middle of one shape. Exactly one of each
+   * vertical pair can be exterior, because the waist's end IS one of the two
+   * edges it was built from.
+   */
+  it('marks exactly the waist corners that are on the outside of the silhouette', () => {
+    // Segment far left, panel right: the left end is the segment's (so the
+    // TOP-left is welded and the BOTTOM-left is exposed), the right end is the
+    // panel's (so the bottom-right is welded and the top-right is exposed).
+    const far = bondConnector({ segStart: 0.05, segEnd: 0.2, side: 'right' }).corners;
+    expect(far).toEqual({ tl: false, tr: true, bl: true, br: false });
+    // Segment inside the panel: both ends are the panel's, so both bottom
+    // corners are welded and both top corners flank the segment.
+    const over = bondConnector({ segStart: 0.6, segEnd: 0.8, side: 'right' }).corners;
+    expect(over).toEqual({ tl: true, tr: true, bl: false, br: false });
+    // Segment exactly the panel: every corner is a weld. This is the degenerate
+    // case where the waist disappears into the two panels it joins.
+    const flush = bondConnector({ segStart: 0.5, segEnd: 1, side: 'right' }).corners;
+    expect(flush).toEqual({ tl: false, tr: false, bl: false, br: false });
+    for (const side of ['left', 'right']) {
+      for (let a = 0; a <= 0.9; a += 0.05) {
+        const { corners } = bondConnector({ segStart: a, segEnd: a + 0.1, side });
+        expect(corners.tl && corners.bl, `both left corners exterior at ${a}`).toBe(false);
+        expect(corners.tr && corners.br, `both right corners exterior at ${a}`).toBe(false);
+      }
+    }
   });
 
   it('never returns a negative width', () => {
@@ -434,14 +503,16 @@ describe('easeAccordion', () => {
 });
 
 describe('the band’s shared numbers', () => {
-  it('the two registers are halves, and the connector reaches exactly that edge', () => {
+  it('the two registers are halves, and the waist covers exactly one of them', () => {
     // NOT `expect(NOW_PANEL_SHARE).toBe(0.5)`, which restates the constant and
-    // cannot fail for any behaviour. What matters is that the geometry the
-    // panel share drives lands on the panel's edge.
+    // cannot fail for any behaviour. What matters is that the geometry the panel
+    // share drives spans the panel — the whole of it, and no more than it needs.
     const c = bondConnector({ segStart: 0.05, segEnd: 0.2, side: 'right' });
-    expect(c.start + c.width).toBeCloseTo(1 - NOW_PANEL_SHARE, 12);
+    expect(c.start + c.width, 'the waist stops short of the band’s right edge')
+      .toBeCloseTo(1, 12);
+    expect(1 - Math.max(c.start, 1 - NOW_PANEL_SHARE)).toBeCloseTo(NOW_PANEL_SHARE, 12);
     const l = bondConnector({ segStart: 0.85, segEnd: 0.95, side: 'left' });
-    expect(l.start).toBeCloseTo(NOW_PANEL_SHARE, 12);
+    expect(l.start, 'the waist stops short of the band’s left edge').toBeCloseTo(0, 12);
   });
 
   it('the hysteresis band is the brief’s ~47%, and it is where the swap-back happens', () => {

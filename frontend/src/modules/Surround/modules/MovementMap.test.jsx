@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import MovementMap from './MovementMap.jsx';
 import { ACCORDION_MS } from '../band.js';
@@ -773,20 +773,99 @@ describe('MovementMap — the bond', () => {
   const connector = (c) => c.querySelector('[data-testid="surround-bond-connector"]');
   const pct = (el, prop) => parseFloat(el.style.getPropertyValue(prop));
 
-  it('sits over the sounding segment, and moves to the next one at the boundary', () => {
-    const { container, rerender } = renderMap({ position: 300 });
-    // Movement I: 0..976 of 2955.
-    expect(pct(bond(container), '--bond-left')).toBeCloseTo(0, 6);
-    expect(pct(bond(container), '--bond-width')).toBeCloseTo((976 / 2955) * 100, 4);
+  /**
+   * ONE CLOCK, DRIVEN BY HAND (design wave 9).
+   *
+   * The bond's start and width ride in the same interpolated vector as the
+   * segment shares, so a boundary moves the whole shape ONCE. Proving that needs
+   * control of the animation, so this installs a `requestAnimationFrame` whose
+   * frames are pumped by the test and a `performance.now` it advances.
+   */
+  const withFrames = () => {
+    const frames = [];
+    const realRaf = globalThis.requestAnimationFrame;
+    const realCancel = globalThis.cancelAnimationFrame;
+    const realNow = globalThis.performance.now;
+    let clock = 0;
+    globalThis.requestAnimationFrame = (fn) => frames.push(fn) && frames.length;
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.performance.now = () => clock;
+    return {
+      step(ms) {
+        clock += ms;
+        const due = frames.splice(0, frames.length);
+        act(() => { due.forEach((fn) => fn(clock)); });
+      },
+      pending: () => frames.length,
+      restore() {
+        globalThis.requestAnimationFrame = realRaf;
+        globalThis.cancelAnimationFrame = realCancel;
+        globalThis.performance.now = realNow;
+      },
+    };
+  };
 
-    rerender(
-      <MovementMap
-        position={1000} duration={DURATION} playing seeking={false}
-        data={EROICA} region={{ module: 'movement-map' }} logger={makeLogger()}
-      />,
-    );
-    expect(pct(bond(container), '--bond-left')).toBeCloseTo((976 / 2955) * 100, 4);
-    expect(pct(bond(container), '--bond-width')).toBeCloseTo((949 / 2955) * 100, 4);
+  const atPosition = (position, data = EROICA) => (
+    <MovementMap
+      position={position} duration={DURATION} playing seeking={false}
+      data={data} region={{ module: 'movement-map' }} logger={makeLogger()}
+    />
+  );
+
+  it('sits over the sounding segment, and travels to the next one at the boundary', () => {
+    const clock = withFrames();
+    try {
+      const { container, rerender } = renderMap({ position: 300 });
+      // Movement I: 0..976 of 2955.
+      expect(pct(bond(container), '--bond-left')).toBeCloseTo(0, 6);
+      expect(pct(bond(container), '--bond-width')).toBeCloseTo((976 / 2955) * 100, 4);
+
+      act(() => { rerender(atPosition(1000)); });
+      clock.step(ACCORDION_MS + 1);
+      expect(pct(bond(container), '--bond-left')).toBeCloseTo((976 / 2955) * 100, 4);
+      expect(pct(bond(container), '--bond-width')).toBeCloseTo((949 / 2955) * 100, 4);
+    } finally {
+      clock.restore();
+    }
+  });
+
+  /**
+   * THE ARTIFACT THIS WAVE REMOVED, ASSERTED AS A NUMBER.
+   *
+   * Wave 7 kept a CSS `transition` on the bond's own `left`/`width`, reasoning
+   * that it travels between segments rather than tracking one, so only its
+   * endpoints mattered. What the user saw was the rail right-sizing and THEN the
+   * highlight sliding into it — two moves, because React committed the bond's
+   * FINAL position in the same frame the widths began easing, and the browser
+   * animated from there on its own clock.
+   *
+   * So: mid-flight, the published position must be strictly BETWEEN the old
+   * segment's and the new one's. Under the old design it was already at the new
+   * one on the first frame after the boundary.
+   *
+   * TO GO RED: publish the bond from `targetShares` instead of the interpolated
+   * vector, or put `transition: left …` back on `.surround-movement-map__bond`.
+   */
+  it('moves the bond mid-flight with the widths, not after them', () => {
+    const clock = withFrames();
+    try {
+      const { container, rerender } = renderMap({ position: 300 });
+      const from = pct(bond(container), '--bond-left');
+      act(() => { rerender(atPosition(1000)); });
+      const to = (976 / 2955) * 100;
+      clock.step(ACCORDION_MS / 2);
+      const mid = pct(bond(container), '--bond-left');
+      expect(
+        mid,
+        `half way through the ${ACCORDION_MS}ms move the bond is at ${mid}% — it should be `
+        + `between ${from}% and ${to}%, not parked at either end on a second clock`,
+      ).toBeGreaterThan(from + 1e-6);
+      expect(mid).toBeLessThan(to - 1e-6);
+      clock.step(ACCORDION_MS);
+      expect(pct(bond(container), '--bond-left')).toBeCloseTo(to, 4);
+    } finally {
+      clock.restore();
+    }
   });
 
   it('goes out over the applause — there is nothing sounding to bond to', () => {
@@ -795,32 +874,61 @@ describe('MovementMap — the bond', () => {
     expect(pct(bond(container), '--bond-width')).toBe(0);
   });
 
-  it('needs NO connector when the sounding segment already sits over the panel', () => {
-    // Movement IV runs 2278..2955 — 77%..100% of the rail — and the NOW panel
-    // is the right half. They overlap, so the two boxes simply touch.
+  /**
+   * THE WAIST SPANS THE PANEL, ALWAYS (design wave 9). Wave 7 ran it from the
+   * segment's near edge only as far as the panel's near edge, so the lit segment
+   * and the lit register met at ONE POINT — the user's "kitty corner". A region
+   * joined at a point is two regions. The waist is now the hull of the two, so
+   * the panel's whole top edge is welded whatever the segment is doing.
+   */
+  it('covers the whole NOW panel even when the segment already sits over it', () => {
+    // Movement IV runs 2278..2955 — 77%..100% of the rail — inside the right
+    // panel. The waist collapses onto the panel rather than to zero.
     const { container } = renderMap({ position: 2500 });
-    expect(connector(container).getAttribute('data-bridging')).toBe('false');
-    expect(pct(connector(container), '--connector-width')).toBe(0);
+    expect(connector(container).getAttribute('data-bonded')).toBe('true');
+    expect(pct(connector(container), '--connector-left')).toBeCloseTo(50, 6);
+    expect(pct(connector(container), '--connector-width')).toBeCloseTo(50, 6);
   });
 
-  it('bridges the gap when the sounding segment is on the far side of the band', () => {
-    // Movement I ends at 33% of the rail; the right-hand panel starts at 50%.
+  it('reaches back to a sounding segment on the far side, still covering the panel', () => {
+    // Movement I ends at 33% of the rail; the right-hand panel is 50%..100%.
     const { container } = renderMap({ position: 300 });
-    expect(connector(container).getAttribute('data-bridging')).toBe('true');
     const left = pct(connector(container), '--connector-left');
     const width = pct(connector(container), '--connector-width');
-    expect(left).toBeCloseTo((976 / 2955) * 100, 4);
-    expect(left + width, 'the connector does not reach the panel it is bridging to')
+    expect(left, 'the waist does not reach the segment it hangs from').toBeCloseTo(0, 6);
+    expect(left + width, 'the waist stops short of the panel’s far edge').toBeCloseTo(100, 6);
+    // ...which is the property that matters: the panel is covered end to end.
+    expect(Math.min(left + width, 100) - Math.max(left, 50), 'the panel is not fully welded')
       .toBeCloseTo(50, 6);
   });
 
-  it('bridges LEFTWARDS when the register is configured onto the left', () => {
+  it('reaches LEFTWARDS when the register is configured onto the left', () => {
     const left = { ...EROICA, definition: { band: { nowSide: 'left' } } };
     const { container } = renderMap({ position: 2500, data: left });
     expect(container.querySelector('[data-testid="surround-movement-map"]')
       .getAttribute('data-now-side')).toBe('left');
-    expect(connector(container).getAttribute('data-bridging')).toBe('true');
-    expect(pct(connector(container), '--connector-left')).toBeCloseTo(50, 6);
+    expect(pct(connector(container), '--connector-left')).toBeCloseTo(0, 6);
+    // Movement IV ends at the rail's right edge, so the waist runs the whole band.
+    expect(pct(connector(container), '--connector-width')).toBeCloseTo(100, 6);
+  });
+
+  /**
+   * THE CORNER RULE, AS PUBLISHED. Only the waist corners that are on the
+   * OUTSIDE of the silhouette take `--bond-radius`; the rest are welds and are
+   * square, so the joins are invisible. The geometry is decided in `../band.js`
+   * and asserted there; this pins that the component actually publishes it.
+   */
+  it('publishes a radius only for the waist corners that are exterior', () => {
+    const { container } = renderMap({ position: 300 });
+    const c = connector(container);
+    // Segment far left, panel right: the waist's left end is the segment's own
+    // edge (top-left welded, bottom-left exposed) and its right end is the
+    // panel's (bottom-right welded, top-right exposed).
+    expect(c.getAttribute('data-corners')).toBe('tr bl');
+    expect(c.style.getPropertyValue('--connector-tl')).toBe('0');
+    expect(c.style.getPropertyValue('--connector-tr')).toBe('var(--bond-radius)');
+    expect(c.style.getPropertyValue('--connector-bl')).toBe('var(--bond-radius)');
+    expect(c.style.getPropertyValue('--connector-br')).toBe('0');
   });
 
   it('follows the playhead across the band when the side is dynamic', () => {
@@ -843,23 +951,35 @@ describe('MovementMap — the bond', () => {
     expect(side()).toBe('left');
   });
 
-  it('paints the bond in the frame’s shared ground, and squares off where it continues', () => {
-    const css = withStyles().replace(/\s+/g, ' ');
+  it('paints the bond in the frame’s shared ground, on the band’s one radius rule', () => {
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
     const panel = css.match(/\.surround-movement-map__bond \{[^}]*\}/)[0];
     // ONE token, published by the frame, so the rail's panel and the band's
     // cannot drift a few percent apart and stop reading as one shape.
     expect(panel).toMatch(/background: var\(--bond-ground,/);
-    // Rounded at the head, square at the foot — the foot is not an edge, it is
-    // where this panel becomes the connector and then the register's.
-    expect(panel).toMatch(/border-radius: 5px 5px 0 0/);
+    // THE CORNER RULE: every corner on the OUTSIDE of the silhouette takes
+    // `--bond-radius`; every corner where two parts weld is square. The foot is
+    // not an edge — it is where this panel becomes the waist.
+    expect(panel).toMatch(/border-radius: var\(--bond-radius\) var\(--bond-radius\) 0 0/);
     // ...and it reaches THROUGH the band's bottom padding to the seam.
     expect(panel).toMatch(/bottom: calc\(var\(--band-pad-bottom\) \* -1\)/);
+    // NOTHING IN THE BAND IS EDGED.
+    expect(panel, 'the bond grew a border').not.toMatch(/box-shadow|border(-(top|left|right|bottom))?:/);
 
     const shoulder = css.match(/\.surround-movement-map__bond-connector \{[^}]*\}/)[0];
     expect(shoulder).toMatch(/background: var\(--bond-ground,/);
-    expect(shoulder, 'the connector rounds a corner in the middle of one shape')
-      .not.toMatch(/border-radius/);
+    // The waist's four corners are decided per-render, not fixed: the component
+    // publishes a radius only where a corner is exterior.
+    expect(shoulder).toMatch(/border-radius: var\(--connector-tl, 0\) var\(--connector-tr, 0\) var\(--connector-br, 0\) var\(--connector-bl, 0\)/);
     expect(shoulder).toMatch(/bottom: calc\(var\(--band-pad-bottom\) \* -1\)/);
+
+    // ONE CLOCK. Neither the panel nor the waist may animate its own geometry —
+    // both are repositioned every frame from the interpolated vector.
+    for (const [name, rule] of [['the bond', panel], ['the waist', shoulder]]) {
+      const t = rule.match(/transition: ([^;]*);/);
+      expect(t, `${name} lost its fade`).not.toBeNull();
+      expect(t[1], `${name} is back on a second, CSS clock`).not.toMatch(/\bleft\b|\bwidth\b/);
+    }
   });
 
   it('gives the connector a height that reads at ten feet, and clears the type above it', () => {
@@ -885,7 +1005,7 @@ describe('MovementMap — the bond', () => {
     expect(block[1]).toMatch(/transition: none/);
     // The SEGMENT is deliberately absent from this block, and that is the
     // review-I2 fix showing through: it has no CSS transition to cancel. Its
-    // widths are interpolated in JS, and `useEasedShares` reads the preference
+    // widths are interpolated in JS, and `useEasedVector` reads the preference
     // itself and commits the target in one go.
     const seg = css.match(/\.surround-movement-map__segment \{[^}]*\}/)[0];
     expect(seg, 'the segment is back on a second, CSS clock').not.toMatch(/transition/);

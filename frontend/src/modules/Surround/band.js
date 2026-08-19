@@ -25,9 +25,9 @@ import { prefersReducedMotion } from './dissolve.js';
 // the accordion's arithmetic unit-testable without rendering anything — and the
 // two React bindings at the foot are memory and a clock, not judgement.
 //
-// THE ACCORDION HAS EXACTLY ONE CLOCK, and it is `useEasedShares`. Segment
+// THE ACCORDION HAS EXACTLY ONE CLOCK, and it is `useEasedVector`. Segment
 // widths, the playhead, the bond and its connector are all derived from the one
-// array it returns, in the same render. Anything animated by CSS *instead*
+// vector it returns, in the same render. Anything animated by CSS *instead*
 // would be on a second timeline, and the playhead leaving the boundary it is
 // supposed to sit on is precisely what that costs (see the hook's own comment).
 //
@@ -505,29 +505,73 @@ export function playheadFraction({ segments, shares, position, end }) {
 export const NOW_PANEL_SHARE = 0.5;
 
 /**
- * The connector: the horizontal interval, in shares of the rule, that the rail
- * has to bridge to reach the NOW panel.
+ * How close two share-edges have to be before they count as the same edge.
+ * A rule is ~600-1250px wide across the fleet, so this is a fifth of a pixel at
+ * the narrowest screen — below any radius decision a viewer could see, and above
+ * the float noise a sum of interpolated shares carries.
+ */
+const EDGE_EPS = 3e-4;
+
+/**
+ * The connector — the WAIST of the bond: the horizontal interval, in shares of
+ * the rule, that runs along the band's seam and welds the sounding segment above
+ * it to the NOW panel below it.
  *
- * Returns an interval of zero width whenever the active segment already sits
- * over the panel — "when the active segment sits directly above the panel, the
- * two simply touch". Nothing is drawn in that case; the segment's own box and
- * the panel's box are already contiguous.
+ * IT SPANS THE HULL, AND THAT IS THE FIX (design wave 9). It used to run from
+ * the segment's near edge only as far as the panel's near edge, so the two lit
+ * areas met at a POINT: the waist's bottom corner against the panel's top corner,
+ * diagonal neighbours touching at nothing. The user's word for it was "kitty
+ * corner", and it is not a shape — a region joined at a single point is two
+ * regions in every sense a viewer has. The waist now spans from the leftmost of
+ * (segment, panel) to the rightmost of them, which makes two things true at once
+ * and by construction:
+ *
+ *   * THE PANEL'S WHOLE TOP EDGE IS WELDED. The waist contains the panel's span
+ *     entirely, so the join below it is an interval half the band wide, never a
+ *     corner.
+ *   * THE SEGMENT'S WHOLE BOTTOM EDGE IS WELDED, for the same reason. The waist
+ *     contains the segment's span too, so the join above it is the segment's own
+ *     full width.
+ *
+ * It also means the waist's two ends always land ON an edge one of the other two
+ * parts already has, which is what keeps the silhouette free of new corners: at
+ * each end, either the segment continues upward from it or the panel continues
+ * downward from it. `corners` says which of the waist's own four corners are
+ * therefore on the OUTSIDE of the shape and take the radius — see the stylesheet.
+ *
+ * DEGENERATE CASES, all handled by the same two `min`/`max`: the segment sitting
+ * directly over the panel (the hull is the panel; the waist collapses into it and
+ * the two simply merge, with no pinch anywhere), the segment at the far end of
+ * the rule (the waist is nearly the whole band — a long thin middle, which is the
+ * shape the user asked for), and the first and last movements (nothing special:
+ * their spans are just the extreme ones).
  *
  * @param {object} args
  * @param {number} args.segStart the active segment's left edge, 0..1 of the rule.
  * @param {number} args.segEnd its right edge, 0..1.
  * @param {'left'|'right'} args.side which side the NOW panel is on.
- * @returns {{start:number, width:number}} in shares of the rule.
+ * @returns {{start:number, width:number, corners:{tl:boolean,tr:boolean,bl:boolean,br:boolean}}}
+ *   in shares of the rule; `corners` are the waist corners that are exterior.
  */
 export function bondConnector({ segStart, segEnd, side }) {
   const panelStart = side === 'left' ? 0 : 1 - NOW_PANEL_SHARE;
   const panelEnd = side === 'left' ? NOW_PANEL_SHARE : 1;
   const a = Number.isFinite(segStart) ? segStart : 0;
   const b = Number.isFinite(segEnd) ? segEnd : 0;
-  // Overlapping intervals need no bridge.
-  if (b > panelStart && a < panelEnd) return { start: a, width: 0 };
-  if (b <= panelStart) return { start: b, width: panelStart - b };
-  return { start: panelEnd, width: a - panelEnd };
+  const lo = Math.min(a, panelStart);
+  const hi = Math.max(b, panelEnd);
+  return {
+    start: lo,
+    width: hi - lo,
+    corners: {
+      // The TOP corners are exterior where the segment does not continue upward.
+      tl: lo < a - EDGE_EPS,
+      tr: hi > b + EDGE_EPS,
+      // The BOTTOM corners are exterior where the panel does not continue down.
+      bl: lo < panelStart - EDGE_EPS,
+      br: hi > panelEnd + EDGE_EPS,
+    },
+  };
 }
 
 export default resolveBandConfig;
@@ -588,10 +632,10 @@ export function useNowSide(config, fraction, log = null) {
 /**
  * `cubic-bezier(0.2, 0.8, 0.2, 1)` — the frame's `--enter-ease`, evaluated in JS.
  *
- * It exists because the accordion's widths are no longer animated by CSS (see
- * `useEasedShares`), and the rest of the frame's motion still is: the bond's
- * travel between segments and the band's panel slide both ride the same curve.
- * One easing, two engines, so nothing in the band moves on a different feel.
+ * It exists because the accordion's geometry is no longer animated by CSS (see
+ * `useEasedVector`), and the rest of the frame's motion still is: the band's
+ * panel slide on a `nowSide` swap rides the same curve. One easing, two engines,
+ * so nothing in the band moves on a different feel.
  *
  * Newton's method on x(t) for the parameter, then y at it — the same solve a
  * browser does, to a tolerance far finer than a pixel at these durations.
@@ -615,7 +659,7 @@ export function easeAccordion(t) {
 }
 
 /**
- * Animate the rail's shares in JS, and hand back the array that is on screen.
+ * Animate a vector of the rail's geometry in JS, and hand back what is on screen.
  *
  * REVIEW FINDING I2 — THE REASON THIS EXISTS. The widths used to be animated by
  * a CSS `transition: width` over `ACCORDION_MS` while the playhead ran on its
@@ -627,19 +671,28 @@ export function easeAccordion(t) {
  * desynchronise the head from the boundaries"), and two clocks cannot satisfy
  * it however either one is tuned.
  *
- * So there is ONE clock, and it is this one. The shares are interpolated here;
- * the segment widths, the playhead, the bond and its connector are all derived
- * from the array this returns, in the same render. They cannot drift because
- * there is nothing left for them to drift against.
+ * IT CARRIES THE BOND TOO NOW (design wave 9), and that is why it is a VECTOR
+ * rather than an array of shares. Wave 7 left the bond's `left`/`width` on a CSS
+ * transition, reasoning that the bond travels BETWEEN segments rather than
+ * tracking one, so only its endpoints have to be right. The endpoints were right
+ * and the journey was not: the segment widths eased in JS from the first frame
+ * while the bond's own box did not begin moving until React had committed the
+ * new `left`, so the eye saw the rail right-size itself and THEN the highlight
+ * slide into it — one move read as two. The user saw it immediately. The bond's
+ * start and width are appended to the same vector the shares ride in, so the
+ * whole shape is published from one interpolation in one render, and there is
+ * nothing left for any part of it to drift against.
  *
  * The loop runs only while a move is in flight — a movement boundary is minutes
  * apart, so this is idle for all but ~420 ms of a symphony.
  *
- * @param {number[]} target the solved shares.
+ * @param {number[]} target the geometry vector: the solved shares, then any
+ *   other numbers that must move on the same clock.
  * @param {number} durationMs
- * @returns {{shares:number[], moving:boolean}}
+ * @returns {{shares:number[], moving:boolean}} `shares` is the whole vector, in
+ *   the order it was given.
  */
-export function useEasedShares(target, durationMs) {
+export function useEasedVector(target, durationMs) {
   const [, tick] = useState(0);
   const from = useRef(target);
   const current = useRef(target);

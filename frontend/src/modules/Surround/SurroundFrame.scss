@@ -15,6 +15,10 @@
    a default serif — and to different metrics, which move every clamp and tier
    threshold in the band. See `_fonts.scss` for the licence and the subsetting. */
 @use "./fonts";
+/* The band's shared literals - the bond's ground and the band's one radius.
+   Published as custom properties on the band's region below, so the two modules
+   that draw the bond read one value and neither can drift from the other. */
+@use "./tokens" as *;
 
 .surround-frame {
   --hall-ink: #14100c;
@@ -405,17 +409,23 @@
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.28);
-  /* THE BOND'S GROUND (design wave 7). The sounding movement's panel on the
-     rail and the NOW register's panel in the listening band are the SAME
-     colour — that is the whole mechanism by which they read as one shape, and
-     so the colour is published once, here, on the region both modules live in,
-     rather than twice in two stylesheets that would drift.
-     A lifted ground, not a different material: #241c15 against the band's
-     #191310..#14100c is about seven points of lightness in the same warm
-     parchment/ink family. Enough to separate the panel from the band at ten
-     feet; not so much that the band grows a second surface competing with the
-     brass rule for the loudest mark. */
-  --bond-ground: #241c15;
+  /* THE BOND'S GROUND (design wave 7; re-hued in wave 9). The sounding
+     movement's panel on the rail, the waist that joins them and the NOW
+     register's panel in the listening band are the SAME colour — that is the
+     whole mechanism by which they read as one shape, and so the colour is
+     published once, here, on the region both modules live in, rather than twice
+     in two stylesheets that would drift. The literal itself lives in
+     `_tokens.scss`, which is what makes the modules' own fallbacks the same
+     value rather than three hand-copied hexes.
+     MAROON, NOT BROWN. It was #241c15, a warm brown, and it read as brown. It
+     is now house material: the velvet drape's own hue family, darker than the
+     rail's ground, and three and a half times as distinct from the band's unlit
+     ground as the brown was — see `_tokens.scss` for the CIELAB table. */
+  --bond-ground: #{$bond-ground};
+  /* THE BAND'S ONE RADIUS, and the rule it states: every corner on the outside
+     of the bond's silhouette carries it, every corner where its parts weld is
+     square, and nothing else in the band is rounded. */
+  --bond-radius: #{$bond-radius};
   background-color: #191310;
   background-image: linear-gradient(180deg, #1e1712 0%, #14100c 100%);
   box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
