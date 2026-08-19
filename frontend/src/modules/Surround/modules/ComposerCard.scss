@@ -290,6 +290,22 @@
   color: var(--ink-soft, #6b6152);
 }
 
+/* THE LINE — the clamp (fix round 1, review finding M3). Size, position and
+   the two-line CEILING stay on `__period` above; this inner span's only job is
+   truncation, the house pattern also used by the ticker and the era plate's
+   note. Before this, a period longer than two lines was cut by `overflow:
+   hidden` alone wherever the box edge fell — glyph included, no ellipsis —
+   because the outer box had no ellipsis idiom of its own. No authored era in
+   the corpus is known to need a third line, but the box no longer depends on
+   that staying true; it wraps to two and ellipsizes the second only when a
+   longer one arrives. */
+.surround-composer-card__period-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ---------------------------------------------------------------------------
    FACT ZONE — centred in whatever height the header leaves.
    `margin: auto 0` on a flex-column child splits the free space above and below

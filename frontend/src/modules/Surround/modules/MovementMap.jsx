@@ -99,7 +99,14 @@ export default function MovementMap({
   // The rule ends where the MUSIC ends, not where the file does. The Eroica has
   // ~4½ minutes of applause after the final chord; a bar running to `duration`
   // would tell the viewer the piece is still playing.
-  const musicEndsAt = data?.piece?.musicEndsAt;
+  //
+  // Fix round 1 (review finding I4): COERCED, not read raw. YAML round-trips
+  // can hand this back as a string ("613"), and `Number.isFinite` on a string
+  // is always false — silently falling through to `duration` and drawing the
+  // rule over the applause. `CueTicker` already reads the same field coerced
+  // (`Number(data?.piece?.musicEndsAt)`); this is that same reading, so the
+  // two halves of the band cannot disagree about where the music stops.
+  const musicEndsAt = Number(data?.piece?.musicEndsAt);
   const end = Number.isFinite(musicEndsAt) && musicEndsAt > 0 ? musicEndsAt : duration;
 
   const segments = useMemo(() => {

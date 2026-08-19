@@ -230,6 +230,35 @@ async function currentTime(page) {
 }
 
 /**
+ * Fix round 1 (review finding M1). `currentTime(page)` and the header's
+ * `.textContent()` used to be two independent round trips — each an `await`
+ * of its own, with real wall-clock time (and, on a live page, real playback)
+ * elapsing between them. A movement boundary landing in that gap made the
+ * header check straddle it: `now` read from before the boundary, the header
+ * already reading the new movement (or the reverse), and the assertion below
+ * would fail for a reason that was never a real defect — a timing race in the
+ * GATE, not in the component.
+ *
+ * `page.evaluate` cannot reach the <video> directly — script in the page does
+ * not pierce the <dash-video> shadow root the real element lives in (see
+ * `PLAYABLE_SEL`'s own comment) — so this resolves BOTH elements to
+ * `ElementHandle`s first (a Playwright locator call, which does pierce it)
+ * and then reads `currentTime` and `textContent` off them inside ONE
+ * `page.evaluate`, in the same synchronous tick, on the same document frame.
+ * Nothing can advance between the two reads.
+ */
+async function readNowAtHeader(page) {
+  const [video, header] = await Promise.all([
+    page.locator(PLAYABLE_SEL).first().elementHandle(),
+    page.locator('[data-testid="surround-ticker-now"]').first().elementHandle(),
+  ]);
+  return page.evaluate(([v, h]) => ({
+    now: v.currentTime,
+    header: (h.textContent ?? '').trim(),
+  }), [video, header]);
+}
+
+/**
  * Wait until the transport can actually be DRIVEN, not merely until it exists.
  *
  * `waitForSelector(MEDIA_SEL)` resolves the moment the <dash-video> HOST is in
@@ -721,14 +750,19 @@ test.describe('Surround — composed layout gate', () => {
 
     //     THE HEADER NAMES WHAT IS SOUNDING. The gate knows the position from
     //     the transport, so this is a real cross-check between the video's
-    //     clock and the register's text — not a check that some string rendered.
-    const now = await currentTime(page);
+    //     clock and the register's text — not a check that some string
+    //     rendered. Fix round 1 (review finding M1): `now` and `header` used
+    //     to be two independent round trips, which let a movement boundary
+    //     land between them and fail the check for a gate-timing reason
+    //     rather than a real defect. `readNowAtHeader` reads both inside ONE
+    //     `page.evaluate`, so nothing can advance between them.
+    const { now, header: rawHeader } = await readNowAtHeader(page);
     const index = movementAt(now);
     expect(
       index,
       `the transport is at ${now}s, which is not inside any movement — reseek the fixture`,
     ).toBeGreaterThanOrEqual(0);
-    const header = (await page.locator('[data-testid="surround-ticker-now"]').first().textContent())?.trim();
+    const header = rawHeader;
     expect(
       header,
       `the NOW header reads "${header}" at ${now.toFixed(1)}s, which is movement ${index + 1} `

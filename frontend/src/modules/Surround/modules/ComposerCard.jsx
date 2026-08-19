@@ -261,7 +261,16 @@ export default function ComposerCard({
                   className="surround-composer-card__period"
                   data-testid="surround-composer-period"
                 >
-                  {period}
+                  {/* Fix round 1 (review finding M3): the house inner-line
+                      clamp pattern (CueTicker, EraTimeline's note) — the
+                      outer `<p>` owns the box (the two-line ceiling below),
+                      this inner span owns the truncation. Before this, an
+                      era longer than two lines was cut by `overflow: hidden`
+                      wherever the box edge happened to fall, glyph included,
+                      with no ellipsis to say so. No authored era in the
+                      corpus is known to exceed two lines, but the outer box
+                      no longer depends on that staying true. */}
+                  <span className="surround-composer-card__period-line">{period}</span>
                 </p>
               )}
             </div>

@@ -328,12 +328,16 @@ describe('CueTicker — reserved height and centred setting', () => {
   });
 
   /**
-   * Design wave 6 — THE RESERVE IS TWO LINES WHERE THE BAND CAN PAY FOR IT.
+   * Fix round 1 (review finding C1) — THE RESERVE IS THREE LINES WHERE THE
+   * BAND CAN PAY FOR IT, not two. Wave 6 shipped two, and a real authored fact
+   * (the Eroica's 232-character Napoleon note) still ellipsized at every
+   * screen in the fleet — a two-line box only ever showed 44-90 of it.
    *
    * happy-dom does not evaluate `@container`, so this reads the compiled sheet:
    * the query exists, it is on the ticker's own container name, its threshold
-   * is at least the right zone's own arithmetic, and inside it the reserve and
-   * the clamp both go to two while the now-header's translation appears.
+   * is at least the right zone's own three-line arithmetic, and inside it the
+   * reserve and the clamp both go to three while the now-header's translation
+   * appears.
    */
   it('promotes the reserve, the clamp and the translation in a band with room', () => {
     const css = withStyles().replace(/\s+/g, ' ');
@@ -344,19 +348,62 @@ describe('CueTicker — reserved height and centred setting', () => {
     const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{(.*?)\} \}/);
     expect(q, 'no container query — the band cannot adapt to the room it has').not.toBeNull();
     const threshold = Number(q[1]);
-    // The right zone in the two-line layout owes: the now-header's two lines
-    // (0.78rem x 1.2 + 0.1rem + 0.72rem x 1.2 = 30.4px) plus two lines of note
-    // at the clamp's FLOOR (2 x 0.88rem x 1.35 = 38.0px). A threshold below
-    // that promotes a layout the zone cannot hold, which is an overflow the
-    // region then clips.
+    // The right zone in the three-line layout owes: the now-header's two
+    // lines (0.78rem x 1.2 + 0.1rem + 0.72rem x 1.2 = 30.4px) plus three
+    // lines of note at the clamp's FLOOR (3 x 0.88rem x 1.35 = 57.0px). A
+    // threshold below that promotes a layout the zone cannot hold, which is
+    // an overflow the region then clips — and this IS the same arithmetic
+    // that overflowed at wave 6's 19cqh coefficient, which is why the
+    // coefficient itself changed alongside the line count (see the SCSS).
     expect(threshold, 'the query promotes a layout the right zone cannot hold')
-      .toBeGreaterThanOrEqual(30.4 + (2 * 0.88 * 16 * 1.35));
+      .toBeGreaterThanOrEqual(30.4 + (3 * 0.88 * 16 * 1.35));
 
     const inside = q[2];
-    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*min-height: 2\.7em/);
-    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*max-height: 2\.7em/);
-    expect(inside).toMatch(/\.surround-cue-ticker__line \{[^}]*-webkit-line-clamp: 2/);
+    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*min-height: 4\.05em/);
+    expect(inside).toMatch(/\.surround-cue-ticker__text \{[^}]*max-height: 4\.05em/);
+    expect(inside).toMatch(/\.surround-cue-ticker__line \{[^}]*-webkit-line-clamp: 3/);
     expect(inside).toMatch(/__now-translation \{[^}]*display: block/);
+  });
+
+  /**
+   * Fix round 1 (review finding C1) — the three-line reserve must not overflow
+   * the ticker's OWN box at the container height the fleet actually produces.
+   * This is the arithmetic that broke at wave 6's 19cqh coefficient (measured:
+   * 104.9px of header+note needed against a 96.8px budget at 1280x720) and is
+   * why the coefficient dropped to 16 alongside the line count. Proved here
+   * algebraically rather than re-measured in a browser: at the container
+   * query's own threshold (floor font, the worst case — see the SCSS comment)
+   * the now-zone's header-plus-three-lines must fit inside the threshold
+   * itself, and past the threshold the reserve grows more slowly than the
+   * container does, so the margin only widens.
+   */
+  it('does not budget more for the three-line now-zone than the threshold itself holds', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const q = css.match(/@container ticker \(min-height: ([\d.]+)px\) \{(.*?)\} \}/);
+    const threshold = Number(q[1]);
+    const text = css.match(/\.surround-cue-ticker__text \{[^}]*\}/)[0];
+    const [, , coefStr] = text.match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqh, ([\d.]+)rem\)/);
+    const coef = Number(coefStr) / 100;
+    const header = css.match(/\.surround-cue-ticker__now-head \{[^}]*\}/)[0];
+    const headerLineHeight = Number(header.match(/font-size: ([\d.]+)rem/)[1])
+      * Number(header.match(/line-height: ([\d.]+)/)[1]) * 16;
+    const translation = css.match(/\.surround-cue-ticker__now-translation \{[^}]*\}/)[0];
+    const translationLineHeight = Number(translation.match(/font-size: ([\d.]+)rem/)[1])
+      * Number(translation.match(/line-height: ([\d.]+)/)[1]) * 16;
+    const nowBox = css.match(/\.surround-cue-ticker__now \{[^}]*\}/)[0];
+    const margin = Number(nowBox.match(/margin: [\d.]+ 0 ([\d.]+)rem/)[1]) * 16;
+    const headerBudget = headerLineHeight + margin + translationLineHeight;
+
+    const noteAt = (h) => Math.min(Math.max(coef * h, 0.88 * 16), 1.5 * 16);
+    const budgetAt = (h) => headerBudget + (3 * 1.35 * noteAt(h));
+    // At the threshold itself (the worst case: font still at or near the
+    // floor) the now-zone's own arithmetic must not exceed the room the
+    // query just granted it.
+    expect(budgetAt(threshold), 'the promoted layout overflows the container that promoted it')
+      .toBeLessThanOrEqual(threshold);
+    // ...and past it, real fleet sizes stay comfortably inside their own room.
+    expect(budgetAt(96.8), '1280x720 overflows the ticker').toBeLessThanOrEqual(96.8);
+    expect(budgetAt(215.6), '1920x1080 overflows the ticker').toBeLessThanOrEqual(215.6);
   });
 
   it('sets the note centred and balanced', () => {
@@ -681,6 +728,77 @@ describe('CueTicker — the split band (design wave 6)', () => {
     const view = renderSplit();
     view.unmount();
     expect(() => tick(FACT_INTERVAL_MS * 3)).not.toThrow();
+  });
+
+  /**
+   * Fix round 1 (review finding I1). The piece register's effect used to list
+   * `activeCue` in its dependency array even though the SPLIT branch never
+   * reads it — cues belong to the NOW zone only — so a cue landing or lifting
+   * in the other zone tore the piece timer down and rebuilt it, restarting its
+   * 20s countdown from that instant. Proven by crossing the ORIGINAL period's
+   * boundary with two cue edges in between: a still-buggy effect would have
+   * reset at each edge and not be due again for another full period, so the
+   * piece register would still be showing its first line.
+   */
+  it('does not reset the piece register’s rotation when a cue interrupts the NOW zone', () => {
+    const view = renderSplit();
+    const piece0 = view.piece();
+
+    tick(FACT_INTERVAL_MS - 1);
+    expect(view.piece()).toBe(piece0);
+
+    // A cue arrives in the NOW zone and departs again, entirely inside the
+    // last millisecond of the piece register's own period.
+    view.at(500);
+    view.at(500 + CUE_DWELL_S);
+
+    // The final millisecond of the ORIGINAL period: an untouched timer fires
+    // now.
+    tick(1);
+    settle();
+    expect(view.piece()).not.toBe(piece0);
+  });
+
+  /**
+   * Fix round 1 (review finding I2), first half: a cue landing while the NOW
+   * zone is mid-dissolve of an ordinary rotation used to re-queue a fresh full
+   * `DISSOLVE_COMMIT_MS` wait on top of whatever was left of the interrupted
+   * one — up to twice the normal commit latency. The fix commits an activating
+   * cue instantly, so it must be showing with NO wait at all, not just a
+   * shorter one.
+   */
+  it('commits a cue instantly even when it lands mid-dissolve of an ordinary rotation', () => {
+    const view = renderSplit();
+    expect(view.listen()).toBe('Two hammered chords, then the cellos.');
+
+    // Cross the NOW register's own rotation boundary, but only one tick in —
+    // it is now hidden and mid-fade, its commit still ~479ms away.
+    tick(LISTEN_PHASE_MS);
+    tick(1);
+
+    // A cue lands while that ordinary dissolve is still in flight. No
+    // settle() follows: if this still queued a fresh dissolve, the cue's text
+    // would not be showing yet.
+    view.at(500);
+    expect(view.listen()).toBe('The development begins.');
+  });
+
+  /**
+   * Fix round 1 (review finding I2), second half. The header above the NOW
+   * text is never dissolved — it just re-renders on the movement boundary —
+   * so a softened note there used to keep naming the OLD movement for up to a
+   * full commit while the header already named the new one. No settle()
+   * follows the boundary crossing: the fix's whole point is that no wait is
+   * needed for the two to agree.
+   */
+  it('never lets the header and the note name different movements after a boundary tick', () => {
+    const view = renderSplit();
+    expect(view.header()).toContain('Allegro con brio');
+    expect(view.listen()).toBe('Two hammered chords, then the cellos.');
+
+    view.at(1000);   // into movement II
+    expect(view.header()).toContain('Marcia funebre. Adagio assai');
+    expect(view.listen()).toBe('The march tune is in the violins.');
   });
 });
 

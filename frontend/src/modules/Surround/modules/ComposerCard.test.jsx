@@ -1024,4 +1024,32 @@ describe('ComposerCard — the period line', () => {
     expect(place).toContain('white-space: nowrap');
     expect(place).toContain('text-overflow: ellipsis');
   });
+
+  /**
+   * Fix round 1 (review finding M3). "Wraps, does not ellipsize" was true of
+   * the CEILING (asserted above) but not of what happened if an era ever
+   * exceeded it: the outer box's own `overflow: hidden` cut it wherever the
+   * box edge fell, glyph included, with no ellipsis to say the cut happened.
+   * The house inner-line clamp pattern (CueTicker, EraTimeline's note) fixes
+   * that: the outer keeps the ceiling, an inner span does the truncating.
+   */
+  it('clamps the era to two lines with an ellipsis on the inner element the outer box bounds', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-composer-card__period-line \{[^}]*\}/);
+    expect(rule, 'no .surround-composer-card__period-line rule — the clamp was not added').not.toBeNull();
+    expect(rule[0]).toContain('display: -webkit-box');
+    expect(rule[0]).toContain('-webkit-line-clamp: 2');
+    expect(rule[0]).toContain('-webkit-box-orient: vertical');
+    expect(rule[0]).toContain('overflow: hidden');
+
+    // The markup actually nests them: `__period-line` is what `__period`
+    // bounds, not a sibling or a class that never renders.
+    const view = renderCard({
+      data: { ...DATA, piece: { ...DATA.piece, period: 'Classical to Romantic' } },
+    });
+    const outer = period(view);
+    const inner = outer.querySelector('.surround-composer-card__period-line');
+    expect(inner, 'the outer box has no .surround-composer-card__period-line child').not.toBeNull();
+    expect(inner.textContent).toBe('Classical to Romantic');
+  });
 });
