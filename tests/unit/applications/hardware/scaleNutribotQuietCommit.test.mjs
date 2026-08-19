@@ -28,10 +28,28 @@ function manualScheduler() {
   };
 }
 
+// Let every queued microtask AND both awaited use cases settle. A single
+// `await Promise.resolve()` is not enough: `commitNow` awaits SelectScaleDensity
+// and then AcceptFoodLog before it consumes the composition, so the post-commit
+// state is only observable after a real turn of the loop.
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 const SCALE = 'kitchen-food-scale';
 
 const makeHarness = ({ complete = true } = {}) => {
-  const accept = { execute: vi.fn().mockResolvedValue({ success: true }) };
+  // Call order across the two use cases, so "density THEN accept" can be asserted
+  // as a sequence. Both being called is not the claim — the claim is that the
+  // entry never reaches history without its calories.
+  const calls = [];
+  const accept = {
+    execute: vi.fn(async () => { calls.push('accept'); return { success: true }; }),
+  };
+  // The step that actually writes calories: `calories = round(netGrams ×
+  // kcal_per_g)`, plus the label and `metadata.densityLevel`. Without it a
+  // committed entry is 'Unknown' / 0 kcal.
+  const selectDensity = {
+    execute: vi.fn(async () => { calls.push('density'); return { success: true, calories: 578 }; }),
+  };
   // Same convention as the existing bridge suite: an EDIT is told from a CREATE
   // by `existingLogUuid`, and must answer `edited: true` or the bridge treats the
   // dispatch as failed and bails before it can buffer (and so before it can arm).
@@ -52,6 +70,7 @@ const makeHarness = ({ complete = true } = {}) => {
     nutribotContainer: {
       getLogFoodFromScale: () => logFromScale,
       getAcceptFoodLog: () => accept,
+      getSelectScaleDensity: () => selectDensity,
       getRetractScaleLog: () => ({ execute: vi.fn() }),
     },
     userId: 'kckern', conversationId: 'telegram:b1_c2',
@@ -66,7 +85,9 @@ const makeHarness = ({ complete = true } = {}) => {
   // returns early), so every placement below has to be preceded by one or the
   // bridge never posts a prompt at all and there is nothing to commit.
   const prime = (unit = 'g') => publish({ id: SCALE, grams: 0, unit, stable: true });
-  return { bridge, accept, logFromScale, compositionStore, scheduler, publish, prime };
+  return {
+    bridge, accept, selectDensity, calls, logFromScale, compositionStore, scheduler, publish, prime,
+  };
 };
 
 describe('ScaleNutribotBridge quiet-commit', () => {
@@ -77,7 +98,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(accept.execute).not.toHaveBeenCalled();   // not yet — it is still quiet-waiting
     expect(scheduler.pending?.ms).toBe(25_000);
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1',
     }));
@@ -91,7 +112,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     await prime('ml');
     await publish({ id: SCALE, grams: 240, unit: 'ml', stable: true });
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).not.toHaveBeenCalled();
     bridge.dispose();
   });
@@ -101,7 +122,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     await prime();
     await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).not.toHaveBeenCalled();
     bridge.dispose();
   });
@@ -117,7 +138,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(scheduler.counts.arms).toBe(2);      // re-armed, not merely left running
     expect(scheduler.counts.clears).toBe(1);    // and the first one was cancelled
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
     bridge.dispose();
   });
@@ -138,7 +159,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(scheduler.counts.arms).toBe(2);
 
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
     bridge.dispose();
   });
@@ -171,7 +192,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
 
     expect(scheduler.pending).toBeNull();
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).not.toHaveBeenCalled();
     bridge.dispose();
   });
@@ -185,8 +206,59 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     bridge.dispose();
     expect(scheduler.pending).toBeNull();
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).not.toHaveBeenCalled();
+  });
+
+  // CALORIES. `LogFoodFromScale` persists `{ label: 'Unknown', calories: 0 }` and
+  // `AcceptFoodLog` never touches calories — the multiplication lives ONLY in
+  // `SelectScaleDensity`, which is what the Telegram density button calls. So a
+  // commit that goes straight to accept files a 413 g / 0 kcal / "Unknown" entry
+  // AND, by auto-accepting, removes the user's chance to press the button that
+  // would have computed it. That is worse than the stranding this feature fixes.
+  it('applies the buffered density before accepting, so the entry carries calories', async () => {
+    const { bridge, accept, selectDensity, calls, scheduler, publish, prime } = makeHarness();
+    await prime();
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
+    scheduler.fire();
+    await flush();
+
+    expect(selectDensity.execute).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'kckern', conversationId: 'telegram:b1_c2', logUuid: 'L1',
+      level: 4, messageId: '9',
+    }));
+    // ORDER, not merely both: accepting first would close the log before the
+    // calories were written, and `SelectScaleDensity` refuses a non-pending log.
+    expect(calls).toEqual(['density', 'accept']);
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+    bridge.dispose();
+  });
+
+  // A refusal — 'unknown level', 'log not found', 'already processed' — means the
+  // entry has no calories. Accepting anyway files exactly the wrong data this fix
+  // exists to prevent, so the commit stands down and leaves the prompt live for
+  // the human.
+  it('does not accept when the density cannot be applied', async () => {
+    const { bridge, accept, selectDensity, scheduler, publish, prime, compositionStore } = makeHarness();
+    selectDensity.execute.mockResolvedValue({ success: false, error: 'unknown level' });
+
+    await prime();
+    await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
+    scheduler.fire();
+    await flush();
+
+    expect(selectDensity.execute).toHaveBeenCalledTimes(1);
+    expect(accept.execute).not.toHaveBeenCalled();
+    // The scans survive: the entry still needs them, and the human can still act.
+    expect(compositionStore.endPlacement).not.toHaveBeenCalled();
+
+    // And the prompt was given back, so a later lull can retry it.
+    selectDensity.execute.mockResolvedValue({ success: true, calories: 578 });
+    bridge.armCommitFor(SCALE);
+    scheduler.fire();
+    await flush();
+    expect(accept.execute).toHaveBeenCalledTimes(1);
+    bridge.dispose();
   });
 
   // AcceptFoodLog is awaited, and a scan arriving during that await re-arms the
@@ -203,16 +275,17 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     await prime();
     await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
 
-    scheduler.fire();                    // commit starts, parks on the gate
+    scheduler.fire();                    // density applies, then accept parks on the gate
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
 
     bridge.armCommitFor(SCALE);          // a scan lands while the accept is in flight
     scheduler.fire();                    // and the clock comes round again
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);   // NOT twice
 
     release();
-    await Promise.resolve();
+    await flush();
     bridge.dispose();
   });
 
@@ -227,13 +300,12 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     await publish({ id: SCALE, grams: 639, unit: 'g', stable: true });
 
     scheduler.fire();
-    await Promise.resolve();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
 
     bridge.armCommitFor(SCALE);
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(2);   // retried, not stranded
     bridge.dispose();
   });
@@ -249,7 +321,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(compositionStore.endPlacement).not.toHaveBeenCalled();
 
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
     expect(compositionStore.endPlacement).toHaveBeenCalledWith(SCALE);
     bridge.dispose();
@@ -265,7 +337,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
       await prime(snapshot.unit);
       await publish({ id: SCALE, grams: snapshot.grams, unit: snapshot.unit, stable: true });
       scheduler.fire();
-      await Promise.resolve();
+      await flush();
 
       expect(accept.execute).not.toHaveBeenCalled();
       expect(compositionStore.endPlacement).not.toHaveBeenCalled();
@@ -295,6 +367,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
       nutribotContainer: {
         getLogFoodFromScale: () => logFromScale,
         getAcceptFoodLog: () => accept,
+        getSelectScaleDensity: () => ({ execute: async () => ({ success: true, calories: 578 }) }),
         getRetractScaleLog: () => ({ execute: vi.fn() }),
       },
       userId: 'kckern', conversationId: 'telegram:b1_c2',
@@ -313,7 +386,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(seen[0]).toMatchObject({ density: 4, container: 'tupperware' });
 
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);
 
     // The plate is never lifted — it is nudged, which is a fresh qualifying
@@ -328,7 +401,7 @@ describe('ScaleNutribotBridge quiet-commit', () => {
     expect(store.read(SCALE)).toMatchObject({ grams: 900, density: null, container: null });
 
     scheduler.fire();
-    await Promise.resolve();
+    await flush();
     expect(accept.execute).toHaveBeenCalledTimes(1);   // incomplete → no second entry
     bridge.dispose();
   });
