@@ -10,11 +10,17 @@
 // letterspaced small caps of the display face, the way a concert programme sets
 // section headers; there is no third typeface.
 //
+// Beneath the piece data the card cycles COMPOSER-level facts — the ones the
+// sidecar inherits from `_composer.yml`, about the person rather than the piece.
+// They are quiet supporting text on their own timer: the card stays
+// position-independent, and the beat deliberately does not line up with the
+// footer ticker's (see COMPOSER_FACT_INTERVAL_MS).
+//
 // Every asset degrades to an empty slot: a missing portrait hides itself and the
 // card stays composed. The warning is capped so a broken path cannot flood the
 // log store once per render.
 
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -24,6 +30,19 @@ import './ComposerCard.scss';
 export const ASSET_WARN_PER_MINUTE = 5;
 const ASSET_WARN_WINDOW_MS = 60000;
 
+/**
+ * How long one composer fact holds the rail.
+ *
+ * 27 s, against the footer ticker's 20 s, and coprime with it: the two panels
+ * only ever swap in the same instant once every 9 minutes instead of every third
+ * swap. A shared or harmonic beat makes the whole surround look like it blinked.
+ */
+export const COMPOSER_FACT_INTERVAL_MS = 27000;
+/** Old line out / new line in — the house 280 ms, as ArtPlacards and the ticker. */
+export const COMPOSER_FACT_FADE_MS = 280;
+
+const NO_FACT = Object.freeze({ key: 'empty', index: null, text: '' });
+
 let moduleLogger = null;
 function fallbackLogger() {
   if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'composer-card' });
@@ -32,6 +51,14 @@ function fallbackLogger() {
 function resolveLogger(logger) {
   if (!logger) return fallbackLogger();
   return logger.child?.({ app: 'surround', component: 'composer-card' }) ?? logger;
+}
+
+function prefersReducedMotion() {
+  try {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  } catch (_) {
+    return false;
+  }
 }
 
 /** `beethoven/portrait.jpg` + `surround/classical` -> /api/v1/static/img/... */
@@ -119,6 +146,57 @@ export default function ComposerCard({
     });
   }, [log, contentId, data]);
 
+  // ---- composer facts -------------------------------------------------------
+  // Inherited from `_composer.yml`, so the pool is the same whatever is playing.
+  const facts = useMemo(
+    () => (Array.isArray(composer?.facts) ? composer.facts : [])
+      .filter((f) => typeof f === 'string' && f.trim()),
+    [composer],
+  );
+
+  const [factIndex, setFactIndex] = useState(0);
+
+  // One fact is not a rotation, and no fact arms nothing at all.
+  useEffect(() => {
+    if (facts.length < 2) return undefined;
+    const id = setInterval(() => setFactIndex((i) => i + 1), COMPOSER_FACT_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [facts.length]);
+
+  const nextFact = useMemo(() => {
+    if (!facts.length) return NO_FACT;
+    const i = ((factIndex % facts.length) + facts.length) % facts.length;
+    return { key: `fact:${i}`, index: i, text: facts[i] };
+  }, [facts, factIndex]);
+
+  const [shownFact, setShownFact] = useState(() => nextFact);
+  const [factHidden, setFactHidden] = useState(false);
+  const fadeTimers = useRef([]);
+  const clearFadeTimers = () => { fadeTimers.current.forEach(clearTimeout); fadeTimers.current = []; };
+
+  useEffect(() => {
+    if (nextFact.key === shownFact.key) return;
+    clearFadeTimers();
+    // Nothing on screen to fade out of — swap straight in.
+    if (!shownFact.text || prefersReducedMotion()) {
+      setShownFact(nextFact);
+      setFactHidden(false);
+      return;
+    }
+    setFactHidden(true);
+    fadeTimers.current.push(setTimeout(() => {
+      setShownFact(nextFact);
+      setFactHidden(false);
+    }, COMPOSER_FACT_FADE_MS));
+  }, [nextFact, shownFact]);
+
+  useEffect(() => () => clearFadeTimers(), []);
+
+  useEffect(() => {
+    if (!shownFact.text) return;
+    log.debug('surround.composer-fact.shown', { contentId, index: shownFact.index });
+  }, [shownFact, contentId, log]);
+
   const dates = lifeSpan(composer);
 
   return (
@@ -155,6 +233,19 @@ export default function ComposerCard({
         <Datum label="City" value={piece?.city} />
         <Datum label="Premiered" value={piece?.premiered} />
       </dl>
+
+      {shownFact.text && (
+        <>
+          <hr className="surround-composer-card__fact-rule" />
+          <p
+            className={`surround-composer-card__fact${factHidden ? ' surround-composer-card__fact--hidden' : ''}`}
+            data-testid="surround-composer-fact"
+            style={{ transition: `opacity ${COMPOSER_FACT_FADE_MS}ms ease` }}
+          >
+            {shownFact.text}
+          </p>
+        </>
+      )}
     </div>
   );
 }
