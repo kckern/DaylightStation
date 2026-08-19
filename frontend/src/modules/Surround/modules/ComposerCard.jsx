@@ -37,6 +37,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
+import { smartQuotes, smartQuotesAll } from '../typography.js';
 import {
   DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_COMMIT_MS, prefersReducedMotion,
 } from '../dissolve.js';
@@ -147,9 +148,14 @@ export default function ComposerCard({
 
   // ---- composer facts -------------------------------------------------------
   // Inherited from `_composer.yml`, so the pool is the same whatever is playing.
+  // Curled at the seam — one helper, `../typography.js`. A composer's facts are
+  // the frame's densest prose and carry more possessives than anything else it
+  // prints ("Bach's employer", "the violins' grief").
   const facts = useMemo(
-    () => (Array.isArray(composer?.facts) ? composer.facts : [])
-      .filter((f) => typeof f === 'string' && f.trim()),
+    () => smartQuotesAll(
+      (Array.isArray(composer?.facts) ? composer.facts : [])
+        .filter((f) => typeof f === 'string' && f.trim()),
+    ),
     [composer],
   );
 
@@ -206,7 +212,7 @@ export default function ComposerCard({
   // rail sitting beside that symphony the work's answer is the true one. The
   // composer's is the fallback, which is what every piece without its own
   // period (Vivaldi's Spring) actually uses.
-  const period = trimmed(data?.piece?.period) ?? trimmed(composer?.period);
+  const period = smartQuotes(trimmed(data?.piece?.period) ?? trimmed(composer?.period));
   const hasIdentity = Boolean(composer?.name || dates || composer?.birthplace || period);
   // The header row is a row only when it has two things to put side by side.
   // With one of them missing the survivor takes the whole width rather than
@@ -243,12 +249,12 @@ export default function ComposerCard({
                 // Museum convention (settled 2026-08-19): the brass reads name,
                 // then dates, engraved together — the dates are NOT rail voice.
                 <div className="surround-composer-card__nameplate">
-                  {composer?.name && <h2 className="surround-composer-card__name">{composer.name}</h2>}
+                  {composer?.name && <h2 className="surround-composer-card__name">{smartQuotes(composer.name)}</h2>}
                   {dates && <p className="surround-composer-card__dates">{dates}</p>}
                 </div>
               )}
               {composer?.birthplace && (
-                <p className="surround-composer-card__birthplace">{composer.birthplace}</p>
+                <p className="surround-composer-card__birthplace">{smartQuotes(composer.birthplace)}</p>
               )}
               {/* THE PERIOD (design wave 6). Rail voice, under the plate with
                   the birthplace — NOT engraved on the brass. The plate is

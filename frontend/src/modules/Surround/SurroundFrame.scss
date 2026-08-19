@@ -69,6 +69,23 @@
   /* How far the dark band rides up over the video's last pixels. Visual only —
      a negative margin on the footer, never a change to the media box. */
   --band-overlap: 10px;
+  /* HOW FAR THE CURTAIN BLEEDS DOWN INTO THE PICTURE (design wave 7).
+     The band already dissolves upward into the video's bottom edge
+     (`__footer::before`, 22px); the velvet at the top met it on a hard line,
+     so the picture read as a rectangle cut out of a drape rather than as
+     something the drape hangs in front of.
+     THE DEPTH IS DERIVED, not chosen. The settled figure at the top of the
+     frame is the placard's straddle: the plate overlaps the video by one third
+     of its own height (`--placard-straddle`, wave 5 §2, not to be changed).
+     The placard measures 80.3px at every screen in the fleet (it is rem-typed;
+     measured in the harness at 960x540 / 1280x720 / 1920x1080 — 80.3 at all
+     three), so that overlap is 26.77px, and the brief's "half to 60% of that
+     overlap" is 13.4..16.1px. 15px sits in that window with room either side —
+     the shallow end reads as a smudge at ten feet rather than as a dissolve.
+     It is a VEIL over the media, never a change to the media box: the video
+     keeps its width, its height, its 16:9 lock and every pixel of its picture
+     below this depth. */
+  --curtain-bleed: 15px;
   /* One easing for the whole entrance. The DURATIONS and the stagger are
      published from `entrance.js` (the rAF safety net and the stage's un-clip
      window need the same numbers); the literals here are the fallback for a
@@ -122,6 +139,9 @@
    itself instead, and if it shrinks past `collapse.footerFloor` the frame drops
    its first region, which is the designed degradation path. */
 .surround-frame__stage {
+  /* The veil below is positioned against this box, and it is the video's own
+     top edge it has to sit on — which is exactly this box's padding edge. */
+  position: relative;
   flex: 0 0 auto;
   min-height: 0;
   padding-top: var(--placard-inset);
@@ -154,6 +174,52 @@
       rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
     linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
   box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
+}
+
+/* THE CURTAIN BLEEDS INTO THE PICTURE (design wave 7).
+   The drape above the video used to stop at the video's top edge, dead level,
+   and that line was the one hard join left in the frame — the band already
+   dissolves upward into the picture's foot.
+   IT IS THE SAME CLOTH, FADED OUT. The two horizontal layers below are the
+   stage's own fold stripes and its own burgundy ramp, verbatim, at the same
+   `vw` phase and across the same width — so at the veil's top edge it paints
+   the identical colour the drape a pixel above it does, and the join has
+   nothing to be seen at. Only the vertical darkening differs: the stage's is a
+   gradient across its whole height (38% black at the top, 6% at the middle),
+   and this reproduces its value AT THE VIDEO'S TOP EDGE as a flat 30% —
+   computed, not guessed: the edge sits at 12.2% of the stage on the office
+   screen (67.2px of inset over a 549.6px stage), which is 0.38 - 0.32 x 0.244
+   = 0.302. The same point is 0.280 at 960x540 and 0.326 at 1920x1080, so one
+   flat value is within +/-0.03 alpha — about one level on a colour this dark —
+   at every screen in the fleet.
+   THE MASK is what makes it a bleed rather than a bar. It holds fully opaque
+   for the first 12% so the topmost rows paint the drape's own colour exactly
+   (a straight 0%-to-100% ramp is already ~9% transparent on its first pixel
+   row, which showed as a faint step at the join), then falls to nothing by
+   `--curtain-bleed` into the picture.
+   IT IS A VEIL, NOT A CHANGE TO THE BOX. The media box is untouched: same
+   width, same height, same 16:9, and every pixel below `--curtain-bleed` is the
+   picture exactly as decoded. `pointer-events: none` because the video's top
+   edge is real estate a viewer taps.
+   IT ONLY EXISTS WHEN THE FRAME IS ON: the inactive shell has no class and
+   generates no box, so this rule matches nothing there. */
+.surround-frame__stage::after {
+  content: "";
+  position: absolute;
+  top: var(--placard-inset);
+  left: 0;
+  right: 0;
+  height: var(--curtain-bleed);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
+      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* 16:9 is inviolable. aspect-ratio / max-width / max-height are ALSO set inline
@@ -338,6 +404,17 @@
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.28);
+  /* THE BOND'S GROUND (design wave 7). The sounding movement's panel on the
+     rail and the NOW register's panel in the listening band are the SAME
+     colour — that is the whole mechanism by which they read as one shape, and
+     so the colour is published once, here, on the region both modules live in,
+     rather than twice in two stylesheets that would drift.
+     A lifted ground, not a different material: #241c15 against the band's
+     #191310..#14100c is about seven points of lightness in the same warm
+     parchment/ink family. Enough to separate the panel from the band at ten
+     feet; not so much that the band grows a second surface competing with the
+     brass rule for the loudest mark. */
+  --bond-ground: #241c15;
   background-color: #191310;
   background-image: linear-gradient(180deg, #1e1712 0%, #14100c 100%);
   box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);

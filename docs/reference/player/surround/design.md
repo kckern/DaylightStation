@@ -51,6 +51,18 @@ programme *glosses*.
 - **Labels** are letterspaced small caps of the display face (`0.14em`), the way
   concert programmes set section headers. Not a fourth typeface.
 
+**Quotes are typographic, everywhere, without exception.** A straight `'` is a
+typewriter mark that no serif face was ever cut for; in Garamond the engine
+substitutes a vertical tick that reads as a standing hyphen, and on parchment at
+ten feet it is the one thing on the screen that looks unset. Every authored
+string the frame prints — the plate's title and provenance, the composer's name,
+birthplace, era and facts, movement names and their glosses, listening notes,
+cues, captions, the standing label — is curled at its **render seam** by one
+shared helper. Not in the corpus: the corpus is data a human edits by hand, and a
+migration would have to be re-run after every edit. The transform is idempotent,
+it never touches feet-and-inches primes, and it makes no conversion the corpus has
+no input for (there are no double hyphens in it, so there is no em-dash rule).
+
 Scale, tuned for a 10-foot living-room read at 1920×1080:
 
 | Role | Size | Weight |
@@ -181,30 +193,80 @@ picture stay the brightest things in the room. Only the stage wears it — the m
 box keeps its black, the rail its oxblood, the band its stone, the plate its
 stone.
 
-**The band's regions are sized to their contents.** The movement map claims only
-the rule lane, a name's line (or two, wrapped) and its gloss (one line, or two
-where the segment and the band both have room); ALL the band's remaining height
-belongs to the ticker, which centres its notes in it. A floor larger than the
-short case needs would be dead black between the names and the note, not
-breathing room — so the map's floor covers the SHORT case and the band simply
-grows where a name or its gloss genuinely wraps.
+**And it bleeds into the picture.** The band already dissolves upward into the
+video's foot; the drape above it met the picture on a dead-level line, so the
+video read as a rectangle cut out of a curtain rather than as something the
+curtain hangs in front of. A veil of the SAME cloth — the same fold stripes at
+the same phase, the same ramp across the same width — lies on the video's top
+edge and is masked to nothing a short way in. Its depth is derived from the
+placard's straddle: the plate overlaps the picture by a third of its own height,
+and the veil reaches a little over half of that overlap. It is a veil, never a
+change to the box: the video keeps its width, its height, its 16:9 lock and every
+pixel below the veil's reach, and it cannot intercept a tap.
+
+**The band's regions are sized to their contents.** The movement map claims the
+rule lane, one line of name and one line of gloss — a constant height at every
+screen and for every piece, because nothing on the rail wraps. ALL the band's
+remaining height belongs to the ticker, which centres its notes in it. A floor
+larger than that would be dead black between the names and the note, not
+breathing room.
 
 **The band's text zone is two registers, divided by a hairline.**
 
 - LEFT, **the piece**: the untimed `facts` pool, rotating slowly. True at 0:00
   and at 53:00; it does not care where the playhead is.
-- RIGHT, **now**: a header naming the movement that is sounding (numeral, name,
-  and its translation where the band has room for it), and beneath it that
-  movement's `listen` notes — what to listen for in the next three minutes. A
-  movement change swaps the pool and restarts it at its first note. A **timed
-  cue** interrupts this register, and only this one: a cue is the same kind of
-  claim, pinned to a second rather than to a movement. A movement with no
-  authored notes keeps its header and borrows the piece pool beneath it — never
-  empty paper.
+- LEFT also carries the work's **standing label** — `piece.short_title`, the
+  work's own alternate name ("Beethoven's Third Symphony"), at the ten-foot
+  floor in tracked small caps. Without one the zone read as orphan prose. Where
+  the corpus authors no short title the zone renders **no header at all**: a long
+  title cut down to fit is a wronger claim about the work than saying nothing.
+  The label is fixed — it never takes the bond's ground and never moves with
+  progress.
+- RIGHT, **now**: that movement's `listen` notes — what to listen for in the next
+  three minutes. It does **not** print the movement's heading: the rail six inches
+  above already sets it, and the BOND (below) is what says which movement this
+  register belongs to. `band.nowHeading` brings the heading back where the rail
+  has none of its own. A movement change swaps the pool and restarts it at its
+  first note. A **timed cue** interrupts this register, and only this one: a cue
+  is the same kind of claim, pinned to a second rather than to a movement. A
+  movement with no authored notes borrows the piece pool — never empty paper.
+- **Which register sits on which side is configurable** (`band.nowSide`): right
+  by default, left, or `dynamic` — dynamic keeps the NOW register on the same
+  side of the band as the sounding segment, so the bond stays short. The
+  crossover is at half-way with a hysteresis band below it, so a scrub sitting on
+  the mark cannot flap the layout. The swap is a considered move: the panel
+  slides across the band while the registers' text dissolves.
 - The two rotations are **phase-offset by half a period**. Both play the house
   dissolve, and two of those in one instant reads as the whole band blinking.
 - A piece with no movements does not split at all: there is no "now" to give a
   register to, so the band stays one full-width zone and cues preempt it.
+
+## The bond: the relationship, drawn
+
+The NOW register used to print the sounding movement's heading directly beneath a
+rail that had just printed it. Two surfaces, one sentence, six inches apart.
+
+The relationship is **visual** instead. The sounding segment on the rail carries a
+lifted panel ground; the NOW register carries the **same** ground; and a connector
+runs along the band's seam from one to the other, so the two read as one
+continuous, stepped shape. Where the segment already sits over the register the
+two simply touch and there is no connector to draw. The eye follows the bond from
+the rule down into the register, and the movement never has to be named twice.
+
+- **One ground, one token.** `--bond-ground` is published by the frame on the
+  band's region and read by both modules. Two panels a few percent apart in
+  colour stop being one object.
+- **The panel is a few points lighter than the band**, in the same warm
+  parchment/ink family — enough to separate at ten feet, not so much that the
+  band grows a second surface competing with the brass rule.
+- **It TRAVELS.** One element that moves to the sounding movement, not a
+  per-segment background that lights and unlights: a highlight that travels is
+  followed, and being followed is the whole mechanism.
+- **It is state, not motion.** Under `prefers-reduced-motion` the bond still
+  moves to the sounding movement; it simply arrives in one frame.
+- The panel rounds at its **head** (the top of the rail's segment) and at its
+  **foot** (the bottom of the register), and squares off everywhere the shape
+  continues. A radius in the middle of one object draws a seam across it.
 
 ## Signature: the movement map as engraved score
 
@@ -240,17 +302,32 @@ movement is a segment proportional to its real duration.
 - One quiet separator between movements, not a double barline.
 - A future movement's name is brighter than an elapsed one's: what is coming is
   context the band exists to give, what is gone is not.
-- Movement names sit **below** the rule, tempo term in italic, wrapping to at
-  most two lines.
+- Movement names sit **below** the rule, tempo term in italic, on **one line**.
 - Under each name, where one is authored, the **translation** of its tempo term
-  — "Allegro con brio" → *Fast, with spirit*. Annotation sans, and it wraps by
-  the same law as the name above it — a narrow segment (a scherzo is shorter
-  than a first movement more often than not) is the fleet's normal case, not a
-  genuine overflow, so a single-line ellipsis there was cutting a routine gloss.
-  It wraps to a second line wherever the band can afford it without threatening
-  the ticker's own floor, and ellipsizes only where a gloss genuinely needs a
-  third. It recedes with an elapsed movement and is never brightened for the
+  — "Allegro con brio" → *Fast, with spirit*. Annotation sans, one line, and it
+  recedes with an elapsed movement without ever being brightened for the
   sounding one.
+- **The numeral has its own gutter.** `III.` is an index mark, not the first word
+  of the title, so it lives in a fixed-width track to the LEFT of the segment's
+  text column, right-aligned in it with a constant gap to the name. Heading and
+  gloss both start at the text column's edge, so a gloss can never begin under
+  the numeral. The track is sized ONCE PER RAIL, from the longest numeral the
+  piece has, so every segment on one rail shares a text edge. The mark is set in
+  small caps with lining figures at a low opacity — it is an ordinal, not
+  content — and comes up only on the sounding movement.
+- **THE ACCORDION.** Everything on the rail is one line with an ellipsis while
+  it is not sounding. When a movement becomes active its segment **widens** until
+  its heading and its gloss each fit whole on one line; its neighbours compress
+  in proportion to their own durations, down to a measured floor (enough for the
+  numeral, three glyphs and the ellipsis), and keep their ellipses. Where the
+  ideal width would starve them the active segment takes what is free and keeps
+  its own ellipsis — degrade, don't break.
+  The time scale is therefore **not uniform**, and that is accepted: the playhead
+  runs faster through a compressed segment and slower through the widened one.
+  What it never does is lie about a boundary — the cursor's position inside a
+  segment is that segment's own elapsed fraction, derived from the RENDERED
+  widths, so it arrives at a segment's right edge exactly when the music crosses
+  it. Under `prefers-reduced-motion` the widths snap.
 - No clef, no notes, no staff of five lines. One rule and the barline grammar.
   The restraint is what keeps it from reading as fussy pastiche.
 
@@ -389,3 +466,27 @@ Borrow ArtMode's physical realism, but one plate, not a gallery:
 - Everything degrades to an empty slot: a missing portrait, a piece with no
   movements, a sidecar with no facts. The frame must still look composed.
 - `prefers-reduced-motion` honored.
+
+## Band configuration
+
+Three keys on the surround definition (`_surrounds/<id>.yml`), beside `regions`
+and `collapse`. Every one of them is optional; the frame resolves and defaults
+each independently, so an unauthored — or misspelled — `band` block is the normal
+case rather than an error.
+
+```yaml
+band:
+  nowSide: right        # right (default) | left | dynamic
+  nowHeading: auto      # auto (default) | always | never
+  railDensity: names    # names (default) | bars
+```
+
+| Key | Meaning |
+|---|---|
+| `nowSide` | Which half of the band the NOW register occupies. `dynamic` follows the playhead — left under half-way, right at and past it, with hysteresis so a scrub on the mark cannot flap the layout — so the bond stays short. |
+| `nowHeading` | Whether the NOW register prints the sounding movement's name. `auto` prints it only where the rail does not, which with the shipped rail means never: the rail names the movement and the bond points at it. |
+| `railDensity` | What the movement rail itself prints. `bars` is the hook for a compact rail with no names on it, and it is what makes `nowHeading: auto` resolve the other way. |
+
+The corpus field the band consumes is `piece.short_title` — the work's alternate
+name, authored on the work in the library tree, used as the piece register's
+standing label. Unauthored is a supported state and renders no header.

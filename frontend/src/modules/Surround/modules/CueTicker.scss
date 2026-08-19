@@ -67,36 +67,119 @@
   display: flex;
   align-items: stretch;
   justify-content: center;
-  /* Vertical 0.2rem -> 0.1rem (fix round 2, live defect 1+2). Live defect 1's
-     fix (MovementMap.scss) grows the band by 14.2px wherever a movement's
-     heading AND its gloss both need two lines — measured at 1280x720, that
-     drops this container's own content from 96.8px to 82.6px, BELOW the
-     88px threshold the three-line tier below needs to stay self-consistent.
-     3.2px of this box's own padding was never typographically load-bearing
-     (it is clearance around the whole panel, not around a line of text), so
-     trimming it here is what buys the three-line tier back its room without
-     taking anything from either module's actual reading room. See
-     MovementMap.scss's own padding trim for the other half of this budget. */
-  padding: 0.1rem 1rem;
+  /* Vertical 0.2rem -> 0.1rem (fix round 2, live defect 1+2): 3.2px of this
+     box's own padding was never typographically load-bearing — it is clearance
+     around the whole panel, not around a line of text — and reclaiming it is
+     what bought the three-line tier its room. It is a TOKEN now because the
+     bond's panel has to bleed back over it (see `__ground`): the panel's top
+     edge must meet the rail's connector at the region seam with no strip of
+     band ground between them, and a second copy of this number is how that
+     join drifts.
+     HORIZONTAL 1rem -> 1.1rem (design wave 7). It matches `MovementMap`'s own
+     inset exactly, and that is load-bearing rather than tidy: the NOW panel's
+     inner edge has to land on the same x as the point the rail's connector
+     reaches for. At 1rem the two were 1.6px apart on each side — invisible on
+     its own, and a visible kink in a shape that has to read as continuous. */
+  --ticker-pad-y: 0.1rem;
+  padding: var(--ticker-pad-y) 1.1rem;
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
 }
 
 /* The two registers. `stretch`, not `center`: each zone centres its OWN
-   contents, and a zone shorter than the band would put the hairline between
-   them on a different vertical run than the text it divides. */
+   contents, and a zone shorter than the band would put the panel edge between
+   them on a different vertical run than the text it divides.
+   `position: relative` is the bond panel's containing block — percentages on
+   `__ground` below resolve against THIS box, which is exactly the span the two
+   registers occupy, so "the panel is the right half" is true to the pixel. */
 .surround-cue-ticker__zones {
+  position: relative;
   display: flex;
   align-items: stretch;
   justify-content: center;
   width: 100%;
   min-width: 0;
+  /* The considered move: the whole band's text dissolves through the ground
+     while the registers change sides beneath it. Duration comes from the
+     component (the house dissolve), so this and the JS timer cannot drift. */
+  transition: opacity var(--cue-fade-ms, 320ms) ease;
+}
+
+/* The NOW register sits LEFT (`band.nowSide`). DOM order never changes — the
+   piece register is always written first, so a screen reader walks the same
+   band whichever way it is laid out — and only the visual order flips. */
+.surround-cue-ticker--now-left .surround-cue-ticker__zones {
+  flex-direction: row-reverse;
+}
+
+/* Mid-swap: the text is out, the panel is still sliding. */
+.surround-cue-ticker__zones--swapping {
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   THE BOND'S PANEL (design wave 7) — the band's half of the shape whose other
+   half is the sounding segment on the rail above.
+
+   Same ground as `MovementMap`'s `__bond`, and that shared token is the whole
+   mechanism: two panels in one colour, joined along the seam by the rail's
+   connector, read as ONE object, and once they do, the register no longer has
+   to reprint the movement heading the rail already set. `--bond-ground` is
+   published by the frame on the band's region (`SurroundFrame.scss`) so both
+   modules read one value and neither can drift a few percent away from it.
+
+   IT BLEEDS over this panel's own vertical padding, top and bottom: at the top
+   so it meets the rail's connector exactly at the region seam, at the bottom so
+   it sits on the frame's floor rather than floating a pixel and a half above
+   it. The ticker's `overflow: hidden` is what bounds the bleed.
+
+   IT SLIDES rather than being a background on the zone, because with
+   `nowSide: dynamic` it has to travel from one half of the band to the other,
+   and a background cannot travel. `left` (not a transform) because the panel's
+   radius and its edge rule would both be dragged out of shape by a `scaleX`,
+   and because this moves once in a fifty-minute symphony rather than at 10 Hz —
+   the wave-5 pixel-snapping law is about the two marks that move continuously.
+
+   SQUARE AT THE TOP, ROUNDED AT THE FOOT. The top edge is not an edge: it is
+   where this panel continues the rail's, and a radius there would draw a seam
+   across the middle of one shape. The foot is a real edge and gets the same
+   5px the rail's panel has at its head.
+   --------------------------------------------------------------------------- */
+.surround-cue-ticker__ground {
+  position: absolute;
+  top: calc(var(--ticker-pad-y) * -1);
+  bottom: calc(var(--ticker-pad-y) * -1);
+  left: var(--now-left, 50%);
+  width: 50%;
+  background: var(--bond-ground, #241c15);
+  border-radius: 0 0 5px 5px;
+  /* THE DIVIDER, and there is only one mark now where wave 6 had a separate
+     hairline. A lifted panel already divides the two registers by its own edge;
+     an inset rule ON that edge is what makes it read as deliberate at ten feet
+     rather than as a slightly-different black. It is the frame's own hairline
+     token — the same line the programme panels are edged with. */
+  box-shadow: inset 1px 0 0 var(--programme-edge, rgba(233, 223, 200, 0.26));
+  pointer-events: none;
+  transition: left var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+/* Panel on the left: its inner edge is the RIGHT one. Keyed off the panel's own
+   attribute rather than the root's `--now-left` class, because the two do not
+   change on the same beat: the panel follows the side decision immediately (so
+   it travels with the rail's connector) while the class follows the dissolve's
+   commit (so the text swaps under cover of the fade). */
+.surround-cue-ticker__ground[data-side="left"] {
+  box-shadow: inset -1px 0 0 var(--programme-edge, rgba(233, 223, 200, 0.26));
 }
 
 /* HALF EACH, and equally — `flex: 1 1 50%` with `min-width: 0`, so a long
    unbroken word in one zone can never take width from the other. The unsplit
    band (a piece with no movements) renders ONE zone, which then takes the whole
-   width by the same rule. */
+   width by the same rule.
+   Since design wave 7 it also carries `position: relative`, which is what puts
+   its text ABOVE the bond's panel: the panel is out of flow and positioned, and
+   in-flow content paints beneath positioned siblings whatever the source order
+   says. */
 .surround-cue-ticker__zone {
   position: relative;
   flex: 1 1 50%;
@@ -108,21 +191,41 @@
   box-sizing: border-box;
 }
 
-/* THE DIVIDING HAIRLINE. A pseudo-element rather than a border, because a
-   border runs the zone's full height and this rule must not touch the band's
-   top and bottom edges — it divides two columns of text, it does not box them.
-   `--programme-edge` is the frame's own hairline token, re-mapped to a faint
-   parchment on the band's near-black ground, so this is the same line the
-   programme panels are edged with. */
-.surround-cue-ticker--split .surround-cue-ticker__zone--now::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 14%;
-  bottom: 14%;
-  width: 1px;
-  background: var(--programme-edge, rgba(233, 223, 200, 0.26));
-  pointer-events: none;
+/* ---------------------------------------------------------------------------
+   THE PIECE REGISTER'S STANDING LABEL (design wave 7).
+   The left zone had no header and read as orphan prose — a paragraph about a
+   symphony with nothing on the band saying which symphony. This is the work's
+   short title ("Beethoven's Third Symphony"), and it is set as a LABEL, not a
+   headline: at the ten-foot floor, tracked, in small caps, in `--ink-soft`.
+   Quieter and smaller than the NOW panel's own content on purpose — it is the
+   thing that note is about, not a competitor to it.
+   It never joins the bond. The bond is state (what is sounding); this is
+   identity (what the whole file is), and giving it the lifted ground would say
+   the piece itself was the thing currently playing.
+   One line, ellipsised: a work with a long "short" title is an authoring
+   problem, and a header that wraps stops being one. */
+.surround-cue-ticker__piece-head {
+  flex: 0 0 auto;
+  /* HALF the now-header's 0.1rem, and the difference is typographic rather
+     than a rounding: that header is a two-line block (name, then gloss) and
+     needs air under it to stop reading as part of the note. This is a single
+     tracked small-cap line — a standing label — and a label wants to sit close
+     to what it labels. The 0.8px it gives back is also what puts the office
+     screen's band over the four-line tier's threshold (see the foot of this
+     file), which is worth stating rather than discovering later. */
+  margin: 0 0 0.05rem;
+  text-align: center;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 0.72rem;              /* the ten-foot floor itself */
+  font-weight: 600;
+  font-variant-caps: all-small-caps;
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft, #6b6152);
 }
 
 /* ---------------------------------------------------------------------------
@@ -388,6 +491,46 @@
   }
 
   .surround-cue-ticker__line {
+    -webkit-line-clamp: 4;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE FOURTH LINE, EARLIER, WHEN THERE IS NO NOW-HEADING (design wave 7).
+   The 161px above is the threshold for a band whose NOW register still prints a
+   movement heading: that header costs 30.4px, and 30.4 + four lines at the
+   clamp's CEILING is 160.0. With `band.nowHeading` resolving to off — the
+   default, because the rail names the movement and the bond points at it — that
+   30.4px is not spent, and the binding zone becomes the PIECE register, whose
+   own standing label costs 15.4px (0.72rem x 1.2 + 0.1rem).
+   Re-derived from scratch rather than scaled: budget(T) = 14.62 + 4 x 1.35 x
+   clamp(14.08, 0.16T, 24). Inside the linear regime that is 14.62 + 0.864T <= T,
+   i.e. T >= 107.5, and at T = 107.5 the note computes to 17.2px — inside the
+   clamp, so the regime assumption holds and the solution is self-consistent.
+   108px is that floor.
+   THE MARGIN HERE IS REAL, AND IT WAS NOT FREE. The office screen's ticker has
+   113.2px of content (measured, post-padding), and at the piece header's first
+   draft — a 0.1rem bottom margin, matching the now-header's — the threshold
+   solved to 113.4px and this tier missed by two tenths of a pixel. Halving that
+   margin (see `__piece-head` above, where the reason is typographic and not
+   this arithmetic) moves the threshold to 107.5 and leaves 5.7px of real
+   clearance instead of a miss.
+   WHERE IT LANDS. 1280x720 — the office screen's real root, the one this whole
+   wave was reviewed on — clears it and gets four lines where it had three:
+   138 of the Napoleon fact's 224 characters becomes 184. 960x540 (57px) stays
+   on the single-line tier. 1920x1080 (235px) already had four from the 161px
+   tier above and is unchanged.
+   It is scoped to the class rather than being an unconditional lower threshold
+   because the arithmetic genuinely differs: a band configured `nowHeading:
+   always` at 116px of content would overflow itself at four lines, which is
+   exactly the self-consistency failure the 161px tier's own comment describes. */
+@container ticker (min-height: 108px) {
+  .surround-cue-ticker--no-now-heading .surround-cue-ticker__text {
+    min-height: 5.4em;
+    max-height: 5.4em;
+  }
+
+  .surround-cue-ticker--no-now-heading .surround-cue-ticker__line {
     -webkit-line-clamp: 4;
   }
 }

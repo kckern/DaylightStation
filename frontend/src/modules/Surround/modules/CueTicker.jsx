@@ -22,6 +22,35 @@
 // not split: there is no "now" to have a register for, so the band is one zone
 // and cues preempt it, exactly as it behaved before this wave.
 //
+// THE NOW REGISTER STOPPED PRINTING THE MOVEMENT HEADING (design wave 7)
+// ---------------------------------------------------------------------
+// It used to name the sounding movement — directly beneath a rail that had just
+// named it. The user's word for that was "wasteful", and the replacement is
+// VISUAL: this register carries the same lifted panel ground as the sounding
+// segment on the rail, joined to it by a connector along the band's seam (the
+// BOND — see `MovementMap.jsx`). The eye follows the shape from the rule down
+// into the register and the name never needs setting twice. The heading code is
+// still here and still correct, because a rail in a bars-only density has no
+// name for the bond to point at: `band.nowHeading` (auto | always | never)
+// decides, and `auto` — the default — shows it exactly when the rail does not.
+//
+// THE PIECE REGISTER GAINED ONE (design wave 7)
+// ---------------------------------------------
+// The left zone read as orphan prose: a paragraph about a symphony with nothing
+// saying which symphony. `piece.short_title` is the work's own alternate name
+// ("Beethoven's Third Symphony"), set as a standing label rather than a
+// headline. It is fixed: it never takes the bond's ground, never moves with
+// progress, and where the corpus has not authored one the zone renders with no
+// header at all rather than an ellipsized long title pretending to be short.
+//
+// WHICH SIDE IS WHICH IS CONFIGURABLE (design wave 7)
+// ---------------------------------------------------
+// `band.nowSide` is right (today's behaviour), left, or dynamic — dynamic puts
+// the NOW register on the same side of the band as the sounding segment, which
+// keeps the bond short. The swap is a considered move, not a jump: the panel
+// slides across the band while the two registers' text cross-fades through the
+// house dissolve. See `../band.js` for the threshold and its hysteresis.
+//
 // `render: overlay` cues are ignored here; the pop-up-video overlay is phase two
 // and has its own region. An unknown or absent `render` is docked.
 //
@@ -43,6 +72,8 @@ import {
   DISSOLVE_FADE_MS, DISSOLVE_HOLD_MS, DISSOLVE_SWAP_MS, DISSOLVE_COMMIT_MS,
   prefersReducedMotion,
 } from '../dissolve.js';
+import { smartQuotes, smartQuotesAll } from '../typography.js';
+import { resolveBandConfig, showsNowHeading, useNowSide, ACCORDION_MS } from '../band.js';
 import './CueTicker.scss';
 
 /** Each half of the dissolve: the old line out, then the new line in.
@@ -157,7 +188,6 @@ function useDissolve(next) {
 
 export default function CueTicker({
   position = 0,
-  // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   duration = 0,
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
   playing = false,
@@ -170,6 +200,7 @@ export default function CueTicker({
 }) {
   const log = useMemo(() => resolveLogger(logger), [logger]);
   const contentId = data?.contentId ?? null;
+  const config = useMemo(() => resolveBandConfig(data), [data]);
 
   const cues = useMemo(() => (Array.isArray(data?.cues) ? data.cues : [])
     .filter((c) => c && typeof c === 'object' && c.text)
@@ -178,8 +209,14 @@ export default function CueTicker({
     .filter((c) => (c.render ?? 'docked') !== 'overlay')
     .filter((c) => Number.isFinite(Number(c.at))), [data]);
 
+  // Every authored string this band prints is curled at its render seam — one
+  // helper, `../typography.js`, called here rather than a regex scattered
+  // through the JSX. A programme note is set in Garamond on stock; a straight
+  // apostrophe is the one mark on the screen that was never cut for the face.
   const facts = useMemo(
-    () => (Array.isArray(data?.facts) ? data.facts : []).filter((f) => typeof f === 'string' && f.trim()),
+    () => smartQuotesAll(
+      (Array.isArray(data?.facts) ? data.facts : []).filter((f) => typeof f === 'string' && f.trim()),
+    ),
     [data],
   );
 
@@ -217,8 +254,10 @@ export default function CueTicker({
   const movement = movementIndex >= 0 ? movements[movementIndex] : null;
 
   const listen = useMemo(
-    () => (Array.isArray(movement?.listen) ? movement.listen : [])
-      .filter((n) => typeof n === 'string' && n.trim()),
+    () => smartQuotesAll(
+      (Array.isArray(movement?.listen) ? movement.listen : [])
+        .filter((n) => typeof n === 'string' && n.trim()),
+    ),
     [movement],
   );
 
@@ -283,7 +322,7 @@ export default function CueTicker({
     // Unsplit: this single zone carries the cues too.
     if (!split && activeCue) {
       const at = Number(activeCue.at);
-      return { key: `cue:${at}`, kind: 'cue', at, text: String(activeCue.text) };
+      return { key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)) };
     }
     if (facts.length) {
       const i = ((factIndex % facts.length) + facts.length) % facts.length;
@@ -324,7 +363,7 @@ export default function CueTicker({
       // movement boundary, and a cue landing exactly on one is not exempt —
       // the header above it changes either way.
       return {
-        key: `cue:${at}`, kind: 'cue', at, text: String(activeCue.text), mv: movementIndex,
+        key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)), mv: movementIndex,
       };
     }
     if (nowPool.length) {
@@ -372,21 +411,90 @@ export default function CueTicker({
   const numeral = movement
     ? `${ROMAN[Number(movement.n)] ?? (movementIndex + 1)}.`
     : null;
-  const movementName = trimmed(movement?.name);
-  const movementTranslation = trimmed(movement?.translation);
+  const movementName = smartQuotes(trimmed(movement?.name));
+  const movementTranslation = smartQuotes(trimmed(movement?.translation));
+
+  // ---- the bond's two shared decisions --------------------------------------
+  // Both come from `../band.js` so this module and the rail cannot disagree
+  // about the shape they are drawing two halves of.
+  const nowHeading = showsNowHeading(config);
+  // The same fraction the rail measures: elapsed over where the MUSIC ends,
+  // falling back to the file's duration when no `musicEndsAt` is authored.
+  const pieceEnd = end !== null ? end : (duration > 0 ? duration : 0);
+  const side = useNowSide(
+    config, pieceEnd > 0 ? Math.min(1, Math.max(0, position / pieceEnd)) : 0,
+  );
+
+  // The swap is a CONSIDERED MOVE, in the house language. The panel slides
+  // across the band (the SCSS, `__ground`) while the two registers' text
+  // dissolves — out to the ground, a held beat, in on the other side. Reusing
+  // `useDissolve` rather than writing a second choreography is what keeps the
+  // swap on the same clock as every other content change in the frame, and it
+  // brings `prefers-reduced-motion` (an instant commit) with it for free.
+  const sideNext = useMemo(
+    () => ({ key: `side:${side}`, kind: 'side', at: null, text: side }),
+    [side],
+  );
+  const [sideShown, sideSwapping] = useDissolve(sideNext);
+  const renderedSide = sideShown.text === 'left' ? 'left' : 'right';
+
+  /**
+   * THE PIECE REGISTER'S STANDING LABEL (design wave 7).
+   * `short_title` only — never a truncated `title`. A long title cut down to
+   * fit would be a different, wronger claim about the work than saying nothing,
+   * and the zone reads perfectly well with no header at all.
+   */
+  const shortTitle = smartQuotes(trimmed(data?.piece?.short_title));
 
   return (
     <div
-      className={`surround-cue-ticker surround-cue-ticker--${rootKind}${split ? ' surround-cue-ticker--split' : ''}`}
+      className={`surround-cue-ticker surround-cue-ticker--${rootKind}${split ? ' surround-cue-ticker--split' : ''}${split && renderedSide === 'left' ? ' surround-cue-ticker--now-left' : ''}${split && !nowHeading ? ' surround-cue-ticker--no-now-heading' : ''}`}
       data-testid="surround-cue-ticker"
       data-kind={rootKind}
       data-split={split ? 'true' : 'false'}
+      data-now-side={split ? side : null}
+      style={{ '--accordion-ms': `${ACCORDION_MS}ms`, '--cue-fade-ms': `${CUE_FADE_MS}ms` }}
     >
-      <div className="surround-cue-ticker__zones">
+      <div className={`surround-cue-ticker__zones${sideSwapping ? ' surround-cue-ticker__zones--swapping' : ''}`}>
+        {/* THE NOW PANEL'S GROUND — the band's half of the bond (design wave 7).
+            It is a sibling of the zones rather than a background ON the now
+            zone, for one reason: when `nowSide` is dynamic this panel has to
+            SLIDE from one half of the band to the other, and a background
+            cannot travel. Out of flow, so it is not a flex item; behind the
+            zones, which carry `position: relative` for exactly that. */}
+        {split && (
+          // THE PANEL MOVES FIRST, THE WORDS FOLLOW. Its side is the RAW
+          // decision, not the dissolved one: the rail's connector starts
+          // travelling the instant the side changes, and a panel that waited
+          // for the text's commit would leave the connector pointing at half a
+          // shape for the length of a fade. Both slide on `--accordion-ms`, so
+          // the two halves of the bond arrive together; the registers' text
+          // swaps underneath, on the dissolve's own clock.
+          <span
+            className="surround-cue-ticker__ground"
+            data-testid="surround-ticker-ground"
+            data-side={side}
+            style={{ '--now-left': side === 'left' ? '0%' : '50%' }}
+            aria-hidden="true"
+          />
+        )}
         <div
           className="surround-cue-ticker__zone surround-cue-ticker__zone--piece"
           data-testid="surround-ticker-zone-piece"
         >
+          {/* THE WORK, NAMED ONCE (design wave 7). A standing label in the
+              quietest register on the band — smaller and greyer than the note
+              beneath it, because it is the thing the note is ABOUT rather than
+              a heading competing with it. Fixed: it never takes the bond's
+              ground and never moves with the playhead. */}
+          {split && shortTitle && (
+            <p
+              className="surround-cue-ticker__piece-head"
+              data-testid="surround-ticker-piece-head"
+            >
+              {shortTitle}
+            </p>
+          )}
           <p
             className={`surround-cue-ticker__text${pieceHidden ? ' surround-cue-ticker__text--hidden' : ''}`}
             data-testid="surround-ticker-text"
@@ -410,11 +518,18 @@ export default function CueTicker({
             data-testid="surround-ticker-zone-now"
             data-borrowed={borrowed ? 'true' : 'false'}
           >
-            {/* The header is NOT part of the dissolve. It names what is
-                sounding, and that changes on a movement boundary — a beat the
-                viewer can already see happening on the rule above. Fading it
-                with the note beneath it would make an ordinary rotation look
-                like the piece had moved on. */}
+            {/* THE HEADING IS OFF BY DEFAULT (design wave 7). The rail six
+                inches above already names the sounding movement, and the bond
+                — this panel's ground, continuous with that segment's — is what
+                now says WHICH one without printing it twice. `band.nowHeading`
+                brings it back: `always`, or `auto` on a bars-only rail that has
+                no name of its own for the bond to point at.
+                When it IS shown it is still NOT part of the dissolve. It names
+                what is sounding, and that changes on a movement boundary — a
+                beat the viewer can already see happening on the rule above.
+                Fading it with the note beneath it would make an ordinary
+                rotation look like the piece had moved on. */}
+            {nowHeading && (
             <p
               className="surround-cue-ticker__now"
               data-testid="surround-ticker-now"
@@ -438,6 +553,7 @@ export default function CueTicker({
                 </span>
               )}
             </p>
+            )}
             <p
               className={`surround-cue-ticker__text surround-cue-ticker__text--now${nowHidden ? ' surround-cue-ticker__text--hidden' : ''}`}
               data-testid="surround-ticker-listen"

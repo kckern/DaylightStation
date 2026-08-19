@@ -41,7 +41,12 @@ const isPresent = (v) => v !== undefined && v !== null;
 // An allowlist, so it must be kept in sync with the corpus schema: a field
 // added to a library work YAML and not added here never reaches the payload,
 // and the only symptom is the region rendering without it.
-const PIECE_FIELDS = ['title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+// `short_title` is the work's own alternate name — "Beethoven's Third Symphony"
+// beside a `title` of `Symphony No. 3 in E-flat major, "Eroica"`. The band's
+// piece register prints it as a standing label (design wave 7) and prints NO
+// header at all where it is unauthored, so this field is optional in every
+// sense: absent is a supported state, not a gap.
+const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
 const pick = (obj, keys) => {
   const out = {};
   for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
@@ -587,7 +592,16 @@ export class YamlSurroundStore extends ISurroundStore {
       normalized: normalizeTitle(doc.match.title),
       payload: {
         id: doc.surround,
-        definition: { regions: definition.regions, collapse: definition.collapse },
+        // `band` joins `regions`/`collapse` as the third thing a definition
+        // says about a frame: which side the NOW register sits on, whether it
+        // prints a movement heading, and what density the rail is in (see
+        // frontend `modules/Surround/band.js`, which resolves and defaults
+        // every one of them, so an unauthored `band` is the normal case).
+        definition: {
+          regions: definition.regions,
+          collapse: definition.collapse,
+          band: definition.band
+        },
         piece,
         movements: resolvedMovements,
         cues,

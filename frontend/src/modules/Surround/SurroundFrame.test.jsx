@@ -823,3 +823,73 @@ describe('SurroundFrame — the shipped composition', () => {
     });
   });
 });
+
+/**
+ * THE CURTAIN BLEEDS INTO THE PICTURE (design wave 7).
+ *
+ * The band already dissolves upward into the video's foot; the velvet above it
+ * met the picture on a dead-level line, so the video read as a rectangle cut out
+ * of a drape rather than as something the drape hangs in front of.
+ */
+describe('SurroundFrame — the curtain’s bleed', () => {
+  const sheet = () => sass.compile(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'SurroundFrame.scss'),
+  ).css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
+
+  it('lays a veil on the video’s top edge, at a depth derived from the placard’s straddle', () => {
+    const css = sheet();
+    const veil = css.match(/\.surround-frame__stage::after \{[^}]*\}/);
+    expect(veil, 'the velvet still meets the video on a hard edge').not.toBeNull();
+    // It starts exactly at the video's top edge — which is the stage's own
+    // padding edge, i.e. `--placard-inset`.
+    expect(veil[0]).toMatch(/top: var\(--placard-inset\)/);
+    expect(veil[0]).toMatch(/height: var\(--curtain-bleed\)/);
+
+    // THE DEPTH IS DERIVED. The placard overlaps the video by a third of its own
+    // height (`--placard-straddle`, settled in wave 5 and not this wave's to
+    // move), and the veil reaches half to 60% of that overlap. The placard
+    // measures 80.3px at every screen in the fleet.
+    const root = css.match(/\.surround-frame \{[^}]*\}/)[0];
+    const bleed = Number(root.match(/--curtain-bleed: ([\d.]+)px/)[1]);
+    const overlap = 80.3 / 3;
+    expect(bleed, 'the veil is shallower than half the placard’s overlap')
+      .toBeGreaterThanOrEqual(overlap * 0.5);
+    expect(bleed, 'the veil reaches deeper into the picture than 60% of the overlap')
+      .toBeLessThanOrEqual(overlap * 0.6);
+  });
+
+  it('is the SAME cloth as the drape above it, faded out — not a black bar', () => {
+    const veil = sheet().match(/\.surround-frame__stage::after \{[^}]*\}/)[0];
+    const stage = sheet().match(/\.surround-frame__stage \{[^}]*\}/)[0];
+    // The two horizontal layers are the stage's own, verbatim: same fold
+    // stripes at the same `vw` phase, same burgundy ramp across the same width.
+    // That is what makes the join invisible rather than merely soft.
+    for (const layer of [
+      'repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw, rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw)',
+      'linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407)',
+    ]) {
+      expect(stage, 'the stage no longer paints this layer').toContain(layer);
+      expect(veil, 'the veil is not the drape’s own cloth').toContain(layer);
+    }
+    // ...and it is a MASK that fades it out, held opaque at the join so the
+    // topmost rows paint the drape's colour exactly.
+    expect(veil).toMatch(/mask-image: linear-gradient\(to bottom, #000 0%, #000 12%, rgba\(0, 0, 0, 0\) 100%\)/);
+  });
+
+  it('cannot intercept a tap, and cannot move the media box', () => {
+    const css = sheet();
+    const veil = css.match(/\.surround-frame__stage::after \{[^}]*\}/)[0];
+    expect(veil, 'the veil eats taps on the top of the picture').toContain('pointer-events: none');
+    // The 16:9 lock is untouched: the media box's own rule still carries it,
+    // and the veil is a positioned pseudo-element with no bearing on layout.
+    const media = css.match(/\.surround-frame__media \{[^}]*\}/)[0];
+    expect(media).toContain('aspect-ratio: 16/9');
+    expect(veil).toContain('position: absolute');
+    // It exists only when the frame is active — the inactive shell has no
+    // class, so this selector matches nothing there.
+    const { container } = render(
+      <SurroundFrame data={null} active={false} contentId="x"><video /></SurroundFrame>,
+    );
+    expect(container.querySelector('.surround-frame__stage')).toBeNull();
+  });
+});

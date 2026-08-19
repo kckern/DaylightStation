@@ -55,3 +55,37 @@ it('renders nothing without a piece — an empty plate is worse than no plate', 
   const { container } = render(<WorkPlacard data={{ composer: { name: 'X' } }} position={0} duration={0} region={{ slot: 'top' }} />);
   expect(container.firstChild).toBeNull();
 });
+
+/**
+ * SMART QUOTES AT THE RENDER SEAM (design wave 7).
+ *
+ * The plate is the frame's largest type and both live works carry a nickname in
+ * straight double quotes, so it is the surface where an unset mark is most
+ * obviously wrong. The curl happens here rather than in the corpus: the corpus
+ * is data a human edits by hand, and a migration would have to be re-run after
+ * every edit.
+ */
+describe('WorkPlacard — smart quotes', () => {
+  it('curls the nickname in the title — the real Eroica string, verbatim', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={{ piece: { title: 'Symphony No. 3 in E-flat major, "Eroica"' } }} />,
+    );
+    expect(getByTestId('surround-work-placard').textContent)
+      .toContain('Symphony No. 3 in E-flat major, “Eroica”');
+  });
+
+  it('curls the nickname in Vivaldi’s title too', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={{ piece: { title: 'Violin Concerto in E major, "Spring"' } }} />,
+    );
+    expect(getByTestId('surround-work-placard').textContent).toContain('“Spring”');
+  });
+
+  it('curls the provenance line', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={{ piece: { title: 'X', premiered: "Vienna, at the Prince's palace" } }} />,
+    );
+    expect(getByTestId('surround-work-placard').textContent).toContain('Prince’s');
+    expect(getByTestId('surround-work-placard').textContent).not.toContain("'");
+  });
+});

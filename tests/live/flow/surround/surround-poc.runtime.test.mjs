@@ -247,15 +247,20 @@ async function currentTime(page) {
  * `page.evaluate`, in the same synchronous tick, on the same document frame.
  * Nothing can advance between the two reads.
  */
-async function readNowAtHeader(page) {
-  const [video, header] = await Promise.all([
+async function readNowAtBond(page) {
+  const [video, bond] = await Promise.all([
     page.locator(PLAYABLE_SEL).first().elementHandle(),
-    page.locator('[data-testid="surround-ticker-now"]').first().elementHandle(),
+    page.locator('[data-testid="surround-bond"]').first().elementHandle(),
   ]);
-  return page.evaluate(([v, h]) => ({
+  return page.evaluate(([v, b]) => ({
     now: v.currentTime,
-    header: (h.textContent ?? '').trim(),
-  }), [video, header]);
+    // Where the bond's panel sits on the rule, 0..1 of the rule's own width —
+    // read in the SAME evaluate as the clock, so a movement boundary cannot
+    // land between the two reads (fix round 1, review finding M1).
+    left: parseFloat(b.style.getPropertyValue('--bond-left')) / 100,
+    width: parseFloat(b.style.getPropertyValue('--bond-width')) / 100,
+    bonded: b.getAttribute('data-bonded'),
+  }), [video, bond]);
 }
 
 /**
@@ -748,26 +753,111 @@ test.describe('Surround — composed layout gate', () => {
       `the band's text zone overflows itself by ${tickerFit.scroll - tickerFit.client}px`,
     ).toBeLessThanOrEqual(tickerFit.client + 1);
 
-    //     THE HEADER NAMES WHAT IS SOUNDING. The gate knows the position from
-    //     the transport, so this is a real cross-check between the video's
-    //     clock and the register's text — not a check that some string
-    //     rendered. Fix round 1 (review finding M1): `now` and `header` used
-    //     to be two independent round trips, which let a movement boundary
-    //     land between them and fail the check for a gate-timing reason
-    //     rather than a real defect. `readNowAtHeader` reads both inside ONE
-    //     `page.evaluate`, so nothing can advance between them.
-    const { now, header: rawHeader } = await readNowAtHeader(page);
+    //     3e. THE BOND NAMES WHAT IS SOUNDING (design wave 7). The NOW
+    //     register no longer prints the movement heading the rail above it has
+    //     already set — the user's word for that repetition was "wasteful".
+    //     What says WHICH movement this register belongs to is the BOND: the
+    //     sounding segment's panel and this register's panel drawn in one
+    //     ground and joined along the band's seam.
+    //
+    //     So this is still a real cross-check between the video's clock and
+    //     the band's answer — it just reads a geometry rather than a string,
+    //     and the geometry is the harder thing to get right. Both reads happen
+    //     inside ONE `page.evaluate` (fix round 1, review finding M1) so a
+    //     movement boundary cannot land between them.
+    expect(
+      await page.locator('[data-testid="surround-ticker-now"]').count(),
+      'the NOW register is reprinting the movement heading the rail already set',
+    ).toBe(0);
+
+    const { now, left, width, bonded } = await readNowAtBond(page);
     const index = movementAt(now);
     expect(
       index,
       `the transport is at ${now}s, which is not inside any movement — reseek the fixture`,
     ).toBeGreaterThanOrEqual(0);
-    const header = rawHeader;
+    expect(bonded, `nothing is bonded at ${now.toFixed(1)}s, inside movement ${index + 1}`)
+      .toBe('true');
+    //     The panel covers the segment the clock says is sounding — asserted
+    //     against that segment's OWN rendered box, because the accordion means
+    //     a segment's width is no longer its duration's share of the rule.
+    const seg = await box(`[data-testid="surround-movement"][data-index="${index}"]`);
+    const rule = await box('.surround-movement-map__rule');
     expect(
-      header,
-      `the NOW header reads "${header}" at ${now.toFixed(1)}s, which is movement ${index + 1} `
-      + `("${MOVEMENT_NAMES[index]}")`,
-    ).toContain(MOVEMENT_NAMES[index]);
+      Math.abs((rule.x + left * rule.width) - seg.x),
+      `the bond starts at ${(rule.x + left * rule.width).toFixed(1)} but movement `
+      + `${index + 1} ("${MOVEMENT_NAMES[index]}") starts at ${seg.x.toFixed(1)}`,
+    ).toBeLessThanOrEqual(1.5);
+    expect(
+      Math.abs(width * rule.width - seg.width),
+      `the bond is ${(width * rule.width).toFixed(1)}px wide over a ${seg.width.toFixed(1)}px segment`,
+    ).toBeLessThanOrEqual(1.5);
+
+    //     ...and the two halves of the shape are actually CONTIGUOUS on screen.
+    //     This is the one claim no jsdom spec can make: the rail's panel (or
+    //     its connector, where the segment is on the far side of the band) has
+    //     to meet the register's panel at the region seam with nothing between
+    //     them, horizontally and vertically.
+    const bondBox = await box('[data-testid="surround-bond"]');
+    const connBox = await box('[data-testid="surround-bond-connector"]');
+    const groundBox = await box('[data-testid="surround-ticker-ground"]');
+    expect(
+      Math.abs((bondBox.y + bondBox.height) - groundBox.y),
+      `the rail's panel ends at ${(bondBox.y + bondBox.height).toFixed(1)} and the `
+      + `register's begins at ${groundBox.y.toFixed(1)} — the bond has a seam`,
+    ).toBeLessThanOrEqual(1);
+    // Horizontal continuity: panel ∪ connector must reach the register's panel.
+    const spanLeft = Math.min(bondBox.x, connBox.width > 0 ? connBox.x : bondBox.x);
+    const spanRight = Math.max(
+      bondBox.x + bondBox.width,
+      connBox.width > 0 ? connBox.x + connBox.width : bondBox.x + bondBox.width,
+    );
+    const gap = Math.max(0, Math.max(spanLeft, groundBox.x)
+      - Math.min(spanRight, groundBox.x + groundBox.width));
+    expect(
+      gap,
+      `${gap.toFixed(1)}px of band ground between the rail's panel and the register's `
+      + '— the bond reads as two marks, not one shape',
+    ).toBeLessThanOrEqual(1);
+    //     ...and they are the SAME ground, which is what makes them one shape
+    //     rather than two panels that happen to touch.
+    const grounds = await page.evaluate(() => [
+      getComputedStyle(document.querySelector('[data-testid="surround-bond"]')).backgroundColor,
+      getComputedStyle(document.querySelector('[data-testid="surround-ticker-ground"]')).backgroundColor,
+    ]);
+    expect(grounds[0], `the two panels are painted ${grounds[0]} and ${grounds[1]}`)
+      .toBe(grounds[1]);
+
+    //     3f. THE NUMERAL'S GUTTER (design wave 7). Every segment's heading and
+    //     every segment's gloss start on the SAME text edge, measured from the
+    //     segment's own left — which is what the fixed-width numeral track
+    //     exists to guarantee and what the old inline numeral broke.
+    const edges = await page.evaluate(() => [...document.querySelectorAll(
+      '.surround-movement-map__segment',
+    )].map((segment) => {
+      const l = segment.getBoundingClientRect().left;
+      const heading = segment.querySelector('.surround-movement-map__heading');
+      const gloss = segment.querySelector('.surround-movement-map__translation');
+      return {
+        heading: +(heading.getBoundingClientRect().left - l).toFixed(2),
+        gloss: gloss ? +(gloss.getBoundingClientRect().left - l).toFixed(2) : null,
+      };
+    }));
+    expect(edges.length, 'no segments on the rail').toBeGreaterThan(0);
+    const textEdge = edges[0].heading;
+    for (const [i, e] of edges.entries()) {
+      expect(
+        Math.abs(e.heading - textEdge),
+        `movement ${i + 1}'s name starts at ${e.heading} against ${textEdge} on the first`,
+      ).toBeLessThanOrEqual(0.5);
+      if (e.gloss !== null) {
+        expect(
+          Math.abs(e.gloss - e.heading),
+          `movement ${i + 1}'s gloss starts at ${e.gloss}, its name at ${e.heading} `
+          + '— the translation is rendering under the numeral',
+        ).toBeLessThanOrEqual(0.5);
+      }
+    }
 
     // 4. Every rail child ends on-screen (the bio used to end at 742 of 720).
     //    The nameplate and the place-carousel are NOT optional for this fixture:

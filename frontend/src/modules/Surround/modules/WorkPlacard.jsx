@@ -17,6 +17,7 @@
 
 import React from 'react';
 import PropTypes from 'prop-types';
+import { smartQuotes } from '../typography.js';
 import './WorkPlacard.scss';
 
 export default function WorkPlacard({
@@ -38,11 +39,16 @@ export default function WorkPlacard({
   const piece = data?.piece ?? null;
   if (!piece?.title) return null;
 
-  const meta = [piece.opus, piece.composed, piece.premiered].filter(Boolean).join('   ·   ');
+  // The plate is the frame's largest type, so it is the surface where a straight
+  // quote is most obviously unset — both live works have a nickname in quotes
+  // ("Eroica", "Spring"). One curl at the render seam, `../typography.js`.
+  const meta = smartQuotes(
+    [piece.opus, piece.composed, piece.premiered].filter(Boolean).join('   ·   '),
+  );
 
   return (
     <div className="surround-work-placard" data-testid="surround-work-placard">
-      <h2 className="surround-work-placard__title">{piece.title}</h2>
+      <h2 className="surround-work-placard__title">{smartQuotes(piece.title)}</h2>
       {meta ? <p className="surround-work-placard__meta">{meta}</p> : null}
     </div>
   );
