@@ -14,6 +14,8 @@ const DEFINITIONS_DIR = '_surrounds';
 const COMPOSER_FILE = '_composer';
 
 const isReserved = (name) => name.startsWith('_');
+const asArray = (v) => (Array.isArray(v) ? v : []);
+const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * Index of authored surround sidecars.
@@ -42,13 +44,19 @@ export class SurroundStore {
    * Never throws: a miss, an unreadable tree, or a broken sidecar all yield null
    * so the caller attaches nothing and playback is unaffected.
    *
+   * Returns a fresh clone each call. The payload is attached verbatim to play
+   * and queue responses, where callers may decorate it (asset URLs, defaults);
+   * handing out the indexed object would let one such edit persist into every
+   * later lookup, and definition blocks are shared across pieces.
+   *
    * @param {string} contentId - Compound content ID (e.g. 'plex:663134')
    * @param {string} title - Item title
    * @returns {Object|null} Resolved surround payload, or null
    */
   lookup(contentId, title) {
     try {
-      return this.#byContentId.get(contentId) || null;
+      const payload = this.#byContentId.get(String(contentId));
+      return payload ? structuredClone(payload) : null;
     } catch {
       return null;
     }
@@ -73,7 +81,7 @@ export class SurroundStore {
         for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
           const composerDir = path.join(domainDir, composer);
           const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
-          if (composerBase) composers += 1;
+          if (isPlainObject(composerBase)) composers += 1;
 
           const files = listYamlFiles(composerDir, { stripExtension: false })
             .filter((f) => !isReserved(f));
@@ -89,7 +97,8 @@ export class SurroundStore {
     }
 
     this.#byContentId = index;
-    this.logger?.info('surround.index.built', {
+    if (typeof this.logger?.info !== 'function') return;
+    this.logger.info('surround.index.built', {
       pieces: index.size,
       composers,
       definitions: definitions.size,
@@ -129,17 +138,24 @@ export class SurroundStore {
     const definition = definitions.get(doc.surround);
     if (!definition) return null;
 
+    // Shapes are guarded, not trusted: an indentation slip that turns `movements`
+    // into a string would otherwise reach a module's .map() and throw in render,
+    // taking the player subtree down with it.
     return {
-      contentId: doc.match.contentId,
+      // YAML parses a bare `contentId: 663134` as a number; keys are always strings.
+      contentId: String(doc.match.contentId),
       payload: {
         id: doc.surround,
         definition: { regions: definition.regions, collapse: definition.collapse },
-        piece: doc.piece || {},
-        movements: doc.movements || [],
-        cues: doc.cues || [],
-        facts: doc.facts || [],
+        piece: isPlainObject(doc.piece) ? doc.piece : {},
+        movements: asArray(doc.movements),
+        cues: asArray(doc.cues),
+        facts: asArray(doc.facts),
         // Piece-level `composer:` overrides the shared _composer.yml, key by key.
-        composer: deepMerge(composerBase || {}, doc.composer || {}),
+        composer: deepMerge(
+          isPlainObject(composerBase) ? composerBase : {},
+          isPlainObject(doc.composer) ? doc.composer : {}
+        ),
         assetBase: `surround/${domain}`
       }
     };
