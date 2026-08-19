@@ -108,3 +108,35 @@
   line-height: 1.25;
   color: var(--ink, #2a1d07);
 }
+
+/* Composer facts — the quietest register in the rail. Body face, ink-soft, at
+   the foot of the card so the composer name and piece title stay dominant.
+   `margin-top: auto` parks it at the bottom of the flex column, which is also
+   why the card looks identical when a composer has no facts at all. */
+.surround-composer-card__fact-rule {
+  width: 100%;
+  height: 1px;
+  margin: auto 0 0.6rem;
+  border: 0;
+  background: var(--programme-edge, #ddd0b4);
+}
+
+.surround-composer-card__fact {
+  margin: 0;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink-soft, #6b6152);
+  opacity: 1;
+}
+
+.surround-composer-card__fact--hidden {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-composer-card__fact {
+    transition: none !important;
+  }
+}
