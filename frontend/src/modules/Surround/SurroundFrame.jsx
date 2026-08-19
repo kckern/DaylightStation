@@ -135,10 +135,12 @@ export default function SurroundFrame({
 
   const definition = data?.definition ?? null;
   // `right` is authored as either a single object or a list of modules (e.g.
-  // composer-card + country-map). The width belongs to the rail as a whole, so
-  // when it's a list the first entry carries it.
+  // composer-card + country-map). Width and side both belong to the rail as a
+  // whole, so when it's a list the first entry carries them.
   const rightDef = definition?.regions?.right;
-  const railWidth = (Array.isArray(rightDef) ? rightDef[0]?.width : rightDef?.width) ?? DEFAULT_RAIL_WIDTH;
+  const railFirst = Array.isArray(rightDef) ? rightDef[0] : rightDef;
+  const railWidth = railFirst?.width ?? DEFAULT_RAIL_WIDTH;
+  const railSide = railFirst?.side === 'left' ? 'left' : 'right';
   const footerFloor = Number.isFinite(definition?.collapse?.footerFloor)
     ? definition.collapse.footerFloor
     : DEFAULT_FOOTER_FLOOR;
@@ -266,8 +268,12 @@ export default function SurroundFrame({
     );
   };
 
-  const rootClass = ['surround-frame', collapsed && 'surround-frame--collapsed', className]
-    .filter(Boolean).join(' ');
+  const rootClass = [
+    'surround-frame',
+    collapsed && 'surround-frame--collapsed',
+    railSide === 'left' && 'surround-frame--rail-left',
+    className,
+  ].filter(Boolean).join(' ');
 
   // EVERY element on the path down to `children` is rendered in both states, in
   // the same order, so React sees the player at one fixed position for the whole

@@ -189,6 +189,43 @@ describe('SurroundFrame', () => {
     expect(getByTestId('surround-rail').style.width).toBe('20%');
   });
 
+  it('flips the rail to the left when the definition says so (single-object shape)', () => {
+    const definition = {
+      ...DEFINITION,
+      regions: { ...DEFINITION.regions, right: { module: 'composer-card', side: 'left' } },
+    };
+    const { getByTestId } = renderFrame({ data: { ...DATA, definition } });
+    expect(getByTestId('surround-frame').className).toContain('surround-frame--rail-left');
+  });
+
+  it('flips the rail to the left from the first entry when the right region is a list', () => {
+    const definition = {
+      ...DEFINITION,
+      regions: {
+        ...DEFINITION.regions,
+        right: [{ module: 'composer-card', side: 'left' }, { module: 'composer-card' }],
+      },
+    };
+    const { getByTestId } = renderFrame({ data: { ...DATA, definition } });
+    expect(getByTestId('surround-frame').className).toContain('surround-frame--rail-left');
+  });
+
+  it('does not add the left-rail modifier when the definition omits side (right stays default)', () => {
+    const { getByTestId } = renderFrame();
+    expect(getByTestId('surround-frame').className).not.toContain('surround-frame--rail-left');
+  });
+
+  it('never leaks the rail-side modifier onto the inactive boxless shell', () => {
+    const definition = {
+      ...DEFINITION,
+      regions: { ...DEFINITION.regions, right: { module: 'composer-card', side: 'left' } },
+    };
+    const { container } = renderFrame({ data: { ...DATA, definition }, active: false });
+    const root = container.firstElementChild;
+    expect(root.className).toBe('');
+    expect(root.className).not.toContain('surround-frame--rail-left');
+  });
+
   it('drops the collapse:first region when the footer falls below the floor', () => {
     const logger = makeLogger();
     const { getByTestId, queryByTestId } = renderFrame({ logger });
