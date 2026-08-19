@@ -236,7 +236,7 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       } else if (action === 'media:play') {
         showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: secPayload.menuId, playerRef: navPlayerRef });
+        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef });
       }
       return;
     }

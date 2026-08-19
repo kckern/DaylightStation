@@ -594,9 +594,27 @@ test.describe('Surround — composed layout gate', () => {
     //     enriched fixture always authors a portrait, so `box()` failing to find
     //     it is a mount failure, not an absent-content case — same convention as
     //     the nameplate/carousel check in 4 above.
+    // The mat is `fit-content` around `img { width: 100% }`, so before the
+    // portrait finishes decoding its box is ~0-wide and the side-by-side
+    // assertion below (`portrait right edge <= nameplate left + 2`) passes
+    // for free against a sliver — not because the layout is actually a row.
+    // Wait for the real decode before trusting any geometry off this element.
+    await page.waitForFunction(() => {
+      const img = document.querySelector('.surround-composer-card__portrait');
+      return !!img && img.complete && img.naturalWidth > 0;
+    }, { timeout: 10000 });
+
     const rail = await box('.surround-frame__rail');
     const portraitBox = await box('.surround-composer-card__plate');
     const nameplateBox = await box('.surround-composer-card__nameplate');
+    //     A floor on the portrait's width: without this, a regression back to
+    //     an undecoded/collapsed mat would still satisfy the side-by-side
+    //     check above (a ~0-wide box is trivially left of the nameplate).
+    expect(
+      portraitBox.width,
+      `portrait is only ${portraitBox.width}px wide against a ${rail.width}px rail — `
+      + `looks collapsed/undecoded, not a real picture`,
+    ).toBeGreaterThan(rail.width * 0.2);
     expect(
       portraitBox.x + portraitBox.width,
       `portrait ends at ${portraitBox.x + portraitBox.width} but the nameplate starts at `

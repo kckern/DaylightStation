@@ -333,7 +333,6 @@ export default function SurroundFrame({
 
   const rootClass = [
     'surround-frame',
-    collapsed && 'surround-frame--collapsed',
     railSide === 'left' && 'surround-frame--rail-left',
     !entered && 'surround-frame--entering',
     className,

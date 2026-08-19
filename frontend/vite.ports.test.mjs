@@ -24,6 +24,7 @@ describe('vite.ports resolvePorts — local-over-base merge (regression: local f
     const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
     expect(result.app).toBe(3112);
     expect(result.backend).toBe(3113);
+    expect(result.usedDefault).toBe(false);
   });
 
   test('local file present but WITHOUT an app key -> base app.ports still wins (the kckern-server bug)', () => {
@@ -56,11 +57,12 @@ describe('vite.ports resolvePorts — local-over-base merge (regression: local f
     expect(result.backend).toBe(3112);
   });
 
-  test('neither file exists -> hardcoded default', () => {
+  test('neither file exists -> hardcoded default, and usedDefault says so (no false "resolved" reporting)', () => {
     const fs = makeFs(new Map());
     const result = resolvePorts({ dataPath: '/data', envName: 'kckern-server', ...fs });
     expect(result.app).toBe(DEFAULT_APP_PORT);
     expect(result.backend).toBe(DEFAULT_APP_PORT + 1);
+    expect(result.usedDefault).toBe(true);
   });
 });
 

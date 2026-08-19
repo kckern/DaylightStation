@@ -120,9 +120,9 @@ const MARKER_CLEARANCE_PX = 34;
  * would have just fitted, under-estimating ships "LONDONGERMANY", and only one
  * of those is a defect a viewer sees.
  */
-const LABEL_EM_PER_CHAR = 0.78;
+export const LABEL_EM_PER_CHAR = 0.78;
 /** Breathing room around a label box, in ems of its own size. */
-const LABEL_MARGIN_EM = 0.5;
+export const LABEL_MARGIN_EM = 0.5;
 
 let moduleLogger = null;
 function fallbackLogger() {

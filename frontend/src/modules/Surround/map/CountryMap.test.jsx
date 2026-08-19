@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
-import CountryMap, { __resetMapCache, RENDER_W, RENDER_H } from './CountryMap.jsx';
+import CountryMap, { __resetMapCache, RENDER_W, RENDER_H, LABEL_EM_PER_CHAR, LABEL_MARGIN_EM } from './CountryMap.jsx';
 
 /**
  * A tiny stand-in for europe.geo.json. Three squares of very different size and
@@ -479,8 +479,6 @@ describe('CountryMap labels', () => {
     await waitFor(() => expect(container.querySelector('[data-testid="country-map-marker"]')).toBeTruthy());
     await waitFor(() => expect(labelFor(container, 'Ruritania')).toBeTruthy());
 
-    const LABEL_EM_PER_CHAR = 0.78;
-    const LABEL_MARGIN_EM = 0.5;
     const labelBox = ({ x, y, text, sizePx, anchor = 'middle', unitsPerPx }) => {
       const w = (String(text).length * LABEL_EM_PER_CHAR + LABEL_MARGIN_EM * 2) * sizePx * unitsPerPx;
       const h = (1 + LABEL_MARGIN_EM) * sizePx * unitsPerPx;
