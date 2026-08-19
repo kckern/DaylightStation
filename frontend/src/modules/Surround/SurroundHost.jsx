@@ -1,0 +1,276 @@
+// frontend/src/modules/Surround/SurroundHost.jsx
+//
+// SurroundHost — the seam wrapper. It is mounted around the legacy `Player` at
+// the two places playback actually starts (`ScreenPlayer` for WS/URL-triggered
+// playback, `MenuStack` for menu-selected playback) and decides, per item,
+// whether that player gets a programme frame around it.
+//
+// THE ONE RULE
+// ------------
+// The surround can never be the reason something will not play. Every path that
+// is not "this item is enriched AND the screen allows it AND the frame rendered
+// without throwing" renders `children` inside a shell that generates NO BOX —
+// `display: contents`, no class, no attributes — so an un-enriched page lays out
+// exactly as a bare player does. That is asserted in the spec, not assumed.
+//
+// WHY A NO-BOX SHELL AND NOT "NO WRAPPER AT ALL"
+// ---------------------------------------------
+// The host learns an item is enriched from a poll, i.e. AFTER the player is
+// already mounted. The original design rendered `children` bare and then moved
+// them inside the frame — a different depth in the React tree, which is a
+// remount, which reloads the <video>: one audible restart about a second into
+// every enriched item. `children` now sit at ONE fixed depth for the whole
+// session (SurroundStage → SurroundFrame → shell → media box), so engaging or
+// dropping the frame is a style change, never a re-parenting.
+//
+// WHY POLLING
+// -----------
+// `Player` publishes nothing; it exposes an imperative handle. The established
+// way to read it is a poll — `publishers/usePlayerSessionBinding.js` +
+// `playerSessionBridge.js` do exactly this at 1 Hz for fleet-view session state.
+// This host copies that cadence. A queue advance is therefore visible within a
+// second, which is well inside the gap between two movements of anything.
+//
+// WHERE THE CLOCK LIVES
+// ---------------------
+// In `SurroundStage`, which is now mounted for every item (constant depth) but
+// runs its clock only while the frame is on: when inactive it is handed a
+// media-element getter that returns null, so nothing is attached, no rVFC loop
+// runs and no 10 Hz React sampling happens. An un-enriched item costs the 1 Hz
+// poll and the clock's idle supervisor, and nothing else.
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import PropTypes from 'prop-types';
+import getLogger from '../../lib/logging/Logger.js';
+import { useMediaClockState } from '../../lib/Player/useMediaClock.js';
+import SurroundFrame from './SurroundFrame.jsx';
+import { useSurroundSetting, SURROUND_OFF } from './SurroundSettingContext.js';
+// Side-effect import: registers movement-map / cue-ticker / composer-card, so
+// neither seam needs a registration call of its own.
+import './builtins.js';
+
+/** Matches the session bridge's 1 Hz cadence. */
+const DEFAULT_POLL_MS = 1000;
+
+/** Identity keys, in the order `playerSessionBridge.normalizePlayableItem` reads them. */
+const ID_KEYS = ['contentId', 'assetId', 'id', 'plex', 'key'];
+
+/** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
+const NO_MEDIA = () => null;
+
+function resolveContentId(item) {
+  if (item == null) return null;
+  if (typeof item === 'string' || typeof item === 'number') {
+    const s = String(item);
+    return s.length > 0 ? s : null;
+  }
+  if (typeof item !== 'object') return null;
+  for (const k of ID_KEYS) {
+    const v = item[k];
+    if (v != null && String(v).length > 0) return String(v);
+  }
+  return null;
+}
+
+/** The backend omits the key entirely when there is no sidecar — test truthiness. */
+function resolveSurround(item) {
+  const s = item && typeof item === 'object' ? item.surround : null;
+  return (s && typeof s === 'object' && !Array.isArray(s)) ? s : null;
+}
+
+/**
+ * Clock owner and per-item lifecycle. Mounted for EVERY item — enriched or not —
+ * because it sits on the path down to `children` and that path must never change
+ * shape. `active` is what turns the frame and the clock on; the per-item logs are
+ * keyed on `contentId` by effect dependency rather than by a React `key`, because
+ * a `key` here would remount the player on every queue advance.
+ */
+function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, children }) {
+  const { position, duration, playing, seeking } = useMediaClockState({
+    getMediaEl: active ? getMediaEl : NO_MEDIA,
+    contentId,
+    logger,
+  });
+
+  useEffect(() => {
+    if (!active) return undefined;
+    const startedAt = Date.now();
+    logger.info('surround.mount', {
+      contentId,
+      surroundId: surround?.id ?? null,
+      mode,
+      modules: [
+        surround?.definition?.regions?.right?.module,
+        ...(Array.isArray(surround?.definition?.regions?.bottom)
+          ? surround.definition.regions.bottom.map((r) => r?.module)
+          : [surround?.definition?.regions?.bottom?.module]),
+      ].filter(Boolean),
+    });
+    return () => {
+      logger.info('surround.unmount', {
+        contentId,
+        surroundId: surround?.id ?? null,
+        // Wall-clock seconds the frame was on screen — not playhead progress, so
+        // a paused-and-abandoned item reads as the long session it really was.
+        watchedSec: Math.round((Date.now() - startedAt) / 1000),
+      });
+    };
+    // One pair per (item, active) span. `surround` is stable for the life of an
+    // item, so it is deliberately not a dependency.
+  }, [active, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Logged as `surround-host` (spec table) even though the throw happened inside
+  // a module: this is the host's fail-soft decision, not the module's own event.
+  const onModuleError = (error) => {
+    logger.error('surround.render.error', {
+      contentId,
+      surroundId: surround?.id ?? null,
+      error: String(error?.message ?? error),
+    });
+  };
+
+  return (
+    <SurroundFrame
+      active={active}
+      data={surround}
+      contentId={contentId}
+      position={position}
+      duration={duration}
+      playing={playing}
+      seeking={seeking}
+      logger={logger}
+      onModuleError={onModuleError}
+    >
+      {children}
+    </SurroundFrame>
+  );
+}
+
+SurroundStage.propTypes = {
+  contentId: PropTypes.string,
+  surround: PropTypes.object,
+  active: PropTypes.bool,
+  mode: PropTypes.string,
+  logger: PropTypes.object.isRequired,
+  getMediaEl: PropTypes.func.isRequired,
+  children: PropTypes.node,
+};
+
+/**
+ * @param {object} props
+ * @param {() => (object|null)} props.getPlayerHandle — returns the Player's
+ *   imperative handle (or null). Called on every poll, so an inline arrow over a
+ *   ref is fine and expected.
+ * @param {string|object} [props.contentId] — what the SEAM was asked to play
+ *   (`play` / `queue`). Used only to correlate logs before the first poll lands;
+ *   the poll remains the source of truth for what is actually on screen.
+ * @param {object} [props.logger] — override for the host logger. Tests inject a
+ *   spy; production leaves it undefined and gets the durable session child.
+ * @param {number} [props.pollMs]
+ * @param {React.ReactNode} props.children — the player.
+ */
+export default function SurroundHost({
+  getPlayerHandle,
+  contentId = null,
+  logger = null,
+  pollMs = DEFAULT_POLL_MS,
+  children,
+}) {
+  const mode = useSurroundSetting();
+
+  // Created once. `sessionLog: true` lives HERE and nowhere below: the frame and
+  // every module re-child from this logger and inherit it, and re-declaring it
+  // would double-open the backend session file.
+  const hostLogger = useMemo(
+    () => logger ?? getLogger().child({ app: 'surround', component: 'surround-host', sessionLog: true }),
+    [logger],
+  );
+
+  // Latest-ref so a fresh inline closure never restarts the poll.
+  const getHandleRef = useRef(getPlayerHandle);
+  getHandleRef.current = getPlayerHandle;
+
+  const readHandle = () => {
+    try {
+      return getHandleRef.current?.() ?? null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const disabled = mode === SURROUND_OFF;
+
+  const [current, setCurrent] = useState({ contentId: null, surround: null });
+
+  useEffect(() => {
+    if (disabled) {
+      // The most valuable line in the feature is the one explaining why NOTHING
+      // happened: "configured off" and "no sidecar" look identical from outside.
+      hostLogger.debug('surround.disabled', { contentId: null, mode });
+      return undefined;
+    }
+
+    // Tracked outside React state so the poll can compare without re-subscribing.
+    let seen = { contentId: null, surroundId: null };
+
+    const read = () => {
+      let item = null;
+      try {
+        item = readHandle()?.getNowPlaying?.()?.item ?? null;
+      } catch (_) {
+        item = null;
+      }
+      const nextId = resolveContentId(item);
+      const surround = resolveSurround(item);
+      const surroundId = surround?.id ?? null;
+      if (nextId === seen.contentId && surroundId === seen.surroundId) return;
+
+      hostLogger.debug('surround.item-change', {
+        contentId: nextId,
+        from: seen.contentId,
+        to: nextId,
+        enriched: !!surround,
+        surroundId,
+      });
+      seen = { contentId: nextId, surroundId };
+      // New object only on a real change — the surround reference is therefore
+      // stable for the life of the item, which is what keeps the frame's payload
+      // memo from rebuilding on every 10 Hz tick.
+      setCurrent({ contentId: nextId, surround });
+    };
+
+    read();
+    const timer = setInterval(read, pollMs > 0 ? pollMs : DEFAULT_POLL_MS);
+    return () => clearInterval(timer);
+    // `readHandle` reads through a ref, so it is deliberately not a dependency.
+  }, [disabled, pollMs, hostLogger, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A definition-id mode is a forced definition, which in the PoC still only
+  // applies to items the backend already enriched (plan: "Out of scope").
+  const active = !disabled && !!current.surround;
+
+  // The seam's id is a hint for log correlation only, and only until the poll
+  // resolves the real one.
+  const seamId = useMemo(() => resolveContentId(contentId), [contentId]);
+
+  return (
+    <SurroundStage
+      contentId={current.contentId ?? seamId}
+      surround={current.surround}
+      active={active}
+      mode={mode}
+      logger={hostLogger}
+      getMediaEl={() => readHandle()?.getMediaElement?.() ?? null}
+    >
+      {children}
+    </SurroundStage>
+  );
+}
+
+SurroundHost.propTypes = {
+  getPlayerHandle: PropTypes.func,
+  contentId: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.object]),
+  logger: PropTypes.object,
+  pollMs: PropTypes.number,
+  children: PropTypes.node,
+};

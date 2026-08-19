@@ -1,0 +1,45 @@
+/**
+ * CueTicker — the programme note beneath the stage.
+ *
+ * One line of body Garamond on programme stock. No icon, no badge, no border:
+ * the movement map is where the boldness is spent, and a busy ticker would
+ * compete with the music it sits under.
+ *
+ * The 280ms opacity transition is set inline by the component so the fade
+ * duration has a single source of truth with the JS choreography.
+ */
+
+.surround-cue-ticker {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 1.6rem;
+  overflow: hidden;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+}
+
+.surround-cue-ticker__text {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--ink, #2a1d07);
+  opacity: 1;
+}
+
+.surround-cue-ticker__text--hidden {
+  opacity: 0;
+}
+
+/* A timed cue is tied to what is sounding right now; the velvet hairline is the
+   only thing that marks it apart from a fact. Accent, not area. */
+.surround-cue-ticker--cue .surround-cue-ticker__text {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--velvet, #4a1018);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-cue-ticker__text {
+    transition: none !important;
+  }
+}

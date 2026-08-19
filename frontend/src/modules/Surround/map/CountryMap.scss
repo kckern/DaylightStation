@@ -1,0 +1,39 @@
+/**
+ * CountryMap — the composer's geography, auto-framed.
+ *
+ * Almost everything visual is set as SVG attributes in the component, because
+ * the fills have to be readable by the tests that guard the design tokens. What
+ * lives here is what CSS is actually better at: the label's small-caps setting,
+ * the paper-lit hairline, and the fluid box.
+ *
+ * Ground stays transparent — this sits directly on the programme panel.
+ */
+
+.surround-country-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: transparent;
+  /* Guards against a parent grid stretching the box away from the viewBox's
+     aspect; the letterboxing already lives in the viewBox itself. */
+  aspect-ratio: 420 / 260;
+  overflow: visible;
+}
+
+/* Concert-programme section-header setting: letterspaced small caps of the
+   display face. Not a third typeface. */
+.surround-country-map__label {
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  paint-order: stroke fill;
+  stroke: var(--hall-ink, #14100c);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-country-map { transition: none; }
+}
