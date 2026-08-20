@@ -45,7 +45,7 @@ The Portal panel lives in the **school room**. Video dispatches to the living ro
 | D1 | Codes are a **router with a fence**, not authentication | The lock keeps a child on task, not out of a vault. No throttling, no lockout, no audit alarm. A guessed sibling code means doing your sibling's maths — annoying and self-correcting. |
 | D2 | The code is an **alias for an existing token**, stored in `ITokenRegistry` | Scope (learner + subject) becomes structural. **Expiry does NOT come free** — see D5. |
 | D3 | New `offeredActions()` **beside** `nextMove()`, not a widening of it | Keeps the scan path byte-identical, and lets the card speak in screen words where `nextMove`'s consumers speak in paper words. |
-| D4 | Destination from **`school.yml` default + per-unit override** | No picker UI, no occupancy logic. The button names the destination so the child knows where to walk. |
+| D4 | Destination from **`school.yml` default only** | No picker UI, no occupancy logic. The button names the destination so the child knows where to walk. **The per-unit override this decision originally allowed does not exist** — see below. |
 | D5 | Codes die at the **study-day rollover**, via their own `accessCodeExpiresAt` | The underlying token deliberately lives 7 days; the code must not. See "Two clocks" below. |
 | D6 | Lock mode is **per-screen config** on `portal.yml`, not household-wide | A parent's browser stays browsable, so no master code or profile bypass is needed — i.e. no auth model sneaks back in. Real home: `data/household/screens/*.yml` + `surfaceProfile`. |
 | D7 | **Do not refactor `ResolveScanAction`.** Share only two small judgements | Revised — see "Parity, revisited". |
@@ -311,8 +311,14 @@ the highest blast radius in the subsystem.
 # school.yml (household app config)
 selfService:
   enabled: true                 # mint codes at agenda build
-  mediaSurface: livingroom-tv   # per-unit `media.surface` overrides
+  mediaSurface: livingroom-tv   # household-wide; there is NO per-unit override
   idleTimeoutSeconds: 120
+
+# NOTE (found building Task 6): earlier drafts promised a per-unit `media.surface`
+# override. No such field exists and a unit cannot carry one — `unitValidation.mjs`
+# types `media` as a bare reference into `manifestIds`, not an object, so
+# `unit.media?.surface` is permanently undefined. Config is the only destination
+# source. Per-unit destinations would need a unit-schema change first.
 
 # data/household/screens/*.yml
 school-room-portal:
