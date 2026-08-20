@@ -517,7 +517,11 @@ export default function SegmentMap({
 
   useEffect(() => {
     if (!segments.length || !(railPx > 0) || !metrics.needs.length) return;
-    log.debug('surround.rail.density', {
+    // INFO, NOT DEBUG. The shipper drops debug, so a rail state logged there is
+    // invisible unless somebody is holding devtools open on the screen itself —
+    // which is precisely when it cannot be observed. One event per rail; the
+    // volume is nothing and the answer to "what did it draw" is total.
+    log.info('surround.rail.density', {
       contentId,
       density: chips ? 'chips' : 'names',
       segments: segments.length,
@@ -694,7 +698,9 @@ export default function SegmentMap({
     if (lastLogged.current === activeIndex) return;
     lastLogged.current = activeIndex;
     const active = activeIndex >= 0 ? segments[activeIndex] : null;
-    log.debug('surround.segment.change', {
+    // INFO for the same reason as the density above: at most one per movement,
+    // and it is the only record of what the rail lit and when.
+    log.info('surround.segment.change', {
       contentId,
       index: activeIndex,
       n: active?.n ?? null,

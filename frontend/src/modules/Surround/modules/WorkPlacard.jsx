@@ -267,7 +267,9 @@ export default function WorkPlacard({
 
   useEffect(() => {
     if (!container) return;
-    log.debug('surround.placard.segment', {
+    // INFO: one per movement, and it says what the plate actually headlined —
+    // the other half of "what was on screen" beside the rail's own density.
+    log.info('surround.placard.segment', {
       contentId, index, of: drawn.length, title, refused,
     });
     // The event fires on the segment changing; the rest is payload.
