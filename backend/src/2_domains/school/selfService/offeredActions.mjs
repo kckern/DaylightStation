@@ -77,27 +77,31 @@ const playAction = (mediaSurface, { withRoom, withoutRoom }) => {
  * that asks the child to wait. Mirrors `nextMove`'s ladder state by state,
  * with `bankPrintable` standing where `nextMove` guesses at a course name.
  */
+function atCreated(unit, { mediaSurface, bankPrintable }) {
+  // `launch` is validated as mutually exclusive with media/document/bank, so
+  // reading it first can never shadow one of them — it just keeps the one-shot
+  // case at the top of the table, as `nextMove` does.
+  if (unit.launch) {
+    const hint = unit.launch.labelHint;
+    return action('launch', hint ? capitalise(hint) : 'Go do this', unit.launch.surface);
+  }
+  // Media before document: rule 1 above.
+  if (unit.media) return playAction(mediaSurface, PLAY_WORDING.first);
+  if (unit.document) return action('print', 'Print your sheet');
+  if (unit.bank) {
+    return bankPrintable === true
+      ? action('print', 'Print your worksheet')
+      : action('screen', 'Answer on the screen');
+  }
+  return null;
+}
+
 function workAction(resolution, { mediaSurface, bankPrintable }) {
   const unit = resolution.unit ?? {};
 
   switch (resolution.state?.state) {
     case 'created':
-      // `launch` is validated as mutually exclusive with media/document/bank,
-      // so reading it first can never shadow one of them — it just keeps the
-      // one-shot case at the top of the table, as `nextMove` does.
-      if (unit.launch) {
-        const hint = unit.launch.labelHint;
-        return action('launch', hint ? capitalise(hint) : 'Go do this', unit.launch.surface);
-      }
-      // Media before document: rule 1 above.
-      if (unit.media) return playAction(mediaSurface, PLAY_WORDING.first);
-      if (unit.document) return action('print', 'Print your sheet');
-      if (unit.bank) {
-        return bankPrintable === true
-          ? action('print', 'Print your worksheet')
-          : action('screen', 'Answer on the screen');
-      }
-      return null;
+      return atCreated(unit, { mediaSurface, bankPrintable });
 
     case 'media_completed':
       if (unit.document) return action('print', 'Print the questions');
@@ -133,17 +137,29 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       // merely unhandled: the planner flips a passed entry to `completed`
       // before this subject is resolved again.
       //
-      // COMPOSITION-AWARE, unlike `issued`/`reprinted` above. That case can be
-      // blind because ISSUABLE was already satisfied for the unit — paper is
-      // known to exist. A remediation session has passed no gate at all, and
-      // `OpenRemediation` prints nothing; it appends a fresh `created` event.
-      // So for a screen-answered bank unit "Print a fresh sheet" promises a
-      // sheet that never arrives, and the very next card withdraws it with
-      // "Answer on the screen".
+      // THE LABEL IS DERIVED, NOT ASSUMED, unlike `issued`/`reprinted` above.
+      // That case can afford to be composition-blind because ISSUABLE was
+      // already satisfied for the unit — paper is known to exist. A
+      // remediation session has passed no gate at all, and `OpenRemediation`
+      // prints nothing: it appends a fresh `created` event and returns
+      // `document: null` for every composition.
+      //
+      // So the honest question is "what will the FRESH card offer?", and
+      // because the new session really is a `created` session, `atCreated` IS
+      // that answer rather than a heuristic standing in for it. Assuming paper
+      // instead promised a sheet the next card withdrew — "Print a fresh
+      // sheet" followed by "Go do this" for a launch unit, by "Play the video"
+      // for a media unit, by "Answer on the screen" for screen-answered bank
+      // work. One bug in four compositions, not three separate ones.
+      //
+      // `kind` stays `retry` whatever the label says: Task 7 looks the action
+      // up by kind and routes it to `OpenRemediation`. Only the wording
+      // follows the composition — and paper keeps "a fresh sheet", which is
+      // the thing that distinguishes a remediation from an ordinary reprint.
       if (resolution.state?.outcome?.result === 'needs_remediation') {
-        return unit.bank && bankPrintable !== true
-          ? action('retry', 'Try again on the screen')
-          : action('retry', 'Print a fresh sheet');
+        const fresh = atCreated(unit, { mediaSurface, bankPrintable });
+        if (!fresh) return action('retry', 'Try again');
+        return action('retry', fresh.kind === 'print' ? 'Print a fresh sheet' : fresh.label);
       }
       return null;
 
