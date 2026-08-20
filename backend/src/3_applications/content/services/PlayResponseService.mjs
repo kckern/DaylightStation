@@ -61,9 +61,12 @@ export class PlayResponseService {
    * @param {string|null} [options.session] - Opaque client session the caller
    *   put on the wire as `?session=`. Threaded into the returned Plex stream
    *   url so the media element carries it to the proxy route.
+   * @param {string|null} [options.containerId] - The container playback was
+   *   started FROM, when it was started from one. Absent for a direct play of a
+   *   media item, which is what keeps a standalone étude a whole work.
    * @returns {Object} Play response DTO
    */
-  toPlayResponse(item, watchState = null, { adapter, resume, session = null } = {}) {
+  toPlayResponse(item, watchState = null, { adapter, resume, session = null, containerId = null } = {}) {
     const response = {
       id: item.id,
       assetId: item.id,
@@ -154,13 +157,24 @@ export class PlayResponseService {
     // its absence — or a store that breaks its never-throw contract — must
     // leave the response byte-identical to an un-enriched one.
     try {
-      const surround = this.#surroundStore?.lookup(item.id, item.title);
+      // A part of an enriched container gets the CONTAINER's frame, not its
+      // own, and the container's claim has to be asked FIRST — an étude episode
+      // has a perfectly good standalone sidecar of its own, so asking `lookup`
+      // first would answer with it and the season's rail would never appear.
+      //
+      // The distinguishing signal is `containerId`: how playback started, never
+      // the id. A direct play of the same episode passes none, falls straight
+      // to `lookup`, and reads as a whole work exactly as it always has.
+      const part = containerId ? this.#surroundStore?.lookupByPart?.(item.id) : null;
+      const surround = part?.payload ?? this.#surroundStore?.lookup(item.id, item.title);
       if (surround) {
         response.surround = surround;
+        if (part) response.surroundPart = part.part;
         this.#surroundLogger?.debug?.('surround.attach', {
           contentId: item.id,
           surroundId: surround.id,
-          path: 'play'
+          path: 'play',
+          ...(part ? { containerId, part: part.part } : {})
         });
       }
     } catch (err) {

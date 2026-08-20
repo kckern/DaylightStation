@@ -3,6 +3,7 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { parseActionRouteId } from '../utils/actionRouteParser.mjs';
 import { splatPath } from '#api/utils/wildcard.mjs';
+import { planSurroundQueue } from '#apps/content/services/surroundQueuePlan.mjs';
 
 export function toQueueItem(item) {
   const qi = {
@@ -81,7 +82,12 @@ export function createQueueRouter(config) {
   const { contentIdResolver, queueService, logger = console } = config;
   // Optional surround sidecar lookup (ISurroundStore port). Absent → the queue
   // projection is exactly what it always was.
-  const { surroundStore = null } = config;
+  //
+  // `surroundEnforceOrder` is config `surround.enforceOrder`, resolved in
+  // composition and defaulting to true here as well, so a router built without
+  // it still imposes a container's authored order rather than silently opting
+  // every programme out.
+  const { surroundStore = null, surroundEnforceOrder = true } = config;
   // Surround keeps its own subsystem identity so its events stay queryable
   // apart from the generic queue stream.
   const surroundLogger = logger?.child?.({ app: 'surround', module: 'queue-router' }) ?? logger;
@@ -139,6 +145,21 @@ export function createQueueRouter(config) {
 
     let items = await queueService.resolveQueue(playables, resolvedSource, { shuffle });
 
+    // THIS is where a media item learns it is a part rather than a whole work:
+    // the queue request names the container, the play request does not, and
+    // that difference — not the id — is what decides which frame it gets. It
+    // runs before `limit` on purpose, so a truncated queue keeps the
+    // programme's FIRST parts rather than the first parts of whatever order
+    // the adapter happened to return.
+    const surroundPlan = planSurroundQueue({
+      surroundStore,
+      containerId: finalId,
+      items,
+      enforceOrder: surroundEnforceOrder,
+      logger: surroundLogger
+    });
+    if (surroundPlan) items = surroundPlan.items;
+
     if (limit) {
       items = items.slice(0, limit);
     }
@@ -158,13 +179,22 @@ export function createQueueRouter(config) {
     // storage-unaware. Per item, so one bad sidecar can never cost the queue.
     for (const qi of queueItems) {
       try {
-        const surround = surroundStore?.lookup(qi.contentId, qi.title);
+        // A container's plan answers for every item on its rail — including
+        // answering "nothing" for all of them when the order cannot be trusted.
+        // So when a plan exists it is the ONLY source: falling through to the
+        // per-item lookup there would hand each episode its own standalone
+        // frame, which is precisely the rail-that-lies the refusal exists to
+        // prevent.
+        const part = surroundPlan?.surroundFor.get(qi.contentId) ?? null;
+        const surround = surroundPlan ? part?.payload ?? null : surroundStore?.lookup(qi.contentId, qi.title);
         if (surround) {
           qi.surround = surround;
+          if (part) qi.surroundPart = part.part;
           surroundLogger?.debug?.('surround.attach', {
             contentId: qi.contentId,
             surroundId: surround.id,
-            path: 'queue'
+            path: 'queue',
+            ...(part ? { containerId: finalId, part: part.part } : {})
           });
         }
       } catch (err) {

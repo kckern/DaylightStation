@@ -29,18 +29,46 @@ const makeLogger = () => {
   return l;
 };
 
-const makeApp = ({ items, surroundStore, logger = makeLogger() }) => {
+const makeApp = ({ items, surroundStore, logger = makeLogger(), localId = 'eroica', ...rest }) => {
   const app = express();
   const adapter = { resolvePlayables: vi.fn().mockResolvedValue({ items }) };
   app.use('/api/v1/queue', createQueueRouter({
     contentExpression: { fromQuery: () => ({ options: {} }) },
-    contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: 'eroica' }) },
+    contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId }) },
     queueService: { resolveQueue: vi.fn().mockResolvedValue(items) },
     surroundStore,
-    logger
+    logger,
+    ...rest
   }));
   return app;
 };
+
+// The live container: season plex:696233 composing three étude episodes.
+const SEASON = {
+  id: 'concert-hall',
+  piece: { title: 'Études' },
+  timeline: {
+    totalSounding: 3738,
+    parts: [
+      { contentId: 'plex:696234', index: 0, sounding: 1800 },
+      { contentId: 'plex:696235', index: 1, sounding: 1550 },
+      { contentId: 'plex:696236', index: 2, sounding: 388 }
+    ]
+  }
+};
+
+// Each episode also has a perfectly good standalone sidecar — the thing the
+// container's claim has to beat, and the thing the mismatch refusal must NOT
+// fall back to.
+const seasonStore = () => ({
+  lookup: vi.fn((id) => (id === 'plex:696233' ? SEASON : (id?.startsWith?.('plex:6962') ? PAYLOAD : null)))
+});
+
+const shuffledEpisodes = [
+  makeItem('plex:696235', 'Études, Op. 25'),
+  makeItem('plex:696236', 'Trois nouvelles études'),
+  makeItem('plex:696234', 'Études, Op. 10')
+];
 
 describe('queue router surround attachment', () => {
   const items = [makeItem('plex:663134', 'Beethoven: 3. Sinfonie')];
@@ -97,5 +125,63 @@ describe('queue router surround attachment', () => {
     expect('surround' in res.body.items[2]).toBe(false);
     expect(res.body.items[0]).toEqual(bare.body.items[0]);
     expect(res.body.items[2]).toEqual(bare.body.items[2]);
+  });
+});
+
+describe('queue router container expansion', () => {
+  const get = (opts) => request(makeApp({ localId: '696233', ...opts })).get('/api/v1/queue/plex:696233');
+
+  it('plays a container in its authored order and frames every part with it', async () => {
+    const logger = makeLogger();
+    const res = await get({ items: shuffledEpisodes, surroundStore: seasonStore(), logger });
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((i) => i.contentId))
+      .toEqual(['plex:696234', 'plex:696235', 'plex:696236']);
+    expect(res.body.items.map((i) => i.surroundPart)).toEqual([0, 1, 2]);
+    // The CONTAINER's payload, not each episode's own — both exist.
+    expect(res.body.items.every((i) => i.surround.piece.title === 'Études')).toBe(true);
+
+    const enforced = logger.info.mock.calls.find((c) => c[0] === 'surround.order.enforced');
+    expect(enforced[1]).toMatchObject({ containerId: 'plex:696233', parts: 3, reordered: true });
+  });
+
+  it('refuses to attach a rail when the queue order does not match and enforcement is off', async () => {
+    const logger = makeLogger();
+    const res = await get({
+      items: shuffledEpisodes,
+      surroundStore: seasonStore(),
+      surroundEnforceOrder: false,
+      logger
+    });
+
+    expect(res.status).toBe(200);
+    // A frame with no rail — and specifically NOT each episode's own sidecar,
+    // which the store would happily have supplied.
+    expect(res.body.items.every((i) => i.surround === undefined)).toBe(true);
+    expect(res.body.items.map((i) => i.contentId))
+      .toEqual(['plex:696235', 'plex:696236', 'plex:696234']);
+    const mismatch = logger.warn.mock.calls.find((c) => c[0] === 'surround.order.mismatch');
+    expect(mismatch[1]).toMatchObject({
+      containerId: 'plex:696233',
+      enforceOrder: false,
+      authored: ['plex:696234', 'plex:696235', 'plex:696236'],
+      queued: ['plex:696235', 'plex:696236', 'plex:696234']
+    });
+  });
+
+  it('orders before truncating, so a limited queue keeps the programme\'s first parts', async () => {
+    const app = express();
+    const adapter = { resolvePlayables: vi.fn().mockResolvedValue({ items: shuffledEpisodes }) };
+    app.use('/api/v1/queue', createQueueRouter({
+      contentExpression: { fromQuery: () => ({ options: { limit: '2' } }) },
+      contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '696233' }) },
+      queueService: { resolveQueue: vi.fn().mockResolvedValue(shuffledEpisodes) },
+      surroundStore: seasonStore(),
+      logger: makeLogger()
+    }));
+    const res = await request(app).get('/api/v1/queue/plex:696233');
+
+    expect(res.body.items.map((i) => i.contentId)).toEqual(['plex:696234', 'plex:696235']);
   });
 });

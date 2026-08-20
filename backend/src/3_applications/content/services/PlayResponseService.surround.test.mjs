@@ -25,6 +25,32 @@ const PAYLOAD = {
   assetBase: 'surround/classical'
 };
 
+// The live container case: season plex:696233, second étude episode plex:696235.
+const EPISODE = {
+  id: 'plex:696235',
+  title: 'Études, Op. 25',
+  mediaUrl: '/api/v1/proxy/plex/stream/696235',
+  mediaType: 'video',
+  duration: 2016,
+  resumable: true,
+  metadata: {}
+};
+
+const SEASON_PAYLOAD = {
+  ...PAYLOAD,
+  piece: { title: 'Études' },
+  timeline: {
+    totalSounding: 3738,
+    parts: [
+      { contentId: 'plex:696234', index: 0, sounding: 1800 },
+      { contentId: 'plex:696235', index: 1, sounding: 1550 },
+      { contentId: 'plex:696236', index: 2, sounding: 388 }
+    ]
+  }
+};
+
+const EPISODE_PAYLOAD = { ...PAYLOAD, piece: { title: 'Études, Op. 25' } };
+
 const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn(), child: vi.fn() });
 // The composed logger is a child logger; keep the same spies so assertions see the calls.
 const makeChildLogger = () => {
@@ -65,6 +91,57 @@ describe('PlayResponseService surround attachment', () => {
     expect(store.lookup).toHaveBeenCalled();
     expect(missed).toEqual(bare);
     expect('surround' in missed).toBe(false);
+  });
+
+  it('attaches the container payload to a child item, with its part index', () => {
+    const logger = makeChildLogger();
+    const store = {
+      // The episode HAS its own sidecar; the container's claim must still win,
+      // which is why lookupByPart is asked first rather than as a fallback.
+      lookup: vi.fn().mockReturnValue(EPISODE_PAYLOAD),
+      lookupByPart: vi.fn((id) => (id === 'plex:696235' ? { payload: SEASON_PAYLOAD, part: 1 } : null))
+    };
+    const response = makeService(store, logger)
+      .toPlayResponse(EPISODE, null, { containerId: 'plex:696233' });
+
+    expect(response.surround).toEqual(SEASON_PAYLOAD);
+    expect(response.surroundPart).toBe(1);
+    expect(store.lookup).not.toHaveBeenCalled();
+    const attached = logger.debug.mock.calls.find((c) => c[0] === 'surround.attach');
+    expect(attached[1]).toMatchObject({ containerId: 'plex:696233', part: 1, path: 'play' });
+  });
+
+  it('gives the same episode its own standalone frame when played directly', () => {
+    const store = {
+      lookup: vi.fn().mockReturnValue(EPISODE_PAYLOAD),
+      lookupByPart: vi.fn().mockReturnValue({ payload: SEASON_PAYLOAD, part: 1 })
+    };
+    const response = makeService(store, makeChildLogger()).toPlayResponse(EPISODE);
+
+    expect(response.surround).toEqual(EPISODE_PAYLOAD);
+    expect('surroundPart' in response).toBe(false);
+    expect(store.lookupByPart).not.toHaveBeenCalled();
+  });
+
+  it('does not attach a container payload to an unrelated item', () => {
+    const store = { lookup: () => null, lookupByPart: () => null };
+    const response = makeService(store, makeChildLogger())
+      .toPlayResponse({ id: 'plex:other', title: 'x', metadata: {} }, null, { containerId: 'plex:696233' });
+
+    expect(response.surround).toBeUndefined();
+    expect('surroundPart' in response).toBe(false);
+  });
+
+  it('falls back to the item\'s own sidecar when the container does not claim it', () => {
+    const store = {
+      lookup: vi.fn().mockReturnValue(EPISODE_PAYLOAD),
+      lookupByPart: vi.fn().mockReturnValue(null)
+    };
+    const response = makeService(store, makeChildLogger())
+      .toPlayResponse(EPISODE, null, { containerId: 'plex:696233' });
+
+    expect(response.surround).toEqual(EPISODE_PAYLOAD);
+    expect('surroundPart' in response).toBe(false);
   });
 
   it('still returns a playable response when the store violates its never-throw contract', () => {

@@ -131,6 +131,13 @@ export function createApiRouters(config) {
     logger
   });
 
+  // §5 of the surround design: an enriched container imposes its authored order
+  // over shuffle. The opt-out is `enforceOrder: false` under the household's
+  // `surround` app config; an absent config is the default, so nothing has to be
+  // authored to get the specified behaviour — only to leave it.
+  const surroundEnforceOrder =
+    configService?.getHouseholdAppConfig?.(null, 'surround')?.enforceOrder !== false;
+
   // Create PlayResponseService for play response building and watch state reconciliation
   const playResponseService = new PlayResponseService({ mediaProgressMemory, progressSyncService, progressSyncSources, surroundStore, logger });
 
@@ -149,7 +156,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, economyService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('media/menu-memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, logger }),
+      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, surroundEnforceOrder, logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),
