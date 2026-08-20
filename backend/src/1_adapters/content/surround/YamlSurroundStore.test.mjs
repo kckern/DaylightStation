@@ -59,10 +59,27 @@ describe('YamlSurroundStore exact lookup', () => {
   });
 
   it('leaves movements untouched when a work gains chapters', () => {
+    // Two movements, not one: a single-movement fixture would make offset:0
+    // trivially true for every chapter regardless of whether the rail logic
+    // ran at all. The second movement's offset only lands on 976 if the
+    // sounding-time rail actually accumulated the first movement's duration.
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: Allegro con brio }\n  - { n: 2, name: Marcia funebre }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n'
+      + 'starts: [0, 976]\nmusicEndsAt: 1925\n');
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663134', '');
-    expect(r.movements).toEqual([{ n: 1, name: 'Allegro con brio', start: 0 }]);
-    expect(r.chapters[0]).toMatchObject({ n: 1, name: 'Allegro con brio', start: 0, offset: 0 });
+    expect(r.movements).toEqual([
+      { n: 1, name: 'Allegro con brio', start: 0 },
+      { n: 2, name: 'Marcia funebre', start: 976 }
+    ]);
+    expect(r.chapters[0]).toMatchObject({
+      n: 1, name: 'Allegro con brio', start: 0, end: 976, offset: 0, duration: 976
+    });
+    expect(r.chapters[1]).toMatchObject({
+      n: 2, name: 'Marcia funebre', start: 976, end: 1925, offset: 976, duration: 949
+    });
   });
 
   it('merges _composer.yml under the piece composer block, piece winning per key', () => {
@@ -1130,6 +1147,34 @@ describe('YamlSurroundStore library resolution', () => {
         file: 'classical/beethoven/symphony-3-eroica.yml',
         reasons: expect.arrayContaining(['starts-entry-invalid'])
       }));
+    // `chapters` desugars from the same rawStarts array as `movements`, so it is
+    // just as exposed to a filter-instead-of-map regression. If a bad entry were
+    // ever dropped rather than mapped to undefined, the fourth movement's start
+    // would slide down to index 0 (or the array would run short); a filtering
+    // bug here would silently shift every chapter after the first bad entry.
+    expect(r.chapters.map((c) => c.start)).toEqual([undefined, undefined, undefined, 900]);
+  });
+
+  it('keeps the chapter after a malformed spans entry at its own position', () => {
+    // `spans` is the other timing shape `toSpans` accepts, and it goes through a
+    // separate branch (array-of-pairs, not starts+musicEndsAt). A one-element
+    // entry — an author who wrote a start with no end — is malformed the same
+    // way a bad `starts` value is: if it were filtered out instead of mapped to
+    // {start, end:undefined}, movement 3's span would shift into movement 2's
+    // slot instead of staying at index 2.
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One }\n  - { n: 2, name: Two }\n'
+      + '  - { n: 3, name: Three }\n  - { n: 4, name: Four }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n'
+      + 'spans:\n  - [0, 10]\n  - [20]\n  - [30, 40]\n  - [50, 60]\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    // The malformed entry (movement 2, a one-element pair) keeps its own start
+    // and gets no end. The entries after it — movement 3 and movement 4 — keep
+    // the start authored for their own position, not shifted up.
+    expect(r.chapters.map((c) => c.start)).toEqual([0, 20, 30, 50]);
+    expect(r.chapters[1].end).toBeUndefined();
   });
 
   it('keeps a zero start, which is a valid offset and not a dropped one', () => {

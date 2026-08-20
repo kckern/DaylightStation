@@ -36,4 +36,28 @@ describe('withOffsets', () => {
     expect(out.map((c) => c.offset)).toEqual([0, 5, 5]);
     expect(out[1].duration).toBe(0);
   });
+
+  // A span the store hands in could be malformed in ways that never touch
+  // `toSpans` — a hand-authored `spans:` pair with the numbers backwards, or
+  // reversed by a future caller's arithmetic. The failure mode worth pinning
+  // isn't the degenerate chapter's own duration (that's the easy half); it's
+  // whether it quietly eats into or grants width on the rail, which would
+  // misplace every chapter after it.
+  it('gives an end-before-start span zero duration and does not move the following chapter', () => {
+    const out = withOffsets([{ start: 0, end: 5 }, { start: 20, end: 10 }, { start: 50, end: 60 }]);
+    expect(out[1].duration).toBe(0);
+    expect(out[2].offset).toBe(5);
+  });
+
+  it('gives an end-equals-start span zero duration and does not move the following chapter', () => {
+    const out = withOffsets([{ start: 0, end: 5 }, { start: 10, end: 10 }, { start: 50, end: 60 }]);
+    expect(out[1].duration).toBe(0);
+    expect(out[2].offset).toBe(5);
+  });
+
+  it('gives a start with no end zero duration and does not move the following chapter', () => {
+    const out = withOffsets([{ start: 0, end: 5 }, { start: 10 }, { start: 50, end: 60 }]);
+    expect(out[1].duration).toBe(0);
+    expect(out[2].offset).toBe(5);
+  });
 });
