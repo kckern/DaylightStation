@@ -1642,6 +1642,59 @@ describe('YamlSurroundStore — parts composed by contentId', () => {
     expect(r.piece.title).toBe('Études');
   });
 
+  /**
+   * THE FACTS OF THE WORKS A CONTAINER PLAYS, by slug — the middle rung of the
+   * band's precedence (`frontend/src/modules/Surround/segments.js`, `factPool`).
+   * Without them the polonaise season can only ever print the facts about the
+   * SET while one polonaise is sounding, and the facts that work authored about
+   * itself reach no screen at all.
+   *
+   * MUTATION PROOF: drop the assignment in `#referencedSegments` and this reads
+   *   expected {} to deeply equal { 'chopin/etudes-op-10': [ 'Liszt.' ], … }
+   */
+  it('publishes each part work’s own facts, keyed by the slug its segments carry', () => {
+    writeLib('classical/0_flagship/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Études, Op. 10"\nfacts:\n  - Liszt.\n  - Unplayable.\n'
+      + 'segments:\n  - { n: 1, name: "Op. 10 No. 1" }\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-25.yml',
+      'title: "Études, Op. 25"\nsegments:\n  - { n: 1, name: "Op. 25 No. 1" }\n');
+    writeLib('classical/0_flagship/chopin/etudes.yml',
+      'title: "Études"\nfacts:\n  - About the set.\n'
+      + 'segments:\n  - work: chopin/etudes-op-10\n  - work: chopin/etudes-op-25\n');
+    write('classical/chopin/etudes-op-10.yml',
+      'work: chopin/etudes-op-10\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\n'
+      + 'starts: [0]\nmusicEndsAt: 100\n');
+    write('classical/chopin/etudes-op-25.yml',
+      'work: chopin/etudes-op-25\nsurround: concert-hall\nmatch: { contentId: plex:ep2 }\n'
+      + 'starts: [0]\nmusicEndsAt: 40\n');
+    write('classical/chopin/etudes.season.yml', SEASON);
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    // The key is the slug the SEGMENTS are stamped with, so the frontend joins
+    // on a value it already has.
+    expect(r.segments[0].group.work).toBe('chopin/etudes-op-10');
+    expect(r.groupFacts).toEqual({ 'chopin/etudes-op-10': ['Liszt.', 'Unplayable.'] });
+    // A part that authored no facts gets no entry — an absence and an empty
+    // list mean the same thing to the band, and an empty array on the wire is a
+    // claim the corpus never made.
+    expect(Object.keys(r.groupFacts)).not.toContain('chopin/etudes-op-25');
+    // ...and the container's own facts are untouched beside them.
+    expect(r.facts).toEqual(['About the set.']);
+  });
+
+  /** A piece that composes nothing still has the key, so the shape never moves. */
+  it('gives a single work an empty groupFacts rather than none', () => {
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Études, Op. 10"\nfacts:\n  - Liszt.\nsegments:\n  - { n: 1, name: "Op. 10 No. 1" }\n');
+    write('classical/chopin/etudes-op-10.yml',
+      'work: chopin/etudes-op-10\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\n'
+      + 'starts: [0]\nmusicEndsAt: 100\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:ep1', '').groupFacts).toEqual({});
+  });
+
   it('numbers groups by their position on the composed rail, not on whatever produced them', () => {
     // NO NESTING HERE — two perfectly ordinary part sidecars. Each one's own
     // corpus work uses a segment reference, and `#resolveSegments` counts parts

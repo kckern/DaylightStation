@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { segmentAt } from './segments.js';
+import {
+  segmentAt, factPool, factPools, isComposedContainer,
+} from './segments.js';
 
 const CH = [
   { contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10 },
@@ -129,5 +131,167 @@ describe('segmentAt — dead time and empty input', () => {
   it('reports dead time with globalSeconds 0 for an empty segments list', () => {
     expect(segmentAt({ segments: [], contentId: 'plex:ep1', position: 5 }))
       .toEqual({ index: -1, globalSeconds: 0 });
+  });
+});
+
+/* ========================================================================== */
+/* THE FACT POOL — what the band talks about while one work of a set plays     */
+/* ========================================================================== */
+
+/**
+ * The live shape, reduced: the polonaise season (`plex:696237`) is seven media
+ * items, one work each, every work carrying facts of its own, under a container
+ * work that carries eight. Field for field this is what
+ * `YamlSurroundStore#composeOne` publishes for it.
+ */
+const SET = {
+  timeline: { totalSounding: 60, parts: [{ index: 0 }, { index: 1 }] },
+  segments: [
+    {
+      contentId: 'plex:696238', offset: 0, duration: 30,
+      name: 'Polonaise in C-sharp minor, Op. 26 No. 1',
+      group: { index: 0, work: 'chopin/polonaise-op-26-no-1', title: 'Polonaise No. 1…' }
+    },
+    {
+      contentId: 'plex:696243', offset: 30, duration: 30,
+      name: 'Polonaise in A-flat major, Op. 53',
+      group: { index: 1, work: 'chopin/polonaise-op-53', title: 'Polonaise No. 6…' }
+    }
+  ],
+  groupFacts: {
+    'chopin/polonaise-op-26-no-1': ['A bare octave opens it.'],
+    'chopin/polonaise-op-53': ['The Heroic nickname is not Chopin’s.', 'Published in December 1843.']
+  },
+  facts: ['The polonaise is a Polish processional dance in triple time.']
+};
+
+describe('factPool — the segment, then its work, then the set', () => {
+  /**
+   * TO GO RED: drop the `note` rung — the pool falls through to the group's
+   * facts and the assertion reads
+   *   expected [ 'The Heroic nickname…', 'Published…' ] to deeply equal [ 'The trio is in E major.' ]
+   */
+  it('prefers the segment’s own note to everything else', () => {
+    const noted = {
+      ...SET,
+      segments: [SET.segments[0], { ...SET.segments[1], note: 'The trio is in E major.' }]
+    };
+    expect(factPool(noted, 1)).toEqual(['The trio is in E major.']);
+  });
+
+  /**
+   * TO GO RED: drop the `groupFacts` rung — the pool falls through to the
+   * container's single fact instead of the two the Heroic authored.
+   */
+  it('falls to the facts of the work the segment belongs to', () => {
+    expect(factPool(SET, 1))
+      .toEqual(['The Heroic nickname is not Chopin’s.', 'Published in December 1843.']);
+    expect(factPool(SET, 0)).toEqual(['A bare octave opens it.']);
+  });
+
+  /** TO GO RED: return [] rather than the container's facts at the bottom. */
+  it('falls to the container’s own facts when the work authored none', () => {
+    const orphan = { ...SET, groupFacts: {} };
+    expect(factPool(orphan, 1))
+      .toEqual(['The polonaise is a Polish processional dance in triple time.']);
+  });
+
+  /**
+   * Nothing is sounding — the applause between two polonaises. The set is the
+   * only subject the band still has.
+   * TO GO RED: index -1 into `segments` (or coerce it to 0), and the pool
+   * becomes the first work's facts while its music is not playing.
+   */
+  it('gives the set’s facts when nothing is sounding', () => {
+    expect(factPool(SET, -1)).toEqual(SET.facts);
+  });
+
+  /**
+   * A rung with nothing in it is an ABSENCE, not an empty answer.
+   * TO GO RED: test `note !== undefined` instead of "has text" — a whitespace
+   * note then wins and the register goes blank for the length of a work.
+   */
+  it('treats a blank note and an empty fact list as absences', () => {
+    const blank = {
+      ...SET,
+      segments: [SET.segments[0], { ...SET.segments[1], note: '   ' }],
+      groupFacts: { 'chopin/polonaise-op-53': [] }
+    };
+    expect(factPool(blank, 1)).toEqual(SET.facts);
+  });
+
+  it('survives a payload with no rail, no groups and no facts', () => {
+    expect(factPool(null, 0)).toEqual([]);
+    expect(factPool({ segments: 'nope', facts: 'nope' }, 0)).toEqual([]);
+  });
+});
+
+/**
+ * THE FIT IS A CONSTANT OF THE PIECE. `fit.js` solves the band's type once,
+ * against every string either register can ever show; if the piece register's
+ * pool changes at a part boundary, the union is what has to be measured.
+ */
+describe('factPools — every pool the piece register can reach', () => {
+  /**
+   * TO GO RED: measure only the sounding pool (`factPool(data, index)`) — the
+   * union loses the other six works' facts, the band re-solves its type at
+   * every part boundary, and this reads
+   *   expected [ 'The Heroic…', 'Published…' ] to contain 'A bare octave opens it.'
+   */
+  it('unions every segment’s pool with the set’s own facts', () => {
+    const noted = {
+      ...SET,
+      segments: [{ ...SET.segments[0], note: 'A bare octave.' }, SET.segments[1]]
+    };
+    expect(factPools(noted)).toEqual([
+      'A bare octave.',
+      'The Heroic nickname is not Chopin’s.',
+      'Published in December 1843.',
+      'The polonaise is a Polish processional dance in triple time.'
+    ]);
+  });
+
+  it('de-duplicates a fact two works share, keeping rail order', () => {
+    const shared = {
+      ...SET,
+      groupFacts: {
+        'chopin/polonaise-op-26-no-1': ['Written in exile.'],
+        'chopin/polonaise-op-53': ['Written in exile.', 'Published in December 1843.']
+      }
+    };
+    expect(factPools(shared)).toEqual([
+      'Written in exile.',
+      'Published in December 1843.',
+      'The polonaise is a Polish processional dance in triple time.'
+    ]);
+  });
+});
+
+/**
+ * THE GATE. Everything above changes what the band says while a work plays, and
+ * it must reach containers ONLY — a single work's segments carry notes too (the
+ * Eroica authors one per movement), and following them there would replace that
+ * symphony's fourteen facts with one line about the funeral march.
+ */
+describe('isComposedContainer — several media items, one rail', () => {
+  it('is true for a rail composed from more than one part', () => {
+    expect(isComposedContainer(SET)).toBe(true);
+  });
+
+  /**
+   * The Eroica: four segments, one media item, one part.
+   * TO GO RED: count SEGMENTS rather than PARTS — the Eroica then reads as a
+   * container and its piece register follows its movement notes.
+   */
+  it('is false for a single work with four movements', () => {
+    expect(isComposedContainer({
+      timeline: { totalSounding: 2933.65, parts: [{ contentId: 'plex:663134', index: 0 }] },
+      segments: [{ n: 1 }, { n: 2 }, { n: 3 }, { n: 4 }]
+    })).toBe(false);
+  });
+
+  it('is false for a payload with no rail at all', () => {
+    expect(isComposedContainer({ timeline: { parts: [{}, {}] }, segments: [] })).toBe(false);
+    expect(isComposedContainer(null)).toBe(false);
   });
 });

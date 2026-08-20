@@ -68,6 +68,7 @@ import {
   PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
   PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
+import { factPools, isComposedContainer, segmentAt } from './segments.js';
 import { smartQuotes } from './typography.js';
 import { smartQuotesAll } from './typography.js';
 import './builtins.js';
@@ -384,6 +385,73 @@ const NOCTURNES = Object.freeze({
 /** Nocturne 9 is sounding: mid-rail, so both halves of the rail are compressed. */
 const NOCTURNE_POSITION = 2700;
 
+/**
+ * THE POLONAISE SEASON (`plex:696237`), verbatim in shape from this branch's
+ * store run against the production data volume: seven media items, one work
+ * each, every segment stamped with the work that performs it and every work
+ * carrying facts of its own under a container that carries eight.
+ *
+ * It is here because it is the payload the PLATE changed for. The two shipped
+ * pieces above are single works, so their plates are the plate that always
+ * shipped; this is the one where the headline is a segment name, the set line
+ * exists at all, and the plate's type is fitted rather than fixed.
+ */
+const POLONAISE_NAMES = Object.freeze([
+  ['Polonaise in C-sharp minor, Op. 26 No. 1', 'plex:696238', 447, 'chopin/polonaise-op-26-no-1'],
+  ['Polonaise in E-flat minor, Op. 26 No. 2', 'plex:696239', 481, 'chopin/polonaise-op-26-no-2'],
+  ['Polonaise in A major, Op. 40 No. 1', 'plex:696240', 334, 'chopin/polonaise-op-40-no-1'],
+  ['Polonaise in C minor, Op. 40 No. 2', 'plex:696241', 497, 'chopin/polonaise-op-40-no-2'],
+  ['Polonaise in F-sharp minor, Op. 44', 'plex:696242', 618, 'chopin/polonaise-op-44'],
+  ['Polonaise in A-flat major, Op. 53', 'plex:696243', 449, 'chopin/polonaise-op-53'],
+  ['Polonaise-fantaisie in A-flat major, Op. 61', 'plex:696244', 730, 'chopin/polonaise-op-61'],
+]);
+
+const POLONAISES = Object.freeze({
+  id: 'concert-hall',
+  // The item ON SCREEN is the sixth part — a container is played one media item
+  // at a time, and the frame stamps the playing item's id onto the payload.
+  contentId: 'plex:696243',
+  definition: DEFINITION,
+  assetBase: 'library/classical',
+  piece: {
+    title: 'Polonaises',
+    short_title: "Chopin's Polonaises",
+    composed: '1835-1846',
+    year: 1846,
+    period: 'Romantic',
+  },
+  composer: {
+    name: 'Frédéric Chopin', born: 1810, died: 1849, birthplace: 'Żelazowa Wola', period: 'Romantic',
+    facts: ['Chopin left Poland at twenty and never went back.'],
+  },
+  // The container work's own list: seven entries with no timings, which is what
+  // the live payload carries and why the band does not split on this piece.
+  pieceSegments: [],
+  cues: [],
+  segments: POLONAISE_NAMES.map(([name, contentId, duration, work], i) => ({
+    n: i + 1,
+    name,
+    contentId,
+    part: i,
+    offset: POLONAISE_NAMES.slice(0, i).reduce((n, [, , d]) => n + d, 0),
+    duration,
+    start: 0,
+    end: duration,
+    group: { index: i, work, title: name },
+  })),
+  timeline: {
+    totalSounding: POLONAISE_NAMES.reduce((n, [, , d]) => n + d, 0),
+    parts: POLONAISE_NAMES.map(([, contentId, sounding], index) => ({ contentId, index, sounding })),
+  },
+  groupFacts: Object.fromEntries(POLONAISE_NAMES.map(([, , , work]) => [work, [
+    `A fact the corpus authored about ${work.split('/').pop()}, long enough to be a real programme note rather than a label.`,
+  ]])),
+  facts: ['The polonaise is a Polish processional dance in triple time — walked, not danced.'],
+});
+
+/** 200 seconds into the SIXTH polonaise's own file — the Heroic is sounding. */
+const POLONAISE_POSITION = 200;
+
 /** The two pieces this frame actually ships, by the name the failure prints. */
 const SHIPPED = Object.freeze([
   { piece: "Beethoven's Eroica", data: EROICA_FULL, sounding: 1200 },
@@ -400,7 +468,11 @@ const SHIPPED = Object.freeze([
  */
 const poolsFor = (data) => {
   const raw = bandPools({
-    facts: data.facts,
+    // THE UNION ON A CONTAINER, exactly as `CueTicker` derives it: the piece
+    // register's pool follows the sounding work, so what the fit is solved
+    // against is every pool it can reach. On a single work the two are the same
+    // list, which is why both shipped pieces above are unaffected.
+    facts: isComposedContainer(data) ? factPools(data) : data.facts,
     segments: placedSegments(data.pieceSegments).map((p) => p.segment),
     cues: data.cues,
   });
@@ -457,9 +529,10 @@ async function injectFit(page) {
     .replace(/^export default .*$/m, '')
     .replace(/^export /gm, '');
   await page.addScriptTag({
-    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, proseFloorPx, proseCeilingPx, rootWidthOf, PROSE_FLOOR_ANCHOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
+    content: `${src}\nwindow.__fit = { fitBand, fitStyle, fitPlate, plateStyle, withheldPlate, bandPools, withhold, withheldSets, proseFloorPx, proseCeilingPx, rootWidthOf, PROSE_FLOOR_ANCHOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
   });
-  const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function');
+  const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function'
+    && typeof window.__fit?.fitPlate === 'function');
   expect(ok, 'fit.js did not load into the page — the injection stripped something it needed').toBe(true);
 }
 
@@ -1997,4 +2070,159 @@ describe('the band, measured against the shipped stylesheet', () => {
       `at ${name} the note reads ${contrast.onBand}:1 against the band's own ground`,
     ).toBeGreaterThanOrEqual(4.5);
   }, 90000);
+  /**
+   * ============================================================================
+   * THE PLATE, ON A CONTAINER — measured
+   * ============================================================================
+   *
+   * The one surface this wave changed that no arithmetic can check: the plate's
+   * headline is now a SEGMENT name, its type is sized by a search whose every
+   * step is a measurement, and the cap it is measured against is
+   * `86% of the MEASURED video` — a value that only becomes a length once the
+   * frame has measured the media box. All three of those are layout, so all
+   * three are asserted here, in Chromium, against the compiled stylesheet and
+   * the vendored Cormorant.
+   *
+   * EFFECT 5 — `WorkPlacard`'s fit, reproduced by calling it, exactly as the
+   * ticker's is above: the component solves `fitPlate(root, names)` in a layout
+   * effect and publishes what it returns as one custom property, and both
+   * halves happen here with the SAME functions.
+   */
+  describe('the polonaise season — the plate names what is playing', () => {
+    const plateAt = async ({ width, height, position }) => {
+      await layout(page, css, { width, height, data: POLONAISES, position });
+      return page.evaluate(({ names }) => {
+        const root = document.querySelector('[data-testid="surround-work-placard"]');
+        if (!root) return { error: 'no plate' };
+        const solved = window.__fit.fitPlate(root, names);
+        if (solved) {
+          const style = window.__fit.plateStyle(solved);
+          Object.entries(style).forEach(([k, v]) => root.style.setProperty(k, v));
+        }
+        const title = root.querySelector('[data-testid="surround-placard-title"]');
+        const set = root.querySelector('[data-testid="surround-placard-set"]');
+        const px = (el) => Number(el.getBoundingClientRect().height.toFixed(2));
+        return {
+          fit: solved && {
+            fontPx: solved.fontPx, availPx: solved.availPx, rejected: solved.rejected.length,
+          },
+          title: title.textContent,
+          set: set?.textContent ?? null,
+          // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's
+          // full single-line width whatever the box is currently showing, so
+          // this is the ellipsis, measured.
+          cutPx: Number((title.scrollWidth - title.clientWidth).toFixed(2)),
+          plateHeight: px(root),
+          titleHeight: px(title),
+          setHeight: set ? px(set) : null,
+          plateWidth: Number(root.getBoundingClientRect().width.toFixed(2)),
+        };
+      }, { names: POLONAISES.segments.map((m) => smartQuotes(m.name)) });
+    };
+
+    /**
+     * TO GO RED: headline `piece.title` — the plate reads "Polonaises" for
+     * fifty-nine minutes and names none of the seven works it plays.
+     */
+    it.each(FLEET)('$name — headlines the sounding polonaise, over the set', async ({ width, height }) => {
+      const plate = await plateAt({ width, height, position: POLONAISE_POSITION });
+      expect(plate.title).toBe('Polonaise in A-flat major, Op. 53');
+      expect(plate.set).toBe('Chopin’s Polonaises·6 of 7');
+    }, 60000);
+
+    /**
+     * THE CAP IS A LENGTH BY THE TIME THE FIT ASKS. Until the frame publishes
+     * `--surround-media-w` the plate's `max-width` computes to a PERCENTAGE,
+     * and reading "86%" as 86 pixels would refuse every name on the rail. The
+     * fit declines to answer in that state and the component retries; this
+     * asserts that the answer, once it comes, is measured against the real cap.
+     *
+     * TO GO RED: drop the `px` guard in `plateZone` — `availPx` comes back at
+     * 22 (86 minus the plate's padding) and every name is rejected.
+     */
+    it.each(FLEET)('$name — measures against the video’s cap, and sets every name whole', async ({ width, height }) => {
+      const plate = await plateAt({ width, height, position: POLONAISE_POSITION });
+      expect(plate.fit, 'the plate was never fitted at all').not.toBeNull();
+      expect(
+        plate.fit.availPx,
+        `the plate was fitted against ${plate.fit.availPx}px of cap on a ${width}px root — `
+        + 'the cap was read before the video was measured',
+      ).toBeGreaterThan(width * 0.4);
+      expect(
+        plate.fit.rejected,
+        `the fit refused ${plate.fit.rejected} of the seven polonaise names at `
+        + `${plate.fit.fontPx}px against ${plate.fit.availPx}px`,
+      ).toBe(0);
+      // ...and nothing is cut on the screen, which is the claim the fit exists
+      // to make good. `cutPx` is the string's own width minus the box it was
+      // given: zero is the law.
+      expect(
+        plate.cutPx,
+        `the headline overflows its box by ${plate.cutPx}px at ${plate.fit.fontPx}px — `
+        + 'the ellipsis is doing the fit\'s job',
+      ).toBeLessThanOrEqual(0);
+    }, 60000);
+
+    /**
+     * THE RESERVED-HEIGHT LAW, on the plate. The type is solved against every
+     * name on the rail, so it is a constant of the SET; the set line is
+     * rendered blank rather than removed where nothing is sounding. Both
+     * together mean the plate is exactly as tall in the sixth polonaise, in the
+     * first, and in the applause between two of them.
+     *
+     * TO GO RED: make the set line conditional on there being a segment, or fit
+     * the plate to the sounding name alone — the plate's height then changes
+     * between the three states below.
+     */
+    it('1280x720 — the plate does not change height as the set moves', async () => {
+      const heights = [];
+      // The sixth polonaise, the first polonaise, and the dead time after the
+      // sixth has finished (its own file runs 449s; 600 is past the end).
+      for (const position of [POLONAISE_POSITION, 100, 600]) {
+        // eslint-disable-next-line no-await-in-loop
+        heights.push(await plateAt({ width: 1280, height: 720, position }));
+      }
+      const [sounding, first, dead] = heights;
+      expect(first.plateHeight, `${first.plateHeight} against ${sounding.plateHeight}`)
+        .toBe(sounding.plateHeight);
+      expect(
+        dead.plateHeight,
+        `the plate is ${dead.plateHeight}px tall with nothing sounding and `
+        + `${sounding.plateHeight}px with the Heroic playing — the set line was removed rather `
+        + 'than blanked',
+      ).toBe(sounding.plateHeight);
+      // The blank line is BLANK, not absent: same box, no words.
+      expect(dead.setHeight).toBe(sounding.setHeight);
+      expect(dead.set.trim()).toBe('');
+      expect(dead.title).toBe('Polonaises');
+    }, 90000);
+
+    /**
+     * AND THE EROICA'S PLATE IS UNTOUCHED — the regression this wave promised,
+     * in pixels rather than in markup. A single work has no set line and no
+     * fitted type, so its plate is the plate that shipped.
+     */
+    it.each(FLEET)('$name — a single work’s plate carries no set line', async ({ width, height }) => {
+      await layout(page, css, { width, height, data: EROICA_FULL, position: 1200 });
+      const plate = await page.evaluate(() => {
+        const root = document.querySelector('[data-testid="surround-work-placard"]');
+        const title = root.querySelector('[data-testid="surround-placard-title"]');
+        return {
+          set: root.querySelector('[data-testid="surround-placard-set"]'),
+          probe: root.querySelector('.surround-work-placard__probe'),
+          title: title.textContent,
+          fontPx: Number(parseFloat(getComputedStyle(title).fontSize).toFixed(2)),
+          lineHeightPx: Number(parseFloat(getComputedStyle(title).lineHeight).toFixed(2)),
+        };
+      });
+      expect(plate.set, 'a single work grew a set line').toBeNull();
+      expect(plate.probe, 'a single work grew a ruler nothing measures').toBeNull();
+      expect(plate.title).toBe('Symphony No. 3 in E-flat major, “Eroica”');
+      // 2.05rem at the frame's 16px root, and a line box of 1.12 of it — the
+      // two numbers the stylesheet has set since design wave 4, unchanged by
+      // the ceiling and the reserve this wave expressed them through.
+      expect(plate.fontPx).toBe(32.8);
+      expect(plate.lineHeightPx).toBeCloseTo(32.8 * 1.12, 1);
+    }, 60000);
+  });
 });

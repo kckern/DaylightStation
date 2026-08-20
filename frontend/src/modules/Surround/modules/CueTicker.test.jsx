@@ -1595,57 +1595,64 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
  * the trial size, lines times the trial leading) installed on the prototype for
  * the length of the case and removed after.
  */
-describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)', () => {
-  const ORIGINAL_RECT = Element.prototype.getBoundingClientRect;
-  let restore = null;
+/**
+ * THE RULER, hoisted (this wave). Two blocks need it now — the fit's refusals
+ * below, and the container's fact pools above them — and one stand-in for
+ * layout that both install is one place for it to be honest about being a
+ * model. Installed for the length of a case and removed after.
+ */
+const ORIGINAL_RECT = Element.prototype.getBoundingClientRect;
+let restore = null;
 
-  /** A monotone stand-in for layout. See the block comment above. */
-  const withRuler = ({ roomPx, widthPx, emPerChar = 0.46 }) => {
-    const isBox = (el) => el?.classList?.contains('surround-cue-ticker__text');
-    const isProbe = (el) => el?.classList?.contains('surround-cue-ticker__probe');
-    // The DOM implementation decides which prototype in the chain owns
-    // `clientHeight`; patching the wrong one is silently shadowed by the right
-    // one, so the owner is found rather than assumed.
-    const ownerOf = (prop) => {
-      let proto = HTMLElement.prototype;
-      while (proto && !Object.getOwnPropertyDescriptor(proto, prop)) {
-        proto = Object.getPrototypeOf(proto);
-      }
-      return proto || HTMLElement.prototype;
-    };
-    const defs = ['clientHeight', 'clientWidth'].map((prop) => {
-      const owner = ownerOf(prop);
-      const prev = Object.getOwnPropertyDescriptor(owner, prop);
-      Object.defineProperty(owner, prop, {
-        configurable: true,
-        get() {
-          if (isBox(this)) return prop === 'clientHeight' ? roomPx : widthPx;
-          return prev?.get ? prev.get.call(this) : 0;
-        },
-      });
-      return [prop, prev, owner];
+/** A monotone stand-in for layout. See the block comment above. */
+const withRuler = ({ roomPx, widthPx, emPerChar = 0.46 }) => {
+  const isBox = (el) => el?.classList?.contains('surround-cue-ticker__text');
+  const isProbe = (el) => el?.classList?.contains('surround-cue-ticker__probe');
+  // The DOM implementation decides which prototype in the chain owns
+  // `clientHeight`; patching the wrong one is silently shadowed by the right
+  // one, so the owner is found rather than assumed.
+  const ownerOf = (prop) => {
+    let proto = HTMLElement.prototype;
+    while (proto && !Object.getOwnPropertyDescriptor(proto, prop)) {
+      proto = Object.getPrototypeOf(proto);
+    }
+    return proto || HTMLElement.prototype;
+  };
+  const defs = ['clientHeight', 'clientWidth'].map((prop) => {
+    const owner = ownerOf(prop);
+    const prev = Object.getOwnPropertyDescriptor(owner, prop);
+    Object.defineProperty(owner, prop, {
+      configurable: true,
+      get() {
+        if (isBox(this)) return prop === 'clientHeight' ? roomPx : widthPx;
+        return prev?.get ? prev.get.call(this) : 0;
+      },
     });
-    Element.prototype.getBoundingClientRect = function rect() {
-      if (!isProbe(this)) return ORIGINAL_RECT.call(this);
-      const size = parseFloat(this.style.fontSize) || 16;
-      const leading = parseFloat(this.style.lineHeight) || 1.35;
-      const box = parseFloat(this.style.width) || widthPx;
-      const perLine = Math.max(1, Math.floor(box / (emPerChar * size)));
-      const lines = Math.max(1, Math.ceil((this.textContent?.length ?? 0) / perLine));
-      const height = lines * size * leading;
-      return {
-        width: box, height, top: 0, left: 0, right: box, bottom: height, x: 0, y: 0,
-      };
-    };
-    restore = () => {
-      defs.forEach(([prop, prev, owner]) => {
-        if (prev) Object.defineProperty(owner, prop, prev);
-        else delete owner[prop];
-      });
-      Element.prototype.getBoundingClientRect = ORIGINAL_RECT;
+    return [prop, prev, owner];
+  });
+  Element.prototype.getBoundingClientRect = function rect() {
+    if (!isProbe(this)) return ORIGINAL_RECT.call(this);
+    const size = parseFloat(this.style.fontSize) || 16;
+    const leading = parseFloat(this.style.lineHeight) || 1.35;
+    const box = parseFloat(this.style.width) || widthPx;
+    const perLine = Math.max(1, Math.floor(box / (emPerChar * size)));
+    const lines = Math.max(1, Math.ceil((this.textContent?.length ?? 0) / perLine));
+    const height = lines * size * leading;
+    return {
+      width: box, height, top: 0, left: 0, right: box, bottom: height, x: 0, y: 0,
     };
   };
+  restore = () => {
+    defs.forEach(([prop, prev, owner]) => {
+      if (prev) Object.defineProperty(owner, prop, prev);
+      else delete owner[prop];
+    });
+    Element.prototype.getBoundingClientRect = ORIGINAL_RECT;
+  };
+};
 
+
+describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)', () => {
   afterEach(() => { restore?.(); restore = null; });
 
   /** A tight band: two lines of room at the fit's own size floor. */
@@ -1739,5 +1746,229 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
     const view = mount(500);
     expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').textContent)
       .toContain('Beethoven puts a death');
+  });
+});
+
+/* ========================================================================== */
+/* THE PIECE REGISTER FOLLOWS THE WORK THAT IS SOUNDING (container rails)      */
+/* ========================================================================== */
+
+/**
+ * The polonaise season, reduced to two parts. The container's own
+ * `pieceSegments` are the work's seven `movements:` entries with no timings —
+ * exactly what the live payload carries — so the band does NOT split here, and
+ * the register under test is the only one there is.
+ */
+const SET_DATA = {
+  contentId: 'plex:696238',
+  piece: { title: 'Polonaises', short_title: "Chopin's Polonaises" },
+  timeline: { totalSounding: 896, parts: [{ index: 0 }, { index: 1 }] },
+  pieceSegments: [],
+  cues: [],
+  segments: [
+    {
+      n: 1, name: 'Polonaise in C-sharp minor, Op. 26 No. 1', contentId: 'plex:696238',
+      part: 0, offset: 0, duration: 447, start: 0, end: 447,
+      group: { index: 0, work: 'chopin/polonaise-op-26-no-1', title: 'Polonaise No. 1…' },
+    },
+    {
+      n: 6, name: 'Polonaise in A-flat major, Op. 53', contentId: 'plex:696243',
+      part: 1, offset: 447, duration: 449, start: 0, end: 449,
+      group: { index: 1, work: 'chopin/polonaise-op-53', title: 'Polonaise No. 6…' },
+    },
+  ],
+  groupFacts: {
+    'chopin/polonaise-op-26-no-1': ['A bare octave leap opens it.', 'Op. 26 was the first pair he published.'],
+    'chopin/polonaise-op-53': ['The Heroic nickname is not Chopin’s.', 'Published in December 1843.'],
+  },
+  facts: ['The polonaise is a Polish processional dance in triple time.'],
+};
+
+const mountSet = (data, contentId, position) => render(
+  <CueTicker
+    position={position} duration={449} playing seeking={false}
+    data={{ ...data, contentId }} region={{ module: 'cue-ticker' }} logger={makeLogger()}
+  />,
+);
+
+describe('CueTicker — the facts follow the segment', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const line = (view) => view.container
+    .querySelector('[data-testid="surround-ticker-text"]').textContent;
+
+  /**
+   * TO GO RED: read `data.facts` directly, as the register did before this
+   * wave — the band talks about the set for fifty-nine minutes and this reads
+   *   expected 'The polonaise is a Polish processional dance in triple time.'
+   *   to be 'The Heroic nickname is not Chopin’s.'
+   */
+  it('rotates the facts of the work that is sounding, not the set’s', () => {
+    expect(line(mountSet(SET_DATA, 'plex:696243', 200)))
+      .toBe('The Heroic nickname is not Chopin’s.');
+    expect(line(mountSet(SET_DATA, 'plex:696238', 100)))
+      .toBe('A bare octave leap opens it.');
+  });
+
+  /** The segment's own note outranks its work's facts. */
+  it('prefers a segment’s own note where the corpus authored one', () => {
+    const noted = {
+      ...SET_DATA,
+      segments: [
+        SET_DATA.segments[0],
+        { ...SET_DATA.segments[1], note: 'The trio is in E major, a remote shift.' },
+      ],
+    };
+    expect(line(mountSet(noted, 'plex:696243', 200)))
+      .toBe('The trio is in E major, a remote shift.');
+  });
+
+  /** Nothing sounding — between two works, the set is the only subject left. */
+  it('falls back to the set’s facts when no segment is sounding', () => {
+    expect(line(mountSet(SET_DATA, 'plex:696243', 900)))
+      .toBe('The polonaise is a Polish processional dance in triple time.');
+  });
+
+  /**
+   * THE POOL SWAP IS THE HOUSE DISSOLVE, not a second choreography: out, a beat
+   * of empty ground, then in. The register is HIDDEN for the fade-out and the
+   * old work's fact is still the one on screen until the commit.
+   *
+   * TO GO RED: give the payload a key that ignores its text (the `fact:{index}`
+   * key of wave 8) — the dissolve sees the same key, plays nothing, and the
+   * first assertion fails with `expected false to be true`.
+   */
+  it('swaps the pool through the house dissolve, and opens it at its first fact', () => {
+    const props = (contentId, position) => ({
+      position,
+      duration: 449,
+      playing: true,
+      seeking: false,
+      data: { ...SET_DATA, contentId },
+      region: { module: 'cue-ticker' },
+      logger: makeLogger(),
+    });
+    const view = render(<CueTicker {...props('plex:696238', 100)} />);
+    const text = () => view.container.querySelector('[data-testid="surround-ticker-text"]');
+    expect(text().textContent).toBe('A bare octave leap opens it.');
+
+    // Let the first work's rotation move OFF its first fact, so "opens at the
+    // first fact" is a claim about the new pool rather than about index 0
+    // never having moved.
+    act(() => { vi.advanceTimersByTime(FACT_INTERVAL_MS); });
+    act(() => { vi.advanceTimersByTime(CUE_SWAP_MS); });
+    expect(text().textContent).toBe('Op. 26 was the first pair he published.');
+
+    // The transport moves into the second polonaise.
+    act(() => { view.rerender(<CueTicker {...props('plex:696243', 200)} />); });
+    expect(text().className.includes('surround-cue-ticker__text--hidden')).toBe(true);
+    expect(text().textContent, 'the new pool arrived without a dissolve')
+      .toBe('Op. 26 was the first pair he published.');
+
+    act(() => { vi.advanceTimersByTime(CUE_FADE_MS + CUE_HOLD_MS); });
+    act(() => { vi.advanceTimersByTime(CUE_FADE_MS); });
+    expect(text().textContent).toBe('The Heroic nickname is not Chopin’s.');
+    expect(text().className.includes('surround-cue-ticker__text--hidden')).toBe(false);
+  });
+});
+
+/**
+ * THE GATE, on the payload it exists for.
+ *
+ * The Eroica is FOUR segments in ONE media item, and two of them carry an
+ * authored `note` — which the store already docks as a timed cue at its own
+ * second. A register that followed the segment on any payload with segments
+ * would replace that symphony's programme facts with one line about the funeral
+ * march, and print it twice over when the cue fired.
+ */
+describe('CueTicker — one media item is not a container', () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  const EROICA = {
+    contentId: 'plex:663134',
+    piece: { title: 'Symphony No. 3', musicEndsAt: 2955 },
+    timeline: { totalSounding: 2933.65, parts: [{ contentId: 'plex:663134', index: 0 }] },
+    pieceSegments: [],
+    cues: [],
+    segments: [
+      {
+        n: 1, name: 'Allegro con brio', contentId: 'plex:663134', part: 0,
+        offset: 0, duration: 954.65, start: 21.35, end: 976,
+      },
+      {
+        n: 2, name: 'Marcia funebre', note: 'The funeral march.', contentId: 'plex:663134',
+        part: 0, offset: 954.65, duration: 949, start: 976, end: 1925,
+      },
+    ],
+    facts: ['Beethoven tore the page.', 'The premiere ran over two hours.'],
+  };
+
+  /**
+   * TO GO RED: drop `isComposedContainer` from the pool's index — the register
+   * shows 'The funeral march.' at 1200s and this fails with
+   *   expected 'The funeral march.' to be 'Beethoven tore the page.'
+   */
+  it('keeps the work’s own facts through a movement that has a note', () => {
+    const view = render(
+      <CueTicker
+        position={1200} duration={3223} playing seeking={false}
+        data={EROICA} region={{ module: 'cue-ticker' }} logger={makeLogger()}
+      />,
+    );
+    expect(view.container.querySelector('[data-testid="surround-ticker-text"]').textContent)
+      .toBe('Beethoven tore the page.');
+  });
+});
+
+/**
+ * THE FIT IS STILL A CONSTANT OF THE PIECE — the reserved-height law, on the
+ * one thing this wave made variable. The type is solved against every pool the
+ * register can reach, so moving from one work to the next cannot resize the
+ * band.
+ */
+describe('CueTicker — a pool swap does not resize the band', () => {
+  afterEach(() => { restore?.(); restore = null; });
+
+  const LONG = 'The central left-hand octaves drive downward at speed for page after page, turning the piano into a full marching force and asking of the hand a passage that pianists have measured themselves against ever since.';
+
+  const DATA = {
+    ...SET_DATA,
+    groupFacts: {
+      'chopin/polonaise-op-26-no-1': ['A bare octave leap opens it.'],
+      'chopin/polonaise-op-53': [LONG],
+    },
+  };
+
+  const sizeAt = (contentId, position) => {
+    const view = render(
+      <CueTicker
+        position={position} duration={449} playing seeking={false}
+        data={{ ...DATA, contentId }} region={{ module: 'cue-ticker' }} logger={makeLogger()}
+      />,
+    );
+    const root = view.container.querySelector('[data-testid="surround-cue-ticker"]');
+    const size = root.style.getPropertyValue('--note-size');
+    view.unmount();
+    return size;
+  };
+
+  /**
+   * TO GO RED: measure only the sounding pool (`bandPools({ facts })` with the
+   * rotating pool instead of the union) — the first polonaise's band is solved
+   * for one short fact and the sixth's for a 208-character one, so the two come
+   * back at different sizes and the band resizes mid-programme.
+   */
+  it('solves one size for every pool the register can reach', () => {
+    withRuler({ roomPx: 6 * PROSE_FLOOR_ANCHOR_PX * 1.3, widthPx: 420 });
+    const first = sizeAt('plex:696238', 100);
+    const sixth = sizeAt('plex:696243', 200);
+    expect(first, 'the band was not fitted at all — the ruler is not installed').not.toBe('');
+    expect(
+      sixth,
+      `the band is set at ${first} while the first polonaise plays and ${sixth} while the `
+      + 'sixth does — the type resizes at a part boundary',
+    ).toBe(first);
   });
 });

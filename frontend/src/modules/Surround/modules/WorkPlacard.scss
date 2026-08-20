@@ -37,13 +37,67 @@
    the loudest type in the frame — louder than the composer's brass, which is
    right, because the plate names what is SOUNDING. The nowrap+ellipsis below
    stays as the guard for a title nothing could set on one line at the cap. */
+/* THE SIZE IS THE FIT'S, THE CEILING IS THIS ONE. `--plate-size` is published
+   by `fit.js` (`plateStyle`) on a container's plate, where the headline is a
+   segment name that changes every few minutes; everywhere else the property is
+   unset and the fallback — the 2.05rem this plate has always been set in — is
+   what renders, so an unfitted plate is pixel-for-pixel the plate that shipped.
+
+   THE LINE BOX IS RESERVED AT THE CEILING, which is why the leading is written
+   as a length rather than as the bare 1.12 it used to be. `2.05rem * 1.12` is
+   exactly what `line-height: 1.12` computed to at the unfitted size, so nothing
+   moves on a plate that is not fitted — and on one that is, the box keeps the
+   ceiling's height whatever size the ladder settles on, so the plate cannot
+   change height under a viewer when the fit lands a frame after mount. */
 .surround-work-placard__title {
+  position: relative;                      /* the ruler's containing block */
   margin: 0;
-  font-size: 2.05rem;
+  font-size: var(--plate-size, 2.05rem);
   font-style: italic;
   font-weight: 600;
-  line-height: 1.12;
+  line-height: calc(2.05rem * 1.12);
   color: #b9bcc6;                          /* engraved silver */
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* THE RULER — one element per plate, out of flow and invisible, carrying the
+   headline's own inherited type. `fit.js` sets its size and its text, measures
+   it, and empties it; nothing it ever held is on screen at any opacity. It is
+   `visibility: hidden` rather than `display: none` because a box with no
+   display has no width to report, and `width: max-content` because what is
+   being asked is how wide this string sets on ONE line — not how wide the box
+   it would be poured into happens to be. */
+.surround-work-placard__probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* THE SET LINE (container rails only). Between the headline and the provenance,
+   in the provenance's own quiet small-caps rather than a third voice: it is a
+   locator — "the sixth of seven" — not a claim about the music.
+
+   ITS HEIGHT IS RESERVED. The element is always present on a container's plate
+   and carries a blank line between two works (the applause, where no segment is
+   sounding and there is nothing to locate). An element that disappeared there
+   would give its height back and the plate would shrink and grow as the
+   programme moved from work to work. */
+.surround-work-placard__set {
+  margin: 0.3rem 0 0;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  font-variant-caps: small-caps;
+  line-height: 1.2;
+  color: #a2a5ae;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
   white-space: nowrap;
   overflow: hidden;

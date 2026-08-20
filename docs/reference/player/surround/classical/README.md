@@ -381,6 +381,31 @@ incomplete or odd but not out of order, and keeps its rail. That refusal is the
 container that names three of a collection's ten items leaves the other seven
 exactly as they were, each still finding its own sidecar.
 
+**On a container the chrome names the work that is sounding, not the box.** The
+plate headlines the current segment and locates it beneath — *Polonaise in
+A-flat major, Op. 53* over *Chopin's Polonaises · 6 of 7* — and the listening
+band's piece register rotates the facts of that same work. Precedence, most
+specific first: the segment's own `note`, then the facts of the work its
+`group` names (`groupFacts`, keyed by work slug), then the container's own.
+Between two works nothing is sounding, so the plate names the set, the set line
+holds its height with a blank, and the register talks about the set.
+
+**A single work is unchanged by all of it**, and the gate is `timeline.parts`
+holding more than one part — never the number of segments. A symphony's
+movements carry `note` lines too, so a register that followed the segment on any
+payload would replace fourteen programme facts with one line about the funeral
+march; the plate would headline a movement the rail already names.
+
+The plate's headline is fitted like the band's prose and by the same law: the
+type is sized so every name on the rail sets whole on one line, between a
+ceiling of `2.05rem` (the size the plate has always been) and a floor of
+`1.5rem` (one typographic step above the loudest a programme note may be). The
+size is solved against every name, so it is a constant of the set and the plate
+never changes height mid-programme. A name that cannot be set at the floor is
+**refused**: the plate names the work instead and logs
+`surround.placard.unfittable` with the character budget and the measured
+overflow. Nothing is ever cut mid-word.
+
 Two things to know before building on this:
 
 - **A part index of 0 does not mean "part of a container".** Every ordinary
@@ -538,6 +563,7 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
 | `surround.segments.unplaceable` | The rail declined to draw one or more segments: this recording gave them no usable start, or a start that runs backwards. Names how many were authored, how many were placed, and which numerals were dropped. Always paired with a `starts-entry-invalid` or `starts.mismatch` from the store — this one says what the screen did about it. |
 | `surround.module.missing` | A definition names a module the registry does not have. The region renders empty and the rest of the frame is unaffected — usually a typo in `_surrounds/`. |
+| `surround.placard.unfittable` | A segment name cannot be set whole on the plate at its type floor. The plate names the work instead; the payload carries the name, its character count, its measured character budget, the overflow in pixels and the cap it was judged against. The fix is in the corpus. |
 | `surround.module.misplaced` | A module is authored into a slot it was not registered for (a rail module in the band). It still renders; the warn names the slot and the slots the module declared. |
 
 ---
@@ -549,7 +575,7 @@ The `concert-hall` definition's regions resolve to named modules from
 
 | Module | Region | Draws |
 |---|---|---|
-| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
+| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. On a container it headlines the sounding segment and locates it in the set beneath (see "One programme across several media items"). The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
 | `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
 | `country-map` | right, bottom | The regional map component itself (see below). |

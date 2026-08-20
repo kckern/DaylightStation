@@ -97,6 +97,7 @@ import {
 import {
   bandPools, fitBand, fitStyle, withhold, withheldSets,
 } from '../fit.js';
+import { segmentAt, factPool, factPools, isComposedContainer } from '../segments.js';
 import './CueTicker.scss';
 
 /** Each half of the dissolve: the old line out, then the new line in.
@@ -228,15 +229,49 @@ export default function CueTicker({
     .filter((c) => (c.render ?? 'docked') !== 'overlay')
     .filter((c) => Number.isFinite(Number(c.at))), [data]);
 
+  /* ---- THE PIECE REGISTER'S SUBJECT ---------------------------------------
+   * ON A CONTAINER IT FOLLOWS THE MUSIC. Seven polonaises are seven works, and
+   * the left register talking about "the set" for fifty-nine minutes while one
+   * of them plays is the same defect as a plate that headlines the box. The
+   * precedence — this segment's note, then ITS work's facts, then the
+   * container's — lives in `../segments.js` as a pure function, because it is
+   * the part worth asserting on its own and both this module and the plate ask
+   * the same question of the same payload.
+   *
+   * ON A SINGLE WORK NOTHING MOVES, and the gate is not defensive tidying: the
+   * Eroica's four movements each carry an authored `note` (the store already
+   * docks each as a timed cue at its own second), so a register that followed
+   * the segment on ANY payload would replace that symphony's fourteen facts
+   * with one line about the funeral march. `isComposedContainer` counts PARTS.
+   */
+  const container = isComposedContainer(data);
+  const rail = useMemo(() => (Array.isArray(data?.segments) ? data.segments : []), [data]);
+  /** Where the transport is on the CONTAINER's rail — -1 on a single work. */
+  const railIndex = useMemo(
+    () => (container ? segmentAt({ segments: rail, contentId, position }).index : -1),
+    [container, rail, contentId, position],
+  );
+
   // Every authored string this band prints is curled at its render seam — one
   // helper, `../typography.js`, called here rather than a regex scattered
   // through the JSX. A programme note is set in Garamond on stock; a straight
   // apostrophe is the one mark on the screen that was never cut for the face.
   const facts = useMemo(
-    () => smartQuotesAll(
-      (Array.isArray(data?.facts) ? data.facts : []).filter((f) => typeof f === 'string' && f.trim()),
-    ),
-    [data],
+    () => smartQuotesAll(factPool(data, railIndex)),
+    [data, railIndex],
+  );
+
+  /**
+   * EVERY POOL THIS REGISTER CAN EVER REACH — what the FIT is solved against.
+   *
+   * The fit has to be a constant of the piece or the band's type would resize
+   * whenever the pool swapped, which is the reserved-height law broken by the
+   * mechanism that replaced the reserve. On a single work this is the same list
+   * as `facts`; on a container it is the union over every segment.
+   */
+  const allFacts = useMemo(
+    () => smartQuotesAll(container ? factPools(data) : factPool(data, -1)),
+    [container, data],
   );
 
   const pieceSegments = useMemo(
@@ -331,10 +366,10 @@ export default function CueTicker({
     // straight-quoted original would be measuring a string the screen never
     // shows. `facts` is already curled where it was derived.
     const raw = bandPools({
-      facts, segments: placed.map((p) => p.segment), cues,
+      facts: allFacts, segments: placed.map((p) => p.segment), cues,
     });
     return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
-  }, [facts, placed, cues]);
+  }, [allFacts, placed, cues]);
 
   const rootRef = useRef(null);
   const [fit, setFit] = useState(null);
@@ -525,6 +560,16 @@ export default function CueTicker({
 
   // ---- the PIECE register (left) -------------------------------------------
   const [factIndex, setFactIndex] = useState(0);
+
+  // A NEW POOL OPENS AT ITS FIRST FACT. On a container the rail moving from one
+  // work to the next replaces this register's whole pool, and leaving the
+  // rotation where the previous work left it would open the Heroic's four facts
+  // at whichever of them the index happened to have reached. (It also covers a
+  // seek backwards into an earlier work.) A single work never reaches this: its
+  // `railIndex` is a constant -1, so the effect runs once, at mount, on a state
+  // that is already 0. The swap itself plays the house dissolve like any other
+  // content change — the payload's key is its TEXT, so a new pool is new content.
+  useEffect(() => { setFactIndex(0); }, [railIndex, contentId]);
 
   /**
    * WHEN THE PIECE REGISTER LAST SWAPPED — the clock the NOW register phases

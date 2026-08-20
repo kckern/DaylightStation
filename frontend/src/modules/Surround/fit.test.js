@@ -12,6 +12,7 @@ import {
   PROSE_FLOOR_ANCHOR_PX, PROSE_FLOOR_MIN_PX, PROSE_FLOOR_MAX_PX,
   LABEL_FLOOR_ANCHOR_PX, LABEL_FLOOR_MIN_PX, LABEL_FLOOR_MAX_PX,
   FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, proseCeilingPx, LEADING_FLOOR, LEADING_MAX,
+  fitPlate, plateStyle, withheldPlate, PLATE_FLOOR_PX, PLATE_CEILING_PX,
 } from './fit.js';
 
 /**
@@ -500,5 +501,158 @@ describe('fitBand', () => {
     expect(fitStyle({ fontPx: 16.25, leading: 1.35 }))
       .toEqual({ '--note-size': '16.25px', '--note-leading': '1.35' });
     expect(fitStyle(null)).toBeNull();
+  });
+});
+
+/* ========================================================================== */
+/* THE PLATE — the same law, one line wide                                     */
+/* ========================================================================== */
+
+/**
+ * A ruled plate, built the same way and for the same reason as `ruledBand`
+ * above: happy-dom has no layout, so the SEARCH is exercised against a monotone
+ * stand-in — a headline's width is its character count times the trial size
+ * times a per-character advance. The real ruler is Chromium with the vendored
+ * Cormorant, in `band.measure.test.jsx`.
+ *
+ * The structure is the plate's own: a `.surround-frame__header` carrying the
+ * cap as its `max-width` (the stylesheet's `86% of the measured video`), the
+ * plate inside it with its padding, and the headline's probe inside that.
+ */
+function ruledPlate({ capPx, padPx = 32, emPerChar = 0.5 }) {
+  const header = document.createElement('div');
+  header.className = 'surround-frame__header';
+  header.style.maxWidth = `${capPx}px`;
+  const root = document.createElement('div');
+  root.className = 'surround-work-placard';
+  root.style.paddingLeft = `${padPx}px`;
+  root.style.paddingRight = `${padPx}px`;
+  root.innerHTML = '<h2 data-testid="surround-placard-title">'
+    + '<span class="surround-work-placard__probe"></span></h2>';
+  header.appendChild(root);
+  const probe = root.querySelector('.surround-work-placard__probe');
+  probe.getBoundingClientRect = () => {
+    const size = parseFloat(probe.style.fontSize) || 16;
+    const width = (probe.textContent?.length ?? 0) * emPerChar * size;
+    return { width, height: size, top: 0, left: 0, right: width, bottom: size, x: 0, y: 0 };
+  };
+  return { header, root };
+}
+
+describe('the plate’s floors', () => {
+  /**
+   * THE PLATE'S FLOOR IS DERIVED FROM THE NOTE'S CEILING, not chosen: the plate
+   * is the headline of the whole screen and `PROSE_CEILING_PX` is the loudest a
+   * programme note may ever be, so the headline's floor is one typographic step
+   * (a major third) above it. Written out rather than recomputed from the
+   * implementation's own expression, which could not fail.
+   *
+   * TO GO RED: set the floor to the prose ceiling itself, or below it.
+   */
+  it('keeps the quietest headline a clear step louder than the loudest note', () => {
+    expect(PLATE_FLOOR_PX).toBe(24);
+    expect(PLATE_FLOOR_PX / PROSE_CEILING_PX).toBeCloseTo(1.25, 6);
+    expect(PLATE_FLOOR_PX).toBeGreaterThan(PROSE_CEILING_PX);
+    expect(PLATE_CEILING_PX).toBeGreaterThan(PLATE_FLOOR_PX);
+  });
+
+  /**
+   * THE CEILING IS THE SIZE THE PLATE HAS ALWAYS BEEN SET IN — 2.05rem at the
+   * frame's 16px root — so a plate that fits is pixel-for-pixel the plate that
+   * shipped, and `--plate-size` never makes anything BIGGER than the stylesheet.
+   */
+  it('tops out at the size the stylesheet already sets', () => {
+    expect(PLATE_CEILING_PX).toBe(2.05 * 16);
+  });
+});
+
+describe('fitPlate', () => {
+  /** Room for the longest polonaise name at the ceiling: it takes the ceiling. */
+  it('takes the ceiling whole when the cap has room for every name', () => {
+    const { header, root } = ruledPlate({ capPx: 2000 });
+    document.body.appendChild(header);
+    const fit = fitPlate(root, ['Polonaise in A-flat major, Op. 53', 'Polonaise in C minor']);
+    expect(fit.fontPx).toBe(PLATE_CEILING_PX);
+    expect(fit.rejected).toEqual([]);
+    header.remove();
+  });
+
+  /**
+   * THE POOL IS EVERY NAME, NOT THE SOUNDING ONE. A plate solved against the
+   * name in it would resize at every part boundary — the reserved-height law
+   * broken by the mechanism meant to keep it.
+   *
+   * TO GO RED: fit only `keep[0]` — the answer stops depending on the long
+   * name and this reads `expected 32.8 to be less than 32.8`.
+   */
+  it('sizes the plate to the LONGEST name on the rail, not the current one', () => {
+    const SHORT = 'In C major';
+    const LONG = 'Polonaise-fantaisie in A-flat major, Op. 61';
+    // A cap that holds the short name at the ceiling and the long one only
+    // below it.
+    const capPx = LONG.length * 0.5 * 28 + 64;
+    const { header, root } = ruledPlate({ capPx });
+    document.body.appendChild(header);
+    const alone = fitPlate(root, [SHORT]);
+    const both = fitPlate(root, [SHORT, LONG]);
+    expect(alone.fontPx).toBe(PLATE_CEILING_PX);
+    expect(both.fontPx).toBeLessThan(alone.fontPx);
+    expect(both.fontPx).toBeGreaterThanOrEqual(PLATE_FLOOR_PX);
+    header.remove();
+  });
+
+  /**
+   * A NAME NO SIZE CAN SET IS REFUSED, WITH A MEASURED BUDGET — the plate's
+   * half of the no-ellipsis law. The budget is bisected rather than estimated,
+   * because "cut it to 41 characters" is what an author can act on.
+   *
+   * TO GO RED: skip pass one and let the ladder run over every name — the
+   * long name drags the size below the floor, `rejected` comes back empty, and
+   * a name the plate cannot set reaches the screen with an ellipsis on it.
+   */
+  it('refuses a name that cannot be set at the floor, and budgets it', () => {
+    const { header, root } = ruledPlate({ capPx: 400 });
+    document.body.appendChild(header);
+    const impossible = 'x'.repeat(200);
+    const fit = fitPlate(root, ['In C major', impossible]);
+    expect(fit.rejected).toHaveLength(1);
+    const [r] = fit.rejected;
+    expect(r.text).toBe(impossible);
+    expect(r.chars).toBe(200);
+    expect(r.budget).toBeGreaterThan(0);
+    expect(r.budget).toBeLessThan(200);
+    expect(r.overflowPx).toBeGreaterThan(0);
+    // ...and the SURVIVOR is what the size was solved for, so one impossible
+    // name does not shrink every other name on the rail.
+    expect(fit.fontPx).toBeGreaterThanOrEqual(PLATE_FLOOR_PX);
+    expect(withheldPlate(fit).has(impossible)).toBe(true);
+    header.remove();
+  });
+
+  /**
+   * THE CAP IS THE PLATE'S MAX-WIDTH, NOT THE TITLE'S BOX. The plate is
+   * `width: max-content`, so the rendered title's box is as wide as whatever
+   * title is in it: measuring against that would tell every name that it fits.
+   *
+   * TO GO RED: read `title.clientWidth` (0 in happy-dom, the current name's own
+   * width in a browser) instead of the header's cap.
+   */
+  it('measures against the cap, and the plate’s padding comes out of it', () => {
+    const { header, root } = ruledPlate({ capPx: 500, padPx: 50 });
+    document.body.appendChild(header);
+    expect(fitPlate(root, ['x']).availPx).toBe(400);
+    header.remove();
+  });
+
+  /** No frame, no cap, no measurement — and nothing may be refused. */
+  it('declines to fit a plate that is not inside a frame', () => {
+    const { root } = ruledPlate({ capPx: 500 });
+    expect(fitPlate(root, ['x'])).toBeNull();
+    expect(withheldPlate(null)).toBeNull();
+  });
+
+  it('publishes the fit as the one property the stylesheet reads', () => {
+    expect(plateStyle({ fontPx: 27.5 })).toEqual({ '--plate-size': '27.5px' });
+    expect(plateStyle(null)).toBeNull();
   });
 });
