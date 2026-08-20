@@ -454,3 +454,34 @@ sound; the detection is not.
 new information remains a human listening at four or five ρ-predicted times —
 that would confirm or kill the tempo model directly, and it is the one input none
 of these four attempts had.
+
+### Finer bands: the diagnosis was right, the result is still unusable
+
+Twelve log-spaced bands (80 Hz–11 kHz) at 0.25 s framing — 32,160 frames — put
+through the *identical* acceptance test as the four-band version, against the
+same 20 held-out boundaries.
+
+| feature | within 5 s | median error |
+|---|---|---|
+| 4 bands @ 1.0 s | 22% | — |
+| **12 bands @ 0.25 s** | **35%** | 11.5 s |
+| chance in a 61 s window | 18% | — |
+
+So the diagnosis held: four coarse bands *were* smearing the distinction, and
+finer spectral resolution roughly doubles the hit rate over chance. It is real
+signal. **It is not a usable detector.** Thirteen of twenty are still wrong by
+more than five seconds, the median error is 11.5 s, and at n = 20 a 7-vs-3.6
+result is only marginally significant. Aimed at the 33 unknown windows it would
+yield roughly twelve right boundaries and twenty-one wrong ones.
+
+Note the window trend — 35% at a 2 s half-window, 25% at 5 s, 20% at 10 s. The
+signal is a sharp local change, so shorter windows localise better. That is a
+real lead for anyone continuing, and also exactly where tuning-toward-the-answer
+would begin, so it stops here.
+
+**Five methods, five measured outcomes, one conclusion.** The tempo model is
+sound and reusable; the acoustic detection is not good enough at any resolution
+tried. What is missing is not a better scorer or a finer feature — it is
+information the audio does not carry at these resolutions. A human ear at four or
+five ρ-predicted times remains the cheapest thing that would move this, and it is
+the one input none of the five attempts had.
