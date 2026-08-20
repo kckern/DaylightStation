@@ -378,6 +378,58 @@ describe('access code on a token record', () => {
       .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_MISSING_CODE' }));
   });
 
+  it('reports a malformed code before a missing clock — format is the first question', () => {
+    // Both rules are broken at once. If the order ever flips, a child who typed
+    // a bad code is told the SERVER is misconfigured.
+    expect(() => createTokenRecord({
+      token: TOKEN, ...base, accessCode: 'abc', accessCodeExpiresAt: null,
+    })).toThrow(expect.objectContaining({ code: 'INVALID_SCHOOL_ACCESS_CODE' }));
+  });
+
+  it.each([
+    ['a day later', '2026-08-28T16:00:00Z'],
+    ['a month later', '2026-09-30T16:00:00Z'],
+    ['one millisecond later', '2026-08-27T16:00:00.001Z'],
+  ])('refuses a code clock that outlives the token clock (%s)', (_label, accessCodeExpiresAt) => {
+    // The invariant this whole record is named for. Without it the panel accepts
+    // the code, then resolution calls the same token expired.
+    expect(() => withCode({ accessCodeExpiresAt }))
+      .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_OUTLIVES_TOKEN' }));
+  });
+
+  it('allows a code clock that lands exactly on the token clock', () => {
+    // Equal is not longer. A same-day token is legal, if pointless.
+    expect(withCode({ accessCodeExpiresAt: base.expiresAt }).accessCodeExpiresAt).toBe(base.expiresAt);
+  });
+
+  it.each([
+    ['identify', { learnerId: 'test-user' }, null],
+    ['select_unit', { sessionId: 'ses_abc123' }, null],
+    ['issue_document', { sessionId: 'ses_abc123' }, null],
+    ['media_action', { sessionId: 'ses_abc123' }, null],
+    ['remediation', { sessionId: 'ses_abc123' }, null],
+    ['recovery', { sessionId: 'ses_abc123' }, null],
+    ['learning_action', {
+      deviceId: 'dev1', address: 'a/b', actionId: 'act1', tokenVersion: 1,
+    }, null],
+    ['answer_sheet_lost', { cardId: '1234567', authorizedBy: 'test-user' }, '2026-08-27T16:00:00Z'],
+  ])('refuses an access code on a %s token', (tokenClass, subject, expiresAt) => {
+    // Only a subject_next agenda line carries a code. The other classes either
+    // forbid an expiry outright or name a session, so there is nothing for the
+    // code's shorter clock to be shorter THAN.
+    expect(() => createTokenRecord({
+      token: TOKEN, tokenClass, subject, at: base.at, expiresAt,
+      accessCode: CODE, accessCodeExpiresAt: CODE_EXPIRES,
+    })).toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS' }));
+  });
+
+  it('leaves those classes untouched when no code is supplied', () => {
+    const card = createTokenRecord({ token: TOKEN, tokenClass: 'identify', subject: { learnerId: 'test-user' }, at: base.at });
+    expect(Object.keys(card)).toEqual([
+      'token', 'tokenClass', 'subject', 'issuedAt', 'expiresAt', 'revokedAt',
+    ]);
+  });
+
   it('leaves a record with neither field exactly as it is today', () => {
     const record = createTokenRecord({ token: TOKEN, ...base });
     expect(Object.keys(record)).toEqual([
@@ -397,21 +449,21 @@ describe('access code on a token record', () => {
   it('kills the code at the study-day rollover while the printed QR keeps resolving', () => {
     const record = withCode();
     const now = '2026-08-21T09:00:00Z'; // past the code's day, inside the token's week
-    expect(isAccessCodeLive(record, now)).toBe(false);
+    expect(isAccessCodeLive(record, { now })).toBe(false);
     expect(resolveTokenState(record, { now }).status).toBe('actionable');
   });
 
   it('is live before the rollover', () => {
-    expect(isAccessCodeLive(withCode(), '2026-08-20T18:00:00Z')).toBe(true);
+    expect(isAccessCodeLive(withCode(), { now: '2026-08-20T18:00:00Z' })).toBe(true);
   });
 
   it('is dead exactly AT the rollover, not a moment after', () => {
-    expect(isAccessCodeLive(withCode(), CODE_EXPIRES)).toBe(false);
+    expect(isAccessCodeLive(withCode(), { now: CODE_EXPIRES })).toBe(false);
   });
 
   it('is false for a revoked record even before the code expires', () => {
     const record = { ...withCode(), revokedAt: '2026-08-20T17:00:00Z' };
-    expect(isAccessCodeLive(record, '2026-08-20T18:00:00Z')).toBe(false);
+    expect(isAccessCodeLive(record, { now: '2026-08-20T18:00:00Z' })).toBe(false);
   });
 
   it.each([
@@ -420,20 +472,35 @@ describe('access code on a token record', () => {
     ['undefined', () => undefined],
     ['an array', () => []],
   ])('is false for %s', (_label, make) => {
-    expect(isAccessCodeLive(make(), '2026-08-20T18:00:00Z')).toBe(false);
+    expect(isAccessCodeLive(make(), { now: '2026-08-20T18:00:00Z' })).toBe(false);
   });
 
   it.each([
     ['unparseable accessCodeExpiresAt', { accessCodeExpiresAt: 'not-a-date' }],
     ['missing accessCodeExpiresAt', { accessCodeExpiresAt: null }],
     ['missing accessCode', { accessCode: null }],
+    // Item 8: a hand-edited registry record can hold anything. The predicate
+    // applies the SAME format rule the constructor delegates to, not a laxer one.
+    ['a word for an accessCode', { accessCode: 'hello' }],
+    ['a short accessCode', { accessCode: '4819' }],
+    ['a long accessCode', { accessCode: '4819201' }],
+    ['a padded accessCode', { accessCode: ' 481920 ' }],
+    ['a numeric accessCode', { accessCode: 481920 }],
   ])('is false when the record is malformed after the fact (%s)', (_label, over) => {
     // Records reach this predicate from the registry, not only from the constructor.
-    expect(isAccessCodeLive({ ...withCode(), ...over }, '2026-08-20T18:00:00Z')).toBe(false);
+    expect(isAccessCodeLive({ ...withCode(), ...over }, { now: '2026-08-20T18:00:00Z' })).toBe(false);
   });
 
   it('is false for an unparseable now', () => {
-    expect(isAccessCodeLive(withCode(), 'whenever')).toBe(false);
+    expect(isAccessCodeLive(withCode(), { now: 'whenever' })).toBe(false);
+  });
+
+  it('takes an options bag like resolveTokenState, and fails closed without one', () => {
+    // Tasks 3 and 5 call this beside `resolveTokenState(record, { sessionState, now })`.
+    // A bare positional string must not quietly keep working during that move.
+    expect(isAccessCodeLive(withCode())).toBe(false);
+    expect(isAccessCodeLive(withCode(), {})).toBe(false);
+    expect(isAccessCodeLive(withCode(), '2026-08-20T18:00:00Z')).toBe(false);
   });
 
   it('threads both fields through mintToken', () => {
