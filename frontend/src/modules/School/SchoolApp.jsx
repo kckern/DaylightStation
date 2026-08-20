@@ -627,7 +627,6 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
               card={selfService.card}
               view={selfService.view}
               sentence={selfService.sentence}
-              printAgain={selfService.printAgain}
               busy={selfService.busy}
               onAction={selfService.runAction}
               onConfirm={selfService.confirmPrint}
