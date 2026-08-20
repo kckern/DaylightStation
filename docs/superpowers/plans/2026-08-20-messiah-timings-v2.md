@@ -348,3 +348,59 @@ Keep the three-Part sidecar, which is live and honest. Report the sweep, the omi
 ## What would still be unproven
 
 Even a clean sweep and a sane omitted list leave the boundaries *plausible*, not *verified*. The only thing that closes that gap is listening: three or four spot-checks against the audio, especially either side of a claimed omission. That is cheap, and it is the last step before anyone treats these timings as fact.
+
+---
+
+## EXECUTED — and the result, recorded so nobody repeats it
+
+The metadata half is **done and live**: `messiah-part-1/2/3.yml` carry all 53
+numbers (21/23/9) with name, form, voice, scripture and text — forms 53/53,
+scripture 51/53, text 51/53, the two gaps being the instrumental Sinfonia and
+Pifa. They sit as standalone corpus entries; `messiah.yml` is deliberately NOT
+pointed at them yet, because 53 segments against 3 starts would break the rail.
+
+The timing half **refuses, and the bottleneck is now measured rather than
+guessed: it is candidate detection, not scoring.**
+
+**Per-number priors did not rescue the gate.** Sweeping `musicEndsAt` across
+116–133 min gave costs of 1079–1367 — a 26% spread, non-monotonic, a flat curve
+— while keeping only 26–28 of 53 numbers at *every* end time, which contradicts
+the ρ evidence that Parts I and II are essentially uncut.
+
+**ρ-prediction with a ±30 s snap window, tried next, gave the clearest reading
+of all.** Per-Part ratios fit consistently — **0.907 / 1.014 / 0.935**, within
+11% of each other — and predictions were checked against detected candidates:
+
+| window | snapped | median offset |
+|---|---|---|
+| ±10 s | 12/53 | 6 s |
+| ±30 s | **20/53** | 9 s |
+| ±60 s | 31/53 | 21 s |
+
+Two things follow, and they point opposite ways. **The prediction is good** — a
+median 9 s error inside movements averaging 140 s is ~6%, and the 20 hits are
+spread across all three Parts (9/21, 8/23, 3/9) rather than clustered, so the
+model holds over the whole work. **But the candidates are not there.** Loosening
+detection to −45 dB / 0.25 s yields 165 silences against 142 — 16% more, not the
+2–3× required. Those boundaries are not in the audio *as silences*: the
+movements run attacca or with sub-threshold gaps.
+
+**And partial timings cannot ship.** With ~20 of 53 numbers timed, the store's
+positional-null semantics let the previous segment absorb the gap, so a single
+label would be drawn over up to three consecutive movements — the rail printing
+one name while several sound. That is precisely the rail-that-lies the design
+refuses, so "ship what we have" is not available.
+
+### What the next attempt must do differently
+
+Not another scoring function. **Detect boundaries by texture rather than by
+silence** — the plan's leg 2, never implemented — using the ρ-predicted times to
+say *where to look*: a ±30 s window around each of the 33 unconfirmed
+predictions is a small, well-posed search for a spectral change, not a sweep of
+134 minutes. The prediction accuracy measured here (median 9 s) is what makes
+that search tractable.
+
+Before any of that, the cheapest check remains unrun and would settle more than
+another inference pass: **listen at four or five predicted boundaries.** If they
+land, the model is confirmed and texture detection is worth building. If they
+drift, nothing downstream of ρ is worth building at all.
