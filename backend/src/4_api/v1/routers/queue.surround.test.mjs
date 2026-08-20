@@ -136,6 +136,40 @@ describe('queue router surround attachment', () => {
 describe('queue router container expansion', () => {
   const get = (opts) => request(makeApp({ localId: '696233', ...opts })).get('/api/v1/queue/plex:696233');
 
+  /* ---------------------------------------------------------------------------
+     A PROGRAMME STARTS AT THE TOP OF EACH WORK.
+
+     Every part is its own media item with its own saved playhead, so a season
+     played end to end dropped into the middle of part two — wherever that
+     episode was last abandoned — and the rail, which is right, drew a playhead
+     a third of the way along a work that had just started. Resume is a fact
+     about watching ONE thing; a container is the statement that these seven are
+     one thing, and the container outranks it.
+     --------------------------------------------------------------------------- */
+  const watched = () => shuffledEpisodes.map((i) => ({
+    ...i, resumePosition: 94, watchProgress: 24, resume: true,
+  }));
+
+  it('starts every part of a container at the beginning, whatever the file remembers', async () => {
+    const res = await get({ items: watched(), surroundStore: seasonStore() });
+
+    expect(res.body.items.map((i) => i.surroundPart)).toEqual([0, 1, 2]);
+    expect(res.body.items.map((i) => i.resumePosition)).toEqual([null, null, null]);
+    expect(res.body.items.map((i) => i.resume)).toEqual([false, false, false]);
+    // The item is otherwise untouched — this suppresses a resume, it does not
+    // rewrite watch state. `watchProgress` still says the file has been seen.
+    expect(res.body.items.map((i) => i.watchProgress)).toEqual([24, 24, 24]);
+  });
+
+  it('leaves an ordinary item’s resume alone', async () => {
+    const items = [{ ...makeItem('plex:663134', 'Beethoven: 3. Sinfonie'), resumePosition: 94, resume: true }];
+    const surroundStore = { lookup: vi.fn().mockReturnValue(PAYLOAD) };
+    const res = await request(makeApp({ items, surroundStore })).get('/api/v1/queue/plex:eroica');
+
+    expect(res.body.items[0].resumePosition).toBe(94);
+    expect(res.body.items[0].resume).toBe(true);
+  });
+
   it('plays a container in its authored order and frames every part with it', async () => {
     const logger = makeLogger();
     const res = await get({ items: shuffledEpisodes, surroundStore: seasonStore(), logger });

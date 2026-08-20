@@ -1873,6 +1873,25 @@ describe('YamlSurroundStore — parts composed by contentId', () => {
     });
   });
 
+  /**
+   * `short:` — the crowded-rail form of a segment's name. Segment-level fields
+   * are not allowlisted (only work-level ones are), so this asks the question
+   * that matters for a new one: does it survive BOTH hops — the work's own
+   * resolution, and the container's concatenation, which rebuilds every segment
+   * object twice on its way to the rail.
+   */
+  it('carries an authored `short` label through to the composed rail', () => {
+    writeEtudes(SEASON);
+    writeLib('classical/0_flagship/chopin/etudes-op-25.yml',
+      'title: "Études, Op. 25"\nsegments:\n  - { n: 1, name: "Op. 25 No. 1", short: "Aeolian" }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+
+    expect(store.lookup('plex:season', '').segments[2].short).toBe('Aeolian');
+    // And on the part played on its own, which is the same list one hop shorter.
+    expect(store.lookup('plex:ep2', '').segments[0].short).toBe('Aeolian');
+    expect(store.lookup('plex:ep2', '').pieceSegments[0].short).toBe('Aeolian');
+  });
+
   it('labels each part with the work that part plays, not the container above it', () => {
     writeEtudes(SEASON);
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });

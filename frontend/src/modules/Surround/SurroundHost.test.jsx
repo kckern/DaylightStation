@@ -177,6 +177,60 @@ describe('SurroundHost', () => {
     expect(changes[0][1]).toMatchObject({ contentId: 'plex:1', from: null, to: 'plex:1', enriched: false });
   });
 
+  /* ---------------------------------------------------------------------------
+     WHICH MEDIA ITEM THE RAIL IS ON.
+
+     Every segment of a composed rail is stamped with the contentId of the part
+     it lives in, and the rail resolves what is sounding by matching that stamp
+     against the id the host publishes. The office screen played the étude season
+     with `item.contentId` set to the SEASON — the container's own id, not the
+     part's — and the match found nothing: no segment sounding, no playhead, no
+     bond, and twenty-seven segments painted as though the recital had finished.
+
+     The queue already publishes the pairing that answers it. An item enriched by
+     a container carries `surroundPart`, the part's dense index on the rail, and
+     `timeline.parts[i].contentId` is that part's real id. Where both are present
+     they OUTRANK the item's own id, because they are a statement about this rail
+     and the id is a statement about whatever the player was handed.
+     --------------------------------------------------------------------------- */
+  const SEASON = {
+    ...SURROUND,
+    timeline: {
+      totalSounding: 340,
+      parts: [
+        { contentId: 'plex:696234', index: 0, sounding: 300 },
+        { contentId: 'plex:696235', index: 1, sounding: 40 },
+      ],
+    },
+  };
+
+  it('names the PART on the rail, not the container id the item arrived with', () => {
+    const player = makePlayer({
+      item: { id: 'plex:696233', contentId: 'plex:696233', title: 'Op. 25', surround: SEASON, surroundPart: 1 },
+      media: new FakeMedia(),
+    });
+    renderHost({ getPlayerHandle: player.get, logger });
+    expect(recorded.at(-1).data.contentId).toBe('plex:696235');
+  });
+
+  it('keeps the item’s own id when the part index names no slot', () => {
+    const player = makePlayer({
+      item: { id: 'plex:696233', surround: SEASON, surroundPart: 9 },
+      media: new FakeMedia(),
+    });
+    renderHost({ getPlayerHandle: player.get, logger });
+    expect(recorded.at(-1).data.contentId).toBe('plex:696233');
+  });
+
+  it('leaves an ordinary item alone — no part index, no rail to be a part of', () => {
+    const player = makePlayer({
+      item: { id: 'plex:663134', title: 'Eroica', surround: SURROUND },
+      media: new FakeMedia(),
+    });
+    renderHost({ getPlayerHandle: player.get, logger });
+    expect(recorded.at(-1).data.contentId).toBe('plex:663134');
+  });
+
   it('frames the player when the item carries a surround and the mode is auto', () => {
     const player = makePlayer({
       item: { id: 'plex:663134', title: 'Eroica', surround: SURROUND },

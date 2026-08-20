@@ -319,6 +319,32 @@ export function railGroups(placed) {
 }
 
 /**
+ * IS THIS RAIL ONE TIER OR TWO?
+ *
+ * A heading is a heading when it names a RUN. Where every run is a single
+ * segment the heading and the segment are the same thing said twice — the
+ * polonaise season prints `Polonaise No. 1 in C-sharp minor, Op. 26 No. 1`
+ * above the rule and `Polonaise in C-sharp minor, Op. 26 No. 1` below it, both
+ * ellipsized, and the viewer reads one work's name twice and neither of them
+ * whole. That rail is FLAT: a list of works, one segment each.
+ *
+ * Two consequences, and they are the same decision taken once. A flat rail
+ * prints no heading row, and it numbers its gutter by POSITION ON THE RAIL —
+ * because every part authored `n: 1` for its own single movement, so the
+ * authored numerals say `I.` seven times where the viewer wants 1 … 7. A
+ * grouped rail keeps both: `Études, Op. 10` genuinely spans twelve segments,
+ * and those twelve are numbered 1 … 12 by the corpus to match the names printed
+ * under them.
+ *
+ * @param {Array<{count:number}>} groups from `railGroups`.
+ * @returns {boolean} true when no run covers more than one segment.
+ */
+export function railIsFlat(groups) {
+  const list = Array.isArray(groups) ? groups : [];
+  return list.every((run) => (Number(run?.count) || 0) <= 1);
+}
+
+/**
  * Which placed segment is sounding, or -1 when none is.
  *
  * ONE derivation, called by the rail and by the listening band, because the two

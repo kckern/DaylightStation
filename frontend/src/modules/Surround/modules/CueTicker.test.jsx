@@ -582,6 +582,63 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.root().getAttribute('data-split')).toBe('false');
   });
 
+  /* ---------------------------------------------------------------------------
+     A CONTAINER'S NOW REGISTER.
+
+     `split` was decided from `pieceSegments` — the work's OWN authored list. On
+     a container that list belongs to the set (seven `work:` references, or seven
+     names with no timings of their own), so nothing in it is placeable, the band
+     never split, and the polonaise season played with a full-width piece
+     register while the rail six inches above it lit a segment and ran a bond
+     down to a NOW panel that was not there.
+
+     The rail already reads the composed list (`SegmentMap`). This register reads
+     the same one, so what the two halves of the band think is sounding cannot
+     disagree — and the bond always lands.
+     --------------------------------------------------------------------------- */
+  const SEASON = {
+    contentId: 'plex:ep2',
+    piece: { title: 'Polonaises' },
+    definition: { regions: {}, collapse: {}, band: { nowHeading: 'always' } },
+    segments: [
+      {
+        n: 1, name: 'Polonaise in C-sharp minor', contentId: 'plex:ep1', part: 0,
+        start: 0, end: 100, offset: 0, duration: 100,
+        listen: ['A bare octave leap opens without harmony.'],
+        group: { work: 'chopin/polonaise-1', title: 'No. 1', index: 0 },
+      },
+      {
+        n: 1, name: 'Polonaise in E-flat minor', contentId: 'plex:ep2', part: 1,
+        start: 0, end: 200, offset: 100, duration: 200,
+        listen: ['Long stretches stay hushed.'],
+        group: { work: 'chopin/polonaise-2', title: 'No. 2', index: 1 },
+      },
+    ],
+    timeline: {
+      totalSounding: 300,
+      parts: [
+        { contentId: 'plex:ep1', index: 0, sounding: 100 },
+        { contentId: 'plex:ep2', index: 1, sounding: 200 },
+      ],
+    },
+    facts: ['The polonaise is a figured walk.'],
+    cues: [],
+  };
+
+  it('splits the band for a container, whose segments live on the composed rail', () => {
+    const view = renderSplit({ data: SEASON, position: 50 });
+    expect(view.root().getAttribute('data-split')).toBe('true');
+    expect(view.container.querySelector('[data-testid="surround-ticker-zone-now"]')).not.toBeNull();
+  });
+
+  it('names the sounding WORK and reads ITS listening note', () => {
+    const view = renderSplit({ data: SEASON, position: 50 });
+    // 50 s into episode 2 — the second polonaise, not the first.
+    expect(view.header()).toContain('E-flat minor');
+    expect(view.listen()).toBe('Long stretches stay hushed.');
+    expect(view.root().getAttribute('data-sounding')).toBe('true');
+  });
+
   it('names the sounding segment in the right zone’s header, with its translation', () => {
     const view = renderSplit();
     expect(view.header()).toContain('Allegro con brio');

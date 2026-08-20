@@ -98,6 +98,7 @@ tier: flagship                        # flagship | key | catalog
 segments:
   - n: 1
     name: "Allegro con brio"
+    short: "Allegro"                   # the crowded-rail form of the name
     translation: "Fast, with spirit"
     listen:                           # per-segment appreciation bullets
       - "Two hammered E-flat chords, then the cellos sing the heroic theme — built from a plain broken chord."
@@ -146,6 +147,22 @@ Notes that save a debugging pass:
   anything true of the composer beside *any* work belongs in `_composer.yml`,
   which `ComposerCard` cycles on its own rotation. A line repeated between
   `_composer.yml` and a work's `facts:` shows twice on screen at once.
+- **`short:` is what the rail sets while a segment is NOT sounding.** Truncation
+  assumes the distinguishing part of a name comes first, and on a rail of works
+  from one set it never does: seven polonaises all begin "Polonaise", so seven
+  segments read `Pol…` and the rail spends its whole width saying nothing seven
+  times. Author a deliberately short second name — the nickname where the piece
+  has one (`Heroic`, `Military`), otherwise the key (`C-sharp minor`) — and the
+  rail sets that instead, on one line with no gloss under it. The SOUNDING
+  segment always sets its whole name: it is the one segment the accordion
+  guarantees room for, so it has nothing to gain from a compressed form.
+  Optional everywhere; a segment without one truncates exactly as before. Aim
+  for a word or two — a floored segment is about 37px of run, so a long `short:`
+  is cut like anything else, just informatively.
+- **`short:` is not `short_title:`.** They live at different levels and answer
+  different questions: `short_title` is the WORK's own alternate name for the
+  band's standing label, `short` is a SEGMENT's compressed label for a crowded
+  rule.
 - **`short_title:` is the work's own alternate name**, not an abbreviation of the
   title. It is the standing label over the listening band's left register —
   "Beethoven's Third Symphony" — and the band prints no label at all rather than
@@ -460,12 +477,43 @@ never changes height mid-programme. A name that cannot be set at the floor is
 `surround.placard.unfittable` with the character budget and the measured
 overflow. Nothing is ever cut mid-word.
 
+**A container's own `segments:` list is not its rail.** The rail is the parts'
+lists concatenated — every heading, name, `short`, gloss and `listen` note on it
+was authored on the work that part plays, and the container's own segment list
+reaches the payload as `pieceSegments` and is drawn by nothing. Author the
+listening notes on the works; a note left on the container is a note no screen
+shows.
+
+**A flat rail is one tier.** Where every heading names exactly one segment — a
+programme of seven whole works, each contributing the one movement it has — the
+heading and the segment say the same thing, so the heading ROW IS NOT DRAWN and
+the numeral gutter counts along the rail instead of reprinting each part's own
+`n: 1`. A grouped rail keeps both: `Études, Op. 10` really does span twelve
+segments, and the corpus numbers those twelve to match the names printed under
+them. Nothing is configured; the shape of the rail decides.
+
+**A programme starts at the top of each work.** Every part is its own media item
+with its own saved playhead, so without this a season dropped into the middle of
+part two — wherever that episode was last abandoned. The queue clears
+`resumePosition` for any item a container claims. Playing that episode on its own
+resumes exactly as it always did: this is the container's reading, not a rewrite
+of the watch state.
+
 Two things to know before building on this:
 
 - **A part index of 0 does not mean "part of a container".** Every ordinary
   sidecar is part 0 of its own single-item rail, so the index alone cannot tell
   a whole work from the opening of a programme. The container signal is
   `timeline.parts` naming ids *other than* the piece's own.
+- **The rail is matched on the PART's contentId, and the item may not carry it.**
+  Every segment is stamped with the id of the media item it lives in; the frame
+  finds what is sounding by matching that stamp. One route handed the player a
+  season's id while a part played, and the match found nothing — no sounding
+  segment, no playhead, no bond, and a whole rule painted as though the recital
+  had finished. `railContentId` prefers the queue's own pairing
+  (`item.surroundPart` → `timeline.parts[i].contentId`) over the item's id, and a
+  payload that still names no segment on its rail logs `surround.rail.unmapped`
+  rather than drawing a confident, complete, wrong rail.
 - **A media item may belong to only one programme.** Two containers naming the
   same episode is an authoring mistake: the index keeps one claim, warns
   `surround.part.claimed` naming both files, and the queue and play paths can
@@ -619,6 +667,7 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | `surround.module.missing` | A definition names a module the registry does not have. The region renders empty and the rest of the frame is unaffected — usually a typo in `_surrounds/`. |
 | `surround.placard.unfittable` | A segment name cannot be set whole on the plate at its type floor. The plate names the work instead; the payload carries the name, its character count, its measured character budget, the overflow in pixels and the cap it was judged against. The fix is in the corpus. |
 | `surround.module.misplaced` | A module is authored into a slot it was not registered for (a rail module in the band). It still renders; the warn names the slot and the slots the module declared. |
+| `surround.rail.unmapped` | The frame is showing a media item the rail has no segment for, so nothing can be sounding: no active segment, no playhead, no bond. Never a state the music can be in — always a wiring fault upstream of the payload. Names the id it was given and the part ids the rail actually holds. |
 
 ---
 
@@ -634,7 +683,7 @@ The `concert-hall` definition's regions resolve to named modules from
 | `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
 | `country-map` | right, bottom | The regional map component itself (see below). |
 | `segment-map` | bottom | The engraved-score progress band, with each segment's translation glossed under its name. Also answers to its pre-rename name, `movement-map`, so an unmigrated definition still draws the rail rather than warning `surround.module.missing` over an empty region. |
-| `cue-ticker` | bottom | The docked ticker: the playing segment's `listen` notes on one side, cues and facts on the other. |
+| `cue-ticker` | bottom | The docked ticker: the playing segment's `listen` notes on one side, cues and facts on the other. On a container it reads the composed rail, the same list the band above it draws — which is what makes "the bond always lands" structural: the two halves cannot disagree about what is sounding, because they ask one function of one list. |
 
 ### The band's notes are never cut
 

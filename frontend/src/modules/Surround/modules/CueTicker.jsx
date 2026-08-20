@@ -313,10 +313,34 @@ export default function CueTicker({
    * saying the same thing from the same pool is the case this split exists to
    * avoid, and an untimed recording is that case exactly.
    */
-  const split = placed.length > 0;
-  const segment = placedIndex >= 0 ? placed[placedIndex].segment : null;
+  /**
+   * THE SEGMENTS THIS REGISTER IS ABOUT — and on a container they are not the
+   * ones above.
+   *
+   * `pieceSegments` is the piece's OWN authored list, and for a container that
+   * is the SET's list: seven `work:` references, or seven names the container
+   * never timed, so `placedSegments` refuses every one of them. The band then
+   * did not split at all — a full-width piece register under a rail that was
+   * lighting a segment and running a bond down to a NOW panel that did not
+   * exist. Half a shape, pointing at nothing.
+   *
+   * The rail reads `data.segments`, the composed list, and so does this. The two
+   * halves of the band now derive what is sounding from ONE list through ONE
+   * function (`segmentAt`), which is what makes "the bond always lands"
+   * structural rather than a thing to keep in step by hand.
+   */
+  const nowSegments = useMemo(
+    () => (container ? rail : placed.map((p) => p.segment)),
+    [container, rail, placed],
+  );
+  const split = nowSegments.length > 0;
+  const segment = container
+    ? (railIndex >= 0 ? (rail[railIndex] ?? null) : null)
+    : (placedIndex >= 0 ? placed[placedIndex].segment : null);
   /** The AUTHORED index of the sounding segment — what the log and the bond name. */
-  const segmentIndex = placedIndex >= 0 ? placed[placedIndex].index : -1;
+  const segmentIndex = container
+    ? railIndex
+    : (placedIndex >= 0 ? placed[placedIndex].index : -1);
 
   const listen = useMemo(
     () => smartQuotesAll(
@@ -366,10 +390,10 @@ export default function CueTicker({
     // straight-quoted original would be measuring a string the screen never
     // shows. `facts` is already curled where it was derived.
     const raw = bandPools({
-      facts: allFacts, segments: placed.map((p) => p.segment), cues,
+      facts: allFacts, segments: nowSegments, cues,
     });
     return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
-  }, [allFacts, placed, cues]);
+  }, [allFacts, nowSegments, cues]);
 
   const rootRef = useRef(null);
   const [fit, setFit] = useState(null);

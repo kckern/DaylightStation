@@ -3,7 +3,7 @@ import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
   placedSegments, activeSegmentIndex, numeral, numeralText, numeralStyle, ROMAN_CEILING,
-  placedRailSegments, railGroups,
+  placedRailSegments, railGroups, railIsFlat,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -734,5 +734,37 @@ describe('railGroups', () => {
 
   it('answers with no runs for anything that is not a rail', () => {
     expect(railGroups(undefined)).toEqual([]);
+  });
+});
+
+/**
+ * A rail of WORKS — seven polonaises, each its own media item contributing one
+ * segment — against a rail of SEGMENTS grouped by opus. The difference decides
+ * two things the screen got wrong at once: whether a heading row is printed
+ * above the rule, and what the numeral gutter counts.
+ */
+describe('railIsFlat', () => {
+  const run = (index, title, count) => Array.from({ length: count }, () => ({
+    segment: { duration: 10, group: { work: `w${index}`, title, index } },
+  }));
+
+  it('is flat when every heading names exactly one segment', () => {
+    const polonaises = railGroups([...run(0, 'No. 1', 1), ...run(1, 'No. 2', 1), ...run(2, 'No. 3', 1)]);
+    expect(railIsFlat(polonaises)).toBe(true);
+  });
+
+  it('is NOT flat when a heading spans several segments', () => {
+    const etudes = railGroups([...run(0, 'Op. 10', 12), ...run(1, 'Op. 25', 12)]);
+    expect(railIsFlat(etudes)).toBe(false);
+  });
+
+  /** One work played twice in a row is two headings, and both still name one segment. */
+  it('reads the runs, not the works', () => {
+    expect(railIsFlat(railGroups([...run(0, 'A', 1), ...run(1, 'A', 1)]))).toBe(true);
+  });
+
+  it('is flat for a rail with no headings at all', () => {
+    expect(railIsFlat([])).toBe(true);
+    expect(railIsFlat(undefined)).toBe(true);
   });
 });
