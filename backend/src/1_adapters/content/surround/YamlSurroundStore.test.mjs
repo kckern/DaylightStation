@@ -133,6 +133,92 @@ describe('YamlSurroundStore totality', () => {
   });
 });
 
+/**
+ * ONE BAD SIDECAR COSTS ONE SIDECAR — the walk loop's own guard, as against
+ * `#composeContainers`' (already per-container; see the "composition isolation"
+ * block below). Before this the whole per-file loop sat under ONE try/catch, so
+ * the FIRST sidecar to throw silently dropped every piece indexed after it —
+ * walk order, an accident of the filesystem, decided how much of a ~1,500-file
+ * corpus one bad file was allowed to take with it. That is the exact shape that
+ * put a real screen dark twice in one production day: `surround.index.built
+ * pieces: 0` with nothing in the log store naming why.
+ */
+describe('YamlSurroundStore — sidecar-walk isolation', () => {
+  it('keeps indexing after one sidecar throws, and names the one that did', () => {
+    // THE THROW ITSELF is forced honestly, at a real call site inside
+    // `#resolvePerformance` — the sidecar has no `match.title`, which is a SOFT
+    // defect that still indexes the piece but calls `this.logger.warn(...)` to
+    // report it. Making `warn` explode for exactly that one file's warning is a
+    // real exception coming out of the method under test, not a hook added to
+    // the store for the test's benefit — the store cannot tell this apart from
+    // a bug in some future warning, which is the point: ANY throw from
+    // resolving one sidecar must cost only that sidecar.
+    write('classical/beethoven/good.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:good, title: Good }\n');
+    write('classical/beethoven/bad.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:bad }\n');
+    const badFile = 'classical/beethoven/bad.yml';
+    const logger = makeLogger();
+    logger.warn.mockImplementation((event, data) => {
+      if (event === 'surround.sidecar.invalid' && data?.file === badFile) {
+        throw new Error('logger exploded mid-warn');
+      }
+    });
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    // The good sidecar, walked alphabetically after the bad one, still resolves.
+    expect(store.lookup('plex:good', '')).not.toBeNull();
+    // The bad one itself is dropped, not half-indexed.
+    expect(store.lookup('plex:bad', '')).toBeNull();
+    expect(logger.error).toHaveBeenCalledWith('surround.sidecar.threw', {
+      file: badFile,
+      message: 'logger exploded mid-warn'
+    });
+  });
+
+  it('does not warn twice for the sidecar that threw', () => {
+    write('classical/beethoven/bad.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:bad }\n');
+    const badFile = 'classical/beethoven/bad.yml';
+    const logger = makeLogger();
+    logger.warn.mockImplementation((event, data) => {
+      if (event === 'surround.sidecar.invalid' && data?.file === badFile) {
+        throw new Error('logger exploded mid-warn');
+      }
+    });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.error.mock.calls.filter((c) => c[0] === 'surround.sidecar.threw')).toHaveLength(1);
+  });
+
+  it('counts the thrown sidecar as skipped in the index line', () => {
+    write('classical/beethoven/bad.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:bad }\n');
+    const badFile = 'classical/beethoven/bad.yml';
+    const logger = makeLogger();
+    logger.warn.mockImplementation((event, data) => {
+      if (event === 'surround.sidecar.invalid' && data?.file === badFile) {
+        throw new Error('logger exploded mid-warn');
+      }
+    });
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    // The fixture's own eroica sidecar (1) plus the thrown one counted as skipped.
+    expect(logger.info).toHaveBeenCalledWith('surround.index.built',
+      expect.objectContaining({ pieces: 1, skipped: 1 }));
+  });
+
+  it('logs the walk failure instead of swallowing it when the root itself faults mid-walk', () => {
+    // `rootDir: undefined` makes `path.join` throw inside `#loadDefinitions`,
+    // before the per-file loop ever runs — the OUTER guard's own case, kept
+    // deliberately distinct from the per-sidecar one above.
+    const logger = makeLogger();
+    let store;
+    expect(() => { store = new YamlSurroundStore({ rootDir: undefined, libraryDir: library, logger }); }).not.toThrow();
+    expect(store.lookup('plex:663134', '')).toBeNull();
+    expect(logger.error).toHaveBeenCalledWith('surround.index.walk-failed', expect.any(Object));
+  });
+});
+
 describe('YamlSurroundStore reserved names', () => {
   it('never indexes _-prefixed domains, composers, piece files, or _composer.yml', () => {
     // Every trap is a sidecar that would resolve if it were walked — a real work
@@ -1347,6 +1433,25 @@ describe('YamlSurroundStore — segment references', () => {
     // The inline segment is ungrouped; the two referenced parts are 0 and 1.
     expect(r.segments.map((c) => c.group?.index)).toEqual([0, undefined, 1]);
     expect(r.segments[2].group).toEqual({ work: 'chopin/etudes-op-25', title: 'Op. 25', index: 1 });
+  });
+
+  it('breaks an INDIRECT reference cycle too (a -> b -> c -> a), not just a direct one', () => {
+    // Deferred from Task 2: the direct case above (a -> b -> a) proves the
+    // `seen` set catches a hop that comes straight back; this proves it also
+    // catches one that takes the scenic route. Same guard, one more hop, so the
+    // coverage is by ASSERTION rather than by reading `#resolveSegments` and
+    // trusting the set works for N hops because it worked for one.
+    writeLib('classical/0_flagship/chopin/a.yml', 'title: A\nsegments:\n  - work: chopin/b\n');
+    writeLib('classical/0_flagship/chopin/b.yml', 'title: B\nsegments:\n  - work: chopin/c\n');
+    writeLib('classical/0_flagship/chopin/c.yml', 'title: C\nsegments:\n  - work: chopin/a\n');
+    write('classical/chopin/cyc3.yml',
+      'work: chopin/a\nsurround: concert-hall\nmatch: { contentId: plex:cyc3 }\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(store.lookup('plex:cyc3', '')).not.toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('surround.segment.cycle',
+      expect.objectContaining({ work: 'chopin/a' }));
   });
 
   it('expands the same work twice when two segments reference it — a repeat is not a cycle', () => {

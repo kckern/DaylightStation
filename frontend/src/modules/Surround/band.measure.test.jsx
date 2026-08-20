@@ -1377,6 +1377,61 @@ describe('the band, measured against the shipped stylesheet', () => {
   }, 90000);
 
   /**
+   * THE NOW HEADER'S OWN BLANK LINE (Task 11, folded in from a Task 7 finding).
+   * `band.nowHeading: 'always'` forces the header to print regardless of rail
+   * density so both of its lines are on the page: the segment name/numeral, and
+   * — for a glossed piece — the tempo translation beneath it. Both fall back to
+   * `CueTicker`'s `BLANK_LINE` with nothing sounding, exactly as the placard's
+   * set line does (`WorkPlacard.jsx`, Task 7's fix), and the reserve is only
+   * real if the line box survives being empty.
+   *
+   * TO GO RED: swap `BLANK_LINE` back to a plain space. A run of collapsible
+   * whitespace generates no line box, so the header's own height comes back
+   * short by whichever line has nothing to print — confirmed by hand against a
+   * plain-space `BLANK_LINE` before this test was committed.
+   */
+  it('1280x720 — the NOW header’s blank line reserves the same height as a filled one', async () => {
+    const alwaysHeading = {
+      ...EROICA_FULL,
+      definition: { ...DEFINITION, band: { nowHeading: 'always' } },
+    };
+    const headBox = () => page.evaluate(() => {
+      const px = (sel) => {
+        const el = document.querySelector(sel);
+        return el ? Number(el.getBoundingClientRect().height.toFixed(2)) : null;
+      };
+      return {
+        head: px('.surround-cue-ticker__now-head'),
+        gloss: px('.surround-cue-ticker__now-translation'),
+      };
+    });
+
+    // A segment sounding: both lines carry real text.
+    await layout(page, css, { ...FLEET[1], data: alwaysHeading, position: 200 });
+    const sounding = await headBox();
+    expect(sounding.head, 'the header never rendered with a segment sounding').not.toBeNull();
+    expect(sounding.gloss, 'the gloss line never rendered for a glossed piece').not.toBeNull();
+
+    // Before the first segment starts: no segment is active, so the numeral,
+    // the name and the translation all fall back to BLANK_LINE.
+    const blankData = {
+      ...alwaysHeading,
+      pieceSegments: alwaysHeading.pieceSegments.map((m, i) => (i === 0 ? { ...m, start: 45 } : m)),
+    };
+    await layout(page, css, { ...FLEET[1], data: blankData, position: 20 });
+    const blank = await headBox();
+
+    expect(
+      blank.head,
+      `${blank.head}px blank against ${sounding.head}px with a segment sounding`,
+    ).toBe(sounding.head);
+    expect(
+      blank.gloss,
+      `${blank.gloss}px blank against ${sounding.gloss}px with a segment sounding`,
+    ).toBe(sounding.gloss);
+  }, 90000);
+
+  /**
    * THE ACCORDION'S WHOLE PURPOSE. The sounding segment widens until neither
    * its heading nor its gloss is cut; its neighbours compress but never past the
    * measured floor. Both halves are asserted here, against the real solver.

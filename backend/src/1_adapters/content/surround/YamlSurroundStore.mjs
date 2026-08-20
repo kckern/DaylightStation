@@ -406,14 +406,38 @@ export class YamlSurroundStore extends ISurroundStore {
             // Relative to rootDir, because that is how the author knows the file.
             // Every warning below is addressed to whoever wrote the sidecar.
             const relFile = path.join(domain, composer, file);
-            const resolved = this.#resolvePerformance(path.join(composerDir, file), domain, definitions, library, relFile);
+            // PER SIDECAR, so one throw costs one sidecar. This used to be
+            // caught only by the OUTER try below, which meant the FIRST sidecar
+            // to throw silently dropped every piece indexed after it — walk
+            // order decided how much of the corpus a bug in one file was
+            // allowed to take down. That is the exact silent-empty-index shape
+            // that put a real screen dark twice in one production day, both
+            // times as `surround.index.built pieces: 0` with nothing in the log
+            // store naming why.
+            let resolved;
+            try {
+              resolved = this.#resolvePerformance(path.join(composerDir, file), domain, definitions, library, relFile);
+            } catch (err) {
+              this.logger?.error?.('surround.sidecar.threw', {
+                file: relFile,
+                message: err?.message ?? String(err)
+              });
+              skipped += 1;
+              continue;
+            }
             if (!resolved) { skipped += 1; continue; }
             pieces.push(resolved);
           }
         }
       }
-    } catch {
-      // A malformed root leaves whatever resolved so far; lookups miss quietly.
+    } catch (err) {
+      // The tree itself going missing or unreadable MID-WALK (rootDir not a
+      // usable path, a directory replaced by a file between two stats) is
+      // rarer than one bad sidecar, but it must not go quiet either — a silent
+      // `catch {}` at THIS level is the other half of the defect this task
+      // removes. Whatever resolved before the fault stands; lookups against
+      // anything after it simply miss, same as always, but now on the record.
+      this.logger?.error?.('surround.index.walk-failed', { message: err?.message ?? String(err) });
     }
 
     this.#composeContainers(pieces);
