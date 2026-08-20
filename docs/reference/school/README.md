@@ -1161,7 +1161,6 @@ selfService:
   mediaSurface:
     id: livingroom-tv            # must be a real dispatch target
     label: living room           # bare room name -> "Play in the living room"
-  printerRoom: kitchen           # where the worksheet actually comes out
 
 # data/household/screens/portal.yml
 school:
@@ -1182,8 +1181,10 @@ config leaves the panel browsable, because "config absent" and "fetch failed" ar
 indistinguishable from the client.
 
 **Printer locality.** Worksheets print on the kitchen laser (see *Printing*
-above) while the panel is in the school room, so the confirm step names the room
-rather than asking "Did it print?" about a machine two rooms away.
+above). The kitchen adjoins the school room through an open doorway, so a child
+at the panel can see and hear the printer and the confirm step can simply ask
+"Did it print?". If the laser ever moves out of sight of the panel, that step
+needs revisiting — the confirm assumes the child can check.
 
 ### NFC personal cards — tap to agenda
 
