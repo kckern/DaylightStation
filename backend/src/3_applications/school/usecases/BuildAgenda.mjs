@@ -32,8 +32,9 @@
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
-import { studyDayIndex, offsetMinutesFor } from '#domains/school/studyDay.mjs';
+import { studyDayIndex, offsetMinutesFor, studyDayWindow } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 
@@ -66,6 +67,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
+  #selfService;
 
   /**
    * @param {object} deps
@@ -82,6 +84,14 @@ export class BuildAgenda {
    * @param {() => number} [deps.rng] - injected so a test can mint predictable tokens
    * @param {() => string} [deps.newSessionId]
    * @param {number} [deps.subjectTokenTtlHours]
+   * @param {{enabled?: boolean}|null} [deps.selfService] - `school.yml`'s
+   *   `selfService` block, passed through by composition. With `enabled: true`
+   *   every subject ticket also gets a six-digit panel code, printed beside the
+   *   lesson so a child can start their own work at the school-room panel.
+   *   Anything else — absent, `false`, a typo — and this use case behaves
+   *   exactly as it did before the feature existed: no code minted, no key on
+   *   the record, no line on the paper. Requires a token registry that can
+   *   report its live codes (`liveAccessCodes`).
    * @param {import('../ports/IReviewQueue.mjs').IReviewQueue} [deps.reviewQueue] - read
    *   for the "Notes for you" section (spec R7): a grown-up's resolved-item
    *   notes for this learner, from the current or previous study day.
@@ -97,6 +107,7 @@ export class BuildAgenda {
     // planner's gate-unlock; teacher notes join the "Notes for you" window.
     attestations = null, teacherNotes = null,
     schoolCalcStudies = null, schoolCalcMode = 'off',
+    selfService = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -121,6 +132,17 @@ export class BuildAgenda {
     }
     this.#schoolCalcStudies = schoolCalcStudies;
     this.#schoolCalcMode = schoolCalcMode;
+    // One switch, read once: `selfService.enabled !== true` is today's agenda,
+    // byte for byte — no code minted, no key on the record, no line on the paper.
+    this.#selfService = selfService?.enabled === true;
+    // A code is only unique if something can say whether it is already taken.
+    // Refuse at CONSTRUCTION rather than letting the first agenda of the day
+    // discover it: `mintAccessCode` has no default `taken`, and a registry
+    // that cannot answer would leave the within-agenda set as the only guard —
+    // which never sees yesterday's still-live codes.
+    if (this.#selfService && typeof tokens.liveAccessCodes !== 'function') {
+      throw new Error('BuildAgenda: selfService requires a token registry with liveAccessCodes');
+    }
   }
 
   /**
@@ -177,6 +199,26 @@ export class BuildAgenda {
     const offers = [];
     const createdSessions = [];
     const tokensBySubject = {};
+    const accessCodesBySubject = {};
+    // Two sets, two kinds of collision. `mintedCodes` guards the sheet being
+    // built — two lessons on ONE piece of paper must never carry the same code.
+    // `liveCodes` guards ACROSS DAYS: a code still live from a previous agenda
+    // must not be reissued, or the registry's index keeps only the last writer
+    // and the earlier record's code silently stops resolving.
+    const mintedCodes = new Set();
+    // Read ONCE per build, deliberately: the mint predicate is synchronous.
+    let liveCodes = new Set();
+    if (this.#selfService) {
+      const live = await this.#tokens.liveAccessCodes();
+      // "No live codes" and "the registry answered with nothing" are different
+      // things, and `new Set(undefined)` cannot tell them apart — it is an
+      // empty set either way, which would leave the cross-day guard silently
+      // not running. Say so instead.
+      if (!live || typeof live[Symbol.iterator] !== 'function') {
+        throw new Error('BuildAgenda: tokens.liveAccessCodes must resolve to an iterable of live codes');
+      }
+      liveCodes = new Set(live);
+    }
     const actionLabelBySubject = new Map();
     const calculatorBySubject = new Map();
 
@@ -215,17 +257,32 @@ export class BuildAgenda {
         continue;
       }
 
+      const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
+      // `mintAccessCode` tests `taken` SYNCHRONOUSLY, so the registry cannot be
+      // asked per draw — a Promise is always truthy and every attempt would read
+      // as taken, failing as a (wildly misleading) exhausted code space. The
+      // live set is fetched once, above, and closed over here.
+      const accessCode = this.#selfService
+        ? mintAccessCode({ rng: this.#rng, taken: (code) => liveCodes.has(code) || mintedCodes.has(code) })
+        : null;
+      if (accessCode) mintedCodes.add(accessCode);
       const record = mintToken({
         tokenClass: 'subject_next',
         subject: { learnerId, subject: section.subject },
         at: nowIso,
         rng: this.#rng,
-        expiresAt: new Date(Date.parse(nowIso) + this.#ttlMs).toISOString(),
+        expiresAt,
+        ...(accessCode ? {
+          accessCode,
+          // The code dies at the rollover; the token above keeps its week.
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+        } : {}),
       });
       // eslint-disable-next-line no-await-in-loop
       await this.#tokens.put(record);
 
       tokensBySubject[section.subject] = record.token;
+      if (record.accessCode) accessCodesBySubject[section.subject] = record.accessCode;
       actionLabelBySubject.set(section.subject, suffix);
       offers.push({
         subject: section.subject,
@@ -288,9 +345,47 @@ export class BuildAgenda {
       createdSessions,
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
-        sections: sectionsForDocument, tokensBySubject, notes,
+        sections: sectionsForDocument, tokensBySubject, accessCodesBySubject, notes,
       }),
     };
+  }
+
+  /**
+   * When the printed code stops working: the next study-day rollover, so a
+   * code is only good for the day its paper describes.
+   *
+   * `studyDayWindow`'s `endAtMs` IS that boundary — one copy of the math, in
+   * the domain, so this and `GetTeacherToday` can never disagree about when
+   * "today" ends.
+   *
+   * The clamp is the interesting part. `createTokenRecord` refuses a code that
+   * outlives its token (`SCHOOL_ACCESS_CODE_OUTLIVES_TOKEN`), and the two
+   * clocks are configured independently: the token's TTL is
+   * `lifecycle.subjectTokenTtlHours` (a week by default), the code's is the
+   * rollover. Set that TTL under ~24 hours and the rollover lands PAST the
+   * token's expiry — which would throw here and take the whole agenda with it.
+   * A child would get no paper at all because a grown-up shortened a TTL.
+   *
+   * So we clamp rather than fail, and say so: the code dies WITH its token,
+   * which is exactly the invariant the rule is protecting, and the print
+   * survives. The warning names the config key so the household can see why
+   * their codes expire early instead of guessing.
+   */
+  #accessCodeExpiryFor(nowIso, tokenExpiresAt) {
+    const rolloverMs = studyDayWindow(Date.parse(nowIso), {
+      timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR,
+    }).endAtMs;
+    const tokenMs = Date.parse(tokenExpiresAt);
+    if (Number.isFinite(tokenMs) && rolloverMs > tokenMs) {
+      this.#logger.warn?.('school.agenda.access-code-clamped', {
+        configKey: 'lifecycle.subjectTokenTtlHours',
+        tokenExpiresAt,
+        rolloverAt: new Date(rolloverMs).toISOString(),
+        reason: 'subject token TTL is shorter than a study day; the panel code now dies with its token',
+      });
+      return tokenExpiresAt;
+    }
+    return new Date(rolloverMs).toISOString();
   }
 
   /**
