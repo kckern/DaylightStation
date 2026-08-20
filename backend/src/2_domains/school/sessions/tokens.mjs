@@ -15,6 +15,8 @@
  * error: the holder is a child with a piece of paper, and "that didn't work" with
  * nothing after it is the failure this whole subsystem exists to avoid.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
+import { normalizeAccessCode } from './accessCode.mjs';
 
 export const TOKEN_PREFIX = 'sch:';
 
@@ -64,10 +66,14 @@ export function isSchoolToken(code) {
  * @param {Function} args.rng         () => number in [0,1) (injected — no crypto here;
  *                                    composition supplies a CSPRNG-backed draw, tests a seeded one)
  * @param {string}   [args.expiresAt] ISO expiry; forbidden for `identify`
+ * @param {string}   [args.accessCode]           six-digit panel alias (see accessCode.mjs)
+ * @param {string}   [args.accessCodeExpiresAt]  the code's own, shorter clock
  * @returns {{ token: string, tokenClass: string, subject: object, issuedAt: string,
  *             expiresAt: string|null, revokedAt: null }}
  */
-export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {}) {
+export function mintToken({
+  tokenClass, subject, at, rng, expiresAt = null, accessCode = null, accessCodeExpiresAt = null,
+} = {}) {
   if (typeof rng !== 'function') throw new Error('mintToken: rng function is required');
   let body = '';
   for (let i = 0; i < BODY_LENGTH; i += 1) {
@@ -79,6 +85,7 @@ export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {
 
   return createTokenRecord({
     token: `${TOKEN_PREFIX}${body}`, tokenClass, subject, at, expiresAt,
+    accessCode, accessCodeExpiresAt,
   }, { caller: 'mintToken' });
 }
 
@@ -87,7 +94,9 @@ export function mintToken({ tokenClass, subject, at, rng, expiresAt = null } = {
  * adapter. This is used by deterministic, device-bound lesson-action tokens;
  * all class/subject/time invariants remain in the pure domain.
  */
-export function createTokenRecord({ token, tokenClass, subject, at, expiresAt = null } = {}, { caller = 'createTokenRecord' } = {}) {
+export function createTokenRecord({
+  token, tokenClass, subject, at, expiresAt = null, accessCode = null, accessCodeExpiresAt = null,
+} = {}, { caller = 'createTokenRecord' } = {}) {
   if (!TOKEN_CLASSES.includes(tokenClass)) throw new Error(`${caller}: unknown token class: ${tokenClass}`);
   if (!TOKEN_PATTERN.test(token || '')) throw new Error(`${caller}: token must be an opaque 16-character School token`);
   if (!isIsoTimestamp(at)) throw new Error(`${caller}: at must be an ISO-8601 timestamp`);
@@ -118,9 +127,63 @@ export function createTokenRecord({ token, tokenClass, subject, at, expiresAt = 
   if (expiresAt != null && !isIsoTimestamp(expiresAt)) {
     throw new Error(`${caller}: expiresAt must be an ISO-8601 timestamp`);
   }
-  return {
+
+  const record = {
     token, tokenClass, subject: structuredClone(subject), issuedAt: at, expiresAt, revokedAt: null,
   };
+
+  // Both fields absent is today's record, key-for-key. A token with no panel
+  // code must not grow a pair of null columns nobody reads.
+  if (accessCode == null && accessCodeExpiresAt == null) return record;
+
+  // Format is accessCode.mjs's business — delegated, not restated, so the panel
+  // and the record can never disagree about what six digits means. Its typed
+  // ValidationError propagates unwrapped.
+  if (accessCode == null) {
+    throw new ValidationError(`${caller}: accessCodeExpiresAt requires an accessCode`, {
+      code: 'SCHOOL_ACCESS_CODE_MISSING_CODE', details: { caller, accessCodeExpiresAt },
+    });
+  }
+  const code = normalizeAccessCode(accessCode);
+
+  // The second clock is REQUIRED, never inherited from expiresAt. `subject_next`
+  // tokens are minted with a 7-day TTL so the printed QR outlives its agenda
+  // (BuildAgenda's DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168). A code riding that
+  // clock would still be typable a week later and would open whatever the
+  // subject offers THAT day — contradicting the paper in the child's hand.
+  if (!isIsoTimestamp(accessCodeExpiresAt)) {
+    throw new ValidationError(`${caller}: accessCode requires an ISO-8601 accessCodeExpiresAt`, {
+      code: 'SCHOOL_ACCESS_CODE_MISSING_EXPIRY', details: { caller, accessCodeExpiresAt },
+    });
+  }
+
+  record.accessCode = code;
+  record.accessCodeExpiresAt = accessCodeExpiresAt;
+  return record;
+}
+
+/**
+ * Is the typed code still good?
+ *
+ * A code dies at the study-day rollover; its token lives a week (see
+ * BuildAgenda's TTL). Two clocks on one record, deliberately — and this
+ * predicate reads ONLY the shorter one. `resolveTokenState` reads only the
+ * longer one, so a dead code never stops the printed QR beside it from working.
+ *
+ * Fails closed on anything it cannot read: a record from the registry may be
+ * older than this code, hand-edited, or half-written.
+ *
+ * @param {object} record the registry record
+ * @param {string} now    ISO current time (injected — this module reads no clock)
+ * @returns {boolean}
+ */
+export function isAccessCodeLive(record, now) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
+  if (record.revokedAt) return false;
+  if (typeof record.accessCode !== 'string' || record.accessCode.length === 0) return false;
+  if (!isIsoTimestamp(record.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
+  // At the rollover it is already dead: the boundary belongs to the next day.
+  return Date.parse(now) < Date.parse(record.accessCodeExpiresAt);
 }
 
 /**
