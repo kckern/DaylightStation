@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import * as sass from 'sass-embedded';
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import WorkPlacard from './WorkPlacard.jsx';
+import WorkPlacard, { plateText } from './WorkPlacard.jsx';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,7 +39,10 @@ it('sets the work title as the loudest type on the plate', () => {
   const css = sass.compile(path.join(__dirname, 'WorkPlacard.scss')).css.replace(/\s+/g, ' ');
   const size = (sel) => {
     const rule = css.match(new RegExp(`\\.surround-work-placard__${sel} \\{([^}]*)\\}`))?.[1] ?? '';
-    const m = rule.match(/font-size: ([\d.]+)rem/);
+    // The title's size is `var(--plate-size, 2.05rem)` since the plate learned
+    // to fit a container's segment names: the FALLBACK is the size an unfitted
+    // plate renders at, which is the size this spec is about.
+    const m = rule.match(/font-size: (?:var\(--plate-size, )?([\d.]+)rem/);
     expect(m, `no rem font-size on __${sel}`).not.toBeNull();
     return parseFloat(m[1]);
   };
@@ -126,5 +129,205 @@ describe('WorkPlacard — the provenance line’s separators', () => {
     );
     expect(container.querySelectorAll('.surround-work-placard__sep')).toHaveLength(0);
     expect(container.querySelector('.surround-work-placard__meta').textContent).toBe('Op. 8 No. 1');
+  });
+});
+
+/* ========================================================================== */
+/* THE CONTAINER PLATE — the plate names what is PLAYING                       */
+/* ========================================================================== */
+
+/**
+ * The polonaise season (`plex:696237`), reduced to two of its seven parts.
+ * Field for field the shape `YamlSurroundStore#composeOne` publishes: seven
+ * media items, one work each, every segment stamped with its own `group`.
+ */
+const SET = {
+  contentId: 'plex:696243',
+  piece: { title: 'Polonaises', short_title: "Chopin's Polonaises", composed: '1835-1846' },
+  timeline: { totalSounding: 3556, parts: [{ index: 0 }, { index: 1 }] },
+  segments: [
+    {
+      n: 1, name: 'Polonaise in C-sharp minor, Op. 26 No. 1', contentId: 'plex:696238',
+      part: 0, offset: 0, duration: 447, start: 0, end: 447,
+      group: { index: 0, work: 'chopin/polonaise-op-26-no-1', title: 'Polonaise No. 1…' },
+    },
+    {
+      n: 6, name: 'Polonaise in A-flat major, Op. 53', contentId: 'plex:696243',
+      part: 1, offset: 447, duration: 449, start: 0, end: 449,
+      group: { index: 1, work: 'chopin/polonaise-op-53', title: 'Polonaise No. 6…' },
+    },
+  ],
+  facts: ['The polonaise is a Polish processional dance.'],
+};
+
+const at = (position, data = SET) => render(
+  <WorkPlacard data={data} position={position} duration={449} playing region={{ slot: 'top' }} />,
+);
+
+describe('WorkPlacard — a container names the sounding segment', () => {
+  /**
+   * TO GO RED: headline `piece.title` on a container as well — the plate reads
+   * "Polonaises" for fifty-nine minutes and this fails with
+   *   expected 'Polonaises' to be 'Polonaise in A-flat major, Op. 53'
+   */
+  it('headlines the current segment with the set beneath it', () => {
+    // 200s into plex:696243, which is the SECOND of the two parts drawn here.
+    const { getByTestId } = at(200);
+    expect(getByTestId('surround-placard-title').textContent)
+      .toBe('Polonaise in A-flat major, Op. 53');
+    expect(getByTestId('surround-placard-set').textContent)
+      .toBe("Chopin’s Polonaises·2 of 2");
+  });
+
+  /**
+   * The ordinal is the segment's place on the rail, not the part's index and
+   * not a constant.
+   * TO GO RED: number from the AUTHORED index (`mapped.index + 1`) rather than
+   * the drawn one, or hard-code 1.
+   */
+  it('counts the segment’s place along the whole set', () => {
+    const { getByTestId } = at(100, { ...SET, contentId: 'plex:696238' });
+    expect(getByTestId('surround-placard-title').textContent)
+      .toBe('Polonaise in C-sharp minor, Op. 26 No. 1');
+    expect(getByTestId('surround-placard-set').textContent)
+      .toBe("Chopin’s Polonaises·1 of 2");
+  });
+
+  /**
+   * Nothing sounding — the position is past this item's own segment (the
+   * applause after the sixth polonaise, before the seventh loads).
+   * THE LINE IS RESERVED, NOT REMOVED: an element that disappeared would give
+   * its height back and the plate would shrink by a line between two works.
+   * TO GO RED: render the set line conditionally on `set` — `getByTestId`
+   * throws "Unable to find an element by: [data-testid=surround-placard-set]".
+   */
+  it('keeps the set line’s height with nothing sounding, and names the work', () => {
+    const { getByTestId } = at(600);
+    expect(getByTestId('surround-placard-set')).toBeTruthy();
+    // A NO-BREAK SPACE, not a plain one, and the difference is the reserve
+    // actually existing: a block whose only content is collapsible whitespace
+    // generates no line box, so the "reserved" line is as absent as no element
+    // would have been. It was a plain space until Chromium reported the plate
+    // 17.28px shorter here than with a polonaise sounding
+    // (`band.measure.test.jsx`), which is exactly the set line's own line box.
+    expect(getByTestId('surround-placard-set').textContent).toBe('\u00a0');
+    expect(getByTestId('surround-placard-title').textContent).toBe('Polonaises');
+  });
+
+  it('sets the interpunct as an element on the set line too, never as whitespace', () => {
+    const { getByTestId } = at(200);
+    const seps = getByTestId('surround-placard-set').querySelectorAll('.surround-work-placard__sep');
+    expect(seps).toHaveLength(1);
+    expect(seps[0].textContent).toBe('·');
+  });
+
+  it('carries the ruler the fit measures on, and only on a container', () => {
+    expect(at(200).container.querySelector('.surround-work-placard__probe')).not.toBeNull();
+    expect(at(200, EROICA).container.querySelector('.surround-work-placard__probe')).toBeNull();
+  });
+});
+
+/* ========================================================================== */
+/* THE REGRESSION THIS WAVE PROMISED: the Eroica's plate is untouched          */
+/* ========================================================================== */
+
+/**
+ * The live Eroica payload (`plex:663134`), verbatim in shape: FOUR segments —
+ * more than the polonaise set has parts — in ONE media item, and two of them
+ * carrying an authored `note`. It is the payload every "is this a container"
+ * shortcut gets wrong.
+ */
+const EROICA = {
+  contentId: 'plex:663134',
+  piece: {
+    title: 'Symphony No. 3 in E-flat major, "Eroica"',
+    short_title: "Beethoven's Third Symphony",
+    opus: 'Op. 55', composed: '1803-04', premiered: 'Vienna, 1805', musicEndsAt: 2955,
+  },
+  timeline: { totalSounding: 2933.65, parts: [{ contentId: 'plex:663134', index: 0, sounding: 2933.65 }] },
+  segments: [
+    { n: 1, name: 'Allegro con brio', contentId: 'plex:663134', part: 0, offset: 0, duration: 954.65, start: 21.35, end: 976 },
+    { n: 2, name: 'Marcia funebre. Adagio assai', note: 'The funeral march.', contentId: 'plex:663134', part: 0, offset: 954.65, duration: 949, start: 976, end: 1925 },
+    { n: 3, name: 'Scherzo. Allegro vivace', contentId: 'plex:663134', part: 0, offset: 1903.65, duration: 353, start: 1925, end: 2278 },
+    { n: 4, name: 'Finale. Allegro molto', contentId: 'plex:663134', part: 0, offset: 2256.65, duration: 677, start: 2278, end: 2955 },
+  ],
+  facts: ['One.', 'Two.'],
+};
+
+/**
+ * THE GOLDEN. Captured by rendering the plate at commit b1f9f6725 — before this
+ * task — with the payload above, and frozen here character for character. The
+ * ONE addition is `data-testid="surround-placard-title"`, which is a handle for
+ * a spec and not a mark on the screen.
+ *
+ * It is a golden rather than a list of assertions because the requirement is
+ * literally "exactly as it does today": no extra element, no extra attribute,
+ * no changed text, no reordering. Any of those is a rug-pull on the one payload
+ * this wave promised not to touch.
+ *
+ * TO GO RED: drop the container gate (`isComposedContainer`) — the plate then
+ * headlines "Marcia funebre. Adagio assai", grows a set line and a ruler, and
+ * this fails on the first character of the headline.
+ */
+const EROICA_PLATE = '<div class="surround-work-placard" data-testid="surround-work-placard">'
+  + '<h2 class="surround-work-placard__title" data-testid="surround-placard-title">'
+  + 'Symphony No. 3 in E-flat major, “Eroica”</h2>'
+  + '<p class="surround-work-placard__meta">Op. 55'
+  + '<span class="surround-work-placard__sep" aria-hidden="true">·</span>1803-04'
+  + '<span class="surround-work-placard__sep" aria-hidden="true">·</span>Vienna, 1805</p></div>';
+
+describe('WorkPlacard — one media item is not a container', () => {
+  it('renders the Eroica’s plate exactly as it did before this wave', () => {
+    // 1200s: inside the funeral march, the movement that HAS a note — the state
+    // in which a container-shaped plate would look most obviously different.
+    const { container } = at(1200, EROICA);
+    expect(container.innerHTML).toBe(EROICA_PLATE);
+  });
+
+  it('names the symphony at every position, not the movement', () => {
+    [0, 1200, 2400, 2950].forEach((p) => {
+      const { getByTestId, unmount } = at(p, EROICA);
+      expect(getByTestId('surround-placard-title').textContent)
+        .toBe('Symphony No. 3 in E-flat major, “Eroica”');
+      unmount();
+    });
+  });
+});
+
+/* ========================================================================== */
+/* plateText — the decision, on its own                                        */
+/* ========================================================================== */
+
+describe('plateText', () => {
+  const PIECE = { title: 'Polonaises', short_title: "Chopin's Polonaises" };
+  const SEG = { name: 'Polonaise in A-flat major, Op. 53' };
+
+  it('headlines the segment and labels the set with its short title', () => {
+    expect(plateText({ piece: PIECE, segment: SEG, ordinal: 6, count: 7 })).toEqual({
+      title: 'Polonaise in A-flat major, Op. 53',
+      set: { name: "Chopin's Polonaises", ordinal: 6, count: 7 },
+    });
+  });
+
+  /** TO GO RED: read `title` first — the label becomes the catalogue "Polonaises". */
+  it('falls back to the title where the corpus authored no short title', () => {
+    expect(plateText({ piece: { title: 'Études' }, segment: { name: 'No. 3 in E major' }, ordinal: 3, count: 27 }))
+      .toEqual({ title: 'No. 3 in E major', set: { name: 'Études', ordinal: 3, count: 27 } });
+  });
+
+  /**
+   * A REFUSED NAME NEVER REACHES THE SCREEN. The fit has certified it cannot be
+   * set whole at the plate's floor; showing it at any size is the ellipsis this
+   * wave removes. The plate names the work instead — a smaller claim, and true.
+   * TO GO RED: ignore `refused` — the title comes back as the segment name.
+   */
+  it('names the work instead of a name the fit refused', () => {
+    expect(plateText({ piece: PIECE, segment: SEG, ordinal: 6, count: 7, refused: true }))
+      .toEqual({ title: 'Polonaises', set: { name: "Chopin's Polonaises", ordinal: 6, count: 7 } });
+  });
+
+  it('writes no set line with nothing sounding, or on a rail that draws nothing', () => {
+    expect(plateText({ piece: PIECE, segment: null, ordinal: 0, count: 7 }).set).toBeNull();
+    expect(plateText({ piece: PIECE, segment: SEG, ordinal: 1, count: 0 }).set).toBeNull();
   });
 });

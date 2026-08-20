@@ -640,6 +640,173 @@ export function fitBand(root, pools) {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* THE PLATE — the same law, one line wide                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The plate's headline size — 2.05rem, exactly what the stylesheet has set
+ * since design wave 4, and the ladder's ceiling rather than a new number. A
+ * plate whose headline fits is set at this size and is pixel-for-pixel the
+ * plate that shipped.
+ */
+export const PLATE_CEILING_PX = 32.8;
+
+/**
+ * The smallest a headline may be set on the plate — 1.5rem.
+ *
+ * DERIVED FROM THE NOTE'S CEILING, not chosen: `PROSE_CEILING_PX` (19.2px) is
+ * the loudest a programme note may ever be, and the plate is the headline of
+ * the whole screen. One typographic step above the loudest note — a major third,
+ * 1.25 — is 24px. Below that the plate stops being the loudest type in the
+ * frame and starts competing with the band, which is the relationship the
+ * ceiling encodes from the other side.
+ *
+ * IT DOES NOT SCALE WITH THE ROOT, for the same reason `PROSE_CEILING_PX` does
+ * not: it is a claim about two things on the SAME root (the plate against the
+ * band beneath it), both set in rem, so the relationship already rides the root.
+ * Only the angular readability floor has to be re-expressed per screen.
+ */
+export const PLATE_FLOOR_PX = round2(PROSE_CEILING_PX * 1.25);
+
+/**
+ * The plate's one measurable box: its headline's own probe, and the width the
+ * plate may ever be.
+ *
+ * THE AVAILABLE WIDTH IS THE CAP, NOT THE TITLE'S BOX. The plate is
+ * `width: max-content` capped at 86% of the measured video (`SurroundFrame.scss`,
+ * `.surround-frame__header`), so the rendered title's box is as wide as
+ * WHATEVER TITLE IS IN IT — measuring against that would tell every string that
+ * it fits, and would make the fit a function of the sounding segment rather
+ * than a constant of the piece. The cap is read off the header's computed
+ * `max-width` and the plate's own padding taken out of it, so the number is the
+ * stylesheet's rather than a copy of it.
+ */
+function plateZone(root) {
+  const title = root?.querySelector?.('[data-testid="surround-placard-title"]');
+  const probe = title?.querySelector?.('.surround-work-placard__probe');
+  const view = root?.ownerDocument?.defaultView;
+  const header = root?.closest?.('.surround-frame__header');
+  if (!probe || !view || !header) return null;
+  // THE CAP HAS TO BE A LENGTH, AND UNTIL THE VIDEO IS MEASURED IT IS NOT.
+  // The rule is `calc(var(--surround-media-w, 100%) * 0.86)`, and the frame
+  // publishes `--surround-media-w` only once it has measured the media box —
+  // before that the computed value is a PERCENTAGE ("86%"), which `parseFloat`
+  // would read as 86 pixels and refuse every name on the rail. A percentage
+  // means "not measured yet", which is the same answer as no layout at all.
+  const cap = view.getComputedStyle(header).maxWidth;
+  if (!/px\s*$/.test(String(cap))) return null;
+  const capPx = parseFloat(cap);
+  if (!(capPx > 0)) return null;
+  const pad = view.getComputedStyle(root);
+  const availPx = capPx
+    - (parseFloat(pad.paddingLeft) || 0)
+    - (parseFloat(pad.paddingRight) || 0);
+  if (!(availPx > 0)) return null;
+  return { probe, availPx };
+}
+
+/** How wide this string sets on ONE line at this size. */
+function widthOf(zone, text, fontPx) {
+  const { probe } = zone;
+  probe.style.fontSize = `${fontPx}px`;
+  probe.textContent = text;
+  return probe.getBoundingClientRect().width;
+}
+
+/** The most characters of `text` that set inside the cap at the floor. */
+function plateBudget(zone, text) {
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (widthOf(zone, text.slice(0, mid), PLATE_FLOOR_PX) <= zone.availPx + EPS) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
+}
+
+/**
+ * Set the plate's headline to the largest size at which every name it will ever
+ * carry sets whole on one line.
+ *
+ * THE SAME LAW AS THE BAND'S, ON THE SURFACE THE LAW WAS WRITTEN FOR. The plate
+ * has always had `text-overflow: ellipsis` as a guard against a long authored
+ * title; a container makes that guard load-bearing, because the headline is now
+ * a SEGMENT name that changes every few minutes and one of them running long is
+ * an ordinary authoring outcome rather than an emergency. So the names are
+ * measured, the type is sized to them, and a name that cannot be set even at the
+ * floor is REFUSED and reported rather than quietly cut mid-word.
+ *
+ * THE POOL IS EVERY NAME ON THE RAIL, for the same reason `bandPools` is the
+ * union over the piece: a size solved against the sounding segment alone would
+ * change at every part boundary, and the plate would grow and shrink under a
+ * viewer who is looking at it.
+ *
+ * @param {Element} root the placard's root element.
+ * @param {string[]} titles every headline this plate may carry, CURLED — what
+ *   is measured has to be what is painted.
+ * @returns {null|{fontPx:number, floorPx:number, ceilingPx:number, availPx:number,
+ *   rejected:Array<{text:string,chars:number,budget:number,overflowPx:number}>}}
+ *   null when the plate has not been laid out inside a frame yet — which is the
+ *   state a spec with no frame around it is in, and the state in which nothing
+ *   may be refused.
+ */
+export function fitPlate(root, titles) {
+  const zone = plateZone(root);
+  if (!zone) return null;
+  const pool = (Array.isArray(titles) ? titles : []).filter((t) => typeof t === 'string' && t.trim());
+
+  // PASS ONE — what no size in the ladder can set whole.
+  const rejected = [];
+  const keep = [];
+  for (const text of pool) {
+    const w = widthOf(zone, text, PLATE_FLOOR_PX);
+    if (w <= zone.availPx + EPS) { keep.push(text); continue; }
+    rejected.push({
+      text,
+      chars: text.length,
+      budget: plateBudget(zone, text),
+      overflowPx: Number((w - zone.availPx).toFixed(2)),
+    });
+  }
+
+  // PASS TWO — the largest size that sets all the survivors.
+  const fontPx = keep.length
+    ? largestPassing(
+      PLATE_FLOOR_PX, PLATE_CEILING_PX, FONT_STEP_PX,
+      (f) => keep.every((t) => widthOf(zone, t, f) <= zone.availPx + EPS),
+    )
+    : PLATE_CEILING_PX;
+
+  zone.probe.textContent = '';
+  zone.probe.style.fontSize = '';
+
+  return {
+    fontPx: Number(fontPx.toFixed(2)),
+    floorPx: PLATE_FLOOR_PX,
+    ceilingPx: PLATE_CEILING_PX,
+    availPx: Number(zone.availPx.toFixed(2)),
+    rejected,
+  };
+}
+
+/** The names the plate must NOT set. Null when it refused nothing. */
+export function withheldPlate(fit) {
+  if (!fit?.rejected?.length) return null;
+  return new Set(fit.rejected.map((r) => r.text));
+}
+
+/**
+ * The custom property a plate fit publishes. The stylesheet's own 2.05rem is
+ * the fallback, so an unfitted plate — no frame, no layout, no container — is
+ * the plate that shipped.
+ */
+export function plateStyle(fit) {
+  if (!fit) return null;
+  return { '--plate-size': `${fit.fontPx}px` };
+}
+
 /**
  * The strings the band must NOT show, per register.
  *

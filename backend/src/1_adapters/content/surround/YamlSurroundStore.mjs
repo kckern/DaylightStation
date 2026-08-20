@@ -784,13 +784,25 @@ export class YamlSurroundStore extends ISurroundStore {
 
     const segments = [];
     const slots = [];
+    // THE FACTS OF THE WORKS THIS CONTAINER PLAYS, by work slug — the middle
+    // rung of the band's precedence (frontend `Surround/segments.js`,
+    // `factPool`): a segment's own note, then ITS WORK's facts, then the
+    // container's. Without this the polonaise season could only ever print the
+    // eight facts about the set while a single polonaise was sounding, and the
+    // four facts that work authored about ITSELF — the ones a viewer wants
+    // while it plays — reached no screen at all.
+    //
+    // Keyed by `group.work`, which is the same slug the segments are stamped
+    // with, so the frontend joins on a value it already has rather than on the
+    // part's position (which a dropped part renumbers).
+    const groupFacts = {};
     container.parts.forEach((entry, authored) => {
       const ref = partRef(entry);
       const index = slots.length;
       // `authored` is the position in the YAML — the line an author has to go
       // and fix — while `index` is the dense position on the composed rail.
       const mine = ref
-        ? this.#referencedSegments(container, ref, authored, byContentId)
+        ? this.#referencedSegments(container, ref, authored, byContentId, groupFacts)
         : this.#inlineSegments(container, entry, byWork);
       if (!mine) return;
 
@@ -808,6 +820,7 @@ export class YamlSurroundStore extends ISurroundStore {
       if (slot) slot.sounding += segment.duration;
     }
     container.payload.segments = placed;
+    container.payload.groupFacts = groupFacts;
     container.payload.timeline = {
       totalSounding: placed.reduce((n, c) => n + c.duration, 0),
       parts: slots
@@ -876,9 +889,14 @@ export class YamlSurroundStore extends ISurroundStore {
    * dependency-ordered pass; the spec scopes nesting out at one level and
    * nothing authors it, so it stays refused rather than half-working.)
    *
+   * @param {Object} groupFacts - Accumulator: each part work's own facts, by
+   *   slug. Filled here rather than in a second walk because this is the only
+   *   place that holds the resolved part beside the group it is stamped with —
+   *   a later pass over the composed rail has the slug and no way back to the
+   *   sidecar it came from.
    * @private
    */
-  #referencedSegments(container, contentId, authored, byContentId) {
+  #referencedSegments(container, contentId, authored, byContentId, groupFacts = {}) {
     const part = byContentId.get(contentId);
     // A container listing itself is a cycle wearing a different hat.
     if (!part || part === container) {
@@ -897,6 +915,11 @@ export class YamlSurroundStore extends ISurroundStore {
     // labels are more specific than anything nameable from out here. Neither
     // kind carries its own index: `#renumberGroups` assigns every one of them.
     const group = { work: part.work, title: part.payload.piece?.title ?? part.work };
+    // The heading's facts travel with the heading. Only a part that authored
+    // some is recorded: an empty entry and an absent one mean the same thing to
+    // the band (fall through to the container's facts), and an empty array on
+    // the wire is a claim the corpus never made.
+    if (part.work && part.payload.facts?.length) groupFacts[part.work] = part.payload.facts;
     return part.payload.segments.map((c) => (c.group ? c : { ...c, group }));
   }
 
@@ -1216,6 +1239,11 @@ export class YamlSurroundStore extends ISurroundStore {
         timeline: { totalSounding: segments.reduce((n, c) => n + c.duration, 0), parts: timelineParts },
         cues,
         facts: asArray(work.facts),
+        // Empty unless this piece is a container that composes — #composeOne
+        // replaces it with each part work's own facts. Present on every payload
+        // so the shape does not change under the frontend when a container
+        // fails to compose.
+        groupFacts: {},
         composer,
         assetBase: `library/${domain}`
       }
