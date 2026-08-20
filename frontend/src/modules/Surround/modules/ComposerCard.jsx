@@ -188,10 +188,32 @@ export default function ComposerCard({
   // panel. Every sibling module (WorkPlacard, PlaceCarousel, CountryMapModule)
   // renders null on empty data and says why: a mat with nothing in it is worse
   // than an absence, because it is an absence the viewer has to look at.
-  if (!hasHeader && !shownFact.text) return null;
+  /**
+   * THE PLATE VARIANT — this card's SECOND HOME.
+   *
+   * When the lyric rail takes the right-hand column, the programme rail slides
+   * out and takes the composer's face and name with it, and a frame that stops
+   * saying whose music this is has lost something it should never lose. So the
+   * `libretto` module mounts THIS component again in its corner, asking for the
+   * header only: portrait, brass nameplate, birthplace. No fact zone — the
+   * corner is the height of the band, and a dissolving line of prose in it
+   * would compete with the verse above it for the same glance.
+   *
+   * A VARIANT, not a copy. One component in two positions is the only shape in
+   * which a change to the plate cannot make the two homes disagree; a second
+   * "small composer plate" component would be identical on the day it was
+   * written and drifting by the next edit.
+   */
+  const plateOnly = region?.variant === 'plate';
+
+  if (!hasHeader && (plateOnly || !shownFact.text)) return null;
 
   return (
-    <div className="surround-composer-card" data-testid="surround-composer-card">
+    <div
+      className={`surround-composer-card${plateOnly ? ' surround-composer-card--plate' : ''}`}
+      data-testid="surround-composer-card"
+      data-variant={plateOnly ? 'plate' : undefined}
+    >
       {hasHeader && (
         <div className="surround-composer-card__header" data-testid="surround-composer-header">
           {portraitSrc && (
@@ -255,7 +277,7 @@ export default function ComposerCard({
         </div>
       )}
 
-      {shownFact.text && (
+      {!plateOnly && shownFact.text && (
         <div className="surround-composer-card__fact-zone" data-testid="surround-composer-fact-zone">
           <hr className="surround-composer-card__fact-rule" />
           <p
