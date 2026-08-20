@@ -247,9 +247,8 @@ export function isAccessCodeLive(record, now) {
 **Files:**
 - Modify: `backend/src/3_applications/school/ports/ITokenRegistry.mjs`
 - Modify: `backend/src/1_adapters/persistence/yaml/YamlTokenRegistry.mjs`
-- Test: `tests/isolated/adapter/school/YamlTokenRegistry.accessCode.test.mjs`
-  *(`adapter` is a JEST target and existing files there import vitest — run it directly with
-  vitest as per Preflight, and do NOT add a new directory.)*
+- Test: `tests/isolated/adapter/school/tokenRegistry.test.mjs` — APPEND to the existing file.
+  (`adapter` is a JEST target whose files import vitest — run directly per Preflight.)
 
 Records are keyed by token body on disk (`<dataDir>/household/school/tokens/{body}.yml`), so a code
 lookup needs an index. Keep it simple: an in-memory `Map<code, body>` built on the same boot sweep
@@ -274,8 +273,9 @@ code returns `null`; two records with different codes do not collide.
   }
 ```
 
-Implement in `YamlTokenRegistry` using `isAccessCodeLive(record, now)` so expiry policy stays in the
-domain. Take the clock as an injected `clock` dep, consistent with the rest of school.
+Implement in `YamlTokenRegistry` using `isAccessCodeLive(record, { now })` so expiry policy stays in
+the domain. The class already carries an injected `#now` ms clock — use it; do not add a second
+clock dep.
 
 **Step 4: Run, confirm PASS. Step 5: Commit** — `feat(school): resolve a token by its panel code`
 
@@ -311,6 +311,22 @@ With it true, each `subject_next` record carries a code and an `accessCodeExpire
 next study-day boundary.
 
 **Step 2: Run, confirm fail. Step 3: Implement.**
+
+**Two rules Task 2 added that the mint MUST respect, or `createTokenRecord` throws:**
+
+1. **A code is legal only on a `subject_next` token** (`SCHOOL_ACCESS_CODE_WRONG_CLASS`). That is
+   already the only place Task 4 mints, so this costs nothing — but a test constructing a record of
+   any other class will throw, which is a real trip when writing fixtures.
+2. **`accessCodeExpiresAt` may not be LATER than `expiresAt`** (`SCHOOL_ACCESS_CODE_OUTLIVES_TOKEN`;
+   equal is allowed). The token TTL defaults to 7 days and the code expires at the next 4am
+   rollover, so the normal case is fine — but a household configuring `subjectTokenTtlHours` below
+   ~24 would cross the rollover and start throwing. Clamp the code's expiry to the token's, or fail
+   loudly with a message naming the config key.
+
+**`taken` must consult the registry, not just a local Set** — `getByAccessCode` is what prevents a
+code minted on a previous day from being reissued while the older record is still live. Task 3 notes
+that if two live records ever carry the same code, the index's last writer wins and the earlier
+record's code becomes unreachable; this predicate is what stops that happening.
 
 At `BuildAgenda.mjs:218`, extend the existing `mintToken` call:
 
