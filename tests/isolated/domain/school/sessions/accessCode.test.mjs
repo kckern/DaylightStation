@@ -99,6 +99,7 @@ describe('mintAccessCode', () => {
     ['Infinity', Infinity],
     ['null', null],
     ['an object', {}],
+    ['a numeric string', '0.5'],
   ])('refuses to mint from a non-finite draw (%s) rather than degrading to 000000', (_label, draw) => {
     const error = thrownBy(() => mintAccessCode({ rng: () => draw, taken: free }));
     expect(error.name).toBe('DomainInvariantError');

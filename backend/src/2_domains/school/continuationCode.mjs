@@ -7,6 +7,8 @@
  * entire six-decimal-digit space.  The affine permutation makes the visible
  * number evenly distributed while remaining exactly reversible offline.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
+
 export const SCHOOL_CONTINUATION_CODE_DIGITS = 6;
 export const SCHOOL_CONTINUATION_CODE_SPACE = 1_000_000;
 export const SCHOOL_CONTINUATION_LEARNER_SLOTS = 4;
@@ -19,11 +21,15 @@ const CODE = /^\d{6}$/;
 
 export function normalizeSchoolContinuationModuleCode(value) {
   if (typeof value !== 'string' || !CODE.test(value)) {
-    throw new Error('School continuationCode must be exactly six decimal digits');
+    throw new ValidationError('School continuationCode must be exactly six decimal digits', {
+      code: 'INVALID_SCHOOL_CONTINUATION_CODE', details: { value },
+    });
   }
   const numeric = Number(value);
   if (numeric >= SCHOOL_CONTINUATION_MODULE_SPACE) {
-    throw new Error('School continuationCode must be between 000000 and 249999');
+    throw new ValidationError('School continuationCode must be between 000000 and 249999', {
+      code: 'SCHOOL_CONTINUATION_MODULE_CODE_OUT_OF_RANGE', details: { value },
+    });
   }
   return value;
 }
@@ -38,7 +44,9 @@ export function encodeSchoolContinuationCode({ learnerSlot, moduleCode } = {}) {
 
 export function decodeSchoolContinuationCode(value) {
   if (typeof value !== 'string' || !CODE.test(value)) {
-    throw new Error('School continuation access code must be exactly six decimal digits');
+    throw new ValidationError('School continuation access code must be exactly six decimal digits', {
+      code: 'INVALID_SCHOOL_CONTINUATION_CODE', details: { value },
+    });
   }
   const encoded = Number(value);
   const payload = mod(MULTIPLIER_INVERSE * (encoded - OFFSET), SCHOOL_CONTINUATION_CODE_SPACE);
@@ -50,7 +58,9 @@ export function decodeSchoolContinuationCode(value) {
 
 function normalizeLearnerSlot(value) {
   if (!Number.isInteger(value) || value < 0 || value >= SCHOOL_CONTINUATION_LEARNER_SLOTS) {
-    throw new Error(`School continuation learnerSlot must be 0..${SCHOOL_CONTINUATION_LEARNER_SLOTS - 1}`);
+    throw new ValidationError(`School continuation learnerSlot must be 0..${SCHOOL_CONTINUATION_LEARNER_SLOTS - 1}`, {
+      code: 'SCHOOL_CONTINUATION_LEARNER_SLOT_INVALID', details: { value },
+    });
   }
   return value;
 }
