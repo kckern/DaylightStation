@@ -62,7 +62,7 @@ describe('normalizeAccessCode', () => {
   });
   it('rejects anything else', () => {
     ['12345', '1234567', 'abc123', '', null, 123456].forEach((bad) => {
-      expect(() => normalizeAccessCode(bad)).toThrow(/six decimal digits/);
+      expect(thrownBy(() => normalizeAccessCode(bad)).code).toBe('INVALID_SCHOOL_ACCESS_CODE');
     });
   });
 });
@@ -101,52 +101,41 @@ describe('mintAccessCode', () => {
 ```
 Expected: FAIL — `Failed to resolve import "#domains/school/sessions/accessCode.mjs"`.
 
-**Step 3: Write the minimal implementation**
+**Step 3 — DELIVERED. Do not re-implement from this plan.**
+
+Task 1 shipped in `72ba1d8d7` + `9d7a3aae8`. **Read the module, not this document.** Nine
+code-review items amended the original spec; the source block that used to sit here is stale, and
+re-implementing from it would undo the review. The delivered contract:
 
 ```js
-/**
- * A 6-digit access code is a human-typable alias for a printed `subject_next`
- * token. A child types it into the school-room panel; the panel resolves it to
- * the same token a QR scan would have carried.
- *
- * It is NOT authentication (design D1): anyone who can read the code can ask
- * the panel to open that work. The lock keeps a child on task, not out of a
- * vault, so there is no throttle and no lockout anywhere in this path.
- *
- * Deliberately NOT `../continuationCode.mjs`. That module is a reversible
- * affine encoding of `learnerSlot x moduleCode` — permanent and fully
- * enumerable by design, and typed into a CALCULATOR. These are random,
- * study-day scoped, and typed into a PANEL.
- *
- * Randomness is injected, never read: this module has no clock and no
- * `Math.random`, exactly as `mintToken({ rng })` does not.
- */
-export const SCHOOL_ACCESS_CODE_DIGITS = 6;
-export const SCHOOL_ACCESS_CODE_SPACE = 1_000_000;
+// backend/src/2_domains/school/sessions/accessCode.mjs
+SCHOOL_ACCESS_CODE_DIGITS = 6
+SCHOOL_ACCESS_CODE_SPACE  = 10 ** SCHOOL_ACCESS_CODE_DIGITS   // derived, not restated
 
-/** Bounded so an exhausted space fails loudly instead of spinning. */
-const MAX_MINT_ATTEMPTS = 50;
-const CODE = /^\d{6}$/;
-
-export function normalizeAccessCode(value) {
-  if (typeof value !== 'string' || !CODE.test(value)) {
-    throw new Error('School access code must be exactly six decimal digits');
-  }
-  return value;
-}
-
-export function mintAccessCode({ random, taken = () => false } = {}) {
-  if (typeof random !== 'function') throw new Error('mintAccessCode: random function is required');
-  for (let attempt = 0; attempt < MAX_MINT_ATTEMPTS; attempt += 1) {
-    // Clamp rather than trust — the same posture mintToken takes with rng.
-    const draw = Math.min(Math.max(Number(random()) || 0, 0), 0.9999999999);
-    const code = String(Math.floor(draw * SCHOOL_ACCESS_CODE_SPACE))
-      .padStart(SCHOOL_ACCESS_CODE_DIGITS, '0');
-    if (!taken(code)) return code;
-  }
-  throw new Error('mintAccessCode: could not mint an unused code');
-}
+normalizeAccessCode(value)      // -> value, or throws
+mintAccessCode({ rng, taken })  // BOTH REQUIRED — no defaults
 ```
+
+Errors are TYPED (`#domains/core/errors/index.mjs`), never bare `Error`:
+
+| Failure | Error | `code` |
+|---|---|---|
+| malformed code | `ValidationError` | `INVALID_SCHOOL_ACCESS_CODE` |
+| missing `rng` or `taken` | `ValidationError` | `INVALID_SCHOOL_ACCESS_CODE_MINT` (`details.missing`) |
+| non-numeric / non-finite draw | `DomainInvariantError` | `SCHOOL_ACCESS_CODE_RNG_INVALID` |
+| space exhausted | `DomainInvariantError` | `SCHOOL_ACCESS_CODE_SPACE_EXHAUSTED` |
+
+**Assert `.code`, never a message regex.** That string-matching is exactly what review item 1
+removed — and `continuationCode.mjs:41` carries the phrase "access code" inside a bare-`Error`
+message, so the obvious regex matches across both modules, one typed and one not.
+
+**`taken` has no default.** Every caller passes a collision predicate. Task 4 must wire it to
+Task 3's `getByAccessCode`, not only to a within-agenda `Set` — a forgotten predicate is now a
+thrown error rather than duplicate codes on paper.
+
+**The draw guard must stay ahead of coercion.** `Number(null)` is `0` and would mint `000000` on
+every agenda for every child. `Number.isFinite` does not coerce, so it takes the raw value
+directly.
 
 **Step 4: Run it and watch it pass**
 
@@ -198,7 +187,7 @@ describe('access code on a token record', () => {
     expect(() => createTokenRecord({
       ...base, token: 'sch:ABCDEFGHJKLMNPQR', accessCode: '48192',
       accessCodeExpiresAt: '2026-08-21T11:00:00Z',
-    })).toThrow(/six decimal digits/);
+    })).toThrow(expect.objectContaining({ code: 'INVALID_SCHOOL_ACCESS_CODE' }));
   });
 
   it('refuses a code with no expiry of its own', () => {
@@ -340,16 +329,18 @@ const record = mintToken({
   ...(accessCode ? {
     accessCode,
     // The code dies at the rollover; the token above keeps its week.
-    accessCodeExpiresAt: nextStudyDayBoundary(nowIso, {
+    accessCodeExpiresAt: new Date(studyDayWindow(Date.parse(nowIso), {
       timezone: this.#timezone, boundaryHour: this.#boundaryHour,
-    }),
+    }).endAtMs).toISOString(),
   } : {}),
 });
 ```
 
 `mintedCodes` is a `Set` local to the build, guarding within-agenda collisions; `getByAccessCode`
-guards across days. Add `nextStudyDayBoundary` to `studyDay.mjs` if it is not already there
-(pure, injected `now`) with its own test.
+guards across days. Do NOT add a `nextStudyDayBoundary` helper. `studyDayWindow(nowMs, { timezone, boundaryHour })`
+in `studyDay.mjs` already returns `{ startAtMs, endAtMs }`, and `endAtMs` IS the next 4am
+boundary. That file keeps one copy of this math on purpose, so `GetTeacherToday` and the
+lifecycle window filter cannot disagree about what "today" means.
 
 **Note the exclusion:** a schoolcalc entry returns early at `BuildAgenda.mjs:210-215` with
 `token: null`, so it never reaches this code and is not keypad-reachable. That is intended
