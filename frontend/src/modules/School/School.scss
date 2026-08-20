@@ -1568,3 +1568,84 @@
   }
 }
 @keyframes school-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+// ---------------------------------------------------------------------------
+// Locked self-service panel (design §3)
+// ---------------------------------------------------------------------------
+// Sized for the Portal at 1280x800, touched by a child standing at a wall: the
+// keys are the biggest thing on the screen and nothing else competes with them.
+// The panel has no header in this mode, so the body owns the whole viewport.
+.school-app--locked .school-app__body {
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem; overflow: hidden;
+}
+
+.school-selfservice {
+  display: flex; flex-direction: column; align-items: center; gap: 1rem;
+  width: min(30rem, 100%);
+}
+.school-selfservice__title {
+  margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.01em;
+}
+.school-selfservice__entry {
+  display: flex; gap: 0.55rem;
+}
+.school-selfservice__slot {
+  width: 2.6rem; height: 3.2rem; display: grid; place-items: center;
+  border: 2px solid var(--school-border); border-radius: 10px;
+  background: var(--school-surface); font-size: 2rem; line-height: 1;
+  &.is-filled { border-color: var(--school-accent); }
+}
+.school-selfservice__message {
+  margin: 0; min-height: 1.5rem; font-size: 1.25rem; font-weight: 700;
+  color: var(--school-warn); text-align: center;
+  &.is-degraded { color: var(--school-danger); }
+}
+.school-selfservice__retry {
+  min-height: 52px; padding: 0 1.6rem; border: 1px solid var(--school-border);
+  border-radius: 12px; background: var(--school-surface-2); color: var(--school-fg);
+  font-size: 1.1rem; font-weight: 700; cursor: pointer;
+}
+.school-selfservice__pad {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem; width: 100%;
+}
+.school-selfservice__key {
+  min-height: 76px; border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-surface); color: var(--school-fg);
+  font-size: 2rem; font-weight: 700; cursor: pointer;
+  &:active { background: var(--school-surface-2); }
+  &:disabled { opacity: 0.45; }
+  &--clear, &--back { font-size: 1.2rem; color: var(--school-muted); }
+}
+.school-selfservice__go {
+  width: 100%; min-height: 72px; border: none; border-radius: 14px;
+  background: var(--school-accent); color: var(--school-accent-ink);
+  font-size: 1.5rem; font-weight: 800; cursor: pointer;
+  &:disabled { background: var(--school-surface-2); color: var(--school-muted); cursor: default; }
+}
+
+.school-selfservice-card {
+  display: flex; flex-direction: column; align-items: center; gap: 1.4rem;
+  width: min(38rem, 100%); text-align: center;
+}
+.school-selfservice-card__subject {
+  margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--school-muted);
+}
+.school-selfservice-card__title { margin: 0.2rem 0 0; font-size: 2.3rem; font-weight: 800; }
+.school-selfservice-card__sentence { margin: 0; font-size: 1.4rem; line-height: 1.4; }
+.school-selfservice-card__actions {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 0.9rem; width: 100%;
+}
+.school-selfservice-card__action {
+  flex: 1 1 12rem; min-height: 76px; padding: 0 1.4rem;
+  border: 1px solid var(--school-border); border-radius: 14px;
+  background: var(--school-accent); color: var(--school-accent-ink);
+  font-size: 1.35rem; font-weight: 800; cursor: pointer;
+  &:disabled { opacity: 0.5; }
+  // The way out is never the loudest thing on the card.
+  &--exit {
+    flex: 0 1 10rem; background: transparent; color: var(--school-muted);
+    font-weight: 700;
+  }
+}
