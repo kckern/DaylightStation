@@ -359,7 +359,24 @@ Setting `enforceOrder: false` in the household's `surround` config opts out. The
 a queue whose order disagrees with the authored one gets **no surround at all** —
 not the container's rail, and not each episode's own standalone frame either —
 and logs `surround.order.mismatch` naming both orders. A frame with no rail is
-honest; a rail that lies about position is not.
+honest; a rail that lies about position is not. Disagreement means an actual
+inversion: a queue holding only some of the parts, or repeating one, is
+incomplete or odd but not out of order, and keeps its rail. That refusal is the
+*only* case where an item loses a frame it would otherwise have had — a
+container that names three of a collection's ten items leaves the other seven
+exactly as they were, each still finding its own sidecar.
+
+Two things to know before building on this:
+
+- **A part index of 0 does not mean "part of a container".** Every ordinary
+  sidecar is part 0 of its own single-item rail, so the index alone cannot tell
+  a whole work from the opening of a programme. The container signal is
+  `timeline.parts` naming ids *other than* the piece's own.
+- **A media item may belong to only one programme.** Two containers naming the
+  same episode is an authoring mistake: the index keeps one claim, warns
+  `surround.part.claimed` naming both files, and the queue and play paths can
+  then disagree about which rail that episode sits on. Fix the sidecars; nothing
+  downstream arbitrates it.
 
 ---
 

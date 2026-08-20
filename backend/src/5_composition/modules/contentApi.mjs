@@ -19,6 +19,7 @@ import { ContentIdResolver } from '#apps/content/ContentIdResolver.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { ContentQueryAliasResolver } from '#apps/content/services/ContentQueryAliasResolver.mjs';
 import { PlayResponseService } from '#apps/content/services/PlayResponseService.mjs';
+import { planSurroundQueue } from '#apps/content/services/surroundQueuePlan.mjs';
 import { SiblingsService } from '#apps/content/services/SiblingsService.mjs';
 import { YamlUserVideoProgressStore as UserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { ContentSourceRegistry } from '#domains/content/services/ContentSourceRegistry.mjs';
@@ -156,7 +157,7 @@ export function createApiRouters(config) {
       play: createPlayRouter({ registry, mediaProgressMemory, playResponseService, contentQueryService, contentIdResolver, progressSyncService, progressSyncSources, eventBus, userVideoProgressStore, economyService, logger }),
       list: createListRouter({ registry, loadFile, configService, contentQueryService, contentIdResolver, menuMemoryPath: configService.getHouseholdPath('media/menu-memory'), logger }),
       siblings: createSiblingsRouter({ siblingsService, contentIdResolver, logger }),
-      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, surroundEnforceOrder, logger }),
+      queue: createQueueRouter({ contentExpression: ContentExpression, contentIdResolver, queueService: new QueueService({ mediaProgressMemory }), surroundStore, surroundPlanner: planSurroundQueue, surroundEnforceOrder, logger }),
       local: createLocalRouter({ localMediaAdapter, mediaBasePath, cacheBasePath: cacheBasePath || path.join(dataPath, 'system/cache'), logger }),
       stream: createStreamRouter({
         singalongMediaPath: path.join(mediaBasePath, 'audio', 'singalong'),

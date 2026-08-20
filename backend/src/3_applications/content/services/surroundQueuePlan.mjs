@@ -18,10 +18,15 @@ const idOf = (v) => (v === undefined || v === null ? '' : String(v));
  * order over shuffle — a programme is a programme, and playing the Revolutionary
  * étude third would be wrong in a way no rail can rescue. `enforceOrder: false`
  * opts out, and when it is off AND the queue disagrees with the authored order
- * this attaches NOTHING: a frame with no rail is honest, a rail that lies about
- * position is not. That is why the caller must not fall back to a per-item
- * lookup on an empty result — doing so would hand each episode its own
- * standalone frame, which is exactly the lie being avoided.
+ * this REFUSES: a frame with no rail is honest, a rail that lies about position
+ * is not.
+ *
+ * `refused` is what distinguishes that from an ordinary miss, and the two must
+ * not be conflated. A refusal is total — no item in the queue may be framed,
+ * because falling back to each item's own sidecar there is the same lie in a
+ * different costume. An item merely *not on* a successful plan's rail is not
+ * refused anything: a container naming three of a collection's ten items leaves
+ * the other seven exactly as they were, each free to find its own sidecar.
  *
  * Returns `null` for everything that is not an enriched container queue, which
  * is the signal to behave exactly as before this existed.
@@ -35,7 +40,8 @@ const idOf = (v) => (v === undefined || v === null ? '' : String(v));
  * @param {Array<{id: string}>} options.items - Resolved queue items, in adapter order
  * @param {boolean} [options.enforceOrder=true] - Config `surround.enforceOrder`
  * @param {Object} [options.logger] - Structured logger (already scoped to surround)
- * @returns {{ items: Array<Object>, surroundFor: Map<string, {payload: Object, part: number}> }|null}
+ * @returns {{ items: Array<Object>, surroundFor: Map<string, {payload: Object, part: number}>,
+ *   refused: boolean }|null}
  */
 export function planSurroundQueue({ surroundStore, containerId, items, enforceOrder = true, logger = null } = {}) {
   if (typeof surroundStore?.lookup !== 'function') return null;
@@ -75,12 +81,18 @@ export function planSurroundQueue({ surroundStore, containerId, items, enforceOr
     return null;
   }
 
-  // Compared against the authored order RESTRICTED to the parts present: a
-  // queue missing a part is incomplete, not mis-ordered, and only the second
-  // makes a rail lie about position.
+  // "Does the queue DISAGREE with the authored order" — asked as: do the parts
+  // it holds appear in non-decreasing authored rank. Not as list equality,
+  // which conflates three different things with mis-ordering. A queue missing a
+  // part is incomplete (ranks 0,2 — still ascending); a queue repeating one is
+  // odd but not out of order (0,0,1); only an actual inversion (1,0) makes a
+  // rail lie about position, and only that may cost the frame.
+  const rank = new Map(slots.map((slot, i) => [idOf(slot.contentId), i]));
+  const queuedRanks = onRailIds.map((id) => rank.get(id));
+  const matchesAuthored = queuedRanks.every((r, i) => i === 0 || queuedRanks[i - 1] <= r);
+  // Reported, not compared: the authored order of the parts this queue holds,
+  // so the warn below names both sides of the disagreement.
   const authored = slots.map((slot) => idOf(slot.contentId)).filter((id) => onRailIds.includes(id));
-  const matchesAuthored = onRailIds.length === authored.length
-    && onRailIds.every((id, i) => id === authored[i]);
 
   if (!enforceOrder && !matchesAuthored) {
     logger?.warn?.('surround.order.mismatch', {
@@ -91,13 +103,13 @@ export function planSurroundQueue({ surroundStore, containerId, items, enforceOr
       authored,
       queued: queuedIds
     });
-    // The queue plays in whatever order it arrived; it just does so unframed.
-    return { items: queued, surroundFor: new Map() };
+    // The queue plays in whatever order it arrived; it just does so unframed —
+    // every item of it, which is what `refused` tells the caller.
+    return { items: queued, surroundFor: new Map(), refused: true };
   }
 
   let ordered = queued;
   if (enforceOrder) {
-    const rank = new Map(slots.map((slot, i) => [idOf(slot.contentId), i]));
     // Items the rail does not know keep their relative order and follow the
     // programme, rather than being dropped or interleaved at an arbitrary point.
     const onRail = queued
@@ -126,7 +138,7 @@ export function planSurroundQueue({ surroundStore, containerId, items, enforceOr
   for (const id of new Set(onRailIds)) {
     surroundFor.set(id, { payload: container, part: slotById.get(id).index });
   }
-  return { items: ordered, surroundFor };
+  return { items: ordered, surroundFor, refused: false };
 }
 
 export default planSurroundQueue;

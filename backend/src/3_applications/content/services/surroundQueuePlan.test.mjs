@@ -108,6 +108,28 @@ describe('planSurroundQueue', () => {
     expect(logger.info).not.toHaveBeenCalledWith('surround.order.enforced', expect.anything());
   });
 
+  it('marks a refusal as such, and distinguishes it from a plan that simply omits an item', () => {
+    const refusal = plan({ items: shuffled, enforceOrder: false, logger: makeLogger() });
+    expect(refusal.refused).toBe(true);
+
+    // Same empty answer for one item, entirely different meaning: this queue is
+    // framed, that item is just not on the rail and keeps its own sidecar.
+    const partial = plan({ items: [item('plex:999'), item('plex:696234')], logger: makeLogger() });
+    expect(partial.refused).toBe(false);
+    expect(partial.surroundFor.has('plex:999')).toBe(false);
+  });
+
+  it('does not call a repeated part mis-ordered', () => {
+    const logger = makeLogger();
+    // Ascending authored rank with a repeat: odd, but it disagrees with nothing.
+    const repeated = [item('plex:696234'), item('plex:696234'), item('plex:696235')];
+    const result = plan({ items: repeated, enforceOrder: false, logger });
+
+    expect(result.refused).toBe(false);
+    expect(result.surroundFor.get('plex:696234')).toEqual({ payload: SEASON, part: 0 });
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   it('attaches without reordering when enforcement is off and the order already matches', () => {
     const logger = makeLogger();
     const inOrder = [item('plex:696234'), item('plex:696235'), item('plex:696236')];
