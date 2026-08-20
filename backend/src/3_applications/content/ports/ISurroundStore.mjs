@@ -20,6 +20,25 @@ export class ISurroundStore {
    * the caller attaches nothing. The surround is always additive — it can never
    * be the reason something fails to play.
    *
+   * TWO SEGMENT LISTS REACH THE PAYLOAD, and picking the wrong one is silent.
+   * For a single-item piece they carry the same segments and either reads
+   * correctly, which is exactly why the mistake survives review — it only
+   * surfaces on a container, where they are different lists.
+   *
+   *   `segments`      the COMPOSED SOUNDING RAIL. One entry per segment across
+   *                   every media item the surround spans, each carrying
+   *                   `offset` and `duration` in sounding seconds plus the
+   *                   `contentId` and `part` it belongs to. This is what
+   *                   `timeline` describes and what a position maps onto.
+   *   `pieceSegments` the PIECE'S OWN AUTHORED LIST, in authored order, with
+   *                   this recording's `starts` written onto it. No offsets, no
+   *                   part, and for a container it is the container work's own
+   *                   list rather than its parts'.
+   *
+   * USE `segments` for anything positional — where the playhead is, which
+   * segment is sounding, how wide a segment is drawn. Use `pieceSegments` only
+   * for what the work itself says: names, translations, `listen` notes.
+   *
    * @param {string} contentId - Canonical content identifier (e.g. 'plex:663134')
    * @param {string} [title] - Live item title, used to rebind when a library
    *   rescan has invalidated the authored contentId
@@ -28,6 +47,8 @@ export class ISurroundStore {
    *   definition: Object,
    *   piece: Object,
    *   segments: Array,
+   *   pieceSegments: Array,
+   *   timeline: { totalSounding: number, parts: Array },
    *   cues: Array,
    *   facts: Array,
    *   composer: Object,

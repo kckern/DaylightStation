@@ -117,4 +117,33 @@ describe('surround builtins', () => {
     expect(registry.get('movement-map')).toBe(registry.get('segment-map'));
     expect(registry.getMeta('movement-map')).toEqual(registry.getMeta('segment-map'));
   });
+
+  // OVER THE WHOLE TABLE, not just today's one row. The registration loop used
+  // to carry an `if (name === 'segment-map')` guard, so a second alias would
+  // have been declared, listed, and silently never registered — a blank region
+  // for the one definition nobody had migrated yet, which is precisely what the
+  // alias mechanism exists to prevent. These two specs are what make the loop's
+  // generality real rather than asserted in a comment.
+  it('registers every alias in the table against its target module', async () => {
+    const builtins = await import('./builtins.js');
+    builtins.registerSurroundBuiltins();
+    const registry = getSurroundRegistry();
+    const aliases = Object.entries(builtins.LEGACY_MODULE_ALIASES);
+    expect(aliases.length).toBeGreaterThan(0);
+    aliases.forEach(([alias, name]) => {
+      expect(registry.get(name), `alias ${alias} names ${name}, which is not a builtin`)
+        .toEqual(expect.any(Function));
+      expect(registry.get(alias), `${alias} does not resolve to ${name}'s component`)
+        .toBe(registry.get(name));
+      expect(registry.getMeta(alias), `${alias} does not carry ${name}'s regions meta`)
+        .toEqual(registry.getMeta(name));
+    });
+  });
+
+  it('declares every alias among the names the frame resolves', async () => {
+    const { SURROUND_BUILTIN_MODULES, LEGACY_MODULE_ALIASES } = await import('./builtins.js');
+    Object.keys(LEGACY_MODULE_ALIASES).forEach((alias) => {
+      expect(SURROUND_BUILTIN_MODULES, `${alias} is registered but not declared`).toContain(alias);
+    });
+  });
 });

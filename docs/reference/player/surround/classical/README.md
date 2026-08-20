@@ -121,8 +121,16 @@ Notes that save a debugging pass:
   generalised it. The store accepts all three and takes the first non-empty one
   in the order `segments:`, `chapters:`, `movements:` — so a file that carries
   more than one resolves to `segments:` and the others are ignored, never
-  merged. Author `segments:`; the aliases exist so a corpus rename does not have
-  to land in the same breath as the code that reads it.
+  merged. Author `segments:`.
+- **The compatibility runs one way only: deploy first, migrate the data
+  second.** New code reads old data. Old code does *not* read new data — a build
+  deployed before the bilingual reader knows `movements:` and nothing else, so a
+  corpus renamed to `segments:` resolves to nothing under it and every classical
+  rail on the fleet goes blank. This tree is shared with production over
+  Dropbox, so writing the file *is* the release; there is no staging step in
+  which to catch it. Renaming the key ahead of the deploy has already cost
+  twenty minutes of dark rails once. Same rule for the module name in
+  `_surrounds/*.yml`.
 
 ### The composer file
 
@@ -479,8 +487,9 @@ curl -s https://logs.kckern.net/select/logsql/query \
 |---|---|
 | `surround.sidecar.invalid` | Malformed YAML or a missing required key in a performance sidecar. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Blocking reasons: `yaml-unparseable`, `not-a-mapping`, `missing-surround`, `missing-work`, `missing-match`, `match-not-a-mapping`, `missing-match-contentId`. Soft ones (the sidecar still loads): `missing-match-title`, `starts-not-a-list`, `starts-entry-invalid`, `cues-not-a-list`, `composer-not-a-mapping`, `piece-not-a-mapping`. |
 | `surround.work.missing` | The sidecar's `work:` ref names no file in the corpus. The sidecar is excluded. Carries the ref, the sidecar `file`, and `expected` — the corpus path that was looked for — so the fix is either to create that file or to correct the slug, without re-deriving the path. Usually a typo, or a work file that never got written. |
-| `surround.work.invalid` | A **corpus** work file has a present-but-non-array `segments` or `facts` — a mapping written where a list belongs. Warn and continue: the key is coerced to empty and the work still indexes. |
-| `surround.starts.mismatch` | `starts` length ≠ segment count. The sidecar still resolves; the unpaired segments get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. |
+| `surround.work.invalid` | A **corpus** work file has a present-but-non-array segment list or `facts` — a mapping written where a list belongs. Checked under all three segment-key names (`segments`, `chapters`, `movements`), so a legacy file stays visible. `reason` names the offending key. Warn and continue: the key is coerced to empty and the work still indexes. |
+| `surround.starts.mismatch` | `starts` length ≠ segment count. The sidecar still resolves; the unpaired segments get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. **The count field was renamed `movements` → `segments` with the rest of the vocabulary; the event name did not change.** A saved query reading `data.movements` off this event returns nothing rather than erroring. |
+| `surround.segments.none` | A piece resolved to an EMPTY rail. Carries `work`, `parts`, and `segmentKey` — which of `segments` / `chapters` / `movements` the work authored its list under, or `null` for none of them. This is the one that catches a corpus migrated to a key the deployed build does not read: every sidecar resolves, `surround.index.built` reports its usual `pieces` count, and every rail on the fleet is blank. Check `segmentKeys` and `empty` on `surround.index.built` for the corpus-wide picture. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
 | `surround.sidecar.duplicate` | Two sidecars claim one contentId. Names both files; last one walked wins. |
 | `surround.titles.ambiguous` | Two authored titles could match the same live title. Emitted at index time so you learn before a playback trips it. |

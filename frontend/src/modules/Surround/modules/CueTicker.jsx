@@ -173,7 +173,7 @@ const hasLine = (value) => Boolean(value?.text);
 /**
  * The NOW zone's two urgent edges — commit instantly rather than softening.
  *
- * Fix round 1 (review finding I2), scoped to the NOW ZONE ONLY: `mv` is carried
+ * Fix round 1 (review finding I2), scoped to the NOW ZONE ONLY: `seg` is carried
  * solely on the now-zone's payload (see `nowNext`), so both conditions are false
  * whenever `next`/`shown` are the piece register's. The piece register's cue
  * interrupt (the unsplit band, wave 2) keeps its original gentle dissolve on
@@ -181,8 +181,8 @@ const hasLine = (value) => Boolean(value?.text);
  *   - an ACTIVATING CUE (`shown` was not a cue, `next` is): a cue is a claim
  *     about what is sounding RIGHT NOW, and a stale rotation note lingering
  *     through even one fade-out is a wrong answer, however briefly.
- *   - a SEGMENT BOUNDARY (`next.mv` names a different segment than
- *     `shown.mv`): the header above this text is NOT dissolved, so a softened
+ *   - a SEGMENT BOUNDARY (`next.seg` names a different segment than
+ *     `shown.seg`): the header above this text is NOT dissolved, so a softened
  *     note would show the NEW segment's header over the OLD segment's note for
  *     up to a full fade — the two halves of the band naming different segments
  *     at the same instant.
@@ -191,9 +191,9 @@ const hasLine = (value) => Boolean(value?.text);
  * first.
  */
 export function urgentNowEdge(next, shown) {
-  const isNowZone = next?.mv !== undefined || shown?.mv !== undefined;
+  const isNowZone = next?.seg !== undefined || shown?.seg !== undefined;
   const activating = isNowZone && next?.kind === 'cue' && shown?.kind !== 'cue';
-  const boundary = next?.mv !== undefined && shown?.mv !== undefined && next.mv !== shown.mv;
+  const boundary = next?.seg !== undefined && shown?.seg !== undefined && next.seg !== shown.seg;
   // A RE-FIT (design wave 9), in BOTH registers. The band has just decided what
   // it can and cannot set whole, and a note it has withdrawn must leave at once:
   // softening the change plays a 320ms fade of the exact note the fit refused,
@@ -659,7 +659,7 @@ export default function CueTicker({
     if (!split || !segment) return EMPTY;
     if (activeCue) {
       const at = Number(activeCue.at);
-      // `mv` rides along even on a cue line: fix round 1 (review finding I2)
+      // `seg` rides along even on a cue line: fix round 1 (review finding I2)
       // reads it in `useDissolve` to force an instant commit across a
       // segment boundary, and a cue landing exactly on one is not exempt —
       // the header above it changes either way.
@@ -668,7 +668,7 @@ export default function CueTicker({
         kind: 'cue',
         at,
         text: smartQuotes(String(activeCue.text)),
-        mv: segmentIndex,
+        seg: segmentIndex,
         // See `pieceNext`: a cue the fit withdraws must leave at once.
         pool: fitGen,
       };
@@ -686,11 +686,11 @@ export default function CueTicker({
         pool: fitGen,
         // Fix round 1 (review finding I2): which segment this line belongs
         // to. `useDissolve` compares this against the currently-SHOWN line's
-        // `mv` to detect a segment boundary and commit instantly instead of
+        // `seg` to detect a segment boundary and commit instantly instead of
         // softening across it — the header (not part of the dissolve) has
         // already changed by the time this renders, so a dissolved note would
         // disagree with it for up to a full commit.
-        mv: segmentIndex,
+        seg: segmentIndex,
       };
     }
     return EMPTY;

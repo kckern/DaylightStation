@@ -749,7 +749,11 @@ describe('YamlSurroundStore warning totality', () => {
       'surround.sidecar.invalid',
       'surround.definition.missing',
       'surround.sidecar.duplicate',
-      'surround.titles.ambiguous'
+      'surround.titles.ambiguous',
+      // `four-seasons.yml` is a title and nothing else, so the two sidecars
+      // pointing at it resolve to an empty rail — the family added after a
+      // corpus migrated ahead of its deploy left every rail blank in silence.
+      'surround.segments.none'
     ]));
   });
 });
@@ -1466,6 +1470,25 @@ describe('YamlSurroundStore — the authored list reads under all three key name
     expect(r.segments.map((s) => s.name)).toEqual(['Preferred']);
   });
 
+  // EVERY STEP OF THE FALL-THROUGH, not just the first and the last. The rule
+  // is "first NON-EMPTY wins", and an implementation that tested presence
+  // rather than emptiness, or that stopped after one hop, passes the
+  // three-keys-in-isolation specs above and fails exactly here — on the
+  // half-migrated file, which is the only shape a migration in flight makes.
+  it.each([
+    ['segments: []', 'segments: []\nchapters:\n  - { n: 1, name: Interim }\n', 'Interim'],
+    ['segments: [] and chapters: []', 'segments: []\nchapters: []\nmovements:\n  - { n: 1, name: Legacy }\n', 'Legacy'],
+    ['no segments: at all', 'chapters:\n  - { n: 1, name: Interim }\nmovements:\n  - { n: 1, name: Legacy }\n', 'Interim'],
+    ['chapters: [] and no segments:', 'chapters: []\nmovements:\n  - { n: 1, name: Legacy }\n', 'Legacy'],
+  ])('falls through %s to the next name that carries a list', (_label, body, expected) => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml', `title: Symphony No. 3\n${body}`);
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+
+    expect(r.segments.map((s) => s.name)).toEqual([expected]);
+  });
+
   it('falls through an empty segments: to the legacy movements: list', () => {
     writeLib('classical/beethoven/symphony-3-eroica.yml',
       'title: Symphony No. 3\nsegments: []\nmovements:\n  - { n: 1, name: Legacy }\n');
@@ -1474,6 +1497,68 @@ describe('YamlSurroundStore — the authored list reads under all three key name
     const r = store.lookup('plex:663134', '');
 
     expect(r.segments.map((s) => s.name)).toEqual(['Legacy']);
+  });
+
+  /**
+   * THE OUTAGE'S SIGNATURE, MADE AUDIBLE.
+   *
+   * A corpus renamed to a key the running build does not read produces the one
+   * fault shape that looks entirely healthy from the index: every sidecar
+   * resolves, `surround.index.built` reports its usual piece count, nothing is
+   * skipped, and every rail is empty. It was found on a screen. These specs are
+   * what make it findable in the log store instead.
+   */
+  describe('an empty rail says why it is empty', () => {
+    it('warns surround.segments.none, naming the key that won', () => {
+      writeLib('classical/beethoven/symphony-3-eroica.yml',
+        'title: Symphony No. 3\nfuturistic:\n  - { n: 1, name: Unreadable }\n');
+
+      const logger = makeLogger();
+      new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+      expect(logger.warn).toHaveBeenCalledWith('surround.segments.none', expect.objectContaining({
+        file: 'classical/beethoven/symphony-3-eroica.yml',
+        work: 'beethoven/symphony-3-eroica',
+        // No recognised key carried a list, which is the whole message: this is
+        // a work whose list is authored under a name this build does not read,
+        // not a work that authored nothing.
+        segmentKey: null,
+        parts: 0,
+      }));
+    });
+
+    it('names the key that DID win, so a half-migrated corpus is legible', () => {
+      writeLib('classical/beethoven/symphony-3-eroica.yml',
+        'title: Symphony No. 3\nmovements:\n  - { n: 1, name: Legacy }\n');
+
+      const logger = makeLogger();
+      new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+      expect(logger.info).toHaveBeenCalledWith('surround.index.built', expect.objectContaining({
+        segmentKeys: { movements: 1 },
+        empty: 0,
+      }));
+    });
+
+    it('counts the whole-corpus-blank shape on surround.index.built', () => {
+      writeLib('classical/beethoven/symphony-3-eroica.yml', 'title: Symphony No. 3\nfuturistic: []\n');
+
+      const logger = makeLogger();
+      new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+      // `pieces` stays at its normal number — that is what made this invisible.
+      // `empty` and `segmentKeys.none` are what say the rail is dark.
+      expect(logger.info).toHaveBeenCalledWith('surround.index.built', expect.objectContaining({
+        pieces: 1, skipped: 0, empty: 1, segmentKeys: { none: 1 },
+      }));
+    });
+
+    it('stays quiet for a piece whose rail actually has segments', () => {
+      const logger = makeLogger();
+      new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+      expect(logger.warn).not.toHaveBeenCalledWith('surround.segments.none', expect.anything());
+    });
   });
 
   // The corpus visibility warning has to cover every name the key can take, or
