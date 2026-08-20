@@ -534,9 +534,15 @@ a segment boundary and the two registers are always set in one size.
 | Bound | Value | Why |
 |---|---|---|
 | Prose size floor | `0.88rem` | The frame's ten-foot floor for LABELS is `0.72rem`; a label is a short tracked small-cap string read as a shape, and continuous prose is read glyph by glyph. EB Garamond's x-height is 0.42em, so this buys 5.91px of x-height against the label floor's 4.84px on a fleet running at device pixel ratio 1. |
-| Prose size ceiling | `1.5rem` | Where a programme note starts competing with the work's own title on the plate. |
+| Prose size ceiling | `1.2rem` | Where a programme note starts competing with the work's own title on the plate. On a root whose scaled floor has climbed past it (the 1920 measurement root, `1.32rem`) the FLOOR wins and the ladder is one rung — the readability claim outranks the loudness one. |
 | Leading floor | `1.25` | EB Garamond's ink extent is exactly 1.00em ascender-to-descender, so this leaves a quarter of the type size of clear air between lines — 80% of what the face's own `line-height: normal` (1.31) reserves. Below it the failure is line tracking at distance, not collision. |
-| Leading, loose | `1.35` | What the band is set at wherever it can afford it. |
+| Leading, loose | `1.30` | What the band is set at wherever it can afford it — the face's own `line-height: normal` (1.31), rather than above it. |
+
+The note's ink is `--ink` at **66%**, not at full strength: the band's parchment
+on near-black stone reads as white and shouts at 12.85:1. Composited it leaves
+6.2:1 over the lit bond panel and 6.6:1 over the band's own ground — measured, at
+all three roots. Each register also carries a foot (`--zone-pad-bottom`), so the
+last line of a note is never on the band's bottom edge.
 
 **A note that cannot be set whole at both floors is an authoring failure, not a
 render problem.** It is dropped from the rotation and logged as

@@ -325,9 +325,31 @@ segment is drawn proportional to its real duration.
   it is not sounding. When a segment becomes active its segment **widens** until
   its heading and its gloss each fit whole on one line; its neighbours compress
   in proportion to their own durations, down to a measured floor (enough for the
-  numeral, three glyphs and the ellipsis), and keep their ellipses. Where the
-  ideal width would starve them the active segment takes what is free and keeps
-  its own ellipsis — degrade, don't break.
+  numeral, three glyphs and the ellipsis), and keep their ellipses. That floor is
+  derived per rail — the rail's own furniture plus the widest three-glyph opening
+  in the corpus — so a rail whose gutter holds `21.` earns a wider floor than one
+  holding `IV.`
+- **CHIPS, when the rail cannot afford names at all.** Twenty-one nocturnes on
+  the office rule is ~39px each against names that want ~250px, and 21 floors is
+  more rule than any screen has: the floor has not been degraded, it has run out.
+  Below a threshold measured as **available width per inactive segment** — the
+  rule, less what the WIDEST name on it would need, over the segments that are
+  not sounding — every inactive segment stops rendering a name and renders its
+  number in a circle instead, and the floor drops to what a chip needs. The
+  switch is all-or-nothing across the rail and is a constant of the piece, never
+  of this instant. A chip is a different thing from a trimmed name: no text is
+  rendered at zero opacity or clipped. The SOUNDING segment always shows its
+  whole name — that guarantee is what chip mode buys. Where even a chipped rail
+  cannot pay for it, the segment takes what is free and keeps its ellipsis and
+  the rail WARNS (`surround.accordion.degraded`) — degrade, don't break, and say
+  so.
+- **One notation per rail.** The Roman table runs to XII, so a rail of
+  twenty-one used to set `… XI. XII. 13. 14. …` in one gutter. The style is a
+  property of the list: Roman only where every mark on the rail can be written in
+  it, figures for the whole rail otherwise. The chip carries the same mark
+  without its point, so the chip and the gutter can never disagree. The `n` field
+  is authoritative for numbering — it is the only address a movement rail has,
+  and a chip can only be rendered from a field.
   The time scale is therefore **not uniform**, and that is accepted: the playhead
   runs faster through a compressed segment and slower through the widened one.
   What it never does is lie about a boundary — the cursor's position inside a

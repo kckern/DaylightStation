@@ -273,9 +273,16 @@ export function rootWidthOf(el) {
 }
 
 /**
- * The largest — 1.5rem. The point at which a programme note starts competing
- * with the work's own title on the plate above it. Unchanged from the clamp
- * this ladder replaces.
+ * The largest — 1.2rem. The point at which a programme note starts competing
+ * with the work's own title on the plate above it.
+ *
+ * IT CAME DOWN 20% IN TASK 6C, from 1.5rem, and the owner's word for the band
+ * before it did was "garish": on a screen with room the ladder ran all the way
+ * to the old ceiling and set a programme note as loudly as a headline. THE
+ * FLOOR DID NOT MOVE. It is the angular-size readability floor (`proseFloorPx`)
+ * and lowering it would undo that derivation, so the cut lands entirely on the
+ * ceiling — which means a band that was already pinned at its floor is
+ * unchanged, and only a band that had room comes down.
  *
  * AND IT DOES NOT SCALE WITH THE ROOT, deliberately. The floor is an ANGULAR
  * claim — "big enough to read from ten feet" — so it has to be re-expressed on
@@ -285,10 +292,49 @@ export function rootWidthOf(el) {
  * and pinning the ceiling to it in rem is what keeps the relationship fixed.
  * Scaling the ceiling by the root as well would scale it twice.
  */
-export const PROSE_CEILING_PX = 24;
+export const PROSE_CEILING_PX = 19.2;
 
-/** The leading a note is set at when the room is there. */
-export const LEADING_MAX = 1.35;
+/**
+ * The ladder's top ON THIS ROOT — the ceiling, or the floor where the floor has
+ * climbed above it.
+ *
+ * A ROOT-SCALED FLOOR AND A REM-PINNED CEILING CAN CROSS, and after the 20% cut
+ * one of them does: at the fleet's 1920 measurement root the prose floor is
+ * 21.12px (1.32rem, the high clamp) against a 19.2px ceiling. That is not a bug
+ * in either number — it is the two claims disagreeing on a root where the
+ * angular floor has grown past the size at which a note starts competing with
+ * the title — and the resolution is the one the floor's own derivation already
+ * names: THE FLOOR WINS, and the ladder is one rung.
+ *
+ * The alternative is worse in both directions. Clamping the search to a `hi`
+ * below its `lo` makes `largestPassing` return the floor anyway, but by an
+ * accident of its snap rather than by a rule, and every assertion about the
+ * ceiling then has to know about the accident. Lowering the floor to fit under
+ * the ceiling would undo the angular derivation on the one root where it bites
+ * hardest.
+ *
+ * THE TWO SHIPPED SCREENS ARE NOT AFFECTED: the office root's floor is 14.08px
+ * and the living room's 10.56px, both well under the cut ceiling, so both get a
+ * real ladder and both come down.
+ *
+ * @param {number} rootWidthPx the CSS width of the screen root.
+ * @returns {number} the largest size the ladder may return here.
+ */
+export function proseCeilingPx(rootWidthPx) {
+  return Math.max(PROSE_CEILING_PX, proseFloorPx(rootWidthPx));
+}
+
+/**
+ * The leading a note is set at when the room is there.
+ *
+ * 1.30 SINCE TASK 6C, from 1.35 — the other half of "make them more compact".
+ * It is not an arbitrary tightening: EB Garamond's own `line-height: normal` is
+ * 1.31 (measured against the vendored binary), so the loose end of the ladder
+ * now stops at the face's own metrics instead of sitting above them. The FLOOR
+ * (1.25) is untouched: that one is measured against the face's ink extent and
+ * is what keeps line tracking possible at ten feet.
+ */
+export const LEADING_MAX = 1.30;
 
 /**
  * The tightest leading a programme note may be set at.
@@ -512,7 +558,7 @@ function largestPassing(lo, hi, step, pass) {
  * @param {{piece?:string[], now?:string[]}} pools every string each register can
  *   ever show for this piece — facts, every segment's listening notes, cues.
  * @returns {null|{
- *   fontPx:number, leading:number, floorPx:number, rootWidthPx:number,
+ *   fontPx:number, leading:number, floorPx:number, ceilingPx:number, rootWidthPx:number,
  *   rejected:Array<{zone:string,text:string,chars:number,budget:number,overflowPx:number}>,
  *   zones:Array<{zone:string,availPx:number,widthPx:number,texts:number}>
  * }} null when the band has not been laid out yet. `floorPx` is the floor THIS
@@ -525,6 +571,12 @@ export function fitBand(root, pools) {
   // the band would refuse a note it then had room for.
   const rootWidthPx = rootWidthOf(root);
   const floorPx = proseFloorPx(rootWidthPx);
+  // THE LADDER'S TOP IS NEVER BELOW ITS OWN BOTTOM — see `proseCeilingPx`. The
+  // 20% ceiling cut of task 6c puts the rem-pinned ceiling under the root-scaled
+  // floor at the 1920 root, and a ladder whose `hi` is under its `lo` is not a
+  // ladder that returns the floor by rule, it is one that returns it by
+  // accident of the snap in `largestPassing`.
+  const ceilingPx = proseCeilingPx(rootWidthPx);
 
   const work = [];
   for (const key of ZONE_KEYS) {
@@ -562,7 +614,7 @@ export function fitBand(root, pools) {
   // Which is the user's order exactly: tighten the leading to hold the size, and
   // only give the leading back once the size has been paid for.
   const fontPx = largestPassing(
-    floorPx, PROSE_CEILING_PX, FONT_STEP_PX,
+    floorPx, ceilingPx, FONT_STEP_PX,
     (f) => everythingFits(work, f, LEADING_FLOOR),
   );
   const leading = largestPassing(
@@ -576,6 +628,7 @@ export function fitBand(root, pools) {
     fontPx: Number(fontPx.toFixed(2)),
     leading: Number(leading.toFixed(2)),
     floorPx,
+    ceilingPx,
     rootWidthPx: Number(rootWidthPx.toFixed(2)),
     rejected,
     zones: work.map(({ key, zone, texts }) => ({

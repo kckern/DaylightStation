@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
-  placedSegments, activeSegmentIndex, roman, placedRailSegments, railGroups,
+  placedSegments, activeSegmentIndex, numeral, numeralText, numeralStyle, ROMAN_CEILING,
+  placedRailSegments, railGroups,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -605,10 +606,53 @@ describe('which segment is sounding', () => {
   });
 
   it('sets a segment numeral, falling back to its position where none is authored', () => {
-    expect(roman(3, 99)).toBe('III.');
-    expect(roman(undefined, 2)).toBe('III.');
-    // Past the table, the number itself is a better answer than nothing.
-    expect(roman(14, 0)).toBe('14.');
+    expect(numeral(3, 99, 'roman')).toBe('III.');
+    expect(numeral(undefined, 2, 'roman')).toBe('III.');
+    // The mark WITHOUT its point is what a chip carries, and it is the same mark
+    // — the chip and the gutter can never disagree because there is one
+    // derivation and one table.
+    expect(numeralText(3, 99, 'roman')).toBe('III');
+    expect(numeralText(undefined, 2, 'arabic')).toBe('3');
+  });
+
+  /**
+   * ONE NOTATION PER RAIL — the numbering fix of task 6c.
+   *
+   * `ROMAN` runs out at XII, and a rail of twenty-one used to set
+   * `… X. XI. XII. 13. 14. …`: the notation changing partway along one gutter,
+   * which is not a numbering system. The style is a property of the LIST.
+   *
+   * TO GO RED: return `'roman'` unconditionally from `numeralStyle`, or read the
+   * style per entry instead of per rail.
+   */
+  describe('numeralStyle', () => {
+    it('sets Roman where every mark on the rail can be written in it', () => {
+      expect(numeralStyle([{ n: 1 }, { n: 2 }, { n: 3 }, { n: 4 }])).toBe('roman');
+      expect(numeralStyle(Array.from({ length: ROMAN_CEILING }, (_, i) => ({ n: i + 1 }))))
+        .toBe('roman');
+    });
+
+    it('sets figures for the WHOLE rail as soon as one mark is past the table', () => {
+      const nocturnes = Array.from({ length: 21 }, (_, i) => ({ n: i + 1 }));
+      expect(
+        numeralStyle(nocturnes),
+        'a rail of twenty-one set I.-XII. and then 13.-21., in one gutter',
+      ).toBe('arabic');
+      // ...and the mark at position 5 is a figure on that rail, not a V.
+      expect(numeral(5, 4, numeralStyle(nocturnes))).toBe('5.');
+      expect(numeral(5, 4, numeralStyle(nocturnes.slice(0, 4)))).toBe('V.');
+    });
+
+    it('numbers from POSITION where the corpus authored no `n`, and judges those too', () => {
+      expect(numeralStyle(Array.from({ length: 13 }, () => ({})))).toBe('arabic');
+      expect(numeralStyle(Array.from({ length: 12 }, () => ({})))).toBe('roman');
+    });
+
+    it('answers for an empty or unusable list without throwing', () => {
+      expect(numeralStyle([])).toBe('roman');
+      expect(numeralStyle(null)).toBe('roman');
+      expect(numeralStyle([{ n: 0 }]), 'zero is not a numeral').toBe('arabic');
+    });
   });
 });
 

@@ -68,25 +68,48 @@ import { surroundLogger } from '../moduleKit.js';
 import { segmentAt } from '../segments.js';
 import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
-  bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, roman,
+  bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
+  numeral, numeralText, numeralStyle,
   placedRailSegments, railGroups,
-  desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
+  soundingWidth, idealWidth, nameFloorPx, railWearsChips,
+  ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
 import './SegmentMap.scss';
+
+/**
+ * A tempo marking is WORDS. Figures in a heading mean it is a title — a
+ * catalogue number, an opus, a key — and a title is set roman.
+ *
+ * The rule exists because the divider below is a heuristic and a heuristic needs
+ * a guard. On a movement rail the last period genuinely divides a character
+ * title from its tempo term; on a rail of WORKS it lands inside the catalogue
+ * number, and "No. 5 in F-sharp major, Op. 15 No. 2" was being set as the title
+ * "No. 5 in F-sharp major, Op. 15 No." followed by an italic "2" — visible on
+ * the office screen as a stray leaning figure at the end of every nocturne.
+ */
+const tempoLike = (s) => /^[^0-9]+$/.test(s);
 
 /**
  * Split an engraved segment heading into its title and its tempo marking.
  * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', tempo: 'Adagio assai' }
  * "Allegro con brio"            -> { title: null,               tempo: 'Allegro con brio' }
+ * "No. 5 in F-sharp major, Op. 15 No. 2" -> { title: <the whole name>, tempo: null }
  * Scores set the tempo term in italic and any character title in roman; the last
- * period is the divider that convention uses.
+ * period is the divider that convention uses, and `tempoLike` is what stops that
+ * convention being applied to a string it was never about.
  */
 function splitHeading(name) {
   const text = String(name ?? '').trim();
   if (!text) return { title: null, tempo: '' };
   const cut = text.lastIndexOf('.');
-  if (cut <= 0 || cut === text.length - 1) return { title: null, tempo: text };
-  return { title: text.slice(0, cut + 1).trim(), tempo: text.slice(cut + 1).trim() };
+  if (cut > 0 && cut < text.length - 1) {
+    const head = text.slice(0, cut + 1).trim();
+    const tail = text.slice(cut + 1).trim();
+    if (tempoLike(tail)) return { title: head, tempo: tail };
+  }
+  // No divider the convention covers: the whole heading is one thing, and which
+  // thing it is decides the face it is set in.
+  return tempoLike(text) ? { title: null, tempo: text } : { title: text, tempo: null };
 }
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
@@ -304,8 +327,20 @@ export default function SegmentMap({
   // because both are typographic facts (how wide is this rail, how wide is this
   // string in this face at this size) that no amount of arithmetic can supply.
   const ruleRef = useRef(null);
+  const probeRef = useRef(null);
   const [railPx, setRailPx] = useState(RAIL_UNMEASURED);
-  const [desiredPx, setDesiredPx] = useState(0);
+  /**
+   * What the RAIL is, typographically — read once per rail off the probe below,
+   * never off the segments the accordion has already sized.
+   *
+   * `chromePx` is a segment's furniture (the numeral's gutter and the text
+   * insets) and `needs[i]` is how wide segment i's widest line sets on one line.
+   * Both are independent of the widths the accordion applies, which is what
+   * makes the solve non-circular: measuring `need` off a live segment would read
+   * a box the last solve had already resized, and the chip decision taken from
+   * it would flip on its own output.
+   */
+  const [metrics, setMetrics] = useState({ chromePx: 0, needs: [] });
   const [fontsTick, setFontsTick] = useState(0);
 
   useEffect(() => {
@@ -330,48 +365,130 @@ export default function SegmentMap({
     return () => { live = false; };
   }, []);
 
-  const measureDesired = useCallback(() => {
-    const rule = ruleRef.current;
+  /**
+   * THE RAIL, MEASURED ON ITS PROBE — the one measurement pass, run once per
+   * rail (and again when the faces land) rather than once per segment boundary.
+   *
+   * IT MEASURES THE PROBE, NOT THE SEGMENTS, and that is the whole reason the
+   * probe exists. Two of the numbers below are needed for segments that are NOT
+   * rendering their names at all — that is what chip mode is — so there is no
+   * segment to read them off; and the numbers that could be read off a live
+   * segment would be read off a box the previous solve had already resized,
+   * which is a decision feeding on its own output.
+   */
+  const measureRail = useCallback(() => {
+    const probe = probeRef.current;
     // A bars-only rail has no type to right-size for.
-    if (!rule || activeIndex < 0 || !named) { setDesiredPx(0); return; }
-    const seg = rule.querySelector(`[data-index="${activeIndex}"]`);
-    const cell = seg?.querySelector('.surround-segment-map__text');
-    if (!seg || !cell) { setDesiredPx(0); return; }
-    const segW = seg.getBoundingClientRect().width;
-    const cellW = cell.getBoundingClientRect().width;
-    const heading = seg.querySelector('.surround-segment-map__heading');
-    const gloss = seg.querySelector('.surround-segment-map__translation');
-    // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's full
-    // single-line width whatever the box is currently showing.
-    const need = Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
-    // THE DOM READ IS HERE; THE ARITHMETIC ON TOP OF IT IS IN `../band.js`. Only
-    // a rendered rail knows how wide a string is in this face at this size; the
-    // sum over those numbers is a rule, and it belongs where the accordion's
-    // other rules live — and where the spec that measures the rail can call the
-    // same function instead of transcribing it.
-    const desired = desiredWidth({ segW, cellW, need });
-    if (!(desired > 0)) { setDesiredPx(0); return; }
-    setDesiredPx(desired);
-    // Review finding I5: the accordion's one measured input. It decides every
-    // width on the rail and it is read off the DOM in a face that arrives
-    // asynchronously, so it is the number to look at first when a rail on a
-    // real screen is not the shape it should be.
-    log.debug('surround.accordion.measured', {
-      contentId, index: activeIndex, desired, need: Math.round(need),
-      chrome: Math.round(segW - cellW), railPx: Math.round(railPx),
+    if (!probe || !named || !segments.length) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    const row = probe.querySelector('.surround-segment-map__text-row');
+    const cell = probe.querySelector('.surround-segment-map__text');
+    const heading = probe.querySelector('.surround-segment-map__heading');
+    const gloss = probe.querySelector('.surround-segment-map__translation');
+    if (!row || !cell || !heading || !gloss) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    // The probe row is `width: max-content`, so its numeral track is this rail's
+    // own gutter at its own size and its text track is exactly the text — which
+    // makes the difference the segment furniture, measured rather than derived
+    // from the `em`/`ch` arithmetic in the stylesheet.
+    const chromePx = row.getBoundingClientRect().width - cell.getBoundingClientRect().width;
+    const needs = segments.map((seg) => {
+      const { title, tempo } = splitHeading(seg.name);
+      // The heading is two spans with a margin between them, exactly as the
+      // segment sets it — a probe holding one concatenated string would measure
+      // a narrower line than the rail paints.
+      heading.innerHTML = '';
+      if (title) {
+        const t = document.createElement('span');
+        t.className = 'surround-segment-map__title';
+        t.textContent = title;
+        heading.appendChild(t);
+      }
+      if (tempo) {
+        const t = document.createElement('span');
+        t.className = 'surround-segment-map__tempo';
+        t.textContent = tempo;
+        heading.appendChild(t);
+      }
+      gloss.textContent = seg.translation ?? '';
+      return Math.max(
+        heading.getBoundingClientRect().width,
+        seg.translation ? gloss.getBoundingClientRect().width : 0,
+      );
     });
-  }, [activeIndex, named, log, contentId, railPx]);
+    heading.innerHTML = '';
+    gloss.textContent = '';
+    setMetrics({ chromePx, needs });
+  }, [named, segments]);
 
-  useLayoutEffect(() => { measureDesired(); },
-    [measureDesired, segments, fontsTick]);
+  useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
+
+  // THE RAIL'S OWN FLOOR, and the decision it drives. Both are constants of the
+  // PIECE — the widest name it has, against the width of its rule — never of
+  // this instant, because a rail that swapped between chips and names at a
+  // segment boundary would read as a bug rather than as a density.
+  const floorPx = nameFloorPx(metrics.chromePx);
+  const widestPx = useMemo(() => (metrics.needs.length
+    ? idealWidth({ chromePx: metrics.chromePx, needPx: Math.max(...metrics.needs) })
+    : 0), [metrics]);
+  const chips = named && railWearsChips({
+    railPx, count: segments.length, widestPx, floorPx,
+  });
+
+  useEffect(() => {
+    if (!segments.length || !(railPx > 0) || !metrics.needs.length) return;
+    log.debug('surround.rail.density', {
+      contentId,
+      density: chips ? 'chips' : 'names',
+      segments: segments.length,
+      railPx: Math.round(railPx),
+      widestPx,
+      chromePx: Math.round(metrics.chromePx),
+      nameFloorPx: floorPx,
+      // The threshold itself: what each inactive segment would have if the
+      // widest name on this rail were open. Below the floor, the rail chips.
+      roomPx: Math.round((railPx - Math.min(widestPx, railPx)) / Math.max(1, segments.length - 1)),
+    });
+  }, [chips, segments.length, railPx, widestPx, floorPx, metrics, contentId, log]);
+
+  // THE SOUNDING SEGMENT'S IDEAL WIDTH, from the same measurements. `segW`/
+  // `cellW` are this segment's NATURAL (duration-derived) geometry rather than
+  // its rendered geometry, so `desiredWidth`'s "does it already fit" test is
+  // asked about the width the rail would give it anyway — the question the
+  // accordion is actually deciding — and cannot be answered by the width the
+  // accordion has already granted.
+  const desiredPx = useMemo(() => {
+    if (activeIndex < 0 || !named || !(railPx > 0) || !metrics.needs.length) return 0;
+    return soundingWidth({
+      naturalPx: (segments[activeIndex]?.natural ?? 0) * railPx,
+      chromePx: metrics.chromePx,
+      needPx: metrics.needs[activeIndex] ?? 0,
+    });
+  }, [activeIndex, named, railPx, metrics, segments]);
+
+  // Review finding I5: the accordion's one measured input. It decides every
+  // width on the rail and it is read off the DOM in a face that arrives
+  // asynchronously, so it is the number to look at first when a rail on a real
+  // screen is not the shape it should be.
+  useEffect(() => {
+    if (!(desiredPx > 0)) return;
+    log.debug('surround.accordion.measured', {
+      contentId, index: activeIndex, desired: desiredPx,
+      need: Math.round(metrics.needs[activeIndex] ?? 0),
+      chrome: Math.round(metrics.chromePx), railPx: Math.round(railPx),
+    });
+  }, [desiredPx, activeIndex, metrics, railPx, contentId, log]);
 
   const targetShares = useMemo(() => accordionShares({
     natural: segments.map((s) => s.natural),
     activeIndex,
     railPx,
     desiredPx,
-    floorPx: SEGMENT_FLOOR_PX,
-  }), [segments, activeIndex, railPx, desiredPx]);
+    // A CHIPPED neighbour needs room for a chip, not for a name. Holding it at
+    // the name floor is exactly what makes a twenty-one segment rail insoluble:
+    // 21 x 77px is more rule than any screen in the fleet has, so the accordion
+    // could donate nothing and the sounding segment could never have its name
+    // whole — the guarantee this mode exists to keep.
+    floorPx: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
+  }), [segments, activeIndex, railPx, desiredPx, chips, floorPx]);
 
   // ---- the bond -------------------------------------------------------------
   // ONE definition of "how far through the piece" (review finding I3) — see
@@ -431,12 +548,16 @@ export default function SegmentMap({
   const { shares: vector, moving } = useEasedVector(geometry, ACCORDION_MS);
   const shares = useMemo(() => vector.slice(0, targetShares.length), [vector, targetShares.length]);
 
-  // Review finding I5: the degrade branch. When the sounding segment's name
-  // cannot have the width it needs without starving its neighbours past the
-  // floor, it takes what is free and keeps its ellipsis — a designed
-  // degradation, and one that is invisible on screen (a trimmed name looks
-  // like a trimmed name whatever the reason). This is the only way to tell
-  // "the rail is crowded" from "the corpus authored a long name".
+  // THE ONE GUARANTEE THIS MODE MAKES, AND WHAT HAPPENS WHEN IT CANNOT BE KEPT.
+  // The sounding segment always shows its name whole; chip mode is what buys the
+  // room for that on a crowded rail. When even a fully chipped rail cannot spare
+  // the width — a rail so long that its chips alone fill the rule, or a name
+  // longer than the whole screen — the segment takes what is free and keeps its
+  // ellipsis, and THAT IS REPORTED. It is a warn rather than a debug because it
+  // is invisible on screen (a trimmed name looks like a trimmed name whatever
+  // the reason) and because it is the corpus telling us something: this is the
+  // only signal that distinguishes "the rail is crowded" from "somebody authored
+  // a name no screen can hold". Debug never reaches the log store.
   const starved = desiredPx > 0 && railPx > 0
     && (targetShares[activeIndex] ?? 0) * railPx < desiredPx - 1;
   const lastStarved = useRef(null);
@@ -445,15 +566,19 @@ export default function SegmentMap({
     if (lastStarved.current === key) return;
     lastStarved.current = key;
     if (!starved) return;
-    log.debug('surround.accordion.degraded', {
+    log.warn('surround.accordion.degraded', {
       contentId,
       index: activeIndex,
+      name: segments[activeIndex]?.name ?? null,
       desired: desiredPx,
       granted: Math.round((targetShares[activeIndex] ?? 0) * railPx),
-      floor: SEGMENT_FLOOR_PX,
+      floor: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
+      density: chips ? 'chips' : 'names',
+      railPx: Math.round(railPx),
       segments: segments.length,
     });
-  }, [starved, activeIndex, desiredPx, targetShares, railPx, segments.length, contentId, log]);
+  }, [starved, activeIndex, desiredPx, targetShares, railPx, segments,
+    chips, floorPx, contentId, log]);
 
   // READ OUT OF THE INTERPOLATED VECTOR, not recomputed from the shares. The two
   // agree at rest and only the vector is right mid-flight, which is the whole
@@ -500,22 +625,27 @@ export default function SegmentMap({
 
   if (!segments.length) return null;
 
+  // ONE NOTATION PER RAIL (`numeralStyle`). `ROMAN` runs to XII, so a rail of
+  // twenty-one used to set `… XI. XII. 13. 14. …` — the notation changing
+  // partway along one gutter. The style is a property of the list.
+  const style = numeralStyle(segments);
+
   // THE GUTTER IS SIZED ONCE PER RAIL, not per segment — that is the whole point
   // of it. A piece running to IX. gives every one of its segments a IX.-wide
   // track, so all of them share one text edge; a piece of three segments gets a
   // narrower one and wastes nothing.
   const numeralChars = segments.reduce(
-    (max, seg, i) => Math.max(max, roman(seg.n, i).length), 1,
+    (max, seg, i) => Math.max(max, numeral(seg.n, i, style).length), 1,
   );
 
   const headPct = playheadFraction({ segments, shares, position: railPosition, end }) * 100;
 
   return (
     <div
-      className={`surround-segment-map${named ? '' : ' surround-segment-map--bars'}${grouped ? ' surround-segment-map--grouped' : ''}`}
+      className={`surround-segment-map${named ? '' : ' surround-segment-map--bars'}${grouped ? ' surround-segment-map--grouped' : ''}${chips ? ' surround-segment-map--chips' : ''}`}
       data-testid="surround-segment-map"
       data-now-side={side}
-      data-density={named ? 'names' : 'bars'}
+      data-density={named ? (chips ? 'chips' : 'names') : 'bars'}
       data-grouped={grouped ? 'true' : 'false'}
       style={{
         '--numeral-chars': String(numeralChars),
@@ -568,6 +698,34 @@ export default function SegmentMap({
         </div>
       )}
       <div className="surround-segment-map__rule" ref={ruleRef}>
+        {/* THE RULER (the same idiom `CueTicker` measures its prose with). One
+            element per rail, out of flow and invisible, carrying the segment
+            row's real structure — the numeral's gutter, the text column, the
+            heading with its title/tempo spans, the gloss in the annotation face
+            — so what it reports is what the rail paints and not an arithmetic
+            model of it.
+            IT IS A RULER, NOT HIDDEN TEXT. It holds one segment's strings at a
+            time and is emptied when the pass ends; nothing it ever contained is
+            on screen, at any opacity, in any state. That distinction is the
+            whole of chip mode: a chipped segment renders NO name, rather than a
+            name nobody can see. `aria-hidden` because a ruler is not content. */}
+        {named && (
+          <span className="surround-segment-map__probe" ref={probeRef} aria-hidden="true">
+            <span className="surround-segment-map__text-row">
+              {/* The gutter's cell, empty and unclassed. Empty because the
+                  gutter is an explicitly sized grid track, so the chrome it
+                  contributes is the same whatever mark sits in it; UNCLASSED
+                  because the ruler must not answer a query for the rail's
+                  numerals — a query that found this one would count a mark
+                  nobody is looking at. */}
+              <span />
+              <span className="surround-segment-map__text">
+                <span className="surround-segment-map__heading" />
+                <span className="surround-segment-map__translation" />
+              </span>
+            </span>
+          </span>
+        )}
         <span className="surround-segment-map__barline surround-segment-map__barline--terminal surround-segment-map__barline--start" aria-hidden="true" />
 
         {/* THE BOND (design wave 7). ONE element that MOVES, rather than a
@@ -685,10 +843,22 @@ export default function SegmentMap({
                   A BARS-ONLY rail (`band.railDensity`) omits the row entirely
                   rather than hiding it: the band's height is its content, so a
                   hidden-but-rendered row would leave the rail as tall as a
-                  named one and buy nothing. */}
-              {named && (
+                  named one and buy nothing.
+                  A CHIPPED rail omits it for every segment but the sounding one,
+                  for the same reason and one step further — see the chip. */}
+              {named && chips && state !== 'active' && (
+                <span
+                  className="surround-segment-map__chip"
+                  data-testid="surround-segment-chip"
+                  data-n={numeralText(seg.n, i, style)}
+                  aria-hidden="true"
+                >
+                  {numeralText(seg.n, i, style)}
+                </span>
+              )}
+              {named && (!chips || state === 'active') && (
               <span className="surround-segment-map__text-row">
-                <span className="surround-segment-map__numeral">{roman(seg.n, i)}</span>
+                <span className="surround-segment-map__numeral">{numeral(seg.n, i, style)}</span>
                 <span className="surround-segment-map__text">
                   <span className="surround-segment-map__heading">
                     {title && <span className="surround-segment-map__title">{title}</span>}

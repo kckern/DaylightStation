@@ -92,7 +92,7 @@ import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeSegmentIndex,
-  placedSegments, roman, useEasedVector, ACCORDION_MS, NOW_PANEL_SHARE,
+  placedSegments, numeral, numeralStyle, useEasedVector, ACCORDION_MS, NOW_PANEL_SHARE,
 } from '../band.js';
 import {
   bandPools, fitBand, fitStyle, withhold, withheldSets,
@@ -719,7 +719,14 @@ export default function CueTicker({
   // ever cared about.
   const rootKind = activeCue ? 'cue' : (pieceShown.kind ?? nowShown.kind ?? 'empty');
 
-  const numeral = segment ? roman(Number(segment.n), segmentIndex) : null;
+  // THE SAME NOTATION THE RAIL USES, from the same derivation (`numeralStyle`).
+  // Both registers of the band print this mark and they may not disagree about
+  // how it is written: a rail of twenty-one sets figures because `ROMAN` cannot
+  // reach XXI, and a NOW header still setting `V.` beside a rail setting `5.`
+  // would be two numbering systems for one fact — which is the defect task 6c
+  // was asked to settle, reappearing in the other half of the bond.
+  const style = numeralStyle(placed.map((p) => p.segment));
+  const segmentNumeral = segment ? numeral(Number(segment.n), segmentIndex, style) : null;
   const segmentName = smartQuotes(trimmed(segment?.name));
   const segmentTranslation = smartQuotes(trimmed(segment?.translation));
 
@@ -937,7 +944,7 @@ export default function CueTicker({
               <span className="surround-cue-ticker__now-head">
                 {segmentName ? (
                   <>
-                    {numeral && <span className="surround-cue-ticker__now-numeral">{numeral}</span>}
+                    {segmentNumeral && <span className="surround-cue-ticker__now-numeral">{segmentNumeral}</span>}
                     <span className="surround-cue-ticker__now-name">{segmentName}</span>
                   </>
                 ) : BLANK_LINE}
