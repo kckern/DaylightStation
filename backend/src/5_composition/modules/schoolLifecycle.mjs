@@ -71,6 +71,7 @@ import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
+import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
@@ -84,6 +85,7 @@ import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
+import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
 
 /**
  * Tokens are printed and carried around a house; a predictable stream would let
@@ -165,7 +167,7 @@ export async function createSchoolLifecycle({
     logger.info?.('school.lifecycle.unwired', { reason });
     return {
       wired: false, reason, handlesCode: () => false, handleScan: null,
-      reporter: null, router: null, devicesRouter: null,
+      reporter: null, router: null, devicesRouter: null, selfServiceRouter: null,
       useCases: {}, stores: {}, devices: {}, renderers: {},
       donowSchoolBridge: null, grownUps: null, teacherGate: null, passOverrides: null,
     };
@@ -770,12 +772,38 @@ export async function createSchoolLifecycle({
     teacherGate, clock, logger,
   });
 
+  // --- the school-room panel's keypad (self-service access codes, §4) -------
+  // The READ half only: six digits in, a launch card out. It shares every
+  // collaborator with `resolveSubjectNext` above — same curriculum instance,
+  // same session repository, same launcher map — but computes the plan without
+  // ensuring a session, so a child typing a sibling's code cannot open work in
+  // that sibling's history. `issueDocument` is handed over for exactly one
+  // synchronous question (`canIssueBank`), which is the print-or-screen call
+  // the pure card builder is deliberately not allowed to make for itself.
+  //
+  // `cfg.selfService` is the SAME `school.yml` block `buildAgenda` mints codes
+  // from, passed through untouched — one config path, so the room a video goes
+  // to and the codes that reach it can never come from two different readings.
+  const resolveAccessCode = new ResolveAccessCode({
+    tokens: stores.tokens,
+    curriculum,
+    assignments: stores.assignments,
+    sessions: stores.sessions,
+    launchers,
+    attestations,
+    issueDocument,
+    selfService: cfg.selfService,
+    timezone,
+    clock,
+    logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
-    enrollLearner, unenrollLearner,
+    enrollLearner, unenrollLearner, resolveAccessCode,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -790,6 +818,12 @@ export async function createSchoolLifecycle({
     syllabi,
     logger,
   });
+
+  // Mounted at `/api/v1/school/self-service` by app.mjs, inside this same
+  // `lifecycle.enabled` gate — a panel configured `mode: locked` against a
+  // disabled lifecycle would otherwise show a keypad whose /resolve 404s, and
+  // per-screen lock config ships independently of `school.yml`.
+  const selfServiceRouter = createSchoolSelfServiceRouter({ resolveAccessCode });
 
   // Only when the doubles exist; the factory itself also refuses to register a
   // route for a device it was not handed.
@@ -820,6 +854,7 @@ export async function createSchoolLifecycle({
     }),
     router,
     devicesRouter,
+    selfServiceRouter,
     useCases,
     // `curriculum` is the read model every use case above shares — the same
     // cache, so a caller reading a unit sees exactly what the console saw.
