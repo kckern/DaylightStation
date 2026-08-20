@@ -1,4 +1,8 @@
-const num = (v) => (Number.isFinite(v) && v >= 0 ? v : undefined);
+// A timing value is only usable if it is a non-negative finite number — the
+// same rule the store applies to `starts` entries before this module ever
+// sees them. Exported so the store can share one definition instead of
+// keeping a second copy in sync.
+export const num = (v) => (Number.isFinite(v) && v >= 0 ? v : undefined);
 
 /**
  * Normalise whatever timing an author supplied into one span per chapter.

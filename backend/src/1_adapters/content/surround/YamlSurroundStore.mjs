@@ -10,7 +10,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { deepMerge } from '#system/utils/deepMerge.mjs';
 import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
-import { toSpans, withOffsets } from './chapters.mjs';
+import { toSpans, withOffsets, num } from './chapters.mjs';
 
 // Definitions live in this reserved folder; every other `_`-prefixed name under
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
@@ -610,7 +610,7 @@ export class YamlSurroundStore extends ISurroundStore {
     // pairs with movements positionally, so dropping an entry outright would
     // silently shift every later movement's timing by one.
     const rawStarts = Array.isArray(doc.starts) ? doc.starts : [];
-    const starts = rawStarts.map((v) => (Number.isFinite(v) && v >= 0 ? v : undefined));
+    const starts = rawStarts.map(num);
     if (starts.some((v) => v === undefined)) soft.push('starts-entry-invalid');
     if (soft.length) this.#invalid(file, soft);
 
