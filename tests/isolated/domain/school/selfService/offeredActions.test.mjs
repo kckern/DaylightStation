@@ -7,14 +7,16 @@ const OPTS = { mediaSurface: LIVING_ROOM, bankPrintable: false };
 const opts = (over = {}) => ({ ...OPTS, ...over });
 
 /** A `move` resolution — the shape `ResolveSubjectNext` returns for `kind: 'move'`. */
-const move = (unit, state = 'created') => ({
+const move = (unit, state = 'created', stateExtras = {}) => ({
   kind: 'move',
   move: { kind: 'ignored-by-this-module', tokenClass: 'select_unit', label: 'ignored' },
   sessionId: 's1',
-  state: { state, learnerId: 'kid' },
+  state: { state, learnerId: 'kid', ...stateExtras },
   unit,
   entry: { unitId: unit?.unitId ?? 'u1', subject: unit?.subject ?? 'maths' },
 });
+
+const needsRemediation = (unit) => move(unit, 'outcome_recorded', { outcome: { result: 'needs_remediation' } });
 
 const kinds = (actions) => actions.map((a) => a.kind);
 
@@ -266,6 +268,38 @@ describe('later session states reuse the same builder', () => {
   });
 });
 
+describe('work that needs remediation gets a fresh sheet, not a dead end', () => {
+  it.each([
+    ['a document unit', { document: { template: 'sheet' } }],
+    ['a bank unit', { bank: { bankId: 'b1' }, subject: 'maths' }],
+    ['a media unit', { media: { plex: '1' } }],
+  ])('offers the retry to %s', (_label, unit) => {
+    expect(kinds(offeredActions(needsRemediation(unit), opts()))).toEqual(['retry', 'exit']);
+  });
+
+  it('names the physical outcome on the button', () => {
+    expect(offeredActions(needsRemediation({ document: {} }), opts())[0].label).toBe('Print a fresh sheet');
+  });
+
+  it('runs off the panel, so there is no room to walk to', () => {
+    expect(offeredActions(needsRemediation({ document: {} }), opts())[0].target).toBeUndefined();
+  });
+
+  it('says nothing extra — the button is the answer', () => {
+    expect(cardSentence(needsRemediation({ document: {} }), opts())).toBeNull();
+  });
+
+  it('does not offer it once the work passed', () => {
+    const passed = move({ document: {} }, 'outcome_recorded', { outcome: { result: 'passed' } });
+    expect(kinds(offeredActions(passed, opts()))).toEqual(['exit']);
+    expect(cardSentence(passed, opts())).toBeTruthy();
+  });
+
+  it('never reprints the graded session instead — that would be refused by ISSUABLE', () => {
+    expect(kinds(offeredActions(needsRemediation({ document: {} }), opts()))).not.toContain('print');
+  });
+});
+
 describe('the media surface', () => {
   it('accepts a bare surface id and drops the room name from the button', () => {
     const [action] = offeredActions(move({ media: { plex: '1' } }), opts({ mediaSurface: 'livingroom-tv' }));
@@ -298,6 +332,11 @@ describe('every card ends with a way out', () => {
     move({ bank: { bankId: 'b1' } }),
     move({}, 'media_dispatched'),
     move({}, 'outcome_recorded'),
+    needsRemediation({ document: {} }),
+    move({}, 'submitted'),
+    move({}, 'graded'),
+    move({}, 'launch_dispatched'),
+    move({}, 'abandoned'),
     { kind: 'something-new-nobody-wrote-yet' },
   ];
 
