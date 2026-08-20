@@ -324,28 +324,64 @@ describe('work that needs remediation gets a fresh start, not a dead end', () =>
     expect(kinds(offeredActions(needsRemediation(unit), withRoom({ bankPrintable: true })))).toEqual(['retry', 'exit']);
   });
 
-  it('promises paper only when paper is what arrives', () => {
-    expect(offeredActions(needsRemediation({ document: DOCUMENT }), opts())[0].label).toBe('Print a fresh sheet');
+  /**
+   * Every composition that can reach `outcome_recorded`. `OpenRemediation` is
+   * composition-blind — it appends a fresh `created` event and always returns
+   * `document: null` — so the retry button must describe whatever the FRESH
+   * `created` card will offer, never assume paper.
+   */
+  const COMPOSITIONS = [
+    ['a document unit', { document: DOCUMENT }, { bankPrintable: false }],
+    ['a printable bank unit', { bank: BANK, subject: 'maths' }, { bankPrintable: true }],
+    ['a screen-answered bank unit', { bank: BANK, subject: 'maths' }, { bankPrintable: false }],
+    ['a screen-answered civilization bank unit', { bank: 'civ-1', subject: 'civilization' }, { bankPrintable: false }],
+    ['a launch unit', { launch: LAUNCH }, { bankPrintable: false }],
+    ['a launch unit with its own wording', { launch: { ...LAUNCH, labelHint: 'go ride the bike' } }, { bankPrintable: false }],
+    ['a media unit', { media: MEDIA }, { bankPrintable: false }],
+    ['a media unit with a worksheet behind it', { media: MEDIA, document: DOCUMENT }, { bankPrintable: false }],
+  ];
+
+  it.each(COMPOSITIONS)('%s is promised what the fresh created card actually offers', (_label, unit, over) => {
+    const options = opts(over);
+    const [retry] = offeredActions(needsRemediation(unit), options);
+    const [fresh] = offeredActions(move(unit, 'created'), options);
+
+    // The invariant, asserted as AGREEMENT rather than eight literals so it
+    // cannot drift: the only licensed divergence is the paper case, where
+    // "a fresh sheet" is what distinguishes a remediation from a reprint.
+    expect(retry.kind).toBe('retry');
+    expect(retry.label).toBe(fresh.kind === 'print' ? 'Print a fresh sheet' : fresh.label);
   });
 
-  it('promises the SCREEN for a screen-answered bank unit', () => {
-    // `OpenRemediation` prints nothing — it opens a fresh session. For a bank
-    // unit the panel is where the retry happens, so a "Print a fresh sheet"
-    // button promises a sheet that never arrives and the next card withdraws
-    // it with "Answer on the screen".
-    const actions = offeredActions(needsRemediation({ bank: BANK, subject: 'maths' }), opts({ bankPrintable: false }));
+  it.each([
+    ['a document unit', { document: DOCUMENT }, { bankPrintable: false }, 'Print a fresh sheet'],
+    ['a printable bank unit', { bank: BANK }, { bankPrintable: true }, 'Print a fresh sheet'],
+    ['a screen-answered bank unit', { bank: BANK }, { bankPrintable: false }, 'Answer on the screen'],
+    ['a launch unit', { launch: LAUNCH }, { bankPrintable: false }, 'Go do this'],
+    ['a media unit', { media: MEDIA }, { bankPrintable: false }, 'Play the video'],
+  ])('%s reads as its own destination', (_label, unit, over, label) => {
+    // The literals the child actually sees, pinned alongside the invariant so
+    // the wording is visible in one place rather than only derivable.
+    expect(offeredActions(needsRemediation(unit), opts(over))[0].label).toBe(label);
+  });
+
+  it('names the room on a retry too, when the caller supplied one', () => {
+    expect(offeredActions(needsRemediation({ media: MEDIA }), withRoom())[0].label)
+      .toBe('Play in the living room');
+  });
+
+  it('falls back to plain wording for a unit with nothing on it', () => {
+    const actions = offeredActions(needsRemediation({ unitId: 'u1' }), opts());
     expect(kinds(actions)).toEqual(['retry', 'exit']);
-    expect(actions[0].label).toBe('Try again on the screen');
+    expect(actions[0].label).toBe('Try again');
   });
 
-  it('promises paper for a bank unit the application layer says IS printable', () => {
-    const actions = offeredActions(needsRemediation({ bank: BANK, subject: 'maths' }), opts({ bankPrintable: true }));
-    expect(actions[0].label).toBe('Print a fresh sheet');
-  });
-
-  it('does not promise paper for a civilization bank unit either, when it is screen-answered', () => {
-    const actions = offeredActions(needsRemediation({ bank: 'civ-1', subject: 'civilization' }), opts({ bankPrintable: false }));
-    expect(actions[0].label).toBe('Try again on the screen');
+  it('keeps `retry` as the identity whatever the label says', () => {
+    // Task 7 finds the action by kind and routes it to `OpenRemediation`. The
+    // label follows the composition; the kind must not.
+    for (const [, unit, over] of COMPOSITIONS) {
+      expect(offeredActions(needsRemediation(unit), opts(over))[0].kind).toBe('retry');
+    }
   });
 
   it('runs off the panel, so there is no room to walk to', () => {
