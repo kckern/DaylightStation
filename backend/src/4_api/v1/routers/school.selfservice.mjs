@@ -2,22 +2,26 @@
  * /api/v1/school/self-service — the school-room wall panel's keypad
  * (self-service access codes design, §4).
  *
- * A child types six digits and this answers with a launch card. That is all it
- * does; `/act` (the endpoint that makes something physically happen) is a
- * separate route and is deliberately not here yet.
+ * A child types six digits and this answers with a launch card (`/resolve`),
+ * then presses one of its buttons and this makes something happen (`/act`).
  *
  * TWO RULES, both inherited from the paper path they replace:
  *
  *  - **It never dead-ends.** An unknown, expired or revoked code is not an
  *    error — it is a card that says "Try again." So `/resolve` answers 200
- *    with `{ ok: false, sentence }`, never 4xx and never a thrown 500. A
+ *    with `{ ok: false, sentence }` and `/act` answers 200 with
+ *    `{ outcome: 'refused', sentence }`, never 4xx and never a thrown 500. A
  *    keypad showing an HTTP status to a seven-year-old is the failure this
- *    subsystem exists to avoid, and the use case is written to not throw.
- *  - **It never writes.** `ResolveAccessCode` reads the plan and reduces the
- *    session; it opens nothing. This router adds no side effect of its own,
- *    which is why the POST carries `Cache-Control: no-store` rather than any
- *    kind of write semantics — the body carries a secret-ish code, so it is a
- *    POST for the same reason a login is, not because it mutates.
+ *    subsystem exists to avoid, and both use cases are written to not throw.
+ *  - **`/resolve` never writes; `/act` is where writing is allowed.**
+ *    `ResolveAccessCode` reads the plan and reduces the session, opening
+ *    nothing — so a child typing a sibling's code cannot write `created`
+ *    events into that sibling's history. `RunSelfServiceAction` opens the
+ *    session for real, because by then a button has actually been pressed.
+ *    That split is the point of there being two routes rather than one.
+ *
+ * Both carry `Cache-Control: no-store`: the body holds a secret-ish code, so
+ * `/resolve` is a POST for the same reason a login is, not because it mutates.
  *
  * Thin like every other router here: read the body, call one use case, return
  * what came back. `4_api` may not import `#domains/*` (`api-no-domains`), and
@@ -32,9 +36,10 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 /**
  * @param {object} deps
  * @param {{execute: (args: {code: string}) => Promise<object>}} deps.resolveAccessCode
+ * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
  * @returns {import('express').Router}
  */
-export function createSchoolSelfServiceRouter({ resolveAccessCode } = {}) {
+export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction } = {}) {
   const router = express.Router();
 
   // Registered only when the use case is actually injected, so a deployment
@@ -45,6 +50,18 @@ export function createSchoolSelfServiceRouter({ resolveAccessCode } = {}) {
       const { code } = req.body || {};
       const card = await resolveAccessCode.execute({ code });
       res.set('Cache-Control', 'no-store').json(card);
+    }));
+  }
+
+  if (runSelfServiceAction) {
+    // `action` is the `kind` of one of the buttons `/resolve` just handed
+    // back. The use case recomputes the card and refuses anything that is not
+    // on it — so this router does no validation of its own; a bad `action` is
+    // a sentence, not a 400.
+    router.post('/act', asyncHandler(async (req, res) => {
+      const { code, action } = req.body || {};
+      const result = await runSelfServiceAction.execute({ code, action });
+      res.set('Cache-Control', 'no-store').json(result);
     }));
   }
 

@@ -72,6 +72,7 @@ import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.m
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
+import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
@@ -798,12 +799,33 @@ export async function createSchoolLifecycle({
     logger,
   });
 
+  // The WRITE half. `/act` is where a button press earns a real session — the
+  // `ensureSession` that `resolveAccessCode` above deliberately does not do —
+  // so it takes the SAME session repository and the SAME `newSessionId` the
+  // agenda builder opens sessions with, and the same use-case instances the
+  // scan path acts through (`issueDocument`, `mediaOrNothing`,
+  // `openRemediation`, `donow`, `closeSessionOutcome`). Deliberately NOT
+  // routed through `ResolveScanAction` (design D7): every exit from that file
+  // prints a thermal slip, and a keypad tap must not put paper in the tray.
+  const runSelfServiceAction = new RunSelfServiceAction({
+    resolveAccessCode,
+    sessions: stores.sessions,
+    issueDocument,
+    dispatchMedia: mediaOrNothing,
+    openRemediation,
+    donow,
+    closeSessionOutcome,
+    newSessionId,
+    clock,
+    logger,
+  });
+
   const useCases = {
     buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
-    enrollLearner, unenrollLearner, resolveAccessCode,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -823,7 +845,7 @@ export async function createSchoolLifecycle({
   // `lifecycle.enabled` gate — a panel configured `mode: locked` against a
   // disabled lifecycle would otherwise show a keypad whose /resolve 404s, and
   // per-screen lock config ships independently of `school.yml`.
-  const selfServiceRouter = createSchoolSelfServiceRouter({ resolveAccessCode });
+  const selfServiceRouter = createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction });
 
   // Only when the doubles exist; the factory itself also refuses to register a
   // route for a device it was not handed.
