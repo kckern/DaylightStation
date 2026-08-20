@@ -48,17 +48,17 @@ const SHOW_ID = 'plex:663144';
 /** Vivaldi, "Summer" (S01E02). Same show, same library, deliberately NOT authored. */
 const PLAIN_ID = 'plex:663147';
 
-/** From the sidecar's `piece.musicEndsAt` — the MovementMap's rule ends here, not at `duration`. */
+/** From the sidecar's `piece.musicEndsAt` — the SegmentMap's rule ends here, not at `duration`. */
 const MUSIC_ENDS_AT = 613;
-/** From the sidecar's `movements[].start`. */
-const MOVEMENT_STARTS = [0, 225, 385];
+/** From the sidecar's `pieceSegments[].start`. */
+const SEGMENT_STARTS = [0, 225, 385];
 /**
- * From the sidecar's `movements[].name`. Design wave 6 split the band's text
- * zone in two and the right-hand register names the movement that is actually
+ * From the sidecar's `pieceSegments[].name`. Design wave 6 split the band's text
+ * zone in two and the right-hand register names the segment that is actually
  * sounding, so the gate now has to know what those names ARE to check that the
  * register is reading the transport rather than printing furniture.
  */
-const MOVEMENT_NAMES = ['Allegro', 'Largo e pianissimo sempre', 'Allegro pastorale'];
+const SEGMENT_NAMES = ['Allegro', 'Largo e pianissimo sempre', 'Allegro pastorale'];
 /** The sidecar's first cue is at 0s with the default 12s dwell. */
 const FIRST_CUE_AT = 0;
 const CUE_DWELL_S = 12;
@@ -129,7 +129,10 @@ test.beforeAll(async () => {
   }
 
   // 3. The sidecar we wrote the numeric assertions against is the one attached.
-  const { piece, movements } = enrichedPlay.surround;
+  // `pieceSegments` is the work's own authored list with this recording's
+  // `starts` written onto it — the list the rail draws. (`segments` beside it
+  // is the composed sounding rail, whose spans are a different reading.)
+  const { piece, pieceSegments } = enrichedPlay.surround;
   if (piece?.musicEndsAt !== MUSIC_ENDS_AT) {
     throw new Error(
       `SURROUND GATE PRECONDITION FAILED: sidecar for ${ENRICHED_ID} has ` +
@@ -137,18 +140,18 @@ test.beforeAll(async () => {
       `Update the fixture constants together with the sidecar.`,
     );
   }
-  const starts = (movements ?? []).map((m) => m.start);
-  if (JSON.stringify(starts) !== JSON.stringify(MOVEMENT_STARTS)) {
+  const starts = (pieceSegments ?? []).map((m) => m.start);
+  if (JSON.stringify(starts) !== JSON.stringify(SEGMENT_STARTS)) {
     throw new Error(
-      `SURROUND GATE PRECONDITION FAILED: sidecar movement starts are ` +
-      `[${starts}], this gate assumes [${MOVEMENT_STARTS}].`,
+      `SURROUND GATE PRECONDITION FAILED: sidecar segment starts are ` +
+      `[${starts}], this gate assumes [${SEGMENT_STARTS}].`,
     );
   }
-  const names = (movements ?? []).map((m) => m.name);
-  if (JSON.stringify(names) !== JSON.stringify(MOVEMENT_NAMES)) {
+  const names = (pieceSegments ?? []).map((m) => m.name);
+  if (JSON.stringify(names) !== JSON.stringify(SEGMENT_NAMES)) {
     throw new Error(
-      `SURROUND GATE PRECONDITION FAILED: sidecar movement names are ` +
-      `[${names}], this gate assumes [${MOVEMENT_NAMES}]. The NOW register's ` +
+      `SURROUND GATE PRECONDITION FAILED: sidecar segment names are ` +
+      `[${names}], this gate assumes [${SEGMENT_NAMES}]. The NOW register's ` +
       `header is asserted against them.`,
     );
   }
@@ -171,7 +174,7 @@ test.beforeAll(async () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Where the MovementMap's playhead sits, as a percentage of the engraved rule.
+ * Where the SegmentMap's playhead sits, as a percentage of the engraved rule.
  *
  * Design wave 5 moved the cursor off `left: N%` and onto a transform, because a
  * painted box's position is pixel-snapped by the engine and a cursor that
@@ -191,18 +194,18 @@ async function playheadPct(page) {
   });
 }
 
-/** Which movement is sounding at a given transport position, or -1 in the applause. */
-function movementAt(position) {
+/** Which segment is sounding at a given transport position, or -1 in the applause. */
+function segmentAt(position) {
   if (position >= MUSIC_ENDS_AT) return -1;
-  for (let i = MOVEMENT_STARTS.length - 1; i >= 0; i -= 1) {
-    if (position >= MOVEMENT_STARTS[i]) return i;
+  for (let i = SEGMENT_STARTS.length - 1; i >= 0; i -= 1) {
+    if (position >= SEGMENT_STARTS[i]) return i;
   }
   return -1;
 }
 
-/** What the playhead SHOULD read for a given playhead position, per MovementMap's geometry. */
+/** What the playhead SHOULD read for a given playhead position, per SegmentMap's geometry. */
 function expectedPlayheadPct(position) {
-  const first = MOVEMENT_STARTS[0];
+  const first = SEGMENT_STARTS[0];
   const span = MUSIC_ENDS_AT - first;
   const frac = Math.min(1, Math.max(0, (position - first) / span));
   return frac * 100;
@@ -233,9 +236,9 @@ async function currentTime(page) {
  * Fix round 1 (review finding M1). `currentTime(page)` and the header's
  * `.textContent()` used to be two independent round trips — each an `await`
  * of its own, with real wall-clock time (and, on a live page, real playback)
- * elapsing between them. A movement boundary landing in that gap made the
+ * elapsing between them. A segment boundary landing in that gap made the
  * header check straddle it: `now` read from before the boundary, the header
- * already reading the new movement (or the reverse), and the assertion below
+ * already reading the new segment (or the reverse), and the assertion below
  * would fail for a reason that was never a real defect — a timing race in the
  * GATE, not in the component.
  *
@@ -255,7 +258,7 @@ async function readNowAtBond(page) {
   return page.evaluate(([v, b]) => ({
     now: v.currentTime,
     // Where the bond's panel sits on the rule, 0..1 of the rule's own width —
-    // read in the SAME evaluate as the clock, so a movement boundary cannot
+    // read in the SAME evaluate as the clock, so a segment boundary cannot
     // land between the two reads (fix round 1, review finding M1).
     left: parseFloat(b.style.getPropertyValue('--bond-left')) / 100,
     width: parseFloat(b.style.getPropertyValue('--bond-width')) / 100,
@@ -317,7 +320,7 @@ test.describe('Surround — PoC runtime gate', () => {
     await expect(frame).toHaveCount(1, { timeout: 20000 });
 
     // The programme panels the definition declares (concert-hall).
-    await expect(page.locator('.surround-frame__region[data-module="movement-map"]')).toHaveCount(1);
+    await expect(page.locator('.surround-frame__region[data-module="segment-map"]')).toHaveCount(1);
     await expect(page.locator('.surround-frame__region[data-module="cue-ticker"]')).toHaveCount(1);
     await expect(page.locator('.surround-frame__region[data-module="composer-card"]')).toHaveCount(1);
 
@@ -342,15 +345,15 @@ test.describe('Surround — PoC runtime gate', () => {
     ).toBeLessThanOrEqual(0.01);
   });
 
-  test('2. seeking the transport moves the MovementMap cursor with the playhead', async ({ page }) => {
+  test('2. seeking the transport moves the SegmentMap cursor with the playhead', async ({ page }) => {
     await openViaUrl(page, ENRICHED_ID);
     await waitForTransport(page);
     await page.waitForSelector('[data-testid="surround-playhead"]', { timeout: 20000 });
 
-    // Somewhere in movement II (225–385) — far from both ends of the rule, so a
+    // Somewhere in segment II (225–385) — far from both ends of the rule, so a
     // cursor stuck at 0 or pinned at 100% cannot accidentally satisfy this.
     const TARGET = 300;
-    // Inside movement I, far below TARGET.
+    // Inside segment I, far below TARGET.
     const ORIGIN = 30;
 
     // PARK THE TRANSPORT FIRST. Playback RESUMES where it last stopped, and this
@@ -392,10 +395,10 @@ test.describe('Surround — PoC runtime gate', () => {
     ).toBeLessThanOrEqual(3);
     expect(after, 'playhead did not move at all').toBeGreaterThan(before + 5);
 
-    // And the map agrees about WHICH movement is sounding.
+    // And the map agrees about WHICH segment is sounding.
     await expect(
-      page.locator('[data-testid="surround-movement"][data-index="1"]'),
-      'movement II should be the active segment at 300s',
+      page.locator('[data-testid="surround-segment"][data-index="1"]'),
+      'segment II should be the active segment at 300s',
     ).toHaveAttribute('data-state', 'active', { timeout: 10000 });
   });
 
@@ -430,7 +433,7 @@ test.describe('Surround — PoC runtime gate', () => {
       })
       .toBeGreaterThan(FIRST_CUE_AT + CUE_DWELL_S + 1);
 
-    // Past the dwell the cue yields the register back to the movement's own
+    // Past the dwell the cue yields the register back to the segment's own
     // listening notes.
     await expect
       .poll(async () => (await text.textContent())?.trim(), {
@@ -539,7 +542,7 @@ test.describe('Surround — PoC runtime gate', () => {
 // ---------------------------------------------------------------------------
 // The composed-layout gate — the recomposition as it stands after design wave 4:
 // the work's title LEADS (the plate is the headline of the screen) and the
-// movement band's RULE ROW rides at the top of the band, against the video's
+// segment band's RULE ROW rides at the top of the band, against the video's
 // bottom edge, with the names below it. Everything wave 3 pinned still holds:
 // the placard FLOATS, straddling the video's top edge as a content-width museum
 // plate; the dark band sits flush under the video and slightly over it; the rail
@@ -665,12 +668,12 @@ test.describe('Surround — composed layout gate', () => {
 
     // 3. The playhead never enters the text band. The law is unchanged from
     //    design wave 2; its DIRECTION is inverted by wave 4. The rule row now
-    //    rides at the TOP of the band and the movement names hang BELOW it, so
+    //    rides at the TOP of the band and the segment names hang BELOW it, so
     //    the clearance reads "playhead lane ends before the heading begins"
-    //    rather than the other way round. Movement names may wrap to two lines,
+    //    rather than the other way round. Segment names may wrap to two lines,
     //    so this still reads the heading's REAL box rather than assuming one.
-    const heading = await box('.surround-movement-map__heading');
-    const playhead = await box('.surround-movement-map__playhead');
+    const heading = await box('.surround-segment-map__heading');
+    const playhead = await box('.surround-segment-map__playhead');
     expect(
       playhead.y + playhead.height,
       `playhead ends at ${playhead.y + playhead.height}, inside the heading box `
@@ -698,8 +701,8 @@ test.describe('Surround — composed layout gate', () => {
     //     compiled stylesheet; here it is read off the RENDERED element, which is
     //     the only place a cascade override or a lost build step shows up.
     for (const [name, sel] of [
-      ['playhead', '.surround-movement-map__playhead'],
-      ['fill', '[data-testid="surround-movement-fill"]'],
+      ['playhead', '.surround-segment-map__playhead'],
+      ['fill', '[data-testid="surround-segment-fill"]'],
     ]) {
       const ramp = await page.locator(sel).first().evaluate((el) => {
         const cs = getComputedStyle(el);
@@ -713,18 +716,18 @@ test.describe('Surround — composed layout gate', () => {
 
     //    ...and the lit tip is gone for good: progress is read from the fill.
     expect(
-      await page.locator('.surround-movement-map__playhead-edge').count(),
+      await page.locator('.surround-segment-map__playhead-edge').count(),
       'the glowing playhead tip is back',
     ).toBe(0);
     expect(
-      await page.locator('[data-testid="surround-movement-fill"]').count(),
+      await page.locator('[data-testid="surround-segment-fill"]').count(),
       'no elapsed fill on the band — progress has nothing to be read from',
     ).toBeGreaterThanOrEqual(1);
 
     // 3d. THE BAND SPLITS (design wave 6). Under the rule the text zone is two
     //     registers: the PIECE on the left (untimed programme notes) and NOW on
-    //     the right (a header naming the movement that is sounding, then that
-    //     movement's listening notes). Both have to be present and neither may
+    //     the right (a header naming the segment that is sounding, then that
+    //     segment's listening notes). Both have to be present and neither may
     //     be a sliver — a `flex: 1 1 50%` that lost its `min-width: 0` collapses
     //     one of them, which no jsdom spec can see.
     for (const sel of [
@@ -744,7 +747,7 @@ test.describe('Surround — composed layout gate', () => {
       .toBeGreaterThan(zonePiece.x);
     //     ...and neither register overflows the band it was given. This is the
     //     one thing the design wave had to measure rather than declare: the
-    //     movement names' translation line takes ~17px off this zone, and on
+    //     segment names' translation line takes ~17px off this zone, and on
     //     the 960x540 screen-root the ticker is left with about forty.
     const tickerFit = await page.locator('[data-testid="surround-cue-ticker"]').first()
       .evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
@@ -754,9 +757,9 @@ test.describe('Surround — composed layout gate', () => {
     ).toBeLessThanOrEqual(tickerFit.client + 1);
 
     //     3e. THE BOND NAMES WHAT IS SOUNDING (design wave 7). The NOW
-    //     register no longer prints the movement heading the rail above it has
+    //     register no longer prints the segment heading the rail above it has
     //     already set — the user's word for that repetition was "wasteful".
-    //     What says WHICH movement this register belongs to is the BOND: the
+    //     What says WHICH segment this register belongs to is the BOND: the
     //     sounding segment's panel and this register's panel drawn in one
     //     ground and joined along the band's seam.
     //
@@ -764,29 +767,29 @@ test.describe('Surround — composed layout gate', () => {
     //     the band's answer — it just reads a geometry rather than a string,
     //     and the geometry is the harder thing to get right. Both reads happen
     //     inside ONE `page.evaluate` (fix round 1, review finding M1) so a
-    //     movement boundary cannot land between them.
+    //     segment boundary cannot land between them.
     expect(
       await page.locator('[data-testid="surround-ticker-now"]').count(),
-      'the NOW register is reprinting the movement heading the rail already set',
+      'the NOW register is reprinting the segment heading the rail already set',
     ).toBe(0);
 
     const { now, left, width, bonded } = await readNowAtBond(page);
-    const index = movementAt(now);
+    const index = segmentAt(now);
     expect(
       index,
-      `the transport is at ${now}s, which is not inside any movement — reseek the fixture`,
+      `the transport is at ${now}s, which is not inside any segment — reseek the fixture`,
     ).toBeGreaterThanOrEqual(0);
-    expect(bonded, `nothing is bonded at ${now.toFixed(1)}s, inside movement ${index + 1}`)
+    expect(bonded, `nothing is bonded at ${now.toFixed(1)}s, inside segment ${index + 1}`)
       .toBe('true');
     //     The panel covers the segment the clock says is sounding — asserted
     //     against that segment's OWN rendered box, because the accordion means
     //     a segment's width is no longer its duration's share of the rule.
-    const seg = await box(`[data-testid="surround-movement"][data-index="${index}"]`);
-    const rule = await box('.surround-movement-map__rule');
+    const seg = await box(`[data-testid="surround-segment"][data-index="${index}"]`);
+    const rule = await box('.surround-segment-map__rule');
     expect(
       Math.abs((rule.x + left * rule.width) - seg.x),
-      `the bond starts at ${(rule.x + left * rule.width).toFixed(1)} but movement `
-      + `${index + 1} ("${MOVEMENT_NAMES[index]}") starts at ${seg.x.toFixed(1)}`,
+      `the bond starts at ${(rule.x + left * rule.width).toFixed(1)} but segment `
+      + `${index + 1} ("${SEGMENT_NAMES[index]}") starts at ${seg.x.toFixed(1)}`,
     ).toBeLessThanOrEqual(1.5);
     expect(
       Math.abs(width * rule.width - seg.width),
@@ -833,11 +836,11 @@ test.describe('Surround — composed layout gate', () => {
     //     segment's own left — which is what the fixed-width numeral track
     //     exists to guarantee and what the old inline numeral broke.
     const edges = await page.evaluate(() => [...document.querySelectorAll(
-      '.surround-movement-map__segment',
+      '.surround-segment-map__segment',
     )].map((segment) => {
       const l = segment.getBoundingClientRect().left;
-      const heading = segment.querySelector('.surround-movement-map__heading');
-      const gloss = segment.querySelector('.surround-movement-map__translation');
+      const heading = segment.querySelector('.surround-segment-map__heading');
+      const gloss = segment.querySelector('.surround-segment-map__translation');
       return {
         heading: +(heading.getBoundingClientRect().left - l).toFixed(2),
         gloss: gloss ? +(gloss.getBoundingClientRect().left - l).toFixed(2) : null,
@@ -848,12 +851,12 @@ test.describe('Surround — composed layout gate', () => {
     for (const [i, e] of edges.entries()) {
       expect(
         Math.abs(e.heading - textEdge),
-        `movement ${i + 1}'s name starts at ${e.heading} against ${textEdge} on the first`,
+        `segment ${i + 1}'s name starts at ${e.heading} against ${textEdge} on the first`,
       ).toBeLessThanOrEqual(0.5);
       if (e.gloss !== null) {
         expect(
           Math.abs(e.gloss - e.heading),
-          `movement ${i + 1}'s gloss starts at ${e.gloss}, its name at ${e.heading} `
+          `segment ${i + 1}'s gloss starts at ${e.gloss}, its name at ${e.heading} `
           + '— the translation is rendering under the numeral',
         ).toBeLessThanOrEqual(0.5);
       }

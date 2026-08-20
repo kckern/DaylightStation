@@ -94,7 +94,7 @@ const defaultHasContent = (value) => value != null;
  *   (a `{ text: '' }` line) override this.
  * @param {(next:*, shown:*) => boolean} [opts.instant] extra fast paths: return
  *   true to commit without the fade. Used for changes that are URGENT rather
- *   than merely new — see `CueTicker`'s cue activation and movement boundary,
+ *   than merely new — see `CueTicker`'s cue activation and segment boundary,
  *   where a softened swap would leave the band's two halves disagreeing about
  *   what is sounding for the length of a fade.
  * @returns {[*, boolean]} `[shown, hidden]`.

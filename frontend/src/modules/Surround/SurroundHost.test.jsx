@@ -59,7 +59,7 @@ const SURROUND = {
   id: 'concert-hall',
   definition: DEFINITION,
   piece: { title: 'Symphony No. 3' },
-  movements: [{ n: 1, name: 'Allegro con brio', start: 0 }],
+  pieceSegments: [{ n: 1, name: 'Allegro con brio', start: 0 }],
   cues: [],
   facts: [],
   composer: { name: 'Ludwig van Beethoven' },
@@ -161,7 +161,7 @@ describe('SurroundHost', () => {
   it('registers the built-in modules by importing the host', () => {
     // The seams must not need a registration call of their own.
     const registry = getSurroundRegistry();
-    expect(registry.get('movement-map')).toBeTruthy();
+    expect(registry.get('segment-map')).toBeTruthy();
     expect(registry.get('cue-ticker')).toBeTruthy();
     expect(registry.get('composer-card')).toBeTruthy();
   });
@@ -557,7 +557,7 @@ describe('SurroundHost — the mount log names the whole frame', () => {
         { module: 'place-carousel' },
       ],
       bottom: [
-        { module: 'movement-map', height: 64 },
+        { module: 'segment-map', height: 64 },
         { module: 'cue-ticker', height: 'fill', collapse: 'first' },
       ],
     },
@@ -566,15 +566,15 @@ describe('SurroundHost — the mount log names the whole frame', () => {
 
   it('reports every module of the shipped definition, in layout order', () => {
     expect(definitionModules(SHIPPED)).toEqual([
-      'work-placard', 'composer-card', 'place-carousel', 'movement-map', 'cue-ticker',
+      'work-placard', 'composer-card', 'place-carousel', 'segment-map', 'cue-ticker',
     ]);
   });
 
   it('reads a slot authored as a single object exactly as it reads a list', () => {
-    expect(definitionModules({ regions: { bottom: { module: 'movement-map' } } }))
-      .toEqual(['movement-map']);
-    expect(definitionModules({ regions: { bottom: [{ module: 'movement-map' }] } }))
-      .toEqual(['movement-map']);
+    expect(definitionModules({ regions: { bottom: { module: 'segment-map' } } }))
+      .toEqual(['segment-map']);
+    expect(definitionModules({ regions: { bottom: [{ module: 'segment-map' }] } }))
+      .toEqual(['segment-map']);
   });
 
   it('never throws on a definition that is missing, empty or malformed', () => {

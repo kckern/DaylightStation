@@ -670,7 +670,7 @@ describe('country-map surround module', () => {
     expect(getSurroundRegistry().has('country-map')).toBe(true);
     expect(SURROUND_BUILTIN_MODULES).toContain('country-map');
     // ...alongside, not instead of, the modules already there.
-    for (const name of ['movement-map', 'cue-ticker', 'composer-card']) {
+    for (const name of ['segment-map', 'cue-ticker', 'composer-card']) {
       expect(getSurroundRegistry().has(name)).toBe(true);
     }
   });

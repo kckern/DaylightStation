@@ -31,9 +31,9 @@ const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(),
 });
 
-const MovementStub = ({ position, data, region }) => (
-  <div data-testid="movement-stub" data-position={position} data-height={region?.height}>
-    {(data?.movements ?? []).length} movements
+const SegmentStub = ({ position, data, region }) => (
+  <div data-testid="segment-stub" data-position={position} data-height={region?.height}>
+    {(data?.pieceSegments ?? []).length} segments
   </div>
 );
 const TickerStub = () => <div data-testid="ticker-stub">ticker</div>;
@@ -44,7 +44,7 @@ const DEFINITION = {
   regions: {
     right: { width: '20%', module: 'composer-card' },
     bottom: [
-      { module: 'movement-map', height: 60 },
+      { module: 'segment-map', height: 60 },
       { module: 'cue-ticker', height: 156, collapse: 'first' },
     ],
   },
@@ -55,7 +55,7 @@ const DATA = {
   id: 'concert-hall',
   definition: DEFINITION,
   piece: { title: 'Symphony No. 3' },
-  movements: [{ n: 1, name: 'Allegro con brio', start: 0 }],
+  pieceSegments: [{ n: 1, name: 'Allegro con brio', start: 0 }],
   cues: [],
   facts: ['A fact.'],
   composer: { name: 'Ludwig van Beethoven' },
@@ -89,7 +89,7 @@ describe('SurroundFrame', () => {
     observers = [];
     globalThis.ResizeObserver = FakeResizeObserver;
     resetSurroundRegistry();
-    registerSurroundModule('movement-map', MovementStub);
+    registerSurroundModule('segment-map', SegmentStub);
     registerSurroundModule('cue-ticker', TickerStub);
     registerSurroundModule('composer-card', CardStub);
   });
@@ -100,20 +100,20 @@ describe('SurroundFrame', () => {
 
   it('renders every declared region through the registry', () => {
     const { getByTestId } = renderFrame();
-    expect(getByTestId('movement-stub')).toBeInTheDocument();
+    expect(getByTestId('segment-stub')).toBeInTheDocument();
     expect(getByTestId('ticker-stub')).toBeInTheDocument();
     expect(getByTestId('card-stub')).toHaveTextContent('Ludwig van Beethoven');
   });
 
   it('passes the clock and the region definition down to each module', () => {
     const { getByTestId } = renderFrame({ position: 976 });
-    const stub = getByTestId('movement-stub');
+    const stub = getByTestId('segment-stub');
     expect(stub.getAttribute('data-position')).toBe('976');
     expect(stub.getAttribute('data-height')).toBe('60');
   });
 
   it('renders a top region as a floating plate, not as a width-pinned band', () => {
-    const definition = { regions: { top: { module: 'movement-map' }, right: { module: 'composer-card' } } };
+    const definition = { regions: { top: { module: 'segment-map' }, right: { module: 'composer-card' } } };
     const { container, getByTestId } = renderFrame({ data: { ...DATA, definition } });
     const main = container.querySelector('.surround-frame__main');
     const header = main.querySelector('.surround-frame__header');
@@ -142,7 +142,7 @@ describe('SurroundFrame', () => {
 
   it('gives modules a data payload carrying the contentId for log correlation', () => {
     const Spy = vi.fn(() => null);
-    registerSurroundModule('movement-map', Spy);
+    registerSurroundModule('segment-map', Spy);
     renderFrame();
     expect(Spy.mock.calls[0][0].data.contentId).toBe('plex:663134');
     expect(Spy.mock.calls[0][0].data.piece.title).toBe('Symphony No. 3');
@@ -256,7 +256,7 @@ describe('SurroundFrame', () => {
       regions: {
         ...DEFINITION.regions,
         bottom: [
-          { module: 'movement-map', height: 64 },
+          { module: 'segment-map', height: 64 },
           { module: 'cue-ticker', height: 'fill', collapse: 'first' },
         ],
       },
@@ -270,10 +270,10 @@ describe('SurroundFrame', () => {
 
   it('treats a bottom region’s declared height as a FLOOR, so two-line names fit', () => {
     const { container } = renderFrame();
-    const band = container.querySelector('[data-module="movement-map"]');
+    const band = container.querySelector('[data-module="segment-map"]');
     expect(band.style.minHeight).toBe('60px');
     expect(band.style.flex).toBe('0 0 auto');
-    // A fixed height would clip the second line of a wrapped movement name.
+    // A fixed height would clip the second line of a wrapped segment name.
     expect(band.style.height).toBe('');
   });
 
@@ -282,11 +282,11 @@ describe('SurroundFrame', () => {
       ...DEFINITION,
       regions: {
         ...DEFINITION.regions,
-        right: [{ module: 'composer-card', width: '33%' }, { module: 'movement-map', height: 230 }],
+        right: [{ module: 'composer-card', width: '33%' }, { module: 'segment-map', height: 230 }],
       },
     };
     const { container } = renderFrame({ data: { ...DATA, definition } });
-    const map = container.querySelector('.surround-frame__rail [data-module="movement-map"]');
+    const map = container.querySelector('.surround-frame__rail [data-module="segment-map"]');
     expect(map.style.height).toBe('230px');
     expect(map.style.flex).toBe('0 0 230px');
   });
@@ -378,7 +378,7 @@ describe('SurroundFrame', () => {
     resize(getByTestId('surround-footer'), { width: 800, height: 40 });
 
     expect(queryByTestId('ticker-stub')).toBeNull();
-    expect(queryByTestId('movement-stub')).not.toBeNull();
+    expect(queryByTestId('segment-stub')).not.toBeNull();
     const collapsed = logger.debug.mock.calls.find((c) => c[0] === 'surround.collapse');
     expect(collapsed).toBeDefined();
     expect(collapsed[1]).toMatchObject({ collapsed: true, floor: 90, contentId: 'plex:663134' });
@@ -405,13 +405,13 @@ describe('SurroundFrame', () => {
     expect(queryByTestId('ticker-stub')).toBeNull();
   });
 
-  it('still renders a composed frame when the payload has no movements or facts', () => {
-    const bare = { ...DATA, movements: undefined, facts: undefined, cues: undefined };
+  it('still renders a composed frame when the payload has no segments or facts', () => {
+    const bare = { ...DATA, pieceSegments: undefined, facts: undefined, cues: undefined };
     const { getByTestId } = renderFrame({ data: bare });
     expect(getByTestId('surround-frame')).toBeInTheDocument();
     expect(getByTestId('surround-rail')).toBeInTheDocument();
     expect(getByTestId('surround-footer')).toBeInTheDocument();
-    expect(getByTestId('movement-stub')).toHaveTextContent('0 movements');
+    expect(getByTestId('segment-stub')).toHaveTextContent('0 segments');
     expect(getByTestId('the-player')).toBeInTheDocument();
   });
 
@@ -475,7 +475,7 @@ describe('SurroundFrame — the shipped composition', () => {
     observers = [];
     globalThis.ResizeObserver = FakeResizeObserver;
     resetSurroundRegistry();
-    registerSurroundModule('movement-map', MovementStub);
+    registerSurroundModule('segment-map', SegmentStub);
     registerSurroundModule('cue-ticker', TickerStub);
     registerSurroundModule('composer-card', CardStub);
     registerSurroundModule('work-placard', () => <div data-testid="placard-stub">plate</div>);

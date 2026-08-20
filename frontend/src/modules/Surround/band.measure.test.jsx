@@ -37,8 +37,8 @@
 //   1. `SurroundFrame`'s ResizeObserver — the footer takes the measured media
 //      box's width, and the band collapses its `collapse: first` region when the
 //      footer falls under `collapse.footerFloor` (`SurroundFrame.jsx`).
-//   2. `MovementMap`'s accordion — measure the rule and the sounding segment's
-//      overflow, solve the widths, apply them (`MovementMap.jsx`, `band.js`).
+//   2. `SegmentMap`'s accordion — measure the rule and the sounding segment's
+//      overflow, solve the widths, apply them (`SegmentMap.jsx`, `band.js`).
 //
 // Both are reproduced below by calling the SAME pure functions the components
 // call, on numbers read off this page. Nothing about the geometry is restated:
@@ -59,7 +59,7 @@ import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import {
-  accordionShares, desiredWidth, placedMovements, SEGMENT_FLOOR_PX,
+  accordionShares, desiredWidth, placedSegments, SEGMENT_FLOOR_PX,
 } from './band.js';
 import {
   bandPools, proseFloorPx, labelFloorPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
@@ -100,7 +100,7 @@ const DEFINITION = Object.freeze({
       { module: 'place-carousel' },
     ],
     bottom: [
-      { module: 'movement-map', height: 64 },
+      { module: 'segment-map', height: 64 },
       { module: 'cue-ticker', height: 'fill', collapse: 'first' },
     ],
   },
@@ -130,7 +130,7 @@ const EROICA = Object.freeze({
     period: 'Classical',
     facts: ['Beethoven said his hearing loss began in 1798, during a heated argument with a singer.'],
   },
-  movements: [
+  pieceSegments: [
     {
       n: 1,
       name: 'Allegro con brio',
@@ -166,7 +166,7 @@ const EROICA = Object.freeze({
 
 /**
  * THE OTHER SHIPPED PIECE, verbatim from `data/content/library/classical/vivaldi/
- * four-seasons-spring.yml`. Three movements against the Eroica's four, a third of
+ * four-seasons-spring.yml`. Three segments against the Eroica's four, a third of
  * the duration, and much shorter facts — which is exactly why it is here: a fit
  * ladder that only ever sees one corpus proves nothing about the ladder.
  */
@@ -188,7 +188,7 @@ const SPRING = Object.freeze({
     name: 'Antonio Vivaldi', born: 1678, died: 1741, birthplace: 'Venice', period: 'Baroque',
     facts: ['Vivaldi was ordained a priest and was known as il Prete Rosso, the Red Priest.'],
   },
-  movements: [
+  pieceSegments: [
     {
       n: 1,
       name: 'Allegro',
@@ -253,17 +253,17 @@ const EROICA_FULL = Object.freeze({
   ...EROICA,
   facts: [
     NAPOLEON,
-    'It is twice as long as a symphony by Haydn or Mozart. The first movement alone runs about as long as a whole Classical symphony.',
+    'It is twice as long as a symphony by Haydn or Mozart. The first segment alone runs about as long as a whole Classical symphony.',
     'The published title page reads: composed to celebrate the memory of a great man.',
     'A surviving copy of the score still shows the dedication to Bonaparte scratched out — twice, in two languages.',
-    'The second movement was played at state funerals for more than a century after his death.',
+    'The second segment was played at state funerals for more than a century after his death.',
   ],
-  movements: EROICA.movements.map((m, i) => ({
+  pieceSegments: EROICA.pieceSegments.map((m, i) => ({
     ...m,
     listen: [
       m.listen[0],
       ...(i === 0 ? [
-        'The theme slides onto a strange note almost at once — that small wrongness powers the whole movement.',
+        'The theme slides onto a strange note almost at once — that small wrongness powers the whole segment.',
         'Before the main theme returns, a lone horn sneaks it in early over hushed strings — early audiences thought the player had miscounted.',
         'Huge off-beat chords batter against the bar line — the music fighting its own meter.',
       ] : []),
@@ -284,8 +284,8 @@ const SHIPPED = Object.freeze([
 
 /**
  * Every string the band can show, exactly as `CueTicker` derives them — from the
- * PLACED movements (review finding M-7). A movement this recording cannot put on
- * the clock never becomes the sounding movement, so its notes never show and the
+ * PLACED segments (review finding M-7). A segment this recording cannot put on
+ * the clock never becomes the sounding segment, so its notes never show and the
  * component never fits against them; passing the authored list instead would
  * make this spec measure strings the band will not paint. Equivalent on both
  * shipped pieces, and wrong the moment a recording has a bad `starts` entry.
@@ -293,13 +293,13 @@ const SHIPPED = Object.freeze([
 const poolsFor = (data) => {
   const raw = bandPools({
     facts: data.facts,
-    movements: placedMovements(data.movements).map((p) => p.movement),
+    segments: placedSegments(data.pieceSegments).map((p) => p.segment),
     cues: data.cues,
   });
   return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
 };
 
-/** Movement II is sounding: the longest heading and the longest gloss on the rail. */
+/** Segment II is sounding: the longest heading and the longest gloss on the rail. */
 const POSITION = 1200;
 
 /* -------------------------------------------------------------------------- */
@@ -317,7 +317,7 @@ const POSITION = 1200;
  */
 async function compileSheet() {
   const sass = await import('sass-embedded');
-  const sheets = ['SurroundFrame.scss', 'modules/MovementMap.scss', 'modules/CueTicker.scss',
+  const sheets = ['SurroundFrame.scss', 'modules/SegmentMap.scss', 'modules/CueTicker.scss',
     'modules/WorkPlacard.scss', 'modules/ComposerCard.scss', 'modules/PlaceCarousel.scss',
     'map/CountryMap.scss', 'map/EraTimeline.scss'];
   const compiled = [];
@@ -483,7 +483,7 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
 /**
  * EFFECT 2 — the accordion, reproduced with the real solver.
  *
- * `MovementMap.measureDesired` reads four numbers off the DOM and `band.js`
+ * `SegmentMap.measureDesired` reads four numbers off the DOM and `band.js`
  * turns them into widths. Both halves happen here: the numbers are read in the
  * page, the solve is the imported `accordionShares`, and the result is written
  * back as the inline widths the component would have set.
@@ -498,18 +498,18 @@ async function runAccordion(page) {
   // of load-bearing arithmetic, and a transcription of `measureDesired` in the
   // spec that measures `measureDesired` is the worst possible place for one.
   const measured = await page.evaluate(() => {
-    const rule = document.querySelector('.surround-movement-map__rule');
+    const rule = document.querySelector('.surround-segment-map__rule');
     if (!rule) return null;
-    const segs = [...rule.querySelectorAll('.surround-movement-map__segment')];
+    const segs = [...rule.querySelectorAll('.surround-segment-map__segment')];
     const activeIndex = segs.findIndex((s) => s.getAttribute('data-state') === 'active');
     const natural = segs.map((s) => Number(s.getAttribute('data-natural')));
     const railPx = rule.getBoundingClientRect().width;
     if (activeIndex < 0) return { natural, activeIndex, railPx };
     const seg = segs[activeIndex];
-    const cell = seg.querySelector('.surround-movement-map__text');
+    const cell = seg.querySelector('.surround-segment-map__text');
     if (!cell) return { natural, activeIndex, railPx };
-    const heading = seg.querySelector('.surround-movement-map__heading');
-    const gloss = seg.querySelector('.surround-movement-map__translation');
+    const heading = seg.querySelector('.surround-segment-map__heading');
+    const gloss = seg.querySelector('.surround-segment-map__translation');
     return {
       natural,
       activeIndex,
@@ -534,7 +534,7 @@ async function runAccordion(page) {
     floorPx: SEGMENT_FLOOR_PX,
   });
   await page.evaluate((widths) => {
-    const segs = [...document.querySelectorAll('.surround-movement-map__segment')];
+    const segs = [...document.querySelectorAll('.surround-segment-map__segment')];
     segs.forEach((s, i) => { s.style.width = `${widths[i] * 100}%`; });
   }, shares);
   return { ...measured, shares };
@@ -612,7 +612,7 @@ async function bondBoxes(page) {
       segment: rect('[data-testid="surround-bond"]'),
       waist: rect('[data-testid="surround-bond-connector"]'),
       panel: rect('[data-testid="surround-ticker-ground"]'),
-      rule: rect('.surround-movement-map__rule'),
+      rule: rect('.surround-segment-map__rule'),
       zones: rect('.surround-cue-ticker__zones'),
     };
   });
@@ -718,7 +718,7 @@ describe('the band, measured against the shipped stylesheet', () => {
       ).toEqual([]);
 
       // ...and the same for the NOW register, whose rotation is the case the
-      // brief asked to be argued rather than assumed. Its pool is per-movement
+      // brief asked to be argued rather than assumed. Its pool is per-segment
       // and its room is the same box, so the fit covers it by the same solve.
       const shownNow = pools.now.filter((t) => !fit.rejected.some((r) => r.zone === 'now' && r.text === t));
       const nowCuts = [];
@@ -952,7 +952,7 @@ describe('the band, measured against the shipped stylesheet', () => {
     // for a cue of ordinary length.)
     const OVERLONG = 'The funeral march, and the reason it is the centre of the symphony rather than an '
       + 'interlude: Beethoven puts a death where a minuet had always gone, and the whole shape of '
-      + 'the piece changes around it — the hero of the first movement is buried here, and every bar '
+      + 'the piece changes around it — the hero of the first segment is buried here, and every bar '
       + 'after it is written by somebody who has been to the funeral and come back.';
     const data = {
       ...EROICA_FULL,
@@ -1010,7 +1010,7 @@ describe('the band, measured against the shipped stylesheet', () => {
    * met at a CORNER — "kitty corner", diagonal neighbours touching at a point.
    * Two regions joined at a point are two regions, in every sense a viewer has.
    *
-   * Asserted as geometry, over every movement of both shipped pieces and both
+   * Asserted as geometry, over every segment of both shipped pieces and both
    * `nowSide` settings, because "it looked joined at 1200s on the Eroica" is
    * exactly the kind of evidence that let this ship in the first place:
    *
@@ -1024,17 +1024,17 @@ describe('the band, measured against the shipped stylesheet', () => {
    * TO GO RED: return `{ start: b, width: panelStart - b }` from `bondConnector`
    * — wave 7's version, which stops at the panel's near edge.
    */
-  const bondCase = async ({ width, height, data, movementIndex, side, name }) => {
+  const bondCase = async ({ width, height, data, segmentIndex, side, name }) => {
     const withSide = { ...data, definition: { ...DEFINITION, band: { nowSide: side } } };
-    const at = data.movements[movementIndex].start
-      + Math.max(1, ((data.movements[movementIndex + 1]?.start ?? data.piece.musicEndsAt)
-        - data.movements[movementIndex].start) / 2);
+    const at = data.pieceSegments[segmentIndex].start
+      + Math.max(1, ((data.pieceSegments[segmentIndex + 1]?.start ?? data.piece.musicEndsAt)
+        - data.pieceSegments[segmentIndex].start) / 2);
     await layout(page, css, { width, height, data: withSide, position: at });
     const b = await bondBoxes(page);
-    const where = `${name}, movement ${movementIndex + 1} at ${Math.round(at)}s, nowSide ${side}`;
+    const where = `${name}, segment ${segmentIndex + 1} at ${Math.round(at)}s, nowSide ${side}`;
     expect(b.segment, `no bond on the rail — ${where}`).not.toBeNull();
     expect(b.panel, `no panel in the register — ${where}`).not.toBeNull();
-    expect(Number(b.segment.opacity), `the bond is faded out while a movement is sounding — ${where}`).toBe(1);
+    expect(Number(b.segment.opacity), `the bond is faded out while a segment is sounding — ${where}`).toBe(1);
 
     const overlap = (a, c) => Math.min(a.right, c.right) - Math.max(a.x, c.x);
 
@@ -1072,36 +1072,36 @@ describe('the band, measured against the shipped stylesheet', () => {
 
   describe.each(SHIPPED)('$piece — the bond is one shape', ({ piece, data }) => {
     const cases = [];
-    data.movements.forEach((_movement, movementIndex) => {
+    data.pieceSegments.forEach((_segment, segmentIndex) => {
       for (const side of ['right', 'left']) {
-        cases.push({ ...FLEET[1], piece, data, movementIndex, side });
+        cases.push({ ...FLEET[1], piece, data, segmentIndex, side });
       }
     });
-    it.each(cases)('movement $movementIndex, nowSide $side', bondCase, 60000);
+    it.each(cases)('segment $segmentIndex, nowSide $side', bondCase, 60000);
   });
 
-  /** ...and at the other two sizes, for the movement most likely to pinch. */
+  /** ...and at the other two sizes, for the segment most likely to pinch. */
   it.each(FLEET)('$name — the bond still welds along the panel’s whole edge', async ({ width, height, name }) => {
-    // Movement I of the Eroica: a third of the rule, far from a right-hand
+    // Segment I of the Eroica: a third of the rule, far from a right-hand
     // panel — the longest waist the shipped corpus produces, and the case the
     // user was looking at when they found the corner.
     await bondCase({
-      width, height, name, data: EROICA_FULL, movementIndex: 0, side: 'right',
+      width, height, name, data: EROICA_FULL, segmentIndex: 0, side: 'right',
     });
   }, 60000);
 
   /**
    * NOTHING SOUNDING IS A DESIGNED STATE (design wave 9). Before the first
-   * movement — the walk-on, the applause, the settling — and after the last
+   * segment — the walk-on, the applause, the settling — and after the last
    * chord, no segment is active, the bond is out on both halves at once, and the
    * NOW register is blank. The band does NOT change height for it.
    *
-   * TO GO RED: light the panel with no movement sounding, or let the NOW
+   * TO GO RED: light the panel with no segment sounding, or let the NOW
    * register borrow a piece fact there (which is what it used to do).
    */
   it.each([
-    { when: 'before the first movement starts', position: 20, first: 45 },
-    { when: 'after the last movement ends', position: 3000, first: 0 },
+    { when: 'before the first segment starts', position: 20, first: 45 },
+    { when: 'after the last segment ends', position: 3000, first: 0 },
   ])('1280x720 — nothing sounding, $when: blank, unlit, and the same height', async ({ position, first }) => {
     const sounding = await layout(page, css, { ...FLEET[1], data: EROICA_FULL, position: 1200 });
     const soundingH = await tickerContentBox(page);
@@ -1109,12 +1109,12 @@ describe('the band, measured against the shipped stylesheet', () => {
 
     const late = {
       ...EROICA_FULL,
-      movements: EROICA_FULL.movements.map((m, i) => (i === 0 ? { ...m, start: first } : m)),
+      pieceSegments: EROICA_FULL.pieceSegments.map((m, i) => (i === 0 ? { ...m, start: first } : m)),
     };
     await layout(page, css, { ...FLEET[1], data: late, position });
     const b = await bondBoxes(page);
     const state = await page.evaluate(() => ({
-      states: [...document.querySelectorAll('[data-testid="surround-movement"]')]
+      states: [...document.querySelectorAll('[data-testid="surround-segment"]')]
         .map((el) => el.getAttribute('data-state')),
       note: document.querySelector('[data-testid="surround-ticker-listen"]').textContent.trim(),
       bonded: document.querySelector('[data-testid="surround-ticker-ground"]').getAttribute('data-bonded'),
@@ -1134,7 +1134,7 @@ describe('the band, measured against the shipped stylesheet', () => {
   }, 90000);
 
   /**
-   * THE ACCORDION'S WHOLE PURPOSE. The sounding movement widens until neither
+   * THE ACCORDION'S WHOLE PURPOSE. The sounding segment widens until neither
    * its heading nor its gloss is cut; its neighbours compress but never past the
    * measured floor. Both halves are asserted here, against the real solver.
    */
@@ -1152,15 +1152,15 @@ describe('the band, measured against the shipped stylesheet', () => {
         .evaluate((el) => Number(el.getBoundingClientRect().height.toFixed(2)));
       expect(
         footerH,
-        `there is no movement rail on this screen, but the footer is ${footerH}px — above the ${DEFINITION.collapse.footerFloor}px floor, so the collapse rule is not why it is missing`,
+        `there is no segment rail on this screen, but the footer is ${footerH}px — above the ${DEFINITION.collapse.footerFloor}px floor, so the collapse rule is not why it is missing`,
       ).toBeLessThan(DEFINITION.collapse.footerFloor);
       return;
     }
     const after = await page.evaluate(() => {
-      const segs = [...document.querySelectorAll('.surround-movement-map__segment')];
+      const segs = [...document.querySelectorAll('.surround-segment-map__segment')];
       return segs.map((s, i) => {
-        const heading = s.querySelector('.surround-movement-map__heading');
-        const gloss = s.querySelector('.surround-movement-map__translation');
+        const heading = s.querySelector('.surround-segment-map__heading');
+        const gloss = s.querySelector('.surround-segment-map__translation');
         return {
           i,
           state: s.getAttribute('data-state'),
@@ -1198,23 +1198,23 @@ describe('the band, measured against the shipped stylesheet', () => {
    * THE ACCORDION ONLY EVER OPENS WHEN IT NEEDS TO.
    *
    * The other half of the accordion's contract, and the one an outcome
-   * assertion cannot see: a movement whose heading and gloss ALREADY fit must
+   * assertion cannot see: a segment whose heading and gloss ALREADY fit must
    * not widen at all, because every pixel it takes comes off a neighbour that
    * was telling the truth about its duration. `scrollWidth` is an integer and a
    * segment's measured width is not, so a bare `need > cellW` is true by a
    * rounding hair on a box that is not overflowing — which is how this used to
    * quietly compress the whole rail for a name that fitted.
    *
-   * Movement I at 1920x1080: "Allegro con brio" and "Fast, with spirit" in a
+   * Segment I at 1920x1080: "Allegro con brio" and "Fast, with spirit" in a
    * segment a third of a 1251px rule wide. Nothing to open for.
    *
    * TO GO RED: drop the half-pixel threshold from `desiredWidth`.
    */
-  it('1920x1080 — a sounding movement whose text already fits takes nothing from its neighbours', async () => {
+  it('1920x1080 — a sounding segment whose text already fits takes nothing from its neighbours', async () => {
     await layout(page, css, { ...FLEET[2], position: 100 });
     const solved = await runAccordion(page);
     expect(solved, 'no rail to measure').not.toBeNull();
-    expect(solved.activeIndex, 'movement I should be sounding at 100s').toBe(0);
+    expect(solved.activeIndex, 'segment I should be sounding at 100s').toBe(0);
     expect(
       solved.desiredPx,
       `the accordion wants ${solved.desiredPx}px for a segment already ${solved.segW.toFixed(2)}px wide whose text column is ${solved.cellW.toFixed(2)}px and whose widest line is ${solved.need}px — it fits, so nothing should open`,
@@ -1222,7 +1222,7 @@ describe('the band, measured against the shipped stylesheet', () => {
     const drift = solved.shares.map((s, i) => Number((s - solved.natural[i]).toFixed(6)));
     expect(
       drift,
-      `the rail's rendered widths drifted from their duration-derived shares for a movement that needed no room: ${JSON.stringify(drift)}`,
+      `the rail's rendered widths drifted from their duration-derived shares for a segment that needed no room: ${JSON.stringify(drift)}`,
     ).toEqual(solved.natural.map(() => 0));
   }, 60000);
 

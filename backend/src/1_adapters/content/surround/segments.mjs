@@ -5,9 +5,9 @@
 export const num = (v) => (Number.isFinite(v) && v >= 0 ? v : undefined);
 
 /**
- * Normalise whatever timing an author supplied into one span per chapter.
+ * Normalise whatever timing an author supplied into one span per segment.
  *
- * `starts` + `musicEndsAt` is the compact form for a work whose chapters run
+ * `starts` + `musicEndsAt` is the compact form for a work whose segments run
  * end to end inside one file; it desugars here so nothing downstream has to
  * know two shapes. Explicit `spans` are taken verbatim, because the gap
  * between two of them is real content — applause — that belongs to neither.
@@ -31,34 +31,34 @@ export function toSpans({ starts, musicEndsAt, spans, count }) {
 }
 
 /**
- * Place chapters on one rail measured in SOUNDING seconds. Dead time is not on
+ * Place segments on one rail measured in SOUNDING seconds. Dead time is not on
  * the rail at all, so a segment's width is the music it contains and nothing
- * else; a chapter with no timing occupies no width and does not shift its
+ * else; a segment with no timing occupies no width and does not shift its
  * neighbours.
  *
- * ZERO-WIDTH CHAPTERS ARE NORMAL, and they make offsets non-unique: an untimed
- * chapter shares its offset with whatever follows it. Nine of the nineteen
- * authored pieces have one today, almost always a trailing chapter for want of
+ * ZERO-WIDTH SEGMENTS ARE NORMAL, and they make offsets non-unique: an untimed
+ * segment shares its offset with whatever follows it. Nine of the nineteen
+ * authored pieces have one today, almost always a trailing segment for want of
  * `musicEndsAt`, and in a composed container that lands exactly on a part
  * boundary.
  *
  * THE TIE-BREAK, stated once here so position mapping does not have to decide
- * it again: **a chapter owns the half-open interval `[offset, offset + duration)`,
- * and where several chapters share one offset the LAST of them wins.** A
- * zero-width chapter's interval is empty, so it is never current for any
- * position; a position landing exactly on a boundary belongs to the chapter
+ * it again: **a segment owns the half-open interval `[offset, offset + duration)`,
+ * and where several segments share one offset the LAST of them wins.** A
+ * zero-width segment's interval is empty, so it is never current for any
+ * position; a position landing exactly on a boundary belongs to the segment
  * that is starting, not the one that just ended.
  *
- * Why: at a part boundary in a composed container the preceding chapter is
+ * Why: at a part boundary in a composed container the preceding segment is
  * usually the zero-width one. Resolving the boundary to it would name the
  * previous part's media item, and the transport would seek into the file that
  * has just finished — one wrong media item at every join, which reads as a
  * mapping bug rather than as the missing timing it actually is. The store warns
- * `surround.chapters.untimed` so the condition is visible while it lasts.
+ * `surround.segments.untimed` so the condition is visible while it lasts.
  */
-export function withOffsets(chapters) {
+export function withOffsets(segments) {
   let offset = 0;
-  return chapters.map((c) => {
+  return segments.map((c) => {
     const duration = c.start !== undefined && c.end !== undefined && c.end > c.start ? c.end - c.start : 0;
     const placed = { ...c, duration, offset };
     offset += duration;

@@ -1,26 +1,26 @@
-// frontend/src/modules/Surround/modules/MovementMap.jsx
+// frontend/src/modules/Surround/modules/SegmentMap.jsx
 //
 // The signature element of the concert-hall surround, and the only place the
 // design spends any boldness.
 //
 // This is NOT a progress bar. It is set as the barline grammar of engraved music:
-// one hairline staff rule, one quiet separator between movements, each segment
-// proportional to that movement's real duration, names above the rule with the
+// one hairline staff rule, one quiet separator between segments, each segment
+// proportional to that segment's real duration, names above the rule with the
 // tempo term in italic.
 //
 // WHERE THE RULE SITS (design wave 4)
 // -----------------------------------
 // At the TOP of the band, tight against the video's bottom edge — inside the
 // footer's own overlap, so the timeline reads as the picture's own baseline
-// rather than as a bar floating in a strip of black below it. The movement
+// rather than as a bar floating in a strip of black below it. The segment
 // names hang BELOW the rule. That inverts wave 2's arrangement, and the
 // clearance law it was written for still binds, only mirrored: the playhead
 // lane is ABOVE, the names are below, and the two boxes must not meet.
 //
 // WHERE PROGRESS IS READ (design wave 2)
 // --------------------------------------
-// From the FILL, not from the cursor. The sounding movement's rule thickens and
-// sweeps left to right as it elapses; finished movements read as filled; movements
+// From the FILL, not from the cursor. The sounding segment's rule thickens and
+// sweeps left to right as it elapses; finished segments read as filled; segments
 // still to come are a faint hairline. The playhead survives as a plain brass
 // HAIRLINE — no lit tip, no glow: the glowing tip read as a worm crawling the
 // band, and once the fill carries the progress the cursor has nothing left to
@@ -41,7 +41,7 @@
 // THE ACCORDION (design wave 7)
 // -----------------------------
 // Everything on the rail is one line with an ellipsis when it is not sounding.
-// When a movement becomes active its segment WIDENS until its heading and its
+// When a segment becomes active its segment WIDENS until its heading and its
 // gloss each fit whole on one line; its neighbours compress in proportion to
 // their own durations, down to a measured floor, and keep their ellipses. The
 // time scale therefore stops being uniform, which the user accepted explicitly —
@@ -54,7 +54,7 @@
 // The active segment carries a lifted panel ground, and the listening band's NOW
 // register carries the SAME ground, joined by a connector along the band's seam.
 // The two read as one shape, which is what lets the NOW register stop reprinting
-// a movement heading the rail has already set six inches above it.
+// a segment heading the rail has already set six inches above it.
 //
 // Module contract: { position, duration, playing, seeking, data, region }.
 // `logger` is threaded alongside as infrastructure, not as content.
@@ -67,13 +67,13 @@ import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
-  bondConnector, elapsedFraction, activeMovementIndex, placedMovements, roman,
+  bondConnector, elapsedFraction, activeSegmentIndex, placedSegments, roman,
   desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
-import './MovementMap.scss';
+import './SegmentMap.scss';
 
 /**
- * Split an engraved movement heading into its title and its tempo marking.
+ * Split an engraved segment heading into its title and its tempo marking.
  * "Marcia funebre. Adagio assai" -> { title: 'Marcia funebre.', tempo: 'Adagio assai' }
  * "Allegro con brio"            -> { title: null,               tempo: 'Allegro con brio' }
  * Scores set the tempo term in italic and any character title in roman; the last
@@ -98,7 +98,7 @@ const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
  */
 const RAIL_UNMEASURED = 0;
 
-export default function MovementMap({
+export default function SegmentMap({
   position = 0,
   duration = 0,
   // eslint-disable-next-line no-unused-vars -- part of the fixed module contract
@@ -110,12 +110,12 @@ export default function MovementMap({
   region = null,
   logger = null,
 }) {
-  const log = useMemo(() => surroundLogger(logger, 'movement-map'), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'segment-map'), [logger]);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
   // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
   // the playhead, with no names under them — for a band too short to carry
-  // type, or a screen where the movement titles belong somewhere else. It is
+  // type, or a screen where the segment titles belong somewhere else. It is
   // what makes `nowHeading: 'auto'` a real decision rather than a constant:
   // with no names on the rule, the listening band is the only surface left
   // that can say what is sounding, so the NOW heading comes back on.
@@ -123,8 +123,8 @@ export default function MovementMap({
 
   // Memoized: the `[]` fallback would otherwise be a fresh array every render and
   // recompute `segments` on every 10 Hz tick.
-  const movements = useMemo(
-    () => (Array.isArray(data?.movements) ? data.movements : []), [data],
+  const pieceSegments = useMemo(
+    () => (Array.isArray(data?.pieceSegments) ? data.pieceSegments : []), [data],
   );
 
   // The rule ends where the MUSIC ends, not where the file does. The Eroica has
@@ -140,46 +140,46 @@ export default function MovementMap({
   const musicEndsAt = Number(data?.piece?.musicEndsAt);
   const end = Number.isFinite(musicEndsAt) && musicEndsAt > 0 ? musicEndsAt : duration;
 
-  // ONLY THE MOVEMENTS THIS RECORDING CAN PLACE. `placedMovements` drops any
+  // ONLY THE SEGMENTS THIS RECORDING CAN PLACE. `placedSegments` drops any
   // whose start the store refused (it ships `start: undefined` and warns) or
   // whose start runs backwards — the alternative, the `Number(m?.start) || 0`
-  // this used to do, re-anchors a mid-piece movement to the top of the file and
+  // this used to do, re-anchors a mid-piece segment to the top of the file and
   // draws a zero-width, out-of-order segment with complete confidence. The band
-  // asks the same function, so both halves place the same movements.
-  const placed = useMemo(() => placedMovements(movements), [movements]);
+  // asks the same function, so both halves place the same segments.
+  const placed = useMemo(() => placedSegments(pieceSegments), [pieceSegments]);
 
-  // A movement the rail cannot place is a real event on a real screen, not a
+  // A segment the rail cannot place is a real event on a real screen, not a
   // silent filter: the store already warned that the START was wrong, and this
   // says what the renderer did about it.
   useEffect(() => {
-    if (placed.length === movements.length) return;
-    log.warn('surround.movements.unplaceable', {
+    if (placed.length === pieceSegments.length) return;
+    log.warn('surround.segments.unplaceable', {
       contentId,
-      authored: movements.length,
+      authored: pieceSegments.length,
       placed: placed.length,
-      dropped: movements
+      dropped: pieceSegments
         .map((m, i) => (placed.some((p) => p.index === i) ? null : (m?.n ?? i + 1)))
         .filter((n) => n !== null),
     });
-  }, [placed, movements, contentId, log]);
+  }, [placed, pieceSegments, contentId, log]);
 
   const segments = useMemo(() => {
     if (!placed.length) return [];
     const first = placed[0].start;
     const span = end - first;
     if (!(span > 0)) return [];
-    return placed.map(({ movement: m, start }, i) => {
+    return placed.map(({ segment: m, start }, i) => {
       const next = i + 1 < placed.length ? placed[i + 1].start : end;
       const stop = Math.max(start, Math.min(next, end));
       return {
         n: m?.n,
         // Every authored string the frame prints goes through one curl at its
-        // render seam (`../typography.js`). A movement name is set in Garamond
+        // render seam (`../typography.js`). A segment name is set in Garamond
         // on stock; a straight apostrophe in it is the only unset mark on the
         // screen.
         name: smartQuotes(m?.name ?? ''),
         // The editor's gloss on the tempo term — "Allegro con brio" -> "Fast,
-        // with spirit". Optional per movement: an unauthored translation
+        // with spirit". Optional per segment: an unauthored translation
         // renders NO element at all, never an empty line holding space.
         translation: typeof m?.translation === 'string' && m.translation.trim()
           ? smartQuotes(m.translation.trim()) : null,
@@ -196,14 +196,14 @@ export default function MovementMap({
   const first = segments.length ? segments[0].start : 0;
   const span = end - first;
 
-  // -1 = NO MOVEMENT IS SOUNDING — the applause after the final chord, and
+  // -1 = NO SEGMENT IS SOUNDING — the applause after the final chord, and
   // equally the tuning or the announcement before the first one. This loop used
   // to fall through to `return 0` for a position before the first start, which
-  // lit movement I over music that had not begun while the band six inches below
+  // lit segment I over music that had not begun while the band six inches below
   // printed its "nothing is playing" header. One derivation now answers for
   // both (`../band.js`), and it answers -1.
   const activeIndex = useMemo(
-    () => activeMovementIndex({ placed: segments, position, end }),
+    () => activeSegmentIndex({ placed: segments, position, end }),
     [segments, position, end],
   );
   /** Nothing has sounded YET — as against nothing sounding any more. */
@@ -246,12 +246,12 @@ export default function MovementMap({
     // A bars-only rail has no type to right-size for.
     if (!rule || activeIndex < 0 || !named) { setDesiredPx(0); return; }
     const seg = rule.querySelector(`[data-index="${activeIndex}"]`);
-    const cell = seg?.querySelector('.surround-movement-map__text');
+    const cell = seg?.querySelector('.surround-segment-map__text');
     if (!seg || !cell) { setDesiredPx(0); return; }
     const segW = seg.getBoundingClientRect().width;
     const cellW = cell.getBoundingClientRect().width;
-    const heading = seg.querySelector('.surround-movement-map__heading');
-    const gloss = seg.querySelector('.surround-movement-map__translation');
+    const heading = seg.querySelector('.surround-segment-map__heading');
+    const gloss = seg.querySelector('.surround-segment-map__translation');
     // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's full
     // single-line width whatever the box is currently showing.
     const need = Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
@@ -342,7 +342,7 @@ export default function MovementMap({
   const { shares: vector, moving } = useEasedVector(geometry, ACCORDION_MS);
   const shares = useMemo(() => vector.slice(0, targetShares.length), [vector, targetShares.length]);
 
-  // Review finding I5: the degrade branch. When the sounding movement's name
+  // Review finding I5: the degrade branch. When the sounding segment's name
   // cannot have the width it needs without starving its neighbours past the
   // floor, it takes what is free and keeps its ellipsis — a designed
   // degradation, and one that is invisible on screen (a trimmed name looks
@@ -362,7 +362,7 @@ export default function MovementMap({
       desired: desiredPx,
       granted: Math.round((targetShares[activeIndex] ?? 0) * railPx),
       floor: SEGMENT_FLOOR_PX,
-      movements: segments.length,
+      segments: segments.length,
     });
   }, [starved, activeIndex, desiredPx, targetShares, railPx, segments.length, contentId, log]);
 
@@ -398,7 +398,7 @@ export default function MovementMap({
     if (lastLogged.current === activeIndex) return;
     lastLogged.current = activeIndex;
     const active = activeIndex >= 0 ? segments[activeIndex] : null;
-    log.debug('surround.movement.change', {
+    log.debug('surround.segment.change', {
       contentId,
       index: activeIndex,
       n: active?.n ?? null,
@@ -412,7 +412,7 @@ export default function MovementMap({
 
   // THE GUTTER IS SIZED ONCE PER RAIL, not per segment — that is the whole point
   // of it. A piece running to IX. gives every one of its segments a IX.-wide
-  // track, so all of them share one text edge; a piece of three movements gets a
+  // track, so all of them share one text edge; a piece of three segments gets a
   // narrower one and wastes nothing.
   const numeralChars = segments.reduce(
     (max, seg, i) => Math.max(max, roman(seg.n, i).length), 1,
@@ -422,8 +422,8 @@ export default function MovementMap({
 
   return (
     <div
-      className={`surround-movement-map${named ? '' : ' surround-movement-map--bars'}`}
-      data-testid="surround-movement-map"
+      className={`surround-segment-map${named ? '' : ' surround-segment-map--bars'}`}
+      data-testid="surround-segment-map"
       data-now-side={side}
       data-density={named ? 'names' : 'bars'}
       style={{
@@ -438,8 +438,8 @@ export default function MovementMap({
         '--head-ms': moving ? '0ms' : '120ms',
       }}
     >
-      <div className="surround-movement-map__rule" ref={ruleRef}>
-        <span className="surround-movement-map__barline surround-movement-map__barline--terminal surround-movement-map__barline--start" aria-hidden="true" />
+      <div className="surround-segment-map__rule" ref={ruleRef}>
+        <span className="surround-segment-map__barline surround-segment-map__barline--terminal surround-segment-map__barline--start" aria-hidden="true" />
 
         {/* THE BOND (design wave 7). ONE element that MOVES, rather than a
             per-segment background that lights and unlights: the point the user
@@ -450,7 +450,7 @@ export default function MovementMap({
             order), and it hangs below the rule's box by the band's own bottom
             padding so its ground reaches the seam the NOW panel starts at. */}
         <span
-          className="surround-movement-map__bond"
+          className="surround-segment-map__bond"
           data-testid="surround-bond"
           data-bonded={bonded ? 'true' : 'false'}
           style={bond
@@ -469,7 +469,7 @@ export default function MovementMap({
             two parts continues, and a radius there would cut a notch in the
             middle of one shape. `bondConnector` decides; the stylesheet draws. */}
         <span
-          className="surround-movement-map__bond-connector"
+          className="surround-segment-map__bond-connector"
           data-testid="surround-bond-connector"
           data-bonded={bonded ? 'true' : 'false'}
           data-corners={bond
@@ -491,7 +491,7 @@ export default function MovementMap({
 
         {segments.map((seg, i) => {
           // NOTHING SOUNDING HAS TWO OPPOSITE MEANINGS, and the rail must not
-          // confuse them. After the last chord every movement HAS sounded and
+          // confuse them. After the last chord every segment HAS sounded and
           // the rule reads full; before the first one — a recording that opens
           // on tuning or an announcement, which the corpus explicitly permits —
           // none of them has, and a rule drawn full would say the piece was over
@@ -500,7 +500,7 @@ export default function MovementMap({
             : unsounded ? 'future'
               : (activeIndex === -1 || i < activeIndex) ? 'elapsed' : 'future';
           const { title, tempo } = splitHeading(seg.name);
-          // How much of THIS movement has sounded. Elapsed movements read full,
+          // How much of THIS segment has sounded. Elapsed segments read full,
           // future ones empty, and the sounding one sweeps — that sweep is where
           // the viewer reads progress now. It is a fraction of the SEGMENT, so
           // the accordion cannot desynchronise it: whatever width the segment is
@@ -512,38 +512,38 @@ export default function MovementMap({
           return (
             <div
               key={`${seg.n ?? i}:${seg.start}`}
-              className={`surround-movement-map__segment surround-movement-map__segment--${state}`}
-              data-testid="surround-movement"
+              className={`surround-segment-map__segment surround-segment-map__segment--${state}`}
+              data-testid="surround-segment"
               data-state={state}
               data-index={i}
               data-natural={seg.natural.toFixed(6)}
               style={{ width: `${(shares[i] ?? seg.natural) * 100}%` }}
             >
-              {/* ONE quiet separator between movements. The double barline was
+              {/* ONE quiet separator between segments. The double barline was
                   correct notation and too much ink at this size — it read as
                   clutter across four segments, so the grammar keeps the mark
                   and drops the doubling. */}
               {i > 0 && (
                 <span
-                  className="surround-movement-map__barline surround-movement-map__barline--separator"
+                  className="surround-segment-map__barline surround-segment-map__barline--separator"
                   aria-hidden="true"
                 />
               )}
               {/* THE RULE COMES FIRST (design wave 4). The rule row rides at
                   the TOP of the band, in the overlap zone under the video's
-                  bottom edge; the movement names hang BELOW it. Source order
+                  bottom edge; the segment names hang BELOW it. Source order
                   is the layout order — no `column-reverse`, so the DOM a
                   screen reader walks is the order a viewer sees. */}
-              <span className="surround-movement-map__bar" aria-hidden="true">
+              <span className="surround-segment-map__bar" aria-hidden="true">
                 {/* The fill is a full-width bar SCALED to its fraction, not a
                     bar whose width is set — see the stylesheet: a painted box's
                     position/size is pixel-snapped and a transform's is not, and
-                    at this scale (a movement is minutes long across a few
+                    at this scale (a segment is minutes long across a few
                     hundred pixels) snapping is the difference between a glide
                     and a crawl. `--fill` is 0..1. */}
                 <span
-                  className="surround-movement-map__bar-fill"
-                  data-testid="surround-movement-fill"
+                  className="surround-segment-map__bar-fill"
+                  data-testid="surround-segment-fill"
                   data-fill={fill.toFixed(4)}
                   style={{ '--fill': String(fill) }}
                 />
@@ -558,12 +558,12 @@ export default function MovementMap({
                   hidden-but-rendered row would leave the rail as tall as a
                   named one and buy nothing. */}
               {named && (
-              <span className="surround-movement-map__text-row">
-                <span className="surround-movement-map__numeral">{roman(seg.n, i)}</span>
-                <span className="surround-movement-map__text">
-                  <span className="surround-movement-map__heading">
-                    {title && <span className="surround-movement-map__title">{title}</span>}
-                    {tempo && <span className="surround-movement-map__tempo">{tempo}</span>}
+              <span className="surround-segment-map__text-row">
+                <span className="surround-segment-map__numeral">{roman(seg.n, i)}</span>
+                <span className="surround-segment-map__text">
+                  <span className="surround-segment-map__heading">
+                    {title && <span className="surround-segment-map__title">{title}</span>}
+                    {tempo && <span className="surround-segment-map__tempo">{tempo}</span>}
                   </span>
                   {/* THE TRANSLATION (design wave 6). A recessive sub-line under
                       the heading, in the annotation face — sans, not Garamond —
@@ -573,8 +573,8 @@ export default function MovementMap({
                       widens the SOUNDING segment instead of wrapping anything. */}
                   {seg.translation && (
                     <span
-                      className="surround-movement-map__translation"
-                      data-testid="surround-movement-translation"
+                      className="surround-segment-map__translation"
+                      data-testid="surround-segment-translation"
                     >
                       {seg.translation}
                     </span>
@@ -585,7 +585,7 @@ export default function MovementMap({
             </div>
           );
         })}
-        <span className="surround-movement-map__barline surround-movement-map__barline--terminal surround-movement-map__barline--end" aria-hidden="true" />
+        <span className="surround-segment-map__barline surround-segment-map__barline--terminal surround-segment-map__barline--end" aria-hidden="true" />
 
         {/* A barline in motion: one brass hairline, unlit. The ELEMENT is the
             width of the rule and carries the hairline on its right edge (see
@@ -595,7 +595,7 @@ export default function MovementMap({
             Since design wave 7 the fraction is read off the RENDERED widths, not
             off the piece's elapsed time — see `band.js`, `playheadFraction`. */}
         <span
-          className="surround-movement-map__playhead"
+          className="surround-segment-map__playhead"
           data-testid="surround-playhead"
           data-head={(headPct / 100).toFixed(4)}
           style={{ '--head': String(headPct / 100) }}
@@ -606,7 +606,7 @@ export default function MovementMap({
   );
 }
 
-MovementMap.propTypes = {
+SegmentMap.propTypes = {
   position: PropTypes.number,
   duration: PropTypes.number,
   playing: PropTypes.bool,

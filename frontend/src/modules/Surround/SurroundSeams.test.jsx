@@ -51,7 +51,7 @@ const SURROUND = {
   id: 'concert-hall',
   definition: DEFINITION,
   piece: { title: 'Symphony No. 3' },
-  movements: [],
+  pieceSegments: [],
   cues: [],
   facts: [],
   composer: { name: 'Beethoven' },

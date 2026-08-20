@@ -23,7 +23,7 @@ one work commonly has more than one recording. See
 data/content/library/classical/            THE CORPUS — knowledge only
   beethoven/
     _composer.yml                          bio, dates, map, portrait refs, facts
-    symphony-3-eroica.yml                  the WORK: movements, listen notes, facts, themes
+    symphony-3-eroica.yml                  the WORK: segments, listen notes, facts, themes
   vivaldi/
     _composer.yml
     four-seasons-spring.yml
@@ -70,11 +70,11 @@ premiered: Theater an der Wien, 7 April 1805
 set: symphonies                       # groups works into a cycle
 set_index: 3
 tier: flagship                        # flagship | key | catalog
-movements:
+segments:
   - n: 1
     name: "Allegro con brio"
     translation: "Fast, with spirit"
-    listen:                           # per-movement appreciation bullets
+    listen:                           # per-segment appreciation bullets
       - "Two hammered E-flat chords, then the cellos sing the heroic theme — built from a plain broken chord."
       - "Huge off-beat chords batter against the bar line — the music fighting its own meter."
   - n: 2
@@ -90,32 +90,39 @@ themes: [heroism, napoleon, deafness] # cross-work threads for future curricula
 
 Notes that save a debugging pass:
 
-- **No `start:` on a movement.** Timings are a property of a recording, not of the
+- **No `start:` on a segment.** Timings are a property of a recording, not of the
   music, and live in the performance sidecar's `starts:` array. The store writes
-  `start` onto each movement at resolve time.
-- **`note:` becomes a cue.** A movement with a `note` and a paired start second is
+  `start` onto each segment at resolve time.
+- **`note:` becomes a cue.** A segment with a `note` and a paired start second is
   synthesized into a docked cue at that second. That is the whole mechanism —
-  there is no per-movement cue syntax.
+  there is no per-segment cue syntax.
 - **`short_title:` is the work's own alternate name**, not an abbreviation of the
   title. It is the standing label over the listening band's left register —
   "Beethoven's Third Symphony" — and the band prints no label at all rather than
   cutting a long `title` down to pretend to be one. Author it or leave it out.
-- **A movement reaches the payload whole**, so `translation:` and `listen:` are
-  read by the player: `MovementMap` sets the translation as a gloss under the
-  movement's name, and `CueTicker` cycles that movement's `listen` bullets in the
+- **A segment reaches the payload whole**, so `translation:` and `listen:` are
+  read by the player: `SegmentMap` sets the translation as a gloss under the
+  segment's name, and `CueTicker` cycles that segment's `listen` bullets in the
   "now" zone while it is playing, falling back to the work's `facts` for a
-  movement nobody has written notes for yet.
+  segment nobody has written notes for yet.
 - **Work-level fields are allowlisted, and `themes:`, `set:`, `set_index:` and
   `tier:` are not on the list.** They are corpus fields, authored now for the
   School projection. `piece` is exactly the store's `PIECE_FIELDS` (`title`,
   `short_title`, `opus`, `composed`, `year`, `period`, `period_note`, `city`,
   `premiered`), plus
-  `movements`, `facts` and an optional `composer:` override block. **Adding a
+  `segments`, `facts` and an optional `composer:` override block. **Adding a
   work-level field and not adding it to that allowlist is silent** — the region
-  simply renders without it. Movement-level fields need no allowlist.
-- A `movements:` or `facts:` key that is present but not a list logs
+  simply renders without it. Segment-level fields need no allowlist.
+- A `segments:` or `facts:` key that is present but not a list logs
   `surround.work.invalid` and is coerced to empty; the rest of the work still
   indexes.
+- **`segments:` has two legacy names, and both still read.** The key was
+  `movements:` when the corpus was written and `chapters:` for the wave that
+  generalised it. The store accepts all three and takes the first non-empty one
+  in the order `segments:`, `chapters:`, `movements:` — so a file that carries
+  more than one resolves to `segments:` and the others are ignored, never
+  merged. Author `segments:`; the aliases exist so a corpus rename does not have
+  to land in the same breath as the code that reads it.
 
 ### The composer file
 
@@ -171,7 +178,7 @@ match:                                # required
   contentId: plex:663134              # exact-match fast path
   title: "Beethoven: 3. Sinfonie"     # rebind fallback (normalized substring)
 performance: "hr-Sinfonieorchester · Andrés Orozco-Estrada · Alte Oper Frankfurt, 11 February 2016"
-starts: [0, 976, 1925, 2278]          # movement start seconds, positional
+starts: [0, 976, 1925, 2278]          # segment start seconds, positional
 musicEndsAt: 2955                     # where the music stops and the applause starts
 ```
 
@@ -182,29 +189,29 @@ musicEndsAt: 2955                     # where the music stops and the applause s
 | `match.contentId` | yes | See "Why `match` has two keys" below. |
 | `match.title` | soft | Absent logs `surround.sidecar.invalid` with reason `missing-match-title` and gives up the rebind lane; the sidecar still works by id. |
 | `performance` | no | Free-text performers/venue/date. Reaches the payload as `piece.performance`; no shipped module renders it yet. |
-| `starts` | no | Seconds from the top of the media, positional — `starts[i]` is `movements[i]`'s start. |
-| `musicEndsAt` | no | Reaches the payload as `piece.musicEndsAt`; `MovementMap` uses it so the last movement's bar stops at the music rather than running to `duration`. |
+| `starts` | no | Seconds from the top of the media, positional — `starts[i]` is `segments[i]`'s start. |
+| `musicEndsAt` | no | Reaches the payload as `piece.musicEndsAt`; `SegmentMap` uses it so the last segment's bar stops at the music rather than running to `duration`. |
 | `parts` | no | Makes this a container: the `contentId`s its programme is performed on, in playing order. See "One programme across several media items". |
-| `cues` | no | Performance-specific extras only, `{ at, render, text }`. Movement notes already produce their own. |
+| `cues` | no | Performance-specific extras only, `{ at, render, text }`. Segment notes already produce their own. |
 | `composer` / `piece` | no | Per-key overrides applied last. Use sparingly — an override that belongs to the music belongs in the corpus. |
 
 A `starts` entry that is not a non-negative finite number (a quoted timestamp, a
 placeholder `null`, a negative from arithmetic against the wrong reference) is
 dropped to `undefined` and logs the soft reason `starts-entry-invalid`. Positions
-are preserved rather than compacted, so one bad entry costs one movement's timing
-instead of shifting every later movement by one — the movement keeps its name,
+are preserved rather than compacted, so one bad entry costs one segment's timing
+instead of shifting every later segment by one — the segment keeps its name,
 its translation and its listening notes, which are true whatever this transfer's
-timing says. The band then **declines to draw** that movement on the rule
-(`surround.movements.unplaceable`) rather than anchoring it to second zero, so
+timing says. The band then **declines to draw** that segment on the rule
+(`surround.segments.unplaceable`) rather than anchoring it to second zero, so
 one bad entry costs a segment and never an out-of-order rail.
 
-A first movement that starts late — a transfer that opens on the conductor's
+A first segment that starts late — a transfer that opens on the conductor's
 walk-on, applause and a settling hall, `starts: [45, …]` — is a supported and
 expected recording; so is the applause after the last chord, which `musicEndsAt`
-puts outside every movement. **Nothing sounding is a designed state, not a gap.**
-In it the rail draws every movement as still to come (before the first) or as
+puts outside every segment. **Nothing sounding is a designed state, not a gap.**
+In it the rail draws every segment as still to come (before the first) or as
 played (after the last), no segment carries the sounding state, the bond is out
-on both halves at once, and the NOW register is blank — no movement name, no
+on both halves at once, and the NOW register is blank — no segment name, no
 borrowed fact. It borrows nothing because that register is about what is playing,
 and nothing is. The band does not change height for it: every box in it is
 reserved, so the state is quiet rather than visible as a reflow.
@@ -229,7 +236,7 @@ regions:
       side: left
     - module: place-carousel            # no height: both rail regions split evenly
   bottom:
-    - { module: movement-map, height: 64 }
+    - { module: segment-map, height: 64 }
     - { module: cue-ticker, height: fill, collapse: first }
 collapse:
   footerFloor: 90
@@ -246,14 +253,14 @@ slot it was not registered for still renders and logs
 `surround.module.misplaced`.
 
 `band:` is the third thing a definition says about a frame, beside `regions` and
-`collapse` — how the listening band and the movement rail are laid out relative
+`collapse` — how the listening band and the segment rail are laid out relative
 to each other. Every key defaults, and an unauthored, misspelled or wrong-typed
 value degrades to its default rather than reaching a module.
 
 | Key | Default | Meaning |
 |---|---|---|
 | `band.nowSide` | `right` | Which half of the band carries the NOW register. `dynamic` follows the playhead — the register sits on the same side of the band as the sounding segment, so the bond joining them stays short — and swaps once, at half way, with hysteresis so a scrub cannot flap it. |
-| `band.nowHeading` | `auto` | Whether the NOW register prints the sounding movement's name. `auto` prints it exactly when the rail does not, because the rail's own names are that heading; `always` and `never` override. |
+| `band.nowHeading` | `auto` | Whether the NOW register prints the sounding segment's name. `auto` prints it exactly when the rail does not, because the rail's own names are that heading; `always` and `never` override. |
 | `band.railDensity` | `names` | What the rail prints. `names` is the shipped rail; `bars` is the rule, its barlines and the playhead with no type under them — for a band too short to carry names, and what makes `nowHeading: auto` resolve the other way. |
 
 ### How the two resolve
@@ -271,8 +278,8 @@ value degrades to its default rather than reaching a module.
   with an empty list.
 - `piece` is the work's allowlisted fields, then `performance` and `musicEndsAt`
   from the sidecar, then any `piece:` override block.
-- `movements` are the work's, each gaining `start: starts[i]`.
-- `cues` are the synthesized movement-note cues plus the sidecar's explicit `cues`,
+- `segments` are the work's, each gaining `start: starts[i]`.
+- `cues` are the synthesized segment-note cues plus the sidecar's explicit `cues`,
   the whole list sorted by `at`.
 - `facts` in the payload are the **work's** facts. Composer facts stay under
   `composer.facts`; the two rotate in different panels. A `facts:` key on a
@@ -389,13 +396,13 @@ node cli/plex.cli.mjs search "Eroica" --deep
 node cli/plex.cli.mjs info 663134 --json
 ```
 
-The Plex **summary is often authoritative for movement names** — the hr-Sinfonieorchester
+The Plex **summary is often authoritative for segment names** — the hr-Sinfonieorchester
 uploads list them in order — and also carries the performers, venue, and concert
 date, which belong on the composer card.
 
-### 2. Derive movement timings from the audio
+### 2. Derive segment timings from the audio
 
-Neither PoC file had chapter markers, so timings come from spectral analysis of
+Neither PoC file had segment markers, so timings come from spectral analysis of
 the media itself. **Run this on the media host**, never on a workstation: the
 files live on a Dropbox mount and pulling a 54-minute video across it is
 expensive and slow.
@@ -410,15 +417,15 @@ astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:fil
 ffmpeg -v error -y -i "$F" -lavfi "showspectrumpic=s=2400x500:legend=1:gain=3" /tmp/spec.png
 ```
 
-Then read the spectrogram — movement boundaries are visible as texture changes,
+Then read the spectrogram — segment boundaries are visible as texture changes,
 and applause is an unmistakable broadband block — and confirm numerically:
 
 | Signal | Rule | Why |
 |---|---|---|
-| **Applause** | HF-ratio (`hf − full`) above ~−26 dB, sustained ≥5 s, **and** preceded within 5 s by a dip below −50 dB | The dip is what makes it work. Without it, bright violin passages give 14 false positives on Spring instead of 3 true ones. Physically: a movement ends with the music stopping. |
-| **Movement start** | After applause decays to its floor, the first second back above −45 dB | Taking the first second after the run ends lands mid-decay, ~7 s early. |
-| **Symphony boundaries** | Sustained runs below −55 dB — no applause at all | Audiences don't applaud between symphony movements. Concertos in this library do. Handle both. |
-| **Final applause** | 15 s window standard deviation ≈0.3–0.4 dB vs 2–11 dB for music | An orchestra never sustains a flat wash. Use this so the last movement's bar doesn't run to `duration`. |
+| **Applause** | HF-ratio (`hf − full`) above ~−26 dB, sustained ≥5 s, **and** preceded within 5 s by a dip below −50 dB | The dip is what makes it work. Without it, bright violin passages give 14 false positives on Spring instead of 3 true ones. Physically: a segment ends with the music stopping. |
+| **Segment start** | After applause decays to its floor, the first second back above −45 dB | Taking the first second after the run ends lands mid-decay, ~7 s early. |
+| **Symphony boundaries** | Sustained runs below −55 dB — no applause at all | Audiences don't applaud between symphony segments. Concertos in this library do. Handle both. |
+| **Final applause** | 15 s window standard deviation ≈0.3–0.4 dB vs 2–11 dB for music | An orchestra never sustains a flat wash. Use this so the last segment's bar doesn't run to `duration`. |
 
 **Always sanity-check against canonical proportions.** A detector that returns
 four plausible numbers can still be wrong; a Scherzo that isn't ~5 minutes or a
@@ -426,20 +433,20 @@ Finale that isn't ~11 is a signal to look again.
 
 Measured for the two reference pieces:
 
-| Piece | Duration | Movement starts | Lengths | Applause from |
+| Piece | Duration | Segment starts | Lengths | Applause from |
 |---|---|---|---|---|
 | Vivaldi, Spring (`plex:663146`) | 628 s | 0, 225, 385 | 3m45 / 2m40 / 4m03 | ~613 s |
 | Beethoven, Eroica (`plex:663134`) | 3223 s | 0, 976, 1925, 2278 | 15m26 / 15m06 / 5m33 / 11m17 | ~2955 s |
 
 Those numbers are a property of the recording, so they go in the **performance
-sidecar** — the movement starts as `starts:` in movement order, the applause point
+sidecar** — the segment starts as `starts:` in segment order, the applause point
 as `musicEndsAt:`. A second recording of the same work gets its own sidecar with
 its own `starts:` and reuses the work file untouched.
 
 ### 3. Write the work file, the sidecar, and the assets
 
 Two YAML files, in that order, plus the images. The work file is the slow one —
-movement names, `listen:` bullets, `note:` lines, facts — and it is what a second
+segment names, `listen:` bullets, `note:` lines, facts — and it is what a second
 performance later reuses. The sidecar is six lines.
 
 Portraits and city images: Wikimedia Commons for public-domain composers (the
@@ -472,15 +479,15 @@ curl -s https://logs.kckern.net/select/logsql/query \
 |---|---|
 | `surround.sidecar.invalid` | Malformed YAML or a missing required key in a performance sidecar. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Blocking reasons: `yaml-unparseable`, `not-a-mapping`, `missing-surround`, `missing-work`, `missing-match`, `match-not-a-mapping`, `missing-match-contentId`. Soft ones (the sidecar still loads): `missing-match-title`, `starts-not-a-list`, `starts-entry-invalid`, `cues-not-a-list`, `composer-not-a-mapping`, `piece-not-a-mapping`. |
 | `surround.work.missing` | The sidecar's `work:` ref names no file in the corpus. The sidecar is excluded. Carries the ref, the sidecar `file`, and `expected` — the corpus path that was looked for — so the fix is either to create that file or to correct the slug, without re-deriving the path. Usually a typo, or a work file that never got written. |
-| `surround.work.invalid` | A **corpus** work file has a present-but-non-array `movements` or `facts` — a mapping written where a list belongs. Warn and continue: the key is coerced to empty and the work still indexes. |
-| `surround.starts.mismatch` | `starts` length ≠ movement count. The sidecar still resolves; the unpaired movements get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. |
+| `surround.work.invalid` | A **corpus** work file has a present-but-non-array `segments` or `facts` — a mapping written where a list belongs. Warn and continue: the key is coerced to empty and the work still indexes. |
+| `surround.starts.mismatch` | `starts` length ≠ segment count. The sidecar still resolves; the unpaired segments get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
 | `surround.sidecar.duplicate` | Two sidecars claim one contentId. Names both files; last one walked wins. |
 | `surround.titles.ambiguous` | Two authored titles could match the same live title. Emitted at index time so you learn before a playback trips it. |
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
 | `surround.match.ambiguous` | The title lane matched more than one sidecar at lookup time, so the store refused. Names the live title and every candidate file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
-| `surround.movements.unplaceable` | The rail declined to draw one or more movements: this recording gave them no usable start, or a start that runs backwards. Names how many were authored, how many were placed, and which numerals were dropped. Always paired with a `starts-entry-invalid` or `starts.mismatch` from the store — this one says what the screen did about it. |
+| `surround.segments.unplaceable` | The rail declined to draw one or more segments: this recording gave them no usable start, or a start that runs backwards. Names how many were authored, how many were placed, and which numerals were dropped. Always paired with a `starts-entry-invalid` or `starts.mismatch` from the store — this one says what the screen did about it. |
 | `surround.module.missing` | A definition names a module the registry does not have. The region renders empty and the rest of the frame is unaffected — usually a typo in `_surrounds/`. |
 | `surround.module.misplaced` | A module is authored into a slot it was not registered for (a rail module in the band). It still renders; the warn names the slot and the slots the module declared. |
 
@@ -497,8 +504,8 @@ The `concert-hall` definition's regions resolve to named modules from
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
 | `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
 | `country-map` | right, bottom | The regional map component itself (see below). |
-| `movement-map` | bottom | The engraved-score progress band, with each movement's translation glossed under its name. |
-| `cue-ticker` | bottom | The docked ticker: the playing movement's `listen` notes on one side, cues and facts on the other. |
+| `segment-map` | bottom | The engraved-score progress band, with each segment's translation glossed under its name. Also answers to its pre-rename name, `movement-map`, so an unmigrated definition still draws the rail rather than warning `surround.module.missing` over an empty region. |
+| `cue-ticker` | bottom | The docked ticker: the playing segment's `listen` notes on one side, cues and facts on the other. |
 
 ### The band's notes are never cut
 
@@ -512,8 +519,8 @@ the text by measurement. The ladder, in order: tighten the leading toward its
 floor, then step the size down toward its floor. Both floors are derived against
 the vendored face's own metrics and neither is crossed. The fit is solved once per
 piece, against every string either register can ever show (all the work's facts,
-every placed movement's `listen` notes, every docked cue), so it cannot change at
-a movement boundary and the two registers are always set in one size.
+every placed segment's `listen` notes, every docked cue), so it cannot change at
+a segment boundary and the two registers are always set in one size.
 
 | Bound | Value | Why |
 |---|---|---|
@@ -531,9 +538,9 @@ the floors. Author facts to the budget of the smallest band they must appear on.
 
 ### The bond, and the band's two design rules
 
-The sounding movement's panel on the rail, a thin waist along the band's seam, and
+The sounding segment's panel on the rail, a thin waist along the band's seam, and
 the NOW register's panel are ONE shape in one colour — that is what lets the
-register stop reprinting the movement name the rail set six inches above it. The
+register stop reprinting the segment name the rail set six inches above it. The
 waist spans the HULL of the segment and the panel, so the panel's whole top edge
 and the segment's whole bottom edge are both welded along a real interval; the
 parts never meet at a corner. When the segment already sits over the panel the
@@ -548,7 +555,7 @@ waist collapses onto it and the two simply merge.
 
 The whole shape moves on ONE clock: the segment widths, the playhead, the bond and
 its waist are all published from a single interpolated vector in a single render,
-so a movement boundary is one move rather than a resize followed by a slide. Under
+so a segment boundary is one move rather than a resize followed by a slide. Under
 `prefers-reduced-motion` the vector commits in one frame.
 
 The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
@@ -613,7 +620,7 @@ curl -s "http://{wikipedia_host}/article/Symphony%20No.%203%20(Beethoven)" | jq 
 ```
 
 It is also a useful independent check on the audio analysis: the article gives
-per-movement durations, and all four measured Eroica movements fell inside them.
+per-segment durations, and all four measured Eroica segments fell inside them.
 
 ## Scale
 

@@ -25,7 +25,7 @@ describe('smartQuotes — apostrophes', () => {
   });
 
   it('curls a PLURAL possessive, where the mark follows the word and precedes a space', () => {
-    // Verbatim: the Eroica's second-movement listening note.
+    // Verbatim: the Eroica's second-segment listening note.
     expect(smartQuotes("Basses mutter like muffled drums beneath the violins' grief"))
       .toBe('Basses mutter like muffled drums beneath the violins’ grief');
   });

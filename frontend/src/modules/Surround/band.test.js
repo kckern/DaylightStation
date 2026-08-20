@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
-  placedMovements, activeMovementIndex, roman,
+  placedSegments, activeSegmentIndex, roman,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
 const withBand = (band) => ({ definition: { regions: {}, collapse: {}, band } });
 
-/** The Eroica's four movements, as the rail derives them: 976/949/353/677 of 2955. */
+/** The Eroica's four segments, as the rail derives them: 976/949/353/677 of 2955. */
 const EROICA_SEGMENTS = [
   { start: 0, stop: 976 },
   { start: 976, stop: 1925 },
@@ -49,7 +49,7 @@ describe('resolveBandConfig', () => {
 });
 
 describe('showsNowHeading', () => {
-  it('auto + a rail that names movements: the register does NOT repeat the name', () => {
+  it('auto + a rail that names segments: the register does NOT repeat the name', () => {
     expect(showsNowHeading({ nowHeading: 'auto', railDensity: 'names' })).toBe(false);
   });
 
@@ -134,21 +134,21 @@ describe('accordionShares', () => {
     })).toEqual(EROICA_NATURAL);
   });
 
-  it('returns the natural widths for a single-movement piece — no neighbour to compress', () => {
+  it('returns the natural widths for a single-segment piece — no neighbour to compress', () => {
     expect(accordionShares({
       natural: [1], activeIndex: 0, railPx: RAIL, desiredPx: 900,
     })).toEqual([1]);
   });
 
   it('never NARROWS the active segment below what its duration earns it', () => {
-    // Movement 1 is 976/2955 of the rail — 283px. A 40px name asks for nothing.
+    // Segment 1 is 976/2955 of the rail — 283px. A 40px name asks for nothing.
     const out = accordionShares({
       natural: EROICA_NATURAL, activeIndex: 0, railPx: RAIL, desiredPx: 40,
     });
     expect(out).toEqual(EROICA_NATURAL);
   });
 
-  it('widens the sounding movement to exactly what it asked for', () => {
+  it('widens the sounding segment to exactly what it asked for', () => {
     const desired = 260;
     const out = accordionShares({
       natural: EROICA_NATURAL, activeIndex: 2, railPx: RAIL, desiredPx: desired,
@@ -197,7 +197,7 @@ describe('accordionShares', () => {
   });
 
   it('gives nothing when every neighbour is already at or under the floor', () => {
-    // Eight short movements on a narrow rail: 400/8 = 50px each, under the floor.
+    // Eight short segments on a narrow rail: 400/8 = 50px each, under the floor.
     const many = new Array(8).fill(1 / 8);
     const out = accordionShares({
       natural: many, activeIndex: 3, railPx: 400, desiredPx: 300,
@@ -409,13 +409,13 @@ describe('bondConnector', () => {
  * The rail and the band each decide which side the NOW register sits on. They
  * used to compute the input themselves — `(position - first) / span` on the
  * rail, `position / end` in the band — which agree only while the first
- * movement starts at 0. When they disagree the two halves of one shape point at
+ * segment starts at 0. When they disagree the two halves of one shape point at
  * opposite sides of the screen, each held there by its own hysteresis, and
  * nothing reports it.
  */
 describe('elapsedFraction', () => {
-  it('measures from the first movement, not from the top of the file', () => {
-    // A late first movement: tuning, applause, an offset transfer — the same
+  it('measures from the first segment, not from the top of the file', () => {
+    // A late first segment: tuning, applause, an offset transfer — the same
     // class of fact `musicEndsAt` models at the other end.
     expect(elapsedFraction({ position: 1530, first: 60, end: 3000 })).toBeCloseTo(0.5, 9);
     // The reading the band used to take would have put this at 0.51 — past the
@@ -423,7 +423,7 @@ describe('elapsedFraction', () => {
     expect(1530 / 3000).toBeGreaterThan(NOW_SIDE_THRESHOLD);
   });
 
-  it('agrees with the naive reading exactly when the first movement starts at 0', () => {
+  it('agrees with the naive reading exactly when the first segment starts at 0', () => {
     // Which is why both shipped sidecars hid the defect.
     for (const position of [0, 700, 1477, 2955]) {
       expect(elapsedFraction({ position, first: 0, end: 2955 }))
@@ -529,7 +529,7 @@ describe('the band’s shared numbers', () => {
  * The rail and the listening band each held a near-copy of this loop, and the
  * copies disagreed at exactly the two edges no shipped recording exercises.
  */
-describe('which movement is sounding', () => {
+describe('which segment is sounding', () => {
   const EROICA = [
     { n: 1, name: 'Allegro con brio', start: 0 },
     { n: 2, name: 'Marcia funebre. Adagio assai', start: 976 },
@@ -537,74 +537,74 @@ describe('which movement is sounding', () => {
     { n: 4, name: 'Finale. Allegro molto', start: 2278 },
   ];
 
-  it('places every movement of a well-timed recording, in order', () => {
-    expect(placedMovements(EROICA).map((p) => p.start)).toEqual([0, 976, 1925, 2278]);
-    expect(placedMovements(EROICA).map((p) => p.index)).toEqual([0, 1, 2, 3]);
+  it('places every segment of a well-timed recording, in order', () => {
+    expect(placedSegments(EROICA).map((p) => p.start)).toEqual([0, 976, 1925, 2278]);
+    expect(placedSegments(EROICA).map((p) => p.index)).toEqual([0, 1, 2, 3]);
   });
 
   // The store ships `start: undefined` for an entry it refused, deliberately
-  // keeping the slot so `starts` still pairs positionally with `movements`.
-  it('declines to place a movement whose start the store refused', () => {
+  // keeping the slot so `starts` still pairs positionally with `segments`.
+  it('declines to place a segment whose start the store refused', () => {
     const bad = [EROICA[0], { ...EROICA[1], start: undefined }, EROICA[2], EROICA[3]];
-    const placed = placedMovements(bad);
+    const placed = placedSegments(bad);
     expect(placed.map((p) => p.start)).toEqual([0, 1925, 2278]);
-    // ...and the survivors still know which authored movement they are, so the
+    // ...and the survivors still know which authored segment they are, so the
     // band can still reach the right listening notes.
     expect(placed.map((p) => p.index)).toEqual([0, 2, 3]);
   });
 
   it('declines a start that runs backwards — it cannot bound the segment before it', () => {
     const jumbled = [EROICA[0], { ...EROICA[1], start: 500 }, { ...EROICA[2], start: 200 }, EROICA[3]];
-    expect(placedMovements(jumbled).map((p) => p.start)).toEqual([0, 500, 2278]);
+    expect(placedSegments(jumbled).map((p) => p.start)).toEqual([0, 500, 2278]);
   });
 
   it('declines a start that is not a number at all, or is negative', () => {
-    expect(placedMovements([{ start: null }, { start: -5 }, { start: NaN }, {}, null]))
+    expect(placedSegments([{ start: null }, { start: -5 }, { start: NaN }, {}, null]))
       .toEqual([]);
   });
 
   // COERCED, the same reading `musicEndsAt` takes (review finding I4): a YAML
   // round-trip can hand a timing back as a string, and refusing that would drop
-  // a movement whose start is perfectly well known. It is the values that carry
+  // a segment whose start is perfectly well known. It is the values that carry
   // no position — null, negative, NaN — that cannot be placed.
   it('places a start that arrived as a numeric string', () => {
-    expect(placedMovements([{ start: '0' }, { start: '976' }]).map((p) => p.start))
+    expect(placedSegments([{ start: '0' }, { start: '976' }]).map((p) => p.start))
       .toEqual([0, 976]);
   });
 
-  it('names the sounding movement inside its own span', () => {
-    const placed = placedMovements(EROICA);
-    expect(activeMovementIndex({ placed, position: 0, end: 2955 })).toBe(0);
-    expect(activeMovementIndex({ placed, position: 975.9, end: 2955 })).toBe(0);
-    expect(activeMovementIndex({ placed, position: 976, end: 2955 })).toBe(1);
-    expect(activeMovementIndex({ placed, position: 2954, end: 2955 })).toBe(3);
+  it('names the sounding segment inside its own span', () => {
+    const placed = placedSegments(EROICA);
+    expect(activeSegmentIndex({ placed, position: 0, end: 2955 })).toBe(0);
+    expect(activeSegmentIndex({ placed, position: 975.9, end: 2955 })).toBe(0);
+    expect(activeSegmentIndex({ placed, position: 976, end: 2955 })).toBe(1);
+    expect(activeSegmentIndex({ placed, position: 2954, end: 2955 })).toBe(3);
   });
 
   // The two edges the two copies disagreed about.
   it('says NOTHING is sounding after the music ends', () => {
-    const placed = placedMovements(EROICA);
-    expect(activeMovementIndex({ placed, position: 2955, end: 2955 })).toBe(-1);
-    expect(activeMovementIndex({ placed, position: 3100, end: 2955 })).toBe(-1);
+    const placed = placedSegments(EROICA);
+    expect(activeSegmentIndex({ placed, position: 2955, end: 2955 })).toBe(-1);
+    expect(activeSegmentIndex({ placed, position: 3100, end: 2955 })).toBe(-1);
   });
 
-  it('says NOTHING is sounding before the first movement starts', () => {
+  it('says NOTHING is sounding before the first segment starts', () => {
     // A transfer that opens on tuning or an announcement — `starts: [45, …]`,
     // which the store explicitly permits. The rail used to fall through to
-    // "movement I is active" here and light a segment over music that had not
+    // "segment I is active" here and light a segment over music that had not
     // begun, while the band printed its "nothing is playing" header.
-    const late = placedMovements([{ n: 1, start: 45 }, { n: 2, start: 900 }]);
-    expect(activeMovementIndex({ placed: late, position: 0, end: 2955 })).toBe(-1);
-    expect(activeMovementIndex({ placed: late, position: 44.9, end: 2955 })).toBe(-1);
-    expect(activeMovementIndex({ placed: late, position: 45, end: 2955 })).toBe(0);
+    const late = placedSegments([{ n: 1, start: 45 }, { n: 2, start: 900 }]);
+    expect(activeSegmentIndex({ placed: late, position: 0, end: 2955 })).toBe(-1);
+    expect(activeSegmentIndex({ placed: late, position: 44.9, end: 2955 })).toBe(-1);
+    expect(activeSegmentIndex({ placed: late, position: 45, end: 2955 })).toBe(0);
   });
 
   it('answers -1 rather than throwing for an empty or unusable list', () => {
-    expect(activeMovementIndex({ placed: [], position: 10, end: 100 })).toBe(-1);
-    expect(activeMovementIndex({ placed: null, position: 10, end: 100 })).toBe(-1);
-    expect(activeMovementIndex({ placed: placedMovements(EROICA), position: NaN, end: 2955 })).toBe(-1);
+    expect(activeSegmentIndex({ placed: [], position: 10, end: 100 })).toBe(-1);
+    expect(activeSegmentIndex({ placed: null, position: 10, end: 100 })).toBe(-1);
+    expect(activeSegmentIndex({ placed: placedSegments(EROICA), position: NaN, end: 2955 })).toBe(-1);
   });
 
-  it('sets a movement numeral, falling back to its position where none is authored', () => {
+  it('sets a segment numeral, falling back to its position where none is authored', () => {
     expect(roman(3, 99)).toBe('III.');
     expect(roman(undefined, 2)).toBe('III.');
     // Past the table, the number itself is a better answer than nothing.

@@ -7,28 +7,28 @@
 //     slow timer. This is the programme note: it is true at 0:00 and at 53:00,
 //     and it does not care where the playhead is.
 //
-//   RIGHT — NOW. A small header naming the movement that is actually sounding
+//   RIGHT — NOW. A small header naming the segment that is actually sounding
 //     (numeral, name, and the translation of its tempo term), and beneath it
-//     the `movements[].listen` notes for THAT movement — "the violas bark twice
+//     the `segments[].listen` notes for THAT segment — "the violas bark twice
 //     a bar, all the way through". This is the half of the band that teaches:
 //     it tells a viewer what to listen for in the next three minutes, not what
-//     happened in 1804. A movement change swaps the whole pool and resets the
+//     happened in 1804. A segment change swaps the whole pool and resets the
 //     rotation; a TIMED CUE (`data.cues`) interrupts this zone for its dwell,
 //     because a cue is the same kind of claim — one line tied to what is
-//     sounding right now — only pinned to a second rather than to a movement.
+//     sounding right now — only pinned to a second rather than to a segment.
 //
-// A movement with no authored `listen` notes borrows the piece pool beneath its
-// header rather than showing empty paper. A piece with NO MOVEMENTS AT ALL does
+// A segment with no authored `listen` notes borrows the piece pool beneath its
+// header rather than showing empty paper. A piece with NO SEGMENTS AT ALL does
 // not split: there is no "now" to have a register for, so the band is one zone
 // and cues preempt it, exactly as it behaved before this wave.
 //
-// THE NOW REGISTER STOPPED PRINTING THE MOVEMENT HEADING (design wave 7)
+// THE NOW REGISTER STOPPED PRINTING THE SEGMENT HEADING (design wave 7)
 // ---------------------------------------------------------------------
-// It used to name the sounding movement — directly beneath a rail that had just
+// It used to name the sounding segment — directly beneath a rail that had just
 // named it. The user's word for that was "wasteful", and the replacement is
 // VISUAL: this register carries the same lifted panel ground as the sounding
 // segment on the rail, joined to it by a connector along the band's seam (the
-// BOND — see `MovementMap.jsx`). The eye follows the shape from the rule down
+// BOND — see `SegmentMap.jsx`). The eye follows the shape from the rule down
 // into the register and the name never needs setting twice. The heading code is
 // still here and still correct, because a rail in a bars-only density has no
 // name for the bond to point at: `band.nowHeading` (auto | always | never)
@@ -60,7 +60,7 @@
 // rotation is therefore phase-offset by half a period from the left's, which is
 // the maximum separation two equal periods admit. The offset is measured
 // against the PIECE register's own last swap (`phaseDelay`), not against the
-// moment the right zone happens to re-arm, so a movement boundary or a cue puts
+// moment the right zone happens to re-arm, so a segment boundary or a cue puts
 // it back at its maximum rather than at whatever that beat's timing produced.
 // Under prefers-reduced-motion both collapse to an instant swap.
 //
@@ -79,7 +79,7 @@
 // the floors is an authoring failure; it is dropped from the rotation and warned
 // about with its character budget rather than cut. The fit is solved once per
 // piece, against every string either register can ever show, so it cannot change
-// at a movement boundary — which is the reserved-height law, kept.
+// at a segment boundary — which is the reserved-height law, kept.
 
 import React, {
   useEffect, useLayoutEffect, useMemo, useRef, useState,
@@ -91,8 +91,8 @@ import {
 import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import {
-  resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeMovementIndex,
-  placedMovements, roman, useEasedVector, ACCORDION_MS, NOW_PANEL_SHARE,
+  resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeSegmentIndex,
+  placedSegments, roman, useEasedVector, ACCORDION_MS, NOW_PANEL_SHARE,
 } from '../band.js';
 import {
   bandPools, fitBand, fitStyle, withhold, withheldSets,
@@ -126,7 +126,7 @@ export const LISTEN_INTERVAL_MS = FACT_INTERVAL_MS;
  *
  * THE OFFSET IS MEASURED FROM THE PIECE REGISTER'S OWN CLOCK, not from the
  * moment the NOW register re-arms, and that distinction is the whole of the
- * invariant's honesty. The NOW register re-arms at every movement boundary and
+ * invariant's honesty. The NOW register re-arms at every segment boundary and
  * at the end of every timed cue; the piece register's beat runs on through both
  * (it must — tearing it down on a cue edge in the OTHER zone was itself a
  * defect). A flat "wait half a period from HERE" therefore gave an exact
@@ -161,7 +161,7 @@ const EMPTY = Object.freeze({ key: 'empty', kind: null, at: null, text: '' });
  * The NOW header is blank when nothing is sounding (design wave 9), and blank
  * has to mean BLANK rather than absent: an element that disappears gives its
  * height back to the note's box, which changes the room the fit was solved
- * against, which resizes the type of both registers on a movement boundary. The
+ * against, which resizes the type of both registers on a segment boundary. The
  * reserved-height law is the same law it has always been; this is what keeps it
  * true through a state the band did not use to have.
  */
@@ -181,10 +181,10 @@ const hasLine = (value) => Boolean(value?.text);
  *   - an ACTIVATING CUE (`shown` was not a cue, `next` is): a cue is a claim
  *     about what is sounding RIGHT NOW, and a stale rotation note lingering
  *     through even one fade-out is a wrong answer, however briefly.
- *   - a MOVEMENT BOUNDARY (`next.mv` names a different movement than
+ *   - a SEGMENT BOUNDARY (`next.mv` names a different segment than
  *     `shown.mv`): the header above this text is NOT dissolved, so a softened
- *     note would show the NEW movement's header over the OLD movement's note for
- *     up to a full fade — the two halves of the band naming different movements
+ *     note would show the NEW segment's header over the OLD segment's note for
+ *     up to a full fade — the two halves of the band naming different segments
  *     at the same instant.
  * Without this, a second edge arriving before the first dissolve's commit fires
  * re-queues a full `DISSOLVE_COMMIT_MS` wait on top of whatever was left of the
@@ -239,39 +239,39 @@ export default function CueTicker({
     [data],
   );
 
-  const movements = useMemo(
-    () => (Array.isArray(data?.movements) ? data.movements : []), [data],
+  const pieceSegments = useMemo(
+    () => (Array.isArray(data?.pieceSegments) ? data.pieceSegments : []), [data],
   );
 
   // The rule ends where the MUSIC ends, not where the file does — the same
-  // reading MovementMap takes, so the two halves of the band agree about when
-  // the last movement stops sounding and the applause begins.
+  // reading SegmentMap takes, so the two halves of the band agree about when
+  // the last segment stops sounding and the applause begins.
   const musicEndsAt = Number(data?.piece?.musicEndsAt);
   const end = Number.isFinite(musicEndsAt) && musicEndsAt > 0 ? musicEndsAt : null;
 
   // ONE DERIVATION OF WHAT IS SOUNDING, shared with the rail (`../band.js`).
-  // This module and `MovementMap` used to hold two near-copies of the same loop
-  // whose fall-through cases disagreed — the rail lit movement I before the
+  // This module and `SegmentMap` used to hold two near-copies of the same loop
+  // whose fall-through cases disagreed — the rail lit segment I before the
   // first start, this register said nothing was playing. Both now ask the same
-  // function, which also declines to place a movement whose start the store
+  // function, which also declines to place a segment whose start the store
   // refused, instead of coercing it to 0.
-  const placed = useMemo(() => placedMovements(movements), [movements]);
+  const placed = useMemo(() => placedSegments(pieceSegments), [pieceSegments]);
   const placedIndex = useMemo(
-    () => activeMovementIndex({ placed, position, end }), [placed, position, end],
+    () => activeSegmentIndex({ placed, position, end }), [placed, position, end],
   );
 
   /**
    * THE BAND SPLITS ONLY WHERE THERE IS A "NOW" TO SPLIT OFF.
    *
-   * Without movements there is no current-movement header, no per-movement
+   * Without segments there is no current-segment header, no per-segment
    * listen pool, and the right zone would be a second copy of the left one —
    * two registers saying the same thing is worse than one saying it properly.
-   * So a movement-less piece keeps the single, full-width band this module
+   * So a segment-less piece keeps the single, full-width band this module
    * shipped with, cues and all.
    *
-   * IT IS THE PLACED MOVEMENTS THAT DECIDE, not the authored ones. A recording
+   * IT IS THE PLACED SEGMENTS THAT DECIDE, not the authored ones. A recording
    * whose timings are all unusable — every `starts` entry refused, or a work
-   * authored ahead of any timing at all — has movements on paper and none on the
+   * authored ahead of any timing at all — has segments on paper and none on the
    * clock, so there is no "now" for a second register to be about: the rail
    * beside it draws nothing, and a NOW zone under an empty rail would print
    * `Listen for` over borrowed facts for the length of the piece. Two registers
@@ -279,20 +279,20 @@ export default function CueTicker({
    * avoid, and an untimed recording is that case exactly.
    */
   const split = placed.length > 0;
-  const movement = placedIndex >= 0 ? placed[placedIndex].movement : null;
-  /** The AUTHORED index of the sounding movement — what the log and the bond name. */
-  const movementIndex = placedIndex >= 0 ? placed[placedIndex].index : -1;
+  const segment = placedIndex >= 0 ? placed[placedIndex].segment : null;
+  /** The AUTHORED index of the sounding segment — what the log and the bond name. */
+  const segmentIndex = placedIndex >= 0 ? placed[placedIndex].index : -1;
 
   const listen = useMemo(
     () => smartQuotesAll(
-      (Array.isArray(movement?.listen) ? movement.listen : [])
+      (Array.isArray(segment?.listen) ? segment.listen : [])
         .filter((n) => typeof n === 'string' && n.trim()),
     ),
-    [movement],
+    [segment],
   );
 
   /**
-   * NEVER EMPTY PAPER — WHILE SOMETHING IS SOUNDING. A movement nobody has
+   * NEVER EMPTY PAPER — WHILE SOMETHING IS SOUNDING. A segment nobody has
    * written listening notes for still gets its header, and the piece pool is
    * borrowed beneath it. Two zones showing from the same pool, half a period
    * apart, is a weaker band than two pools; it is a far better band than a blank
@@ -300,30 +300,30 @@ export default function CueTicker({
    *
    * WITH NOTHING SOUNDING THE REGISTER IS BLANK, and that is the opposite rule
    * for the opposite reason (design wave 9). This register is about what is
-   * playing NOW. Before the first movement — the conductor's walk-on, the
+   * playing NOW. Before the first segment — the conductor's walk-on, the
    * applause, the settling — and after the last chord, nothing is, and there is
-   * no note about the sounding movement to show because there is no sounding
-   * movement. Borrowing a piece fact there would put a claim about 1804 under a
+   * no note about the sounding segment to show because there is no sounding
+   * segment. Borrowing a piece fact there would put a claim about 1804 under a
    * lit panel that says "this is what you are hearing", and duplicate the left
    * register while it did so. Blank is the honest answer, and blank does not
    * move the band: the box is still there and still exactly as tall.
    */
-  const borrowed = split && movement !== null && listen.length === 0;
+  const borrowed = split && segment !== null && listen.length === 0;
   const nowPool = useMemo(() => {
-    if (!movement) return [];
+    if (!segment) return [];
     return listen.length ? listen : facts;
-  }, [movement, listen, facts]);
+  }, [segment, listen, facts]);
 
   /* ---- THE FIT (design wave 9) --------------------------------------------
    * The band's type is sized so that no note is ever cut. `../fit.js` holds the
    * ladder and the floors and does the measuring; this is the wiring.
    *
    * THE POOLS ARE THE WHOLE PIECE'S, not this instant's. The fit has to be a
-   * constant of the piece, or the type would resize at a movement boundary and
+   * constant of the piece, or the type would resize at a segment boundary and
    * the reserved-height law would be broken by the mechanism that replaced it —
    * so what is measured is EVERY string either register can ever show: all the
-   * facts, every placed movement's listening notes, every docked cue, and the
-   * facts again in the NOW register if any movement will borrow them.
+   * facts, every placed segment's listening notes, every docked cue, and the
+   * facts again in the NOW register if any segment will borrow them.
    */
   const fitPools = useMemo(() => {
     // CURLED, because that is what is painted. Every authored string this band
@@ -331,7 +331,7 @@ export default function CueTicker({
     // straight-quoted original would be measuring a string the screen never
     // shows. `facts` is already curled where it was derived.
     const raw = bandPools({
-      facts, movements: placed.map((p) => p.movement), cues,
+      facts, segments: placed.map((p) => p.segment), cues,
     });
     return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
   }, [facts, placed, cues]);
@@ -539,10 +539,10 @@ export default function CueTicker({
    * How many times the piece register's interval has been (re)armed.
    *
    * THE INVARIANT HAS TO HOLD WHICHEVER REGISTER MOVES. The NOW register
-   * re-phases whenever IT re-arms, which covers every movement boundary and
+   * re-phases whenever IT re-arms, which covers every segment boundary and
    * every cue; but the piece register re-arms too — its effect depends on
    * `facts.length`, and a corpus edit picked up by the mtime watcher can grow a
-   * work's fact pool without touching its movements. That re-seeds
+   * work's fact pool without touching its segments. That re-seeds
    * `pieceSwappedAt` and, without this, leaves the NOW register running on an
    * offset measured against a clock that has since moved: the original defect
    * with the roles swapped. Bumping a generation here and reading it in the NOW
@@ -623,10 +623,10 @@ export default function CueTicker({
   // ---- the NOW register (right) --------------------------------------------
   const [listenIndex, setListenIndex] = useState(0);
 
-  // A movement change swaps the pool; the rotation starts that pool at its
-  // first note rather than at wherever the previous movement's index happened
-  // to be. (Also covers a seek backwards into an earlier movement.)
-  useEffect(() => { setListenIndex(0); }, [movementIndex, contentId]);
+  // A segment change swaps the pool; the rotation starts that pool at its
+  // first note rather than at wherever the previous segment's index happened
+  // to be. (Also covers a seek backwards into an earlier segment.)
+  useEffect(() => { setListenIndex(0); }, [segmentIndex, contentId]);
 
   useEffect(() => {
     if (!split || nowNotes.length < 2) return undefined;
@@ -634,7 +634,7 @@ export default function CueTicker({
     // the note it interrupted is not skipped.
     if (activeCue) return undefined;
     // THE HALF-PERIOD GAP, RE-ESTABLISHED RATHER THAN INTENDED. This effect
-    // re-arms at every movement boundary and at the end of every cue, and the
+    // re-arms at every segment boundary and at the end of every cue, and the
     // piece register's beat runs on untouched through both. Waiting a flat
     // `LISTEN_PHASE_MS` from HERE therefore held the offset only until the
     // first boundary, after which it was whatever the boundary's timing made
@@ -650,25 +650,25 @@ export default function CueTicker({
     return () => { clearTimeout(phase); if (interval) clearInterval(interval); };
     // `pieceArm` is in the list for its identity alone: it is how the OTHER
     // register says "my clock restarted, re-measure your offset against it".
-  }, [split, activeCue, movementIndex, nowNotes.length, pieceArm]);
+  }, [split, activeCue, segmentIndex, nowNotes.length, pieceArm]);
 
   const nowNext = useMemo(() => {
     // BLANK WHEN NOTHING IS SOUNDING (design wave 9) — including through a cue.
     // A cue is a claim about what is sounding right now, so with nothing
     // sounding it has no subject either.
-    if (!split || !movement) return EMPTY;
+    if (!split || !segment) return EMPTY;
     if (activeCue) {
       const at = Number(activeCue.at);
       // `mv` rides along even on a cue line: fix round 1 (review finding I2)
       // reads it in `useDissolve` to force an instant commit across a
-      // movement boundary, and a cue landing exactly on one is not exempt —
+      // segment boundary, and a cue landing exactly on one is not exempt —
       // the header above it changes either way.
       return {
         key: `cue:${at}`,
         kind: 'cue',
         at,
         text: smartQuotes(String(activeCue.text)),
-        mv: movementIndex,
+        mv: segmentIndex,
         // See `pieceNext`: a cue the fit withdraws must leave at once.
         pool: fitGen,
       };
@@ -676,25 +676,25 @@ export default function CueTicker({
     if (nowNotes.length) {
       const i = ((listenIndex % nowNotes.length) + nowNotes.length) % nowNotes.length;
       return {
-        // Keyed by the movement AND the text — see `pieceNext` for why the index
-        // will not do. The movement stays in the key because the same borrowed
+        // Keyed by the segment AND the text — see `pieceNext` for why the index
+        // will not do. The segment stays in the key because the same borrowed
         // fact under a different header is different content.
-        key: `${borrowed ? 'borrowed' : 'listen'}:${movementIndex}:${nowNotes[i]}`,
+        key: `${borrowed ? 'borrowed' : 'listen'}:${segmentIndex}:${nowNotes[i]}`,
         kind: borrowed ? 'fact' : 'listen',
         at: null,
         text: nowNotes[i],
         pool: fitGen,
-        // Fix round 1 (review finding I2): which movement this line belongs
+        // Fix round 1 (review finding I2): which segment this line belongs
         // to. `useDissolve` compares this against the currently-SHOWN line's
-        // `mv` to detect a movement boundary and commit instantly instead of
+        // `mv` to detect a segment boundary and commit instantly instead of
         // softening across it — the header (not part of the dissolve) has
         // already changed by the time this renders, so a dissolved note would
         // disagree with it for up to a full commit.
-        mv: movementIndex,
+        mv: segmentIndex,
       };
     }
     return EMPTY;
-  }, [split, movement, activeCue, nowNotes, listenIndex, borrowed, movementIndex, fitGen]);
+  }, [split, segment, activeCue, nowNotes, listenIndex, borrowed, segmentIndex, fitGen]);
 
   const [nowShown, nowHidden] = useDissolve(nowNext, LINE_DISSOLVE);
 
@@ -707,10 +707,10 @@ export default function CueTicker({
   useEffect(() => {
     if (!split || !nowShown.text) return;
     log.debug('surround.listen.shown', {
-      kind: nowShown.kind, at: nowShown.at, movement: movementIndex, borrowed, contentId,
+      kind: nowShown.kind, at: nowShown.at, segment: segmentIndex, borrowed, contentId,
     });
-    // `movementIndex` and `borrowed` ride along as payload; the event fires on
-    // the line changing, not on the movement changing.
+    // `segmentIndex` and `borrowed` ride along as payload; the event fires on
+    // the line changing, not on the segment changing.
   }, [nowShown, split, contentId, log]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The root's kind is whichever register a TIMED CUE is currently in — the
@@ -719,9 +719,9 @@ export default function CueTicker({
   // ever cared about.
   const rootKind = activeCue ? 'cue' : (pieceShown.kind ?? nowShown.kind ?? 'empty');
 
-  const numeral = movement ? roman(Number(movement.n), movementIndex) : null;
-  const movementName = smartQuotes(trimmed(movement?.name));
-  const movementTranslation = smartQuotes(trimmed(movement?.translation));
+  const numeral = segment ? roman(Number(segment.n), segmentIndex) : null;
+  const segmentName = smartQuotes(trimmed(segment?.name));
+  const segmentTranslation = smartQuotes(trimmed(segment?.translation));
 
   // ---- the bond's two shared decisions --------------------------------------
   // Both come from `../band.js` so this module and the rail cannot disagree
@@ -729,17 +729,17 @@ export default function CueTicker({
   const nowHeading = showsNowHeading(config);
   // ONE definition of "how far through the piece" (review finding I3). This
   // used to be `position / pieceEnd` while the rail measured
-  // `(position - first) / (end - first)` — equal only while the first movement
+  // `(position - first) / (end - first)` — equal only while the first segment
   // starts at 0, which both shipped sidecars do and a sidecar with a late first
-  // movement would not. When they disagree the register's panel and the rail's
+  // segment would not. When they disagree the register's panel and the rail's
   // connector point at opposite sides of the screen, each held there by its own
   // hysteresis, and nothing anywhere reports it. `elapsedFraction` is now the
   // single source, called with the same inputs in both modules.
   const pieceEnd = end !== null ? end : (duration > 0 ? duration : 0);
-  // ...and from the same PLACED movements, for the same reason. Taking this from
-  // `movements[0]` with a `|| 0` coercion re-opened finding I3 one edge over:
-  // when the FIRST movement is the unplaceable one, the rail measures from the
-  // first movement it can place and this measured from second zero, so the two
+  // ...and from the same PLACED segments, for the same reason. Taking this from
+  // `segments[0]` with a `|| 0` coercion re-opened finding I3 one edge over:
+  // when the FIRST segment is the unplaceable one, the rail measures from the
+  // first segment it can place and this measured from second zero, so the two
   // halves resolved opposite sides and each held there by its own hysteresis.
   // The comment above says both modules are called with the same inputs; this is
   // what makes that true rather than nearly true.
@@ -784,11 +784,11 @@ export default function CueTicker({
    * jumped to the new hull in the frame the side flipped, because
    * `bondConnector` took the side discretely. For the length of the swap the two
    * halves of "one shape" were in different places: exactly the artifact §7
-   * abolished for the movement boundary, surviving in the one event §1 named as
+   * abolished for the segment boundary, surviving in the one event §1 named as
    * a degenerate case to hold.
    *
    * So the panel's left edge is interpolated by the SAME hook, over the same
-   * duration, on the same easing, and `MovementMap` feeds the identical number
+   * duration, on the same easing, and `SegmentMap` feeds the identical number
    * into `bondConnector`. Both modules resolve `side` from `useNowSide` on the
    * same fraction in the same React commit, so their animations begin on the
    * same frame and the two halves cannot separate. Reduced motion snaps both,
@@ -811,15 +811,15 @@ export default function CueTicker({
   /**
    * DOES THE NOW HEADER RESERVE A LINE FOR THE GLOSS?
    *
-   * It is a property of the PIECE, not of the sounding movement, and that is
-   * what keeps the header's height constant: a work where some movements are
+   * It is a property of the PIECE, not of the sounding segment, and that is
+   * what keeps the header's height constant: a work where some segments are
    * glossed and some are not would otherwise give the note's box a different
-   * run in different movements, and the fit is solved once for the whole piece.
-   * Where no movement is glossed at all, no line is reserved and nothing is
+   * run in different segments, and the fit is solved once for the whole piece.
+   * Where no segment is glossed at all, no line is reserved and nothing is
    * spent.
    */
   const glossed = useMemo(
-    () => placed.some(({ movement: m }) => Boolean(trimmed(m?.translation))),
+    () => placed.some(({ segment: m }) => Boolean(trimmed(m?.translation))),
     [placed],
   );
 
@@ -831,7 +831,7 @@ export default function CueTicker({
       data-kind={rootKind}
       data-split={split ? 'true' : 'false'}
       data-now-side={split ? side : null}
-      data-sounding={split && movement ? 'true' : 'false'}
+      data-sounding={split && segment ? 'true' : 'false'}
       style={{
         '--accordion-ms': `${ACCORDION_MS}ms`,
         '--cue-fade-ms': `${CUE_FADE_MS}ms`,
@@ -858,10 +858,10 @@ export default function CueTicker({
             data-testid="surround-ticker-ground"
             data-side={side}
             // NOTHING SOUNDING, NOTHING LIT (design wave 9). The bond is what is
-            // sounding; before the first movement and after the last there is
+            // sounding; before the first segment and after the last there is
             // nothing for it to be, so this panel fades exactly as the rail's
             // does and the register above it is blank.
-            data-bonded={movement ? 'true' : 'false'}
+            data-bonded={segment ? 'true' : 'false'}
             style={{ '--now-left': `${panelLeft * 100}%` }}
             aria-hidden="true"
           />
@@ -909,13 +909,13 @@ export default function CueTicker({
             data-borrowed={borrowed ? 'true' : 'false'}
           >
             {/* THE HEADING IS OFF BY DEFAULT (design wave 7). The rail six
-                inches above already names the sounding movement, and the bond
+                inches above already names the sounding segment, and the bond
                 — this panel's ground, continuous with that segment's — is what
                 now says WHICH one without printing it twice. `band.nowHeading`
                 brings it back: `always`, or `auto` on a bars-only rail that has
                 no name of its own for the bond to point at.
                 When it IS shown it is still NOT part of the dissolve. It names
-                what is sounding, and that changes on a movement boundary — a
+                what is sounding, and that changes on a segment boundary — a
                 beat the viewer can already see happening on the rule above.
                 Fading it with the note beneath it would make an ordinary
                 rotation look like the piece had moved on. */}
@@ -923,7 +923,7 @@ export default function CueTicker({
             <p
               className="surround-cue-ticker__now"
               data-testid="surround-ticker-now"
-              data-sounding={movement ? 'true' : 'false'}
+              data-sounding={segment ? 'true' : 'false'}
             >
               {/* NOTHING SOUNDING IS BLANK (design wave 9). It used to print
                   "Listen for" over the applause and over the walk-on, which is
@@ -932,19 +932,19 @@ export default function CueTicker({
                   when it has nothing to say. The lines are still RESERVED
                   (blank, not absent): an element that disappeared would hand its
                   height to the note's box below, change the room the fit was
-                  solved against, and resize the whole band's type on a movement
+                  solved against, and resize the whole band's type on a segment
                   boundary. */}
               <span className="surround-cue-ticker__now-head">
-                {movementName ? (
+                {segmentName ? (
                   <>
                     {numeral && <span className="surround-cue-ticker__now-numeral">{numeral}</span>}
-                    <span className="surround-cue-ticker__now-name">{movementName}</span>
+                    <span className="surround-cue-ticker__now-name">{segmentName}</span>
                   </>
                 ) : BLANK_LINE}
               </span>
               {glossed && (
                 <span className="surround-cue-ticker__now-translation">
-                  {movementTranslation || BLANK_LINE}
+                  {segmentTranslation || BLANK_LINE}
                 </span>
               )}
             </p>

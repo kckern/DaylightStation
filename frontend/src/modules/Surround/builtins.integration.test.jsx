@@ -29,7 +29,7 @@ const CONCERT_HALL = {
       { module: 'place-carousel' },
     ],
     bottom: [
-      { module: 'movement-map', height: 64 },
+      { module: 'segment-map', height: 64 },
       { module: 'cue-ticker', height: 'fill', collapse: 'first' },
     ],
   },
@@ -49,7 +49,7 @@ const EROICA = {
     died: 1827,
     map: { country: 'Austria', city: 'Vienna', lat: 48.21, lon: 16.37 },
   },
-  movements: [
+  pieceSegments: [
     { n: 1, name: 'Allegro con brio', start: 0 },
     { n: 2, name: 'Marcia funebre. Adagio assai', start: 976 },
   ],
@@ -70,7 +70,7 @@ describe('surround builtins in the frame', () => {
     );
 
     expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.missing')).toHaveLength(0);
-    expect(container.querySelector('[data-testid="surround-movement-map"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="surround-cue-ticker"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="surround-composer-card"]')).not.toBeNull();
     // The two modules the stale fixture did not cover.
@@ -81,13 +81,13 @@ describe('surround builtins in the frame', () => {
     expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
   });
 
-  it('drives every module from one clock — position 976 lands in movement 2', () => {
+  it('drives every module from one clock — position 976 lands in segment 2', () => {
     render(
       <SurroundFrame data={EROICA} contentId="plex:663134" position={976} duration={3223} playing seeking={false}>
         <video />
       </SurroundFrame>,
     );
-    const states = [...document.querySelectorAll('[data-testid="surround-movement"]')]
+    const states = [...document.querySelectorAll('[data-testid="surround-segment"]')]
       .map((el) => el.getAttribute('data-state'));
     expect(states).toEqual(['elapsed', 'active']);
 
@@ -95,18 +95,18 @@ describe('surround builtins in the frame', () => {
     // register on the right — it is a claim about what is sounding, which is
     // that zone's whole subject. The piece register on the left goes on with
     // the programme note, undisturbed. Both halves are read off the same clock
-    // as the movement states above, which is what this spec exists to prove.
+    // as the segment states above, which is what this spec exists to prove.
     expect(document.querySelector('[data-testid="surround-ticker-listen"]').textContent)
       .toBe('The funeral march begins.');
     expect(document.querySelector('[data-testid="surround-ticker-text"]').textContent)
       .toBe('Beethoven tore the page.');
-    // ...and design wave 7: the NOW register does NOT reprint the movement
-    // heading the rail above already sets. What names the sounding movement in
+    // ...and design wave 7: the NOW register does NOT reprint the segment
+    // heading the rail above already sets. What names the sounding segment in
     // the band is the BOND — this register's panel and that segment's, drawn in
     // one ground and joined along the seam — so the header element is absent by
     // default and the bond is present instead.
     expect(document.querySelector('[data-testid="surround-ticker-now"]'),
-      'the NOW register is reprinting the movement heading the rail already set')
+      'the NOW register is reprinting the segment heading the rail already set')
       .toBeNull();
     expect(document.querySelector('[data-testid="surround-bond"]').getAttribute('data-bonded'))
       .toBe('true');
@@ -115,21 +115,21 @@ describe('surround builtins in the frame', () => {
 
   /**
    * THE TWO HALVES OF THE BAND MUST AGREE, and the edge where they did not is
-   * the head of a recording whose first movement starts late — tuning, an
+   * the head of a recording whose first segment starts late — tuning, an
    * announcement, an offset transfer. The store explicitly permits it
-   * (`starts: [45, …]`); the rail's loop fell through to "movement I is active"
+   * (`starts: [45, …]`); the rail's loop fell through to "segment I is active"
    * while the band's fell through to "nothing is playing", so a lit segment sat
    * on the rule above a header saying nothing was sounding. Both shipped
    * recordings start at 0, so nothing on a real screen ever showed it.
    *
    * TO GO RED: restore either fall-through — `return 0` at the foot of the
-   * rail's index loop, or an `activeMovementIndex` that clamps to the first
-   * movement instead of returning -1.
+   * rail's index loop, or an `activeSegmentIndex` that clamps to the first
+   * segment instead of returning -1.
    */
-  it('agrees that nothing is sounding before a late first movement starts', () => {
+  it('agrees that nothing is sounding before a late first segment starts', () => {
     const late = {
       ...EROICA,
-      movements: [
+      pieceSegments: [
         { n: 1, name: 'Allegro con brio', start: 45, listen: ['Two hammered chords.'] },
         { n: 2, name: 'Marcia funebre. Adagio assai', start: 976 },
       ],
@@ -143,7 +143,7 @@ describe('surround builtins in the frame', () => {
       </SurroundFrame>,
     );
     // The rail: no segment sounding, and nothing drawn as already played.
-    const states = [...document.querySelectorAll('[data-testid="surround-movement"]')]
+    const states = [...document.querySelectorAll('[data-testid="surround-segment"]')]
       .map((el) => el.getAttribute('data-state'));
     expect(states).toEqual(['future', 'future']);
     expect(document.querySelector('[data-testid="surround-bond"]').getAttribute('data-bonded'))
@@ -166,22 +166,22 @@ describe('surround builtins in the frame', () => {
    * reopened by wave 8's own §5 fix and closed here).
    *
    * `elapsedFraction` is single-sourced, but it is only as single as its inputs:
-   * the rail took `first` from the movements it could PLACE while the band took
-   * it from `movements[0]` with a `Number(x) || 0` coercion. When the first
-   * movement is the unplaceable one those are different numbers, and with
+   * the rail took `first` from the segments it could PLACE while the band took
+   * it from `segments[0]` with a `Number(x) || 0` coercion. When the first
+   * segment is the unplaceable one those are different numbers, and with
    * `nowSide: dynamic` the two halves of one shape resolve opposite sides —
    * the NOW panel on the right, the rail's connector reaching left, each pinned
    * by its own hysteresis and nothing anywhere reporting it.
    *
-   * TO GO RED: `const pieceFirst = movements.length ? (Number(movements[0]?.start) || 0) : 0`.
+   * TO GO RED: `const pieceFirst = segments.length ? (Number(segments[0]?.start) || 0) : 0`.
    * At 1900s the rail then measures (1900-976)/(2955-976) = 0.467 and picks
    * `left` while the band measures 1900/2955 = 0.643 and picks `right`.
    */
-  it('puts both halves of the bond on the same side when the first movement is unplaceable', () => {
+  it('puts both halves of the bond on the same side when the first segment is unplaceable', () => {
     const late = {
       ...EROICA,
       definition: { ...CONCERT_HALL, band: { nowSide: 'dynamic' } },
-      movements: [
+      pieceSegments: [
         { n: 1, name: 'Allegro con brio', start: undefined, listen: ['A.'] },
         { n: 2, name: 'Marcia funebre. Adagio assai', start: 976, listen: ['B.'] },
         { n: 3, name: 'Scherzo. Allegro vivace', start: 1925 },
@@ -193,30 +193,30 @@ describe('surround builtins in the frame', () => {
         <video />
       </SurroundFrame>,
     );
-    const rail = document.querySelector('[data-testid="surround-movement-map"]').getAttribute('data-now-side');
+    const rail = document.querySelector('[data-testid="surround-segment-map"]').getAttribute('data-now-side');
     const band = document.querySelector('[data-testid="surround-cue-ticker"]').getAttribute('data-now-side');
     expect(
       band,
       `the rail's bond reaches ${rail} while the band's NOW register sits ${band} — the two halves of one shape are pointing at opposite sides of the screen`,
     ).toBe(rail);
-    // ...and it is the answer measured from the first PLACED movement, not from
+    // ...and it is the answer measured from the first PLACED segment, not from
     // second zero: (1900-976)/(2955-976) = 0.467, which is under half way.
     expect(rail).toBe('left');
   });
 
   /**
-   * A MOVEMENT THE RECORDING CANNOT PLACE IS NOT A MOVEMENT AT SECOND ZERO.
+   * A SEGMENT THE RECORDING CANNOT PLACE IS NOT A SEGMENT AT SECOND ZERO.
    * The store ships `start: undefined` for a `starts` entry it refused and warns
    * about it; both halves of the band then coerced that with `Number(x) || 0`,
-   * re-anchoring a mid-piece movement to the top of the file — a zero-width
+   * re-anchoring a mid-piece segment to the top of the file — a zero-width
    * segment, an out-of-order rail, and a playhead that jumps backwards.
    *
-   * TO GO RED: put `Number(m?.start) || 0` back in `placedMovements`.
+   * TO GO RED: put `Number(m?.start) || 0` back in `placedSegments`.
    */
-  it('draws no segment for a movement whose start the store refused', () => {
+  it('draws no segment for a segment whose start the store refused', () => {
     const bad = {
       ...EROICA,
-      movements: [
+      pieceSegments: [
         { n: 1, name: 'Allegro con brio', start: 0 },
         { n: 2, name: 'Marcia funebre. Adagio assai', start: undefined },
         { n: 3, name: 'Scherzo. Allegro vivace', start: 1925 },
@@ -228,7 +228,7 @@ describe('surround builtins in the frame', () => {
         <video />
       </SurroundFrame>,
     );
-    const segments = [...document.querySelectorAll('[data-testid="surround-movement"]')];
+    const segments = [...document.querySelectorAll('[data-testid="surround-segment"]')];
     // Three placed, not four — and not four with one of them zero-wide at 0:00.
     expect(segments).toHaveLength(3);
     const widths = segments.map((el) => parseFloat(el.style.width));
@@ -236,8 +236,8 @@ describe('surround builtins in the frame', () => {
     // Every segment starts where the one before it stops: the rail is in order.
     const naturals = segments.map((el) => Number(el.getAttribute('data-natural')));
     naturals.forEach((n) => expect(n).toBeGreaterThan(0));
-    // The sounding movement at 1200s is the FIRST one — movement II could not be
-    // placed, so 1200 still falls inside movement I's span.
+    // The sounding segment at 1200s is the FIRST one — segment II could not be
+    // placed, so 1200 still falls inside segment I's span.
     expect(segments.map((el) => el.getAttribute('data-state')))
       .toEqual(['active', 'future', 'future']);
   });

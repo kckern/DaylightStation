@@ -2,7 +2,7 @@
  * CueTicker — the two registers beneath the stage.
  *
  * LEFT is the piece; RIGHT is now. One hairline between them, and nothing else:
- * no boxes, no badges, no second ground. The movement map above is where the
+ * no boxes, no badges, no second ground. The segment map above is where the
  * band spends its boldness, and two bordered panels under it would turn the
  * programme into a dashboard.
  *
@@ -29,14 +29,14 @@
  * WHICH KEEPS THE RESERVED-HEIGHT CONTRACT RATHER THAN BREAKING IT. The box is
  * the zone's leftover run, which does not depend on which note is showing; and
  * the fit is solved once per piece against EVERY string either register can ever
- * show, so it does not change at a movement boundary either. Nothing in the band
+ * show, so it does not change at a segment boundary either. Nothing in the band
  * moves when a note swaps.
  *
  * The opacity transition is set inline by the component so the fade duration has
  * a single source of truth with the JS choreography.
  */
 
-/* The band's shared literals - see `_tokens.scss` and `MovementMap.scss`. */
+/* The band's shared literals - see `_tokens.scss` and `SegmentMap.scss`. */
 @use "../tokens" as *;
 
 .surround-cue-ticker {
@@ -85,7 +85,7 @@
      edge must meet the rail's connector at the region seam with no strip of
      band ground between them, and a second copy of this number is how that
      join drifts.
-     HORIZONTAL 1rem -> 1.1rem (design wave 7). It matches `MovementMap`'s own
+     HORIZONTAL 1rem -> 1.1rem (design wave 7). It matches `SegmentMap`'s own
      inset exactly, and that is load-bearing rather than tidy: the NOW panel's
      inner edge has to land on the same x as the point the rail's connector
      reaches for. At 1rem the two were 1.6px apart on each side — invisible on
@@ -131,10 +131,10 @@
    THE BOND'S PANEL (design wave 7) — the band's half of the shape whose other
    half is the sounding segment on the rail above.
 
-   Same ground as `MovementMap`'s `__bond`, and that shared token is the whole
+   Same ground as `SegmentMap`'s `__bond`, and that shared token is the whole
    mechanism: two panels in one colour, joined along the seam by the rail's
    connector, read as ONE object, and once they do, the register no longer has
-   to reprint the movement heading the rail already set. `--bond-ground` is
+   to reprint the segment heading the rail already set. `--bond-ground` is
    published by the frame on the band's region (`SurroundFrame.scss`) so both
    modules read one value and neither can drift a few percent away from it.
 
@@ -184,7 +184,7 @@
 }
 
 /* NOTHING IS SOUNDING (design wave 9) — the tuning and the walk-on before the
-   first movement, and the applause after the last. The bond binds what is
+   first segment, and the applause after the last. The bond binds what is
    sounding; with nothing sounding there is nothing to bind, so this panel goes
    exactly as the rail's does, on the same duration. The register above it is
    blank in that state, and a lit panel under a blank register would be the frame
@@ -195,7 +195,7 @@
 
 /* HALF EACH, and equally — `flex: 1 1 50%` with `min-width: 0`, so a long
    unbroken word in one zone can never take width from the other. The unsplit
-   band (a piece with no movements) renders ONE zone, which then takes the whole
+   band (a piece with no segments) renders ONE zone, which then takes the whole
    width by the same rule.
    Since design wave 7 it also carries `position: relative`, which is what puts
    its text ABOVE the bond's panel: the panel is out of flow and positioned, and
@@ -251,7 +251,7 @@
 
 /* ---------------------------------------------------------------------------
    THE NOW HEADER — what is sounding, named.
-   NOT part of the dissolve: it changes on a movement boundary, which the rule
+   NOT part of the dissolve: it changes on a segment boundary, which the rule
    above has already shown the viewer. Fading it with the note beneath it would
    make an ordinary twenty-second rotation look like the piece had moved on.
    --------------------------------------------------------------------------- */
@@ -262,7 +262,7 @@
   min-width: 0;
 }
 
-/* The movement's own voice: the display face, as the movement map sets it. One
+/* The segment's own voice: the display face, as the segment map sets it. One
    line, ellipsized — this is a header, and a header that wraps stops being one.
    (The map's headings wrap because a name has to survive there; here the same
    name is already legible six inches above.) */
@@ -286,10 +286,10 @@
 }
 
 /* The translation, in the annotation face — the same gloss, in the same voice,
-   as the movement map's sub-line. Two surfaces, one register: a viewer who
+   as the segment map's sub-line. Two surfaces, one register: a viewer who
    learns that sans means "translation" on the rule reads it the same way here.
    It is the first thing to go when the band is short (see the container query
-   at the foot of this file): the movement's NAME is the header's job, and the
+   at the foot of this file): the segment's NAME is the header's job, and the
    gloss is already on the rule above. */
 .surround-cue-ticker__now-translation {
   display: none;
@@ -391,11 +391,11 @@
    reserve and a line-clamp count for the note. They are gone: the note's box is
    the zone's leftover run and the type is fitted to the text by measurement
    (`../fit.js`, and the head of this file). What remains is a genuine LAYOUT
-   decision that no fit can make — whether the NOW header prints the movement's
+   decision that no fit can make — whether the NOW header prints the segment's
    translation under its name at all.
 
    It is the first thing to go when the band is short, and for an editorial
-   reason rather than an arithmetic one: the movement's NAME is the header's job,
+   reason rather than an arithmetic one: the segment's NAME is the header's job,
    and the gloss on its tempo term is already set on the rule directly above. A
    band with room prints both; a band without prints the one that matters. 88px
    of ticker content is where the band stops being short — measured against the
@@ -403,7 +403,7 @@
    113.2px and 232.0px, so the 960x540 root is the one below it.
 
    (It only ever applies at all where `band.nowHeading` resolves on — the shipped
-   default leaves the header off entirely, because the rail names the movement
+   default leaves the header off entirely, because the rail names the segment
    and the bond points at it.)
    --------------------------------------------------------------------------- */
 @container ticker (min-height: 88px) {
@@ -416,10 +416,10 @@
 /* Reduced motion: NOTHING in this band moves. Review finding I1 — this block
    used to list only the text, leaving the bond's panel sliding for 420ms and
    the registers' cross-fade playing while the RAIL's half of the same shape
-   (correctly guarded in MovementMap.scss) jumped to the new side in one frame.
+   (correctly guarded in SegmentMap.scss) jumped to the new side in one frame.
    The "one shape" visibly tore in half for the length of the slide, which is
    the exact opposite of what the guard exists for. The bond is STATE, not
-   motion: it still moves to the sounding movement and to the configured side,
+   motion: it still moves to the sounding segment and to the configured side,
    it simply gets there in one frame, on both halves at once. */
 @media (prefers-reduced-motion: reduce) {
   .surround-cue-ticker__text,

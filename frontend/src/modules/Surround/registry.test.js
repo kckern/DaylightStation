@@ -20,10 +20,10 @@ describe('surround module registry', () => {
   });
 
   it('round-trips register / has / get', () => {
-    registerSurroundModule('movement-map', Dummy);
+    registerSurroundModule('segment-map', Dummy);
     const registry = getSurroundRegistry();
-    expect(registry.has('movement-map')).toBe(true);
-    expect(registry.get('movement-map')).toBe(Dummy);
+    expect(registry.has('segment-map')).toBe(true);
+    expect(registry.get('segment-map')).toBe(Dummy);
   });
 
   it('returns null (not undefined) for an unknown module and does not throw', () => {
@@ -43,9 +43,9 @@ describe('surround module registry', () => {
   });
 
   it('lists registered module names', () => {
-    registerSurroundModule('movement-map', Dummy);
+    registerSurroundModule('segment-map', Dummy);
     registerSurroundModule('cue-ticker', Other);
-    expect(getSurroundRegistry().list().sort()).toEqual(['cue-ticker', 'movement-map']);
+    expect(getSurroundRegistry().list().sort()).toEqual(['cue-ticker', 'segment-map']);
   });
 
   it('is a separate instance from the screen widget registry', () => {
@@ -53,9 +53,9 @@ describe('surround module registry', () => {
   });
 
   it('does not leak surround modules into the screen widget registry', () => {
-    registerSurroundModule('movement-map', Dummy);
-    expect(getWidgetRegistry().has('movement-map')).toBe(false);
-    expect(getWidgetRegistry().get('movement-map')).toBeNull();
+    registerSurroundModule('segment-map', Dummy);
+    expect(getWidgetRegistry().has('segment-map')).toBe(false);
+    expect(getWidgetRegistry().get('segment-map')).toBeNull();
   });
 
   it('does not pick up screen widgets registered on the shared screen registry', () => {
@@ -100,7 +100,21 @@ describe('surround builtins', () => {
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
         'composer-card', 'country-map', 'cue-ticker', 'movement-map',
-        'place-carousel', 'work-placard',
+        'place-carousel', 'segment-map', 'work-placard',
       ]);
+  });
+
+  // The definition YAML in the data volume is hand-authored and names the rail
+  // module. `movement-map` was that name until the vocabulary was unified, so
+  // it has to keep resolving — to the SAME component, not a stub — or an
+  // unmigrated `_surrounds/*.yml` renders an empty region and warns
+  // `surround.module.missing` instead of drawing the rail.
+  it('resolves the legacy movement-map name to the same component as segment-map', async () => {
+    const builtins = await import('./builtins.js');
+    builtins.registerSurroundBuiltins();
+    const registry = getSurroundRegistry();
+    expect(builtins.LEGACY_MODULE_ALIASES['movement-map']).toBe('segment-map');
+    expect(registry.get('movement-map')).toBe(registry.get('segment-map'));
+    expect(registry.getMeta('movement-map')).toEqual(registry.getMeta('segment-map'));
   });
 });

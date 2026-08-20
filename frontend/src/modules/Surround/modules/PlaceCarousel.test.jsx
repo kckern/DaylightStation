@@ -91,7 +91,7 @@ describe('PlaceCarousel — registration', () => {
     // Alongside, not instead of, everything already there — including the
     // standalone `country-map`, which stays registered for definitions that
     // want a bare map in a region of its own.
-    for (const name of ['composer-card', 'country-map', 'cue-ticker', 'movement-map', 'work-placard']) {
+    for (const name of ['composer-card', 'country-map', 'cue-ticker', 'segment-map', 'work-placard']) {
       expect(getSurroundRegistry().has(name)).toBe(true);
     }
   });
