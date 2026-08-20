@@ -382,4 +382,33 @@ describe('office game chrome', () => {
     const { container } = render(<PianoVisualizer />);
     expect(container.querySelector('.office-game-chrome')).toBeNull();
   });
+
+  // A `replace` game roots itself `position: absolute; inset: 0` (see
+  // PianoChessGame.scss), so its containing block decides how much room it
+  // thinks it has. With the game as a direct child of `.tetris-fullscreen`, that
+  // block was the WHOLE 720px wrapper — the chrome's 52px strip included — and
+  // the header printed straight over the eighth rank of the chessboard.
+  //
+  // The stage is the fix and it is structural, not cosmetic: it is the only
+  // positioned box between the two, so `inset: 0` resolves to the space the
+  // chrome has already given back. Nothing here can be asserted from geometry
+  // (jsdom has no layout), so the nesting itself is the contract.
+  it('puts the game in a stage BELOW the chrome, never in the chrome’s own box', () => {
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { container } = render(<PianoVisualizer />);
+    const wrapper = container.querySelector('.tetris-fullscreen');
+    const chrome = wrapper.querySelector('.office-game-chrome');
+    const stage = wrapper.querySelector('.tetris-fullscreen__stage');
+
+    expect(stage).toBeTruthy();
+    // Siblings in a flex column: the chrome takes its strip, the stage takes
+    // the rest. If the chrome were inside the stage they would share a box
+    // again and the overlap would be back.
+    expect(stage.parentElement).toBe(wrapper);
+    expect(stage.contains(chrome)).toBe(false);
+    // Order matters — the chrome is the strip at the top.
+    expect(chrome.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // And the game must actually be inside the stage, not beside it.
+    expect(stage.childElementCount).toBeGreaterThan(0);
+  });
 });

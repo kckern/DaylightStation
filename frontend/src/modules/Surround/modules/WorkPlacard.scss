@@ -1,0 +1,83 @@
+// frontend/src/modules/Surround/modules/WorkPlacard.scss
+//
+// ArtMode's "music plaque" material (dark stone over the brass texture, engraved
+// light text) recut as the work's museum plate. Deliberately recessive: the
+// plate must never compete with the video it is pinned to. Brass belongs to the
+// composer in the rail — this plate is the work's, in silver on stone.
+//
+// It FLOATS now (design wave 2): the frame positions it straddling the video's
+// top edge, content-width, with the drop shadow that makes it read as an object
+// ON the picture. Nothing about that geometry lives here — the plate only has to
+// be a plate, and stay narrow enough to be one (the padding below is what keeps
+// a short title from reading as a stripe).
+// THE TITLE LEADS (design wave 4). "When I walk in, I want it to be clear we're
+// playing the Violin Concerto in E major" — the plate is the headline of the
+// whole screen, so the title carries display weight and the plate grows to hold
+// it. Still content-width, still centred, still straddling: the frame's cap
+// (86% of the measured video) keeps it a plate rather than a band.
+.surround-work-placard {
+  padding: 0.75rem 2rem 0.85rem;
+  text-align: center;
+  background-color: #18181a;
+  background-image:
+    linear-gradient(rgba(20, 20, 23, 0.88), rgba(20, 20, 23, 0.88)),
+    url('/api/v1/static/img/ui/plaque/brass.jpg'),
+    linear-gradient(180deg, #2c2c31 0%, #3a3a40 36%, #1d1d20 100%);
+  background-size: cover, cover, cover;
+  background-position: center;
+  box-shadow:
+    inset 0 1px 0 rgba(180, 184, 196, 0.28),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.7);
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+}
+
+/* 2.05rem (33px at the kiosk's root size), up from 1.5rem. Judged in the
+   headless harness at both 1920x1080 and 1280x720 against the longest shipped
+   title: at this size the work reads from across the room and is unmistakably
+   the loudest type in the frame — louder than the composer's brass, which is
+   right, because the plate names what is SOUNDING. The nowrap+ellipsis below
+   stays as the guard for a title nothing could set on one line at the cap. */
+.surround-work-placard__title {
+  margin: 0;
+  font-size: 2.05rem;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.12;
+  color: #b9bcc6;                          /* engraved silver */
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The meta line stays SMALL beneath — the provenance, not the headline. With
+   the authored `premiered` shortened to a piece fact ("Published Amsterdam,
+   1725") the whole line now sets inside the plate's cap without ellipsis; the
+   nowrap+ellipsis is kept only as the guard against a future long authoring. */
+.surround-work-placard__meta {
+  margin: 0.25rem 0 0;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-caps: small-caps;
+  color: #8e9097;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* THE INTERPUNCT'S AIR. The mark divides three provenance facts on one engraved
+   line, and a divider set tight against the words it divides reads as
+   punctuation inside a phrase rather than as a separator between claims. The
+   space is an `em` — a fraction of this line's own type — so it holds at every
+   screen in the fleet, which three space glyphs joined in the JSX did not: HTML
+   collapsed them to a single space, and that space's width was whatever the
+   face happened to make it. */
+.surround-work-placard__sep {
+  margin: 0 0.7em;
+  /* Slightly quieter than the facts either side: the eye should read the words
+     and merely register the mark. */
+  opacity: 0.65;
+}

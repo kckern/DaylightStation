@@ -68,6 +68,22 @@ function MenuBackConsumerBridge({ consumer }) {
   return null;
 }
 
+// A menuId is either a LEGACY MENU KEY (`music`, `tv` — resolved under
+// `api/v1/list/watchlist/…`) or a SOURCE-PREFIXED CONTENT ID (`plex:663144`,
+// `menu:music` — resolved under `api/v1/list/<source>/<id>`). Menu.jsx picks
+// the endpoint from the SHAPE it is handed: a bare string always means the
+// watchlist key, an object with `contentId` means the content id.
+//
+// Everything that mints a content-id menuId — `?list=`/`?open=` (see
+// `toContentId` in parseAutoplayParams), NFC triggers, WS dispatch — was
+// handing the string form, so `?list=plex:663144` asked the backend for the
+// watchlist literally named "plex:663144". That returns 200 with `items: []`,
+// which renders as an empty menu: the trigger looks like it did nothing.
+// Colons cannot appear in a watchlist key, so the shape is unambiguous.
+const toMenuRoot = (menuId) => (
+  typeof menuId === 'string' && menuId.includes(':') ? { contentId: menuId } : menuId
+);
+
 export function ScreenActionHandler({ actions = {}, inputType = null }) {
   const { showOverlay, dismissOverlay, hasOverlay, escapeInterceptorRef } = useScreenOverlay();
   const pip = usePip();
@@ -130,7 +146,15 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
     currentMenuRef.current = menuId;
     const menuTimeout = actions?.menu?.timeout ?? 0;
-    showOverlay(MenuStack, { rootMenu: menuId, MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef }, { priority: 'high' });
+    // `ownsNavStack`: a MenuStack overlay RENDERS the shared MenuNavigation
+    // stack, so for as long as it is up it is the stack's only renderer and the
+    // screen's own menu widget yields (MenuWidget). Without it, a selection made
+    // here mounted a Player in BOTH — two unmuted videos in sync.
+    showOverlay(
+      MenuStack,
+      { rootMenu: toMenuRoot(menuId), MENU_TIMEOUT: menuTimeout, playerRef: navPlayerRef },
+      { priority: 'high', ownsNavStack: true },
+    );
   }, [showOverlay, dismissOverlay, actions]);
 
   // --- Media play/queue ---
@@ -212,11 +236,11 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
       logger().debug('playback.secondary-fallback', { secondary: payload.secondary.action });
       const { action, payload: secPayload } = payload.secondary;
       if (action === 'media:queue') {
-        showOverlay(Player, { queue: { contentId: secPayload.contentId }, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { queue: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'media:play') {
-        showOverlay(Player, { play: secPayload.contentId, clear: () => dismissOverlay() }, { chrome: 'media' });
+        showOverlay(Player, { play: { contentId: secPayload.contentId, ...secPayload }, clear: () => dismissOverlay() }, { chrome: 'media' });
       } else if (action === 'menu:open') {
-        showOverlay(MenuStack, { rootMenu: secPayload.menuId, playerRef: navPlayerRef });
+        showOverlay(MenuStack, { rootMenu: toMenuRoot(secPayload.menuId), playerRef: navPlayerRef }, { ownsNavStack: true });
       }
       return;
     }

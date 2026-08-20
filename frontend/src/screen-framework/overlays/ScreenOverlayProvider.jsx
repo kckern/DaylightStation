@@ -159,15 +159,24 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
     escapeInterceptorRef.current = null;
   }, []);
 
+  // `ownsNavStack` (fullscreen only): this overlay RENDERS the shared
+  // MenuNavigation stack — it is a MenuStack. The nav stack is screen-wide
+  // state with exactly one legitimate renderer at a time, and the screen's own
+  // menu widget renders it too; both reading the same stack meant a menu
+  // selection mounted the Player TWICE (two unmuted videos in sync, two
+  // transcode sessions). Declaring ownership here is what lets the widget yield
+  // — see MenuWidget. Overlays that do NOT render the nav stack (a cast Player,
+  // an ArtMode scene, an app) leave it unclaimed, so the widget keeps whatever
+  // it was showing underneath them, exactly as before.
   const showOverlay = useCallback((Component, props = {}, options = {}) => {
-    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000, chrome = 'back' } = options;
+    const { mode = 'fullscreen', position = 'top-right', priority, timeout = 3000, chrome = 'back', ownsNavStack = false } = options;
 
     if (mode === 'fullscreen') {
       setFullscreen((current) => {
         if (current && priority !== 'high') {
           return current;
         }
-        return { Component, props, priority, chrome };
+        return { Component, props, priority, chrome, ownsNavStack };
       });
     } else if (mode === 'pip') {
       setPip({ Component, props, position });
@@ -194,6 +203,10 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
   // hasOverlay intentionally reflects ONLY fullscreen state — pip is non-blocking
   // and must not release the menu-suppression gate or report as a blocking overlay.
   const hasOverlay = fullscreen !== null;
+
+  // True only while the mounted fullscreen overlay is the nav stack's renderer.
+  // Read by the screen's menu widget, which yields the stack for the duration.
+  const overlayOwnsNavStack = fullscreen?.ownsNavStack === true;
 
   // Emit on the ActionBus when a fullscreen overlay first mounts.
   // Used by useInitialActionGate to release the menu-flash suppression
@@ -222,7 +235,7 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
   );
 
   return (
-    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
+    <ScreenOverlayContext.Provider value={{ showOverlay, dismissOverlay, hasOverlay, overlayOwnsNavStack, registerEscapeInterceptor, unregisterEscapeInterceptor, escapeInterceptorRef }}>
       {inputType === 'touch' ? (
         // Touch screens get the shell wrapping EVERYTHING, not just a fullscreen
         // overlay: MenuStack pushes the Player straight onto the nav stack (no
@@ -255,7 +268,7 @@ export function ScreenOverlayProvider({ children, inputType = null }) {
 export function useScreenOverlay() {
   const ctx = useContext(ScreenOverlayContext);
   if (!ctx) {
-    return { showOverlay: () => {}, dismissOverlay: () => {}, hasOverlay: false };
+    return { showOverlay: () => {}, dismissOverlay: () => {}, hasOverlay: false, overlayOwnsNavStack: false };
   }
   return ctx;
 }

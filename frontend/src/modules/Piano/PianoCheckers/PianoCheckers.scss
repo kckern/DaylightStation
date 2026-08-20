@@ -30,6 +30,14 @@
      axes rather than two different-sized things. */
   --ck-rank-rail: 3.6rem;
   --ck-rank-gap: 0.5rem;
+  /* The file rail's THICKNESS, and the same number as the rank rail's — one rail
+     seen on two axes, exactly as the note above says of the cards themselves.
+     It exists as a token because the board's size is now solved from both axes
+     (see `--ck-square`), and that arithmetic needs the height this row will
+     take. Declaring it and then MAKING the row that tall keeps the token
+     authoritative rather than an estimate of a content-sized row: the row can no
+     longer quietly grow and push the board past the bottom of its slot. */
+  --ck-file-rail: var(--ck-rank-rail);
   /* The board's wooden frame, and the brass lip drawn just inside it. The
      playing squares start inside BOTH, so a rail inset by only the rank rail
      still sits a frame-and-lip to the left of the files it names. */
@@ -90,8 +98,36 @@
      where the player is already looking. On a board you move ACROSS, the
      addresses belong under it, where a hand reading along the rank finds them
      without covering the pieces. */
-  grid-template-columns: var(--ck-rank-rail) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
+
+  /* ---- the board is solved from BOTH axes, not just width ----------------
+     The board used to be `width: 100%` of a `1fr` column with `aspect-ratio: 1`,
+     so its height was whatever its width happened to be and the height of the
+     slot was never consulted. On the office screen — where the game chrome takes
+     a strip off the top — that made this stage 543px tall inside a 483px slot,
+     and the file rail printed over the status line beneath it.
+     Both tracks are now the SAME computed square, so the board is square by
+     construction rather than by an aspect-ratio that only one axis respected,
+     and the rails still line up with it because they share those tracks. The
+     stage becomes a size container so `--ck-square` can measure the slot; that
+     is safe because both of its own dimensions are definite (`width` below,
+     `height: 100%`), which is what size containment requires. */
+  container-type: size;
+  height: 100%;
+  /* Without this the grid's automatic minimum size (`min-height: auto`) is its
+     content, which silently outranks `height: 100%` — the stage went on being
+     543px tall and the height constraint looked like it was being ignored. */
+  min-height: 0;
+  --ck-square: min(
+    calc(100cqw - var(--ck-rank-rail) - var(--ck-rank-gap)),
+    calc(100cqh - var(--ck-file-rail) - var(--ck-rank-gap))
+  );
+  grid-template-columns: var(--ck-rank-rail) var(--ck-square);
+  grid-template-rows: var(--ck-square) var(--ck-file-rail);
+  /* The solved square is usually smaller than the width the stage was given, so
+     centre the whole instrument face in what is left rather than letting it sit
+     against the rank rail's edge. */
+  justify-content: center;
+  align-content: center;
   align-items: stretch;
   gap: var(--ck-rank-gap);
   width: min(100%, var(--pg-board-max));
@@ -103,6 +139,10 @@
 .checkers-stage__file-rail {
   grid-column: 2;
   grid-row: 2;
+  /* Exactly the height the board's arithmetic budgeted for it — see
+     `--ck-file-rail`. A content-sized row here would put the token and the
+     reality out of step, which is the drift that overflowed the slot. */
+  height: var(--ck-file-rail);
   padding-inline: var(--ck-rim);
   box-sizing: border-box;
 }

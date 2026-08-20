@@ -1,0 +1,224 @@
+/**
+ * EraTimeline — the era slide, engraved.
+ *
+ * Same language as `CountryMap` and for the same reason: it sits in the SAME
+ * slot in the place carousel, on the same dark mat, and a slide that changed
+ * its drawing conventions between dissolves would read as a different
+ * publication rather than as the next plate in one programme. So: ink hairlines
+ * on the mat's ground, no solid areas of colour, letterspaced small caps of the
+ * display face for every name, and brass reserved for the one thing the
+ * programme asserts — where this piece falls.
+ *
+ * Nothing here is a bar chart. The rule is a rule; the eras are divisions of it
+ * marked by weight, not by fill; the joins are barlines. Progress is not being
+ * shown, a POSITION is.
+ *
+ * Every dimension is in `em`/`rem` or a percentage, and the percentages come
+ * from the component (they are the era dates, which are DATA). The one thing
+ * this sheet must not do is carry a year.
+ */
+
+/* The frame's shared literals - see `_tokens.scss`. */
+@use "../tokens" as *;
+
+.surround-era-timeline {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  /* An INLINE-size container, so the note below can be set against the plate it
+     was actually given. `inline-size` rather than `size` because the width is
+     the safe axis here: it comes from the mat (100% of a 5:3 box the carousel
+     owns), while the height is this box's own business. The era LABELS
+     deliberately do NOT scale with it — the 0.72rem floor is a legibility law,
+     and the component drops a label rather than shrinking one. */
+  container-type: inline-size;
+  container-name: era-plate;
+  padding: 0.7rem 0.9rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  overflow: hidden;
+  /* The mat sets `line-height: 0` so a contained picture leaves no gap beneath
+     it; this slide is TYPE, so it takes its own leading back. */
+  line-height: normal;
+  text-align: left;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  color: var(--ink, #2a1d07);
+}
+
+/* The drawing: a marker row, the rule, the names. Three fixed rows, because the
+   marker and the labels are absolutely positioned inside them and an auto row
+   would collapse to nothing. */
+.surround-era-timeline__scale {
+  flex: 0 0 auto;
+  position: relative;
+  width: 100%;
+}
+
+.surround-era-timeline__marker-row {
+  position: relative;
+  height: 1.15rem;
+}
+
+/* The year, in brass, over its marker. The one bright mark on the drawing —
+   the same restraint the map keeps, where only the city's star is brass.
+   `translateX(-50%)` centres it on the marker; at the very ends of the rule it
+   would hang off the plate, so the box is allowed to sit inside its own
+   padding rather than being clamped (a year at 1550 or 1910 is a corpus we do
+   not have, and inventing a clamp for it would be a rule with no case). */
+.surround-era-timeline__year {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-numeric: lining-nums;
+  color: var(--brass, #c79a3e);
+}
+
+/* The rule itself. It is the measured box (the component observes it), so it
+   must be exactly as wide as the coordinate space the percentages are computed
+   in — no padding, no border, no margin on this element. */
+.surround-era-timeline__rule {
+  position: relative;
+  width: 100%;
+  height: 6px;
+}
+
+/* An era band. `--ink-soft` at the lane's own weight, the same quiet the
+   movement map's yet-to-come track is drawn at: the un-lit eras are CONTEXT,
+   and context that cannot be seen is not context. */
+.surround-era-timeline__band {
+  position: absolute;
+  top: 2px;
+  height: 2px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;
+}
+
+/* The subject era(s): full parchment ink at double the weight, drawn from the
+   top of the lane like the movement map's active fill. Brightened, never
+   filled with a colour of its own — the ladder is weight and value, so a
+   period naming two eras lights two bands and they read as one stretch of line
+   rather than as two different marks. */
+.surround-era-timeline__band--subject {
+  top: 0;
+  height: 6px;
+  background: var(--ink, #2a1d07);
+  opacity: 1;
+}
+
+/* The join between two eras: one quiet barline, exactly the movement map's. */
+.surround-era-timeline__join {
+  position: absolute;
+  left: 0;
+  top: -3px;
+  width: 1px;
+  height: 12px;
+  background: var(--ink-soft, #6b6152);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Where the piece falls: one brass hairline through the rule, unlit. The same
+   mark the movement map's playhead is, at the scale of centuries — and for the
+   same reason it is a hairline rather than a dot: this is a barline in a line
+   of history, not a pin in a chart. */
+.surround-era-timeline__marker {
+  position: absolute;
+  top: -5px;
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  background: var(--brass-lit, #f6e3a0);
+  pointer-events: none;
+}
+
+/* The names. One row, absolutely positioned from the component's own fitting —
+   which DROPS a label rather than shrinking it below the 0.72rem floor, so
+   there is no `font-size` here smaller than that number and no ellipsis: a
+   label either fits at full size or it is not in the DOM. */
+.surround-era-timeline__labels {
+  position: relative;
+  height: 1.15rem;
+  margin-top: 0.42rem;
+}
+
+.surround-era-timeline__label {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--label-floor, #{$label-floor});   /* the ten-foot floor itself, scaled to this root */
+  line-height: 1.15;
+  text-transform: uppercase;
+  color: var(--ink-soft, #6b6152);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  opacity: 0.86;
+}
+
+/* The subject's name, one step up — the caption of the whole drawing, exactly
+   as the map's subject country is. Same two levers as the map: weight and
+   value, never size. */
+.surround-era-timeline__label--subject {
+  color: var(--ink, #2a1d07);
+  font-weight: 600;
+  opacity: 1;
+}
+
+/* The period note. The caption's register — body Garamond, italic, quiet —
+   because that is what it is: a sentence explaining the drawing above it. It
+   sits INSIDE the plate rather than in the carousel's caption slot, and that is
+   a deliberate choice: the caption slot is a two-line reserve shared with the
+   photograph and the maps, and these notes run to three and four lines. Putting
+   them there would have meant either clipping them or growing the reserve for
+   every slide — and the slot's fixed size is what makes the dissolve a
+   dissolve. Here, the 5:3 plate has the room, and the note is part of the plate
+   rather than a label under it.
+   The reserve/clamp split is the wave-5 law: the `<p>` owns the box, the inner
+   span owns the truncation. */
+.surround-era-timeline__note {
+  flex: 0 0 auto;
+  margin: 0;
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  min-height: 0;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  /* TYPE THAT FILLS ITS ROOM, on the axis that decides how many lines a
+     sentence takes. Measured against the real notes: the Eroica's runs to 123
+     characters, which is four tight lines at a flat 0.86rem on the 270px plate
+     a 960x540 rail gives — right on the clamp, i.e. one authored word away from
+     being cut. At the floor it is three comfortable lines there, and 0.95rem on
+     the 600px plate a 1080p rail gives. */
+  font-size: clamp(0.76rem, 3.6cqw, 0.95rem);
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.32;
+  max-height: 5.28em;              /* 4 lines at this line-height */
+  text-align: center;
+  text-wrap: balance;              /* progressive; wraps as before without it */
+  color: var(--ink, #2a1d07);
+  opacity: 0.92;
+}
+
+.surround-era-timeline__note-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Nothing here moves. The slide's own arrival is the carousel's dissolve, and
+   the rule is scenery — declared anyway so a future transition cannot be added
+   without also answering for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-era-timeline__marker,
+  .surround-era-timeline__band {
+    transition: none;
+  }
+}

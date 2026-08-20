@@ -47,7 +47,13 @@ export default function NoteLauncher({
               <span className="note-launcher__player-avatar">
                 <ProfileAvatar id={playerId} name={playerName} size={96} />
               </span>
-              <span><b>{playerName}</b><i>top key to change</i></span>
+              {/* Its own stack. `__player` is a column, but that only reaches
+                  the no-player case — once an avatar sits alongside, the name
+                  and its hint are nested a level deeper and ran together as
+                  "Felixtop key to change". */}
+              <span className="note-launcher__player-id">
+                <b>{playerName}</b><i>top key to change</i>
+              </span>
             </span>
           ) : <b>Nobody yet — play the top key</b>}
         </span>

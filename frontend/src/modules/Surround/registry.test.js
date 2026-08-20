@@ -69,12 +69,26 @@ describe('surround builtins', () => {
   beforeEach(() => { resetSurroundRegistry(); });
   afterEach(() => { resetSurroundRegistry(); });
 
-  it('imports without throwing and registers only known builtin names', async () => {
+  // AN EXACT SET, IN BOTH DIRECTIONS. This asserted subset membership — every
+  // registered name is a known builtin — which is the direction that cannot
+  // fail: delete a registration from `registerSurroundBuiltins` and the set
+  // only shrinks, so both registry specs stayed green while the frame lost a
+  // module. The declaration and the registrations have to be the same set.
+  it('registers exactly the builtin names it declares', async () => {
     const builtins = await import('./builtins.js');
     builtins.registerSurroundBuiltins();
-    const registered = getSurroundRegistry().list();
-    registered.forEach((name) => {
-      expect(builtins.SURROUND_BUILTIN_MODULES).toContain(name);
+    expect(getSurroundRegistry().list().sort())
+      .toEqual([...builtins.SURROUND_BUILTIN_MODULES].sort());
+  });
+
+  it('gives every builtin a real component and its declared regions', async () => {
+    const builtins = await import('./builtins.js');
+    builtins.registerSurroundBuiltins();
+    const registry = getSurroundRegistry();
+    builtins.SURROUND_BUILTIN_MODULES.forEach((name) => {
+      expect(typeof registry.get(name), `${name} resolves to no component`).toBe('function');
+      const slots = registry.getMeta(name)?.regions;
+      expect(Array.isArray(slots) && slots.length > 0, `${name} declares no regions`).toBe(true);
     });
   });
 
@@ -84,6 +98,9 @@ describe('surround builtins', () => {
   it('declares the modules the frame resolves by name', async () => {
     const { SURROUND_BUILTIN_MODULES } = await import('./builtins.js');
     expect([...SURROUND_BUILTIN_MODULES].sort())
-      .toEqual(['composer-card', 'country-map', 'cue-ticker', 'movement-map']);
+      .toEqual([
+        'composer-card', 'country-map', 'cue-ticker', 'movement-map',
+        'place-carousel', 'work-placard',
+      ]);
   });
 });

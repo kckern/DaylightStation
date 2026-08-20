@@ -4,17 +4,20 @@
 // locked to 16:9 on the left and printed programme panels around it.
 //
 // Layout geometry is a deliberate COPY of FitnessPlayerFrame's shell (main column
-// + rail + footer + inert overlay) in a `surround-frame__*` namespace. It is not
+// + rail + footer) in a `surround-frame__*` namespace. It is not
 // imported across the module boundary: the fitness frame is owned by the fitness
 // player and free to change for reasons that have nothing to do with a surround.
 //
-// Two rules make this frame different from that one:
+// Three rules make this frame different from that one:
 //
 //  1. The media box locks 16:9 INLINE (aspect-ratio + max-width + max-height), so
 //     the video letterboxes on ink and can never be distorted by an outer
 //     stylesheet. This is the quality floor of the whole feature.
 //  2. The footer is sized to the MEASURED media-box width, so it reads as that
 //     video's timeline rather than as page furniture.
+//  3. The video is TOP-anchored and the slack all falls to the bottom band. The
+//     work placard is not a band above it at all: it floats, content-width,
+//     straddling the video's top edge like a plate pinned over a painting.
 //
 // `PanelRenderer` is deliberately not used to resolve regions: it renders static
 // YAML props, and every module here is driven by a 10 Hz clock.
@@ -36,8 +39,12 @@
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
-import getLogger from '../../lib/logging/Logger.js';
+import { surroundLogger } from './moduleKit.js';
 import { getSurroundRegistry } from './registry.js';
+import {
+  ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
+} from './entrance.js';
+import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from './fit.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -46,22 +53,30 @@ const DEFAULT_RAIL_WIDTH = '20%';
 const NO_BOX = Object.freeze({ display: 'contents' });
 const DEFAULT_FOOTER_FLOOR = 90;
 
-/** Lazy module-level child. Used only when no host logger was threaded down. */
-let moduleLogger = null;
-function fallbackLogger() {
-  if (!moduleLogger) moduleLogger = getLogger().child({ app: 'surround', component: 'surround-frame' });
-  return moduleLogger;
+/**
+ * A region's declared `height`, turned into flex sizing.
+ *
+ *  * `fill`       — claim the band's slack. The footer now GROWS into the space
+ *                   the floating placard freed (see the SCSS), and something has
+ *                   to absorb it; the sidecar already says which region that is
+ *                   (`cue-ticker: height: fill`), so the frame honours it rather
+ *                   than hard-coding "the last one wins".
+ *  * bottom, Npx  — a FLOOR, not a cap. Movement names may wrap to two lines and
+ *                   the band has to grow to fit them; a fixed height would clip
+ *                   the second line against `overflow: hidden`.
+ *  * elsewhere    — exact, as before. The rail's country-map is sized against a
+ *                   rail whose regions are `height: 100%`; a floor there would
+ *                   let that percentage win and swallow the whole rail.
+ */
+function regionStyle(region) {
+  if (region?.height === 'fill') return { flex: '1 1 auto', minHeight: 0 };
+  const h = Number(region?.height);
+  if (!Number.isFinite(h) || h <= 0) return undefined;
+  if (region.slot === 'bottom') return { minHeight: `${h}px`, flex: '0 0 auto' };
+  return { height: `${h}px`, flex: `0 0 ${h}px` };
 }
 
-/**
- * Resolve the logger to use. A host-supplied logger is re-childed so the event
- * carries this component, while inheriting the host's `sessionLog` (durability)
- * and `contentId`. Plain mock loggers with no `.child` are used as-is.
- */
-function childLogger(logger, component) {
-  if (!logger) return fallbackLogger();
-  return logger.child?.({ app: 'surround', component }) ?? logger;
-}
+/** Lazy module-level child. Used only when no host logger was threaded down. */
 
 /** A region slot in the definition may be a single object or a list of them. */
 function normalizeRegions(value, slot) {
@@ -117,7 +132,7 @@ export default function SurroundFrame({
   onModuleError = null,
   children = null,
 }) {
-  const log = useMemo(() => childLogger(logger, 'surround-frame'), [logger]);
+  const log = useMemo(() => surroundLogger(logger, 'surround-frame'), [logger]);
 
   // A module that threw takes the frame off for THIS item only; the next
   // contentId gets a fresh attempt because the failure belonged to the old
@@ -134,17 +149,23 @@ export default function SurroundFrame({
   };
 
   const definition = data?.definition ?? null;
-  const railWidth = definition?.regions?.right?.width ?? DEFAULT_RAIL_WIDTH;
+  // `right` is authored as either a single object or a list of modules (e.g.
+  // composer-card + country-map). Width and side both belong to the rail as a
+  // whole, so when it's a list the first entry carries them.
+  const rightDef = definition?.regions?.right;
+  const railFirst = Array.isArray(rightDef) ? rightDef[0] : rightDef;
+  const railWidth = railFirst?.width ?? DEFAULT_RAIL_WIDTH;
+  const railSide = railFirst?.side === 'left' ? 'left' : 'right';
   const footerFloor = Number.isFinite(definition?.collapse?.footerFloor)
     ? definition.collapse.footerFloor
     : DEFAULT_FOOTER_FLOOR;
 
+  const topRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.top, 'top'), [definition]);
   const rightRegions = useMemo(
     () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
   const footerRegions = useMemo(
     () => normalizeRegions(definition?.regions?.bottom, 'bottom'), [definition]);
-  const overlayRegions = useMemo(
-    () => normalizeRegions(definition?.regions?.overlay, 'overlay'), [definition]);
 
   // The module contract is exactly { position, duration, playing, seeking, data,
   // region }. contentId is not a seventh prop — it rides inside `data`, so every
@@ -155,11 +176,28 @@ export default function SurroundFrame({
     return data.contentId === contentId ? data : { ...data, contentId };
   }, [data, contentId]);
 
+  const rootRef = useRef(null);
   const mediaRef = useRef(null);
   const footerRef = useRef(null);
   const [mediaWidth, setMediaWidth] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const footerHeightRef = useRef(0);
+  /**
+   * The frame's OWN width, which is the screen root's — and the only thing in
+   * the frame that knows it. Every ten-foot type floor in the surround is an
+   * ANGULAR claim, and a CSS pixel is not an angle: this fleet's screens are all
+   * large televisions read from across a room, and each lays a different number
+   * of CSS pixels across a panel of much the same physical size, so the same rem
+   * is a different apparent size on each. The floors therefore scale with this
+   * number (`fit.js`), and it is published below as one custom property so that
+   * every stylesheet in the frame reads one measurement rather than restating a
+   * constant that is only right on one screen.
+   *
+   * The ANCHOR until it is measured, never zero: a frame that has not been laid
+   * out yet must paint the number the office screen would get, not the smallest
+   * one in the fleet.
+   */
+  const [labelFloor, setLabelFloor] = useState(LABEL_FLOOR_ANCHOR_PX);
 
   // One observer watching both boxes: the media box drives the footer's width,
   // the footer's own height drives the collapse rule.
@@ -173,6 +211,13 @@ export default function SurroundFrame({
         if (entry.target === mediaRef.current) {
           const w = Number(rect.width) || 0;
           setMediaWidth(w > 0 ? w : null);
+        } else if (entry.target === rootRef.current) {
+          // The screen root's width, which every type floor in the frame scales
+          // by. Measured rather than read from screen config: `ScreenRenderer`
+          // letterboxes a fixed `resolution` box inside whatever viewport the
+          // display has, so the window is the wrong number on the office PC and
+          // a config value is a number nobody re-reads.
+          setLabelFloor(labelFloorPx(Number(rect.width) || 0));
         } else if (entry.target === footerRef.current) {
           const h = Number(rect.height) || 0;
           footerHeightRef.current = h;
@@ -183,6 +228,7 @@ export default function SurroundFrame({
     });
     if (mediaRef.current) observer.observe(mediaRef.current);
     if (footerRef.current) observer.observe(footerRef.current);
+    if (rootRef.current) observer.observe(rootRef.current);
     return () => observer.disconnect();
   }, [enabled, footerFloor, footerRegions.length]);
 
@@ -201,8 +247,8 @@ export default function SurroundFrame({
 
   const registry = getSurroundRegistry();
   const allRegions = useMemo(
-    () => [...rightRegions, ...footerRegions, ...overlayRegions],
-    [rightRegions, footerRegions, overlayRegions],
+    () => [...topRegions, ...rightRegions, ...footerRegions],
+    [topRegions, rightRegions, footerRegions],
   );
   const resolved = useMemo(
     () => new Map(allRegions.map((r) => [r.key, registry.get(r.module)])),
@@ -212,10 +258,27 @@ export default function SurroundFrame({
 
   useEffect(() => {
     allRegions.forEach((region) => {
-      if (resolved.get(region.key)) return;
-      log.warn('surround.module.missing', { contentId, module: region.module, slot: region.slot });
+      if (!resolved.get(region.key)) {
+        log.warn('surround.module.missing', { contentId, module: region.module, slot: region.slot });
+        return;
+      }
+      // THE REGISTRATION'S `regions` META, FINALLY DOING ITS JOB. Every built-in
+      // declares the slots it was designed for (`builtins.js`) — the rail's
+      // carousel is a column, the band's rail is a strip, the placard is a
+      // full-width plate — and until now that declaration was stored, asserted
+      // by a test, and read by nothing. A definition that puts a module in a
+      // slot it was never cut for produces a frame that renders and looks
+      // wrong, which is the hardest kind of authoring mistake to find.
+      // It WARNS AND RENDERS: the surround can never be the reason something
+      // does not play, and a module in an unexpected slot may still be exactly
+      // what an author wanted. It says so once, with both ends named.
+      const slots = registry.getMeta?.(region.module)?.regions;
+      if (!Array.isArray(slots) || slots.includes(region.slot)) return;
+      log.warn('surround.module.misplaced', {
+        contentId, module: region.module, slot: region.slot, declared: slots,
+      });
     });
-  }, [allRegions, resolved, contentId, log]);
+  }, [allRegions, resolved, contentId, log, registry]);
 
   useEffect(() => {
     // The component itself is now mounted for every item, so the pair tracks the
@@ -229,13 +292,91 @@ export default function SurroundFrame({
     return () => { log.debug('surround.frame.unmount', { contentId, surroundId: data?.id ?? null }); };
   }, [enabled, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ENTRANCE — THE ENRICHMENT MOMENT (design wave 5).
+  //
+  // The chrome arrives ~1s after the video, on the first enrichment poll, so
+  // without choreography it POPS in — and so does the video's own resize, from
+  // full-bleed picture to a 16:9 box beside a rail. `--entering` holds all four
+  // moving things in their pre-arrival state for one committed frame; dropping it
+  // lets the CSS transitions play them in as one gesture: the video shrinks out
+  // of the whole frame into its box while the rail slides in from its side, the
+  // band rises and the plate settles down onto the picture.
+  //
+  // It is CLASSES on the root and nothing else: the inactive shell has no
+  // className at all, so no animation state can leak there — the same guarantee
+  // `--rail-left` carries.
+  //
+  // THE VIDEO IS ANIMATED BUT NEVER REMOUNTED. The transform goes on the media
+  // box, which is rendered at the same depth in both states, so React only ever
+  // updates its style. And it is a UNIFORM scale (see `shrinkFrom`), which is the
+  // one kind of size animation that cannot leave 16:9 at any frame of it.
+  const [entered, setEntered] = useState(false);
+  // The over-sized video does not fit the stage while it is shrinking, and the
+  // stage clips. `--arriving` un-clips it, and outlasts the transitions so the
+  // clip never snaps back mid-move.
+  const [arriving, setArriving] = useState(false);
+  const [shrink, setShrink] = useState(null);
+
+  // LAYOUT effect, not a ResizeObserver: the pre-shrink transform has to be in
+  // the SAME committed frame as the box it belongs to, or the first painted
+  // frame shows the video already small and the shrink starts from nowhere. This
+  // runs after the enriched layout exists and before it is painted.
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setShrink(null);
+      return;
+    }
+    const root = rootRef.current;
+    const media = mediaRef.current;
+    if (typeof root?.getBoundingClientRect !== 'function'
+      || typeof media?.getBoundingClientRect !== 'function') return;
+    setShrink(shrinkFrom(root.getBoundingClientRect(), media.getBoundingClientRect()));
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setArriving(false);
+      return undefined;
+    }
+    setArriving(true);
+    const done = setTimeout(() => setArriving(false), ENTER_UNCLIP_MS);
+    return () => clearTimeout(done);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setEntered(false);
+      return undefined;
+    }
+    if (typeof requestAnimationFrame !== 'function') {
+      setEntered(true);           // no rAF (SSR/test env): arrive without the animation
+      return undefined;
+    }
+    // Two frames: the first commits the pre-entrance styles, the second releases
+    // them. Releasing in the same frame they were painted is a no-op transition.
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setEntered(true));
+    });
+    // Safety net. A background tab paints no frames, so rAF may never fire — and
+    // the pre-entrance state is `opacity: 0`. Without this, a frame that mounted
+    // while the kiosk tab was hidden would come back to the foreground with
+    // invisible chrome. Timers are throttled in the background, not stopped.
+    const net = setTimeout(() => setEntered(true), ENTER_TOTAL_MS);
+    return () => {
+      cancelAnimationFrame(first);
+      if (second) cancelAnimationFrame(second);
+      clearTimeout(net);
+    };
+  }, [enabled]);
+
   const visibleFooterRegions = collapsed
     ? footerRegions.filter((r) => r.collapse !== 'first')
     : footerRegions;
 
   const renderRegion = (region) => {
     const Module = resolved.get(region.key);
-    const style = region.height ? { height: `${region.height}px`, flex: `0 0 ${region.height}px` } : undefined;
+    const style = regionStyle(region);
     return (
       <div
         key={region.key}
@@ -260,8 +401,36 @@ export default function SurroundFrame({
     );
   };
 
-  const rootClass = ['surround-frame', collapsed && 'surround-frame--collapsed', className]
-    .filter(Boolean).join(' ');
+  const rootClass = [
+    'surround-frame',
+    railSide === 'left' && 'surround-frame--rail-left',
+    !entered && 'surround-frame--entering',
+    arriving && 'surround-frame--arriving',
+    className,
+  ].filter(Boolean).join(' ');
+
+  // The measured media width, published as a custom property so the SCSS can
+  // size the floating placard AGAINST the video (a plate pinned over a painting
+  // is narrower than the painting) without a magic number in JS. The entrance's
+  // durations ride alongside it, from `entrance.js`, so the stylesheet never
+  // restates a number the choreography's JS also has to know; the shrink's three
+  // measured numbers join them while the frame is still arriving.
+  const rootStyle = enabled
+    ? {
+      ...entranceVars(),
+      ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      // The ten-foot LABEL floor for this root, read by every module's
+      // stylesheet through `var(--label-floor, …)`. One published measurement
+      // beats five copies of `0.72rem`, exactly as `--bond-ground` beat three
+      // copies of a hex.
+      '--label-floor': `${labelFloor}px`,
+      ...(shrink ? {
+        '--enter-media-scale': String(shrink.scale),
+        '--enter-media-dx': `${shrink.dx}px`,
+        '--enter-media-dy': `${shrink.dy}px`,
+      } : null),
+    }
+    : NO_BOX;
 
   // EVERY element on the path down to `children` is rendered in both states, in
   // the same order, so React sees the player at one fixed position for the whole
@@ -270,9 +439,19 @@ export default function SurroundFrame({
     <div
       className={enabled ? rootClass : undefined}
       data-testid={enabled ? 'surround-frame' : undefined}
-      style={enabled ? undefined : NO_BOX}
+      ref={rootRef}
+      style={rootStyle}
     >
       <div className={enabled ? 'surround-frame__main' : undefined} style={enabled ? undefined : NO_BOX}>
+        {/* The placard is FLOATING: still the first child of the main column, but
+            out of flow and centred on the video's top edge (see the SCSS). It
+            carries no inline width any more — a museum plate is content-width,
+            capped against the measured video by `--surround-media-w`. */}
+        {enabled && topRegions.length > 0 && (
+          <div className="surround-frame__header" data-testid="surround-header">
+            {topRegions.map(renderRegion)}
+          </div>
+        )}
         <div className={enabled ? 'surround-frame__stage' : undefined} style={enabled ? undefined : NO_BOX}>
           {/* 16:9 lock lives inline so no outer cascade can stretch the video. */}
           <div
@@ -307,17 +486,6 @@ export default function SurroundFrame({
         >
           {rightRegions.map(renderRegion)}
         </aside>
-      )}
-
-      {/* Reserved for phase-two overlay cues. Inert until something is declared. */}
-      {enabled && (
-        <div
-          className="surround-frame__overlay"
-          data-testid="surround-overlay"
-          style={{ pointerEvents: 'none' }}
-        >
-          {overlayRegions.map(renderRegion)}
-        </div>
       )}
     </div>
   );

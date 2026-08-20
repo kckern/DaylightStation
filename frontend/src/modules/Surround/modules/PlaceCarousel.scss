@@ -1,0 +1,171 @@
+/**
+ * PlaceCarousel — the place, at the foot of the rail.
+ *
+ * One slot, two slides, and the slot never moves. That is the whole layout
+ * problem: a picture swapping for a map is a dissolve only if both are the same
+ * size, and a caption swapping from a sentence to a place name is only a
+ * dissolve if the caption's box does not resize either. So:
+ *
+ *   * both slides are 5:3 — the shipped city photographs' ratio, which is also
+ *     `CountryMap`'s RENDER_W:RENDER_H. Identical geometry BY CONSTRUCTION,
+ *     rather than by two numbers that happen to agree today.
+ *   * the caption has a fixed reserve and centres its line(s) inside it, so the
+ *     two-line sentence and the one-line label occupy the same box.
+ *
+ * The mat is DARK (design wave 4): the frame's `--mat`, near-black warm brown,
+ * with `--mat-edge` as its 1px definition line. Cream paper around a bright
+ * city view was the most distracting mark on the screen — a white border on a
+ * dark wall. Every slide gets the SAME dark mat, which also resolves wave 3's
+ * one asymmetry: the map used to need a paperless ground because parchment ink
+ * on parchment is nothing at all, and near-black is a ground both a photograph
+ * and an engraving can sit on. One mat, one box, one dissolve.
+ */
+
+.surround-place-carousel {
+  height: 100%;
+  padding: 0.8rem 1rem 0.9rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  color: var(--ink, #2a1d07);
+}
+
+.surround-place-carousel__slide {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  opacity: 1;
+}
+
+/* Dissolve THROUGH the dark: the outgoing slide goes fully to the rail's ground
+   before the incoming one exists. The duration is set inline from the shared
+   constant so the stylesheet and the timer cannot drift. */
+.surround-place-carousel__slide--hidden {
+  opacity: 0;
+}
+
+/* The slot every slide is drawn in. ONE box, ONE size, ONE ground — that is the
+   reserve, and wave 4 makes the ground part of it too. Dark mat, dark hairline:
+   a photograph reads as a mounted print and an engraving reads in the rail's
+   own parchment ink over near-black, which is the contrast the ink family was
+   re-mapped for in the first place.
+   `aspect-ratio` on the box rather than on the picture keeps the reserve exact
+   even for the one frame before an image has loaded its intrinsic size. */
+.surround-place-carousel__mat {
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  background: var(--mat, #1d0f11);
+  box-shadow:
+    inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
+    0 1px 3px rgba(0, 0, 0, 0.45);
+  /* The guard, for a rail shorter than a 5:3 plate at its own width (a small
+     kiosk, a definition that pins the region tight). The RATIO gives, not the
+     picture: both slides letterbox themselves inside the mat — `object-fit:
+     contain` for the photograph, `preserveAspectRatio` for the map — so a
+     clamped mat shows a little more paper at the sides and nothing is ever
+     cropped or stretched. Overflowing into the region's `overflow: hidden`,
+     which is the alternative, would crop. */
+  max-height: calc(100% - 3.3rem);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 3px;
+  line-height: 0;
+}
+
+/* The map slides re-declare ONE token and nothing else: the halo colour its
+   labels are stroked against. `CountryMap` cannot derive the ground it is drawn
+   over, and that ground is now the mat rather than the rail. Everything visual
+   about the slot — box, ground, hairline — stays in the shared rule above, so
+   the swap between a photograph and an engraving remains a pure dissolve. */
+.surround-place-carousel__mat--map,
+.surround-place-carousel__mat--city-map {
+  --map-halo: var(--mat, #1d0f11);
+}
+
+/* The era slide is TYPE, not a picture: it fills the plate the same way the map
+   does, but it brings its own leading back (the mat sets `line-height: 0` so a
+   contained picture leaves no gap beneath it) and it needs no halo — nothing on
+   it is drawn over anything else. */
+.surround-place-carousel__era {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* NEVER CROPPED — the rail's standing law. `contain` is belt and braces here:
+   the photograph's own ratio already matches the mat's, so nothing is
+   letterboxed either. */
+.surround-place-carousel__photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  filter: saturate(0.92);
+}
+
+/* The map is an SVG, not a raster: it fills the mat and letterboxes itself
+   inside its own viewBox (`preserveAspectRatio: xMidYMid meet`). The
+   `aspect-ratio` CountryMap sets on itself is overridden here because the MAT
+   owns the geometry in this slot. */
+.surround-place-carousel__map {
+  display: block;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+/* The caption sits BELOW the mat, on the rail ground — the rail's voice, not
+   part of the print. RESERVED: a fixed box, contents centred in it, so the
+   sentence register (two lines) and the label register (one) do not resize the
+   slot between slides. In rem, not em, precisely because the two registers have
+   different font sizes — an em reserve would be two different reserves.
+   WAVE 4: it was hard to read. `--ink-soft` on maroon at 0.86rem is a whisper
+   at ten feet, and the caption is the only thing telling a viewer what they
+   are looking at. Full parchment `--ink` and a size up in both registers; the
+   reserve went 2.6rem -> 2.95rem to hold two lines at the new metrics (and the
+   mat's own `max-height` guard above tracks it). */
+.surround-place-carousel__caption {
+  flex: 0 0 auto;
+  min-height: 2.95rem;
+  max-height: 2.95rem;
+  overflow: hidden;
+  padding-top: 0.4rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.25;
+  color: var(--ink, #2a1d07);
+}
+
+/* An authored sentence: set as prose. Italic survives the size rise — at 1rem
+   it still reads as a caption's register rather than as body copy. */
+.surround-place-carousel__caption--sentence {
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 1rem;
+  font-weight: 500;
+  font-style: italic;
+  text-wrap: balance;              /* progressive; wraps as before without it */
+}
+
+/* A place name: set as a label, in the programme's section-header voice. */
+.surround-place-carousel__caption--label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surround-place-carousel__slide {
+    transition: none !important;
+  }
+}
