@@ -161,7 +161,7 @@ describe('locked panel — which surface renders', () => {
   });
 
   it('unlocked mode still renders the normal browsable home', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     expect(await screen.findByText('Civilization')).toBeInTheDocument();
     expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
   });

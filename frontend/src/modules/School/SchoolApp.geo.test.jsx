@@ -82,7 +82,7 @@ async function openSubject(name) {
 
 describe('SchoolApp geography wiring', () => {
   it('the Civilization shelf shows a Geography tile that opens the geography section', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     // Claim an identity first (mirrors "unclaimed, tapping a face … claims
     // directly" in SchoolApp.test.jsx) — the flow this task wires is meant
     // for a claimed learner.
