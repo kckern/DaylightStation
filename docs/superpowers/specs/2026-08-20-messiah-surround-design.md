@@ -409,7 +409,8 @@ already exists.
 ## Testing
 
 - **Pure:** the collapse function in `band.js` — unit tests over group runs.
-- **Render:** `SegmentMap` draws 21 / 27 / 11 boxes as the sounding Part changes,
+- **Render:** `SegmentMap` draws at most 23 / 25 / 11 boxes as the sounding Part
+  changes — fewer wherever this performance omits a number —
   and the collapsed segments carry the Part titles.
 - **Regression, load-bearing:** the étude season's rail is **unchanged** — same
   segment count, same groups, same density, at all three roots.

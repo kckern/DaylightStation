@@ -20,6 +20,8 @@
 - **The store rebuilds on mtime in ~2 s.** No restart, no redeploy, for any corpus or sidecar edit.
 - **Facts are verified, not remembered.** Performer/venue/date come from `Program.pdf`, not from recall.
 - Run tests from the worktree root: `npx vitest run cli/`.
+- **`$SCRATCH` is used throughout and must be set in every shell** (agent shells do not persist state):
+  `export SCRATCH=/tmp/messiah && mkdir -p "$SCRATCH"`.
 
 ## Source material
 
@@ -189,11 +191,13 @@ export function parseLibretto(rawText) {
     if (m) { pending = { form: m[1], voice: m[2] ?? null }; continue; }
     m = NUM_LINE.exec(s);
     if (m) {
+      const n = Number(m[1]);
       const title = m[2].trim();
       if (/^Play All$/i.test(title)) { pending = null; continue; }
       const inst = INSTRUMENTAL.exec(title);
       current = {
         n: 0,
+        pdfN: n,
         part: null,
         form: inst ? inst[1] : (pending?.form ?? null),
         voice: inst ? null : (pending?.voice ?? null),
@@ -214,7 +218,19 @@ export function parseLibretto(rawText) {
       current.text = current.text ? `${current.text}\n${s}` : s;
     }
   }
+  // THE PDF's OWN NUMBERS ARE A CHECKSUM, and discarding them is how a
+  // compensating pair of errors — one number missed, one page number captured —
+  // keeps the count at 53 while shifting every incipit against its timing by one.
+  // Nothing downstream could ever reveal that: the segments would carry the
+  // wrong names against the right seconds.
+  const pdfNums = items.map((it) => it.pdfN);
+  for (let i = 1; i < pdfNums.length; i += 1) {
+    if (pdfNums[i] !== pdfNums[i - 1] + 1) {
+      warnings.push(`sequence break: PDF ${pdfNums[i - 1]} followed by ${pdfNums[i]}`);
+    }
+  }
   items.forEach((it, i) => {
+    delete it.pdfN;
     it.n = i + 1;
     it.scripture = it.cites.length ? it.cites.join('; ') : null;
     delete it.cites;
@@ -273,13 +289,13 @@ node -e '
 const { splitColumns, parseLibretto, assignParts } = await import("./cli/libretto.cli.mjs");
 const { execFileSync } = await import("node:child_process");
 const laid = execFileSync("pdftotext", ["-layout", process.argv[1], "-"], { encoding: "utf8", maxBuffer: 1<<24 });
-const { items } = parseLibretto(splitColumns(laid));
-const parts = assignParts(items).reduce((a,i)=>({...a,[i.part]:(a[i.part]??0)+1}),{});
-console.log(items.length, JSON.stringify(parts));
+const { items, warnings } = parseLibretto(splitColumns(laid));
+warnings.forEach(w => console.error("warn:", w));
+console.log(items.length);   // Part counts come later, once assignParts exists
 ' "/media/kckern/Media/Stage/Handel's Messiah—Live from the Sydney Opera House (2009)/Libretto.pdf"
 ```
 
-Expected: `53 {"One":21,"Two":23,"Three":9}`
+Expected: `53`, with no sequence-break warnings. The Part counts are checked in Step 8, once `assignParts` exists.
 
 - [ ] **Step 5: Write the failing test for the Part anchors**
 
@@ -318,10 +334,11 @@ Run: `npx vitest run cli/libretto.cli.test.mjs -t assignParts` → FAIL (`assign
 /**
  * WHERE THE PARTS DIVIDE — by anchor, never by reading order.
  *
- * `pdftotext -raw` interleaves a two-column page near a heading, so numbers land
- * on the wrong side of a PART line: the trial parse produced 21/23/9 against a
- * true 20/25/9. These two incipits open Parts Two and Three in every edition of
- * Messiah, so they locate the divisions without trusting the column order.
+ * Messiah divides 21 / 23 / 9, and the trial parse got that right — but only by
+ * luck of layout: `pdftotext` can put a heading on the wrong side of a column
+ * break, and the cost is silent, because the validator uses Part membership to
+ * pin the applause breaks. These two incipits open Parts Two and Three in every
+ * edition, so they locate the divisions without trusting the column order.
  */
 export const PART_ANCHORS = Object.freeze({
   Two: 'Behold the Lamb of God',
@@ -433,9 +450,21 @@ describe('candidateBoundaries', () => {
     expect(candidateBoundaries(parseSilences(STDERR), { minGapS: 0 })).toEqual([85.1, 90.8]);
   });
 
-  it('drops a candidate that would make an implausibly short span', () => {
-    // 90.8 is only 5.7s after 85.1 — a breath, not a movement.
+  it('collapses a cluster to its LONGEST silence, not its first', () => {
+    // 90.8 is only 5.7s after 85.1 — one cluster. The 1.7s gap is the better
+    // boundary bet than the 0.8s one, and keeping the FIRST would cull the real
+    // boundary whenever a fermata precedes it.
     expect(candidateBoundaries(parseSilences(STDERR), { minGapS: 30 })).toEqual([85.1]);
+  });
+
+  it('keeps the later candidate when IT is the longer silence', () => {
+    const s = parseSilences([
+      '[silencedetect] silence_start: 83.4',
+      '[silencedetect] silence_end: 84.0 | silence_duration: 0.6',
+      '[silencedetect] silence_start: 90.0',
+      '[silencedetect] silence_end: 93.0 | silence_duration: 3.0',
+    ].join('\n'));
+    expect(candidateBoundaries(s, { minGapS: 30 })).toEqual([93.0]);
   });
 });
 ```
@@ -472,12 +501,19 @@ export function parseSilences(stderr) {
  * fermatas and breaths inside recitative, not boundaries.
  */
 export function candidateBoundaries(silences, { minGapS = 30 } = {}) {
-  const out = [];
-  for (const s of silences.slice().sort((a, b) => a.start - b.start)) {
-    if (out.length && s.end - out[out.length - 1] < minGapS) continue;
-    out.push(s.end);
+  // CLUSTER, THEN KEEP THE LONGEST — never "keep the first and drop the rest".
+  // A fermata that resumes 20s before the real boundary would otherwise survive
+  // and the real one be culled, which breaks this stage's only contract: the
+  // output must CONTAIN the true boundaries. A longer silence is the better bet
+  // within a cluster, and it fails toward the boundary rather than away from it.
+  const sorted = silences.slice().sort((a, b) => a.start - b.start);
+  const clusters = [];
+  for (const s of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (last && s.end - last[last.length - 1].end < minGapS) last.push(s);
+    else clusters.push([s]);
   }
-  return out;
+  return clusters.map((c) => c.reduce((a, b) => (b.duration > a.duration ? b : a)).end);
 }
 ```
 
@@ -598,6 +634,42 @@ Zip the two into per-second `{t, full, hf}` frames, run `applauseRuns`, and repo
 
 **Acceptance:** at least two sustained runs, one near **48.6 min** and one near **111 min**, matching what the silence pass found independently. If they do not appear, sweep `hfFloorDb` from −30 to −20 and report the sweep rather than picking a value that produces the hoped-for answer.
 
+- [ ] **Step 4b: Reject candidates that fall inside applause**
+
+**Measured on this recording, and not what a first reading predicts.** Applause
+is *loud*, so `silencedetect` never sees it — it sees the two short gaps that
+BRACKET it. The Part One break is only a 1.5 s silence. So applause does not
+inflate the previous number's span (No. 21 computes to 148 s, comfortably inside
+its prior); it produces **its own spurious candidate at the instant the clapping
+starts**, and an aligner would hand that ~60 s of pure applause to the *next*
+number as its span.
+
+So the integration is a filter, not a truncation:
+
+```js
+/**
+ * Drop candidates that fall inside — or at the leading edge of — an applause
+ * run. The gap BEFORE applause is not a movement boundary; the gap AFTER it is.
+ */
+export function rejectApplauseCandidates(candidates, runs, { padS = 2 } = {}) {
+  return candidates.filter(
+    (c) => !runs.some((r) => c >= r.start - padS && c <= r.end + padS),
+  );
+}
+```
+
+with the test:
+
+```js
+it('drops the candidate that marks the START of applause, keeping the one after it', () => {
+  const runs = [{ start: 100, end: 160 }];
+  expect(rejectApplauseCandidates([50, 99, 130, 165], runs)).toEqual([50, 165]);
+});
+```
+
+`endS` for the whole alignment is **`musicEndsAt`**, never the file duration —
+otherwise the final Amen's span swallows the closing applause and the credits.
+
 - [ ] **Step 5: Aim the texture detector inside over-long spans**
 
 The aligner (Task 4) reports which spans are **too long for their form** — those
@@ -690,10 +762,20 @@ describe('validateSpans', () => {
     expect(r.spans.filter((s) => s.omitted).map((s) => s.n)).toEqual([2]);
   });
 
-  it('publishes a prior for every form the libretto uses', () => {
-    for (const form of ['Recitative', 'Air', 'Chorus', 'Duet', 'Sinfonia', 'Pifa']) {
+  // DERIVED FROM THE PARSER, not a hand-kept list: a literal list is how `Soli`
+  // stayed recognised by `FORM_LINE` and unpriced by `FORM_DURATIONS`, with this
+  // very test green.
+  it('publishes a prior for every form the reader can recognise', () => {
+    for (const form of RECOGNISED_FORMS) {
       expect(FORM_DURATIONS[form], `no prior for ${form}`).toBeDefined();
     }
+  });
+
+  it('fails a number whose form it cannot price, rather than passing it', () => {
+    const odd = [{ n: 1, form: 'Madrigal', incipit: 'x' }];
+    const r = validateSpans({ items: odd, starts: [0], endS: 200 });
+    expect(r.ok).toBe(false);
+    expect(r.failures.join(' ')).toMatch(/no duration prior/);
   });
 });
 ```
@@ -714,12 +796,13 @@ Run: `npx vitest run cli/segment-timings.cli.test.mjs -t validateSpans` → FAIL
  */
 export const FORM_DURATIONS = Object.freeze({
   Recitative: [15, 180],
-  Air: [90, 480],
+  Air: [90, 660],
   Duet: [90, 420],
   Chorus: [60, 420],
   Sinfonia: [120, 300],
   Pifa: [60, 240],
   Symphony: [60, 300],
+  Soli: [60, 420],
 });
 
 /**
@@ -749,7 +832,13 @@ export function validateSpans({ items, starts, endS }) {
     }
     const seconds = Math.round(nextSounding(i + 1) - starts[i]);
     const prior = FORM_DURATIONS[it.form];
-    const plausible = !prior || (seconds >= prior[0] && seconds <= prior[1]);
+    // FAIL CLOSED. An unknown form means the parse was shaky for exactly this
+    // number, which is the last place to hand out a free pass.
+    if (!prior) {
+      failures.push(`No. ${it.n} "${it.incipit}" has form ${JSON.stringify(it.form)} with no duration prior`);
+      return { n: it.n, form: it.form, seconds, plausible: false, omitted: false };
+    }
+    const plausible = seconds >= prior[0] && seconds <= prior[1];
     if (!plausible) {
       // TOO LONG means a hidden attacca join — two numbers sharing one span, and
       // the place to aim the texture detector. TOO SHORT means a break inside a
@@ -767,6 +856,134 @@ export function validateSpans({ items, starts, endS }) {
 
 Run: `npx vitest run cli/segment-timings.cli.test.mjs`
 Expected: PASS
+
+- [ ] **Step 3b: Write the aligner — the thing that actually produces the starts**
+
+`validateSpans` is a *checker*. Something has to propose the assignment it
+checks, and that is the hardest step in this plan: ~110 candidates to 53 numbers,
+8–12 of which are absent from the audio. Doing it by hand is how a wrong
+alignment gets rationalised into place.
+
+**It is a shortest-path problem.** A state is "number *i* begins at candidate
+*j*". Moving to the next state consumes some candidates and may skip some
+numbers; the cost of a move is how implausible the resulting span is for that
+number's form, plus a penalty per skipped number. The cheapest path is the
+alignment.
+
+**One modelling consequence to state plainly:** a number that was *cut* and a
+number that runs *attacca and could not be split* are both `null` in `starts`,
+because positional starts cannot express "shares a span with its neighbour".
+The two are distinguished in the **report**, never in the data — a span flagged
+too-long is a suspected join, an unassigned number with no over-long neighbour is
+a suspected cut. Task 3 Step 5 exists to convert the first kind into real starts.
+
+```js
+/** A skipped number is normal here — this performance omits 8-12 of 53 — but not free. */
+export const SKIP_PENALTY = 40;
+/** How badly a span misses its form's prior, in seconds outside the range. */
+export function spanCost(item, seconds) {
+  const prior = FORM_DURATIONS[item.form];
+  if (!prior) return SKIP_PENALTY * 2;          // unknown form: never free
+  if (seconds < prior[0]) return prior[0] - seconds;
+  if (seconds > prior[1]) return seconds - prior[1];
+  return 0;
+}
+
+/**
+ * Map the libretto's numbers onto the audible candidates.
+ *
+ * Returns `starts` of length `items.length`, positional, `null` where a number
+ * has no audible span. `report.skipped` names them.
+ */
+export function alignLibretto({ items, candidates, endS }) {
+  const N = items.length;
+  const M = candidates.length;
+  const INF = Infinity;
+  // best[i][j] = cheapest cost with item i assigned to candidate j
+  const best = Array.from({ length: N }, () => new Array(M).fill(INF));
+  const from = Array.from({ length: N }, () => new Array(M).fill(null));
+  for (let j = 0; j < M; j += 1) best[0][j] = j * 5;   // prefer starting early
+  for (let i = 0; i < N; i += 1) {
+    for (let j = 0; j < M; j += 1) {
+      if (best[i][j] === INF) continue;
+      for (let j2 = j + 1; j2 < M; j2 += 1) {
+        const seconds = candidates[j2] - candidates[j];
+        const base = best[i][j] + spanCost(items[i], seconds);
+        // i2 is the next number that SOUNDS; everything between i and i2 is skipped.
+        for (let i2 = i + 1; i2 < N; i2 += 1) {
+          const cost = base + (i2 - i - 1) * SKIP_PENALTY;
+          if (cost < best[i2][j2]) { best[i2][j2] = cost; from[i2][j2] = [i, j]; }
+        }
+      }
+    }
+  }
+  // Close the path: the last sounding number runs to endS.
+  let endBest = INF; let endAt = null;
+  for (let i = 0; i < N; i += 1) {
+    for (let j = 0; j < M; j += 1) {
+      if (best[i][j] === INF) continue;
+      const cost = best[i][j] + spanCost(items[i], endS - candidates[j])
+        + (N - 1 - i) * SKIP_PENALTY;
+      if (cost < endBest) { endBest = cost; endAt = [i, j]; }
+    }
+  }
+  const starts = new Array(N).fill(null);
+  for (let at = endAt; at; at = from[at[0]][at[1]]) starts[at[0]] = candidates[at[1]];
+  return {
+    starts,
+    report: {
+      cost: endBest,
+      skipped: items.filter((_, i) => starts[i] === null).map((it) => `No. ${it.n} ${it.incipit}`),
+    },
+  };
+}
+```
+
+- [ ] **Step 3c: Test the aligner, including a case whose right answer omits a number**
+
+```js
+describe('alignLibretto', () => {
+  const items = [
+    { n: 1, form: 'Sinfonia', incipit: 'Sinfonia' },
+    { n: 2, form: 'Recitative', incipit: 'Comfort ye' },
+    { n: 3, form: 'Air', incipit: "Ev'ry valley" },
+  ];
+
+  it('assigns one candidate per number when they all sound', () => {
+    const { starts, report } = alignLibretto({
+      items, candidates: [0, 180, 250], endS: 500,
+    });
+    expect(starts).toEqual([0, 180, 250]);
+    expect(report.skipped).toEqual([]);
+  });
+
+  it('omits a number rather than forcing an implausible span', () => {
+    // Only two candidates for three numbers, and 0->600 is far too long for a
+    // Sinfonia: the cheap path drops the recitative.
+    const { starts, report } = alignLibretto({
+      items, candidates: [0, 200], endS: 480,
+    });
+    expect(starts[1]).toBeNull();
+    expect(report.skipped).toEqual(['No. 2 Comfort ye']);
+  });
+
+  it('ignores a spurious candidate rather than assigning a number to it', () => {
+    // 185 is applause 5s after the real boundary at 180.
+    const { starts } = alignLibretto({
+      items, candidates: [0, 180, 185, 250], endS: 500,
+    });
+    expect(starts).toEqual([0, 180, 250]);
+  });
+
+  it('feeds an alignment that its own checker accepts', () => {
+    const { starts } = alignLibretto({ items, candidates: [0, 180, 250], endS: 500 });
+    expect(validateSpans({ items, starts, endS: 500 }).ok).toBe(true);
+  });
+});
+```
+
+Run: `npx vitest run cli/segment-timings.cli.test.mjs -t alignLibretto` — watch each
+fail first, then implement, then pass.
 
 - [ ] **Step 4: Run the real selection**
 
