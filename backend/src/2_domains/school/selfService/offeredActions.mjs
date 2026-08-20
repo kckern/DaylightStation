@@ -132,8 +132,18 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       // `passed` is the other outcome, and it is dead in practice rather than
       // merely unhandled: the planner flips a passed entry to `completed`
       // before this subject is resolved again.
+      //
+      // COMPOSITION-AWARE, unlike `issued`/`reprinted` above. That case can be
+      // blind because ISSUABLE was already satisfied for the unit — paper is
+      // known to exist. A remediation session has passed no gate at all, and
+      // `OpenRemediation` prints nothing; it appends a fresh `created` event.
+      // So for a screen-answered bank unit "Print a fresh sheet" promises a
+      // sheet that never arrives, and the very next card withdraws it with
+      // "Answer on the screen".
       if (resolution.state?.outcome?.result === 'needs_remediation') {
-        return action('retry', 'Print a fresh sheet');
+        return unit.bank && bankPrintable !== true
+          ? action('retry', 'Try again on the screen')
+          : action('retry', 'Print a fresh sheet');
       }
       return null;
 
@@ -160,12 +170,25 @@ function buildCard(resolution, { mediaSurface = null, bankPrintable = false } = 
     case 'locked':
       // Verbatim: the remedy is the planner's own wording for why this is shut,
       // and a second phrasing here would be a second answer to drift from.
+      //
+      // `remedy` is the only name to read. Both producers spell it that way
+      // (`ResolveSubjectNext.mjs:124`, `ResolveAccessCode.mjs:270`, each
+      // `{kind:'locked', remedy: section.lockedRemedy}`) — `lockedRemedy` is
+      // the AGENDA SECTION's field name (`agenda.mjs`, `receipts.mjs`), which
+      // never reaches a resolution. An alias for it lived here briefly and was
+      // a branch kept alive for a shape that never arrives.
       return {
         work: null,
-        sentence: resolution.remedy ?? resolution.lockedRemedy ?? 'Finish the earlier work first.',
+        sentence: resolution.remedy ?? 'Finish the earlier work first.',
       };
     case 'empty':
     case 'unavailable':
+      // Both, identically — the scan path does not distinguish them either
+      // (`ResolveScanAction#subjectNext` prints one slip for `empty ||
+      // unavailable`). Its second line is dropped rather than translated: on
+      // paper it reads "Try it on the Portal, or ask a grown-up", and the
+      // panel IS the Portal, so the only part that still means anything here
+      // is the grown-up.
       return { work: null, sentence: TELL_A_GROWN_UP };
     case 'program': {
       // Opens in place on the panel — no room to walk to, so no destination to
@@ -218,7 +241,10 @@ function waitingSentence(resolution) {
       // "Waiting for the work to be done"). Widening this default without
       // checking `computeNextAction` would put a scanner instruction on a
       // keypad.
-      return resolution.move?.label ?? TELL_A_GROWN_UP;
+      //
+      // Capitalised: the reducer's labels are mid-sentence phrases ("carry
+      // on"), and this renders in the same slot as "All done — nice work."
+      return resolution.move?.label ? capitalise(resolution.move.label) : TELL_A_GROWN_UP;
   }
 }
 
@@ -226,14 +252,27 @@ function waitingSentence(resolution) {
  * @param {object} resolution - a `ResolveSubjectNext` resolution
  * @param {object} [options]
  * @param {string|{id: string, label?: string|null}} [options.mediaSurface]
- *   where video goes — `school.yml selfService.mediaSurface`, or a per-unit
- *   `media.surface` override. Give `{id, label}` to have the button name the
- *   room; a bare id leaves it unnamed.
+ *   where video goes. A bare surface id — what `school.yml
+ *   selfService.mediaSurface` emits today — targets the dispatch but leaves
+ *   the button reading "Play the video". **`{id, label}` is what produces a
+ *   room name** ("Play in the living room"), which is the whole point of D4:
+ *   the button names the destination so the child knows where to walk. A
+ *   caller that only forwards the config string never gets that.
+ *
+ *   There is deliberately NO per-unit override read here: `unitValidation.mjs`
+ *   types `media` as a bare reference into `manifestIds`, so `unit.media` is a
+ *   string and has nowhere to put a destination (c06e2c256). Config is the
+ *   only source until the unit schema changes.
  * @param {boolean} [options.bankPrintable] - the application layer's
- *   `IssueDocument.canIssueBank` answer for this unit. Anything but `true`
- *   sends bank work to the panel's screen.
+ *   `IssueDocument.canIssueBank` answer for this unit. STRICTLY `true`;
+ *   anything else, truthy or not, sends bank work to the panel's screen.
  * @returns {Array<{kind: string, label: string, target?: string}>}
  *   at most one work action, then always the exit.
+ *
+ *   `kind` is the action's IDENTITY, not a display hint: Task 7 finds the
+ *   requested action with `actions.find((a) => a.kind === kind)`, which is
+ *   unambiguous only because at most one work action is ever offered. Adding a
+ *   second action of the same kind would break that lookup silently.
  */
 export function offeredActions(resolution, options) {
   const { work } = buildCard(resolution, options);
