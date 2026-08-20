@@ -809,15 +809,26 @@
   opacity: 0.82;
 }
 
-.surround-segment-map__segment--fold::after {
-  content: "×" attr(data-fold);
-  position: absolute;
-  inset: 0;
+/* THE FOLD'S LABEL. It has its Part title's width now, so it sets the title
+   and the count of what it stands in for. No ellipsis: the width was measured
+   FROM this string, so it fits by construction — and if the rail overran and
+   the chips were squeezed, it is still the titles that were held whole. */
+.surround-segment-map__chip--fold {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
-  font-size: max(9px, var(--label-floor, 11.52px));
-  letter-spacing: 0.02em;
-  color: var(--ink-soft, #a89a80);
-  pointer-events: none;
+  gap: 0.28em;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.surround-segment-map__fold-title {
+  font-style: italic;
+  letter-spacing: 0.01em;
+}
+
+.surround-segment-map__fold-count {
+  font-size: 0.82em;
+  opacity: 0.72;
+  font-variant-numeric: tabular-nums;
 }
