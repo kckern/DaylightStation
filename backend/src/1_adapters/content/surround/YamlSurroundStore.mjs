@@ -394,42 +394,63 @@ export class YamlSurroundStore extends ISurroundStore {
     if (!dirExists(this.libraryDir)) return { composers, works };
 
     for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
-      const domainDir = path.join(this.libraryDir, domain);
-
-      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
-        const composerDir = path.join(domainDir, composer);
-        const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
-        if (isPlainObject(composerBase)) composers.set(composer, composerBase);
-
-        const files = listYamlFiles(composerDir, { stripExtension: false }).filter((f) => !isReserved(f));
-        for (const file of files) {
-          const work = loadYamlFromPath(path.join(composerDir, file));
-          if (!isPlainObject(work)) continue;
-
-          // The corpus gets the same visibility a sidecar gets. `asArray` below
-          // flattens a mapping written where a list belongs, and without this the
-          // author's only symptom is a movement map that renders empty. Warn and
-          // keep going: a work with one bad list is still worth indexing.
-          const reasons = [];
-          for (const key of ['movements', 'facts']) {
-            if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
-          }
-          if (reasons.length) {
-            // Relative to libraryDir, because that is how the author knows the file.
-            this.logger?.warn?.('surround.work.invalid', {
-              file: path.join(domain, composer, file),
-              reason: reasons[0],
-              reasons
-            });
-          }
-
-          const slug = file.replace(/\.(yml|yaml)$/, '');
-          works.set(`${composer}/${slug}`, work);
-        }
-      }
+      this.#loadLibraryDir(path.join(this.libraryDir, domain), domain, composers, works);
     }
 
     return { composers, works };
+  }
+
+  /**
+   * Index one directory of the corpus, then descend into its subdirectories.
+   *
+   * A work's identity is `<composer>/<work-slug>` and nothing else. How the
+   * corpus files the composer above that — flat under the domain, or grouped by
+   * era as `classical/5_romantic/chopin/` — is a filing convenience the author
+   * may change at will, so the walk must not encode a depth. The directory that
+   * directly contains a work file names its composer; every directory above it
+   * is grouping. A regrouping that once emptied the whole index (every sidecar
+   * rejected `surround.work.missing`) is then a no-op.
+   *
+   * @param {string} dir - Directory to index.
+   * @param {string} rel - Path of `dir` relative to libraryDir, for warnings.
+   * @param {Map<string, Object>} composers - Accumulator, keyed by composer.
+   * @param {Map<string, Object>} works - Accumulator, keyed `<composer>/<slug>`.
+   * @private
+   */
+  #loadLibraryDir(dir, rel, composers, works) {
+    const composer = path.basename(dir);
+    const composerBase = loadYamlFromPath(path.join(dir, `${COMPOSER_FILE}.yml`));
+    if (isPlainObject(composerBase)) composers.set(composer, composerBase);
+
+    const files = listYamlFiles(dir, { stripExtension: false }).filter((f) => !isReserved(f));
+    for (const file of files) {
+      const work = loadYamlFromPath(path.join(dir, file));
+      if (!isPlainObject(work)) continue;
+
+      // The corpus gets the same visibility a sidecar gets. `asArray` below
+      // flattens a mapping written where a list belongs, and without this the
+      // author's only symptom is a movement map that renders empty. Warn and
+      // keep going: a work with one bad list is still worth indexing.
+      const reasons = [];
+      for (const key of ['movements', 'facts']) {
+        if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
+      }
+      if (reasons.length) {
+        // Relative to libraryDir, because that is how the author knows the file.
+        this.logger?.warn?.('surround.work.invalid', {
+          file: path.join(rel, file),
+          reason: reasons[0],
+          reasons
+        });
+      }
+
+      const slug = file.replace(/\.(yml|yaml)$/, '');
+      works.set(`${composer}/${slug}`, work);
+    }
+
+    for (const child of listDirs(dir).filter((d) => !isReserved(d))) {
+      this.#loadLibraryDir(path.join(dir, child), path.join(rel, child), composers, works);
+    }
   }
 
   /**
@@ -523,12 +544,14 @@ export class YamlSurroundStore extends ISurroundStore {
     if (!work) {
       // Both halves of the miss, because the two trees are edited separately and
       // the reference alone does not say where the corpus was searched. `expected`
-      // is the file the walk in #loadLibrary would have keyed — relative to
-      // libraryDir, the way `file` is relative to rootDir — so the fix is to
-      // create that path or correct the ref, without anyone re-deriving it.
+      // is a glob, not a path: #loadLibraryDir keys a work by its composer folder
+      // at whatever depth it sits, so the corpus may file it under any number of
+      // grouping directories. Naming a single path here would send an author to
+      // create a duplicate one level up from the file they already have.
+      const [composer, slug] = doc.work.split('/');
       this.logger?.warn?.('surround.work.missing', {
         work: doc.work,
-        expected: path.join(domain, `${doc.work}.yml`),
+        expected: path.join(domain, '**', composer ?? '', `${slug ?? ''}.yml`),
         file
       });
       return null;
