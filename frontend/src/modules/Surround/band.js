@@ -126,9 +126,9 @@ export const ROMAN_CEILING = ROMAN.length - 1;
  *   * IT IS THE ONLY UNIVERSAL ADDRESS. A movement rail's names carry no number
  *     at all ("Allegro con brio"), so a rail that numbered from the name would
  *     have nothing to print on the piece this frame was built for.
- *   * THE CHIP CAN ONLY BE RENDERED FROM A FIELD. A number in a circle is a
- *     number, not a prefix parsed off a title with a regular expression, and the
- *     chip has to agree with what the active segment shows.
+ *   * THE CHIP CAN ONLY BE RENDERED FROM A FIELD. A chip's mark is a number,
+ *     not a prefix parsed off a title with a regular expression, and the chip
+ *     has to agree with what the active segment shows.
  *   * EVERYTHING ELSE ALREADY KEYS OFF IT — `segmentAt`, the rail's logging, the
  *     NOW register's own numeral.
  *

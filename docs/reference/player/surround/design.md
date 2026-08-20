@@ -335,9 +335,13 @@ segment is drawn proportional to its real duration.
   Below a threshold measured as **available width per inactive segment** — the
   rule, less what the WIDEST name on it would need, over the segments that are
   not sounding — every inactive segment stops rendering a name and renders its
-  number in a circle instead, and the floor drops to what a chip needs. The
-  switch is all-or-nothing across the rail and is a constant of the piece, never
-  of this instant. A chip is a different thing from a trimmed name: no text is
+  number instead (task 6d dropped the ring around it: a circle sized to hold
+  the mark at the frame's ten-foot label floor outgrew the width the chip is
+  budgeted, so the mark now stands on its own, sized off the same
+  `--label-floor` every other label in the frame reads), and the floor drops
+  to what a chip needs. The switch is all-or-nothing across the rail and is a
+  constant of the piece, never of this instant. A chip is a different thing
+  from a trimmed name: no text is
   rendered at zero opacity or clipped. The SOUNDING segment always shows its
   whole name — that guarantee is what chip mode buys. Where even a chipped rail
   cannot pay for it, the segment takes what is free and keeps its ellipsis and

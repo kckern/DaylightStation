@@ -1602,11 +1602,22 @@ describe('the band, measured against the shipped stylesheet', () => {
    * TO GO RED: change any of the three numbers by changing the chip floor, the
    * band's insets or the programme rail's share, and the root that flips reports
    * which one it is.
+   *
+   * `overrunCount` — task 6d, RE-MEASURED after the chip's ring came off and
+   * its numeral grew to the label floor: how many of the twenty INACTIVE
+   * nocturnes are narrower than the chip that marks them, at each root.
+   * ZERO AT EVERY ROOT, including 960 — where the OLD, REM-fixed 20px circle
+   * DID overrun (task 6c's own report: narrowest nocturne ~17px against a
+   * 20px chip). A bare numeral at the label floor is narrower than that circle
+   * ever was, at every root in the fleet, because 960 is also the root the
+   * label floor is SMALLEST on (8.64px) — the raise this task makes only bites
+   * at 1280 and 1920, where the rail also has more room to give it. See the
+   * task report for the measured widths.
    */
   const RAIL_CAPACITY = Object.freeze({
-    '960x540': { nameWhole: false, overrun: true },
-    '1280x720': { nameWhole: true, overrun: false },
-    '1920x1080': { nameWhole: true, overrun: false },
+    '960x540': { nameWhole: false, overrunCount: 0 },
+    '1280x720': { nameWhole: true, overrunCount: 0 },
+    '1920x1080': { nameWhole: true, overrunCount: 0 },
   });
 
   it.each(FLEET)('$name — twenty-one nocturnes wear chips; four movements keep their names', async ({ width, height, name }) => {
@@ -1713,8 +1724,9 @@ describe('the band, measured against the shipped stylesheet', () => {
           chip: chip ? chip.textContent : null,
           named: !!row,
           widthPx: Number(segBox.width.toFixed(2)),
-          // The chip is a circle, centred in the segment's bar.
-          round: chip ? getComputedStyle(chip).borderRadius : null,
+          // task 6d: no ring any more — the mark is centred in its bar the same
+          // way, but it is bare text, sized off the label floor (see below).
+          fontSizePx: chip ? Number(parseFloat(getComputedStyle(chip).fontSize).toFixed(2)) : null,
           centreOffPx: chip
             ? Number((((box.x + box.right) / 2) - ((segBox.x + segBox.right) / 2)).toFixed(2))
             : null,
@@ -1742,25 +1754,54 @@ describe('the band, measured against the shipped stylesheet', () => {
     expect(inactive.map((p) => p.chip)).not.toContain('XIII');
     expect(painted[12].chip ?? '13').toBe('13');
     inactive.forEach((p) => {
-      expect(p.round, 'a chip that is not a circle').toBe('50%');
       expect(
         Math.abs(p.centreOffPx),
         `chip ${p.i} sits ${p.centreOffPx}px off the centre of its own bar`,
       ).toBeLessThanOrEqual(0.6);
     });
 
+    /**
+     * =========================================================================
+     * THE CHIP'S NUMERAL MEETS THE TEN-FOOT LABEL FLOOR — task 6d.
+     * =========================================================================
+     * The owner's report, watching the office screen: the numbers in the chips
+     * were hard to read. The chip's mark is a LABEL exactly as the standing
+     * band labels and the rail's own gutter numeral are — short, tracked,
+     * small-caps, read as a shape — so it takes the same published floor they
+     * do (`--label-floor`, `labelFloorPx` in `fit.js`) rather than a size
+     * invented for it. This is the assertion the owner's complaint becomes.
+     *
+     * TO GO RED: put a rem literal back on `.surround-segment-map__chip`
+     * (`font-size: 0.62rem` was the pre-fix value — 9.92px, under the floor at
+     * both the office's 11.52px and the living room's 17.28px), or read a
+     * DIFFERENT custom property than the one every other label in the frame
+     * reads.
+     */
+    inactive.forEach((p) => {
+      expect(
+        p.fontSizePx,
+        `chip ${p.i}'s numeral paints at ${p.fontSizePx}px at ${name}, where this root's `
+        + `ten-foot label floor is ${LABEL_FLOORS[name]}px — the number in the circle is smaller `
+        + 'than the frame\'s own floor for a label',
+      ).toBe(LABEL_FLOORS[name]);
+    });
+
     // ...AND THE CHIPS DO NOT OVERRUN THE SEGMENTS THEY MARK. A chip wider than
     // its own segment is two chips touching, which is the thing the chip floor
     // exists to stop — and it is the same capacity question the name guarantee
     // asks, one storey down, so it has the same per-root answer (see
-    // `RAIL_CAPACITY`).
+    // `RAIL_CAPACITY`). Task 6d raised the mark's own size to the label floor
+    // and, in the same change, dropped the ring around it — a bare numeral at
+    // the label floor is narrower than the old REM-fixed circle at every root
+    // in the fleet, including the one (1920) where the floor asks the most of
+    // it, so the honest capacity answer did not get WORSE for the raise.
     const overrun = inactive.filter((p) => p.widthPx < p.chipW - 0.5);
     expect(
-      overrun.length > 0,
+      overrun.length,
       `${overrun.length} of the twenty chips are wider than the segment they mark at ${name} `
       + `(narrowest segment ${Math.min(...inactive.map((p) => p.widthPx)).toFixed(2)}px against a `
-      + `${inactive[0].chipW}px chip) — chips are touching`,
-    ).toBe(RAIL_CAPACITY[name].overrun);
+      + `${inactive[0].chipW}px chip)`,
+    ).toBe(RAIL_CAPACITY[name].overrunCount);
   }, 90000);
 
   /**
