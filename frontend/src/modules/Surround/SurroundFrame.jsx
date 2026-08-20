@@ -45,7 +45,7 @@ import {
   ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
 } from './entrance.js';
 import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from './fit.js';
-import { lyricStateAt } from './lyrics.js';
+import { lyricStateAt, railHasText } from './lyrics.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -441,7 +441,24 @@ export default function SurroundFrame({
     [enabled, lyricRegions.length, data, contentId, position],
   );
   const lyricUp = lyricState.active;
-  /** Exactly one of the two is ever in the tree — never both, never neither. */
+
+  /**
+   * DOES THIS FRAME SLIDE?
+   *
+   * Only a piece that can ever show words: the definition authors a lyric slot
+   * AND the rail carries text somewhere. That gate matters, because sliding
+   * means mounting BOTH rails at once — the programme rail cannot travel out
+   * while it is being unmounted — and no instrumental work should pay for a
+   * second rail it will never show.
+   */
+  const slides = enabled && lyricRegions.length > 0 && railHasText(data?.segments);
+
+  /**
+   * Which rail is in the tree. When the frame slides, BOTH are: one is on
+   * screen and the other is parked just past the edge, and the swap is a move
+   * rather than a mount. When it does not, exactly one is, exactly as before —
+   * so every instrumental work renders the tree it always did.
+   */
   const sideRegions = lyricUp ? lyricRegions : rightRegions;
   const sideSide = lyricUp ? 'right' : railSide;
 
@@ -449,6 +466,7 @@ export default function SurroundFrame({
     'surround-frame',
     sideSide === 'left' && 'surround-frame--rail-left',
     lyricUp && 'surround-frame--lyric',
+    slides && 'surround-frame--slides',
     !entered && 'surround-frame--entering',
     arriving && 'surround-frame--arriving',
     className,
@@ -473,6 +491,10 @@ export default function SurroundFrame({
       // beats five copies of `0.72rem`, exactly as `--bond-ground` beat three
       // copies of a hex.
       '--label-floor': `${labelFloor}px`,
+      // The rail's width, as authored. The slide moves the main column by
+      // exactly this and parks each rail exactly this far off its own edge, so
+      // the three pieces travel as one and the geometry is stated once.
+      '--rail-w': railWidth,
       ...(shrink ? {
         '--enter-media-scale': String(shrink.scale),
         '--enter-media-dx': `${shrink.dx}px`,
@@ -527,7 +549,37 @@ export default function SurroundFrame({
         )}
       </div>
 
-      {enabled && sideRegions.length > 0 && (
+      {/* THE SLIDING PAIR. Both rails are mounted and both are always in the
+          tree; which one is on screen is a matter of where they are, not of
+          whether they exist. The programme rail is parked one rail-width off
+          the left edge while the lyric rail holds the column, and the reverse
+          when the words stop — and the main column travels between them, so
+          the video reads as running on rails rather than jumping. Nothing
+          resizes mid-flight: the video's box is identical in both states, so
+          this is a translation and not a reflow. */}
+      {enabled && slides && (
+        <>
+          <aside
+            className="surround-frame__rail surround-frame__rail--programme"
+            data-testid="surround-rail"
+            data-rail="programme"
+            aria-hidden={lyricUp ? 'true' : undefined}
+            style={{ width: railWidth }}
+          >
+            {rightRegions.map(renderRegion)}
+          </aside>
+          <aside
+            className="surround-frame__rail surround-frame__rail--lyric"
+            data-testid="surround-lyric-rail"
+            data-rail="lyric"
+            aria-hidden={lyricUp ? undefined : 'true'}
+            style={{ width: railWidth }}
+          >
+            {lyricRegions.map(renderRegion)}
+          </aside>
+        </>
+      )}
+      {enabled && !slides && sideRegions.length > 0 && (
         <aside
           className="surround-frame__rail"
           data-testid={lyricUp ? 'surround-lyric-rail' : 'surround-rail'}
