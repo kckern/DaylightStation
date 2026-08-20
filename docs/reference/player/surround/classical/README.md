@@ -156,9 +156,19 @@ Notes that save a debugging pass:
   rail sets that instead, on one line with no gloss under it. The SOUNDING
   segment always sets its whole name: it is the one segment the accordion
   guarantees room for, so it has nothing to gain from a compressed form.
-  Optional everywhere; a segment without one truncates exactly as before. Aim
-  for a word or two — a floored segment is about 37px of run, so a long `short:`
-  is cut like anything else, just informatively.
+  Optional everywhere; a segment without one truncates exactly as before.
+- **A `short:` is never cut — the rail chips instead.** This is the one place
+  `short:` changes the rail's own arithmetic. An authored NAME is floored at
+  three glyphs and an ellipsis, because a stub of a long title is the best a
+  crowded rule can do. A `short:` is the corpus saying "this is as compressed as
+  this segment gets", so a rule that cannot set it whole has nothing left to try
+  — and the design already has the honest rendering for that: the chip. When
+  every drawn segment carries a `short:`, the rail's floor becomes the width the
+  widest of them needs WHOLE, and it wears chips when it cannot afford that.
+  Measured on the polonaise season (`band.measure.test.jsx`): 1920 sets all six
+  labels whole; the office's 822px rule chips; 960 chipped already. So a longer
+  `short:` does not buy a longer label, it buys a chipped rail — keep them to a
+  word or two.
 - **`short:` is not `short_title:`.** They live at different levels and answer
   different questions: `short_title` is the WORK's own alternate name for the
   band's standing label, `short` is a SEGMENT's compressed label for a crowded

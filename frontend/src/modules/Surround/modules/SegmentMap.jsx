@@ -71,7 +71,7 @@ import {
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
   placedRailSegments, railGroups, railIsFlat,
-  soundingWidth, idealWidth, nameFloorPx, railWearsChips,
+  soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
 import './SegmentMap.scss';
@@ -401,7 +401,7 @@ export default function SegmentMap({
    * a box the last solve had already resized, and the chip decision taken from
    * it would flip on its own output.
    */
-  const [metrics, setMetrics] = useState({ chromePx: 0, needs: [] });
+  const [metrics, setMetrics] = useState({ chromePx: 0, needs: [], shortNeeds: [] });
   const [fontsTick, setFontsTick] = useState(0);
 
   useEffect(() => {
@@ -440,17 +440,29 @@ export default function SegmentMap({
   const measureRail = useCallback(() => {
     const probe = probeRef.current;
     // A bars-only rail has no type to right-size for.
-    if (!probe || !named || !segments.length) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    if (!probe || !named || !segments.length) { setMetrics({ chromePx: 0, needs: [], shortNeeds: [] }); return; }
     const row = probe.querySelector('.surround-segment-map__text-row');
     const cell = probe.querySelector('.surround-segment-map__text');
     const heading = probe.querySelector('.surround-segment-map__heading');
     const gloss = probe.querySelector('.surround-segment-map__translation');
-    if (!row || !cell || !heading || !gloss) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    if (!row || !cell || !heading || !gloss) { setMetrics({ chromePx: 0, needs: [], shortNeeds: [] }); return; }
     // The probe row is `width: max-content`, so its numeral track is this rail's
     // own gutter at its own size and its text track is exactly the text — which
     // makes the difference the segment furniture, measured rather than derived
     // from the `em`/`ch` arithmetic in the stylesheet.
     const chromePx = row.getBoundingClientRect().width - cell.getBoundingClientRect().width;
+    // THE LABEL A SILENT SEGMENT WOULD SET, measured in the same face at the
+    // same size — `.__short` and `.__heading` are typographically identical, so
+    // the heading element is the ruler for both. This is what decides the rail's
+    // FLOOR (`railFloorPx`): a `short:` is the corpus's compressed form, so a
+    // rail that cannot set it whole has nothing left to compress and wears chips
+    // instead of cutting the string that existed to avoid being cut.
+    const shortNeeds = segments.map((seg) => {
+      if (!seg.short) return 0;
+      heading.innerHTML = '';
+      heading.textContent = seg.short;
+      return heading.getBoundingClientRect().width;
+    });
     const needs = segments.map((seg) => {
       const { title, tempo } = splitHeading(seg.name);
       // The heading is two spans with a margin between them, exactly as the
@@ -477,7 +489,7 @@ export default function SegmentMap({
     });
     heading.innerHTML = '';
     gloss.textContent = '';
-    setMetrics({ chromePx, needs });
+    setMetrics({ chromePx, needs, shortNeeds });
   }, [named, segments]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
@@ -486,7 +498,16 @@ export default function SegmentMap({
   // PIECE — the widest name it has, against the width of its rule — never of
   // this instant, because a rail that swapped between chips and names at a
   // segment boundary would read as a bug rather than as a density.
-  const floorPx = nameFloorPx(metrics.chromePx);
+  // THE FLOOR THIS RAIL IS JUDGED AGAINST. Where every drawn segment carries a
+  // `short:`, the corpus has said what the compressed form is, and the floor
+  // becomes what the widest of them needs to set WHOLE — so a rule that cannot
+  // afford that chips rather than cutting the string that existed to avoid
+  // being cut. A rail with no short labels (or only some) is judged exactly as
+  // it always was: three glyphs and an ellipsis.
+  const everyShort = segments.length > 0 && segments.every((s) => s.short);
+  const labelPx = everyShort && metrics.shortNeeds.length
+    ? Math.max(...metrics.shortNeeds) : null;
+  const floorPx = railFloorPx({ chromePx: metrics.chromePx, labelPx });
   const widestPx = useMemo(() => (metrics.needs.length
     ? idealWidth({ chromePx: metrics.chromePx, needPx: Math.max(...metrics.needs) })
     : 0), [metrics]);

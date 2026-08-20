@@ -550,6 +550,43 @@ export function nameFloorPx(chromePx) {
 }
 
 /**
+ * THIS RAIL'S FLOOR — and which question it is allowed to ask.
+ *
+ * `nameFloorPx` tolerates a cut, and that tolerance is its whole derivation:
+ * three glyphs and an ellipsis, which is the best a crowded rail can do with a
+ * long authored NAME. `Marcia funebre. Adagio assai` will never fit a floored
+ * segment on any screen in the fleet, so a floor that demanded it would chip
+ * every symphony in the corpus.
+ *
+ * A `short:` IS THE OTHER CASE, and it is the corpus saying so. It is the
+ * compressed form — the shortest thing the author is willing to have stand for
+ * this segment — so a rail that cuts it has nothing left to try. `C-sh…` is not
+ * a degraded label, it is a label that failed, and the design already has the
+ * honest rendering for a rule with no room for type: the chip. So when every
+ * drawn segment carries one, the floor becomes what the widest of them needs to
+ * set WHOLE, and `railWearsChips` — which compares the room against this — flips
+ * the rail to chips exactly when that cannot be afforded.
+ *
+ * It never floors a rail BELOW `nameFloorPx`: a very short label does not buy
+ * permission to draw segments narrower than a named rail already allows.
+ *
+ * @param {number} args.chromePx measured `segW - cellW`, px.
+ * @param {number|null} [args.labelPx] the widest LABEL this rail must set whole
+ *   — max of the authored `short` widths — or null/0 for "not every segment has
+ *   one", which is the ordinary named rail.
+ */
+export function railFloorPx({ chromePx, labelPx = null }) {
+  const named = nameFloorPx(chromePx);
+  const label = Number(labelPx);
+  if (!Number.isFinite(label) || !(label > 0)) return named;
+  const chrome = Number(chromePx);
+  // An unmeasured rail has no furniture to add the label to, so it has no
+  // opinion beyond the fallback — the same reading `nameFloorPx` takes.
+  if (!Number.isFinite(chrome) || !(chrome > 0)) return named;
+  return Math.max(named, idealWidth({ chromePx: chrome, needPx: label }));
+}
+
+/**
  * The narrowest a CHIPPED segment may be drawn — the compressed floor the rail
  * falls to once it has stopped trying to set names.
  *
