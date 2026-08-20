@@ -599,21 +599,29 @@ describe('self-service panel codes', () => {
   });
 
   it('never reissues a code that is still live from a previous agenda', async () => {
+    // What this seed draws first with nothing in the way — the code that is
+    // already sitting on a previous day's paper.
     build({ selfService: { enabled: true } });
-    const first = await useCase.execute({ learnerId: 'kid1' });
-    const yesterdaysCode = subjectRecords()[0].accessCode;
-    expect(yesterdaysCode).toMatch(/^\d{6}$/);
+    await useCase.execute({ learnerId: 'kid1' });
+    const [{ accessCode: alreadyOnPaper }] = subjectRecords();
+    expect(alreadyOnPaper).toMatch(/^\d{6}$/);
 
-    // A fresh build with the SAME seed would draw that code again — but the
-    // registry still holds a live record carrying it, so it must be skipped.
-    // Without the registry predicate the index's last writer wins and the
-    // earlier record's code becomes unreachable.
-    const carriedOver = tokens;
+    // Same seed, same learner, same first draw — but the registry now reports
+    // that code as live, so the mint must skip past it. One build, one record,
+    // asserted on directly: a `forEach` over a collection that can be empty
+    // would pass this test by running no assertions at all.
+    const carriedOver = new CodeAwareTokenRegistry();
+    carriedOver.liveAccessCodes = async () => new Set([alreadyOnPaper]);
     build({ selfService: { enabled: true }, tokenRegistry: carriedOver });
-    await useCase.execute({ learnerId: 'kid2' });
-    const fresh = carriedOver.ofClass('subject_next').filter((r) => r.subject.learnerId === 'kid2');
-    fresh.forEach((r) => expect(r.accessCode).not.toBe(yesterdaysCode));
-    expect(JSON.stringify(first.document)).toContain(`PANEL CODE ${yesterdaysCode}`);
+    await useCase.execute({ learnerId: 'kid1' });
+
+    const records = subjectRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0].accessCode).toMatch(/^\d{6}$/);
+    // The whole cross-day half of the guard: without it the index keeps only
+    // the last writer and the earlier record's printed code stops resolving —
+    // a child types the code on their paper and opens someone else's lesson.
+    expect(records[0].accessCode).not.toBe(alreadyOnPaper);
   });
 
   // A household that shortens `lifecycle.subjectTokenTtlHours` below a day
