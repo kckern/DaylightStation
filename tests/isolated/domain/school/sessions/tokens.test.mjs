@@ -423,6 +423,19 @@ describe('access code on a token record', () => {
     })).toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS' }));
   });
 
+  it('reports the wrong class before a malformed code — a code on this class was never typed', () => {
+    // Both rules are broken at once, and the class wins deliberately. The panel
+    // only ever reads codes off `subject_next` records, so a code on `identify`
+    // did not come from a child's keystrokes — it can only have come from a
+    // miswired call site. Calling it a format error would send a developer to
+    // fix six digits when the real defect is that nothing should be passing a
+    // code here at all.
+    expect(() => createTokenRecord({
+      token: TOKEN, tokenClass: 'identify', subject: { learnerId: 'test-user' },
+      at: base.at, accessCode: 'abc', accessCodeExpiresAt: null,
+    })).toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS' }));
+  });
+
   it('leaves those classes untouched when no code is supplied', () => {
     const card = createTokenRecord({ token: TOKEN, tokenClass: 'identify', subject: { learnerId: 'test-user' }, at: base.at });
     expect(Object.keys(card)).toEqual([
