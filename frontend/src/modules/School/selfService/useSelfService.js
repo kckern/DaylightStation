@@ -48,19 +48,29 @@ export const PRINT_CONFIRM_QUESTION = 'Did it print?';
 export const DEFAULT_IDLE_TIMEOUT_SECONDS = 120;
 
 /**
- * `ResolveAccessCode` never throws — it catches its own lookup/resolve faults
- * and answers a 200 carrying `{ok:false}` with this exact wording (its frozen
- * `NOT_ANSWERING` card), the same string we show for a dead socket. There is no
- * other flag on the payload separating it from a plain wrong code, so the
- * sentence IS the signal. Without this, a backend that faulted inside a
- * successful HTTP response would leave the child reading "isn't answering"
- * beside a keypad with no retry — the exact dead end this feature forbids.
+ * Is an `ok:false` refusal a BACKEND FAULT rather than a bad code?
  *
- * COUPLED to `ResolveAccessCode.NOT_ANSWERING.sentence`; change both together.
+ * It matters because the two get different affordances: a fault gets a retry
+ * button, a bad code does not (there is nothing to retry — type a better code).
+ * `ResolveAccessCode` never throws; it catches its own lookup/resolve faults
+ * and answers a 200 carrying `{ok:false}`, so HTTP status cannot tell them
+ * apart and a fault would otherwise leave a child reading "isn't answering"
+ * beside a keypad with no way forward.
+ *
+ * `reason` is the discriminator and the one to trust. The sentence match is a
+ * TEMPORARY fallback for backends that predate it: duplicating a user-facing
+ * string across two layers means rewording the backend copy for a child
+ * silently removes this panel's retry button — the same dead end, reintroduced
+ * by a typo.
+ *
+ * TODO: drop the sentence fallback once `/resolve` always sends
+ * `reason: 'not_answering' | 'unknown_code'` (Task 7).
  */
-const isDegradedSentence = (sentence) => (
-  typeof sentence === 'string' && sentence.trim() === DEGRADED_SENTENCE
-);
+const isBackendFault = (payload) => {
+  if (payload?.reason === 'not_answering') return true;
+  if (payload?.reason === 'unknown_code') return false;
+  return typeof payload?.sentence === 'string' && payload.sentence.trim() === DEGRADED_SENTENCE;
+};
 
 /** Kinds whose outcome is a print job the child has to go and collect. */
 const PRINT_KINDS = new Set(['print', 'retry']);
@@ -102,7 +112,6 @@ export function useSelfService({
   const [message, setMessage] = useState(null);   // shown on the keypad
   const [degraded, setDegraded] = useState(false);
   const [sentence, setSentence] = useState(null); // shown on the card
-  const [printAgain, setPrintAgain] = useState(false);
   const [busy, setBusy] = useState(false);
   // The code stays valid across an exit or a timeout — nothing here revokes
   // it, so the child can simply type it again.
@@ -115,12 +124,16 @@ export function useSelfService({
     setSentence(null);
     setMessage(null);
     setDegraded(false);
-    setPrintAgain(false);
     codeRef.current = null;
   }, []);
 
+  /**
+   * @returns {Promise<{resolved: boolean, sentence: string|null}>} — the keypad
+   * ignores this, but `confirmPrint` needs to know whether the recomputed card
+   * actually opened rather than landing on keypad-only state it cannot show.
+   */
   const submit = useCallback(async (code) => {
-    if (!code) return;
+    if (!code) return { resolved: false, sentence: null };
     lastTriedRef.current = code;
     setBusy(true);
     const res = await schoolApi.selfServiceResolve(code);
@@ -131,21 +144,25 @@ export function useSelfService({
       setDegraded(true);
       setMessage(DEGRADED_SENTENCE);
       schoolLog.selfServiceError('resolve.failed', { status: res.status });
-      return;
+      return { resolved: false, sentence: DEGRADED_SENTENCE };
     }
+    // `ok` is the ONLY thing separating a REFUSAL (bad code — stay on the
+    // keypad) from a REAL CARD that simply has no buttons (`served`,
+    // `locked`). Both arrive as a 200 with an empty-ish body, and reading a
+    // `served` card as a refusal would tell a child who finished their maths
+    // that they typed the code wrong.
     if (res.data.ok === false) {
-      const faulted = isDegradedSentence(res.data.sentence);
+      const faulted = isBackendFault(res.data);
       setDegraded(faulted);
       setMessage(res.data.sentence || TRY_AGAIN_SENTENCE);
-      if (faulted) schoolLog.selfServiceError('resolve.failed', { status: res.status, inBody: true });
+      if (faulted) schoolLog.selfServiceError('resolve.failed', { status: res.status, inBody: true, reason: res.data.reason ?? null });
       else schoolLog.selfService('code.rejected', { status: res.status });
-      return;
+      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE };
     }
 
     codeRef.current = code;
     setDegraded(false);
     setMessage(null);
-    setPrintAgain(false);
     setCard(res.data);
     setSentence(null);
     setView('card');
@@ -157,6 +174,7 @@ export function useSelfService({
       ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
       ?? null;
     if (learnerId && claim) claim(learnerId);
+    return { resolved: true, sentence: null };
   }, [claim]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
@@ -212,17 +230,32 @@ export function useSelfService({
     setView('sentence');
   }, [busy, onLaunch, toLock]);
 
-  /** "Did it print?" — Yes closes the interaction, No offers it again. */
-  const confirmPrint = useCallback((printed) => {
+  /**
+   * "Did it print?" — Yes closes the interaction, No offers it again.
+   *
+   * No RE-RESOLVES rather than relabelling a button. The session has moved to
+   * `issued` by now, so the domain's own recomputed card says "Print it again"
+   * without the frontend ever deciding that wording — which is D8's "the card
+   * offers one action and recomputes", and keeps `offeredActions` the single
+   * authority on every label. Relabelling here was a second wording authority,
+   * i.e. exactly the drift `offerSession.mjs` records deleting.
+   */
+  const confirmPrint = useCallback(async (printed) => {
     if (printed) {
       schoolLog.selfService('print.confirmed', {});
       toLock();
       return;
     }
     schoolLog.selfService('print.retried', {});
-    setPrintAgain(true);
-    setView('card');
-  }, [toLock]);
+    const { resolved, sentence: said } = await submit(codeRef.current);
+    // A recompute that failed must not strand the child on a confirm whose
+    // question has already been answered: `message`/`degraded` are keypad-only
+    // state and would be invisible from here.
+    if (!resolved) {
+      setSentence(said ?? DEGRADED_SENTENCE);
+      setView('sentence');
+    }
+  }, [submit, toLock]);
 
   // Idle timeout. Armed only while a card is open — the lock screen IS the
   // resting state, so there is nothing to time out to from there.
@@ -250,7 +283,7 @@ export function useSelfService({
   }, [view, toLock]);
 
   return {
-    view, card, message, degraded, sentence, printAgain, busy,
+    view, card, message, degraded, sentence, busy,
     submit, retry, runAction, confirmPrint, exit: toLock,
   };
 }

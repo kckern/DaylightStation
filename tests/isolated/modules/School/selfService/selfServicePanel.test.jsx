@@ -84,6 +84,11 @@ vi.mock('#frontend/modules/Player/Player.jsx', () => ({
   default: ({ play }) => <div data-testid="player-stub">Player: {play?.contentId ?? 'none'}</div>,
 }));
 
+// Labels here are FIXTURE values, not the domain's wording. `offeredActions`
+// owns what every button says (and Task 5 is changing several of them right
+// now: the media button gains a room name, `retry` splits paper from screen).
+// So these tests assert that whatever label ARRIVES is what renders — never
+// that a particular sentence is correct. See the pass-through test below.
 const MOVE_CARD = {
   ok: true,
   learner: 'kid1',
@@ -107,6 +112,16 @@ beforeEach(() => {
   actMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { outcome: 'issued', sentence: 'Printing now.' } });
   screenConfigMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {} });
 });
+
+/**
+ * Find a card button by the action's KIND. Labels belong to `offeredActions`
+ * and move with session state and config (Task 5 is changing two of them right
+ * now), so no test should have to know what a button says in order to press it.
+ * Yes / No / Done / the digits are LaunchCard's and Keypad's own words, so
+ * those are matched by name quite deliberately.
+ */
+const actionButton = (kind) => screen.getByTestId(`selfservice-action-${kind}`);
+const findActionButton = (kind) => screen.findByTestId(`selfservice-action-${kind}`);
 
 /** Tap a code into the keypad and submit it. */
 async function typeCode(code) {
@@ -165,8 +180,8 @@ describe('locked panel — typing a code', () => {
 
     expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
     expect(screen.getByText('Mathematics')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Print your sheet' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Go back' })).toBeInTheDocument();
+    expect(actionButton('print')).toBeInTheDocument();
+    expect(actionButton('exit')).toBeInTheDocument();
     expect(resolveMock).toHaveBeenCalledWith('481920');
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('code.resolved', expect.anything()));
   });
@@ -175,7 +190,7 @@ describe('locked panel — typing a code', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Go back' }));
+    fireEvent.click(await findActionButton('exit'));
 
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
     expect(screen.queryByText('Fractions 3')).toBeNull();
@@ -187,7 +202,7 @@ describe('locked panel — printing', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Print your sheet' }));
+    fireEvent.click(await findActionButton('print'));
 
     expect(await screen.findByText(/did it print\?/i)).toBeInTheDocument();
     expect(actMock).toHaveBeenCalledWith({ code: '481920', action: 'print' });
@@ -197,15 +212,43 @@ describe('locked panel — printing', () => {
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('print.confirmed', expect.anything()));
   });
 
-  it('"No" offers the print again rather than dead-ending', async () => {
+  it('"No" recomputes the card from the server rather than relabelling here', async () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Print your sheet' }));
+    fireEvent.click(await findActionButton('print'));
+
+    // The session is at `issued` now, so the DOMAIN answers with its own
+    // reprint wording. The panel must show whatever it sends, not invent it.
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'print', label: 'ZZ-REPRINT-LABEL' }, { kind: 'exit', label: 'Go back' }] },
+    });
     fireEvent.click(await screen.findByRole('button', { name: /^no$/i }));
 
-    expect(await screen.findByRole('button', { name: /print it again/i })).toBeInTheDocument();
+    // A print is offered again — keyed on KIND. Whether the domain calls it
+    // "Print it again" at `issued` is the domain's business, not this test's.
+    expect(await findActionButton('print')).toBeInTheDocument();
+    expect(screen.queryByText(/did it print\?/i)).toBeNull();
+    // A second /resolve is the recompute; without it the frontend would have
+    // had to decide the reprint wording itself.
+    await waitFor(() => expect(resolveMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('print.retried', expect.anything()));
+  });
+
+  it('"No" on a recompute that fails lands on words, not a stuck confirm', async () => {
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    resolveMock.mockResolvedValueOnce({ ok: false, status: 0, data: null });
+    fireEvent.click(await screen.findByRole('button', { name: /^no$/i }));
+
+    expect(await screen.findByText(/school computer isn.t answering/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did it print\?/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 
   it('a debounced print renders words rather than the backend\'s silence', async () => {
@@ -216,7 +259,7 @@ describe('locked panel — printing', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Print your sheet' }));
+    fireEvent.click(await findActionButton('print'));
 
     expect(await screen.findByText(/already on its way/i)).toBeInTheDocument();
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('print.debounced', expect.anything()));
@@ -238,7 +281,7 @@ describe('locked panel — play and launch', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Play in the living room' }));
+    fireEvent.click(await findActionButton('play'));
 
     expect(await screen.findByText('A grown-up has to say yes first.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
@@ -259,7 +302,7 @@ describe('locked panel — on-screen work registers a sitting', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    fireEvent.click(await screen.findByRole('button', { name: 'Answer on the screen' }));
+    fireEvent.click(await findActionButton('screen'));
 
     // QuizRunner's first question — and, decisively, a session opened through
     // schoolApi.openSession, which is what PortalSurface.occupancy() reads.
@@ -298,6 +341,92 @@ describe('locked panel — idle timeout', () => {
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
     expect(screen.queryByText('Fractions 3')).toBeNull();
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('idle.timeout', expect.anything()));
+  });
+});
+
+describe('locked panel — the domain owns the wording', () => {
+  it('renders every action.label verbatim and sends back action.kind', async () => {
+    // Deliberately nonsense labels: if either renders as anything else, the
+    // frontend is deciding wording it does not own. Task 5 is changing the real
+    // strings under us (the media button gains a room name, `retry` becomes
+    // composition-aware) — this test survives that because it asserts
+    // pass-through, not content.
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        ...MOVE_CARD,
+        actions: [
+          { kind: 'retry', label: 'ZZ-ARBITRARY-RETRY' },
+          { kind: 'exit', label: 'ZZ-ARBITRARY-EXIT' },
+        ],
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+
+    expect(await findActionButton('retry')).toHaveTextContent('ZZ-ARBITRARY-RETRY');
+    expect(actionButton('exit')).toHaveTextContent('ZZ-ARBITRARY-EXIT');
+
+    fireEvent.click(actionButton('retry'));
+    // `kind` is the action's identity — it is what /act looks up. The label
+    // never goes back over the wire.
+    await waitFor(() => expect(actMock).toHaveBeenCalledWith({ code: '481920', action: 'retry' }));
+  });
+
+  it('a card with no work on it is still a card, not a refusal', async () => {
+    // `served` and `locked` resolutions carry a sentence and only an exit.
+    // Without `ok`, that is indistinguishable from a bad code — and telling a
+    // child who already finished their maths that they mistyped would be a lie.
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        ok: true, learner: 'kid1', subject: 'Mathematics', title: 'Fractions 3',
+        sentence: 'You already did this today.',
+        actions: [{ kind: 'exit', label: 'Go back' }],
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+
+    expect(await screen.findByTestId('selfservice-card')).toBeInTheDocument();
+    expect(screen.getByText('You already did this today.')).toBeInTheDocument();
+    expect(screen.getByText('Fractions 3')).toBeInTheDocument();
+    // Emphatically NOT the keypad's refusal path.
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+    expect(selfServiceLog).not.toHaveBeenCalledWith('code.rejected', expect.anything());
+  });
+
+  it('a bad code and a backend fault do not look the same on the wall', async () => {
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ok: false, reason: 'unknown_code', sentence: 'Try again.', actions: [] },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('111111');
+
+    // A minting/expiry bug must not read as an outage, or the two are
+    // indistinguishable to whoever is standing at the panel.
+    expect(await screen.findByText('Try again.')).toBeInTheDocument();
+    expect(screen.queryByText(/school computer isn.t answering/i)).toBeNull();
+  });
+
+  it('prefers the `reason` discriminator over the sentence for a fault', async () => {
+    // The retry affordance must survive the backend rewording its copy for a
+    // child — matching on the sentence alone makes a typo a dead end.
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ok: false, reason: 'not_answering', sentence: 'Something went wrong at school HQ.', actions: [] },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+
+    expect(await screen.findByText('Something went wrong at school HQ.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /try again|retry/i }));
+    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
   });
 });
 

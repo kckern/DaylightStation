@@ -8,9 +8,16 @@
  *
  * No learner name: the card is reached by a code that already named them, and
  * keeping the panel anonymous end to end means one less rule to remember.
+ *
+ * WORDING IS NOT DECIDED HERE. Every button renders `action.label` verbatim.
+ * `offeredActions` is the ONE authority on what a card offers and what each
+ * button says — its own header cites the duplicated judgement in
+ * `offerSession.mjs:133-145` that drifted and had to be deleted. A second
+ * wording authority in the frontend is that same failure one layer up, and it
+ * shows as a button whose text disagrees with what the backend is offering.
+ * `action.kind` is the action's IDENTITY (it is what `/act` looks up); `label`
+ * is for the child's eyes only.
  */
-
-const PRINT_KINDS = new Set(['print', 'retry']);
 
 /**
  * @param {object} props
@@ -19,8 +26,6 @@ const PRINT_KINDS = new Set(['print', 'retry']);
  *   with nothing to do (served / locked / waiting) and is shown verbatim.
  * @param {'card'|'confirm'|'sentence'} props.view
  * @param {string|null} [props.sentence] - the `/act` outcome's words.
- * @param {boolean} [props.printAgain] - the child said it did NOT print, so
- *   the print button says so rather than repeating "Print your sheet".
  * @param {boolean} [props.busy]
  * @param {(action: object) => void} props.onAction
  * @param {(printed: boolean) => void} props.onConfirm
@@ -30,7 +35,6 @@ export default function LaunchCard({
   card,
   view = 'card',
   sentence = null,
-  printAgain = false,
   busy = false,
   onAction,
   onConfirm,
@@ -53,20 +57,23 @@ export default function LaunchCard({
         <>
           {card?.sentence && <p className="school-selfservice-card__sentence">{card.sentence}</p>}
           <div className="school-selfservice-card__actions">
-            {actions.map((action, i) => {
-              const label = printAgain && PRINT_KINDS.has(action.kind) ? 'Print it again' : action.label;
-              return (
-                <button
-                  key={`${action.kind}-${i}`}
-                  type="button"
-                  className={`school-selfservice-card__action school-selfservice-card__action--${action.kind}`}
-                  onClick={() => (action.kind === 'exit' ? onExit() : onAction(action))}
-                  disabled={busy}
-                >
-                  {label}
-                </button>
-              );
-            })}
+            {actions.map((action, i) => (
+              <button
+                key={`${action.kind}-${i}`}
+                type="button"
+                className={`school-selfservice-card__action school-selfservice-card__action--${action.kind}`}
+                /* Addressable by KIND, which is the action's stable identity.
+                   Labels belong to `offeredActions` and change with the
+                   session state and the config, so nothing should have to
+                   find a button by what it says. */
+                data-testid={`selfservice-action-${action.kind}`}
+                onClick={() => (action.kind === 'exit' ? onExit() : onAction(action))}
+                disabled={busy}
+              >
+                {/* Verbatim. The domain owns this wording — see the header. */}
+                {action.label}
+              </button>
+            ))}
             {!hasExit && (
               <button
                 type="button"
