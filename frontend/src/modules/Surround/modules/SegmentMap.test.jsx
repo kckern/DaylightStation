@@ -1344,7 +1344,11 @@ describe('SegmentMap — the compact rail', () => {
     const { container: named } = renderMap();
     expect(named.querySelector('[data-testid="surround-segment-map"]')
       .getAttribute('data-density')).toBe('names');
-    expect(named.querySelectorAll('.surround-segment-map__text-row')).toHaveLength(4);
+    // Scoped to the SEGMENTS. The rail also carries one text row inside its
+    // ruler (`__probe`), which is a measuring instrument and not a segment's
+    // name; a bare query would count it and the claim being made here is about
+    // what the four segments render.
+    expect(named.querySelectorAll('[data-testid="surround-segment"] .surround-segment-map__text-row')).toHaveLength(4);
   });
 
   it('drops the band’s floor to what a bars-only rail actually needs', () => {
@@ -1378,79 +1382,223 @@ describe('SegmentMap — the compact rail', () => {
  * surface anyone can point at afterwards.
  */
 describe('SegmentMap — logging the new decisions', () => {
-  it('reports the accordion’s measured width for the sounding segment', () => {
-    // The measurement path is the one part of this module jsdom cannot reach on
-    // its own (every box is 0x0), and it is the number that decides every width
-    // on the rail — so the geometry is stubbed and the path is actually run,
-    // rather than left as the "designed degradation" every other accordion spec
-    // correctly exercises.
+  /**
+   * THE MEASUREMENT PATH, RUN — the one part of this module jsdom cannot reach
+   * on its own (every box is 0x0 and its ResizeObserver never fires), and the
+   * one that decides every width on the rail. So the geometry is stubbed and the
+   * path is actually exercised.
+   *
+   * IT MEASURES THE RULER, NOT THE SEGMENTS (task 6c). The rail reads its
+   * furniture and its names off `__probe`, a single out-of-flow element, rather
+   * than off a live segment — because two of the numbers are needed for segments
+   * that render no name at all (chip mode), and because a number read off a live
+   * segment is read off a box the previous solve already resized.
+   */
+  const withRailGeometry = (rects, run) => {
     const rect = Element.prototype.getBoundingClientRect;
-    const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth');
+    const RO = globalThis.ResizeObserver;
     Element.prototype.getBoundingClientRect = function stub() {
-      if (this.classList?.contains('surround-segment-map__text')) {
-        return { width: 52, height: 40, x: 0, y: 0, top: 0, left: 0, right: 52, bottom: 40 };
-      }
-      if (this.classList?.contains('surround-segment-map__segment')) {
-        return { width: 100, height: 60, x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 60 };
-      }
-      return { width: 0, height: 0, x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0 };
+      const hit = Object.keys(rects).find((cls) => this.classList?.contains(cls));
+      const width = hit ? rects[hit] : 0;
+      return { width, height: width ? 40 : 0, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 40 };
     };
-    Object.defineProperty(Element.prototype, 'scrollWidth', {
-      configurable: true,
-      get() {
-        return this.classList?.contains('surround-segment-map__heading') ? 149 : 0;
-      },
-    });
-    try {
+    // happy-dom ships a ResizeObserver that never fires, so the rule is never
+    // measured and `railPx` stays at its "no measurement yet" zero. This one
+    // delivers the rule's width once, synchronously, which is what the browser
+    // does on the first frame.
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; }
+      observe(el) { this.cb([{ target: el, contentRect: { width: rects.RAIL ?? 0 } }]); }
+      disconnect() {}
+      unobserve() {}
+    };
+    try { return run(); } finally {
+      Element.prototype.getBoundingClientRect = rect;
+      globalThis.ResizeObserver = RO;
+    }
+  };
+
+  it('reports the accordion’s measured width for the sounding segment', () => {
+    withRailGeometry({
+      RAIL: 1000,
+      // The ruler: a max-content row of 197px whose text column is 149px, so the
+      // rail's segment furniture is 48px — the numeral's gutter and the insets.
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
       const logger = makeLogger();
       renderMap({ position: 2000, logger });   // segment III, the Scherzo
       const measured = logger.debug.mock.calls.filter(([n]) => n === 'surround.accordion.measured');
       expect(measured.length, 'the accordion measured nothing anyone can see').toBe(1);
-      // chrome (100 − 52 = 48) + the widest single-line string (149), rounded up
-      // with one pixel of margin — the number the solver is handed.
+      // chrome (197 − 149 = 48) + the widest single-line string (149), rounded
+      // up with one pixel of margin — the number the solver is handed.
       expect(measured[0][1]).toMatchObject({ index: 2, need: 149, chrome: 48, desired: 198 });
-    } finally {
-      Element.prototype.getBoundingClientRect = rect;
-      if (scroll) Object.defineProperty(Element.prototype, 'scrollWidth', scroll);
-      else delete Element.prototype.scrollWidth;
-    }
+    });
   });
 
   it('does NOT open the accordion for a name that already fits', () => {
-    // Review finding, minor 3: on a `nowrap` box that is not overflowing,
-    // `scrollWidth === clientWidth`, so the old `Math.ceil(...) + 1` asked for a
-    // pixel more than the segment already had and quietly took one off every
-    // neighbour for a segment whose name was never cut.
-    const rect = Element.prototype.getBoundingClientRect;
-    const scroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollWidth');
-    Element.prototype.getBoundingClientRect = function stub() {
-      if (this.classList?.contains('surround-segment-map__text')) {
-        return { width: 52, height: 40, x: 0, y: 0, top: 0, left: 0, right: 52, bottom: 40 };
-      }
-      if (this.classList?.contains('surround-segment-map__segment')) {
-        return { width: 100, height: 60, x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 60 };
-      }
-      return { width: 0, height: 0, x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0 };
-    };
-    Object.defineProperty(Element.prototype, 'scrollWidth', {
-      // The text fits its cell exactly — nothing is being cut.
-      configurable: true,
-      get() {
-        return this.classList?.contains('surround-segment-map__heading') ? 52 : 0;
-      },
-    });
-    try {
+    // Review finding, minor 3: a `nowrap` box that is not overflowing reports
+    // `scrollWidth === clientWidth`, so `Math.ceil(...) + 1` asked for a pixel
+    // more than the segment already had and quietly took one off every
+    // neighbour for a segment whose name was never cut. Task 6c moved the
+    // question onto the segment's NATURAL width — the width the rail would give
+    // it anyway — which is what the accordion is actually deciding about.
+    withRailGeometry({
+      // The Scherzo's natural share of the Eroica is ~0.12 of the rule, so a
+      // 10000px rule gives it ~1195px against a name that wants 197px.
+      RAIL: 10000,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
       const logger = makeLogger();
       renderMap({ position: 2000, logger });
       expect(
         logger.debug.mock.calls.filter(([n]) => n === 'surround.accordion.measured'),
         'the accordion opened for a name that already fitted',
       ).toHaveLength(0);
-    } finally {
-      Element.prototype.getBoundingClientRect = rect;
-      if (scroll) Object.defineProperty(Element.prototype, 'scrollWidth', scroll);
-      else delete Element.prototype.scrollWidth;
-    }
+    });
+  });
+
+  /**
+   * THE RAIL SAYS WHICH DENSITY IT CHOSE, and why — the number the threshold was
+   * decided on, not just its verdict. A rail that is chipping on a real screen
+   * when it should not be is otherwise unfalsifiable from a log.
+   */
+  it('reports the density it chose, with the room each inactive segment had', () => {
+    withRailGeometry({
+      RAIL: 400,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
+      const logger = makeLogger();
+      renderMap({ position: 2000, logger });
+      const density = logger.debug.mock.calls.filter(([n]) => n === 'surround.rail.density');
+      expect(density.length, 'the rail chose a density and said nothing about it')
+        .toBeGreaterThanOrEqual(1);
+      const last = density[density.length - 1][1];
+      // 400px of rule, four segments, the widest name wanting 198px: 202px over
+      // three inactive segments is 67px each, under this rail's 85px name floor
+      // (48px of furniture + the 37px name run), so the rail chips.
+      expect(last).toMatchObject({
+        density: 'chips', segments: 4, railPx: 400, widestPx: 198, chromePx: 48, nameFloorPx: 85,
+      });
+      expect(last.roomPx).toBe(67);
+    });
+  });
+
+  /**
+   * ==========================================================================
+   * THE COMPONENT'S WIRING — it renders what the decision says (task 6c).
+   * ==========================================================================
+   *
+   * The GEOMETRY of chip mode is measured in Chromium against the compiled sheet
+   * (`../band.measure.test.jsx`): the threshold, the widths, the guarantee that
+   * the sounding name is whole. What that spec cannot see is the component —
+   * `renderToStaticMarkup` runs no effects, so it never takes the decision. This
+   * is where the decision reaches the DOM, which is exactly the split
+   * `CueTicker.test.jsx` carries for the fit's `withhold`.
+   *
+   * TO GO RED: render the chip for every segment including the sounding one; or
+   * keep the text row and hide it; or take the decision from `segments.length`.
+   */
+  it('wears chips when the rule cannot afford names, and only then', () => {
+    withRailGeometry({
+      RAIL: 400,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
+      const { container } = renderMap({ position: 2000 });   // segment III sounding
+      expect(container.querySelector('[data-testid="surround-segment-map"]')
+        .getAttribute('data-density')).toBe('chips');
+      const segs = [...container.querySelectorAll('[data-testid="surround-segment"]')];
+      const shape = segs.map((seg) => ({
+        state: seg.getAttribute('data-state'),
+        chip: seg.querySelector('[data-testid="surround-segment-chip"]')?.textContent ?? null,
+        named: !!seg.querySelector('.surround-segment-map__text-row'),
+      }));
+      expect(shape).toEqual([
+        { state: 'elapsed', chip: 'I', named: false },
+        { state: 'elapsed', chip: 'II', named: false },
+        { state: 'active', chip: null, named: true },
+        { state: 'future', chip: 'IV', named: false },
+      ]);
+      // The chip carries the gutter's mark WITHOUT its point — the same mark,
+      // from the same table, so the two can never disagree.
+      expect(container.querySelector('[data-state="active"] .surround-segment-map__numeral').textContent)
+        .toBe('III.');
+    });
+  });
+
+  it('keeps every name when the rule can afford them', () => {
+    withRailGeometry({
+      RAIL: 2000,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
+      const { container } = renderMap({ position: 2000 });
+      expect(container.querySelector('[data-testid="surround-segment-map"]')
+        .getAttribute('data-density')).toBe('names');
+      expect(container.querySelectorAll('[data-testid="surround-segment-chip"]')).toHaveLength(0);
+      expect(container.querySelectorAll('[data-testid="surround-segment"] .surround-segment-map__text-row'))
+        .toHaveLength(4);
+    });
+  });
+
+  /**
+   * ONE NOTATION PER RAIL, AS RENDERED. `ROMAN` runs to XII, so a rail of
+   * twenty-one used to set `… XI. XII. 13. 14. …` in one gutter.
+   *
+   * TO GO RED: take the style per segment instead of per rail.
+   */
+  it('sets one notation across a rail too long for the Roman table', () => {
+    const many = {
+      contentId: 'plex:696230',
+      piece: { title: 'Nocturnes', musicEndsAt: 2100 },
+      pieceSegments: Array.from({ length: 21 }, (_, i) => ({
+        n: i + 1, name: `No. ${i + 1} in C major`, start: i * 100,
+      })),
+    };
+    const { container } = renderMap({ data: many, position: 50, duration: 2200 });
+    const marks = [...container.querySelectorAll('[data-testid="surround-segment"] .surround-segment-map__numeral')]
+      .map((el) => el.textContent);
+    expect(marks[0], 'the first mark on a twenty-one rail').toBe('1.');
+    expect(marks[11], 'the twelfth — the last the Roman table can reach').toBe('12.');
+    expect(marks[20]).toBe('21.');
+    expect(marks.filter((m) => /[IVX]/.test(m)), 'two notations in one gutter').toEqual([]);
+  });
+
+  /**
+   * A NAME THAT CANNOT BE SET WHOLE IS REPORTED, and at WARN — the guarantee is
+   * "the sounding segment shows its name", so failing it is news. Debug never
+   * reaches the log store, which is where this has to be visible: a trimmed name
+   * looks like a trimmed name on screen whatever the reason, so the log is the
+   * only thing that distinguishes "the rail is crowded" from "somebody authored
+   * a name no screen can hold".
+   *
+   * TO GO RED: drop the warn to a debug, or let the accordion silently take what
+   * it can get.
+   */
+  it('warns when even a chipped rail cannot give the sounding name its width', () => {
+    withRailGeometry({
+      RAIL: 120,
+      'surround-segment-map__text-row': 400,
+      'surround-segment-map__heading': 352,
+      'surround-segment-map__text': 352,
+    }, () => {
+      const logger = makeLogger();
+      renderMap({ position: 2000, logger });
+      const warned = logger.warn.mock.calls.filter(([n]) => n === 'surround.accordion.degraded');
+      expect(warned.length, 'the rail trimmed the sounding name and said nothing').toBe(1);
+      expect(warned[0][1]).toMatchObject({ index: 2, density: 'chips', railPx: 120 });
+      expect(warned[0][1].granted).toBeLessThan(warned[0][1].desired);
+      expect(warned[0][1].name, 'the warn does not say WHICH name could not be set')
+        .toBe('Scherzo. Allegro vivace');
+    });
   });
 
   it('reports the side crossover, from both halves of the bond', () => {

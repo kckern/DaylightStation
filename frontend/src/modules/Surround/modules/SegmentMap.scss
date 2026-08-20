@@ -391,6 +391,112 @@
   min-width: 0;
 }
 
+/* ---------------------------------------------------------------------------
+   THE RULER (task 6c) — one per rail, and the only thing on it that is measured
+   rather than painted.
+
+   The rail has two questions no rendered segment can answer. How wide is this
+   rail's segment FURNITURE (the numeral's gutter and the text insets), and how
+   wide would each of its names set on one line — including the names of
+   segments that, in chip mode, are rendering no name at all. Measuring the first
+   off a live segment would read a box the accordion had already resized, which
+   is a decision feeding on its own output; measuring the second is impossible,
+   because the element is not there.
+
+   `width: max-content` is what makes it a ruler rather than a copy of a segment:
+   the row's text track sizes to the string instead of to a share of the rule, so
+   the number it reports is the string's own width and the difference between the
+   row and its text column is the furniture. The gutter track is an explicitly
+   sized grid track either way, so it contributes the same chrome here as there.
+
+   `visibility: hidden` rather than `display: none`, for the reason
+   `CueTicker`'s probe carries the same note: a box with no display has no
+   layout, and layout is the entire question being asked. */
+.surround-segment-map__probe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+  width: max-content;
+
+  /* AND NOTHING HERE OVERRIDES THE CLIPPING, which is the point of sizing the
+     row to its content rather than to a share of the rule: a box that is already
+     as wide as its text never overflows, so the segment's own
+     `overflow: hidden` and its ellipsis are inert inside the ruler without being
+     turned off. The ruler measures the shipped rules, unaltered. */
+  .surround-segment-map__text-row {
+    width: max-content;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE CHIP (task 6c) — what an inactive segment wears when the rail cannot
+   afford names.
+
+   TWENTY-ONE NOCTURNES ON A 1280px RULE IS ~61px EACH against names that want
+   ~200px: short by a factor of three before the accordion opens the sounding
+   one, and 21 x this rail's 77px name floor is 1617px of rule that no screen in
+   the fleet has. The floor has not been degraded there, it has RUN OUT, and the
+   rail has to say so rather than quietly drawing 61px segments that claim to be
+   floored.
+
+   A CHIP IS A DIFFERENT THING FROM A TRIMMED NAME. Text at zero opacity, or a
+   name clipped to two glyphs, is a rail still pretending to be a contents page;
+   a numbered mark is a rail that has changed what it is saying — "twenty-one
+   pieces, this is the ninth" — which is a true and useful statement at a width
+   where the name is not. So the name is not rendered at all, and the mark that
+   replaces it is the SAME mark the numeral gutter sets, without its point, so
+   the chip and the sounding segment's own numeral can never disagree.
+
+   THE SWITCH IS ALL OR NOTHING ACROSS THE RAIL (`railWearsChips`), and it is a
+   constant of the piece rather than of this instant — a mix of chips and names,
+   or a rail that changed density at a segment boundary, reads as a bug.
+
+   REM-FIXED, NOT ROOT-SCALED. The chip is the numeral gutter's mark rendered as
+   a mark, and everything about that gutter — the row's 1.05rem, the numeral's
+   0.92em, the `ch` coefficient — is fixed against the frame's 16px rem. A chip
+   scaled by root width would be the one part of the index mark that moved.
+
+   NO TRANSITION, EITHER WAY. The name-to-chip change is a change of what the
+   rail is rendering, not a move: there is nothing to interpolate between a
+   string and a mark, so `prefers-reduced-motion` has nothing to suppress here
+   and the accordion's own path (`../band.js`, `useEasedVector`) is unchanged.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__chip {
+  --chip-size: 1.25rem;
+  align-self: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  /* Clear of the rule lane by the same 0.55em the text row uses, so a chipped
+     rail and a named one hang their content off the same line. */
+  margin-top: 0.55em;
+  width: var(--chip-size);
+  height: var(--chip-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--ink-soft, #6b6152);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: lining-nums;
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0;
+  color: var(--ink, #2a1d07);
+  /* The same three states the names carry, in the same order of loudness: the
+     future is the brighter quiet state, the elapsed the dimmer one. */
+  opacity: 0.78;
+}
+
+.surround-segment-map__segment--elapsed .surround-segment-map__chip {
+  color: var(--ink-soft, #6b6152);
+  border-color: var(--ink-soft, #6b6152);
+  opacity: 0.5;
+}
+
 /* Segment names sit BELOW the rule (design wave 4), clear of the rule lane
    above.
    ONE LINE, ELLIPSIS — and the segment widens rather than the name wrapping

@@ -208,7 +208,17 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 0 0.9rem;
+  /* THE FOOT (task 6c). Both registers crowded the band's bottom edge: a zone
+     is a column of a header and a note, and the note's box takes the whole of
+     the leftover run, so its last line sat within a pixel or two of the panel's
+     own foot with nothing under it. The owner's word was "garish", and this is
+     the first of the four things that made it so.
+     IT IS PADDING ON THE ZONE, NOT ON THE PANEL, and the difference matters: the
+     bond's ground has to keep bleeding to the region seam at the top and to the
+     frame's floor at the bottom (`__ground`), so the SHAPE must not move. What
+     moves is the type inside it — the note's box loses this many pixels of run,
+     which the fit ladder then solves against, so nothing is cut by the change. */
+  padding: 0 0.9rem var(--zone-pad-bottom, 0.4rem);
   box-sizing: border-box;
 }
 
@@ -277,7 +287,12 @@
   line-height: 1.2;
   letter-spacing: 0.03em;
   color: var(--ink, #2a1d07);
-  opacity: 0.85;
+  /* 0.7, from 0.85 (task 6c). It is the loudest ink in either register and the
+     panel had to stop shouting as a whole, not in one line of it — a header left
+     at 0.85 over a note at 0.66 would simply move the glare up an inch. 0.7 is
+     the top of the range the owner asked for, which is right for the one line in
+     the register whose job is to be found first. */
+  opacity: 0.7;
 }
 
 .surround-cue-ticker__now-numeral {
@@ -347,7 +362,19 @@
   text-wrap: balance;
   font-weight: 500;
   color: var(--ink, #2a1d07);
-  opacity: 1;
+  /* IT SITS BACK INTO THE GROUND (task 6c). The band's `--ink` is #e9dfc8 —
+     parchment, not white, but at full strength on near-black stone it reads as
+     white and it SHOUTS: measured, 12.75:1 against the bond's ground. A
+     programme note is the quietest thing on the frame and was the loudest.
+     0.66 is the middle of the 60-70% the owner asked for, and it is a
+     MEASURED choice rather than a taste: composited over the two grounds this
+     register is ever painted on it leaves 6.2:1 (the lit bond panel) and 6.6:1
+     (the unlit band), both far above the 4.5:1 a body size needs and both
+     asserted in `../band.measure.test.jsx` against the real compiled sheet.
+     `opacity` and not a dimmer `color` because the dissolve already animates
+     this property, and a note fading between two colours as well as two
+     opacities is two transitions where the design has one. */
+  opacity: 0.66;
 }
 
 .surround-cue-ticker__text--hidden {

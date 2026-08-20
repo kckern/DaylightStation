@@ -11,7 +11,7 @@ import {
   bandPools, fitBand, fitStyle, proseFloorPx, labelFloorPx,
   PROSE_FLOOR_ANCHOR_PX, PROSE_FLOOR_MIN_PX, PROSE_FLOOR_MAX_PX,
   LABEL_FLOOR_ANCHOR_PX, LABEL_FLOOR_MIN_PX, LABEL_FLOOR_MAX_PX,
-  FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
+  FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, proseCeilingPx, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
 
 /**
@@ -99,9 +99,45 @@ describe('the ladder’s floors', () => {
     expect(PROSE_FLOOR_ANCHOR_PX * X_HEIGHT, 'the x-height at the floor').toBeCloseTo(5.91, 1);
   });
 
+  /**
+   * THE CEILING CAME DOWN 20% IN TASK 6C — 1.5rem to 1.2rem — because the band
+   * on a screen with room ran the ladder all the way to the old ceiling and set
+   * a programme note as loudly as a headline. THE FLOOR DID NOT MOVE: it is the
+   * angular readability floor, and the whole point of putting the cut on the
+   * ceiling is that a band already pinned at its floor is unchanged.
+   *
+   * TO GO RED: restore 24, or apply the cut to `PROSE_FLOOR_ANCHOR_PX` instead.
+   */
   it('keeps a ceiling under the note, so it cannot shout down the work’s own title', () => {
-    expect(PROSE_CEILING_PX).toBeGreaterThan(PROSE_FLOOR_MAX_PX);
-    expect(PROSE_CEILING_PX).toBe(1.5 * 16);
+    expect(PROSE_CEILING_PX).toBe(1.2 * 16);
+    expect(PROSE_CEILING_PX / (1.5 * 16), 'the cut is not 20%').toBeCloseTo(0.8, 6);
+    // It is still above the floor on both SHIPPED roots, which is what makes the
+    // ladder a ladder where anybody is looking at it.
+    expect(PROSE_CEILING_PX).toBeGreaterThan(proseFloorPx(1280));
+    expect(PROSE_CEILING_PX).toBeGreaterThan(proseFloorPx(960));
+  });
+
+  /**
+   * A ROOT-SCALED FLOOR AND A REM-PINNED CEILING CAN CROSS, and after the cut
+   * one of them does — at the 1920 measurement root the floor is 21.12px against
+   * a 19.2px ceiling. THE FLOOR WINS, by rule and not by an accident of the snap
+   * in `largestPassing`: the floor is the readability claim and the ceiling is a
+   * claim about loudness beside a title, and an unreadable note is the worse of
+   * the two failures.
+   *
+   * TO GO RED: pass `PROSE_CEILING_PX` straight to `largestPassing` as its `hi`.
+   */
+  it('never puts the ladder’s top below its own bottom', () => {
+    expect(proseCeilingPx(1280), 'the office root').toBe(PROSE_CEILING_PX);
+    expect(proseCeilingPx(960), 'the living-room root').toBe(PROSE_CEILING_PX);
+    expect(proseCeilingPx(1920), 'the floor has climbed past the cut ceiling here').toBe(21.12);
+    [320, 960, 1280, 1920, 3840].forEach((root) => {
+      expect(
+        proseCeilingPx(root),
+        `at a ${root}px root the ladder runs from ${proseFloorPx(root)}px to `
+        + `${proseCeilingPx(root)}px — downwards`,
+      ).toBeGreaterThanOrEqual(proseFloorPx(root));
+    });
   });
 
   /**
@@ -192,12 +228,20 @@ describe('proseFloorPx — the prose floor, per root', () => {
     expect(PROSE_FLOOR_MAX_PX).toBe(proseFloorPx(1920));
   });
 
-  it('leaves the ladder real travel below the ceiling even at the high clamp', () => {
-    expect(
-      PROSE_CEILING_PX - PROSE_FLOOR_MAX_PX,
-      'the floor has climbed into the ceiling: the ladder has one rung left',
-    ).toBeGreaterThanOrEqual(2);
-    expect(PROSE_FLOOR_MAX_PX).toBeLessThan(PROSE_CEILING_PX);
+  /**
+   * THE LADDER HAS REAL TRAVEL ON THE SCREENS THE FLEET ACTUALLY RUNS. Task 6c's
+   * ceiling cut leaves the 1920 MEASUREMENT root with one rung (its floor has
+   * climbed past the cut ceiling — see `proseCeilingPx`), and that is the
+   * documented outcome there; the claim that still has to hold is about the two
+   * roots a viewer stands in front of.
+   */
+  it('leaves the ladder real travel on both shipped roots', () => {
+    [960, 1280].forEach((root) => {
+      expect(
+        proseCeilingPx(root) - proseFloorPx(root),
+        `at a ${root}px root the floor has climbed into the ceiling: the ladder has one rung left`,
+      ).toBeGreaterThanOrEqual(2);
+    });
   });
 
   /**
@@ -388,12 +432,13 @@ describe('the ladder’s search', () => {
    * rung below.
    */
   it('tightens the leading before it drops the size', () => {
-    // A two-line note in a 52px box. The loose leading can afford at most
-    // 52 / (2 x 1.35) = 19.26px of type; the tight one can afford 20.8px. The
+    // A two-line note in a 48px box. The loose leading can afford at most
+    // 48 / (2 x 1.30) = 18.46px of type; the tight one can afford 19.2px. The
     // ladder's order is the user's — hold the SIZE and spend the leading on it —
     // so it must come back with the bigger type and the tighter leading, not the
-    // other way round.
-    const roomPx = 52;
+    // other way round. (52px before task 6c, when the ceiling was 1.5rem; the
+    // case is sized so the CEILING is not what decides it.)
+    const roomPx = 48;
     const root = ruledBand({ roomPx, widthPx: 500 });
     document.body.appendChild(root);
     const fit = fitBand(root, { piece: ['x'.repeat(84)] });

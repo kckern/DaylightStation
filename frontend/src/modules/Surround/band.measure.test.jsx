@@ -59,10 +59,13 @@ import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import {
-  accordionShares, desiredWidth, placedSegments, SEGMENT_FLOOR_PX,
+  accordionShares, soundingWidth, idealWidth, placedSegments, nameFloorPx, railWearsChips,
+  inactiveRoomPx, numeralStyle, numeralText,
+  SEGMENT_FLOOR_PX, SEGMENT_NAME_RUN_PX, SEGMENT_CHIP_FLOOR_PX,
 } from './band.js';
 import {
-  bandPools, proseFloorPx, labelFloorPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
+  bandPools, proseFloorPx, labelFloorPx, proseCeilingPx,
+  PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
   PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
 import { smartQuotes } from './typography.js';
@@ -276,6 +279,111 @@ const EROICA_FULL = Object.freeze({
   ],
 });
 
+/**
+ * THE PIECE THE OWNER WAS WATCHING WHEN TASK 6C WAS WRITTEN — Chopin's
+ * Nocturnes, verbatim from `data/content/library/classical/0_flagship/chopin/
+ * nocturnes.yml` and `data/content/surround/classical/chopin/
+ * nocturnes.weimar-lifits.yml`: twenty-one names, twenty-one starts, and the
+ * `musicEndsAt` the sidecar authors.
+ *
+ * IT IS HERE BECAUSE IT IS THE CASE THE OTHER TWO CANNOT MAKE. Four movements
+ * and three movements both leave the rail room for its names at every screen in
+ * the fleet; twenty-one works do not, and everything task 6c added — the chip,
+ * the threshold, the compressed floor, one notation per rail — is unreachable
+ * from a corpus of four. The listening notes are the FIRST of each nocturne's
+ * two, which is what keeps the fit's pool honest without carrying the whole
+ * sidecar into this file.
+ */
+const NOCTURNE_NAMES = Object.freeze([
+  'No. 1 in B-flat minor, Op. 9 No. 1',
+  'No. 2 in E-flat major, Op. 9 No. 2',
+  'No. 3 in B major, Op. 9 No. 3',
+  'No. 4 in F major, Op. 15 No. 1',
+  'No. 5 in F-sharp major, Op. 15 No. 2',
+  'No. 6 in G minor, Op. 15 No. 3',
+  'No. 7 in C-sharp minor, Op. 27 No. 1',
+  'No. 8 in D-flat major, Op. 27 No. 2',
+  'No. 9 in B major, Op. 32 No. 1',
+  'No. 10 in A-flat major, Op. 32 No. 2',
+  'No. 11 in G minor, Op. 37 No. 1',
+  'No. 12 in G major, Op. 37 No. 2',
+  'No. 13 in C minor, Op. 48 No. 1',
+  'No. 14 in F-sharp minor, Op. 48 No. 2',
+  'No. 15 in F minor, Op. 55 No. 1',
+  'No. 16 in E-flat major, Op. 55 No. 2',
+  'No. 17 in B major, Op. 62 No. 1',
+  'No. 18 in E major, Op. 62 No. 2',
+  'No. 19 in E minor, Op. 72 No. 1',
+  'No. 20 in C-sharp minor, Op. posth.',
+  'No. 21 in C minor, Op. posth.',
+]);
+
+const NOCTURNE_STARTS = Object.freeze([
+  30, 347, 578, 1007, 1266, 1469, 1813, 2152, 2582, 2878, 3191,
+  3523, 3886, 4291, 4814, 5129, 5474, 6030, 6430, 6679, 6932,
+]);
+
+const NOCTURNE_LISTEN = Object.freeze([
+  'A long right-hand melody unfolds above rolling left-hand arpeggios, expanding rather than hurrying its phrases.',
+  'The tune returns repeatedly, each time carrying a more elaborate veil of ornament.',
+  'Short, graceful phrases keep the B-major nocturne light on its feet instead of broadly declamatory.',
+  'The tender opening is broken by a sudden impetuous middle section that changes the scale of the music.',
+  'Fine ornaments flit around the F-sharp-major melody with a weightless, suspended touch.',
+  'The G-minor outer sections keep a grave, searching character around the melodic line.',
+  'The left hand casts wide-spaced arpeggios beneath the melody; keep that netting soft enough to remain background.',
+  'Thirds and sixths soften the D-flat-major melody into a richly blended, almost vocal texture.',
+  'The B-major melody begins with unusual simplicity and very little ornament.',
+  'The A-flat-major melody moves in long, unbroken arcs above a constantly changing accompaniment.',
+  'A plaintive melody leans over a wailing accompaniment in the G-minor outer sections.',
+  'The G-major melody is soft and rounded, with harmony that seems to delay every arrival.',
+  'A quiet lament begins in C minor, then gathers weight until the texture becomes a chorale.',
+  'The opening chords command in short, hard phrases while the answering line seems to plead beneath them.',
+  'The outer sections carry a flebile dolcezza: a weeping sweetness held inside the F-minor melody.',
+  'The melody flows without a sharply contrasting middle section, creating one continuous E-flat-major span.',
+  'Tender flutings, trills, and roulades decorate the B-major melody with a late, intricate refinement.',
+  'The E-major nocturne balances a broad singing line against restless inner motion.',
+  'The E-minor melody sings over a simple accompaniment that leaves wide space around each phrase.',
+  'The C-sharp-minor opening states a grave melody in plain chords before the texture begins to move.',
+  'The C-minor line alternates between a simple cantabile phrase and more agitated answering figures.',
+]);
+
+const NOCTURNES = Object.freeze({
+  id: 'concert-hall',
+  contentId: 'plex:696230',
+  definition: DEFINITION,
+  assetBase: 'library/classical',
+  piece: {
+    title: 'Nocturnes',
+    short_title: 'Chopin\u2019s Nocturnes',
+    opus: 'Opp. 9, 15, 27, 32, 37, 48, 55, 62 and posthumous',
+    composed: '1827-1846',
+    year: 1832,
+    period: 'Romantic',
+    musicEndsAt: 7139,
+  },
+  composer: {
+    name: 'Frederic Chopin', born: 1810, died: 1849, birthplace: 'Zelazowa Wola', period: 'Romantic',
+    facts: ['Chopin gave about thirty public concerts in his life; he preferred playing in rooms.'],
+  },
+  pieceSegments: NOCTURNE_NAMES.map((name, i) => ({
+    n: i + 1,
+    name,
+    start: NOCTURNE_STARTS[i],
+    listen: [NOCTURNE_LISTEN[i]],
+    // The one nocturne the corpus glosses, kept because a rail whose glosses are
+    // all absent never exercises the gloss half of the accordion's `need`.
+    ...(i === 19 ? { translation: 'Slow, with great expression' } : {}),
+  })),
+  cues: [],
+  facts: [
+    'These are twenty-one separate pieces, not movements of one work.',
+    'John Field invented the nocturne; Chopin took the form and deepened it beyond recognition.',
+  ],
+});
+
+/** Nocturne 9 is sounding: mid-rail, so both halves of the rail are compressed. */
+const NOCTURNE_POSITION = 2700;
+
 /** The two pieces this frame actually ships, by the name the failure prints. */
 const SHIPPED = Object.freeze([
   { piece: "Beethoven's Eroica", data: EROICA_FULL, sounding: 1200 },
@@ -349,7 +457,7 @@ async function injectFit(page) {
     .replace(/^export default .*$/m, '')
     .replace(/^export /gm, '');
   await page.addScriptTag({
-    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, proseFloorPx, rootWidthOf, PROSE_FLOOR_ANCHOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
+    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, proseFloorPx, proseCeilingPx, rootWidthOf, PROSE_FLOOR_ANCHOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
   });
   const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function');
   expect(ok, 'fit.js did not load into the page — the injection stripped something it needed').toBe(true);
@@ -481,22 +589,31 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
 }
 
 /**
- * EFFECT 2 — the accordion, reproduced with the real solver.
+ * EFFECT 2 — the accordion AND the rail's density, reproduced with the real
+ * solvers.
  *
- * `SegmentMap.measureDesired` reads four numbers off the DOM and `band.js`
- * turns them into widths. Both halves happen here: the numbers are read in the
- * page, the solve is the imported `accordionShares`, and the result is written
- * back as the inline widths the component would have set.
+ * `SegmentMap` reads a handful of numbers off the DOM and `band.js` turns them
+ * into a density, a floor and a set of widths. Both halves happen here: the
+ * numbers are read in the page, every decision on top of them is an imported
+ * function, and the result is written back as the markup the component would
+ * have rendered.
  *
- * @returns the numbers the solve saw, so a failure can report them.
+ * WHAT IS READ WHERE, AND WHY. The rail's FURNITURE comes off the component's
+ * own ruler (`__probe`) because that is where the component reads it, and the
+ * ruler's reading is checked against a live segment's in the same pass — a ruler
+ * that has drifted from the paint is the one failure this arrangement could
+ * hide. Each name's single-line WIDTH comes off the rendered headings'
+ * `scrollWidth`, which is the same quantity the ruler reports and is available
+ * without driving the ruler from the spec (driving it would mean copying the
+ * component's title/tempo splitting into this file, which is the class of copy
+ * this file exists to abolish).
+ *
+ * @returns the numbers every decision was made from, so a failure can report them.
  */
 async function runAccordion(page) {
-  // The DOM READS, and only the DOM reads. Every number the accordion is
-  // computed from is measured here; not one of them is combined here. The
-  // arithmetic on top of them is `desiredWidth`, imported from the module the
-  // component imports it from — this file's whole purpose is to abolish copies
-  // of load-bearing arithmetic, and a transcription of `measureDesired` in the
-  // spec that measures `measureDesired` is the worst possible place for one.
+  // The DOM READS, and only the DOM reads. Not one of these numbers is combined
+  // here; the arithmetic on top of them is imported from the module the
+  // component imports it from.
   const measured = await page.evaluate(() => {
     const rule = document.querySelector('.surround-segment-map__rule');
     if (!rule) return null;
@@ -504,40 +621,83 @@ async function runAccordion(page) {
     const activeIndex = segs.findIndex((s) => s.getAttribute('data-state') === 'active');
     const natural = segs.map((s) => Number(s.getAttribute('data-natural')));
     const railPx = rule.getBoundingClientRect().width;
-    if (activeIndex < 0) return { natural, activeIndex, railPx };
-    const seg = segs[activeIndex];
-    const cell = seg.querySelector('.surround-segment-map__text');
-    if (!cell) return { natural, activeIndex, railPx };
-    const heading = seg.querySelector('.surround-segment-map__heading');
-    const gloss = seg.querySelector('.surround-segment-map__translation');
+    const w = (el) => (el ? el.getBoundingClientRect().width : NaN);
+    const probeRow = rule.querySelector('.surround-segment-map__probe .surround-segment-map__text-row');
+    const probeCell = rule.querySelector('.surround-segment-map__probe .surround-segment-map__text');
+    const live = segs[activeIndex >= 0 ? activeIndex : 0];
+    const liveCell = live?.querySelector('.surround-segment-map__text');
     return {
       natural,
       activeIndex,
       railPx,
-      segW: seg.getBoundingClientRect().width,
-      cellW: cell.getBoundingClientRect().width,
+      // The ruler's reading of the rail's furniture, and the paint's.
+      chromePx: w(probeRow) - w(probeCell),
+      liveChromePx: w(live) - w(liveCell),
       // `scrollWidth` on a `nowrap` + `overflow: hidden` box is the string's
       // full single-line width whatever the box is currently showing.
-      need: Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0),
+      needs: segs.map((seg) => {
+        const heading = seg.querySelector('.surround-segment-map__heading');
+        const gloss = seg.querySelector('.surround-segment-map__translation');
+        return Math.max(heading?.scrollWidth ?? 0, gloss?.scrollWidth ?? 0);
+      }),
     };
   });
   if (!measured) return null;
-  measured.desiredPx = desiredWidth({
-    segW: measured.segW, cellW: measured.cellW, need: measured.need,
+  const {
+    natural, activeIndex, railPx, chromePx, needs,
+  } = measured;
+
+  // THE RAIL'S OWN FLOOR, AND THE DENSITY IT DRIVES — both from `band.js`.
+  const floorPx = nameFloorPx(chromePx);
+  const widestPx = needs.length
+    ? idealWidth({ chromePx, needPx: Math.max(...needs) }) : 0;
+  const count = natural.length;
+  const roomPx = inactiveRoomPx({ railPx, count, widestPx });
+  const chips = railWearsChips({
+    railPx, count, widestPx, floorPx,
+  });
+
+  // The sounding segment's ideal width, asked about its NATURAL geometry — the
+  // width the rail would give it anyway — exactly as the component asks it.
+  const desiredPx = activeIndex < 0 ? 0 : soundingWidth({
+    naturalPx: (natural[activeIndex] ?? 0) * railPx,
+    chromePx,
+    needPx: needs[activeIndex] ?? 0,
   });
 
   const shares = accordionShares({
-    natural: measured.natural,
-    activeIndex: measured.activeIndex,
-    railPx: measured.railPx,
-    desiredPx: measured.desiredPx,
-    floorPx: SEGMENT_FLOOR_PX,
+    natural,
+    activeIndex,
+    railPx,
+    desiredPx,
+    floorPx: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
   });
-  await page.evaluate((widths) => {
+
+  // ...and the render. `renderToStaticMarkup` ran no effects, so the markup on
+  // this page is the pre-measurement one: every segment carrying a name. The
+  // widths and — on a chipped rail — the chips are applied here.
+  // The chip's mark, from the SHIPPED derivation — one notation per rail, and
+  // the same table the gutter sets. Every fixture in this file numbers its
+  // segments from one, which is what lets the mark be derived from the position.
+  const style = numeralStyle(natural.map((_, i) => ({ n: i + 1 })));
+  const marks = natural.map((_, i) => numeralText(i + 1, i, style));
+  await page.evaluate(({ widths, wearChips, numerals }) => {
     const segs = [...document.querySelectorAll('.surround-segment-map__segment')];
-    segs.forEach((s, i) => { s.style.width = `${widths[i] * 100}%`; });
-  }, shares);
-  return { ...measured, shares };
+    segs.forEach((seg, i) => {
+      seg.style.width = `${widths[i] * 100}%`;
+      if (!wearChips || seg.getAttribute('data-state') === 'active') return;
+      seg.querySelector('.surround-segment-map__text-row')?.remove();
+      const chip = document.createElement('span');
+      chip.className = 'surround-segment-map__chip';
+      chip.setAttribute('data-testid', 'surround-segment-chip');
+      chip.textContent = numerals[i];
+      seg.appendChild(chip);
+    });
+  }, { widths: shares, wearChips: chips, numerals: marks });
+
+  return {
+    ...measured, floorPx, widestPx, roomPx, chips, desiredPx, shares, count,
+  };
 }
 
 /**
@@ -755,8 +915,18 @@ describe('the band, measured against the shipped stylesheet', () => {
       + `earns — an x-height of ${(m.fontSize * 0.42).toFixed(2)}px against the `
       + `${(floorPx * 0.42).toFixed(2)}px the floor buys`,
     ).toBeGreaterThanOrEqual(floorPx - 0.01);
-    expect(m.fontSize, 'the note is louder than the work’s own title on the plate')
-      .toBeLessThanOrEqual(PROSE_CEILING_PX + 0.01);
+    // THE LADDER'S TOP ON THIS ROOT, not the bare constant. Task 6c cut the
+    // ceiling 20% and left the floor alone, which puts the two on the wrong side
+    // of each other at the 1920 measurement root (floor 21.12px, ceiling
+    // 19.2px). `proseCeilingPx` resolves that by rule — the floor wins — and the
+    // expected values are written out here rather than recomputed from it.
+    const CEILINGS = { '960x540': 19.2, '1280x720': 19.2, '1920x1080': 21.12 };
+    expect(
+      m.fontSize,
+      `the note is set at ${m.fontSize}px at ${name}, louder than the ${CEILINGS[name]}px this `
+      + 'root allows — a programme note competing with the work’s own title on the plate',
+    ).toBeLessThanOrEqual(CEILINGS[name] + 0.01);
+    expect(proseCeilingPx(width), `the ladder's top at ${name}`).toBe(CEILINGS[name]);
     expect(
       m.leading,
       `the note is leaded at ${m.leading} at ${name}; EB Garamond's ink extent is 1.00em, so that `
@@ -1215,10 +1385,14 @@ describe('the band, measured against the shipped stylesheet', () => {
     const solved = await runAccordion(page);
     expect(solved, 'no rail to measure').not.toBeNull();
     expect(solved.activeIndex, 'segment I should be sounding at 100s').toBe(0);
+    const naturalPx = solved.natural[0] * solved.railPx;
     expect(
       solved.desiredPx,
-      `the accordion wants ${solved.desiredPx}px for a segment already ${solved.segW.toFixed(2)}px wide whose text column is ${solved.cellW.toFixed(2)}px and whose widest line is ${solved.need}px — it fits, so nothing should open`,
+      `the accordion wants ${solved.desiredPx}px for a segment whose duration already earns it `
+      + `${naturalPx.toFixed(2)}px, with ${solved.chromePx.toFixed(2)}px of furniture around a `
+      + `widest line of ${solved.needs[0]}px — it fits, so nothing should open`,
     ).toBe(0);
+    expect(solved.chips, 'a four-movement rail on the largest root is not crowded').toBe(false);
     const drift = solved.shares.map((s, i) => Number((s - solved.natural[i]).toFixed(6)));
     expect(
       drift,
@@ -1284,4 +1458,502 @@ describe('the band, measured against the shipped stylesheet', () => {
       `the name stacked to ${name.lines} lines; the plate's ceiling is 3 (measure ${name.measurePx}px in ${name.font})`,
     ).toBeLessThanOrEqual(3);
   }, 60000);
+
+  /* ==========================================================================
+     TASK 6C — THE RAIL AT TWENTY-ONE SEGMENTS, AND TWO PANELS THAT SHOUTED
+     ========================================================================== */
+
+  /**
+   * THE NAME FLOOR, DERIVED — the number `SEGMENT_NAME_RUN_PX` carries, measured
+   * rather than restated.
+   *
+   * The rail's floor for a NAMED segment is its furniture plus a run of type:
+   * enough of the name to read as a name rather than as a stripe. Design wave 7
+   * swept that against one string ("III. Scherzo. Allegro vivace") and landed on
+   * three glyphs and the ellipsis, at 72px total. The criterion is unchanged;
+   * what this re-derives is the RUN — the type half of it, on its own — across
+   * every name the frame ships, so that a name whose first three glyphs are wide
+   * ("Mar…") is not floored on the measurement of one whose first three are
+   * narrow ("No.…").
+   *
+   * IT IS NOT A TAUTOLOGY. Nothing here divides one CSS value by another: the
+   * page sets `first three glyphs + ellipsis` in the shipped heading rule, in the
+   * vendored face, at the row's own size, and reads the width back. Change the
+   * face, the size, the tracking or the ellipsis and the number moves.
+   *
+   * TO GO RED: set `SEGMENT_NAME_RUN_PX` below the measured maximum, and a rail
+   * would floor a segment at a width that shows two glyphs of its name.
+   */
+  it('1280x720 — the rail’s name floor, derived from the corpus and the real face', async () => {
+    await layout(page, css, { ...FLEET[1], data: NOCTURNES, position: NOCTURNE_POSITION });
+    const names = [
+      ...NOCTURNE_NAMES,
+      ...EROICA.pieceSegments.map((m) => m.name),
+      ...SPRING.pieceSegments.map((m) => m.name),
+    ];
+    const swept = await page.evaluate((all) => {
+      const heading = document.querySelector('.surround-segment-map__probe .surround-segment-map__heading');
+      if (!heading) return null;
+      const runs = all.map((name) => {
+        // What a floored segment must be able to paint: the ellipsis, and the
+        // three glyphs before it that make the mark a name.
+        heading.textContent = `${name.slice(0, 3)}…`;
+        return { name, px: Number(heading.getBoundingClientRect().width.toFixed(2)) };
+      });
+      heading.textContent = '';
+      return runs;
+    }, names);
+    expect(swept, 'no ruler on the rail to sweep with').not.toBeNull();
+
+    const widest = swept.reduce((a, b) => (b.px > a.px ? b : a));
+    expect(
+      SEGMENT_NAME_RUN_PX,
+      `the widest three-glyphs-and-an-ellipsis in the shipped corpus is ${widest.px}px `
+      + `("${widest.name.slice(0, 3)}…", from "${widest.name}"), and the name run is set to `
+      + `${SEGMENT_NAME_RUN_PX}px — a floored segment would show fewer than three glyphs`,
+    ).toBeGreaterThanOrEqual(widest.px);
+    // ...and not so far above it that the floor is padded rather than derived.
+    expect(
+      SEGMENT_NAME_RUN_PX - widest.px,
+      `the name run is ${(SEGMENT_NAME_RUN_PX - widest.px).toFixed(2)}px above the widest run it `
+      + 'has to hold — that is a cushion, not a measurement',
+    ).toBeLessThan(2);
+
+    // AND IT DOES NOT UNDERCUT DESIGN WAVE 7'S SWEEP. That sweep read ONE string
+    // ("III. Scherzo. Allegro vivace") and landed on 72px, which leaves ~30px of
+    // run once the Eroica's furniture is taken out — enough for `Sch…` and not
+    // for `Mar…`, its own neighbour. Re-derived across the corpus the floor moves
+    // UP, which is the only safe direction: a floor that came out below 72 would
+    // mean this derivation shows less of a name than the one it replaces.
+    await layout(page, css, { ...FLEET[1], data: EROICA_FULL });
+    const eroica = await runAccordion(page);
+    expect(
+      eroica.floorPx,
+      `the Eroica's rail floors its segments at ${eroica.floorPx}px — furniture `
+      + `${eroica.chromePx.toFixed(2)}px plus a ${SEGMENT_NAME_RUN_PX}px name run — below the `
+      + `${SEGMENT_FLOOR_PX}px design wave 7 swept`,
+    ).toBeGreaterThanOrEqual(SEGMENT_FLOOR_PX);
+    expect(eroica.floorPx).toBe(Math.ceil(eroica.chromePx + SEGMENT_NAME_RUN_PX));
+  }, 90000);
+
+  /**
+   * THE RULER AGREES WITH THE PAINT. `SegmentMap` measures the rail's furniture
+   * on an out-of-flow probe rather than on a segment, because in chip mode there
+   * is no segment carrying a name to measure and because a live segment's box
+   * has already been resized by the previous solve. A ruler that has drifted
+   * from the thing it measures is the one failure that arrangement could hide.
+   *
+   * TO GO RED: give `.surround-segment-map__probe` a padding, a font-size or a
+   * numeral gutter of its own.
+   */
+  it.each(FLEET)('$name — the rail’s ruler reports the same furniture the segments carry', async ({ width, height, name }) => {
+    await layout(page, css, { width, height, data: EROICA_FULL });
+    const solved = await runAccordion(page);
+    expect(solved, 'no rail to measure').not.toBeNull();
+    expect(
+      solved.chromePx,
+      `the ruler says a segment's furniture is ${solved.chromePx.toFixed(2)}px and the painted `
+      + `segment says ${solved.liveChromePx.toFixed(2)}px at ${name} — every width on this rail is `
+      + 'solved from the first number and rendered against the second',
+    ).toBeCloseTo(solved.liveChromePx, 1);
+  }, 60000);
+
+  /**
+   * ==========================================================================
+   * THE THRESHOLD — measured available width per inactive segment, never a count
+   * ==========================================================================
+   *
+   * Twenty-one nocturnes on the office rule is ~59px each against names that
+   * want ~200px: short by more than a factor of three BEFORE the accordion opens
+   * the sounding one. And 21 x this rail's name floor is more rule than any
+   * screen in the fleet has, so the floor is not being degraded — it has run
+   * out, and the rail has to say so rather than quietly drawing 59px segments
+   * that claim to be floored.
+   *
+   * THE DECISION IS CONTENT-DRIVEN, WHICH IS THE POINT. `widestPx` is the width
+   * the widest NAME on this rail asks for, so long titles starve at a count
+   * where short ones do not — the same twenty-one segments carrying one-word
+   * names would leave far more behind and keep them.
+   *
+   * TO GO RED: decide the density from `segments.length` against a constant, and
+   * the Eroica at 960x540 (four segments, ~890px of rule) lands on the same side
+   * of any count threshold as the Eroica at 1920x1080.
+   */
+  /**
+   * WHAT EACH ROOT CAN ACTUALLY HOLD — written out, because the honest answer is
+   * not the same on all three and a spec that asserted the guarantee everywhere
+   * would be asserting something the arithmetic denies.
+   *
+   * The rule is the FOOTER's width, not the screen's: the footer takes the
+   * measured media box, and the media box is the screen less the programme rail
+   * (33%) less the band's own insets. Twenty chips at the 24px chip floor, and
+   * what is left for the sounding nocturne's ~250px name:
+   *
+   *   960x540    ~608px of rule  -  480 = 128px left.  NOT ENOUGH.
+   *   1280x720   ~822px of rule  -  480 = 342px left.  Enough.
+   *   1920x1080  ~1251px of rule -  480 = 771px left.  Enough.
+   *
+   * The living room is over capacity for this piece, and the rail says so
+   * (`surround.accordion.degraded`, a warn) rather than trimming in silence.
+   * The fix for it is the corpus, not the render — twenty-one names that each
+   * restate a number the gutter already carries are ~7 characters longer than
+   * they need to be. See the task report.
+   *
+   * TO GO RED: change any of the three numbers by changing the chip floor, the
+   * band's insets or the programme rail's share, and the root that flips reports
+   * which one it is.
+   */
+  const RAIL_CAPACITY = Object.freeze({
+    '960x540': { nameWhole: false, overrun: true },
+    '1280x720': { nameWhole: true, overrun: false },
+    '1920x1080': { nameWhole: true, overrun: false },
+  });
+
+  it.each(FLEET)('$name — twenty-one nocturnes wear chips; four movements keep their names', async ({ width, height, name }) => {
+    await layout(page, css, { width, height, data: NOCTURNES, position: NOCTURNE_POSITION });
+    const noct = await runAccordion(page);
+    expect(noct, 'no rail on the nocturnes at all').not.toBeNull();
+    expect(noct.count, 'the rail did not draw all twenty-one nocturnes').toBe(21);
+    expect(
+      noct.chips,
+      `at ${name} the nocturnes' rule is ${noct.railPx.toFixed(1)}px and its widest name wants `
+      + `${noct.widestPx}px, which leaves ${noct.roomPx.toFixed(1)}px for each of the twenty other `
+      + `segments against a ${noct.floorPx}px name floor — the rail is drawing names it cannot set`,
+    ).toBe(true);
+    // The threshold's own arithmetic, reported so the number is in the record.
+    expect(noct.roomPx).toBeLessThan(noct.floorPx);
+
+    await layout(page, css, { width, height, data: EROICA_FULL });
+    const eroica = await runAccordion(page);
+    expect(
+      eroica.chips,
+      `at ${name} the Eroica's four segments each have ${eroica.roomPx.toFixed(1)}px against a `
+      + `${eroica.floorPx}px floor, which is room for their names — chipping them throws away a `
+      + 'contents page the rail can afford',
+    ).toBe(false);
+    expect(eroica.roomPx).toBeGreaterThanOrEqual(eroica.floorPx);
+  }, 90000);
+
+  /**
+   * THE SAME COUNT, TWO DIFFERENT ANSWERS — the case that makes "measured width
+   * per inactive segment, never a count" a claim rather than a sentence.
+   *
+   * Eight segments on the office rule either way. With long titles the sounding
+   * one opens wide enough that what is left will not hold a name; with short
+   * ones it does not, and the rail keeps its contents page. Nothing about the
+   * PIECE changes between the two runs except the strings.
+   *
+   * TO GO RED: decide the density from `segments.length` against any constant.
+   * Both halves of this case have eight segments, so a count threshold either
+   * chips both or chips neither.
+   */
+  it('1280x720 — eight long titles starve where eight short ones do not', async () => {
+    const LONG = [
+      'Vorspiel und Liebestod aus Tristan und Isolde',
+      'Siegfrieds Rheinfahrt aus Götterdämmerung',
+      'Waldweben aus Siegfried, zweiter Aufzug',
+      'Karfreitagszauber aus Parsifal, dritter Aufzug',
+      'Einzug der Gäste auf die Wartburg, Tannhäuser',
+      'Wotans Abschied und Feuerzauber, Die Walküre',
+      'Isoldes Verklärung, Konzertfassung für Orchester',
+      'Trauermarsch aus Götterdämmerung, dritter Aufzug',
+    ];
+    const SHORT = ['Vorspiel', 'Rheinfahrt', 'Waldweben', 'Parsifal',
+      'Einzug', 'Abschied', 'Verklärung', 'Trauermarsch'];
+    const eight = (names) => ({
+      ...EROICA,
+      pieceSegments: names.map((name, i) => ({ n: i + 1, name, start: i * 360 })),
+      piece: { ...EROICA.piece, musicEndsAt: 2880 },
+      facts: ['A short fact.'],
+      cues: [],
+    });
+
+    await layout(page, css, { ...FLEET[1], data: eight(LONG), position: 1100 });
+    const long = await runAccordion(page);
+    await layout(page, css, { ...FLEET[1], data: eight(SHORT), position: 1100 });
+    const short = await runAccordion(page);
+
+    expect(
+      long.count === 8 && short.count === 8,
+      `the two halves of this case do not have the same segment count (${long.count} vs ${short.count})`,
+    ).toBe(true);
+    expect(
+      { long: long.chips, short: short.chips },
+      `eight segments on the same ${long.railPx.toFixed(1)}px rule: the long titles leave `
+      + `${long.roomPx.toFixed(1)}px each against a ${long.floorPx}px name floor, the short ones `
+      + `${short.roomPx.toFixed(1)}px — and the rail treated them the same, so the threshold is `
+      + 'not reading the names',
+    ).toEqual({ long: true, short: false });
+  }, 90000);
+
+  /**
+   * ...AND IT IS ALL OR NOTHING, ACROSS THE RAIL. A mix of chips and names reads
+   * as a bug, so every segment but the sounding one wears a chip and none of
+   * them renders a name at any opacity. A chip is a DIFFERENT THING from a
+   * trimmed name: text at zero opacity, or a name clipped to two glyphs, is a
+   * rail still pretending to be a contents page.
+   *
+   * TO GO RED: keep the text row and hide it (`opacity: 0`, `visibility:
+   * hidden`, a `text-indent` off the edge) instead of not rendering it.
+   */
+  it.each(FLEET)('$name — every inactive nocturne wears a chip, and none of them renders a name', async ({ width, height, name }) => {
+    await layout(page, css, { width, height, data: NOCTURNES, position: NOCTURNE_POSITION });
+    const solved = await runAccordion(page);
+    expect(solved.chips, 'the rail is not in chip mode, so this proves nothing').toBe(true);
+
+    const painted = await page.evaluate(() => [...document.querySelectorAll('.surround-segment-map__segment')]
+      .map((seg, i) => {
+        const chip = seg.querySelector('.surround-segment-map__chip');
+        const row = seg.querySelector('.surround-segment-map__text-row');
+        const box = chip?.getBoundingClientRect();
+        const segBox = seg.getBoundingClientRect();
+        return {
+          i,
+          state: seg.getAttribute('data-state'),
+          chip: chip ? chip.textContent : null,
+          named: !!row,
+          widthPx: Number(segBox.width.toFixed(2)),
+          // The chip is a circle, centred in the segment's bar.
+          round: chip ? getComputedStyle(chip).borderRadius : null,
+          centreOffPx: chip
+            ? Number((((box.x + box.right) / 2) - ((segBox.x + segBox.right) / 2)).toFixed(2))
+            : null,
+          chipW: chip ? Number(box.width.toFixed(2)) : null,
+        };
+      }));
+
+    const active = painted.filter((p) => p.state === 'active');
+    expect(active, 'no nocturne is sounding at 2700s — the rail and the clock disagree').toHaveLength(1);
+    expect(active[0].named, 'the SOUNDING segment lost its name to a chip').toBe(true);
+    expect(active[0].chip, 'the sounding segment wears a chip as well as its name').toBeNull();
+
+    const inactive = painted.filter((p) => p.state !== 'active');
+    expect(
+      inactive.filter((p) => p.named),
+      `${inactive.filter((p) => p.named).length} of the twenty inactive nocturnes are still `
+      + `rendering a name at ${name}, so the rail is showing chips AND names`,
+    ).toEqual([]);
+    expect(
+      inactive.filter((p) => p.chip === null),
+      'an inactive segment wears neither a name nor a chip — it is an unlabelled stripe',
+    ).toEqual([]);
+    // The mark agrees with the gutter's: one notation per rail, and a rail of
+    // twenty-one cannot be Roman.
+    expect(inactive.map((p) => p.chip)).not.toContain('XIII');
+    expect(painted[12].chip ?? '13').toBe('13');
+    inactive.forEach((p) => {
+      expect(p.round, 'a chip that is not a circle').toBe('50%');
+      expect(
+        Math.abs(p.centreOffPx),
+        `chip ${p.i} sits ${p.centreOffPx}px off the centre of its own bar`,
+      ).toBeLessThanOrEqual(0.6);
+    });
+
+    // ...AND THE CHIPS DO NOT OVERRUN THE SEGMENTS THEY MARK. A chip wider than
+    // its own segment is two chips touching, which is the thing the chip floor
+    // exists to stop — and it is the same capacity question the name guarantee
+    // asks, one storey down, so it has the same per-root answer (see
+    // `RAIL_CAPACITY`).
+    const overrun = inactive.filter((p) => p.widthPx < p.chipW - 0.5);
+    expect(
+      overrun.length > 0,
+      `${overrun.length} of the twenty chips are wider than the segment they mark at ${name} `
+      + `(narrowest segment ${Math.min(...inactive.map((p) => p.widthPx)).toFixed(2)}px against a `
+      + `${inactive[0].chipW}px chip) — chips are touching`,
+    ).toBe(RAIL_CAPACITY[name].overrun);
+  }, 90000);
+
+  /**
+   * ==========================================================================
+   * THE GUARANTEE: THE SOUNDING SEGMENT'S NAME IS WHOLE. ALWAYS.
+   * ==========================================================================
+   *
+   * Not a best effort. The accordion opens the sounding segment to the width its
+   * own text needs, and chip mode is what buys that width on a rail where the
+   * name floor cannot be met — 21 x 77px of name floor is more rule than the
+   * office screen has, so with names the accordion has nothing to donate and the
+   * name can never be whole.
+   *
+   * TO GO RED: pass `floorPx: floorPx` (the name floor) to `accordionShares`
+   * regardless of density — the neighbours are then already under their floor,
+   * `available` is zero, and the sounding nocturne stays at its ~59px natural
+   * width with 80% of its name cut off.
+   */
+  it.each(FLEET)('$name — the sounding nocturne shows its whole name, and no chip goes under the chip floor', async ({ width, height, name }) => {
+    await layout(page, css, { width, height, data: NOCTURNES, position: NOCTURNE_POSITION });
+    const solved = await runAccordion(page);
+    expect(solved.chips, 'this case is about a chipped rail').toBe(true);
+
+    const after = await page.evaluate(() => [...document.querySelectorAll('.surround-segment-map__segment')]
+      .map((seg, i) => {
+        const heading = seg.querySelector('.surround-segment-map__heading');
+        const gloss = seg.querySelector('.surround-segment-map__translation');
+        return {
+          i,
+          state: seg.getAttribute('data-state'),
+          widthPx: Number(seg.getBoundingClientRect().width.toFixed(2)),
+          text: heading ? heading.textContent : null,
+          headingCut: heading ? heading.scrollWidth - heading.clientWidth : 0,
+          glossCut: gloss ? gloss.scrollWidth - gloss.clientWidth : 0,
+          wraps: heading
+            ? Math.round(heading.getBoundingClientRect().height / parseFloat(getComputedStyle(heading).lineHeight))
+            : 1,
+        };
+      }));
+
+    const active = after.find((s) => s.state === 'active');
+    expect(
+      active.wraps,
+      `the sounding nocturne's name wrapped to ${active.wraps} lines — the rail is one line`,
+    ).toBe(1);
+
+    const whole = active.headingCut === 0 && active.glossCut === 0;
+    expect(
+      whole,
+      `the sounding nocturne "${active.text}" is ${active.widthPx}px wide at ${name}, solved for `
+      + `${solved.desiredPx}px on a ${solved.railPx.toFixed(1)}px rule with a `
+      + `${SEGMENT_CHIP_FLOOR_PX}px chip floor under its twenty neighbours, and its heading is `
+      + `${whole ? 'whole' : `cut by ${active.headingCut}px`}`,
+    ).toBe(RAIL_CAPACITY[name].nameWhole);
+
+    if (RAIL_CAPACITY[name].nameWhole) {
+      // ...and it got there by DONATION, not by luck: the neighbours that had
+      // slack gave it up and stopped at the floor.
+      const donors = after.filter((s) => s.state !== 'active');
+      expect(
+        donors.filter((s) => s.widthPx < SEGMENT_CHIP_FLOOR_PX - 0.5
+          && s.widthPx < solved.natural[s.i] * solved.railPx - 0.5),
+        'a neighbour was compressed under the chip floor to pay for the name',
+      ).toEqual([]);
+    } else {
+      // THE REPORTABLE CONDITION, not a silent truncation. The component warns
+      // (`surround.accordion.degraded`); what this asserts is that the state the
+      // warn describes is the state the rail is actually in — the name was
+      // refused because there was nothing left to take, not because the solve
+      // declined to ask.
+      const granted = (solved.shares[solved.activeIndex] ?? 0) * solved.railPx;
+      expect(
+        solved.desiredPx,
+        'the rail did not even ask for the width it needed',
+      ).toBeGreaterThan(granted);
+      const spare = solved.shares.reduce((sum, sh, i) => (i === solved.activeIndex ? sum
+        : sum + Math.max(0, sh * solved.railPx - SEGMENT_CHIP_FLOOR_PX)), 0);
+      expect(
+        Number(spare.toFixed(1)),
+        `the sounding nocturne was starved while ${spare.toFixed(1)}px of donatable width was `
+        + `still sitting in its neighbours at ${name}`,
+      ).toBeLessThan(1);
+    }
+  }, 90000);
+
+  /**
+   * ==========================================================================
+   * THE PANELS, AFTER TASK 6C — quieter, tighter, and off the bottom edge.
+   * ==========================================================================
+   *
+   * Four changes, all measured on the paint rather than read back out of the
+   * stylesheet that made them:
+   *
+   *   1. the note's SIZE comes down 20% at the ceiling (the floor is untouched);
+   *   2. its LEADING stops at the face's own `line-height: normal` (1.30) rather
+   *      than above it;
+   *   3. both registers get a foot, so the last line is not on the band's edge;
+   *   4. the ink sits back into the ground at 60-70% instead of reading as white.
+   *
+   * TO GO RED: restore `PROSE_CEILING_PX = 24`; restore `LEADING_MAX = 1.35`;
+   * drop `--zone-pad-bottom`; put `opacity: 1` back on the note.
+   */
+  it.each(FLEET)('$name — the band’s panels are quieter, tighter, and clear of the floor', async ({ width, height, name }) => {
+    const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
+    const m = await noteCut(page);
+
+    // 1. THE SIZE. The ladder's top on this root, and the paint under it.
+    const CEILINGS = { '960x540': 19.2, '1280x720': 19.2, '1920x1080': 21.12 };
+    expect(fit.ceilingPx, `the ladder's top at ${name}`).toBe(CEILINGS[name]);
+    expect(
+      m.fontSize,
+      `the note is painted at ${m.fontSize}px at ${name}, over this root's ${CEILINGS[name]}px top`,
+    ).toBeLessThanOrEqual(CEILINGS[name] + 0.01);
+    expect(m.fontSize, 'and still at or above the readability floor')
+      .toBeGreaterThanOrEqual(fit.floorPx - 0.01);
+
+    // 2. THE LEADING. EB Garamond's own `line-height: normal` is 1.31, so the
+    //    loose end of the ladder now stops at the face's metrics.
+    expect(
+      m.leading,
+      `the note is leaded at ${m.leading} at ${name} — looser than the 1.30 the compacting set`,
+    ).toBeLessThanOrEqual(1.30 + 0.001);
+    expect(m.leading, 'and never under the measured floor').toBeGreaterThanOrEqual(LEADING_FLOOR - 0.001);
+
+    // 3. THE FOOT. Measured as the run of band between the last line of each
+    //    register and the panel's own bottom edge — the thing the owner saw.
+    const feet = await page.evaluate(() => ['piece', 'now'].map((key) => {
+      const zone = document.querySelector(`[data-testid="surround-ticker-zone-${key}"]`);
+      if (!zone) return null;
+      const box = zone.querySelector('.surround-cue-ticker__text');
+      const pad = parseFloat(getComputedStyle(zone).paddingBottom);
+      return {
+        zone: key,
+        padPx: Number(pad.toFixed(2)),
+        clearPx: Number((zone.getBoundingClientRect().bottom
+          - box.getBoundingClientRect().bottom).toFixed(2)),
+      };
+    }).filter(Boolean));
+    expect(feet.length, 'the band did not split into two registers').toBe(2);
+    feet.forEach((f) => {
+      expect(
+        f.padPx,
+        `the ${f.zone} register has ${f.padPx}px of foot at ${name} — it is on the band's edge`,
+      ).toBeGreaterThanOrEqual(6);
+      expect(f.clearPx).toBeCloseTo(f.padPx, 1);
+    });
+
+    // 4. THE INK. Composited at its own opacity over the ground each register is
+    //    painted on, and reported as a contrast ratio — because "65% of the
+    //    current ink" is not a legibility claim and a ratio is.
+    const contrast = await page.evaluate(() => {
+      const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      const rgb = (s) => s.match(/[\d.]+/g).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => 0.2126 * lin(r / 255) + 0.7152 * lin(g / 255) + 0.0722 * lin(b / 255);
+      const ratio = (a, b) => {
+        const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      const over = (fg, bg, alpha) => fg.map((c, i) => bg[i] + (c - bg[i]) * alpha);
+
+      const line = document.querySelector('[data-testid="surround-ticker-text"] .surround-cue-ticker__line');
+      const box = line.closest('.surround-cue-ticker__text');
+      const ink = rgb(getComputedStyle(line).color);
+      const alpha = Number(getComputedStyle(box).opacity);
+      // The two grounds this register is ever painted on: the band's own, and
+      // the bond's lit panel when the NOW register is bonded.
+      const band = rgb(getComputedStyle(document.querySelector('.surround-frame__region--bottom')).backgroundColor);
+      const panel = rgb(getComputedStyle(document.querySelector('[data-testid="surround-ticker-ground"]')).backgroundColor);
+      return {
+        alpha,
+        full: Number(ratio(ink, panel).toFixed(2)),
+        onPanel: Number(ratio(over(ink, panel, alpha), panel).toFixed(2)),
+        onBand: Number(ratio(over(ink, band, alpha), band).toFixed(2)),
+      };
+    });
+
+    expect(
+      contrast.alpha,
+      `the note's ink is at ${contrast.alpha} — the owner asked for 60-70% so it sits back into `
+      + 'the ground instead of shouting off it',
+    ).toBeGreaterThanOrEqual(0.6);
+    expect(contrast.alpha).toBeLessThanOrEqual(0.7);
+    // ...AND IT IS STILL READABLE AT TEN FEET, which is the thing the percentage
+    // does not say on its own. 4.5:1 is the body-text bar; report the number
+    // either way so the trade is on the record rather than assumed.
+    expect(
+      contrast.onPanel,
+      `at ${name} the note reads ${contrast.onPanel}:1 against the lit bond panel (it was `
+      + `${contrast.full}:1 at full strength) — under the 4.5:1 a body size needs`,
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrast.onBand,
+      `at ${name} the note reads ${contrast.onBand}:1 against the band's own ground`,
+    ).toBeGreaterThanOrEqual(4.5);
+  }, 90000);
 });

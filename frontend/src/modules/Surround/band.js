@@ -112,13 +112,65 @@ export const ROMAN = Object.freeze([
   '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII',
 ]);
 
+/** The largest index the Roman table can set. */
+export const ROMAN_CEILING = ROMAN.length - 1;
+
 /**
- * The index mark for a segment: its authored `n` as a numeral, or its position
- * in the list where the corpus authored no number.
+ * ONE NOTATION PER RAIL — the numbering decision of task 6c, settled here
+ * because it is the rail's decision and not any one segment's.
+ *
+ * THE `n` FIELD IS AUTHORITATIVE for numbering, against the number an authored
+ * name may also carry ("No. 5 in F-sharp major, Op. 15 No. 2"). Three reasons,
+ * and none of them is preference:
+ *
+ *   * IT IS THE ONLY UNIVERSAL ADDRESS. A movement rail's names carry no number
+ *     at all ("Allegro con brio"), so a rail that numbered from the name would
+ *     have nothing to print on the piece this frame was built for.
+ *   * THE CHIP CAN ONLY BE RENDERED FROM A FIELD. A number in a circle is a
+ *     number, not a prefix parsed off a title with a regular expression, and the
+ *     chip has to agree with what the active segment shows.
+ *   * EVERYTHING ELSE ALREADY KEYS OFF IT — `segmentAt`, the rail's logging, the
+ *     NOW register's own numeral.
+ *
+ * So the gutter keeps its mark and the CORPUS is where a name that restates it
+ * gets fixed (see the task report). What this function fixes is the defect that
+ * made the doubling visible: `ROMAN` runs out at XII, so a rail of twenty-one
+ * set `…X. XI. XII. 13. 14. …` — two notations in one gutter, changing partway
+ * along. A numeral system is a property of the LIST, not of an entry in it.
+ *
+ * @param {Array<{n:*}>} segments the rail's segments, in rail order.
+ * @returns {'roman'|'arabic'} `roman` only when every mark on this rail can be
+ *   set in it; otherwise the whole rail sets figures.
  */
-export function roman(n, index) {
+export function numeralStyle(segments) {
+  const list = Array.isArray(segments) ? segments : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const n = list[i]?.n;
+    const value = Number.isFinite(n) ? n : i + 1;
+    if (!(value >= 1 && value <= ROMAN_CEILING)) return 'arabic';
+  }
+  return 'roman';
+}
+
+/**
+ * The index mark's TEXT, with no terminating point: what a chip carries.
+ *
+ * @param {*} n the authored number, or anything else for "not authored".
+ * @param {number} index the entry's position in the rail.
+ * @param {'roman'|'arabic'} [style] from `numeralStyle` — one per rail.
+ */
+export function numeralText(n, index, style = 'roman') {
   const value = Number.isFinite(n) ? n : index + 1;
-  return `${ROMAN[value] ?? value}.`;
+  if (style === 'roman' && ROMAN[value]) return ROMAN[value];
+  return String(value);
+}
+
+/**
+ * The index mark for a segment, as the gutter sets it: the numeral and its
+ * point. `numeralText` is the same mark without the point, for the chip.
+ */
+export function numeral(n, index, style = 'roman') {
+  return `${numeralText(n, index, style)}.`;
 }
 
 /**
@@ -410,8 +462,136 @@ export const ACCORDION_MS = 420;
  * two, 72px three ("Sch…"), 88px five ("Scherzo…"). Three glyphs and the
  * ellipsis is the point at which a compressed neighbour still reads as a named
  * segment rather than as a stripe, so the floor is 72.
+ *
+ * IT IS THE FALLBACK NOW, NOT THE ANSWER — see `nameFloorPx`. 72 is that
+ * derivation evaluated on a rail whose widest mark is `III.`; the chrome term in
+ * it grows with the numeral gutter, so a rail running to `VIII.` or `21.` earns
+ * a wider floor than this and a rail of `I./II.` a narrower one. This constant
+ * is what a caller gets when the rail has not been measured.
  */
 export const SEGMENT_FLOOR_PX = 72;
+
+/**
+ * The TEXT a floored segment has to be able to show, in px — the second term of
+ * `nameFloorPx`, and the whole of what the 72px sweep above actually measured
+ * once its chrome is taken back out.
+ *
+ * DERIVED IN `band.measure.test.jsx` ("the rail's name floor, derived"), against
+ * the real compiled sheet and the real vendored faces, as the widest
+ * three-glyphs-plus-ellipsis any shipped segment name sets in the heading's own
+ * face at the row's own 1.05rem. Three glyphs and the ellipsis is the criterion
+ * the original sweep landed on and it is unchanged; what has changed is that it
+ * is now measured across the whole corpus rather than against one string, so a
+ * name whose first three glyphs are wide (`Mar…`) cannot be floored on the
+ * measurement of one whose first three are narrow (`No.…`).
+ *
+ * IT IS A FIXED PX, ON EVERY ROOT, and that is not an oversight. The row is set
+ * at 1.05rem and the frame's rem is 16px on every screen in the fleet, so this
+ * run of type is the same length everywhere — exactly as the chrome it is added
+ * to is (`desiredWidth`).
+ *
+ * IT IS ALSO WIDER THAN THE 72px SWEEP IMPLIED, and that is the re-derivation
+ * doing its job rather than a disagreement. 72 minus the Eroica's furniture
+ * leaves ~30px of run, which is enough for `Sch…` and not enough for `Mar…`
+ * — the widest three-glyph opening in the corpus, measured at 37px. The old
+ * sweep read one string; a floor derived from one string floors every other
+ * name in the set on that string's letterforms. The Eroica's named floor
+ * therefore moves from 72px to ~79px, in the direction that shows MORE of a
+ * compressed name.
+ */
+export const SEGMENT_NAME_RUN_PX = 37;
+
+/**
+ * The narrowest an inactive segment may be drawn and still be a NAMED segment,
+ * on THIS rail.
+ *
+ * `chromePx` is the segment's furniture — the numeral's gutter and the text
+ * insets — which is constant across a rail and across the fleet, and different
+ * between rails: `--numeral-chars` sizes the gutter from the widest mark the
+ * piece has, so twenty-one nocturnes carry a wider one than four movements do.
+ * A floor that ignored it would give a rail of `VIII.` the same room for its
+ * names as a rail of `I.`, which is the same defect the gutter itself was
+ * introduced to fix, one level down.
+ *
+ * @param {number} chromePx measured `segW - cellW`, px.
+ * @returns {number} the floor for this rail, or `SEGMENT_FLOOR_PX` when the
+ *   rail has not been measured — "no measurement yet" is not "no chrome".
+ */
+export function nameFloorPx(chromePx) {
+  const chrome = Number(chromePx);
+  if (!Number.isFinite(chrome) || !(chrome > 0)) return SEGMENT_FLOOR_PX;
+  return Math.ceil(chrome + SEGMENT_NAME_RUN_PX);
+}
+
+/**
+ * The narrowest a CHIPPED segment may be drawn — the compressed floor the rail
+ * falls to once it has stopped trying to set names.
+ *
+ * The chip is 1.25rem across (`SegmentMap.scss`) and this is that plus 4px of
+ * air, so two neighbouring chips never touch. Fixed px on every root for the
+ * same reason `SEGMENT_NAME_RUN_PX` is: the chip is the numeral gutter's mark
+ * rendered as a mark, and the gutter is rem-fixed, not root-scaled.
+ *
+ * IT IS THE POINT OF CHIP MODE, and the arithmetic is the whole argument.
+ * Twenty-one segments cannot each hold `nameFloorPx` on the office rule — 21 x
+ * 76px is 1596px against the 822px the footer actually measures there — so with
+ * names the accordion has nothing to donate and the sounding segment can never
+ * have its name whole. At this floor the same rail spends 20 x 24 = 480px on its
+ * chips and has ~342px left to give, against the ~250px the longest nocturne
+ * asks for. Measured, at all three roots, in `band.measure.test.jsx`.
+ *
+ * IT IS NOT A GUARANTEE ON EVERY ROOT, and the spec says which. The living
+ * room's footer measures ~608px of rule: 480px of chips leaves 128px, and no
+ * nocturne name is that short. That rail degrades and REPORTS it
+ * (`surround.accordion.degraded`, a warn) — which is the designed outcome for a
+ * corpus that has outrun its screen, and the signal the corpus is fixed from.
+ */
+export const SEGMENT_CHIP_FLOOR_PX = 24;
+
+/**
+ * How much width each INACTIVE segment can be given once the sounding one has
+ * been opened to the widest name ON THIS RAIL.
+ *
+ * THE WIDEST NAME, NOT THE SOUNDING ONE, and that is what makes the answer a
+ * constant of the piece rather than of this instant. The rail wears chips or
+ * names all-or-nothing (a mix reads as a bug), so the decision may not change at
+ * a segment boundary — which it would if it were taken against whichever name
+ * happened to be sounding.
+ *
+ * @returns {number} px per inactive segment, or NaN for "not measured" — a
+ *   rail with no width, or one with nothing to compress.
+ */
+export function inactiveRoomPx({ railPx, count, widestPx }) {
+  const rail = Number(railPx);
+  const n = Number(count);
+  const widest = Number(widestPx);
+  if (!(rail > 0) || !(n > 1) || !Number.isFinite(widest)) return NaN;
+  const taken = Math.min(Math.max(widest, 0), rail);
+  return (rail - taken) / (n - 1);
+}
+
+/**
+ * Does this rail wear chips?
+ *
+ * THE THRESHOLD IS A MEASURED WIDTH PER INACTIVE SEGMENT, NEVER A COUNT. Six
+ * long titles starve at a count where six short ones do not, because the long
+ * ones open the sounding segment wider and leave less behind: `widestPx` is the
+ * width the widest name on this rail asks for, so the content is in the answer.
+ *
+ * @param {object} args
+ * @param {number} args.railPx the rule's measured width.
+ * @param {number} args.count how many segments the rail draws.
+ * @param {number} args.widestPx the width the widest-named segment would need.
+ * @param {number} args.floorPx this rail's `nameFloorPx`.
+ * @returns {boolean} false whenever the rail has not been measured — the
+ *   unmeasured rail draws names, which is what it drew before this existed.
+ */
+export function railWearsChips({ railPx, count, widestPx, floorPx }) {
+  const room = inactiveRoomPx({ railPx, count, widestPx });
+  const floor = Number(floorPx);
+  if (!Number.isFinite(room) || !Number.isFinite(floor)) return false;
+  return room < floor;
+}
 
 const EPS = 1e-6;
 
@@ -459,7 +639,67 @@ export function desiredWidth({ segW, cellW, need }) {
   // be garbage.
   if (!(cellW > 1) || !(segW > cellW)) return 0;
   if (!(need > cellW + ACCORDION_OVERFLOW_EPS_PX)) return 0;
-  return Math.ceil((segW - cellW) + need) + 1;
+  return idealWidth({ chromePx: segW - cellW, needPx: need });
+}
+
+/**
+ * The same arithmetic with the "does it already fit" question taken out: the
+ * width a segment would have to be for a string of `needPx` to set whole in it.
+ *
+ * `desiredWidth` answers "how wide should the accordion open THIS segment", and
+ * declines for a segment whose text already fits. The rail's chip threshold asks
+ * a different question — "how wide would the widest name on this rail have to
+ * be" — about a segment that is not sounding and is nowhere near that width, so
+ * the fit test would refuse every time and the threshold would never see the
+ * content it is supposed to be driven by.
+ *
+ * The `+1` is the rounding margin: `scrollWidth` is an integer taken from a
+ * fractional layout, so a box sized to exactly it can still clip a hair.
+ */
+export function idealWidth({ chromePx, needPx }) {
+  const chrome = Number(chromePx);
+  const need = Number(needPx);
+  if (!Number.isFinite(chrome) || !Number.isFinite(need)) return 0;
+  return Math.ceil(Math.max(0, chrome) + Math.max(0, need)) + 1;
+}
+
+/**
+ * What the SOUNDING segment asks the accordion for — the one number the solve
+ * is driven by.
+ *
+ * IT ASKS ABOUT THE SEGMENT'S NATURAL WIDTH, not its rendered one. The rendered
+ * width is the previous solve's output, so measuring the overflow against it is
+ * a decision feeding on itself; the natural width is what the rail would give
+ * this segment anyway, which is the question the accordion is actually
+ * deciding. Everything here is therefore derived from numbers that do not move
+ * when the answer is applied.
+ *
+ * AND THE "IT ALREADY FITS" TEST ONLY APPLIES WHERE THERE IS A CELL TO TEST.
+ * `desiredWidth` declines to judge a text column under a pixel wide, because a
+ * DOM read of one is garbage — but a NATURAL width narrower than the segment's
+ * own furniture is not a bad reading, it is a real and common state on a
+ * crowded rail (a nocturne's 36px share against 50px of numeral gutter and
+ * insets). Declining there returned 0, the accordion never opened, and the
+ * sounding segment kept its ellipsis on precisely the rail this whole mode
+ * exists for.
+ *
+ * @param {object} args
+ * @param {number} args.naturalPx the segment's duration-derived width.
+ * @param {number} args.chromePx the rail's segment furniture.
+ * @param {number} args.needPx the widest of its heading and its gloss.
+ * @returns {number} the width to open to, or 0 for "nothing to open for".
+ */
+export function soundingWidth({ naturalPx, chromePx, needPx }) {
+  const natural = Number(naturalPx);
+  const chrome = Number(chromePx);
+  const need = Number(needPx);
+  if (!Number.isFinite(natural) || !Number.isFinite(chrome) || !Number.isFinite(need)) return 0;
+  if (!(need > 0)) return 0;
+  const cell = natural - chrome;
+  // Wide enough to ask: `desiredWidth` owns the half-pixel threshold that stops
+  // the rail opening for a rounding hair.
+  if (cell > 1) return desiredWidth({ segW: natural, cellW: cell, need });
+  return idealWidth({ chromePx: chrome, needPx: need });
 }
 
 /**
