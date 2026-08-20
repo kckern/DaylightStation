@@ -30,7 +30,15 @@
  */
 
 const FORM_LINE = /^(Recitative|Air|Chorus|Duet|Soli|Sinfonia|Pifa|Symphony)\b\s*(?:\((.+?)\))?\s*$/;
-const NUM_LINE = /^(\d{1,2})\s+(.*)$/;
+/**
+ * A number line, with an optional LETTER SUFFIX.
+ *
+ * Editions split some movements as `15a` / `15b` — here the two shepherd
+ * recitatives — and the pair counts as ONE of the 53. A pattern demanding
+ * whitespace straight after the digits skips both halves, and the only symptom
+ * is the sequence checksum: the movement simply is not there.
+ */
+const NUM_LINE = /^(\d{1,2})([a-z])?\s+(.*)$/;
 const CITE_LINE = /^\((.+?)\)\s*$/;
 const PART_LINE = /^PART\s+(One|Two|Three)$/i;
 /** Instrumental numbers name their own form: "2 Sinfonia (Ouverture)". */
@@ -82,6 +90,86 @@ export function splitColumns(laidOut, { blankRatio = 0.9 } = {}) {
   return out.join('\n');
 }
 
+/* -------------------------------------------------------------------------- */
+/* COORDINATES, NOT WHITESPACE                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Read `pdftotext -bbox` output into pages of words with their extents.
+ *
+ * This exists because `splitColumns` — which guesses a gutter from which text
+ * column is most often blank — lost three movements outright on the real
+ * libretto and emitted a fourth out of order. Word extents turn the same
+ * question into an exact one.
+ */
+export function parseBbox(xml) {
+  const unescape = (s) => s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+  const pages = [];
+  const pageRe = /<page width="([\d.]+)" height="([\d.]+)">([\s\S]*?)<\/page>/g;
+  const wordRe = /<word xMin="([\d.-]+)" yMin="([\d.-]+)" xMax="([\d.-]+)" yMax="([\d.-]+)">([\s\S]*?)<\/word>/g;
+  for (const p of String(xml).matchAll(pageRe)) {
+    const words = [...p[3].matchAll(wordRe)].map((w) => ({
+      xMin: Number(w[1]), yMin: Number(w[2]), xMax: Number(w[3]), yMax: Number(w[4]),
+      text: unescape(w[5]),
+    }));
+    pages.push({ width: Number(p[1]), height: Number(p[2]), words });
+  }
+  return pages;
+}
+
+/**
+ * One page of words, in single-column reading order.
+ *
+ * THE GUTTER IS AN X NO WORD CROSSES. That is the whole idea, and it is exact
+ * rather than statistical: a two-column page has a band of such x's between the
+ * columns, and a page whose heading spans the full measure has none. So a
+ * straddling heading DECLINES the split rather than being cut in half — which is
+ * the failure that cost three movements, because the halves would fall through
+ * the parser's catch-all into the previous number's verse, silently.
+ *
+ * `lineTol` groups words onto a baseline: `yMin` jitters by a fraction of a point
+ * within a line, and exact equality would break every line into single words.
+ */
+export function columnize(page, { minGutterPt = 6, lineTol = 3 } = {}) {
+  const words = page.words ?? [];
+  if (!words.length) return '';
+
+  const linesOf = (subset) => {
+    const rows = [];
+    for (const w of [...subset].sort((a, b) => a.yMin - b.yMin || a.xMin - b.xMin)) {
+      const row = rows[rows.length - 1];
+      if (row && Math.abs(w.yMin - row.y) <= lineTol) row.words.push(w);
+      else rows.push({ y: w.yMin, words: [w] });
+    }
+    return rows.map((r) => r.words.sort((a, b) => a.xMin - b.xMin).map((w) => w.text).join(' '));
+  };
+
+  // Every x in the middle of the page that no word's extent crosses.
+  const lo = page.width * 0.3;
+  const hi = page.width * 0.7;
+  const free = [];
+  for (let x = lo; x <= hi; x += 0.5) {
+    if (!words.some((w) => w.xMin < x && x < w.xMax)) free.push(x);
+  }
+  // The widest contiguous run of free x's is the gutter, if there is one.
+  let bestStart = null; let bestLen = 0; let runStart = null; let prev = null;
+  for (const x of free) {
+    if (prev === null || x - prev > 0.75) runStart = x;
+    const len = x - runStart;
+    if (len > bestLen) { bestLen = len; bestStart = runStart; }
+    prev = x;
+  }
+  if (bestStart === null || bestLen < minGutterPt) return linesOf(words).join('\n');
+
+  const cut = bestStart + bestLen / 2;
+  const left = words.filter((w) => w.xMax <= cut);
+  const right = words.filter((w) => w.xMin >= cut);
+  return [...linesOf(left), ...linesOf(right)].join('\n');
+}
+
 /**
  * Read a libretto's text into structured numbers.
  *
@@ -104,8 +192,16 @@ export function parseLibretto(rawText) {
     m = NUM_LINE.exec(s);
     if (m) {
       const pdfN = Number(m[1]);
-      const title = m[2].trim();
+      const suffix = m[2] ?? null;
+      const title = m[3].trim();
       if (/^Play All$/i.test(title)) { pending = null; continue; }
+      // A lettered continuation (`15b` after `15a`) is the SAME number: keep
+      // appending to the entry already open rather than starting a new one.
+      if (suffix && current && current.pdfN === pdfN) {
+        current.text = current.text ? `${current.text}\n${title}` : title;
+        pending = null;
+        continue;
+      }
       const inst = INSTRUMENTAL.exec(title);
       current = {
         n: 0,
