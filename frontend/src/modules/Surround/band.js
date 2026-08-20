@@ -264,6 +264,64 @@ export function placedRailSegments(segments) {
 }
 
 /**
+ * WHAT A FOLDED PART IS WORTH ON THE RAIL — a placeholder, not its own time.
+ *
+ * THIS DELIBERATELY BREAKS PROPORTION, and that is the whole feature. The first
+ * cut of the accordion gave each fold exactly the width of everything it
+ * replaced, on the reasoning that the rail should stay one honest clock. It
+ * solved nothing: Messiah's Part Two is 23 of 53 numbers but only about a third
+ * of the running time, so folding the other two Parts still left those 23
+ * crammed into a third of the rail — the same cluster, two segments shorter.
+ *
+ * A fold is a MARKER saying "there is a Part here, and it is not the one
+ * sounding". A marker needs to be legible and nothing more, so every fold takes
+ * the same small share whatever it stands in for, and the sounding Part takes
+ * everything they gave up. A three-minute Part and a fifty-minute Part fold to
+ * the same chip, because as markers they carry the same information.
+ *
+ * THE PLAYHEAD SURVIVES THIS FOR FREE. `playheadFraction` accumulates RENDERED
+ * shares and interpolates by time only INSIDE the segment it lands in, so a
+ * rail whose widths no longer track the clock still puts the playhead exactly
+ * where the clock says — including while a fold is sounding, where it crosses
+ * the marker at a constant rate. Nothing had to learn about the discontinuity.
+ *
+ * @param {Array<{duration:number, collapsed?:boolean}>} segments
+ * @returns {number[]} shares summing to 1, index-aligned with `segments`.
+ */
+export const FOLD_SHARE = 0.035;
+/** No matter how many Parts fold, they may not take more of the rail than this. */
+export const FOLD_SHARE_CAP = 0.25;
+
+export function foldedShares(segments, { foldShare = FOLD_SHARE, cap = FOLD_SHARE_CAP } = {}) {
+  const list = Array.isArray(segments) ? segments : [];
+  if (list.length === 0) return [];
+
+  const durationOf = (c) => {
+    const d = Number(c?.duration);
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  };
+  const folds = list.filter((c) => c?.collapsed);
+  const drawnTotal = list.reduce((n, c) => n + (c?.collapsed ? 0 : durationOf(c)), 0);
+
+  // Nothing folded: plain proportion, exactly as the rail has always drawn it.
+  if (folds.length === 0) {
+    const total = list.reduce((n, c) => n + durationOf(c), 0);
+    if (!(total > 0)) return list.map(() => 0);
+    return list.map((c) => durationOf(c) / total);
+  }
+
+  // Everything folded (no sounding Part on this rail) — share it out evenly
+  // rather than by duration, since as markers they are all worth the same.
+  if (!(drawnTotal > 0)) return list.map((c) => (c?.collapsed ? 1 / folds.length : 0));
+
+  // The folds' total is capped so a work with many Parts cannot crowd out the
+  // one being sung.
+  const each = Math.min(foldShare, cap / folds.length);
+  const remainder = 1 - each * folds.length;
+  return list.map((c) => (c?.collapsed ? each : (durationOf(c) / drawnTotal) * remainder));
+}
+
+/**
  * THE ACCORDION: DRAW THE GROUP THAT IS SOUNDING, FOLD THE REST.
  *
  * Messiah is the piece this exists for. Fifty-three numbers on one rail chip at
