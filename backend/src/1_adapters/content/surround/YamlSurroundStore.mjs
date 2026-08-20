@@ -20,6 +20,12 @@ const COMPOSER_FILE = '_composer';
 // lookups are a handful an hour, not a second, so the walk is free; the window
 // exists only so a burst of lookups around one play does not repeat it.
 const FRESHNESS_WINDOW_MS = 2000;
+// How many grouping folders may sit between a domain and a composer. The corpus
+// files composers under one period folder (`5_romantic/brahms/`); the allowance
+// is larger so a future split (by period, then by nationality) does not need a
+// code change, but bounded so a symlink loop or a stray deep tree cannot walk
+// forever at index time.
+const MAX_GROUPING_DEPTH = 4;
 
 const isReserved = (name) => name.startsWith('_');
 // Titles are compared on letters and digits only. Everything else — guillemets
@@ -42,6 +48,49 @@ const isPresent = (v) => v !== undefined && v !== null;
 // added to a library work YAML and not added here never reaches the payload,
 // and the only symptom is the region rendering without it.
 const PIECE_FIELDS = ['title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+
+/**
+ * Seconds between a movement's notes when its end is unknown — the last movement
+ * of a sidecar that names no `musicEndsAt`. Wider than the ticker's cue dwell, so
+ * a note expires and the fact rotation gets a turn before the next one lands.
+ */
+const UNBOUNDED_NOTE_GAP_S = 45;
+
+/**
+ * Fan one movement's note(s) into timed cues.
+ *
+ * `note:` may be a single string or a list. A string stays exactly where it was —
+ * one cue on the movement's downbeat. A list is spread evenly across the
+ * movement's OWN span (this start to the next), so the notes are positioned
+ * relative to the music rather than to a recording's absolute clock: a re-timing
+ * that shifts every start carries the notes along with it, and the same work file
+ * serves every performance of the piece.
+ *
+ * @param {string|string[]|undefined} note
+ * @param {number|undefined} start - this movement's start, in seconds
+ * @param {number|undefined} end - the next movement's start, or end-of-music
+ * @returns {Array<{at: number, render: string, text: string}>}
+ */
+function noteCues(note, start, end) {
+  const texts = (Array.isArray(note) ? note : [note])
+    .filter((t) => typeof t === 'string' && t.trim());
+  if (!texts.length || typeof start !== 'number') return [];
+
+  // A non-positive span means the starts are out of order — treat the end as
+  // unknown rather than spacing the notes backwards through the movement.
+  const span = typeof end === 'number' && end > start ? end - start : undefined;
+  const gap = span === undefined ? UNBOUNDED_NOTE_GAP_S : span / texts.length;
+
+  let previous = -Infinity;
+  return texts.map((text, k) => {
+    // Monotonic by a whole second: a movement too short to hold its notes would
+    // otherwise round two onto the same instant, where the ticker shows the one
+    // that sorts last and the rest are never seen at all.
+    const at = k === 0 ? start : Math.max(Math.round(start + k * gap), previous + 1);
+    previous = at;
+    return { at, render: 'docked', text };
+  });
+}
 const pick = (obj, keys) => {
   const out = {};
   for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
@@ -208,8 +257,9 @@ export class YamlSurroundStore extends ISurroundStore {
     for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
       const domainDir = path.join(this.libraryDir, domain);
       consider(domainDir);
-      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
-        const composerDir = path.join(domainDir, composer);
+      // Same recursive discovery the index uses, so adding or removing a grouping
+      // folder registers as a change rather than leaving a stale index behind.
+      for (const { dir: composerDir } of this.#composerDirs(domainDir)) {
         consider(composerDir);
         for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
           consider(path.join(composerDir, file));
@@ -383,16 +433,63 @@ export class YamlSurroundStore extends ISurroundStore {
    * @returns {{ composers: Map<string, Object>, works: Map<string, Object> }}
    * @private
    */
+  /**
+   * Every composer directory under a domain, at any depth.
+   *
+   * A composer directory is one that holds YAML; a grouping folder holds only
+   * more directories. Testing for `_composer.yml` would be the obvious rule and is
+   * wrong — composer identity is optional, and a folder of works with no
+   * `_composer.yml` is legitimate (the payload simply carries no composer block).
+   *
+   * Anything above a composer folder carries no meaning for resolution: `work:`
+   * refs are keyed `<composer>/<work>`, so filing Brahms under `5_romantic/` or
+   * promoting him to `0_flagship/` breaks no sidecar. Keying on the basename
+   * rather than the path is what makes the shelving cosmetic — reorganize freely;
+   * the only name that must stay stable is the composer folder's own.
+   *
+   * @param {string} domainDir
+   * @returns {Array<{slug: string, dir: string, rel: string}>} rel is relative to domainDir
+   * @private
+   */
+  #composerDirs(domainDir) {
+    const found = [];
+    const walk = (dir, rel, depth) => {
+      for (const name of listDirs(dir).filter((d) => !isReserved(d))) {
+        const child = path.join(dir, name);
+        const childRel = rel ? `${rel}/${name}` : name;
+        if (listYamlFiles(child, { stripExtension: false }).length > 0) {
+          found.push({ slug: name, dir: child, rel: childRel });
+        } else if (depth < MAX_GROUPING_DEPTH) {
+          walk(child, childRel, depth + 1);
+        }
+      }
+    };
+    walk(domainDir, '', 0);
+    return found;
+  }
+
   #loadLibrary() {
     const composers = new Map();
     const works = new Map();
     if (!dirExists(this.libraryDir)) return { composers, works };
+    const claimedBySlug = new Map();
 
     for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
       const domainDir = path.join(this.libraryDir, domain);
 
-      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
-        const composerDir = path.join(domainDir, composer);
+      for (const { slug: composer, dir: composerDir, rel } of this.#composerDirs(domainDir)) {
+        // Two folders claiming one slug would silently merge into whichever the
+        // walk reaches last, so the loser's works vanish with no symptom but a
+        // short index. Name both.
+        const prior = claimedBySlug.get(composer);
+        if (prior) {
+          this.logger?.warn?.('surround.composer.duplicate', {
+            composer, kept: prior, ignored: path.join(domain, rel)
+          });
+        } else {
+          claimedBySlug.set(composer, path.join(domain, rel));
+        }
+
         const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
         if (isPlainObject(composerBase)) composers.set(composer, composerBase);
 
@@ -410,9 +507,11 @@ export class YamlSurroundStore extends ISurroundStore {
             if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
           }
           if (reasons.length) {
-            // Relative to libraryDir, because that is how the author knows the file.
+            // Relative to libraryDir, because that is how the author knows the
+            // file — so the grouping folders are in the path even though they
+            // play no part in the key.
             this.logger?.warn?.('surround.work.invalid', {
-              file: path.join(domain, composer, file),
+              file: path.join(domain, rel, file),
               reason: reasons[0],
               reasons
             });
@@ -553,10 +652,12 @@ export class YamlSurroundStore extends ISurroundStore {
     }
 
     const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
-    const movementCues = movements
-      .map((m, i) => ({ at: starts[i], text: m.note }))
-      .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
-      .map((c) => ({ at: c.at, render: 'docked', text: c.text }));
+    // A movement's end is the next movement's start; the last one falls back to
+    // the sidecar's own end-of-music marker, and to nothing if it names none.
+    const endOf = (i) => (typeof starts[i + 1] === 'number'
+      ? starts[i + 1]
+      : (Number.isFinite(doc.musicEndsAt) ? doc.musicEndsAt : undefined));
+    const movementCues = movements.flatMap((m, i) => noteCues(m.note, starts[i], endOf(i)));
     const explicitCues = asArray(doc.cues);
     const cues = [...movementCues, ...explicitCues].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
 

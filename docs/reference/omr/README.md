@@ -50,7 +50,7 @@ questions are omitted; multi-marked questions keep every letter (grading
 policy is downstream); an unreadable test-ID digit records as `?`. The
 7-digit test ID is *not* a student number — the printed quiz carries it and
 maps it to both the student and that quiz's answer key, so randomized or
-per-student question orders still grade. `cli/omr-quiz-backfill.cli.mjs`
+per-student question orders still grade. `cli/school.mjs omr`
 rebuilds all decoded day files from the manifest (idempotent). For School
 print documents, that mapping is the allocation store: the test ID is the
 card id, and the scan resolves/grades through the card's allocation records —

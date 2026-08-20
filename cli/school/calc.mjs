@@ -8,7 +8,7 @@
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgv } from './_argv.mjs';
+import { parseArgv } from '../_argv.mjs';
 import {
   ValidateSchoolCalcPublication,
 } from '#apps/school/schoolcalc/index.mjs';
@@ -37,7 +37,7 @@ const ALLOWED_FLAGS = new Set([
 const HELP = `schoolcalc-catalog — validate a published School Catalog for SchoolCalc
 
 Usage:
-  schoolcalc-catalog.cli.mjs validate [options]
+  school.mjs calc validate [options]
 
 Options:
   --data-dir <path>                  data root (default: $DAYLIGHT_BASE_PATH/data)

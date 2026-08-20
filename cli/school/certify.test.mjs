@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { dump } from 'js-yaml';
 import { describe, expect, it } from 'vitest';
-import { runCertify } from './school-certify.cli.mjs';
+import { runCertify } from './certify.mjs';
 
 const NOTES_MODULE = { moduleId: 'notes', type: 'lecture_notes', documentId: 'welcome-notes' };
 const QUIZ_MODULE = { moduleId: 'check', type: 'quiz', bankId: 'general:welcome-check' };
@@ -278,7 +278,7 @@ describe('school-certify CLI', () => {
   it('(f) --json output is sorted by (address, surfaceId) and byte-identical across two runs', async () => {
     await withTmpDir(async (root) => {
       await buildFixture(root);
-      const { formatCertifyReport } = await import('./school-certify.cli.mjs');
+      const { formatCertifyReport } = await import('./certify.mjs');
       const first = await runCertify(flagsToArgv(certifyFlags(root)));
       const second = await runCertify(flagsToArgv(certifyFlags(root)));
       const firstJson = formatCertifyReport(first.report, { json: true });
@@ -415,7 +415,7 @@ describe('school-certify CLI', () => {
   it('(o) --json output has canonically sorted keys within each line (F13)', async () => {
     await withTmpDir(async (root) => {
       await buildFixture(root);
-      const { formatCertifyReport } = await import('./school-certify.cli.mjs');
+      const { formatCertifyReport } = await import('./certify.mjs');
       const { report } = await runCertify(flagsToArgv(certifyFlags(root)));
       const json = formatCertifyReport(report, { json: true });
       const firstLine = json.trim().split('\n')[0];

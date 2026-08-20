@@ -21,12 +21,16 @@ one work commonly has more than one recording. See
 
 ```text
 data/content/library/classical/            THE CORPUS — knowledge only
-  beethoven/
-    _composer.yml                          bio, dates, map, portrait refs, facts
-    symphony-3-eroica.yml                  the WORK: movements, listen notes, facts, themes
-  vivaldi/
-    _composer.yml
-    four-seasons-spring.yml
+  0_flagship/                              media-backed composers; full works, not just key works
+    beethoven/
+      _composer.yml                        bio, dates, map, portrait refs, facts
+      symphony-3-eroica.yml                the WORK: movements, listen notes, facts, themes
+    vivaldi/
+      _composer.yml
+      four-seasons-spring.yml
+  1_medieval/  2_renaissance/  3_baroque/  4_classical/
+  5_romantic/  6_modern/       7_contemporary/
+    <composer>/…                           everyone else, shelved by period
 
 data/content/surround/classical/           PERFORMANCES — owned by the player
   beethoven/
@@ -41,24 +45,41 @@ media/img/library/classical/<composer>/    corpus assets (portrait.jpg, <city>.j
 media/img/library/_maps/europe.geo.json    shared geodata
 ```
 
-- Both trees use the same shape — `<domain>/<composer>/<file>.yml` — and the same
-  rule: `_`-prefixed files and folders are never walked as composer folders or as
+- **Grouping folders are cosmetic.** 354 composers in one directory is unusable, so
+  the corpus shelves them: `0_flagship/` for the composers with media in the house
+  (these get fleshed-out catalogues rather than key works only), then one numbered
+  folder per period so the shelves sort chronologically. The store finds composer
+  folders **at any depth** and keys works on the folder's own name, so `work:` refs
+  stay `<composer>/<work>` and reshelving a composer breaks no sidecar. A composer
+  folder is one that contains YAML; a folder containing only folders is a shelf.
+  The tests in `YamlSurroundStore.test.mjs > library grouping folders` pin this.
+- **The composer folder name is the only stable identifier.** Renaming `brahms/`
+  breaks every sidecar that references it; moving it between shelves breaks nothing.
+- Two shelves claiming the same composer slug would silently merge, so the store
+  logs `surround.composer.duplicate` naming both and keeps the first.
+- The performance tree is still flat (`<domain>/<composer>/<file>.yml`) — it holds
+  two composers, so it does not need shelving. Both trees share the rule that
+  `_`-prefixed files and folders are never walked as composer folders or as
   work/performance files. `_composer.yml` and `_surrounds/` are reserved by name.
 - **A work with no performance sidecar is valid.** Most works will be authored
   before any recording is ingested; the corpus never mentions Plex.
 - Assets are referenced relative to `assetBase`, which the store sets to
   `library/<domain>` (so, `library/classical`), and served by the generic static
   image route: `/api/v1/static/img/library/classical/beethoven/portrait.jpg`.
+  Shelving does not touch them: `portrait:` stays `<composer>/portrait.jpg` whatever
+  period folder the YAML sits in, because the ref is relative to `assetBase`.
   That route is generic over the media image tree — nothing hardcodes a surround
   prefix. A missing asset renders an empty slot; it never breaks the surround.
 
 ### The work file
 
-`library/classical/<composer>/<work-slug>.yml` — everything true about the music,
-independent of any recording. Abridged from the real Eroica file:
+`library/classical/<shelf>/<composer>/<work-slug>.yml` — everything true about the
+music, independent of any recording. Abridged from the real Eroica file:
 
 ```yaml
 title: Symphony No. 3 in E-flat major, "Eroica"
+translation: "Heroic Symphony"        # only when the title is not in English
+genre: Symphony                       # Symphony | Opera | Mass setting | Motet | ...
 opus: Op. 55                          # or BWV / K. / RV / HWV — whatever the catalog uses
 composed: 1803-1804
 year: 1804
@@ -66,6 +87,10 @@ period: "Classical to Romantic"
 period_note: "Written at the hinge — Classical forms stretched to Romantic scale and feeling."
 city: Vienna
 premiered: Theater an der Wien, 7 April 1805
+summary: >                            # one paragraph: what it is and why it matters
+  Written at the hinge between the Classical and Romantic eras, and twice the length
+  of any symphony before it.
+scoring: "Orchestra"                  # the forces the music calls for
 set: symphonies                       # groups works into a cycle
 set_index: 3
 tier: flagship                        # flagship | key | catalog
@@ -95,7 +120,25 @@ Notes that save a debugging pass:
 - **`note:` becomes a cue.** A movement with a `note` and a paired start second is
   synthesized into a docked cue at that second. That is the whole mechanism —
   there is no per-movement cue syntax.
-- **`listen:`, `translation:`, `themes:`, `set:`, `set_index:` and `tier:` do not
+- **`note:` may be a list.** Several lines for one movement are spread evenly
+  across that movement's own span — its start to the next movement's start — with
+  the first still landing on the downbeat. The last movement is bounded by the
+  sidecar's `musicEndsAt` if it names one, and otherwise falls back to a fixed
+  45-second gap; a cue past the end of the media simply never fires. Because the
+  spacing is derived from the movement's span rather than absolute seconds, one
+  work file serves every recording, and a re-timing carries the notes with it.
+  Use this for material about a specific numbered piece inside a set — the Chopin
+  études are twelve movements of one work, so "No. 5 is the Black Keys" belongs
+  on movement 5, not in `facts:`.
+- **Put a fact where its scope is.** `facts:` is an untimed pool cycled whenever
+  no cue is up, and it is not scoped to the movement playing — a line about No. 5
+  will surface during No. 9. Anything true of one numbered piece goes in that
+  movement's `note:` list; anything true of the whole work stays in `facts:`;
+  anything true of the composer beside *any* work belongs in `_composer.yml`,
+  which `ComposerCard` cycles on its own rotation. A line repeated between
+  `_composer.yml` and a work's `facts:` shows twice on screen at once.
+- **`listen:`, `translation:`, `genre:`, `summary:`, `scoring:`, `themes:`, `set:`,
+  `set_index:` and `tier:` do not
   reach the surround payload.** They are corpus fields, authored now for the School
   projection and for future modules. Only the fields in the store's `PIECE_FIELDS`
   allowlist (`title`, `opus`, `composed`, `year`, `period`, `period_note`, `city`,
@@ -108,17 +151,21 @@ Notes that save a debugging pass:
 
 ### The composer file
 
-`library/classical/<composer>/_composer.yml` — identity shared by every work that
+`library/classical/<shelf>/<composer>/_composer.yml` — identity shared by every work that
 composer wrote. Author it once and all 41 Beethoven works have it.
 
 ```yaml
 name: Ludwig van Beethoven
 born: 1770
-died: 1827
+died: 1827                            # `died: null` + `living: true` for living composers
 birthplace: Bonn
+nationality: German
 period: Classical
 period_note: "Clear forms and balanced phrases — the Classical style prized proportion above display."
-portrait: beethoven/portrait.jpg
+summary: >                            # one paragraph, for the School projection
+  The hinge of Western music. He inherited the Classical forms from Haydn and Mozart
+  and forced them open while going progressively deaf.
+portrait: beethoven/portrait.jpg      # omit both asset refs when no image exists yet
 city_image: beethoven/vienna.jpg
 map: { country: Austria, city: Vienna, lat: 48.21, lon: 16.37, caption: "Vienna — his adopted city from the age of twenty-one" }
 facts:
@@ -424,3 +471,97 @@ sidecar; work files are written for the long tail too, so the composer count und
 `library/classical/` grows well past the seven with recordings. That asymmetry is
 the point of the split — a composer folder with no video in the house is still
 worth authoring.
+
+### Current corpus
+
+As of 2026-08-19 the tree holds **354 composers and 1,138 works**, spanning Guido
+d'Arezzo to Heiner Goebbels — Romantic 104, Modern 74, Contemporary 70, Baroque 37,
+Renaissance 30, Classical 28, Medieval 9. Every composer has a `_composer.yml`, at
+least one work file, and the full schema (`nationality`, `period`, `period_note`,
+`summary`, `map`, `facts`); every work carries `title`, `genre`, `composed`, `year`,
+`period`, `city`, `summary`, `scoring`, `facts` and `themes`.
+
+Coverage against the DK guide's own composer roster — the canonical "which
+composers matter" list, 309 entries — is **complete**. Only two works, Beethoven's
+Eroica and Vivaldi's Spring, have a performance sidecar; the other 520 are
+corpus-only and carry no timings, no `match:` and no Plex ID. That is the expected
+steady state: the knowledge tree runs far ahead of the media, and ingestion,
+timecoding and Plex matching happen later, per recording.
+
+### Extracting the rosters (do it this way, not the obvious way)
+
+Two passes produced false "complete" verdicts before the method below settled.
+
+- **Use `pdftotext -raw`, not `-layout`.** The DK guide is two-column; `-layout`
+  interleaves the columns and destroys the name/dates adjacency. Raw reading order
+  puts each composer's name on the line directly above its `b 1234–1234 n NATION`
+  line, which makes extraction a three-line script and lifts the yield from ~200
+  mangled candidates to a clean **309**.
+- **Match on surname, not on any token.** Matching any name token makes common
+  forenames collide: `Luigi Nono` matched Boccherini and `Hugo Wolf` matched
+  *Wolfgang* Mozart, both reported present while absent.
+- **Drop the token-length filter for the final check.** A `len > 3` guard silently
+  passes short surnames — `Tan Dun` was reported missing while present.
+- **Expect residual false negatives and eyeball them.** `Josquin Desprez` (book) vs
+  `Josquin des Prez` (tree) will never match on surname. One line of output is
+  cheap to check by hand; a green "complete" is not.
+- **The epub is the better source for *works*.** Each spread carries an explicit
+  "Other key works" block; extracting those (151 entries) surfaces gaps in
+  composers already present — Così fan tutte, Don Carlos, Meistersinger, Eugene
+  Onegin, Rosenkavalier, Butterfly, Bluebeard's Castle and around forty more were
+  all missing while their composers were not.
+- **Smithsonian is a global music history, not a classical directory.** Of ~300
+  unmatched dated names in it, the overwhelming majority are jazz, pop, world music
+  or non-musicians. Filter by hand; roughly 25 real classical composers came out.
+
+### Filling per-composer work gaps with agents
+
+The 2026-08-19 expansion (522 → 1,138 works) ran as a three-stage agent pipeline.
+The staging is the point: **each stage catches the previous stage's errors**, and
+collapsing them into one step loses that.
+
+1. **Audit (cheap model, 12 batches × ~30 composers).** Given each composer and the
+   work titles already present, list the *key works* still missing, capped by the
+   composer's stature. Output JSON keyed by slug.
+2. **Author (capable model, 10 balanced batches × ~64 works).** Write the YAML.
+   Briefed explicitly that the audit says *which* works are missing and its metadata
+   is **not** to be trusted.
+3. **Verify (cheap model, 10 batches).** Independently fact-check every authored
+   title against the offline Wikipedia service: does this work exist, by this
+   composer, at roughly this date?
+
+**The audit fabricates.** Roughly 20 of ~640 proposed works did not exist — invented
+pieces credited to Shchedrin, Stenhammar, Smyth, Ferneyhough, Chávez, Farrenc,
+Saariaho, Gubaidulina, Bryars, Birtwistle, Turnage, Skalkottas and Palmgren; a
+Coleridge-Taylor movement under the wrong name; a phantom Benjamin opera duplicating
+*Written on Skin*; Geminiani concerti grossi filed under an opus holding violin
+sonatas. All were declined at stage 2 **because the authors were told to verify.**
+It also duplicated works already in the tree under variant titles, and misattributed
+an anthem by Samuel Sebastian Wesley to his father. Stage 3 then caught a further 22
+problems in 634 authored works (3.5%) — 20 metadata errors and 2 titles that could
+not be confirmed at all.
+
+**Write through a validate-on-write helper, and collapse whitespace in it.** Agents
+pass triple-quoted Python strings whose source indentation survives into a YAML
+folded scalar (`>`), which preserves more-indented lines literally — 64 files landed
+with newlines embedded in `summary` before this was caught. The helper must
+`" ".join(text.split())` every folded field. It should also refuse unknown composer
+slugs and skip files that already exist, so a re-run is idempotent and cannot clobber
+existing work.
+
+**Check for orphan directories after every agent pass.** An agent writing to a slug
+that does not match an existing composer directory creates a work with no
+`_composer.yml`. Assert `every directory has a composer file` as a post-condition.
+
+Sources for the authoring pass were the three reference books in
+`media/_inbox/classical music/` — DK's *The Classical Music Book* (one spread per
+key work, plus a 60-composer directory), DK's *The Complete Classical Music Guide*
+(244 composer entries with KEY WORKS blocks), and *Smithsonian Music*. Prose in
+those books is copyrighted: adapt, never copy. Dates, premieres and catalog numbers
+were checked against the local Wikipedia service.
+
+**Author with a validate-on-write guard.** YAML written by a generator script fails
+in two recurring ways — a trailing comma after a quoted list item, and an unescaped
+`"` inside a double-quoted title (`Symphony No. 6 in F major, "Pastoral"`). Parse
+each file in memory and only write it if it parses; a batch that rejects bad files
+before touching disk never leaves the tree in a half-broken state.

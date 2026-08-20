@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { runRekey, rewriteLearnerIds } from './school-rekey-learner.cli.mjs';
+import { runRekey, rewriteLearnerIds } from './learner.mjs';
 
 let root;
 beforeEach(() => {

@@ -9,8 +9,8 @@ import {
   main,
   resolveSchoolDocsContentPaths,
   runSchoolDocs,
-} from './school-docs.cli.mjs';
-import { pdfText } from '../tests/_lib/school/pdfText.mjs';
+} from './docs.mjs';
+import { pdfText } from '../../tests/_lib/school/pdfText.mjs';
 
 /** A single question: short stem + fixed-size answer space (no growth ambiguity). */
 const question = (n) => ({

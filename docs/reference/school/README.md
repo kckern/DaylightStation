@@ -947,7 +947,7 @@ a child's work never vanishes silently.
 `variety=hand` for on-page bubbles) is the surface — and
 `GET /print/<7-digit card id>` alone reproduces the sheet that card was
 printed for;
-`cli/school-docs.cli.mjs` covers validate/publish/render/release-card.
+`cli/school.mjs docs` covers validate/publish/render/release-card.
 Sources live at `data/content/school/catalog/documents/` under hierarchical
 taxonomy ids (`subject/course/slug`) — the authored document *class*, on the
 same catalog shelf as the `school.learning-document/v1` files;
@@ -1442,7 +1442,7 @@ did.
 | API | `GET /api/v1/school/report-card`, `GET /report-card/frozen`, `POST /report-card/close`, `GET /teacher/today`, `GET /periods`, `GET /review/learner/:learnerId` (`backend/src/4_api/v1/routers/school.mjs`) |
 | Frontend | `frontend/src/modules/School/report/useTeacherToday.js`, `ReportPanel.jsx` (Today strip) |
 | Frontend | `frontend/src/modules/School/home/useLearnerFeedback.js`, `useLearnerStanding.js`, `StudentPanel.jsx` |
-| CLI | `cli/school-certify.cli.mjs` — `--strict-concepts` |
+| CLI | `cli/school.mjs certify` — `--strict-concepts` |
 | Content | `data/content/school/concepts.yml` — the concept label registry |
 | Config | `data/household/config/school.yml` → `progress.academicPeriods` |
 
@@ -1856,7 +1856,7 @@ No code exists for anything in this section. Each links its spec.
 - **`\fbox` switches TeX to text mode**, where `\phantom` is invalid — use
   `\enclose{box}{\phantom{X}}` for a fill-in blank. Schema validation cannot
   catch this class of error; only the catalog's `--render-probe` can, which is
-  why it exists. Run `node cli/school-catalog.cli.mjs validate --render-probe`
+  why it exists. Run `node cli/school.mjs catalog validate --render-probe`
   before promoting authored curriculum.
 - **Never build a MathJax document without filtering out the `noundefined`
   package.** With it (the default in `AllPackages`), an undefined control

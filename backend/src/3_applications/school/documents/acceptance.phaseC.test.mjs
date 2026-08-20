@@ -56,7 +56,7 @@ import {
 } from '../../../../../tests/_lib/school/lifecycleFakes.mjs';
 import { pdfText } from '../../../../../tests/_lib/school/pdfText.mjs';
 import { requirePdftoppm, rasterizePdfPages } from '../../../../../tests/_lib/school/rasterize.mjs';
-import { runSchoolDocs } from '../../../../../cli/school-docs.cli.mjs';
+import { runSchoolDocs } from '../../../../../cli/school/docs.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_DIR = path.join(HERE, '..', '..', '..', '..', '..', 'docs', '_wip', 'audits', '2026-08-04-print-design-phase-c-acceptance');
