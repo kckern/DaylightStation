@@ -57,7 +57,7 @@ import { nextMove } from './offerSession.mjs';
  * that it is not a session id — the reduced state travels out on the
  * resolution, and `sessionId` beside it is `null`.
  */
-const UNOPENED = 'synthetic:unopened';
+export const SYNTHETIC_SESSION_ID = 'synthetic:unopened';
 
 /** Wrong code, dead code, revoked code, junk. The keypad stays alive. */
 const TRY_AGAIN = Object.freeze({
@@ -127,6 +127,27 @@ export class ResolveAccessCode {
    *   with the exit on a card, and is empty on a refusal.
    */
   async execute({ code } = {}) {
+    return (await this.resolve({ code })).card;
+  }
+
+  /**
+   * The card AND the resolution it was built from.
+   *
+   * `RunSelfServiceAction` (`/act`) needs both: the card to check that the
+   * button it was asked for is really on offer right now, and the resolution
+   * to know WHICH unit, plan entry and session that button acts on. `execute`
+   * is this, narrowed to the card — the wire shape `/resolve` answers with.
+   *
+   * `resolution` is `null` on every refusal. On a card built from a
+   * sessionless entry its `sessionId` is `null` and the state it was decided
+   * against carries the synthetic id — see the header. Opening a real session
+   * is `/act`'s job, and it must never pass that synthetic id on.
+   *
+   * @param {object} args
+   * @param {string} args.code
+   * @returns {Promise<{card: object, resolution: object|null}>}
+   */
+  async resolve({ code } = {}) {
     let record;
     try {
       // Format, expiry, revocation and class are ALL the registry's answer —
@@ -134,7 +155,7 @@ export class ResolveAccessCode {
       // about what six digits means is a second rule to drift from.
       record = await this.#tokens.getByAccessCode(code);
     } catch (error) {
-      return this.#faulted('lookup', { error: error?.message ?? String(error) });
+      return { card: this.#faulted('lookup', { error: error?.message ?? String(error) }), resolution: null };
     }
 
     const learnerId = record?.subject?.learnerId ?? null;
@@ -146,7 +167,7 @@ export class ResolveAccessCode {
       this.#logger.info?.('school.selfservice.code.rejected', {
         reason: record ? 'unscoped-record' : 'no-live-record',
       });
-      return TRY_AGAIN;
+      return { card: TRY_AGAIN, resolution: null };
     }
 
     try {
@@ -171,9 +192,12 @@ export class ResolveAccessCode {
         // A card whose only button is the exit is the interesting one.
         offered: actions.map((a) => a.kind),
       });
-      return card;
+      return { card, resolution };
     } catch (error) {
-      return this.#faulted('resolve', { learnerId, subject, error: error?.message ?? String(error) });
+      return {
+        card: this.#faulted('resolve', { learnerId, subject, error: error?.message ?? String(error) }),
+        resolution: null,
+      };
     }
   }
 
@@ -268,7 +292,7 @@ export class ResolveAccessCode {
       return { sessionId: entry.sessionId, state: reduceSession(await this.#sessions.readEvents(entry.sessionId)) };
     }
     const { errors, event } = createEvent({
-      type: 'created', at: nowIso, sessionId: UNOPENED, learnerId, unitId: entry.unitId,
+      type: 'created', at: nowIso, sessionId: SYNTHETIC_SESSION_ID, learnerId, unitId: entry.unitId,
     });
     if (errors.length) throw new Error(`ResolveAccessCode: could not model a fresh session: ${errors.join('; ')}`);
     return { sessionId: null, state: reduceSession([{ ...event, seq: 1 }]) };
