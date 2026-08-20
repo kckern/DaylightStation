@@ -121,6 +121,32 @@ describe('parseLibretto', () => {
     expect(warnings.filter((w) => /sequence break/.test(w))).toEqual([]);
   });
 
+  /**
+   * THE PAGE-NUMBER TRAP HAS TWO HALVES, and guarding only one is worse than
+   * guarding neither, because the surviving half is silent. `NUM_LINE` requires
+   * text after the digits, so a bare `14` is correctly ignored as a movement
+   * number — and then falls straight through to the text catch-all and is
+   * appended to the current number as a line of verse. Six of 53 numbers were
+   * shipped carrying a page number as their last line, one per page of the PDF.
+   */
+  it('never takes a standalone number as a line of sung text', () => {
+    const withPage = [
+      'Chorus',
+      '22 Behold the Lamb of God,',
+      'that taketh away the sin of the world.',
+      '14',
+      '(John 1: 29)',
+    ].join('\n');
+    const { items } = parseLibretto(withPage);
+    expect(items[0].text.split('\n')).toHaveLength(2);
+    expect(items[0].text).not.toMatch(/\b14\b/);
+  });
+
+  it('keeps a number that is genuinely part of a line', () => {
+    const real = ['Chorus', '30 A line ending in the year 1742', '(Psalm 2: 1)'].join('\n');
+    expect(parseLibretto(real).items[0].text).toContain('1742');
+  });
+
   it('warns when a number repeats — the page-number trap', () => {
     const dupe = [
       'Chorus', '12 First', '(A 1: 1)',

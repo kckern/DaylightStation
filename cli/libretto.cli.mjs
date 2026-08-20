@@ -223,6 +223,13 @@ export function parseLibretto(rawText) {
     // several passages and resume its verse after the first.
     if (m && current) { current.cites.push(m[1]); continue; }
     if (current) {
+      // THE PAGE-NUMBER TRAP HAS TWO HALVES. `NUM_LINE` needs text after the
+      // digits, so a bare `14` is correctly not read as a movement number — and
+      // then falls straight through to here and becomes a line of verse. Six of
+      // 53 numbers shipped carrying a page number as their last line, one per
+      // page of the PDF, and nothing downstream could have revealed it.
+      // A line that is nothing but a small integer is furniture, not text.
+      if (/^\d{1,3}$/.test(s)) continue;
       current.text = current.text ? `${current.text}\n${s}` : s;
     }
   }
