@@ -137,14 +137,14 @@ describe('useDissolve', () => {
   it('commits instantly for a change the caller calls urgent', () => {
     const opts = {
       hasContent: (v) => Boolean(v?.text),
-      instant: (next, shown) => next.mv !== shown.mv,
+      instant: (next, shown) => next.seg !== shown.seg,
     };
-    const view = mount(line('a', 'One.', { mv: 0 }), opts);
-    view.to(line('b', 'Two.', { mv: 0 }));
+    const view = mount(line('a', 'One.', { seg: 0 }), opts);
+    view.to(line('b', 'Two.', { seg: 0 }));
     expect(view.hidden(), 'an ordinary rotation should still dissolve').toBe(true);
     tick(DISSOLVE_COMMIT_MS);
 
-    view.to(line('c', 'Three.', { mv: 1 }));
+    view.to(line('c', 'Three.', { seg: 1 }));
     expect(view.text()).toBe('Three.');
     expect(view.hidden()).toBe(false);
   });

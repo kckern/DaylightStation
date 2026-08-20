@@ -40,9 +40,20 @@ const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
 const isPresent = (v) => v !== undefined && v !== null;
 // THE THREE NAMES ONE LIST HAS WORN. `segments:` is the name; `chapters:` was
 // the interim general form; `movements:` is what the corpus authored before
-// either existed. The reader stays bilingual so a corpus file may be migrated
-// (or not) without the rail going dark — a rename of 1,500 files is not
-// something a screen should depend on landing atomically.
+// either existed. This reader accepts all three so a corpus of ~1,500
+// hand-authored files can be renamed on its own schedule.
+//
+// THE COMPATIBILITY IS ONE-DIRECTIONAL, AND THE ORDER OF OPERATIONS FOLLOWS
+// FROM THAT. New code reads old data. Old code does NOT read new data — a
+// deployed build from before this reader knows only `movements:`, so a corpus
+// migrated to `segments:` resolves to nothing under it and every classical rail
+// on the fleet goes blank. That is not hypothetical; it is how this landed the
+// first time, and it cost twenty minutes of dark rails.
+//
+// So: DEPLOY FIRST, MIGRATE THE DATA SECOND. Never the other way round, and
+// never in parallel. The data tree is shared with production over Dropbox, so
+// "migrate the data" is live the moment the file is written — there is no
+// staging step in which to notice.
 //
 // FIRST NON-EMPTY WINS, in this order. A file carrying more than one — which
 // nothing authors — resolves to `segments:`, then `chapters:`, then
@@ -53,12 +64,16 @@ const SEGMENT_KEYS = ['segments', 'chapters', 'movements'];
 // against "whatever list this work authored" — see the fallback in
 // #resolvePerformance for why the difference matters.
 const LEGACY_SEGMENT_KEY = SEGMENT_KEYS[SEGMENT_KEYS.length - 1];
+// Returns the key alongside the list. The key is not decoration: it is the one
+// fact that separates "this work authors nothing" from "this work authors a
+// name this build does not read", and those two have the same symptom on screen
+// (an empty rail) and very different fixes.
 const authoredSegments = (work) => {
   for (const key of SEGMENT_KEYS) {
     const list = asArray(work?.[key]);
-    if (list.length) return list;
+    if (list.length) return { list, key };
   }
-  return [];
+  return { list: [], key: null };
 };
 // Work-level fields that surface as payload.piece, disjoint from
 // performance-level fields (performance, musicEndsAt) the sidecar supplies.
@@ -450,6 +465,19 @@ export class YamlSurroundStore extends ISurroundStore {
       // seeing, and counting the outcome would have reported it as zero.
       containers: pieces.filter((p) => p.parts).length,
       skipped,
+      // ONE LINE THAT ANSWERS "DID THE CORPUS RENAME LAND, UNDER A NAME THIS
+      // BUILD READS". A healthy corpus is all under one key; a half-migrated one
+      // is split; a corpus renamed past what this build knows shows every piece
+      // under `none` while `pieces` stays at its usual number, which is the
+      // shape that otherwise looks entirely healthy from here.
+      segmentKeys: pieces.reduce((acc, p) => {
+        const k = p.segmentKey ?? 'none';
+        acc[k] = (acc[k] ?? 0) + 1;
+        return acc;
+      }, {}),
+      // Pieces whose rail came out empty. Nonzero here with a normal `pieces`
+      // count is the whole-fleet-blank signature.
+      empty: pieces.filter((p) => !p.payload.segments.length).length,
       composers: library.composers.size,
       definitions: definitions.size,
       ms: Date.now() - startedAt
@@ -602,7 +630,7 @@ export class YamlSurroundStore extends ISurroundStore {
    * @param {{parts: number}} counter - Parts expanded so far, shared across the whole tree
    */
   #resolveSegments(work, library, seen, group = null, counter = { parts: 0 }) {
-    const own = authoredSegments(work);
+    const { list: own } = authoredSegments(work);
     const out = [];
     for (const entry of own) {
       if (!isPlainObject(entry)) continue;
@@ -923,6 +951,32 @@ export class YamlSurroundStore extends ISurroundStore {
    */
   #warnUntimed(piece) {
     const segments = piece.payload.segments;
+
+    // ZERO SEGMENTS IS THE LOUDEST CASE AND USED TO BE THE QUIETEST ONE.
+    // Everything below reasons about segments that are on the rail with no
+    // width; a piece with NO segments at all fell out at `!untimed.length` and
+    // said nothing. That is exactly the signature of a corpus migrated ahead of
+    // the deploy — every sidecar resolves, every index counter looks healthy,
+    // `surround.index.built` reports the usual piece count, and every rail is
+    // empty. It was noticed on a screen instead of in the log store, which is
+    // the failure this warning exists to make impossible a second time.
+    //
+    // `segmentKey` names which of the three spellings actually won, so the log
+    // answers "did the corpus rename land under a name this build knows" in one
+    // query rather than by reading a YAML file on a mounted volume.
+    if (!segments.length) {
+      this.logger?.warn?.('surround.segments.none', {
+        file: piece.file,
+        work: piece.work,
+        segmentKey: piece.segmentKey,
+        // A container with no parts composed is a different fault from a leaf
+        // whose work authored nothing; both land here and the log has to tell
+        // them apart.
+        parts: piece.parts ? piece.parts.length : 0
+      });
+      return;
+    }
+
     const untimed = segments.filter((c) => c.duration === 0);
     if (!untimed.length) return;
     const trailingOnly = untimed.length === 1 && untimed[0] === segments[segments.length - 1];
@@ -1072,6 +1126,9 @@ export class YamlSurroundStore extends ISurroundStore {
     // authored list here instead would put unexpanded `work:` reference entries
     // on the rail, where they would render as segments named after a file path.
     const seenRefs = new Set([doc.work]);
+    // Which of the three spellings this work actually authored, carried to the
+    // warnings so an empty rail says WHY it is empty. See #warnUntimed.
+    const { key: segmentKey } = authoredSegments(work);
     const resolved = this.#resolveSegments(work, library, seenRefs);
     const pieceSegments = resolved.length ? resolved : asArray(work[LEGACY_SEGMENT_KEY]);
     // Length, not content: an author who timed the wrong number of segments has
@@ -1133,10 +1190,12 @@ export class YamlSurroundStore extends ISurroundStore {
       title: typeof doc.match.title === 'string' ? doc.match.title : '',
       normalized: normalizeTitle(doc.match.title),
       // Carried for the second pass and the warnings it emits: which file to
-      // name, which work this piece plays, the parts it is still owed, and the
-      // segments an inline part times against.
+      // name, which work this piece plays, which key that work authored its
+      // list under, the parts it is still owed, and the segments an inline part
+      // times against.
       file,
       work: doc.work,
+      segmentKey,
       parts,
       ownSegments: pieceSegments,
       payload: {

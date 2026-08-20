@@ -81,6 +81,53 @@ describe('surround builtins in the frame', () => {
     expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
   });
 
+  /**
+   * THE UNMIGRATED DEFINITION, END TO END.
+   *
+   * `registry.test.js` proves the alias resolves to the same component; this
+   * proves the whole path works from an authored name a definition on disk
+   * still carries — resolution, the `regions` meta (no `misplaced` warn), and
+   * the rail actually painting. The compatibility only runs one way (new code
+   * reads old data), so the transitional state is a definition that still says
+   * `movement-map` served by a build that calls it `segment-map`, and THAT is
+   * the state this spec pins. A blank region here is a dark rail on the fleet.
+   */
+  it('mounts the rail from a definition that still authors the legacy movement-map name', () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const legacy = {
+      ...EROICA,
+      definition: {
+        ...CONCERT_HALL,
+        regions: {
+          ...CONCERT_HALL.regions,
+          bottom: [
+            { module: 'movement-map', height: 64 },
+            { module: 'cue-ticker', height: 'fill', collapse: 'first' },
+          ],
+        },
+      },
+    };
+
+    const { container } = render(
+      <SurroundFrame data={legacy} contentId="plex:663134" position={976} duration={3223} playing seeking={false} logger={logger}>
+        <video />
+      </SurroundFrame>,
+    );
+
+    expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.missing')).toHaveLength(0);
+    // The meta travels with the alias, so the rail is not also reported as
+    // dropped into a slot it was not cut for.
+    expect(logger.warn.mock.calls.filter((c) => c[0] === 'surround.module.misplaced')).toHaveLength(0);
+    expect(container.querySelector('[data-testid="surround-segment-map"]')).not.toBeNull();
+    // It painted segments, not merely an element.
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(2);
+    // The region keeps the AUTHORED name in `data-module` — the attribute is a
+    // record of what the definition said, not of what resolved. Anything
+    // asserting on it has to tolerate both spellings.
+    expect(container.querySelector('.surround-frame__region[data-module="movement-map"]')).not.toBeNull();
+    expect(container.querySelector('.surround-frame__region--empty')).toBeNull();
+  });
+
   it('drives every module from one clock — position 976 lands in segment 2', () => {
     render(
       <SurroundFrame data={EROICA} contentId="plex:663134" position={976} duration={3223} playing seeking={false}>

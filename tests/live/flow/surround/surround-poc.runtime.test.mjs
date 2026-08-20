@@ -320,7 +320,25 @@ test.describe('Surround — PoC runtime gate', () => {
     await expect(frame).toHaveCount(1, { timeout: 20000 });
 
     // The programme panels the definition declares (concert-hall).
-    await expect(page.locator('.surround-frame__region[data-module="segment-map"]')).toHaveCount(1);
+    //
+    // THE RAIL IS MATCHED UNDER EITHER NAME, and that is not laziness. The
+    // `data-module` attribute carries the name the DEFINITION authored
+    // (`SurroundFrame`), not the name the component has — `segment-map` was
+    // `movement-map` until the vocabulary was unified, and the live
+    // `_surrounds/concert-hall.yml` is hand-edited data that may legitimately
+    // say either while a migration is in flight. Pinning one spelling makes
+    // this gate fail for a reason that has nothing to do with the frame.
+    //
+    // What it asserts instead is the thing that actually matters: the region
+    // exists AND the module resolved. `--empty` is the modifier `SurroundFrame`
+    // adds when a name resolves to no component, so its absence is the real
+    // "the rail mounted" claim, and the rail's own testid confirms it painted.
+    const rail = page.locator(
+      '.surround-frame__region[data-module="segment-map"], .surround-frame__region[data-module="movement-map"]',
+    );
+    await expect(rail).toHaveCount(1);
+    await expect(rail).not.toHaveClass(/surround-frame__region--empty/);
+    await expect(page.locator('[data-testid="surround-segment-map"]')).toHaveCount(1);
     await expect(page.locator('.surround-frame__region[data-module="cue-ticker"]')).toHaveCount(1);
     await expect(page.locator('.surround-frame__region[data-module="composer-card"]')).toHaveCount(1);
 
