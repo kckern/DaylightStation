@@ -783,3 +783,41 @@
     transition: none;
   }
 }
+
+/**
+ * A FOLDED PART — a marker standing in for numbers that are not drawn.
+ *
+ * It must not read as one segment among the rest, which is exactly what it did
+ * when the gutter handed it the mark "1": a Part of twenty-one numbers looked
+ * like a Part of one. So it is drawn as compressed stock rather than as a
+ * segment — a hatched fill and a count instead of a numeral.
+ *
+ * The count is rendered from `data-fold` so no numeral logic has to learn about
+ * folds; the attribute is set only on collapsed segments.
+ */
+.surround-segment-map__segment--fold {
+  position: relative;
+  /* Diagonal hatching: the visual idiom for "elided", and it survives being
+     29px wide where any glyph would not. */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(233, 223, 200, 0.16) 0,
+    rgba(233, 223, 200, 0.16) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  opacity: 0.82;
+}
+
+.surround-segment-map__segment--fold::after {
+  content: "×" attr(data-fold);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: max(9px, var(--label-floor, 11.52px));
+  letter-spacing: 0.02em;
+  color: var(--ink-soft, #a89a80);
+  pointer-events: none;
+}
