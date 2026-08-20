@@ -452,6 +452,121 @@ const POLONAISES = Object.freeze({
 /** 200 seconds into the SIXTH polonaise's own file — the Heroic is sounding. */
 const POLONAISE_POSITION = 200;
 
+/**
+ * THE ÉTUDE SEASON (`plex:696233`) — the case task 9 exists to pin.
+ *
+ * Twenty-seven segments across three media items, three groups, three parts,
+ * `totalSounding` 4186s, zero untimed. It is here because the polonaise season
+ * above cannot make this case: seven works with one segment each never floods
+ * the rail past the chip threshold task 6c built, so nothing above this line
+ * ever exercises a GROUP LABEL spanning more than one segment, or a container
+ * dense enough to wear chips. This is the corpus that does both at once.
+ *
+ * EVERY start/end/offset/duration BELOW IS TRANSCRIBED, NOT RECOMPUTED. It is
+ * `store.lookup('plex:696233', '')`'s own output — this branch's
+ * `YamlSurroundStore` (`toSpans` + `withOffsets`, task 1; part composition,
+ * task 3), run against the PRODUCTION data volume:
+ * `data/content/surround/classical/chopin/etudes.season-696233.yml` (naming
+ * three part contentIds) composing `etudes-op-10.lortie.yml`,
+ * `etudes-op-25.lortie.yml` and `etudes-trois-nouvelles.lortie.yml`, each an
+ * ordinary sidecar with its own `starts`. Re-deriving the arithmetic here with
+ * a second formula is exactly the class of drift this spec exists to catch —
+ * see the task report for the run and its `surround.index.built` log line
+ * (`pieces: 20, containers: 2`, zero `surround.spans.mismatch`).
+ */
+const ETUDE_ROWS = Object.freeze([
+  // [n, name, contentId, part, start, end, offset, duration]
+  [1, 'In C major', 'plex:696234', 0, 7, 131, 0, 124],
+  [2, 'In A minor', 'plex:696234', 0, 131, 222, 124, 91],
+  [3, 'In E major', 'plex:696234', 0, 222, 506, 215, 284],
+  [4, 'In C-sharp minor', 'plex:696234', 0, 506, 639, 499, 133],
+  [5, 'In G-flat major', 'plex:696234', 0, 639, 746, 632, 107],
+  [6, 'In E-flat minor', 'plex:696234', 0, 746, 1010, 739, 264],
+  [7, 'In C major', 'plex:696234', 0, 1010, 1104, 1003, 94],
+  [8, 'In F major', 'plex:696234', 0, 1104, 1250, 1097, 146],
+  [9, 'In F minor', 'plex:696234', 0, 1250, 1396, 1243, 146],
+  [10, 'In A-flat major', 'plex:696234', 0, 1396, 1525, 1389, 129],
+  [11, 'In E-flat major', 'plex:696234', 0, 1525, 1673, 1518, 148],
+  [12, 'In C minor', 'plex:696234', 0, 1673, 1825, 1666, 152],
+  [1, 'In A-flat major', 'plex:696235', 1, 1, 157, 1818, 156],
+  [2, 'In F minor', 'plex:696235', 1, 157, 259, 1974, 102],
+  [3, 'In F major', 'plex:696235', 1, 259, 367, 2076, 108],
+  [4, 'In A minor', 'plex:696235', 1, 367, 466, 2184, 99],
+  [5, 'In E minor', 'plex:696235', 1, 466, 670, 2283, 204],
+  [6, 'In G-sharp minor', 'plex:696235', 1, 670, 794, 2487, 124],
+  [7, 'In C-sharp minor', 'plex:696235', 1, 794, 1155, 2611, 361],
+  [8, 'In D-flat major', 'plex:696235', 1, 1155, 1228, 2972, 73],
+  [9, 'In G-flat major', 'plex:696235', 1, 1228, 1289, 3045, 61],
+  [10, 'In B minor', 'plex:696235', 1, 1289, 1598, 3106, 309],
+  [11, 'In A minor', 'plex:696235', 1, 1598, 1829, 3415, 231],
+  [12, 'In C minor', 'plex:696235', 1, 1829, 1990, 3646, 161],
+  [1, 'In F minor', 'plex:696236', 2, 1, 137, 3807, 136],
+  [2, 'In A-flat major', 'plex:696236', 2, 137, 245, 3943, 108],
+  [3, 'In D-flat major', 'plex:696236', 2, 245, 380, 4051, 135],
+]);
+
+/** The three parts' works, contentIds and group titles — verbatim from the run. */
+const ETUDE_GROUPS = Object.freeze([
+  { work: 'chopin/etudes-op-10', title: 'Études, Op. 10', contentId: 'plex:696234', sounding: 1818 },
+  { work: 'chopin/etudes-op-25', title: 'Études, Op. 25', contentId: 'plex:696235', sounding: 1989 },
+  { work: 'chopin/etudes-trois-nouvelles', title: 'Trois nouvelles études', contentId: 'plex:696236', sounding: 379 },
+]);
+
+const ETUDE_SEGMENTS = ETUDE_ROWS.map(([n, name, contentId, part, start, end, offset, duration]) => ({
+  n, name, contentId, part, start, end, offset, duration,
+  group: { work: ETUDE_GROUPS[part].work, title: ETUDE_GROUPS[part].title, index: part },
+}));
+
+const ETUDE_SEASON = Object.freeze({
+  id: 'concert-hall',
+  // The item ON SCREEN, as with the polonaise fixture: a container is played
+  // one media item at a time and the frame stamps the playing item's id onto
+  // the payload. Overridden per test below to put each of the three parts on
+  // screen in turn.
+  contentId: 'plex:696234',
+  definition: DEFINITION,
+  assetBase: 'library/classical',
+  piece: {
+    title: 'Études',
+    short_title: "Chopin's Études",
+    composed: '1829-1839',
+    year: 1839,
+    period: 'Romantic',
+  },
+  composer: {
+    name: 'Frédéric Chopin', born: 1810, died: 1849, birthplace: 'Żelazowa Wola', period: 'Romantic',
+    facts: ['Chopin turned the étude from practice material into a concert piece with a technical problem inside it.'],
+  },
+  // The container work's own list carries no timings, as with the polonaise
+  // fixture — `placedSegments` filters it to nothing, and `data.segments` is
+  // what the rail and the accordion actually read.
+  pieceSegments: [],
+  cues: [],
+  segments: ETUDE_SEGMENTS,
+  timeline: {
+    totalSounding: ETUDE_GROUPS.reduce((n, g) => n + g.sounding, 0),
+    parts: ETUDE_GROUPS.map((g, index) => ({ contentId: g.contentId, index, sounding: g.sounding })),
+  },
+  groupFacts: Object.fromEntries(ETUDE_GROUPS.map((g) => [g.work, [
+    `A fact the corpus authored about ${g.title}, long enough to be a real programme note rather than a label.`,
+  ]])),
+  facts: [
+    'Twenty-seven in all: twelve in Op. 10, twelve in Op. 25, and three more with no opus number.',
+    'Every nickname attached to these pieces came from someone else. Not one is Chopin’s.',
+  ],
+});
+
+/**
+ * A position INSIDE one of ETUDE_SEASON's own segments, for each of the three
+ * parts — for the whole-name guarantee, which the brief requires "for a
+ * segment in each of the three parts".
+ */
+const ETUDE_PARTS = Object.freeze([
+  { title: 'Op. 10', contentId: 'plex:696234', position: 800 },   // n=6, "In E-flat minor"
+  { title: 'Op. 25', contentId: 'plex:696235', position: 1000 },  // n=7, "In C-sharp minor"
+  { title: 'Trois nouvelles', contentId: 'plex:696236', position: 200 }, // n=2, "In A-flat major"
+]);
+
 /** The two pieces this frame actually ships, by the name the failure prints. */
 const SHIPPED = Object.freeze([
   { piece: "Beethoven's Eroica", data: EROICA_FULL, sounding: 1200 },
@@ -2278,6 +2393,348 @@ describe('the band, measured against the shipped stylesheet', () => {
       // the ceiling and the reserve this wave expressed them through.
       expect(plate.fontPx).toBe(32.8);
       expect(plate.lineHeightPx).toBeCloseTo(32.8 * 1.12, 1);
+    }, 60000);
+  });
+
+  /**
+   * ============================================================================
+   * TASK 9 — THE COMPOSED RAIL AT REAL DENSITY: 27 SEGMENTS ACROSS 3 PARTS
+   * ============================================================================
+   *
+   * The polonaise season above is a composed container, but seven works with
+   * one segment each never floods the rail past the chip threshold task 6c
+   * built (7 x the name floor is well under any root's rule) and never puts
+   * more than one segment under one group label. Neither of those is true of
+   * this corpus: 27 segments, 3 groups, 3 parts — the case the whole plan was
+   * written for, now fully authored in production data.
+   *
+   * ETUDE_SEASON is that corpus, transcribed field for field from this
+   * branch's `YamlSurroundStore` run against the production data volume (see
+   * the fixture's own comment, above `ETUDE_ROWS`).
+   */
+  describe('the étude season — 27 segments across three parts', () => {
+    /**
+     * ==========================================================================
+     * 27 SEGMENTS, THREE LABELLED GROUP RUNS — AND WHICH LABELS ARE LEGIBLE.
+     * ==========================================================================
+     *
+     * `railGroups` (band.js) turns 27 segments into 3 runs by `group.index`;
+     * `SegmentMap` prints one flex-basis label per run, sized by the run's
+     * SOUNDING SECONDS and clipped by the shipped `text-overflow: ellipsis`
+     * (`SegmentMap.scss`). "Legible" is measured the same way this file's own
+     * name-floor sweep measures a heading: the label's rendered box
+     * (`clientWidth`) against the string's own single-line width
+     * (`scrollWidth`) — narrower is CUT, and the ellipsis is doing the fit's
+     * job rather than the label setting whole. Both states are asserted
+     * explicitly per root, with the measured widths in the failure message,
+     * rather than assuming every label always fits.
+     *
+     * TO GO RED (group count): mutate `railGroups` to push a new run for every
+     * segment instead of merging consecutive ones sharing a `group.index` —
+     * the count goes to 27 and the label text becomes
+     * `['Études, Op. 10','Études, Op. 10',...]` (27 entries) instead of the
+     * three set titles. Quoted verbatim in the task report.
+     *
+     * TO GO RED (legibility): shrink `GROUP_LEGIBILITY` for whichever root the
+     * real measurement contradicts, or narrow `.surround-segment-map__group`'s
+     * available width (e.g. give the groups row a fixed pixel width) — a label
+     * that is legible in the shipped stylesheet stops being legible and the
+     * assertion below prints the label, the root and both measured widths.
+     */
+    const GROUP_LEGIBILITY = Object.freeze({
+      // Op. 10 and Op. 25's labels are always legible — they own most of the
+      // rail's 4186 sounding seconds. Trois nouvelles études owns only 379 of
+      // them (9%) and its label is deliberately abbreviated by the shipped
+      // ellipsis AT EVERY ROOT IN THE FLEET — measured, not assumed: 52.55px
+      // cut at 960x540 (74.45px of run against a 127px string), 13.72px cut
+      // even at 1920x1080 (113.28px against 127px). A wider rail buys it back
+      // some room but never all of it. See the task report for all nine widths.
+      '960x540': [true, true, false],
+      '1280x720': [true, true, false],
+      '1920x1080': [true, true, false],
+    });
+
+    it.each(FLEET)('$name — twenty-seven segments render in three labelled group runs', async ({ width, height, name }) => {
+      await layout(page, css, { width, height, data: ETUDE_SEASON, position: ETUDE_PARTS[0].position });
+
+      const segCount = await page.evaluate(() => document.querySelectorAll('.surround-segment-map__segment').length);
+      expect(segCount, `the rail drew ${segCount} segments, not the season's 27`).toBe(27);
+
+      const groups = await page.evaluate(() => [...document.querySelectorAll('[data-testid="surround-group-label"]')].map((el) => ({
+        text: el.textContent,
+        clientPx: Number(el.getBoundingClientRect().width.toFixed(2)),
+        scrollPx: Number(el.scrollWidth.toFixed(2)),
+      })));
+      expect(groups, `the rail rendered ${groups.length} group labels, not one per work`).toHaveLength(3);
+      expect(groups.map((g) => g.text)).toEqual(['Études, Op. 10', 'Études, Op. 25', 'Trois nouvelles études']);
+
+      const legibility = groups.map((g) => ({
+        ...g,
+        legible: g.scrollPx <= g.clientPx + 0.5,
+        cutPx: Number(Math.max(0, g.scrollPx - g.clientPx).toFixed(2)),
+      }));
+      expect(
+        legibility.map((g) => g.legible),
+        `group label legibility at ${name}: ${JSON.stringify(legibility)}`,
+      ).toEqual(GROUP_LEGIBILITY[name]);
+    }, 60000);
+
+    /**
+     * ==========================================================================
+     * CHIP MODE AT 27, AND THE NUMERAL'S TEN-FOOT FLOOR.
+     * ==========================================================================
+     *
+     * 27 x SEGMENT_FLOOR_PX (the named-rail floor) is far more rule than any
+     * screen in the fleet has, so this rail is in chip mode everywhere — the
+     * same threshold the 21 nocturnes already proved (task 6c), now nine
+     * segments denser. Every inactive chip's numeral is set at THIS ROOT'S
+     * `--label-floor` (reusing `LABEL_FLOORS`, defined above for the standing
+     * label — not restated here).
+     *
+     * TO GO RED (chip mode): raise `SEGMENT_FLOOR_PX` or `railWearsChips`'s
+     * threshold until 27 segments fits named at some root — `solved.chips`
+     * reports `false` and the message names the room and the floor it was
+     * measured against.
+     *
+     * TO GO RED (numeral floor): point `.surround-segment-map__chip`'s
+     * font-size at a different custom property, or hardcode a rem literal —
+     * `p.fontSizePx` stops equalling `LABEL_FLOORS[name]` and the message
+     * prints both.
+     */
+    it.each(FLEET)('$name — the season wears chips at 27 segments, and every chip meets this root’s label floor', async ({ width, height, name }) => {
+      await layout(page, css, { width, height, data: ETUDE_SEASON, position: ETUDE_PARTS[0].position });
+      const solved = await runAccordion(page);
+      expect(solved, 'no rail on the étude season at all').not.toBeNull();
+      expect(solved.count, 'the rail did not draw all 27 segments').toBe(27);
+      expect(
+        solved.chips,
+        `at ${name} the season's rule is ${solved.railPx.toFixed(1)}px and its widest name wants `
+        + `${solved.widestPx}px, leaving ${solved.roomPx.toFixed(1)}px per inactive segment against a `
+        + `${solved.floorPx}px name floor — 27 segments should not fit named at any root in the fleet`,
+      ).toBe(true);
+
+      const painted = await page.evaluate(() => [...document.querySelectorAll('.surround-segment-map__segment')].map((seg) => {
+        const chip = seg.querySelector('.surround-segment-map__chip');
+        return {
+          state: seg.getAttribute('data-state'),
+          widthPx: Number(seg.getBoundingClientRect().width.toFixed(2)),
+          chipFontPx: chip ? Number(parseFloat(getComputedStyle(chip).fontSize).toFixed(2)) : null,
+        };
+      }));
+      const active = painted.filter((p) => p.state === 'active');
+      expect(active, 'no segment is sounding — the rail and the clock disagree').toHaveLength(1);
+      const inactive = painted.filter((p) => p.state !== 'active');
+      expect(inactive, 'twenty-six segments should be inactive while one sounds').toHaveLength(26);
+
+      const wrongFloor = inactive.filter((p) => p.chipFontPx !== LABEL_FLOORS[name]);
+      expect(
+        wrongFloor,
+        `${wrongFloor.length} of 26 chips at ${name} do not paint at this root's `
+        + `${LABEL_FLOORS[name]}px label floor: ${JSON.stringify(wrongFloor)}`,
+      ).toEqual([]);
+    }, 90000);
+
+    /**
+     * ==========================================================================
+     * NO SEGMENT BELOW THE FLOOR — OR THE OVERRUN IS NAMED.
+     * ==========================================================================
+     *
+     * `accordionShares` (band.js) never COMPRESSES a segment past the floor —
+     * but a segment whose NATURAL, duration-derived width already sits under
+     * the floor is not a donor and is never lifted to it (see the function's
+     * own "water-filling" comment: only segments with slack above the floor
+     * are asked to give). Twenty-seven études range from 61s to 361s out of a
+     * 4186s rail, so several of the shortest naturally fall under the
+     * `SEGMENT_CHIP_FLOOR_PX` chip floor at every root — that is the honest
+     * capacity answer for THIS corpus, asserted by name rather than assumed
+     * away.
+     *
+     * ETUDE_UNDER_FLOOR is written out per root because, exactly as
+     * `RAIL_CAPACITY` above found for the nocturnes, the answer is not the
+     * same on all three screens — a wider rail buys some (not all) of the
+     * shortest études back above 24px.
+     *
+     * TO GO RED: change `SEGMENT_CHIP_FLOOR_PX`, the rail's inset chrome or
+     * the programme rail's share — any of these moves which études (and how
+     * many) sit under the floor, and the message names them.
+     */
+    const ETUDE_UNDER_FLOOR = Object.freeze({
+      // Measured, not assumed — a wider rail buys back some of the shortest
+      // études (61-136s) but not all of them: 21 of 26 at the living room's
+      // 608px rule, 9 at the office's 822px, 2 even at 1920's 1251px.
+      '960x540': 21,
+      '1280x720': 9,
+      '1920x1080': 2,
+    });
+
+    it.each(FLEET)('$name — no segment falls under the chip floor unnamed', async ({ width, height, name }) => {
+      await layout(page, css, { width, height, data: ETUDE_SEASON, position: ETUDE_PARTS[0].position });
+      const solved = await runAccordion(page);
+      expect(solved, 'no rail on the étude season at all').not.toBeNull();
+
+      const painted = await page.evaluate(() => [...document.querySelectorAll('.surround-segment-map__segment')].map((seg, i) => ({
+        i,
+        state: seg.getAttribute('data-state'),
+        widthPx: Number(seg.getBoundingClientRect().width.toFixed(2)),
+      })));
+      const inactive = painted.filter((p) => p.state !== 'active');
+      const under = inactive.filter((p) => p.widthPx < SEGMENT_CHIP_FLOOR_PX - 0.5);
+      expect(
+        under.length,
+        `${under.length} of 26 inactive segments are under the ${SEGMENT_CHIP_FLOOR_PX}px chip floor at `
+        + `${name}: ${JSON.stringify(under)}`,
+      ).toBe(ETUDE_UNDER_FLOOR[name]);
+    }, 90000);
+
+    /**
+     * ==========================================================================
+     * THE GUARANTEE IS ABSOLUTE: THE ACTIVE SEGMENT'S NAME IS WHOLE, IN EVERY
+     * PART, AT EVERY ROOT.
+     * ==========================================================================
+     *
+     * Task 6's law ("the sounding nocturne shows its whole name") was proved
+     * on one media item. A container composes THREE, and the guarantee has to
+     * survive the seam: whichever part is on screen, its sounding segment
+     * still opens to its full name with zero cut, because the accordion's
+     * solve does not know or care which contentId is playing — it only sees
+     * `natural`, `activeIndex` and `desiredPx`, all derived the same way
+     * whatever part they came from.
+     *
+     * TO GO RED: pass `floorPx: floorPx` (the NAME floor) to `accordionShares`
+     * regardless of density instead of `SEGMENT_CHIP_FLOOR_PX` — the
+     * neighbours are then already under their floor, `available` is zero, and
+     * every one of these nine cases (3 parts x 3 roots) fails with its own
+     * segment's heading cut. Quoted verbatim in the task report.
+     *
+     * THE HONEST ANSWER IS NOT THE SAME ON ALL THREE ROOTS — measured, exactly
+     * as `RAIL_CAPACITY` found for the twenty-one nocturnes above, and it is
+     * the SAME per-root answer for all three parts: the living room's 608px
+     * rule cannot open any of the three sample segments to their full name
+     * (measured cuts of 22px, 36px and 31px), so the state there is the
+     * REPORTABLE degrade, not a silent truncation — the rail asked for more
+     * than the neighbours had to give and said so. Office and 1920 grant every
+     * one of the nine cases its whole name.
+     */
+    const ETUDE_NAME_WHOLE = Object.freeze({
+      '960x540': false,
+      '1280x720': true,
+      '1920x1080': true,
+    });
+
+    describe.each(ETUDE_PARTS)('$title — the active segment shows its whole name', ({ contentId, position }) => {
+      it.each(FLEET)('$name', async ({ width, height, name }) => {
+        await layout(page, css, {
+          width, height, data: { ...ETUDE_SEASON, contentId }, position,
+        });
+        const solved = await runAccordion(page);
+        expect(solved, 'no rail on the étude season at all').not.toBeNull();
+        expect(solved.chips, 'this case is about a chipped rail').toBe(true);
+
+        const after = await page.evaluate(() => [...document.querySelectorAll('.surround-segment-map__segment')]
+          .map((seg, i) => {
+            const heading = seg.querySelector('.surround-segment-map__heading');
+            const gloss = seg.querySelector('.surround-segment-map__translation');
+            return {
+              i,
+              state: seg.getAttribute('data-state'),
+              widthPx: Number(seg.getBoundingClientRect().width.toFixed(2)),
+              text: heading ? heading.textContent : null,
+              headingCut: heading ? heading.scrollWidth - heading.clientWidth : 0,
+              glossCut: gloss ? gloss.scrollWidth - gloss.clientWidth : 0,
+              wraps: heading
+                ? Math.round(heading.getBoundingClientRect().height / parseFloat(getComputedStyle(heading).lineHeight))
+                : 1,
+            };
+          }));
+
+        const active = after.find((s) => s.state === 'active');
+        expect(active, `no segment is sounding for ${contentId} at ${position}s — the rail and the clock disagree`).toBeTruthy();
+        expect(active.wraps, `"${active.text}" wrapped to ${active.wraps} lines — the rail is one line`).toBe(1);
+
+        const whole = active.headingCut === 0 && active.glossCut === 0;
+        expect(
+          whole,
+          `"${active.text}" (${contentId}) is ${active.widthPx}px wide at ${name}, solved for `
+          + `${solved.desiredPx}px on a ${solved.railPx.toFixed(1)}px rule with a `
+          + `${SEGMENT_CHIP_FLOOR_PX}px chip floor under its twenty-six neighbours, and its heading is `
+          + `${whole ? 'whole' : `cut by ${active.headingCut}px`}`,
+        ).toBe(ETUDE_NAME_WHOLE[name]);
+
+        if (ETUDE_NAME_WHOLE[name]) {
+          // ...BY DONATION, NOT BY LUCK. The invariant `accordionShares` owes:
+          // a neighbour whose OWN NATURAL width already cleared the chip floor
+          // must never render BELOW it to pay for the active name — that would
+          // be a donor compressed past the floor the function exists to
+          // respect. A neighbour whose natural width was already under the
+          // floor (the previous case's 2-21 études) is not a donor and is
+          // correctly excluded here by the same test on `natural`.
+          const violators = after.filter((s) => s.state !== 'active'
+            && (solved.natural[s.i] ?? 0) * solved.railPx >= SEGMENT_CHIP_FLOOR_PX - 0.5
+            && s.widthPx < SEGMENT_CHIP_FLOOR_PX - 0.5);
+          expect(
+            violators,
+            `${violators.length} neighbours with natural width above the ${SEGMENT_CHIP_FLOOR_PX}px floor `
+            + `were compressed under it to pay for the active name: ${JSON.stringify(violators)}`,
+          ).toEqual([]);
+        } else {
+          // THE REPORTABLE CONDITION, not a silent truncation (task 6's own
+          // law, re-proved here across a part boundary): the rail asked for
+          // more width than it had, and nothing donatable was left sitting
+          // idle in a neighbour above the floor.
+          const granted = (solved.shares[solved.activeIndex] ?? 0) * solved.railPx;
+          expect(
+            solved.desiredPx,
+            'the rail did not even ask for the width it needed',
+          ).toBeGreaterThan(granted);
+          const spare = solved.shares.reduce((sum, sh, i) => (i === solved.activeIndex ? sum
+            : sum + Math.max(0, sh * solved.railPx - SEGMENT_CHIP_FLOOR_PX)), 0);
+          expect(
+            Number(spare.toFixed(1)),
+            `"${active.text}" was starved while ${spare.toFixed(1)}px of donatable width was still `
+            + `sitting in its neighbours at ${name}`,
+          ).toBeLessThan(1);
+        }
+      }, 90000);
+    });
+
+    /**
+     * ==========================================================================
+     * THE RESERVED-HEIGHT LAW, ACROSS A PART BOUNDARY.
+     * ==========================================================================
+     *
+     * The band's footer (the segment map plus the listening band beneath it)
+     * is a fixed-height region — `collapse.footerFloor` aside, its height is a
+     * property of the DEFINITION, not of what is currently sounding. This was
+     * true for a single work; the question a container adds is whether it
+     * stays true right at the seam between two parts, where one part's own
+     * file runs into applause before the next part's contentId takes over the
+     * screen. `deadPosition` sits past Op. 10's own `musicEndsAt` (1825s) —
+     * inside the applause its own file still carries before the transport
+     * advances to Op. 25.
+     *
+     * TO GO RED: make the groups row's height conditional on there being a
+     * label to show (e.g. render nothing rather than an empty reserved row)
+     * — the footer then measures shorter with a segment sounding than with
+     * nothing sounding, and the two heights below diverge.
+     */
+    it('1280x720 — the band’s footer is the same height inside a segment and in dead time at a part boundary', async () => {
+      await layout(page, css, {
+        ...FLEET[1], data: ETUDE_SEASON, position: ETUDE_PARTS[0].position,
+      });
+      const soundingH = await page.locator('[data-testid="surround-footer"]')
+        .evaluate((el) => Number(el.getBoundingClientRect().height.toFixed(2)));
+
+      await layout(page, css, {
+        ...FLEET[1], data: ETUDE_SEASON, position: 1830,
+      });
+      const deadH = await page.locator('[data-testid="surround-footer"]')
+        .evaluate((el) => Number(el.getBoundingClientRect().height.toFixed(2)));
+
+      expect(
+        deadH,
+        `the footer is ${deadH}px tall in the applause after Op. 10's last étude and `
+        + `${soundingH}px with one sounding — the reserved-height law broke at the part boundary`,
+      ).toBe(soundingH);
     }, 60000);
   });
 });
