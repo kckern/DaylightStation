@@ -63,10 +63,68 @@ The text is public domain: Charles Jennens compiled it in 1742 from the 1611
 King James Bible. What belongs to the Opera House is the PDF's typography, not
 the words.
 
+## The recording is not the score
+
+The libretto is the **work**; the file is a **performance**, and they do not
+match. The arithmetic is decisive:
+
+| | |
+|---|---|
+| File duration | 134.0 min |
+| Audible span (music + applause + any interval) | **~118 min** |
+| Complete Messiah, music alone | **~140 min** |
+
+**This performance is cut**, by roughly twenty minutes. Both PDFs also carry the
+title *"Messiah Download"*, which reads as a generic libretto rather than this
+concert's running order — so the printed text cannot be assumed to be the
+running order at all.
+
+So reconciling the two is an **alignment** problem, not a selection problem, and
+there are four relationships to resolve rather than one:
+
+| | case | how it presents |
+|---|---|---|
+| **1:1** | a number is one audible span | the common case |
+| **n:1** | numbers run *attacca*, with no gap to detect | a span too long for its form |
+| **1:0** | the number was cut | duration falls short; no span to assign |
+| **1:n** | a break inside a number (da capo, applause) | a span too short for its form |
+
+### Omission is already solved, and needs no new syntax
+
+A `starts:` entry that is not a valid non-negative number is dropped to
+`undefined` by the store, which **preserves positions rather than compacting
+them** — deliberately, so one bad entry costs one segment's timing instead of
+shifting every later segment by one. The segment keeps its name, its text and its
+notes; the rail declines to draw it and logs `surround.segments.unplaceable`.
+
+That is exactly the semantics a cut number needs. **A number this performance
+omits gets a `null` start.** It stays in the corpus, because the corpus records
+the work and the work contains it; it never appears on the rail, because the rail
+maps the recording.
+
+This is the load-bearing division of labour for the whole design:
+
+> **The corpus records the work. The sidecar records the performance. The rail
+> draws the recording.**
+
+### Merging is what the spectroscopy leg is for
+
+An attacca join has no silence, but it has a texture change — a recitative over
+continuo giving way to a full-orchestra air is a different spectral picture.
+The sequence is therefore: silence finds the spans; alignment identifies which
+spans are *too long for their form* and so contain a hidden join; spectroscopy is
+then aimed **inside those specific spans**, where we already know how many joins
+to expect. That is a far easier detection problem than sweeping 134 minutes.
+
+Where a join genuinely cannot be recovered, the fallback is the same as omission:
+the second number gets no start, is not drawn, and that is logged rather than
+guessed.
+
 ## Decisions
 
-1. **The rail maps all 53 numbers, grouped by Part.** Completeness over
-   convenience; the legibility problem is solved by collapsing, below.
+1. **The corpus records all 53 numbers, grouped by Part; the rail draws the ones
+   this recording performs.** Completeness in the corpus, honesty on the rail.
+   The legibility problem is solved by collapsing, below.
 2. **Silent Parts collapse to one segment each — but only when the flat rail is
    measured undrawable.** The étude season (27 segments, 3 groups) keeps the flat
    rail it has today, unchanged on every screen.
@@ -138,7 +196,10 @@ match:
   contentId: plex:6918
   title: "Handel's Messiah—Live from the Sydney Opera House"
 performance: "<conductor · choir · orchestra · venue · date, from Program.pdf>"
-starts: [ … 53 entries … ]
+# 53 entries, positional against the flattened segment list. A `null` is a
+# number this performance omits: the store keeps the segment and the rail
+# declines to draw it.
+starts: [ … 53 entries, some null … ]
 musicEndsAt: <the final Amen's end, before the closing applause>
 ```
 
@@ -149,9 +210,14 @@ to a single segment and the **sounding** Part expands to its numbers:
 
 | sounding | rail draws | vs flat |
 |---|---|---|
-| Part One (№1–21) | 21 + 1 + 1 = **23** | 53 |
-| Part Two (№22–44) | 1 + 23 + 1 = **25** | 53 |
-| Part Three (№45–53) | 1 + 1 + 9 = **11** | 53 |
+| Part One (№1–21) | ≤ 21 + 1 + 1 = **≤23** | ≤53 |
+| Part Two (№22–44) | 1 + ≤23 + 1 = **≤25** | ≤53 |
+| Part Three (№45–53) | 1 + 1 + ≤9 = **≤11** | ≤53 |
+
+These are **ceilings**, not counts: a number this performance omits carries a
+`null` start and is not drawn, so the real rail is smaller. Twenty minutes of
+cuts is roughly eight to twelve numbers, which makes the worst case comfortably
+under the étude season's 27.
 
 Messiah divides **21 / 23 / 9** — Part One ending at *His yoke is easy*, Part Two
 at *Hallelujah*, Part Three at the closing *Amen*.
