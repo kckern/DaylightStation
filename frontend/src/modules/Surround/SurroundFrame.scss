@@ -447,9 +447,17 @@
    pre-redesign map's SOLID highlight visible on maroon. The map is drawn in ink
    hairlines now and reads `--ink`/`--ink-soft` like every other module, so the
    stopgap is gone rather than retuned.) */
-.surround-frame__region--right {
+/* The lyric rail is the SAME COLUMN as the programme rail — same ground, same
+   ink, same fibre, and the same "claim the rail's height" sizing. It is never
+   on screen beside the right rail, it is on screen INSTEAD of it, so anything
+   that made it a different material would read as the frame having changed
+   rooms rather than turned a page. Sharing the selector rather than restating
+   the block is what keeps that true after the next palette edit. */
+.surround-frame__region--right,
+.surround-frame__region--lyric {
   flex: 1 1 auto;
   height: 100%;
+  min-height: 0;
 
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
