@@ -20,15 +20,25 @@
  */
 
 import { registerSurroundModule } from './registry.js';
-import MovementMap from './modules/MovementMap.jsx';
+import SegmentMap from './modules/SegmentMap.jsx';
 import CueTicker from './modules/CueTicker.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
 import PlaceCarousel from './modules/PlaceCarousel.jsx';
 import WorkPlacard from './modules/WorkPlacard.jsx';
 
-/** The module names `SurroundFrame` resolves. */
+/**
+ * The name `segment-map` was `movement-map` until the vocabulary was unified,
+ * and the definition YAML in the data volume is authored by hand. Both names
+ * resolve to the same component so a definition may be migrated whenever
+ * somebody gets to it — an unmigrated `_surrounds/*.yml` renders the rail, it
+ * does not warn `surround.module.missing` and leave the region blank.
+ */
+export const LEGACY_MODULE_ALIASES = Object.freeze({ 'movement-map': 'segment-map' });
+
+/** The module names `SurroundFrame` resolves, aliases included. */
 export const SURROUND_BUILTIN_MODULES = Object.freeze([
+  'segment-map',
   'movement-map',
   'cue-ticker',
   'composer-card',
@@ -50,7 +60,13 @@ export const SURROUND_BUILTIN_MODULES = Object.freeze([
  * it, but it says so once with both ends named.
  */
 export function registerSurroundBuiltins() {
-  registerSurroundModule('movement-map', MovementMap, { regions: ['bottom'] });
+  registerSurroundModule('segment-map', SegmentMap, { regions: ['bottom'] });
+  // The pre-rename name, registered against the same component and the same
+  // meta — see LEGACY_MODULE_ALIASES. It is a registration rather than a
+  // resolution-time fallback so `list()` reports what actually resolves.
+  for (const [alias, name] of Object.entries(LEGACY_MODULE_ALIASES)) {
+    if (name === 'segment-map') registerSurroundModule(alias, SegmentMap, { regions: ['bottom'] });
+  }
   registerSurroundModule('cue-ticker', CueTicker, { regions: ['bottom'] });
   registerSurroundModule('composer-card', ComposerCard, { regions: ['right'] });
   registerSurroundModule('country-map', CountryMapModule, { regions: ['right', 'bottom'] });

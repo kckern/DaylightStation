@@ -29,7 +29,7 @@
 // way to read it is a poll — `publishers/usePlayerSessionBinding.js` +
 // `playerSessionBridge.js` do exactly this at 1 Hz for fleet-view session state.
 // This host copies that cadence. A queue advance is therefore visible within a
-// second, which is well inside the gap between two movements of anything.
+// second, which is well inside the gap between two segments of anything.
 //
 // WHERE THE CLOCK LIVES
 // ---------------------
@@ -45,7 +45,7 @@ import getLogger from '../../lib/logging/Logger.js';
 import { useMediaClockState } from '../../lib/Player/useMediaClock.js';
 import SurroundFrame from './SurroundFrame.jsx';
 import { useSurroundSetting, SURROUND_OFF } from './SurroundSettingContext.js';
-// Side-effect import: registers movement-map / cue-ticker / composer-card, so
+// Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
 import './builtins.js';
 

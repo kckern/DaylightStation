@@ -10,7 +10,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { deepMerge } from '#system/utils/deepMerge.mjs';
 import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
-import { toSpans, withOffsets, num } from './chapters.mjs';
+import { toSpans, withOffsets, num } from './segments.mjs';
 
 // Definitions live in this reserved folder; every other `_`-prefixed name under
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
@@ -38,6 +38,28 @@ const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
 // An absent key is authoring intent (the block is optional); a present key of
 // the wrong shape is a mistake the type guards quietly paper over.
 const isPresent = (v) => v !== undefined && v !== null;
+// THE THREE NAMES ONE LIST HAS WORN. `segments:` is the name; `chapters:` was
+// the interim general form; `movements:` is what the corpus authored before
+// either existed. The reader stays bilingual so a corpus file may be migrated
+// (or not) without the rail going dark — a rename of 1,500 files is not
+// something a screen should depend on landing atomically.
+//
+// FIRST NON-EMPTY WINS, in this order. A file carrying more than one — which
+// nothing authors — resolves to `segments:`, then `chapters:`, then
+// `movements:`; the loser is ignored rather than merged, because two lists of
+// the same music are an authoring mistake with no correct concatenation.
+const SEGMENT_KEYS = ['segments', 'chapters', 'movements'];
+// The last of them, named because two places need "the pre-rename list" as
+// against "whatever list this work authored" — see the fallback in
+// #resolvePerformance for why the difference matters.
+const LEGACY_SEGMENT_KEY = SEGMENT_KEYS[SEGMENT_KEYS.length - 1];
+const authoredSegments = (work) => {
+  for (const key of SEGMENT_KEYS) {
+    const list = asArray(work?.[key]);
+    if (list.length) return list;
+  }
+  return [];
+};
 // Work-level fields that surface as payload.piece, disjoint from
 // performance-level fields (performance, musicEndsAt) the sidecar supplies.
 // An allowlist, so it must be kept in sync with the corpus schema: a field
@@ -52,7 +74,7 @@ const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'perio
 // A part that NAMES another sidecar rather than restating its timing. The
 // authored form is a bare contentId string; a mapping is accepted too, but only
 // while it says nothing a reference cannot say — the moment it carries `work` or
-// `spans` it is the inline form, which times the CONTAINER's own chapters and
+// `spans` it is the inline form, which times the CONTAINER's own segments and
 // has to be resolved a different way entirely.
 const partRef = (part) => {
   if (typeof part === 'string' && part.trim()) return part.trim();
@@ -177,7 +199,7 @@ export class YamlSurroundStore extends ISurroundStore {
    *
    * `lookup` answers "what is authored against this id"; this answers "what rail
    * is this id a segment of". The two differ only for a container: playing the
-   * second étude episode has to raise the whole twenty-seven-chapter rail with
+   * second étude episode has to raise the whole twenty-seven-segment rail with
    * the position mapped into part 1, not the episode's own standalone frame.
    *
    * A container's claim beats the item's claim on itself, which is the whole
@@ -519,10 +541,10 @@ export class YamlSurroundStore extends ISurroundStore {
 
       // The corpus gets the same visibility a sidecar gets. `asArray` below
       // flattens a mapping written where a list belongs, and without this the
-      // author's only symptom is a movement map that renders empty. Warn and
+      // author's only symptom is a segment map that renders empty. Warn and
       // keep going: a work with one bad list is still worth indexing.
       const reasons = [];
-      for (const key of ['movements', 'facts']) {
+      for (const key of [...SEGMENT_KEYS, 'facts']) {
         if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
       }
       if (reasons.length) {
@@ -553,21 +575,22 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
-   * Flatten a work's chapters, following `work:` references into their targets.
+   * Flatten a work's segments, following `work:` references into their targets.
    *
    * A reference resolves to a SUBTREE, not a leaf: naming `chopin/etudes-op-10`
-   * brings its twelve études with it. `group` records which work a chapter came
+   * brings its twelve études with it. `group` records which work a segment came
    * from, because the rail is flat but the labels above it are not.
    *
-   * `chapters:` and `movements:` are one key under two names — the corpus has
-   * 1,492 files authored with `movements:` and nothing is being renamed, so a
-   * work that authors neither, or authors `chapters:` empty, resolves to nothing
-   * and the caller falls back to the movements list it always read.
+   * WHICH KEY the list is authored under is `authoredSegments`' business, not
+   * this method's — `segments:`, the interim `chapters:` and the original
+   * `movements:` all read here, first non-empty winning. A work that authors
+   * none of them, or authors an empty one, resolves to nothing and the caller
+   * falls back to the legacy list.
    *
-   * `group.index` numbers PARTS, not chapters, so it is carried by a counter
+   * `group.index` numbers PARTS, not segments, so it is carried by a counter
    * threaded through the recursion rather than derived from whatever the last
-   * chapter happened to hold. Deriving it is wrong in two ways at once: an
-   * inline chapter between two references carries no group to read, and a
+   * segment happened to hold. Deriving it is wrong in two ways at once: an
+   * inline segment between two references carries no group to read, and a
    * reference whose target expands to nothing leaves the previous part's number
    * standing. Both make the second part index 0 again, and the rail then labels
    * two different sets with one heading.
@@ -578,8 +601,8 @@ export class YamlSurroundStore extends ISurroundStore {
    * @param {{work: string, title: string, index: number}|null} group
    * @param {{parts: number}} counter - Parts expanded so far, shared across the whole tree
    */
-  #resolveChapters(work, library, seen, group = null, counter = { parts: 0 }) {
-    const own = asArray(work.chapters).length ? asArray(work.chapters) : asArray(work.movements);
+  #resolveSegments(work, library, seen, group = null, counter = { parts: 0 }) {
+    const own = authoredSegments(work);
     const out = [];
     for (const entry of own) {
       if (!isPlainObject(entry)) continue;
@@ -587,12 +610,12 @@ export class YamlSurroundStore extends ISurroundStore {
       if (!ref) { out.push(group ? { ...entry, group } : entry); continue; }
 
       if (seen.has(ref)) {
-        this.logger?.warn?.('surround.chapter.cycle', { work: ref });
+        this.logger?.warn?.('surround.segment.cycle', { work: ref });
         continue;
       }
       const target = library.works.get(ref);
       if (!target) {
-        this.logger?.warn?.('surround.chapter.missing', { work: ref });
+        this.logger?.warn?.('surround.segment.missing', { work: ref });
         continue;
       }
       // Added before the descent and removed after it, exactly as #loadLibraryDir
@@ -602,7 +625,7 @@ export class YamlSurroundStore extends ISurroundStore {
       seen.add(ref);
       const childGroup = { work: ref, title: target.title ?? ref, index: counter.parts };
       counter.parts += 1;
-      out.push(...this.#resolveChapters(target, library, seen, childGroup, counter));
+      out.push(...this.#resolveSegments(target, library, seen, childGroup, counter));
       seen.delete(ref);
     }
     return out;
@@ -663,23 +686,23 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
-   * Give every container its parts' chapters, on one rail.
+   * Give every container its parts' segments, on one rail.
    *
    * A part is a contentId, never a timing. The three étude episodes are already
    * authored as ordinary sidecars that resolve and play standalone; the
    * container concatenates what they resolved, and restates nothing. So this
-   * takes each part's chapters verbatim — their `start`/`end` stay in their own
+   * takes each part's segments verbatim — their `start`/`end` stay in their own
    * media item's clock — stamps them with the part they came from, and lays the
    * concatenation back onto ONE sounding rail with `withOffsets`. The rail is
    * global; the timings on it are local; that pairing is what lets one frame
    * span seven polonaises.
    *
    * BOTH part forms are resolved here, not just the reference one. The inline
-   * form — a one-off container that times its own resolved chapters because its
+   * form — a one-off container that times its own resolved segments because its
    * media was never authored as separate sidecars — used to be handled while
    * resolving the file, which made classification all-or-nothing: one entry
    * carrying `work:` demoted every bare contentId beside it to an inline entry
-   * that matched no chapters and inherited the CONTAINER's id, so a third of the
+   * that matched no segments and inherited the CONTAINER's id, so a third of the
    * rail vanished and a phantom slot pointed at an unplayable season. Judging
    * each entry on its own merits is only possible once both forms resolve in the
    * same place, and it also leaves one rail-building loop rather than two.
@@ -687,7 +710,7 @@ export class YamlSurroundStore extends ISurroundStore {
    * A part naming a contentId with no sidecar is warned and skipped rather than
    * faulting the container: six polonaises with a rail is worth more than seven
    * with nothing. Surviving parts are numbered densely, so `timeline.parts[n]`
-   * is always the part that `chapter.part === n` belongs to — a gap there would
+   * is always the part that `segment.part === n` belongs to — a gap there would
    * make every later part's sounding total accrue to the wrong slot.
    *
    * @param {Array<Object>} pieces - Every sidecar that resolved, in walk order
@@ -720,18 +743,18 @@ export class YamlSurroundStore extends ISurroundStore {
    * @private
    */
   #composeOne(container, byContentId) {
-    // Group the container's OWN resolved chapters by the work that performs
-    // them, so an inline part's spans pair with its own chapters. Pairing
+    // Group the container's OWN resolved segments by the work that performs
+    // them, so an inline part's spans pair with its own segments. Pairing
     // against the flat list would make one miscounted part shift every later
     // part's timings.
     const byWork = new Map();
-    for (const c of container.ownChapters) {
+    for (const c of container.ownSegments) {
       const key = c.group?.work ?? null;
       if (!byWork.has(key)) byWork.set(key, []);
       byWork.get(key).push(c);
     }
 
-    const chapters = [];
+    const segments = [];
     const slots = [];
     container.parts.forEach((entry, authored) => {
       const ref = partRef(entry);
@@ -739,24 +762,24 @@ export class YamlSurroundStore extends ISurroundStore {
       // `authored` is the position in the YAML — the line an author has to go
       // and fix — while `index` is the dense position on the composed rail.
       const mine = ref
-        ? this.#referencedChapters(container, ref, authored, byContentId)
-        : this.#inlineChapters(container, entry, byWork);
+        ? this.#referencedSegments(container, ref, authored, byContentId)
+        : this.#inlineSegments(container, entry, byWork);
       if (!mine) return;
 
       const contentId = ref ?? (entry?.contentId ? String(entry.contentId) : container.contentId);
       const performance = isPlainObject(entry) && entry.performance ? entry.performance : undefined;
-      for (const chapter of mine) {
-        chapters.push({ ...chapter, contentId, part: index, ...(performance ? { performance } : {}) });
+      for (const segment of mine) {
+        segments.push({ ...segment, contentId, part: index, ...(performance ? { performance } : {}) });
       }
       slots.push({ contentId, index, sounding: 0 });
     });
 
-    const placed = withOffsets(this.#renumberGroups(chapters));
-    for (const chapter of placed) {
-      const slot = slots[chapter.part];
-      if (slot) slot.sounding += chapter.duration;
+    const placed = withOffsets(this.#renumberGroups(segments));
+    for (const segment of placed) {
+      const slot = slots[segment.part];
+      if (slot) slot.sounding += segment.duration;
     }
-    container.payload.chapters = placed;
+    container.payload.segments = placed;
     container.payload.timeline = {
       totalSounding: placed.reduce((n, c) => n + c.duration, 0),
       parts: slots
@@ -768,50 +791,50 @@ export class YamlSurroundStore extends ISurroundStore {
    *
    * `group.index` has to mean "which heading is this, counting along this rail"
    * — and until this ran, it meant "position in whatever produced me". Both
-   * sources of a group number from zero independently: `#resolveChapters` uses
+   * sources of a group number from zero independently: `#resolveSegments` uses
    * a counter that is fresh per call, and a part's stamped group used its part
    * index. So an outer container whose two ordinary parts each resolve a work
-   * that uses chapter references received two groups both claiming index 0, and
+   * that uses segment references received two groups both claiming index 0, and
    * the band prints one heading over two different sets. No nesting required —
    * two plain sidecars are enough.
    *
-   * A run is detected by object identity, not by work: every chapter of one
+   * A run is detected by object identity, not by work: every segment of one
    * group shares the group object it was stamped with, so two consecutive parts
    * that happen to play the SAME work still get two headings — a set played
-   * twice is two appearances, the same rule `#resolveChapters` follows when one
-   * container names one work twice. An ungrouped chapter between two runs
+   * twice is two appearances, the same rule `#resolveSegments` follows when one
+   * container names one work twice. An ungrouped segment between two runs
    * closes the run, so a group reappearing after an interlude is numbered again.
    *
-   * @param {Array<Object>} chapters - The composed rail, in order
-   * @returns {Array<Object>} The same chapters with groups renumbered
+   * @param {Array<Object>} segments - The composed rail, in order
+   * @returns {Array<Object>} The same segments with groups renumbered
    * @private
    */
-  #renumberGroups(chapters) {
+  #renumberGroups(segments) {
     let source = null;
     let renumbered = null;
     let index = -1;
-    return chapters.map((chapter) => {
-      if (!chapter.group) {
+    return segments.map((segment) => {
+      if (!segment.group) {
         source = null;
-        return chapter;
+        return segment;
       }
-      if (chapter.group !== source) {
-        source = chapter.group;
+      if (segment.group !== source) {
+        source = segment.group;
         index += 1;
         // One replacement object shared across the run, so the identity that
         // detected the run survives into the payload for anyone grouping by it.
-        renumbered = { ...chapter.group, index };
+        renumbered = { ...segment.group, index };
       }
-      return { ...chapter, group: renumbered };
+      return { ...segment, group: renumbered };
     });
   }
 
   /**
-   * Chapters of the sidecar a reference-form part names, or null to skip it.
+   * Segments of the sidecar a reference-form part names, or null to skip it.
    *
    * NESTING IS REFUSED, not supported, for two reasons that outlive the
-   * ordering problem. First: composition takes a part's chapters and stamps
-   * every one of them with THAT PART's contentId. An inner container's chapters
+   * ordering problem. First: composition takes a part's segments and stamps
+   * every one of them with THAT PART's contentId. An inner container's segments
    * already name their own leaf media items, so composing it would overwrite
    * real, playable ids with the inner container's own — which is a Plex season,
    * not a media item, and cannot be played or sought. Second: composition runs
@@ -827,7 +850,7 @@ export class YamlSurroundStore extends ISurroundStore {
    *
    * @private
    */
-  #referencedChapters(container, contentId, authored, byContentId) {
+  #referencedSegments(container, contentId, authored, byContentId) {
     const part = byContentId.get(contentId);
     // A container listing itself is a cycle wearing a different hat.
     if (!part || part === container) {
@@ -840,27 +863,27 @@ export class YamlSurroundStore extends ISurroundStore {
       });
       return null;
     }
-    // The heading above these chapters names the work the part PLAYS — the
+    // The heading above these segments names the work the part PLAYS — the
     // part's own `work:`, not the container's. Where a part's own corpus work
-    // used chapter references it arrived already grouped, and those inner
+    // used segment references it arrived already grouped, and those inner
     // labels are more specific than anything nameable from out here. Neither
     // kind carries its own index: `#renumberGroups` assigns every one of them.
     const group = { work: part.work, title: part.payload.piece?.title ?? part.work };
-    return part.payload.chapters.map((c) => (c.group ? c : { ...c, group }));
+    return part.payload.segments.map((c) => (c.group ? c : { ...c, group }));
   }
 
   /**
-   * Chapters an inline-form part times itself, taken from the container's own
+   * Segments an inline-form part times itself, taken from the container's own
    * resolved list and paired with the spans the entry authored.
    *
    * @private
    */
-  #inlineChapters(container, entry, byWork) {
+  #inlineSegments(container, entry, byWork) {
     const key = typeof entry?.work === 'string' ? entry.work.trim() : null;
     const mine = byWork.get(key) ?? [];
     if (Array.isArray(entry?.spans) && entry.spans.length !== mine.length) {
       this.logger?.warn?.('surround.spans.mismatch', {
-        file: container.file, work: key, spans: entry.spans.length, chapters: mine.length
+        file: container.file, work: key, spans: entry.spans.length, segments: mine.length
       });
     }
     const spans = toSpans({ spans: entry?.spans, count: mine.length });
@@ -868,25 +891,25 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
-   * Report chapters that occupy no width on the rail — where that is a gap
+   * Report segments that occupy no width on the rail — where that is a gap
    * rather than the normal authored state.
    *
-   * A chapter with no usable end is placed at zero width deliberately:
+   * A segment with no usable end is placed at zero width deliberately:
    * `withOffsets` puts only sounding time on the rail. The consequence is that
    * it shares its offset with whatever follows, can never be the "current"
-   * chapter, and — in a container — puts a part boundary at an ambiguous
-   * position. The tie-break for anything mapping a position back to a chapter
-   * is stated on `withOffsets`: at a shared offset the LATER chapter wins.
+   * segment, and — in a container — puts a part boundary at an ambiguous
+   * position. The tie-break for anything mapping a position back to a segment
+   * is stated on `withOffsets`: at a shared offset the LATER segment wins.
    *
    * Two cases warn, and one deliberately does not:
    *
-   * - A CONTAINER with any untimed chapter. This is Task 10's outstanding work
+   * - A CONTAINER with any untimed segment. This is Task 10's outstanding work
    *   made visible. It is also the only place the gap lands mid-rail, at a part
    *   boundary, where it can send the transport into the wrong media item.
-   * - Any piece with an untimed chapter that is NOT the last on its rail — a
+   * - Any piece with an untimed segment that is NOT the last on its rail — a
    *   piece whose timings were never authored at all, rather than one missing
    *   its final bound.
-   * - A single item whose LAST chapter alone is unterminated stays quiet. That
+   * - A single item whose LAST segment alone is unterminated stays quiet. That
    *   is the authored shorthand for "runs to the end of the file": the media's
    *   own duration supplies the end at playback and the store cannot know it.
    *   Eight of the nineteen authored pieces are in exactly that state, and
@@ -899,16 +922,16 @@ export class YamlSurroundStore extends ISurroundStore {
    * @private
    */
   #warnUntimed(piece) {
-    const chapters = piece.payload.chapters;
-    const untimed = chapters.filter((c) => c.duration === 0);
+    const segments = piece.payload.segments;
+    const untimed = segments.filter((c) => c.duration === 0);
     if (!untimed.length) return;
-    const trailingOnly = untimed.length === 1 && untimed[0] === chapters[chapters.length - 1];
+    const trailingOnly = untimed.length === 1 && untimed[0] === segments[segments.length - 1];
     if (trailingOnly && !piece.parts) return;
 
-    this.logger?.warn?.('surround.chapters.untimed', {
+    this.logger?.warn?.('surround.segments.untimed', {
       file: piece.file,
       untimed: untimed.length,
-      chapters: chapters.length,
+      segments: segments.length,
       // Which media items are short a timing, so a container names the sidecars
       // to go and fix rather than only the season that surfaced the gap.
       parts: [...new Set(untimed.map((c) => c.contentId))],
@@ -966,10 +989,10 @@ export class YamlSurroundStore extends ISurroundStore {
    * into the payload the API attaches verbatim.
    *
    * Precedence, per the design doc: composer <- work <- performance, applied
-   * separately to the composer block and the piece block. Movements and cues
+   * separately to the composer block and the piece block. Segments and cues
    * come from the work; `starts` pairs with them positionally (starts[i] is
-   * movements[i]'s start second), which is also how a movement's `note` becomes
-   * a synthesized, movement-anchored cue.
+   * segments[i]'s start second), which is also how a segment's `note` becomes
+   * a synthesized, segment-anchored cue.
    *
    * @returns {{ contentId: string, title: string, normalized: string, payload: Object }|null}
    * @private
@@ -1029,8 +1052,8 @@ export class YamlSurroundStore extends ISurroundStore {
     // against the wrong reference point — is dropped to undefined rather than
     // passed through, the same way every other wrong-typed field here is
     // flattened by a guard. Positions are preserved (map, not filter): starts
-    // pairs with movements positionally, so dropping an entry outright would
-    // silently shift every later movement's timing by one.
+    // pairs with segments positionally, so dropping an entry outright would
+    // silently shift every later segment's timing by one.
     const rawStarts = Array.isArray(doc.starts) ? doc.starts : [];
     const starts = rawStarts.map(num);
     if (starts.some((v) => v === undefined)) soft.push('starts-entry-invalid');
@@ -1038,20 +1061,27 @@ export class YamlSurroundStore extends ISurroundStore {
 
     // Seeded with the sidecar's own work so a container that lists itself is a
     // cycle on the first hop rather than the second. An empty resolution falls
-    // back to the raw movements list: that is the path every corpus file
-    // authored before chapter references existed still takes, and `starts`
-    // pairs positionally with whichever list wins here.
+    // back to the raw legacy list: that is the path every corpus file authored
+    // before segment references existed still takes, and `starts` pairs
+    // positionally with whichever list wins here.
+    //
+    // THE FALLBACK IS THE LEGACY KEY ONLY, deliberately not `authoredSegments`.
+    // A work that authors `segments:` (or the interim `chapters:`) and whose
+    // references all fail to resolve — a cycle, or a target the corpus does not
+    // hold — has an empty rail, which is what it has always had. Reading the
+    // authored list here instead would put unexpanded `work:` reference entries
+    // on the rail, where they would render as segments named after a file path.
     const seenRefs = new Set([doc.work]);
-    const resolved = this.#resolveChapters(work, library, seenRefs);
-    const movements = resolved.length ? resolved : asArray(work.movements);
-    // Length, not content: an author who timed the wrong number of movements has
+    const resolved = this.#resolveSegments(work, library, seenRefs);
+    const pieceSegments = resolved.length ? resolved : asArray(work[LEGACY_SEGMENT_KEY]);
+    // Length, not content: an author who timed the wrong number of segments has
     // a different problem from one who mistyped a single value, and a dropped
     // entry above still counts toward the length it was authored at.
-    if (starts.length && starts.length !== movements.length) {
-      this.logger?.warn?.('surround.starts.mismatch', { file, starts: starts.length, movements: movements.length });
+    if (starts.length && starts.length !== pieceSegments.length) {
+      this.logger?.warn?.('surround.starts.mismatch', { file, starts: starts.length, segments: pieceSegments.length });
     }
 
-    const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
+    const resolvedPieceSegments = pieceSegments.map((m, i) => ({ ...m, start: starts[i] }));
 
     // Two ways a rail gets its timing, and a sidecar picks by whether it has
     // `parts:` at all.
@@ -1061,30 +1091,30 @@ export class YamlSurroundStore extends ISurroundStore {
     // forms resolve there — see that method for why classifying them here made
     // one inline entry silently demote every reference beside it. The rail is
     // left EMPTY here on purpose: a container that never composes shows nothing
-    // rather than its untimed corpus chapters stamped with the season's own id,
+    // rather than its untimed corpus segments stamped with the season's own id,
     // which would read as real.
     //
     // Everything else — every sidecar authored before any of this existed — is
     // one media item, which is part 0 of a one-part rail.
     const parts = Array.isArray(doc.parts) && doc.parts.length ? doc.parts : null;
     const selfId = String(doc.match.contentId);
-    let chapters = [];
+    let segments = [];
     let timelineParts = [];
 
     if (!parts) {
       const spans = toSpans({
-        starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: movements.length
+        starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: pieceSegments.length
       });
-      chapters = withOffsets(movements.map((m, i) => ({ ...m, ...spans[i], contentId: selfId, part: 0 })));
-      timelineParts = [{ contentId: selfId, index: 0, sounding: chapters.reduce((n, c) => n + c.duration, 0) }];
+      segments = withOffsets(pieceSegments.map((m, i) => ({ ...m, ...spans[i], contentId: selfId, part: 0 })));
+      timelineParts = [{ contentId: selfId, index: 0, sounding: segments.reduce((n, c) => n + c.duration, 0) }];
     }
 
-    const movementCues = movements
+    const pieceSegmentCues = pieceSegments
       .map((m, i) => ({ at: starts[i], text: m.note }))
       .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
       .map((c) => ({ at: c.at, render: 'docked', text: c.text }));
     const explicitCues = asArray(doc.cues);
-    const cues = [...movementCues, ...explicitCues].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+    const cues = [...pieceSegmentCues, ...explicitCues].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
 
     const workPiece = pick(work, PIECE_FIELDS);
     const performancePiece = pick(doc, ['performance', 'musicEndsAt']);
@@ -1104,16 +1134,16 @@ export class YamlSurroundStore extends ISurroundStore {
       normalized: normalizeTitle(doc.match.title),
       // Carried for the second pass and the warnings it emits: which file to
       // name, which work this piece plays, the parts it is still owed, and the
-      // chapters an inline part times against.
+      // segments an inline part times against.
       file,
       work: doc.work,
       parts,
-      ownChapters: movements,
+      ownSegments: pieceSegments,
       payload: {
         id: doc.surround,
         // `band` joins `regions`/`collapse` as the third thing a definition
         // says about a frame: which side the NOW register sits on, whether it
-        // prints a movement heading, and what density the rail is in (see
+        // prints a segment heading, and what density the rail is in (see
         // frontend `modules/Surround/band.js`, which resolves and defaults
         // every one of them, so an unauthored `band` is the normal case).
         definition: {
@@ -1122,9 +1152,9 @@ export class YamlSurroundStore extends ISurroundStore {
           band: definition.band
         },
         piece,
-        movements: resolvedMovements,
-        chapters,
-        timeline: { totalSounding: chapters.reduce((n, c) => n + c.duration, 0), parts: timelineParts },
+        pieceSegments: resolvedPieceSegments,
+        segments,
+        timeline: { totalSounding: segments.reduce((n, c) => n + c.duration, 0), parts: timelineParts },
         cues,
         facts: asArray(work.facts),
         composer,

@@ -45,12 +45,12 @@
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
   /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
-     Garamonds: a translation under a movement heading, or under the listening
+     Garamonds: a translation under a segment heading, or under the listening
      band's now-header, is the editor speaking, not the programme. In an all-
      serif frame the only way to say "this line is a gloss, not more programme"
      is to change the face — a smaller, greyer Garamond just reads as quieter
      Garamond. Condensed first because a gloss lives in a narrow column (a
-     movement's segment is a few hundred pixels at most); the system sans is the
+     segment's segment is a few hundred pixels at most); the system sans is the
      fallback everywhere it is not installed, and the kiosk has one. */
   --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
 
@@ -404,13 +404,13 @@
 
   /* The work-in-time band is part of the darkened house, not the programme:
      near-black stone with the text in parchment. Re-mapping the frame tokens
-     HERE restyles MovementMap and CueTicker without touching either module —
+     HERE restyles SegmentMap and CueTicker without touching either module —
      they keep reading var(--ink)/var(--ink-soft)/var(--programme-edge). */
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.28);
   /* THE BOND'S GROUND (design wave 7; re-hued in wave 9). The sounding
-     movement's panel on the rail, the waist that joins them and the NOW
+     segment's panel on the rail, the waist that joins them and the NOW
      register's panel in the listening band are the SAME colour — that is the
      whole mechanism by which they read as one shape, and so the colour is
      published once, here, on the region both modules live in, rather than twice

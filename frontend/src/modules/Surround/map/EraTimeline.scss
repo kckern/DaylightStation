@@ -89,7 +89,7 @@
 }
 
 /* An era band. `--ink-soft` at the lane's own weight, the same quiet the
-   movement map's yet-to-come track is drawn at: the un-lit eras are CONTEXT,
+   segment map's yet-to-come track is drawn at: the un-lit eras are CONTEXT,
    and context that cannot be seen is not context. */
 .surround-era-timeline__band {
   position: absolute;
@@ -100,7 +100,7 @@
 }
 
 /* The subject era(s): full parchment ink at double the weight, drawn from the
-   top of the lane like the movement map's active fill. Brightened, never
+   top of the lane like the segment map's active fill. Brightened, never
    filled with a colour of its own — the ladder is weight and value, so a
    period naming two eras lights two bands and they read as one stretch of line
    rather than as two different marks. */
@@ -111,7 +111,7 @@
   opacity: 1;
 }
 
-/* The join between two eras: one quiet barline, exactly the movement map's. */
+/* The join between two eras: one quiet barline, exactly the segment map's. */
 .surround-era-timeline__join {
   position: absolute;
   left: 0;
@@ -124,7 +124,7 @@
 }
 
 /* Where the piece falls: one brass hairline through the rule, unlit. The same
-   mark the movement map's playhead is, at the scale of centuries — and for the
+   mark the segment map's playhead is, at the scale of centuries — and for the
    same reason it is a hairline rather than a dot: this is a barline in a line
    of history, not a pin in a chart. */
 .surround-era-timeline__marker {

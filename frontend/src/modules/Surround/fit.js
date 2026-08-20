@@ -348,25 +348,25 @@ const isText = (s) => typeof s === 'string' && s.trim();
  *
  * THE FIT IS A CONSTANT OF THE PIECE, NOT OF THIS INSTANT, and this function is
  * what makes that true. Fitting the type to whatever is on screen right now
- * would resize both registers at every movement boundary — the reserved-height
+ * would resize both registers at every segment boundary — the reserved-height
  * law broken by the mechanism that replaced the reserve. So the pool is the
- * union over the whole work: every fact, every PLACED movement's listening
+ * union over the whole work: every fact, every PLACED segment's listening
  * notes, every docked cue, and the facts again in the NOW register where some
- * movement will borrow them for want of listening notes of its own.
+ * segment will borrow them for want of listening notes of its own.
  *
  * Pure, and separate from the measuring below, because the spec that measures
  * the band needs exactly this list and must not be allowed to write its own.
  *
- * @param {{facts?:string[], movements?:object[], cues?:object[]}} args
- *   `movements` are the PLACED ones — a movement this recording cannot put on
- *   the clock never becomes the sounding movement, so its notes never show.
+ * @param {{facts?:string[], segments?:object[], cues?:object[]}} args
+ *   `segments` are the PLACED ones — a segment this recording cannot put on
+ *   the clock never becomes the sounding segment, so its notes never show.
  * @returns {{piece:string[], now:string[]}}
  */
-export function bandPools({ facts, movements, cues }) {
+export function bandPools({ facts, segments, cues }) {
   const f = (Array.isArray(facts) ? facts : []).filter(isText);
   const cueTexts = (Array.isArray(cues) ? cues : [])
     .map((c) => String(c?.text ?? '')).filter(isText);
-  const list = Array.isArray(movements) ? movements : [];
+  const list = Array.isArray(segments) ? segments : [];
   const listenAll = list.flatMap(
     (m) => (Array.isArray(m?.listen) ? m.listen : []).filter(isText),
   );
@@ -374,7 +374,7 @@ export function bandPools({ facts, movements, cues }) {
     (m) => !(Array.isArray(m?.listen) ? m.listen : []).some(isText),
   );
   return {
-    // With no movements the band does not split, and this single register
+    // With no segments the band does not split, and this single register
     // carries the cues too.
     piece: [...f, ...(list.length ? [] : cueTexts)],
     now: list.length ? [...listenAll, ...(borrows ? f : []), ...cueTexts] : [],
@@ -467,8 +467,8 @@ function budgetChars(zone, text, floorPx) {
  * ONE ANSWER FOR THE WHOLE BAND, and that is a design decision rather than a
  * convenience. The two registers sit side by side and are read together; setting
  * them in two different sizes would read as a mistake. And the pools are taken
- * across the WHOLE PIECE — every movement's listening notes, not just the
- * sounding movement's — so the answer cannot change at a movement boundary. A
+ * across the WHOLE PIECE — every segment's listening notes, not just the
+ * sounding segment's — so the answer cannot change at a segment boundary. A
  * band whose type resized every few minutes would be the reserved-height law
  * broken by the thing that replaced it.
  */
@@ -510,7 +510,7 @@ function largestPassing(lo, hi, step, pass) {
  *
  * @param {Element} root the ticker's root element.
  * @param {{piece?:string[], now?:string[]}} pools every string each register can
- *   ever show for this piece — facts, every movement's listening notes, cues.
+ *   ever show for this piece — facts, every segment's listening notes, cues.
  * @returns {null|{
  *   fontPx:number, leading:number, floorPx:number, rootWidthPx:number,
  *   rejected:Array<{zone:string,text:string,chars:number,budget:number,overflowPx:number}>,

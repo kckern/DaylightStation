@@ -56,7 +56,7 @@ import './PlaceCarousel.scss';
  * How long one slide holds the foot of the rail.
  *
  * 12 s: long enough to look at a photograph properly, short enough that a viewer
- * who glances up twice in a movement sees more than one slide. Deliberately NOT
+ * who glances up twice in a segment sees more than one slide. Deliberately NOT
  * coprime with the fact rotations the way those are with each other — the
  * pattern a viewer could notice here is "the picture changed", not "everything
  * changed at once", and 12 against 27 and 20 already never lands three swaps in

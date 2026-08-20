@@ -61,7 +61,7 @@ const DEFAULT_FOOTER_FLOOR = 90;
  *                   to absorb it; the sidecar already says which region that is
  *                   (`cue-ticker: height: fill`), so the frame honours it rather
  *                   than hard-coding "the last one wins".
- *  * bottom, Npx  — a FLOOR, not a cap. Movement names may wrap to two lines and
+ *  * bottom, Npx  — a FLOOR, not a cap. Segment names may wrap to two lines and
  *                   the band has to grow to fit them; a fixed height would clip
  *                   the second line against `overflow: hidden`.
  *  * elsewhere    — exact, as before. The rail's country-map is sized against a
@@ -492,7 +492,7 @@ export default function SurroundFrame({
 }
 
 SurroundFrame.propTypes = {
-  /** Resolved surround payload: { id, definition, piece, movements, cues, facts, composer, assetBase }. */
+  /** Resolved surround payload: { id, definition, piece, segments, cues, facts, composer, assetBase }. */
   data: PropTypes.object,
   /** False renders the no-box shell around `children` and no regions at all. */
   active: PropTypes.bool,

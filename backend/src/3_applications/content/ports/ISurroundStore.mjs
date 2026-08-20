@@ -2,7 +2,7 @@
  * ISurroundStore - Port interface for surround sidecar lookup
  *
  * A "surround" is the presentation shell drawn around a shrunken player: a
- * composer card, a movement map, a cue ticker. Its data is authored as YAML
+ * composer card, a segment map, a cue ticker. Its data is authored as YAML
  * sidecars alongside the content corpus; implementations abstract that storage.
  *
  * Synchronous by design, matching IListStore: the play and queue projections
@@ -27,7 +27,7 @@ export class ISurroundStore {
    *   id: string,
    *   definition: Object,
    *   piece: Object,
-   *   movements: Array,
+   *   segments: Array,
    *   cues: Array,
    *   facts: Array,
    *   composer: Object,
@@ -42,7 +42,7 @@ export class ISurroundStore {
    * Find the surround whose rail this piece of content is a SEGMENT of.
    *
    * A surround may span several media items — a season of three étude episodes
-   * presents one twenty-seven chapter rail — so the payload a played item needs
+   * presents one twenty-seven segment rail — so the payload a played item needs
    * is not always the one authored against its own id. Where a container claims
    * an item, this answers with the container and the item's position in it;
    * where nothing does, an item is part 0 of its own single-item rail.

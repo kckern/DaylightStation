@@ -1,6 +1,6 @@
 /**
  * Surround module registry — resolves the module names authored in a surround
- * sidecar (`regions.right.module: movement-map`) to React components.
+ * sidecar (`regions.right.module: segment-map`) to React components.
  *
  * Reuses the `WidgetRegistry` CLASS from the screen framework (it is a plain
  * name -> component Map, with no UI-framework coupling) but as a SEPARATE
@@ -26,7 +26,7 @@ export function getSurroundRegistry() {
 /**
  * Register a component under a surround module name.
  *
- * @param {string} name       Name as authored in the sidecar, e.g. 'movement-map'.
+ * @param {string} name       Name as authored in the sidecar, e.g. 'segment-map'.
  * @param {Function} Component React component. It receives the region definition
  *                             plus the sampled clock state from `SurroundFrame`.
  * @param {object} [meta]     Optional metadata (e.g. preferred regions).

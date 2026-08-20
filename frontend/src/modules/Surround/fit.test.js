@@ -26,21 +26,21 @@ const FLOOR = proseFloorPx(0);
 
 /**
  * THE FIT IS A CONSTANT OF THE PIECE. If the pool were "what is on screen right
- * now", the type would resize at every movement boundary — the reserved-height
+ * now", the type would resize at every segment boundary — the reserved-height
  * law broken by the mechanism that replaced the reserve. These specs pin that
  * the pool is the union over the whole work.
  */
 describe('bandPools — everything either register can ever show', () => {
   const WORK = {
     facts: ['A fact about 1804.', 'Another fact.'],
-    movements: [
+    segments: [
       { n: 1, listen: ['Listen for the horn.', 'And the off-beat chords.'] },
       { n: 2, listen: ['The basses mutter.'] },
     ],
     cues: [{ at: 976, text: 'The funeral march.' }],
   };
 
-  it('gives the NOW register every movement’s notes, not just the sounding one', () => {
+  it('gives the NOW register every segment’s notes, not just the sounding one', () => {
     const pools = bandPools(WORK);
     expect(pools.now).toEqual(expect.arrayContaining([
       'Listen for the horn.', 'And the off-beat chords.', 'The basses mutter.',
@@ -52,29 +52,29 @@ describe('bandPools — everything either register can ever show', () => {
   });
 
   /**
-   * A movement with no listening notes BORROWS the piece pool under its header,
+   * A segment with no listening notes BORROWS the piece pool under its header,
    * so those facts have to be measured against the NOW register's room too — it
    * is a different box from the piece register's, with a different header above
    * it. Where nothing borrows, they are not measured there and the fit is not
    * over-constrained by a string that register will never show.
    */
-  it('measures the facts in the NOW register only where a movement will borrow them', () => {
+  it('measures the facts in the NOW register only where a segment will borrow them', () => {
     expect(bandPools(WORK).now).not.toContain('A fact about 1804.');
     const borrows = {
       ...WORK,
-      movements: [...WORK.movements, { n: 3 }],   // no listen notes authored
+      segments: [...WORK.segments, { n: 3 }],   // no listen notes authored
     };
     expect(bandPools(borrows).now).toContain('A fact about 1804.');
   });
 
   it('gives the cues to the PIECE register when the band does not split', () => {
-    const unsplit = { ...WORK, movements: [] };
+    const unsplit = { ...WORK, segments: [] };
     expect(bandPools(unsplit).piece).toContain('The funeral march.');
     expect(bandPools(unsplit).now).toEqual([]);
   });
 
   it('drops empties, and survives a payload with nothing in it', () => {
-    expect(bandPools({ facts: ['', '   ', null, 'Real.'], movements: [], cues: null }))
+    expect(bandPools({ facts: ['', '   ', null, 'Real.'], segments: [], cues: null }))
       .toEqual({ piece: ['Real.'], now: [] });
     expect(bandPools({})).toEqual({ piece: [], now: [] });
   });

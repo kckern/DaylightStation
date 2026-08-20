@@ -346,7 +346,7 @@ describe('CueTicker — reserved height and centred setting', () => {
     const tiers = [...css.matchAll(/@container ticker \(min-height: ([\d.]+)px\)/g)]
       .map((m) => Number(m[1]));
     // ONE query survives, and it is not a truncation tier: it decides whether
-    // the NOW header prints the movement's translation, which is an editorial
+    // the NOW header prints the segment's translation, which is an editorial
     // decision no fit can make.
     expect(tiers, `the truncation lattice is back: ${JSON.stringify(tiers)}`).toHaveLength(1);
     const q = css.match(/@container ticker \(min-height: [\d.]+px\) \{(.*?)\} \}/);
@@ -499,8 +499,8 @@ describe('CueTicker — reserved height and centred setting', () => {
 /**
  * DESIGN WAVE 6 — THE BAND SPLITS.
  *
- * Everything above this block uses a payload with NO movements, and that is not
- * laziness: a piece without movements has no "now" to give a register to, so it
+ * Everything above this block uses a payload with NO segments, and that is not
+ * laziness: a piece without segments has no "now" to give a register to, so it
  * keeps the single, full-width band this module shipped with — cues and all —
  * and those specs are the regression suite for exactly that path. What follows
  * is the split one.
@@ -508,7 +508,7 @@ describe('CueTicker — reserved height and centred setting', () => {
 const SPLIT = {
   contentId: 'plex:663134',
   piece: { musicEndsAt: 2955 },
-  movements: [
+  pieceSegments: [
     {
       n: 1,
       name: 'Allegro con brio',
@@ -533,8 +533,8 @@ const SPLIT = {
 /**
  * The same band with `band.nowHeading: 'always'`.
  *
- * Design wave 7 turned the NOW register's movement heading OFF by default —
- * the rail names the movement and the bond points at it, so printing it twice
+ * Design wave 7 turned the NOW register's segment heading OFF by default —
+ * the rail names the segment and the bond points at it, so printing it twice
  * was the repetition the user called wasteful. The heading is still a supported
  * mode (a bars-only rail has no name for the bond to point at), so the wave-6
  * specs that describe its behaviour keep describing it, against a fixture that
@@ -575,14 +575,14 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.root().getAttribute('data-split')).toBe('true');
   });
 
-  it('keeps ONE register for a piece with no movements — there is no "now" to split off', () => {
+  it('keeps ONE register for a piece with no segments — there is no "now" to split off', () => {
     const view = renderSplit({ data: DATA });
     expect(view.container.querySelector('[data-testid="surround-ticker-zone-piece"]')).not.toBeNull();
     expect(view.container.querySelector('[data-testid="surround-ticker-zone-now"]')).toBeNull();
     expect(view.root().getAttribute('data-split')).toBe('false');
   });
 
-  it('names the sounding movement in the right zone’s header, with its translation', () => {
+  it('names the sounding segment in the right zone’s header, with its translation', () => {
     const view = renderSplit();
     expect(view.header()).toContain('Allegro con brio');
     expect(view.header()).toContain('Fast, with spirit');
@@ -591,7 +591,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.header()).toContain('Funeral march');
   });
 
-  it('scopes the right zone to THIS movement’s listen notes', () => {
+  it('scopes the right zone to THIS segment’s listen notes', () => {
     const view = renderSplit();
     expect(view.listen()).toBe('Two hammered chords, then the cellos.');
     view.at(1000);
@@ -599,14 +599,14 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.listen()).toBe('The march tune is in the violins.');
   });
 
-  it('resets the rotation when the movement changes, so a new pool starts at its first note', () => {
+  it('resets the rotation when the segment changes, so a new pool starts at its first note', () => {
     const view = renderSplit();
-    // Advance movement I's pool to its second note.
+    // Advance segment I's pool to its second note.
     tick(phaseDelay(0));
     settle();
     expect(view.listen()).toBe('A horn comes in four bars early.');
-    // Into movement II and back: the pool is re-entered at note one, not at
-    // wherever the previous movement's index happened to be.
+    // Into segment II and back: the pool is re-entered at note one, not at
+    // wherever the previous segment's index happened to be.
     view.at(1000);
     settle();
     view.at(10);
@@ -614,8 +614,8 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.listen()).toBe('Two hammered chords, then the cellos.');
   });
 
-  it('borrows the piece pool under the header when a movement has no listen notes', () => {
-    const view = renderSplit({ position: 2000 });   // movement III, unauthored
+  it('borrows the piece pool under the header when a segment has no listen notes', () => {
+    const view = renderSplit({ position: 2000 });   // segment III, unauthored
     expect(view.header()).toContain('Scherzo');
     expect(view.listen()).toBe('Beethoven tore the page.');   // never empty paper
     expect(view.container.querySelector('[data-testid="surround-ticker-zone-now"]')
@@ -632,7 +632,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
     expect(view.root().getAttribute('data-kind')).toBe('cue');
   });
 
-  it('gives the NOW register back to the movement when the cue’s dwell closes', () => {
+  it('gives the NOW register back to the segment when the cue’s dwell closes', () => {
     const view = renderSplit();
     view.at(500);
     settle();
@@ -694,7 +694,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
    * before the first are the same state and get the same answer: no header text,
    * no note, and no lit panel — but the boxes are all still exactly as tall.
    */
-  it('goes blank when no movement is sounding, rather than borrowing the piece pool', () => {
+  it('goes blank when no segment is sounding, rather than borrowing the piece pool', () => {
     const view = renderSplit({ position: 3000 });   // past musicEndsAt: applause
     expect(view.header()).not.toContain('Finale');
     expect(view.header()).not.toContain('Scherzo');
@@ -714,14 +714,14 @@ describe('CueTicker — the split band (design wave 6)', () => {
   /**
    * THE BLANK HEADER STILL RESERVES ITS LINES. An element that disappeared would
    * hand its height to the note's box below, change the room the fit was solved
-   * against, and resize the whole band's type on a movement boundary — the
+   * against, and resize the whole band's type on a segment boundary — the
    * reserved-height law broken by the state that was supposed to be quiet.
    */
   it('reserves the header\u2019s lines while it is blank', () => {
     const sounding = renderSplit({ position: 500 });
     const silent = renderSplit({ position: 3000 });
     const head = (v) => v.container.querySelector('[data-testid="surround-ticker-now"]');
-    expect(head(silent), 'the header element vanished with the movement').not.toBeNull();
+    expect(head(silent), 'the header element vanished with the segment').not.toBeNull();
     expect(head(silent).getAttribute('data-sounding')).toBe('false');
     expect(head(sounding).getAttribute('data-sounding')).toBe('true');
     const lines = (v) => [...head(v).children].length;
@@ -729,11 +729,11 @@ describe('CueTicker — the split band (design wave 6)', () => {
       .toBe(lines(sounding));
   });
 
-  it('logs the listening note it shows, with the movement it belongs to', () => {
+  it('logs the listening note it shows, with the segment it belongs to', () => {
     const view = renderSplit();
     const shown = () => view.logger.debug.mock.calls.filter((c) => c[0] === 'surround.listen.shown');
     expect(shown()).toHaveLength(1);
-    expect(shown()[0][1]).toMatchObject({ kind: 'listen', movement: 0, borrowed: false });
+    expect(shown()[0][1]).toMatchObject({ kind: 'listen', segment: 0, borrowed: false });
   });
 
   it('clears both zones’ timers on unmount', () => {
@@ -797,18 +797,18 @@ describe('CueTicker — the split band (design wave 6)', () => {
 
   /**
    * Fix round 1 (review finding I2), second half. The header above the NOW
-   * text is never dissolved — it just re-renders on the movement boundary —
-   * so a softened note there used to keep naming the OLD movement for up to a
+   * text is never dissolved — it just re-renders on the segment boundary —
+   * so a softened note there used to keep naming the OLD segment for up to a
    * full commit while the header already named the new one. No settle()
    * follows the boundary crossing: the fix's whole point is that no wait is
    * needed for the two to agree.
    */
-  it('never lets the header and the note name different movements after a boundary tick', () => {
+  it('never lets the header and the note name different segments after a boundary tick', () => {
     const view = renderSplit();
     expect(view.header()).toContain('Allegro con brio');
     expect(view.listen()).toBe('Two hammered chords, then the cellos.');
 
-    view.at(1000);   // into movement II
+    view.at(1000);   // into segment II
     expect(view.header()).toContain('Marcia funebre. Adagio assai');
     expect(view.listen()).toBe('The march tune is in the violins.');
   });
@@ -900,8 +900,8 @@ describe('CueTicker — the split band’s shipped design', () => {
    * panel, out of place and connected to nothing they could name. It was: the
    * distinction it drew (a cue, as against a rotating note) is one no viewer can
    * act on, because both are one sentence about the music in the same voice in
-   * the same box. On this corpus the cues are synthesised from each movement's
-   * `note` field at that movement's own start, so the mark appeared for twelve
+   * the same box. On this corpus the cues are synthesised from each segment's
+   * `note` field at that segment's own start, so the mark appeared for twelve
    * seconds at every boundary and meant nothing. The band's rule is that nothing
    * in it is edged or ruled; this was the last exception.
    *
@@ -927,7 +927,7 @@ describe('CueTicker — the split band’s shipped design', () => {
     const view = mountSplit(0, SPLIT_HEADED);
     const header = view.container.querySelector('[data-testid="surround-ticker-now"]');
     // The two text boxes carry the inline opacity transition; the header does
-    // not, because it changes on a movement boundary the rule above has already
+    // not, because it changes on a segment boundary the rule above has already
     // shown the viewer.
     expect(header.style.transition).toBe('');
     expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').style.transition)
@@ -938,7 +938,7 @@ describe('CueTicker — the split band’s shipped design', () => {
 /**
  * DESIGN WAVE 7 — the bond replaces the repetition.
  *
- * The NOW register used to print the sounding movement's heading beneath a rail
+ * The NOW register used to print the sounding segment's heading beneath a rail
  * that had just printed it. It now carries the same lifted panel ground as that
  * segment, joined along the seam, and the heading is off by default.
  */
@@ -972,14 +972,14 @@ describe('CueTicker — the bond, the header and the standing label (design wave
     ...SPLIT, ...extra, definition: { regions: {}, collapse: {}, band },
   });
 
-  it('prints NO movement heading by default — the rail already named it', () => {
+  it('prints NO segment heading by default — the rail already named it', () => {
     const view = mount(SPLIT);
     expect(view.header(), 'the NOW register is repeating the rail’s own heading').toBeNull();
     // ...and the listening note it exists for is still there.
     expect(view.container.querySelector('[data-testid="surround-ticker-listen"]')).not.toBeNull();
   });
 
-  it('prints it on a bars-only rail, where nothing else names the movement', () => {
+  it('prints it on a bars-only rail, where nothing else names the segment', () => {
     const view = mount(banded({ railDensity: 'bars' }));
     expect(view.header().textContent).toContain('Allegro con brio');
   });
@@ -1214,7 +1214,7 @@ describe('CueTicker — smart quotes at the render seam (design wave 7)', () => 
     const viv = {
       contentId: 'plex:663146',
       piece: { musicEndsAt: 600 },
-      movements: [{
+      pieceSegments: [{
         n: 2, name: 'Largo e pianissimo sempre', start: 0,
         listen: ["The violas bark twice a bar, all the way through — Vivaldi marked the part 'the dog that barks'."],
       }],
@@ -1264,7 +1264,7 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
   /**
    * I1. The band's half of the bond had no reduced-motion path: at a dynamic
    * crossover the rail's bond jumped to the new side in one frame (correctly
-   * guarded in `MovementMap.scss`) while this panel slid across the band for
+   * guarded in `SegmentMap.scss`) while this panel slid across the band for
    * 420ms — the "one shape" visibly tearing in half for the length of the
    * slide, which is the exact opposite of what the guard is for.
    */
@@ -1298,14 +1298,14 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
    * I3. The two halves used to measure different fractions — this module read
    * `position / end` while the rail read `(position - first) / (end - first)`.
    */
-  it('measures the piece from its FIRST MOVEMENT, not from the top of the file', () => {
-    // A sidecar whose first movement starts at 60s: at position 1530 the naive
+  it('measures the piece from its FIRST SEGMENT, not from the top of the file', () => {
+    // A sidecar whose first segment starts at 60s: at position 1530 the naive
     // reading is 0.51 (past the mark) and the true one is exactly 0.50.
     const late = {
       contentId: 'x',
       piece: { musicEndsAt: 3000 },
       definition: { regions: {}, collapse: {}, band: { nowSide: 'dynamic' } },
-      movements: [
+      pieceSegments: [
         { n: 1, name: 'One', start: 60, listen: ['a'] },
         { n: 2, name: 'Two', start: 1600, listen: ['b'] },
       ],
@@ -1351,7 +1351,7 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
       contentId: 'x',
       piece: {},
       definition: { regions: {}, collapse: {}, band: { nowSide: 'dynamic' } },
-      movements: [{ n: 1, name: 'One', start: 0, listen: ['a'] }],
+      pieceSegments: [{ n: 1, name: 'One', start: 0, listen: ['a'] }],
       facts: ['f'],
     };
     const view = mount(noEnd, 1800, 0);          // duration not yet known
@@ -1380,7 +1380,7 @@ describe('CueTicker — review round (I1, I3, I5)', () => {
  * The existing spec above asserts the DELAY VALUES — that the wait is half
  * `FACT_INTERVAL_MS`, and that at half a period one zone has moved and the
  * other has not. Both were true, and the invariant they were standing in for was
- * false: the NOW register re-arms at every movement boundary and at the end of
+ * false: the NOW register re-arms at every segment boundary and at the end of
  * every cue, and it used to wait a flat half-period from THAT moment while the
  * piece register's beat ran on untouched from mount. One boundary later the
  * offset was whatever the boundary's timing made it — including zero, the two
@@ -1400,7 +1400,7 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
   const PHASED = {
     contentId: 'plex:663134',
     piece: { musicEndsAt: 2955 },
-    movements: [
+    pieceSegments: [
       { n: 1, name: 'Allegro con brio', start: 0, listen: ['One A.', 'One B.'] },
       { n: 2, name: 'Marcia funebre. Adagio assai', start: 976, listen: ['Two A.', 'Two B.'] },
     ],
@@ -1408,7 +1408,7 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
     facts: ['Fact one.', 'Fact two.'],
   };
 
-  it('re-establishes the half-period offset across a movement boundary', () => {
+  it('re-establishes the half-period offset across a segment boundary', () => {
     const props = (p) => ({
       position: p, duration: 3223, playing: true, seeking: false,
       data: PHASED, region: { module: 'cue-ticker', height: 'fill' }, logger: makeLogger(),
@@ -1468,10 +1468,10 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
 
   /**
    * ...AND WHICHEVER REGISTER RE-ARMS. The fix above re-phases the NOW register
-   * whenever IT re-arms — every movement boundary, every cue end. The PIECE
+   * whenever IT re-arms — every segment boundary, every cue end. The PIECE
    * register re-arms too: its effect depends on `facts.length`, so a corpus edit
    * picked up by the mtime watcher can grow a work's fact pool without touching
-   * its movements, restarting the piece clock while the NOW register runs on an
+   * its segments, restarting the piece clock while the NOW register runs on an
    * offset measured against where that clock used to be. Same defect, roles
    * swapped.
    *
@@ -1528,21 +1528,21 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
   });
 
   /**
-   * A RECORDING WITH NO PLACEABLE MOVEMENT HAS NO "NOW" TO SPLIT OFF.
+   * A RECORDING WITH NO PLACEABLE SEGMENT HAS NO "NOW" TO SPLIT OFF.
    *
-   * The split used to be decided by the AUTHORED movement list while every
+   * The split used to be decided by the AUTHORED segment list while every
    * downstream decision used the placeable one, so a work authored ahead of its
    * timings — or a sidecar whose `starts` were all refused — got two registers
    * above an empty rail, the right one printing `Listen for` over facts borrowed
    * from the left one for the length of the piece. Two registers saying the same
    * thing from the same pool is the case the split exists to avoid.
    *
-   * TO GO RED: `const split = movements.length > 0`.
+   * TO GO RED: `const split = segments.length > 0`.
    */
-  it('does not split the band for a recording whose movements cannot be placed', () => {
+  it('does not split the band for a recording whose segments cannot be placed', () => {
     const untimed = {
       ...PHASED,
-      movements: PHASED.movements.map((m) => ({ ...m, start: undefined })),
+      pieceSegments: PHASED.pieceSegments.map((m) => ({ ...m, start: undefined })),
     };
     const view = render(
       <CueTicker
@@ -1657,7 +1657,7 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
   const DATA = {
     contentId: 'plex:663134',
     piece: { musicEndsAt: 2955 },
-    movements: [
+    pieceSegments: [
       { n: 1, name: 'Allegro con brio', start: 0, listen: ['Two hammered chords.'] },
       { n: 2, name: 'Marcia funebre', start: 976, listen: ['The basses mutter.'] },
     ],
@@ -1687,7 +1687,7 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
       'the register is painting a cue the fit certified as unsettable — at a size solved '
       + 'without it, in a box with overflow: hidden and no ellipsis',
     ).not.toContain('Beethoven puts a death');
-    // ...and the register is not left blank by the refusal: the movement's own
+    // ...and the register is not left blank by the refusal: the segment's own
     // rotation carries on underneath.
     expect(listen.textContent).toBe('Two hammered chords.');
   });
@@ -1724,7 +1724,7 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
     const view = render(
       <CueTicker
         position={500} duration={3223} playing seeking={false}
-        data={{ ...DATA, movements: [] }}
+        data={{ ...DATA, pieceSegments: [] }}
         region={{ module: 'cue-ticker' }} logger={makeLogger()}
       />,
     );

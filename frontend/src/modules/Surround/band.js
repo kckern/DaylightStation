@@ -5,7 +5,7 @@ import { prefersReducedMotion } from './dissolve.js';
 //
 // THE BAND'S SHARED MIND.
 //
-// Under the video there are two modules — the movement rail (`MovementMap`) and
+// Under the video there are two modules — the segment rail (`SegmentMap`) and
 // the split listening band (`CueTicker`) — and since design wave 7 they are no
 // longer independent. The rail's active segment and the band's NOW register are
 // drawn as ONE SHAPE (the bond), which means both modules have to agree, on the
@@ -13,11 +13,11 @@ import { prefersReducedMotion } from './dissolve.js';
 //
 //   * WHICH SIDE the NOW register is on. The rail draws the bond's connector
 //     toward it; the band puts the register there.
-//   * WHETHER the NOW register prints a movement heading. It is the rail's
-//     business (the heading is redundant while the rail names movements) and the
+//   * WHETHER the NOW register prints a segment heading. It is the rail's
+//     business (the heading is redundant while the rail names segments) and the
 //     band's element.
 //   * HOW WIDE each segment is rendered. The accordion widens the sounding
-//     movement, which moves the bond and re-derives the playhead.
+//     segment, which moves the bond and re-derives the playhead.
 //
 // Two modules agreeing by each re-deriving the same answer from the same props
 // is only safe if the derivation lives in ONE place. That is this file. Every
@@ -44,9 +44,9 @@ import { prefersReducedMotion } from './dissolve.js';
 
 /** Which register sits where. `dynamic` follows the playhead — see `nowSideFor`. */
 export const NOW_SIDES = Object.freeze(['right', 'left', 'dynamic']);
-/** Whether the NOW register prints the sounding movement's name. */
+/** Whether the NOW register prints the sounding segment's name. */
 export const NOW_HEADINGS = Object.freeze(['auto', 'always', 'never']);
-/** Whether the rail itself prints movement names, or is bars only. */
+/** Whether the rail itself prints segment names, or is bars only. */
 export const RAIL_DENSITIES = Object.freeze(['names', 'bars']);
 
 export const BAND_DEFAULTS = Object.freeze({
@@ -54,7 +54,7 @@ export const BAND_DEFAULTS = Object.freeze({
   nowSide: 'right',
   /**
    * `auto` — print the heading only where the rail is NOT already naming
-   * movements. With the rail in its normal `names` density the movement heading
+   * segments. With the rail in its normal `names` density the segment heading
    * is six inches above the register, and printing it twice is the repetition
    * design wave 7 exists to remove.
    */
@@ -90,7 +90,7 @@ export function resolveBandConfig(data) {
 }
 
 /**
- * Does the NOW register print the sounding movement's heading?
+ * Does the NOW register print the sounding segment's heading?
  *
  * @param {{nowHeading:string, railDensity:string}} config resolved config.
  * @returns {boolean}
@@ -104,16 +104,16 @@ export function showsNowHeading(config) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Which movement is sounding — ONE derivation, for both halves of the band     */
+/* Which segment is sounding — ONE derivation, for both halves of the band     */
 /* -------------------------------------------------------------------------- */
 
-/** Movement numerals, as an engraved score sets them. */
+/** Segment numerals, as an engraved score sets them. */
 export const ROMAN = Object.freeze([
   '', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII',
 ]);
 
 /**
- * The index mark for a movement: its authored `n` as a numeral, or its position
+ * The index mark for a segment: its authored `n` as a numeral, or its position
  * in the list where the corpus authored no number.
  */
 export function roman(n, index) {
@@ -122,19 +122,19 @@ export function roman(n, index) {
 }
 
 /**
- * The movements this recording can actually PLACE on a timeline.
+ * The segments this recording can actually PLACE on a timeline.
  *
  * THE RENDERER MUST NOT DRAW CONFIDENT GARBAGE FROM BAD DATA. The store ships
  * `start: undefined` for any `starts` entry it refused (a quoted timestamp, a
  * null holding a place, a negative) and warns — deliberately keeping the entry
- * so `starts` still pairs positionally with `movements`. Both halves of the band
+ * so `starts` still pairs positionally with `segments`. Both halves of the band
  * then coerced that with `Number(m?.start) || 0`, which re-anchors a mid-piece
- * movement to the top of the file: a zero-width segment, an out-of-order rail,
+ * segment to the top of the file: a zero-width segment, an out-of-order rail,
  * and a playhead that jumps backwards, all drawn with total confidence.
  *
  * The fix belongs HERE rather than in the store, and the reason is what the two
- * layers each know. The store's `resolvedMovements` is not only a timeline — it
- * carries each movement's name, translation and listen notes, which are
+ * layers each know. The store's `resolvedSegments` is not only a timeline — it
+ * carries each segment's name, translation and listen notes, which are
  * RECORDING-INDEPENDENT knowledge and still true when this recording's timing is
  * wrong; and its positional pairing is the thing the mismatch warn is derived
  * from. Dropping an entry there would renumber the list, hide authored teaching
@@ -145,20 +145,20 @@ export function roman(n, index) {
  * OUT OF ORDER IS THE SAME DEFECT. A start that runs backwards cannot bound the
  * segment before it either, so it is unplaceable for exactly the same reason.
  *
- * @param {Array<object>} movements the payload's movement list, in authored order.
- * @returns {Array<{index:number, start:number, movement:object}>} the placeable
+ * @param {Array<object>} segments the payload's segment list, in authored order.
+ * @returns {Array<{index:number, start:number, segment:object}>} the placeable
  *   subset, in rail order, with `index` naming the entry's position in the
  *   AUTHORED list — so a caller can still reach its listen notes.
  */
-export function placedMovements(movements) {
-  const list = Array.isArray(movements) ? movements : [];
+export function placedSegments(segments) {
+  const list = Array.isArray(segments) ? segments : [];
   const out = [];
   let last = -Infinity;
-  list.forEach((movement, index) => {
-    const raw = movement?.start;
+  list.forEach((segment, index) => {
+    const raw = segment?.start;
     // TYPE FIRST, THEN COERCE, and the order is the whole point. `Number(null)`
     // is 0 and `Number([])` is 0 — bare coercion turns "this recording never
-    // said when this movement starts" into "it starts at the top of the file",
+    // said when this segment starts" into "it starts at the top of the file",
     // which is exactly the re-anchoring this function exists to stop. A NUMERIC
     // STRING is still accepted: a YAML round-trip can hand a timing back as
     // "976", and that is a start we know (the same reading `musicEndsAt` takes,
@@ -168,35 +168,35 @@ export function placedMovements(movements) {
     if (!Number.isFinite(start) || start < 0) return;
     if (start < last) return;
     last = start;
-    out.push({ index, start, movement });
+    out.push({ index, start, segment });
   });
   return out;
 }
 
 /**
- * Which placed movement is sounding, or -1 when none is.
+ * Which placed segment is sounding, or -1 when none is.
  *
  * ONE derivation, called by the rail and by the listening band, because the two
  * used to hold two near-copies that disagreed at the edges. The rail's loop fell
- * through to `return 0` for a position BEFORE the first movement's start, while
+ * through to `return 0` for a position BEFORE the first segment's start, while
  * the band's fell through to -1 — invisible only because both shipped recordings
  * start at 0. The store explicitly permits `starts: [45, …]` (a transfer with
  * tuning or an announcement at the head), and that recording got a lit "active"
  * segment on the rule above a header saying nothing was playing.
  *
  * -1 IS THE CORRECT ANSWER THERE, and it is the same answer for the same reason
- * the band already gives -1 after `musicEndsAt`: a movement is sounding between
+ * the band already gives -1 after `musicEndsAt`: a segment is sounding between
  * its own start and the next one's, and the head of the file is outside every
- * movement's span. Lighting movement I before it begins is a claim about the
+ * segment's span. Lighting segment I before it begins is a claim about the
  * music that the recording contradicts.
  *
  * @param {object} args
- * @param {Array<{start:number}>} args.placed from `placedMovements`.
+ * @param {Array<{start:number}>} args.placed from `placedSegments`.
  * @param {number} args.position the transport's position, in seconds.
  * @param {number|null} args.end where the music stops, or null for "unbounded".
  * @returns {number} an index into `placed`, or -1.
  */
-export function activeMovementIndex({ placed, position, end }) {
+export function activeSegmentIndex({ placed, position, end }) {
   const list = Array.isArray(placed) ? placed : [];
   if (!list.length) return -1;
   const at = Number(position);
@@ -235,8 +235,8 @@ export const NOW_SIDE_HYSTERESIS = 0.03;
  *
  * ONE definition, because two halves of one shape decide their side from it.
  * Review finding I3: the rail measured `(position - first) / (end - first)` and
- * the band measured `position / end`, which agree only while the first movement
- * starts at 0. Both shipped sidecars do — and a sidecar whose first movement
+ * the band measured `position / end`, which agree only while the first segment
+ * starts at 0. Both shipped sidecars do — and a sidecar whose first segment
  * starts late (tuning, an offset transfer, the same class of fact `musicEndsAt`
  * models at the other end) would have put the rail's connector and the band's
  * panel on OPPOSITE SIDES for tens of seconds, each held there by its own
@@ -293,7 +293,7 @@ export function nowSideFor(config, fraction, previous = null) {
  *
  * The frame's existing timing constants are the ENTRANCE (`entrance.js`, one
  * arrival gesture) and the DISSOLVE (`dissolve.js`, one content swap). An
- * accordion is neither: it is a layout move, and it happens on a movement
+ * accordion is neither: it is a layout move, and it happens on a segment
  * boundary — a beat the viewer is already watching. 420 ms is the chrome's own
  * `ENTER_MS`, reused as a value rather than imported as a meaning: the two are
  * the same *feel* (one considered move) and would be wrong to couple, because
@@ -316,7 +316,7 @@ export const ACCORDION_MS = 420;
  * inside the clipped box: 48px shows NONE (the ellipsis alone), 56px one, 64px
  * two, 72px three ("Sch…"), 88px five ("Scherzo…"). Three glyphs and the
  * ellipsis is the point at which a compressed neighbour still reads as a named
- * movement rather than as a stripe, so the floor is 72.
+ * segment rather than as a stripe, so the floor is 72.
  */
 export const SEGMENT_FLOOR_PX = 72;
 
@@ -339,7 +339,7 @@ export const ACCORDION_OVERFLOW_EPS_PX = 0.5;
  * heading nor its gloss to be cut.
  *
  * PURE, AND SHARED WITH THE SPEC THAT MEASURES IT. The DOM reads stay in
- * `MovementMap` (only a rendered rail knows how wide a string is in this face at
+ * `SegmentMap` (only a rendered rail knows how wide a string is in this face at
  * this size), but the arithmetic on top of them lives here, once. It used to
  * live in the component and be transcribed into the measurement harness —
  * which is precisely the class of copy that harness exists to abolish: drop the
@@ -373,7 +373,7 @@ export function desiredWidth({ segW, cellW, need }) {
  * Solve the rail's rendered segment widths.
  *
  * THE RULE THE USER SET. Everything is one line with an ellipsis when inactive;
- * the sounding movement widens until its heading and its translation each fit on
+ * the sounding segment widens until its heading and its translation each fit on
  * one line with nothing cut. Neighbours give up the difference in proportion to
  * their own natural (duration-derived) widths, and stop giving at the floor.
  * When the ideal width would starve them, the active segment takes what is
@@ -386,9 +386,9 @@ export function desiredWidth({ segW, cellW, need }) {
  * the music does.
  *
  * @param {object} args
- * @param {number[]} args.natural each movement's share of the piece, 0..1,
+ * @param {number[]} args.natural each segment's share of the piece, 0..1,
  *   summing to 1 (the duration-derived widths).
- * @param {number} args.activeIndex the sounding movement, or -1 for none.
+ * @param {number} args.activeIndex the sounding segment, or -1 for none.
  * @param {number} args.railPx the rule's measured width in pixels.
  * @param {number} args.desiredPx the active segment's ideal rendered width — the
  *   width at which neither its heading nor its translation is cut.
@@ -402,7 +402,7 @@ export function accordionShares({
   const shares = Array.isArray(natural) ? natural.map((n) => (Number.isFinite(n) ? n : 0)) : [];
   const n = shares.length;
   if (n === 0) return shares;
-  // Nothing sounding (the applause), a single movement with no neighbour to
+  // Nothing sounding (the applause), a single segment with no neighbour to
   // compress, or a rail we have not measured yet: the rail is its own timeline.
   if (n < 2 || activeIndex < 0 || activeIndex >= n) return shares;
   if (!(railPx > 0) || !Number.isFinite(desiredPx)) return shares;
@@ -410,7 +410,7 @@ export function accordionShares({
   const px = shares.map((s) => s * railPx);
   const extra = desiredPx - px[activeIndex];
   // The active segment is never made NARROWER than its duration earns it. A
-  // short name in a long movement keeps the long movement's width; the
+  // short name in a long segment keeps the long segment's width; the
   // accordion only ever opens.
   if (!(extra > EPS)) return shares;
 
@@ -543,7 +543,7 @@ const EDGE_EPS = 3e-4;
  * directly over the panel (the hull is the panel; the waist collapses into it and
  * the two simply merge, with no pinch anywhere), the segment at the far end of
  * the rule (the waist is nearly the whole band — a long thin middle, which is the
- * shape the user asked for), and the first and last movements (nothing special:
+ * shape the user asked for), and the first and last segments (nothing special:
  * their spans are just the extreme ones).
  *
  * THE PANEL'S POSITION IS A NUMBER, NOT A SIDE (review finding I-6). `side` is
@@ -676,7 +676,7 @@ export function easeAccordion(t) {
  *
  * REVIEW FINDING I2 — THE REASON THIS EXISTS. The widths used to be animated by
  * a CSS `transition: width` over `ACCORDION_MS` while the playhead ran on its
- * own 120 ms ramp against the TARGET shares. At a movement boundary the head
+ * own 120 ms ramp against the TARGET shares. At a segment boundary the head
  * therefore reached the widened solution in ~120 ms while the painted boundary
  * was still ~300 ms away from it — measured on the Eroica at 1280x720, the
  * cursor sat ~70 px inside the elapsed fill's still-painted right edge for that
@@ -696,7 +696,7 @@ export function easeAccordion(t) {
  * whole shape is published from one interpolation in one render, and there is
  * nothing left for any part of it to drift against.
  *
- * The loop runs only while a move is in flight — a movement boundary is minutes
+ * The loop runs only while a move is in flight — a segment boundary is minutes
  * apart, so this is idle for all but ~420 ms of a symphony.
  *
  * @param {number[]} target the geometry vector: the solved shares, then any
@@ -713,7 +713,7 @@ export function useEasedVector(target, durationMs) {
   const frame = useRef(0);
   const moving = useRef(false);
 
-  // A different piece, or a piece with a different number of movements, is not
+  // A different piece, or a piece with a different number of segments, is not
   // a move to animate — it is a new rail. Snap.
   const sameShape = current.current.length === target.length;
 

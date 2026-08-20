@@ -334,7 +334,7 @@ export default function EraTimeline({
                   width: `${((era.to - era.from) / SPAN) * 100}%`,
                 }}
               >
-                {/* One quiet barline at each join — the movement map's grammar,
+                {/* One quiet barline at each join — the segment map's grammar,
                     at the scale of centuries instead of minutes. */}
                 {i > 0 && <span className="surround-era-timeline__join" aria-hidden="true" />}
               </span>

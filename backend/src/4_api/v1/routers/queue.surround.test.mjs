@@ -13,7 +13,7 @@ const PAYLOAD = {
   id: 'concert-hall',
   definition: { regions: { right: { module: 'composer-card' } } },
   piece: { title: 'Symphony No. 3' },
-  movements: [{ n: 1, name: 'Allegro con brio', start: 0 }],
+  pieceSegments: [{ n: 1, name: 'Allegro con brio', start: 0 }],
   cues: [],
   facts: [],
   composer: { name: 'Ludwig van Beethoven' },
