@@ -54,8 +54,16 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * The smallest type a programme note may be set in, in px at the frame's 16px
- * root — 0.88rem.
+ * The root the prose floor is ANCHORED to: the office screen's 1280 CSS px.
+ * `screens/office.yml` is the root every typographic number in this frame was
+ * derived against, so it is the root at which the derived number is the answer
+ * and every other root is a scaling of it.
+ */
+export const FLOOR_ANCHOR_ROOT_PX = 1280;
+
+/**
+ * The smallest type a programme note may be set in AT THE ANCHOR ROOT, in px at
+ * the frame's 16px root — 0.88rem.
  *
  * MEASURED AGAINST THE FACE, not chosen. The frame's stated ten-foot floor for
  * LABELS is 0.72rem, and a label earns that floor by being a short, tracked,
@@ -68,13 +76,55 @@
  * 0.72rem its x-height is 4.84px; at 0.88rem it is 5.91px, 22% more, which is
  * the margin the label-to-prose step is worth.
  *
- * THE ARGUMENT IS A RATIO, AND THAT IS WHY IT IS ROOT- AND DPR-INDEPENDENT. Both
- * floors are CSS pixels on the same screen root as each other, so the 22% holds
- * whatever that root is scaled to and whatever the panel's device pixel ratio
- * is. An earlier draft of this comment added "the kiosks in this fleet run at
- * device pixel ratio 1, so an x-height is exactly that many device rows"; that
- * is TRUE OF THE OFFICE SCREEN AND FALSE OF THE LIVING ROOM, and it is worth
- * being exact about because the two roots are different sizes:
+ * THE ARGUMENT IS A RATIO OF TWO SIZES ON ONE ROOT, and that is what survives
+ * being scaled: `proseFloorPx` below multiplies this floor by the root, and the
+ * label floor it is derived from rides the same root, so the +22% x-height step
+ * holds on every screen. What the ratio never fixed is the ABSOLUTE size, which
+ * is what this constant is — and an absolute size is meaningless without the
+ * root it was measured on. Hence the anchor.
+ *
+ * 0.88rem is also the body floor wave 5 derived and every wave since has kept.
+ */
+export const PROSE_FLOOR_ANCHOR_PX = 14.08;
+
+/**
+ * The bounds the root-width scaling is clamped between — the fleet's own two
+ * extremes, evaluated at the anchor: 0.66rem at a 960 root, 1.32rem at a 1920
+ * one. Argued at `proseFloorPx` below, which is the only thing that reads them.
+ */
+export const PROSE_FLOOR_MIN_PX = 10.56;
+export const PROSE_FLOOR_MAX_PX = 21.12;
+
+/**
+ * The prose size floor is a FUNCTION OF THE ROOT WIDTH, not a constant.
+ *
+ * THE ASSUMPTION THIS ENCODES, STATED SO IT CAN BE FALSIFIED. **Every surface
+ * this frame renders on is a large television read from across a room, and its
+ * CSS root width tracks its physical size** — a screen given a smaller CSS root
+ * is a screen whose pixels are physically bigger, in the same proportion. Under
+ * that assumption a type size in CSS pixels divided by the root width is an
+ * ANGULAR size, and holding `size / root` constant is holding the angle
+ * constant. That is the whole claim, and it is what makes one floor correct on
+ * two different roots.
+ *
+ * WAVE 9 ASKED FOR THE TAPE MEASURE AND THIS IS IT, from the owner rather than
+ * assumed: both screens are roughly 60-inch televisions — the living room's
+ * slightly the larger of the two — and each is viewed from across its own room.
+ * Same physical width, fewer CSS pixels laid across it, so a CSS pixel on the
+ * 960 root is already physically bigger and an identical rem renders BIGGER
+ * there. That is the measurement the old single floor was wrong about: it was
+ * not one size on two screens, it was 0.88rem on the office and the apparent
+ * equivalent of 1.17rem on the living room.
+ *
+ * WHAT WOULD INVALIDATE IT: a surface whose root does NOT track its physical
+ * size and distance. A handheld given a 960 root is read from arm's length, not
+ * ten feet, and would want a floor derived from ITS distance rather than scaled
+ * from the office's. A window on a desktop monitor — the surround in a browser
+ * tab a foot from a face — is the same failure. Neither exists in this fleet; if
+ * one is added, this function is where it has to be answered, because a
+ * root-width scaling will silently do the wrong thing rather than fail.
+ *
+ * THE TWO SHIPPED ROOTS, and why 1280 and 960 are the same size to a viewer:
  *
  *   * OFFICE — `screens/office.yml`, a 1280x720 root at DPR 1, letterboxed on
  *     the display. One CSS pixel is one device row, so at this floor the
@@ -83,44 +133,88 @@
  *     screen's.
  *   * LIVING ROOM — `screens/living-room.yml`, a 960x540 root at DPR 2 filling
  *     the Shield's 1920x1080 panel. One CSS pixel is TWO device rows, so the
- *     same glyph is rendered with twice the detail — more headroom, not less.
- *     It is also the SMALLER root on (in this house) the larger panel, so a
- *     glyph of N CSS pixels is physically about 1280/960 = 1.33x bigger there
- *     than the same N on the office screen.
+ *     same glyph is rendered with twice the detail — more headroom for the
+ *     stroke, not less. Device pixel ratio does not enter the scaling at all:
+ *     it changes how a glyph is RESOLVED, never how big it LOOKS.
  *
- * So the living room is the more forgiving root for LEGIBILITY and the tighter
- * one for ROOM, which is exactly the trade its 39px piece register shows.
- * Neither correction moves the floor: device pixel ratio does not change angular
- * size at ten feet, and the binding root for legibility is the office one, where
- * the original DPR-1 reasoning holds unchanged.
+ * 1280 / 960 = 1.333, so the office's 0.88rem floor is the living room's
+ * 0.66rem floor — which is exactly the ratio wave 9 measured between the two
+ * screens' equal-angular floors, arrived at from the other direction.
  *
- * MAKING IT PER-ROOT WAS MEASURED, AND IT IS A REAL DECISION — which is why it
- * is not taken here. The living-room root is 960 CSS px across the whole Shield
- * panel and the office root is a letterboxed 1280 CSS px box, so IF the two
- * panels were the same physical width and were viewed from the same distance, a
- * glyph of N CSS pixels would subtend 1280/960 = 1.33x more on the living room
- * and its equal-angular floor would be 0.88 / 1.33 = 0.66rem. Measured against
- * the real sheet, that floor changes what the living-room piece register holds
- * from ~92 characters to ~123 — not by fitting a third line (39px of room is two
- * lines at either size) but by fitting half again as many characters onto each
- * of the two. Three of the eight shipped facts cross that line.
+ * THE CLAMPS, AND WHY THEY SIT WHERE THEY DO. The scaling is linear between the
+ * fleet's two extremes and flat outside them, because outside them the premise
+ * above is no longer backed by a screen anybody has looked at:
  *
- * It is not taken because the premise is not measured: the office panel's
- * physical size and both screens' true viewing distances are unknown here, so
- * 1.33x is an upper bound on the living room's advantage rather than a
- * measurement, and 0.66rem is below the one floor every other argument in this
- * frame is anchored to. Lowering a readability floor on an assumed panel size is
- * exactly the guess this file exists to replace. One number on every root until
- * somebody measures the two panels.
+ *   * LOW, 10.56px / 0.66rem — the 960 root's value. A root narrower than the
+ *     smallest screen in the fleet is not a smaller television, it is something
+ *     else (a split pane, a phantom measurement mid-resize, a surface nobody has
+ *     looked at), and the scaling's whole warrant is a panel somebody has stood
+ *     in front of. Below 960 the floor stops falling and a text that still does
+ *     not fit is refused, which is the designed outcome — the alternative is a
+ *     band that answers an unreal root with unreadable type.
  *
- * 0.88rem is also the body floor wave 5 derived and every wave since has kept.
+ *     ONE CONSEQUENCE, WRITTEN DOWN RATHER THAN LEFT TO BE FOUND. The frame's
+ *     LABEL floor is a flat `0.72rem` in the stylesheet and does not scale with
+ *     the root, so on the 960 root the prose floor (10.56px) now sits BELOW the
+ *     size its own standing label is set at (11.52px). That is not the prose
+ *     going under its readability floor — 10.56px on a 960 root subtends what
+ *     14.08px does on a 1280 one, which is the floor — it is the LABEL being
+ *     angularly oversized there, since its equal-angular floor at that root
+ *     would be 0.54rem. It only becomes visible if the corpus is long enough to
+ *     pin the ladder at the floor, at which point a note would be set smaller
+ *     than the label above it. Scaling the labels is the fix, and it is a
+ *     stylesheet-wide change this file has no business making on its own.
+ *   * HIGH, 21.12px / 1.32rem — the 1920 root's value. A floor that keeps
+ *     climbing eventually meets `PROSE_CEILING_PX` (24px), and a floor equal to
+ *     the ceiling is not a ladder — it is one rung, and every note that wants a
+ *     smaller size is refused wholesale on the largest, roomiest screen in the
+ *     fleet. 1.32rem leaves the ladder real travel below the ceiling and is
+ *     still short of the size at which a programme note starts competing with
+ *     the work's own title, which is the design intent the ceiling encodes.
+ *
+ * @param {number} rootWidthPx the CSS width of the screen root this band is
+ *   painted on. A non-positive or unmeasurable value falls back to the anchor —
+ *   the number every wave before this one shipped on every screen.
+ * @returns {number} the smallest type a programme note may be set in here.
  */
-export const PROSE_FLOOR_PX = 14.08;
+export function proseFloorPx(rootWidthPx) {
+  const w = Number(rootWidthPx);
+  if (!(w > 0)) return PROSE_FLOOR_ANCHOR_PX;
+  const scaled = PROSE_FLOOR_ANCHOR_PX * (w / FLOOR_ANCHOR_ROOT_PX);
+  const clamped = Math.min(PROSE_FLOOR_MAX_PX, Math.max(PROSE_FLOOR_MIN_PX, scaled));
+  return Number(clamped.toFixed(2));
+}
+
+/**
+ * The CSS width of the screen root this band is painted on.
+ *
+ * IT IS THE FRAME'S OWN WIDTH, NOT THE VIEWPORT'S, and the difference is the
+ * office screen. `ScreenRenderer` gives a screen a FIXED `resolution` box and
+ * letterboxes it inside whatever viewport the display actually has, so on the
+ * office PC `window.innerWidth` is the panel's 1920 while the root the frame is
+ * laid out in is 1280. Measuring the window there would scale the floor by the
+ * wrong number, in the direction that makes prose too big. `SurroundFrame`
+ * fills its screen root, so its own box IS the root — measured, so it cannot
+ * drift from a config value nobody re-read.
+ */
+function rootWidthOf(el) {
+  const frame = el?.closest?.('.surround-frame');
+  const w = frame?.getBoundingClientRect?.().width ?? 0;
+  return w > 0 ? w : 0;
+}
 
 /**
  * The largest — 1.5rem. The point at which a programme note starts competing
  * with the work's own title on the plate above it. Unchanged from the clamp
  * this ladder replaces.
+ *
+ * AND IT DOES NOT SCALE WITH THE ROOT, deliberately. The floor is an ANGULAR
+ * claim — "big enough to read from ten feet" — so it has to be re-expressed on
+ * every root. The ceiling is a claim about a RELATIONSHIP between two things on
+ * the SAME root: the note against the work's title on the plate above it. The
+ * title is itself set in rem on that root, so it already scales with the root,
+ * and pinning the ceiling to it in rem is what keeps the relationship fixed.
+ * Scaling the ceiling by the root as well would scale it twice.
  */
 export const PROSE_CEILING_PX = 24;
 
@@ -140,6 +234,18 @@ export const LEADING_MAX = 1.35;
  *   1.25 (this floor)     ->  0.25em, or 3.5px at the type floor above
  *   1.20 (the classic prose minimum)  ->  0.20em
  *   1.00                  ->  the lines interlock
+ *
+ * IT DOES NOT SCALE WITH THE ROOT, AND THAT IS NOT AN OVERSIGHT. The size floor
+ * had to become a function of the root because it is a LENGTH: 14.08 CSS pixels
+ * is a different angular size on a 960 root than on a 1280 one, so the number
+ * that expresses "big enough to read from ten feet" has to be re-expressed per
+ * root. This floor is a RATIO — a multiple of whatever size the ladder settled
+ * on — so it is already in the units the scaling would have converted it to.
+ * Whatever the root, 1.25 leaves a quarter of the type size between lines, and
+ * every derivation below is in `em`. Scaling a ratio by the root would not
+ * re-express it, it would break it: the same note on the living room would come
+ * back at three quarters of the air the office gives it, tighter than the floor
+ * the measurements say is the minimum, on the screen with the smaller root.
  *
  * 1.25 is 80% of what the type designer's own metrics reserve. That is a
  * tightening within the face's tolerance rather than a re-metric of it, and it
@@ -263,13 +369,17 @@ function resetProbe(zone) {
  * 183 characters", so this is measured rather than estimated from an average
  * advance — the same reason nothing else in this frame counts characters.
  * Bisection on the prefix length, which costs ~8 measurements for a note.
+ *
+ * `floorPx` is THIS ROOT'S floor, so the budget an author reads out of the log
+ * store is the budget on the screen that refused the note — a budget quoted at
+ * some other screen's floor is a re-authoring target that fixes nothing.
  */
-function budgetChars(zone, text) {
+function budgetChars(zone, text, floorPx) {
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (heightOf(zone, text.slice(0, mid), PROSE_FLOOR_PX, LEADING_FLOOR) <= zone.availPx + EPS) {
+    if (heightOf(zone, text.slice(0, mid), floorPx, LEADING_FLOOR) <= zone.availPx + EPS) {
       lo = mid;
     } else {
       hi = mid - 1;
@@ -306,9 +416,11 @@ function everythingFits(work, fontPx, leading) {
  * The largest value in [lo, hi] that passes, to `step`. `pass` must be monotone.
  *
  * THE SNAP IS CLAMPED TO `lo`, and that is not defensive tidying. `lo` is a
- * FLOOR — the prose size floor is 14.08px and the step is 0.25px — and a floor
- * is not on the grid: `Math.floor(14.08 / 0.25) * 0.25` is 14.0, eight
- * hundredths of a pixel BELOW the floor the whole no-ellipsis argument rests on.
+ * FLOOR — the prose size floor is 14.08px at the anchor root and the step is
+ * 0.25px — and a floor is not on the grid: `Math.floor(14.08 / 0.25) * 0.25` is
+ * 14.0, eight hundredths of a pixel BELOW the floor the whole no-ellipsis
+ * argument rests on. Now that the floor is a function of the root it is off the
+ * grid at almost every root rather than at one, so the clamp does more work.
  * It bites exactly when only the bottom rung passes, which is the case a tighter
  * band or a longer corpus produces, and it would have reported itself as a floor
  * violation in the measure spec rather than as the rounding bug it is.
@@ -331,12 +443,20 @@ function largestPassing(lo, hi, step, pass) {
  * @param {{piece?:string[], now?:string[]}} pools every string each register can
  *   ever show for this piece — facts, every movement's listening notes, cues.
  * @returns {null|{
- *   fontPx:number, leading:number,
+ *   fontPx:number, leading:number, floorPx:number, rootWidthPx:number,
  *   rejected:Array<{zone:string,text:string,chars:number,budget:number,overflowPx:number}>,
  *   zones:Array<{zone:string,availPx:number,widthPx:number,texts:number}>
- * }} null when the band has not been laid out yet.
+ * }} null when the band has not been laid out yet. `floorPx` is the floor THIS
+ *   root got, reported because it is what every rejection below was judged
+ *   against and a budget is unreadable without it.
  */
 export function fitBand(root, pools) {
+  // THE FLOOR IS MEASURED, ONCE, BEFORE ANYTHING IS JUDGED — it bounds the
+  // ladder AND the rejection pass, so it has to be the same number in both or
+  // the band would refuse a note it then had room for.
+  const rootWidthPx = rootWidthOf(root);
+  const floorPx = proseFloorPx(rootWidthPx);
+
   const work = [];
   for (const key of ZONE_KEYS) {
     const zone = zoneOf(root, key);
@@ -353,13 +473,13 @@ export function fitBand(root, pools) {
   for (const entry of work) {
     const keep = [];
     for (const text of entry.texts) {
-      const h = heightOf(entry.zone, text, PROSE_FLOOR_PX, LEADING_FLOOR);
+      const h = heightOf(entry.zone, text, floorPx, LEADING_FLOOR);
       if (h <= entry.zone.availPx + EPS) { keep.push(text); continue; }
       rejected.push({
         zone: entry.key,
         text,
         chars: text.length,
-        budget: budgetChars(entry.zone, text),
+        budget: budgetChars(entry.zone, text, floorPx),
         overflowPx: Number((h - entry.zone.availPx).toFixed(2)),
       });
     }
@@ -373,7 +493,7 @@ export function fitBand(root, pools) {
   // Which is the user's order exactly: tighten the leading to hold the size, and
   // only give the leading back once the size has been paid for.
   const fontPx = largestPassing(
-    PROSE_FLOOR_PX, PROSE_CEILING_PX, FONT_STEP_PX,
+    floorPx, PROSE_CEILING_PX, FONT_STEP_PX,
     (f) => everythingFits(work, f, LEADING_FLOOR),
   );
   const leading = largestPassing(
@@ -386,6 +506,8 @@ export function fitBand(root, pools) {
   return {
     fontPx: Number(fontPx.toFixed(2)),
     leading: Number(leading.toFixed(2)),
+    floorPx,
+    rootWidthPx: Number(rootWidthPx.toFixed(2)),
     rejected,
     zones: work.map(({ key, zone, texts }) => ({
       zone: key,
