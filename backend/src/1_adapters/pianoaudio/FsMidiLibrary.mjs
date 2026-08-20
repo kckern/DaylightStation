@@ -1,5 +1,5 @@
 /**
- * FsMidiLibrary — walks media/apps/piano/log for .mid files and mirrors each
+ * FsMidiLibrary — walks media/midi/piano/log for .mid files and mirrors each
  * to media/audio/piano/<same rel>.mp3, returning only those whose mp3 is still
  * missing, newest-first. Owns all filesystem access.
  *

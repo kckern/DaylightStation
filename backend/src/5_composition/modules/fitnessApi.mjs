@@ -186,7 +186,7 @@ export function createFitnessApiRouter(config) {
   // the `_trash` root so it can never reach the live sessions tree. Registered on
   // the agents Scheduler in app.mjs (Docker/prod-gated cron).
   const trashRetentionSweep = new TrashRetentionSweep({
-    trashDir: path.join(configService.getMediaDir(), 'apps', 'fitness', '_trash'),
+    trashDir: path.join(configService.getMediaDir(), 'fitness', '_trash'),
     fileIO: nodeFs,
     logger
   });
@@ -241,7 +241,7 @@ export function createFitnessApiRouter(config) {
       return nodeFs.readdirSync(musicDir)
         .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
         .sort()
-        .map(f => `media/apps/fitness/ux/menus/${f}`);
+        .map(f => `media/fitness/ux/menus/${f}`);
     } catch (_) {
       // Directory missing or unreadable — return empty list gracefully.
       return [];

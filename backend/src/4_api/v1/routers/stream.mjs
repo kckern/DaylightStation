@@ -20,7 +20,7 @@ const MIME_TYPES = {
   '.webm': 'video/webm',
   '.mkv': 'video/x-matroska',
   // Images — without these, `nosniff` + octet-stream makes browsers refuse to
-  // render media-folder images in <img> (e.g. apps/fitness/ux/accessdenied.gif).
+  // render media-folder images in <img> (e.g. fitness/ux/accessdenied.gif).
   '.gif': 'image/gif',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',

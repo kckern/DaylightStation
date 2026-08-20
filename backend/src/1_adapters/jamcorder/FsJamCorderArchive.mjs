@@ -1,6 +1,6 @@
 /**
  * FsJamCorderArchive — persists JamCorder .mid recordings under
- * media/apps/piano/log/jamcorder/<relPath> and maintains a dedup index
+ * media/midi/piano/log/jamcorder/<relPath> and maintains a dedup index
  * (device listPath → archive relPath) at .../piano/jamcorder/_index.yml.
  * Layer: ADAPTER (1_adapters/jamcorder). All FS via FileIO.
  * @module adapters/jamcorder/FsJamCorderArchive
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { IJamCorderArchive } from '#apps/jamcorder/ports/IJamCorderArchive.mjs';
 import { writeBinary, fileExists, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
 
-const REL_ROOT = path.join('apps', 'piano', 'log', 'jamcorder');
+const REL_ROOT = path.join('midi', 'piano', 'log', 'jamcorder');
 
 export class FsJamCorderArchive extends IJamCorderArchive {
   #configService; #logger; #index;

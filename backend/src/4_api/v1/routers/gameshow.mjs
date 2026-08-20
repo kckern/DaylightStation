@@ -15,11 +15,11 @@ import { splatPath } from '#api/utils/wildcard.mjs';
  *   POST /sessions/:id/finish       → mark complete
  *   POST /sessions/:id/command      → host companion → TV command relay (WS)
  *   POST /buzz                      → debug buzz inject → WS broadcast (202)
- *   GET  /media/*splat              → sound packs + clue media from media/apps/
+ *   GET  /media/*splat              → sound packs + clue media from media/games/gameshow/
  */
 const GAMES = [{ id: 'jeopardy', title: 'Jeopardy' }];
 
-export function createGameshowRouter({ gameShowService, sessionStore, broadcastEvent, mediaAppsDir = null, logger = console }) {
+export function createGameshowRouter({ gameShowService, sessionStore, broadcastEvent, mediaGameshowDir = null, logger = console }) {
   const router = express.Router();
 
   router.get('/config', (req, res) => {
@@ -97,13 +97,13 @@ export function createGameshowRouter({ gameShowService, sessionStore, broadcastE
     res.status(202).json({ ok: true });
   });
 
-  // Sound packs + clue media (media/apps/...). Raw /media/* is not served by
+  // Sound packs + clue media. Raw /media/* is not served by
   // the app, so game assets flow through here with containment checks.
   router.get('/media/*splat', (req, res) => {
-    if (!mediaAppsDir) return res.status(404).json({ error: 'media not configured' });
+    if (!mediaGameshowDir) return res.status(404).json({ error: 'media not configured' });
     const rel = splatPath(req);
-    const filePath = path.resolve(mediaAppsDir, rel);
-    if (!filePath.startsWith(path.resolve(mediaAppsDir) + path.sep)) {
+    const filePath = path.resolve(mediaGameshowDir, rel);
+    if (!filePath.startsWith(path.resolve(mediaGameshowDir) + path.sep)) {
       return res.status(404).json({ error: 'not found' });
     }
     res.sendFile(filePath, (err) => {
