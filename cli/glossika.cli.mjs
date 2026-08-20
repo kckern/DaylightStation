@@ -13,8 +13,8 @@
  * directory, id as filename.
  *
  *   corpus      data/content/language/{corpusId}.yml
- *   audio       media/apps/school/language/{corpusId}/{NNNN}-{LANG}.mp3
- *   recordings  media/apps/school/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.mp3
+ *   audio       media/audio/language/{corpusId}/{NNNN}-{LANG}.mp3
+ *   recordings  media/audio/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.mp3
  *   log         data/users/{userId}/apps/school/language/{corpusId}/log/{YYYY-MM-DD}.yml
  *
  * Language codes are **data, never literals**: the corpus binds the ladder's
@@ -232,7 +232,7 @@ function localDateKey(date) {
 function paths(corpusId) {
   const dataDir = configService.getDataDir();
   const mediaDir = configService.getMediaDir();
-  const audioBase = `apps/school/language/${corpusId}`;
+  const audioBase = `audio/language/${corpusId}`;
   return {
     dataDir,
     mediaDir,

@@ -62,7 +62,7 @@ export const spec = {
  *
  * Mirrors YamlSessionDatastore.getStoragePaths: the session file lives at
  * .../fitness/log/{date}/{canonicalId}.yml and its manifest at
- * {mediaDir}/apps/fitness/sessions/{date}/{canonicalId}/snapshots.yml.
+ * {mediaDir}/fitness/sessions/{date}/{canonicalId}/snapshots.yml.
  * Returns null when there is no sidecar (unmigrated session, or none captured).
  */
 function readSnapshotSidecar(ctx, sessionFile) {
@@ -70,7 +70,7 @@ function readSnapshotSidecar(ctx, sessionFile) {
   if (!mediaDir) return null;
   const canonicalId = path.basename(sessionFile, '.yml').replace(/\D/g, '');
   const date = path.basename(path.dirname(sessionFile));
-  const sidecar = path.join(mediaDir, 'apps', 'fitness', 'sessions', date, canonicalId, 'snapshots.yml');
+  const sidecar = path.join(mediaDir, 'fitness', 'sessions', date, canonicalId, 'snapshots.yml');
   try {
     if (!fs.existsSync(sidecar)) return null;
     return yaml.load(fs.readFileSync(sidecar, 'utf8'));
@@ -128,7 +128,7 @@ export async function run(argv, ctx) {
   const ev2 = allEvents.filter(e => Number(e.timestamp) >= SPLIT_TS);
 
   // The frame manifest no longer lives inline: YamlSessionDatastore writes it to
-  // media/apps/fitness/sessions/{date}/{id}/snapshots.yml and rehydrates on read.
+  // media/fitness/sessions/{date}/{id}/snapshots.yml and rehydrates on read.
   // This tool loads the session with raw fs, so it has to rehydrate too — reading
   // `doc.snapshots` alone yields [] for every migrated session, the reconcile
   // check below then passes vacuously (0 + 0 === 0), and the split writes two

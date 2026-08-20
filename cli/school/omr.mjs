@@ -9,8 +9,8 @@
  * backend/src/3_applications/quizzes/; this CLI shares its decoder.
  *
  * Usage:
- *   node cli/omr-quiz-backfill.cli.mjs                 # uses DAYLIGHT_BASE_PATH/data
- *   node cli/omr-quiz-backfill.cli.mjs --data-dir DIR  # explicit data dir
+ *   node cli/school.mjs omr                 # uses DAYLIGHT_BASE_PATH/data
+ *   node cli/school.mjs omr --data-dir DIR  # explicit data dir
  *
  * @module cli/omr-quiz-backfill
  */
@@ -24,17 +24,18 @@ import yaml from 'js-yaml';
 import { rebuildQuizDayFiles } from '#apps/quizzes/quizScanRecorder.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '..', '.env') });
+dotenv.config({ path: join(__dirname, '..', '..', '.env') });
 
-const argIdx = process.argv.indexOf('--data-dir');
+export async function main(argv = process.argv.slice(2)) {
+const argIdx = argv.indexOf('--data-dir');
 const dataDir = argIdx !== -1
-  ? path.resolve(process.argv[argIdx + 1])
+  ? path.resolve(argv[argIdx + 1])
   : process.env.DAYLIGHT_BASE_PATH
     ? join(process.env.DAYLIGHT_BASE_PATH, 'data')
     : null;
 if (!dataDir) {
   console.error('ERROR: pass --data-dir or set DAYLIGHT_BASE_PATH in .env');
-  process.exit(1);
+  return 1;
 }
 
 // Same config file the live recorder gets (dir overrides); defaults if absent.
@@ -59,3 +60,13 @@ const result = await rebuildQuizDayFiles({
   logger: console,
 });
 console.log(`Rebuilt ${result.days} day file(s), ${result.sheets} sheet(s), across ${result.readers} reader(s).`);
+  return 0;
+}
+
+const ENTRYPOINT = fileURLToPath(import.meta.url);
+if (process.argv[1] && path.resolve(process.argv[1]) === ENTRYPOINT) {
+  main().then((code) => process.exit(code)).catch((err) => {
+    console.error(err.stack || err.message);
+    process.exit(1);
+  });
+}

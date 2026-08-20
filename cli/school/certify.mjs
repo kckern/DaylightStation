@@ -4,7 +4,7 @@
  * question banks) against every registered surface profile plus the TI-86
  * codec baseline — spec §8.
  *
- * A small composition root, mirroring `schoolcalc-catalog.cli.mjs`: mounted
+ * A small composition root, mirroring `school.mjs calc`: mounted
  * YAML adapters and the calculator codec are wired here while every
  * certification rule stays in the School domain/application layers
  * (`GetSurfaceCertification`, `SurfaceRegistry`, the per-family ports).
@@ -27,7 +27,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   resolveSchoolCalcContentPaths,
-} from './schoolcalc-catalog.cli.mjs';
+} from './calc.mjs';
 import {
   ValidateSchoolCalcPublication,
 } from '#apps/school/schoolcalc/index.mjs';
@@ -79,7 +79,7 @@ const ALLOWED_FLAGS = new Set([...VALUE_FLAGS, ...BOOLEAN_FLAGS]);
 const HELP = `school-certify — certify published School content against registered surface profiles
 
 Usage:
-  school-certify.cli.mjs [options]
+  school.mjs certify [options]
 
 Options:
   --data-dir <path>                  data root (default: $DAYLIGHT_BASE_PATH/data)

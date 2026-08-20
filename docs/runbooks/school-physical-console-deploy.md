@@ -63,7 +63,7 @@ virtualDevices: false
 **Validate the catalog before every promotion**, and always with the render probe:
 
 ```bash
-node cli/school-catalog.cli.mjs validate --render-probe
+node cli/school.mjs catalog validate --render-probe
 ```
 
 Exit 0 means promotable. The probe is not optional politeness — it is the only

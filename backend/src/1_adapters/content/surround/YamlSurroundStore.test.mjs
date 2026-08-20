@@ -1319,6 +1319,144 @@ describe('YamlSurroundStore library resolution', () => {
   });
 });
 
+describe('YamlSurroundStore library grouping folders', () => {
+  it('resolves a composer filed under a grouping folder exactly as a flat one', () => {
+    // The corpus shelves 354 composers under period folders. If the grouping
+    // leaked into the key, every `work:` ref in every sidecar would need
+    // rewriting whenever a composer were reshelved — so the key must stay
+    // <composer>/<work> no matter how deep the folder sits.
+    writeLib('classical/5_romantic/brahms/_composer.yml', 'name: Johannes Brahms\nborn: 1833\ndied: 1897\n');
+    writeLib('classical/5_romantic/brahms/symphony-4.yml', 'title: Symphony No. 4\nopus: Op. 98\n');
+    write('classical/brahms/symphony-4.yml',
+      'work: brahms/symphony-4\nsurround: concert-hall\nmatch: { contentId: plex:900 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:900', '');
+    expect(r.piece.title).toBe('Symphony No. 4');
+    expect(r.composer.name).toBe('Johannes Brahms');
+  });
+
+  it('reshelving a composer does not change the work key', () => {
+    // The same composer and work, one level deeper. Same ref, same result:
+    // this is the property that makes the period folders cosmetic.
+    writeLib('classical/0_flagship/a/b/mahler/_composer.yml', 'name: Gustav Mahler\nborn: 1860\ndied: 1911\n');
+    writeLib('classical/0_flagship/a/b/mahler/symphony-2.yml', 'title: Resurrection\n');
+    write('classical/mahler/symphony-2.yml',
+      'work: mahler/symphony-2\nsurround: concert-hall\nmatch: { contentId: plex:901 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:901', '').piece.title).toBe('Resurrection');
+  });
+
+  it('indexes composers deeper than the former grouping-depth bound', () => {
+    // Traversal is depth-free and guards against cycles by real path, so corpus
+    // shelving can grow without silently making a deeply filed work unreachable.
+    const deep = 'classical/g1/g2/g3/g4/g5/buried';
+    writeLib(`${deep}/_composer.yml`, 'name: Buried\nborn: 1900\ndied: 1950\n');
+    writeLib(`${deep}/work.yml`, 'title: Unreachable\n');
+    write('classical/buried/work.yml',
+      'work: buried/work\nsurround: concert-hall\nmatch: { contentId: plex:902 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:902', '').piece.title).toBe('Unreachable');
+  });
+
+  it('warns when two grouping folders claim the same composer slug', () => {
+    // Last write wins in the Map, so the loser's works disappear with no symptom
+    // but a short index. The warning is the only way an author learns why.
+    writeLib('classical/4_classical/haydn/_composer.yml', 'name: Joseph Haydn\nborn: 1732\ndied: 1809\n');
+    writeLib('classical/4_classical/haydn/symphony-94.yml', 'title: Surprise\n');
+    writeLib('classical/5_romantic/haydn/_composer.yml', 'name: Wrong Haydn\nborn: 1800\ndied: 1850\n');
+    writeLib('classical/5_romantic/haydn/other.yml', 'title: Other\n');
+    const logger = makeLogger();
+    // eslint-disable-next-line no-new
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger }).lookup('plex:663134', '');
+    expect(logger.warn).toHaveBeenCalledWith('surround.composer.duplicate',
+      expect.objectContaining({ composer: 'haydn' }));
+  });
+
+  it('treats a folder holding YAML as a composer, not a grouping folder', () => {
+    // The obvious rule — "a composer directory has _composer.yml" — is wrong:
+    // composer identity is optional, and a works-only folder is legitimate. If
+    // that rule were used, this lookup would return null.
+    writeLib('classical/3_baroque/telemann/tafelmusik.yml', 'title: Tafelmusik\n');
+    write('classical/telemann/tafelmusik.yml',
+      'work: telemann/tafelmusik\nsurround: concert-hall\nmatch: { contentId: plex:903 }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:903', '');
+    expect(r.piece.title).toBe('Tafelmusik');
+    expect(r.composer).toEqual({});
+  });
+});
+
+describe('YamlSurroundStore multi-note movements', () => {
+  // A movement's note may be a LIST. The notes fan across that movement's own
+  // span rather than stacking on its downbeat, so a set of short pieces (the
+  // Chopin etudes: 12 movements, one per etude) can carry several timed lines
+  // each. Spans are derived from neighbouring starts, so a re-timing that
+  // shifts every start moves the notes with the music.
+  const lib = (movements) => writeLib('classical/beethoven/symphony-3-eroica.yml',
+    `title: Symphony No. 3\nmovements:\n${movements}`);
+  const side = (body) => write('classical/beethoven/symphony-3-eroica.yml',
+    `work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n${body}`);
+  const cues = () => new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() })
+    .lookup('plex:663134', '').cues;
+
+  it('spreads a list of notes evenly across the movement, first note on the downbeat', () => {
+    lib('  - { n: 1, name: One, note: ["A", "B", "C"] }\n  - { n: 2, name: Two }\n');
+    side('starts: [0, 300]\n');
+    // Span 0->300 over three notes: one every 100s.
+    expect(cues()).toEqual([
+      { at: 0, render: 'docked', text: 'A' },
+      { at: 100, render: 'docked', text: 'B' },
+      { at: 200, render: 'docked', text: 'C' },
+    ]);
+  });
+
+  it('keeps a single string note exactly where it was — one cue on the start', () => {
+    lib('  - { n: 1, name: One }\n  - { n: 2, name: Two, note: "Second movement begins." }\n');
+    side('starts: [0, 976]\n');
+    expect(cues()).toEqual([{ at: 976, render: 'docked', text: 'Second movement begins.' }]);
+  });
+
+  it('bounds the final movement with musicEndsAt when the sidecar names one', () => {
+    lib('  - { n: 1, name: One }\n  - { n: 2, name: Two, note: ["X", "Y"] }\n');
+    side('starts: [0, 100]\nmusicEndsAt: 300\n');
+    expect(cues().map((c) => c.at)).toEqual([100, 200]);
+  });
+
+  it('falls back to a fixed gap for a final movement with no known end', () => {
+    lib('  - { n: 1, name: One, note: ["X", "Y", "Z"] }\n');
+    side('starts: [0]\n');
+    const at = cues().map((c) => c.at);
+    expect(at[0]).toBe(0);
+    expect(at[1] - at[0]).toBe(at[2] - at[1]);   // evenly spaced
+    expect(at[1] - at[0]).toBeGreaterThan(12);   // wider than the ticker's dwell
+  });
+
+  it('drops blank and non-string entries without shifting the notes that remain', () => {
+    lib('  - { n: 1, name: One, note: ["A", "   ", 42, null, "B"] }\n  - { n: 2, name: Two }\n');
+    side('starts: [0, 200]\n');
+    expect(cues()).toEqual([
+      { at: 0, render: 'docked', text: 'A' },
+      { at: 100, render: 'docked', text: 'B' },
+    ]);
+  });
+
+  it('never lands two notes of one movement on the same second', () => {
+    // Three notes in a two-second movement would round onto one instant, where
+    // the ticker picks a single winner and the rest are never seen.
+    lib('  - { n: 1, name: One, note: ["A", "B", "C"] }\n  - { n: 2, name: Two }\n');
+    side('starts: [0, 2]\n');
+    const at = cues().map((c) => c.at);
+    expect(new Set(at).size).toBe(3);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+  });
+
+  it('still sorts explicit sidecar cues in among the fanned-out notes', () => {
+    lib('  - { n: 1, name: One, note: ["A", "B"] }\n  - { n: 2, name: Two }\n');
+    side('starts: [0, 200]\ncues:\n  - { at: 50, render: docked, text: "Mid." }\n');
+    expect(cues().map((c) => c.text)).toEqual(['A', 'Mid.', 'B']);
+  });
+});
+
 /**
  * DESIGN WAVE 7 — the two fields the band's new layout consumes.
  *

@@ -420,19 +420,6 @@ export class ConfigService {
   }
 
   /**
-   * Get canonical household app media path
-   * @param {string} appName - App name (fitness, etc.)
-   * @param {string} [relativePath] - Path relative to app media dir
-   * @param {string} [householdId] - Household ID (ignored - kept for API compatibility)
-   * @returns {string} Full path: media/apps/{appName}/households/{relativePath}
-   */
-  getHouseholdAppMediaPath(appName, relativePath = '', householdId = null) {
-    const mediaDir = this.getMediaDir();
-    const basePath = `${mediaDir}/apps/${appName}/households`;
-    return relativePath ? `${basePath}/${relativePath}` : basePath;
-  }
-
-  /**
    * Check if a household exists
    * @param {string} householdId - Household ID to check
    * @returns {boolean}

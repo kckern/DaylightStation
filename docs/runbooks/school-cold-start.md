@@ -76,7 +76,7 @@ Lay out `content/school/{subject}/{work}/{units,documents,quizzes}/` per the
 authoring docs. Validate BEFORE mounting:
 
 ```bash
-node cli/school-docs.cli.mjs validate     # print documents
+node cli/school.mjs docs validate     # print documents
 npm run school:certify                    # catalog/surface certification
 ```
 
@@ -109,5 +109,5 @@ There is no automatic cleanup. A departing learner: remove from `students:`
 (stops agendas/serving) but LEAVE `users/{id}/` intact — attempts and frozen
 report cards are the household's permanent record. A rename is a rekey across
 BOTH `users/{id}/` and the household-keyed stores (assignments, sessions,
-milestones, attestations, notes) — use `node cli/school-rekey-learner.cli.mjs`
+milestones, attestations, notes) — use `node cli/school.mjs learner`
 (wave 8) rather than moving directories by hand.

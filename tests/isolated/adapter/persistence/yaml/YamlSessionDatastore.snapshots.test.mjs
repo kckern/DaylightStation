@@ -2,7 +2,7 @@
  * YamlSessionDatastore — the snapshot manifest lives in media, not in data/.
  *
  * `snapshots.captures` is an index of webcam frames that already live under
- * media/apps/fitness/sessions/{date}/{id}/screenshots. Kept inline it dwarfs the
+ * media/fitness/sessions/{date}/{id}/screenshots. Kept inline it dwarfs the
  * session it belongs to: one measured 2026-07-20 session was 294 lines of actual
  * history and 90,849 lines of manifest — 99.7% of a 3.2 MB file, in the tree that
  * is supposed to stay light enough to commit.
@@ -68,7 +68,7 @@ describe('YamlSessionDatastore — snapshot manifest placement', () => {
     const paths = store.getStoragePaths(ID);
 
     expect(paths.snapshotsFilePath).toBe(
-      path.join(mediaRoot, 'apps', 'fitness', 'sessions', DATE, ID, 'snapshots')
+      path.join(mediaRoot, 'fitness', 'sessions', DATE, ID, 'snapshots')
     );
     const sidecar = loadYamlSafe(paths.snapshotsFilePath);
     expect(sidecar.captures).toHaveLength(3);

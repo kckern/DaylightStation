@@ -28,7 +28,7 @@
  * (actually dispatching a `go:` code to a Trigger, or a `dl:` code into the
  * nutrition ledger) is future work, not a thing this file quietly fakes.
  *
- * GENERALIZED from `school-atlas-sim.cli.mjs`, now deleted (spec: the atlas
+ * GENERALIZED from `school.mjs sim`, now deleted (spec: the atlas
  * course was a fixture baked into that file's variable names, not a feature
  * of the pipeline it proved — everything identifying became a parameter).
  * That file's full single-run lifecycle proof (agenda -> scan -> issue ->
@@ -118,7 +118,7 @@ const ENTRYPOINT = fileURLToPath(import.meta.url);
 
 // This file previously loaded no .env at all — unlike every sibling CLI that
 // reads real household data (see `exercise-library.cli.mjs`,
-// `school-catalog.cli.mjs`, etc.), which all call `dotenv.config()` for
+// `school.mjs catalog`, etc.), which all call `dotenv.config()` for
 // exactly this reason. Without it, `resolveScanSimPaths` below fell through
 // to the Docker-only default (`/usr/src/app/data`) on any host where
 // `DAYLIGHT_BASE_PATH` wasn't ALREADY exported in the calling shell — which a
@@ -179,7 +179,7 @@ Commands:
                                above, which issues + renders through the same
                                path a scanner triggers) -> optionally print.
   proof <learnerId> <courseId> the full in-memory lifecycle proof the old
-                               school-atlas-sim.cli.mjs ran (now deleted,
+                               school.mjs sim ran (now deleted,
                                superseded by this file): agenda -> scan ->
                                issue -> simulated OMR grade -> close ->
                                rescan the result QR -> verify answer-sheet
@@ -888,7 +888,7 @@ export async function runPrinterStatus({ dataDir, flags = {} }) {
 }
 
 // ---------------------------------------------------------------------------
-// proof — the old school-atlas-sim.cli.mjs lifecycle, generalized
+// proof — the old school.mjs sim lifecycle, generalized
 // ---------------------------------------------------------------------------
 
 class MemorySessions {
@@ -948,7 +948,7 @@ class MemoryAttempts {
 
 /**
  * The full in-memory lifecycle proof (spec: keep the existing proof working
- * as a preset, generalized to arguments). Mirrors `school-atlas-sim.cli.mjs`
+ * as a preset, generalized to arguments). Mirrors `school.mjs sim`
  * step for step — agenda -> scan the agenda QR -> issue -> simulate an OMR
  * scan (perfect or deliberately half-wrong per `--outcome`) -> record ->
  * close -> rescan the result QR -> verify the next worksheet reused the SAME

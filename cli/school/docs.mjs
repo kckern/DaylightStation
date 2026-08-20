@@ -3,7 +3,7 @@
  * `school:docs` — validate and proof-render print-document source YAML
  * (envelope v1 or v2, spec §4/§7).
  *
- * A small composition root, mirroring `schoolcalc-catalog.cli.mjs`: the YAML
+ * A small composition root, mirroring `school.mjs calc`: the YAML
  * parse + `--out` file write live here while every structural/fit rule stays
  * in the School domain (`validateAnyDocument`) and application
  * (`RenderPrintDocument`) layers.
@@ -90,7 +90,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
-import { parseArgv } from './_argv.mjs';
+import { parseArgv } from '../_argv.mjs';
 import { validateAnyDocument, DOCUMENT_V2_SCHEMA } from '#domains/school/documents/documentV2.mjs';
 import { DOCUMENT_SOURCE_SCHEMA } from '#domains/school/documents/documentSource.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
@@ -137,13 +137,13 @@ const REPRINT_FLAGS = new Set([...COMMON_FLAGS, 'out']);
 const HELP = `school-docs — validate and proof-render School print-document source YAML
 
 Usage:
-  school-docs.cli.mjs validate <file|dir> [options]
-  school-docs.cli.mjs publish <file> [options]
-  school-docs.cli.mjs render <file> --out <pdf> [options]
-  school-docs.cli.mjs release-card <cardId> [options]
-  school-docs.cli.mjs list-cards [options]
-  school-docs.cli.mjs audit [options]
-  school-docs.cli.mjs reprint <instanceId> --out <pdf>
+  school.mjs docs validate <file|dir> [options]
+  school.mjs docs publish <file> [options]
+  school.mjs docs render <file> --out <pdf> [options]
+  school.mjs docs release-card <cardId> [options]
+  school.mjs docs list-cards [options]
+  school.mjs docs audit [options]
+  school.mjs docs reprint <instanceId> --out <pdf>
 
 Commands:
   validate <file|dir>   parse + validateAnyDocument (v1 or v2); directory form
@@ -234,7 +234,7 @@ function resolveFrom(dataDir, value) {
 }
 
 /**
- * Same `--data-dir`/`$DAYLIGHT_BASE_PATH` pattern as `schoolcalc-catalog.cli.mjs`,
+ * Same `--data-dir`/`$DAYLIGHT_BASE_PATH` pattern as `school.mjs calc`,
  * over the two roots this CLI now spans:
  *
  * - `contentRoot` (`--content-root`) — the ARTIFACT root. `publish` writes

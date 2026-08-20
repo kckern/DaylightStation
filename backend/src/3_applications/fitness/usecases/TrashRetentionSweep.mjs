@@ -7,7 +7,7 @@ export const SESSION_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
  * Use case: fitness session trash retention.
  *
  * The ONLY hard-delete in the session media lifecycle. A confirmed recap moves a
- * session's raw frames into `media/apps/fitness/_trash/<date>/<id>/` (see
+ * session's raw frames into `media/fitness/_trash/<date>/<id>/` (see
  * `YamlRecapSnapshotStore.moveToTrash`) instead of deleting them. This sweep walks
  * that `_trash` tree and permanently removes entries that have sat there longer
  * than the retention window, then prunes the emptied date dirs.

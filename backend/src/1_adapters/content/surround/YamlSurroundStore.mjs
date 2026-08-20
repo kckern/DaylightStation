@@ -22,7 +22,6 @@ const COMPOSER_FILE = '_composer';
 // lookups are a handful an hour, not a second, so the walk is free; the window
 // exists only so a burst of lookups around one play does not repeat it.
 const FRESHNESS_WINDOW_MS = 2000;
-
 const isReserved = (name) => name.startsWith('_');
 // Titles are compared on letters and digits only. Everything else — guillemets
 // (»«), interpuncts (∙), colons, hyphens, whitespace runs — is separator noise
@@ -81,10 +80,8 @@ const authoredSegments = (work) => {
 // added to a library work YAML and not added here never reaches the payload,
 // and the only symptom is the region rendering without it.
 // `short_title` is the work's own alternate name — "Beethoven's Third Symphony"
-// beside a `title` of `Symphony No. 3 in E-flat major, "Eroica"`. The band's
-// piece register prints it as a standing label (design wave 7) and prints NO
-// header at all where it is unauthored, so this field is optional in every
-// sense: absent is a supported state, not a gap.
+// beside a `title` of `Symphony No. 3 in E-flat major, "Eroica"`. It is optional:
+// the band renders no standing label when it is absent.
 const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
 // A part that NAMES another sidecar rather than restating its timing. The
 // authored form is a bare contentId string; a mapping is accepted too, but only
@@ -98,6 +95,58 @@ const partRef = (part) => {
   }
   return null;
 };
+
+/**
+ * Seconds between a segment's notes when its end is unknown — the last segment
+ * of a sidecar that names no `musicEndsAt`. Wider than the ticker's cue dwell, so
+ * a note expires and the fact rotation gets a turn before the next one lands.
+ */
+const UNBOUNDED_NOTE_GAP_S = 45;
+
+/**
+ * Fan one segment's note(s) into timed cues.
+ *
+ * `note:` may be a single string or a list. A string stays exactly where it was —
+ * one cue on the segment's downbeat. A list is spread evenly across the
+ * segment's OWN span (this start to the next), so the notes are positioned
+ * relative to the music rather than to a recording's absolute clock: a re-timing
+ * that shifts every start carries the notes along with it, and the same work file
+ * serves every performance of the piece.
+ *
+ * THE CLOCK IS ONE MEDIA ITEM'S. `at` is an offset the player compares against
+ * its own playhead, and on a composed container that playhead belongs to
+ * whichever part is on screen. So this is fanned over the list the sidecar
+ * itself timed — `pieceSegments`, paired positionally with `starts:` — never
+ * over the composed rail, whose segments carry starts from several different
+ * media clocks that would collide once flattened into one cue list. See the
+ * call site in #resolvePerformance.
+ *
+ * @param {string|string[]|undefined} note
+ * @param {number|undefined} start - this segment's start, in seconds
+ * @param {number|undefined} end - the next segment's start, or end-of-music
+ * @returns {Array<{at: number, render: string, text: string}>}
+ */
+function noteCues(note, start, end) {
+  const texts = (Array.isArray(note) ? note : [note])
+    .filter((t) => typeof t === 'string' && t.trim());
+  if (!texts.length || typeof start !== 'number') return [];
+
+  // A non-positive span means the starts are out of order — treat the end as
+  // unknown rather than spacing the notes backwards through the segment.
+  const span = typeof end === 'number' && end > start ? end - start : undefined;
+  const gap = span === undefined ? UNBOUNDED_NOTE_GAP_S : span / texts.length;
+
+  let previous = -Infinity;
+  return texts.map((text, k) => {
+    // Monotonic by a whole second: a segment too short to hold its notes would
+    // otherwise round two onto the same instant, where the ticker shows the one
+    // that sorts last and the rest are never seen at all.
+    const at = k === 0 ? start : Math.max(Math.round(start + k * gap), previous + 1);
+    previous = at;
+    return { at, render: 'docked', text };
+  });
+}
+
 const pick = (obj, keys) => {
   const out = {};
   for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
@@ -544,7 +593,6 @@ export class YamlSurroundStore extends ISurroundStore {
     const composers = new Map();
     const works = new Map();
     if (!dirExists(this.libraryDir)) return { composers, works };
-
     // Seen real paths, not joined ones: `listDirs` resolves symlinks, so a loop
     // (`classical/self -> classical/`, one mistyped `ln -s` during a reorg) would
     // otherwise recurse until the stack gives out and take the backend with it.
@@ -584,7 +632,12 @@ export class YamlSurroundStore extends ISurroundStore {
 
     const composer = path.basename(dir);
     const composerBase = loadYamlFromPath(path.join(dir, `${COMPOSER_FILE}.yml`));
-    if (isPlainObject(composerBase)) composers.set(composer, composerBase);
+    if (isPlainObject(composerBase)) {
+      if (composers.has(composer)) {
+        this.logger?.warn?.('surround.composer.duplicate', { composer, file: path.join(rel, `${COMPOSER_FILE}.yml`) });
+      }
+      composers.set(composer, composerBase);
+    }
 
     const files = listYamlFiles(dir, { stripExtension: false }).filter((f) => !isReserved(f));
     for (const file of files) {
@@ -1213,10 +1266,36 @@ export class YamlSurroundStore extends ISurroundStore {
       timelineParts = [{ contentId: selfId, index: 0, sounding: segments.reduce((n, c) => n + c.duration, 0) }];
     }
 
-    const pieceSegmentCues = pieceSegments
-      .map((m, i) => ({ at: starts[i], text: m.note }))
-      .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
-      .map((c) => ({ at: c.at, render: 'docked', text: c.text }));
+    // A segment's end is the next segment's start; the last one falls back to
+    // the sidecar's own end-of-music marker, and to nothing if it names none.
+    // Positional against `pieceSegments`, exactly like `starts` itself.
+    const endOf = (i) => (typeof starts[i + 1] === 'number'
+      ? starts[i + 1]
+      : (Number.isFinite(doc.musicEndsAt) ? doc.musicEndsAt : undefined));
+    // FANNED OVER `pieceSegments`, THE WORK'S OWN LIST — NOT OVER `segments`,
+    // THE COMPOSED RAIL. The two are the same list for every single-item
+    // sidecar, so for the whole authored corpus this is a distinction without a
+    // difference; it decides the container case, and it decides it this way for
+    // three reasons that all point the same direction.
+    //
+    // First, `starts:` pairs positionally with `pieceSegments` and with nothing
+    // else. It is the only place a note's downbeat is authored, and `endOf`
+    // reads the same array — fanning over the rail would leave both indexed by
+    // a list they were never written against.
+    //
+    // Second, a cue's `at` is an offset in ONE media item's clock: the ticker
+    // compares it to `position`, which the player reports for whichever item is
+    // on screen. A container's rail spans several items whose local starts all
+    // begin near zero again, so flattening their notes into one cue list would
+    // fire part 3's note during part 0 and never fire it in its own episode.
+    // The rail's own `offset` is a third clock again and is not what `position`
+    // carries.
+    //
+    // Third, a container's parts are ordinary sidecars that already resolved
+    // their own notes into their own payload's cues. Re-fanning them out here
+    // would emit each note twice — once mistimed.
+    const pieceSegmentCues = pieceSegments.flatMap((m, i) => noteCues(m.note, starts[i], endOf(i)));
+
     const explicitCues = asArray(doc.cues);
     const cues = [...pieceSegmentCues, ...explicitCues].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
 

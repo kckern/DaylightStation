@@ -1763,7 +1763,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
 
   // Game Show shell (teams/buzzers/scoreboard) + Jeopardy. Config from
   // gameshow.yml, content from data/content/games/, sessions checkpointed to
-  // data/household/gaming/gameshow/sessions/, media served from media/apps/.
+  // data/household/gaming/gameshow/sessions/, media served from media/games/gameshow/.
   v1Routers.gameshow = createGameshowRouter({
     gameShowService: new GameShowService({
       configService,
@@ -1775,7 +1775,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'gameshow' }),
     }),
     broadcastEvent,
-    mediaAppsDir: join(mediaBasePath, 'apps'),
+    mediaGameshowDir: join(mediaBasePath, 'games', 'gameshow'),
     logger: rootLogger.child({ module: 'gameshow-api' }),
   });
 

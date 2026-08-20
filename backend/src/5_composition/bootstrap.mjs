@@ -342,7 +342,7 @@ import { HttpJamCorderSource } from '#adapters/jamcorder/HttpJamCorderSource.mjs
 import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
 import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderRecordings.mjs';
 
-// Piano MIDI→MP3 adapters + use case (daily render of media/apps/piano/log into media/audio/piano)
+// Piano MIDI→MP3 adapters + use case (daily render of media/midi/piano/log into media/audio/piano)
 import { FsMidiLibrary } from '#adapters/pianoaudio/FsMidiLibrary.mjs';
 import { FluidSynthMp3Converter } from '#adapters/pianoaudio/FluidSynthMp3Converter.mjs';
 import { MidiPngConverter } from '#adapters/pianoaudio/MidiPngConverter.mjs';
@@ -3515,9 +3515,9 @@ export function createHarvesterServices(config) {
     });
   }
 
-  // Piano MIDI→MP3 — daily render of every media/apps/piano/log .mid into media/audio/piano.
+  // Piano MIDI→MP3 — daily render of every media/midi/piano/log .mid into media/audio/piano.
   registerHarvester('piano-mp3', () => {
-    const sourceDir = path.join(configService.getMediaDir(), 'apps', 'piano', 'log');
+    const sourceDir = path.join(configService.getMediaDir(), 'midi', 'piano', 'log');
     const destDir = `${configService.getMediaDir()}/audio/piano`;
     const soundfontPath = '/usr/share/soundfonts/TimGM6mb.sf2'; // Alpine soundfont-timgm; confirm path post-build
     // Junk guardrail: skip note-less / long-AND-sparse (stuck note / idle) files;
@@ -3535,7 +3535,7 @@ export function createHarvesterServices(config) {
   // Piano-roll PNG — render a wrapped piano-roll image beside every .mid (same
   // junk guard; reuses the shared pending/convert use case with a png output).
   registerHarvester('piano-png', () => {
-    const sourceDir = path.join(configService.getMediaDir(), 'apps', 'piano', 'log');
+    const sourceDir = path.join(configService.getMediaDir(), 'midi', 'piano', 'log');
     const destDir = `${configService.getMediaDir()}/audio/piano`;
     const pianoAudioCfg = configService?.getHouseholdAppConfig?.(null, 'pianoaudio') || {};
     const junkMinSeconds = pianoAudioCfg.junkMinSeconds ?? 1800;
