@@ -10,6 +10,7 @@ import {
 } from '#system/utils/FileIO.mjs';
 import { deepMerge } from '#system/utils/deepMerge.mjs';
 import { ISurroundStore } from '#apps/content/ports/ISurroundStore.mjs';
+import { toSpans, withOffsets } from './chapters.mjs';
 
 // Definitions live in this reserved folder; every other `_`-prefixed name under
 // the tree (folders and files alike) is authoring scaffolding, never a piece.
@@ -622,6 +623,10 @@ export class YamlSurroundStore extends ISurroundStore {
     }
 
     const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
+    const spans = toSpans({
+      starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: movements.length
+    });
+    const chapters = withOffsets(movements.map((m, i) => ({ ...m, ...spans[i], contentId: String(doc.match.contentId) })));
     const movementCues = movements
       .map((m, i) => ({ at: starts[i], text: m.note }))
       .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
@@ -659,6 +664,8 @@ export class YamlSurroundStore extends ISurroundStore {
         },
         piece,
         movements: resolvedMovements,
+        chapters,
+        timeline: { totalSounding: chapters.reduce((n, c) => n + c.duration, 0) },
         cues,
         facts: asArray(work.facts),
         composer,

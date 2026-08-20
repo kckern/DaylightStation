@@ -58,6 +58,13 @@ describe('YamlSurroundStore exact lookup', () => {
     expect(r.assetBase).toBe('library/classical');
   });
 
+  it('leaves movements untouched when a work gains chapters', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.movements).toEqual([{ n: 1, name: 'Allegro con brio', start: 0 }]);
+    expect(r.chapters[0]).toMatchObject({ n: 1, name: 'Allegro con brio', start: 0, offset: 0 });
+  });
+
   it('merges _composer.yml under the piece composer block, piece winning per key', () => {
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:663134', '');
