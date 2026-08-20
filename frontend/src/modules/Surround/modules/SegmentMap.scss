@@ -432,8 +432,8 @@
 }
 
 /* ---------------------------------------------------------------------------
-   THE CHIP (task 6c) — what an inactive segment wears when the rail cannot
-   afford names.
+   THE CHIP (task 6c, re-sized task 6d) — what an inactive segment wears when
+   the rail cannot afford names.
 
    TWENTY-ONE NOCTURNES ON A 1280px RULE IS ~61px EACH against names that want
    ~200px: short by a factor of three before the accordion opens the sounding
@@ -454,10 +454,27 @@
    constant of the piece rather than of this instant — a mix of chips and names,
    or a rail that changed density at a segment boundary, reads as a bug.
 
-   REM-FIXED, NOT ROOT-SCALED. The chip is the numeral gutter's mark rendered as
-   a mark, and everything about that gutter — the row's 1.05rem, the numeral's
-   0.92em, the `ch` coefficient — is fixed against the frame's 16px rem. A chip
-   scaled by root width would be the one part of the index mark that moved.
+   NO CIRCLE, AND ROOT-SCALED — the task 6d reversal of task 6c's own call.
+   The circle was REM-fixed at 0.62rem/20px, which meant the mark that was
+   supposed to be legible "from across the room" was the one piece of type in
+   this frame that did NOT answer the frame's own ten-foot argument — it read
+   as a smudge on the office screen once the rest of the rail was checked
+   against `labelFloorPx`. This mark IS a label — short, tracked, small-caps,
+   read as a shape — so it now takes the SAME published floor every other
+   label in the frame takes (`--label-floor`, `fit.js`), instead of a second
+   floor invented for it. A circle sized to hold that floor's largest case
+   (two digits at the 1920 root's 17.28px) would be ~30px across, which is
+   BIGGER than the 20px the chip floor (`SEGMENT_CHIP_FLOOR_PX`, `../band.js`)
+   budgets it — the exact "enlarging the chip naively makes the overrun worse"
+   trap the task warned against, on the rail that is already tightest (see
+   `RAIL_CAPACITY` in the measure spec: the 960 root already overruns at the
+   OLD, smaller size). Dropping the ring and the padding it cost removes a
+   fixed cost the mark never needed — a numeral is legible on its own, the
+   ring was reading the mark's own opacity ladder for it — and what is left is
+   exactly as wide as the digits themselves, which is narrower than the old
+   circle at every root including the one where the floor asks for the most
+   room. `align-self: center` still centres it in the segment's bar; nothing
+   about the layout the accordion solves around it changes.
 
    NO TRANSITION, EITHER WAY. The name-to-chip change is a change of what the
    rail is rendering, not a move: there is nothing to interpolate between a
@@ -465,27 +482,27 @@
    and the accordion's own path (`../band.js`, `useEasedVector`) is unchanged.
    --------------------------------------------------------------------------- */
 .surround-segment-map__chip {
-  --chip-size: 1.25rem;
   align-self: center;
   flex: 0 0 auto;
   box-sizing: border-box;
   /* Clear of the rule lane by the same 0.55em the text row uses, so a chipped
-     rail and a named one hang their content off the same line. */
+     rail and a named one hang their content off the same line — in EM, so it
+     stays proportioned to the mark's own (now root-scaled) size rather than
+     opening a gap that grows relative to the digits as the floor climbs. */
   margin-top: 0.55em;
-  width: var(--chip-size);
-  height: var(--chip-size);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid var(--ink-soft, #6b6152);
-  font-size: 0.62rem;
+  display: block;
+  /* THE TEN-FOOT LABEL FLOOR, MEASURED not invented — see the block comment
+     above. `$label-floor` is the anchor-root fallback for a chip rendered
+     outside the frame (a spec, a storybook); `--label-floor` is what
+     `SurroundFrame` actually publishes, root-scaled. */
+  font-size: var(--label-floor, #{$label-floor});
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: lining-nums;
   font-variant-caps: all-small-caps;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   color: var(--ink, #2a1d07);
+  white-space: nowrap;
   /* The same three states the names carry, in the same order of loudness: the
      future is the brighter quiet state, the elapsed the dimmer one. */
   opacity: 0.78;
@@ -493,7 +510,6 @@
 
 .surround-segment-map__segment--elapsed .surround-segment-map__chip {
   color: var(--ink-soft, #6b6152);
-  border-color: var(--ink-soft, #6b6152);
   opacity: 0.5;
 }
 
