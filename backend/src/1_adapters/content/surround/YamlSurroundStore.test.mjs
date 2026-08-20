@@ -927,13 +927,36 @@ describe('YamlSurroundStore library resolution', () => {
     const logger = makeLogger();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:ghost', '')).toBeNull();
-    // `expected` names the corpus file the walk would have keyed, so the author
-    // reads the fix out of the warning instead of re-deriving it from the ref.
+    // `expected` is a glob, not a path: the corpus may file the composer under
+    // any number of grouping directories, so naming one path would send the
+    // author to create a duplicate a level above the file they already have.
     expect(logger.warn).toHaveBeenCalledWith('surround.work.missing', {
       work: 'beethoven/does-not-exist',
-      expected: 'classical/beethoven/does-not-exist.yml',
+      expected: 'classical/**/beethoven/does-not-exist.yml',
       file: 'classical/beethoven/ghost.yml'
     });
+  });
+
+  it('resolves a work whose composer is filed under grouping directories', () => {
+    // The corpus was reorganized from `classical/<composer>/` to
+    // `classical/<era>/<composer>/` and every sidecar stopped resolving —
+    // `surround.index.built` reported `pieces: 0, skipped: 5` in production.
+    // A work's identity is `<composer>/<slug>`; the folders above the composer
+    // are filing, and the walk must not encode a depth.
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:deep }\n');
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml',
+      'title: Nocturnes\nmovements:\n  - n: 1\n    name: "Op. 9 No. 1"\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:deep', '');
+
+    expect(r).not.toBeNull();
+    expect(r.piece.title).toBe('Nocturnes');
+    expect(r.composer.name).toBe('Frédéric Chopin');
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.work.missing', expect.anything());
   });
 
   it('rejects a sidecar with no work: ref as invalid, blocking', () => {
