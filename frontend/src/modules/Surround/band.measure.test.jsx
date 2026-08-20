@@ -62,7 +62,7 @@ import {
   accordionShares, desiredWidth, placedMovements, SEGMENT_FLOOR_PX,
 } from './band.js';
 import {
-  bandPools, proseFloorPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
+  bandPools, proseFloorPx, labelFloorPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
   PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
 import { smartQuotes } from './typography.js';
@@ -230,10 +230,24 @@ const SPRING = Object.freeze({
 });
 
 /**
- * The Eroica's WHOLE fact pool, verbatim from the corpus — not just the Napoleon
- * note. The wave-8 fixture carried one fact because one tier was being proved;
- * the fit is solved against every string the band can show, so every string the
- * band can show is what the fixture has to hold.
+ * The Eroica's whole fact pool — and A DELIBERATELY HOSTILE ONE, which is what
+ * this comment now says because the previous version claimed it was the corpus
+ * verbatim and it no longer is.
+ *
+ * It WAS a copy of the shipped sidecar, when the shipped sidecar held these five
+ * long facts. The corpus has since been re-authored to fourteen short ones, none
+ * over 92 characters, all of which fit on every screen in the fleet. Fixtures
+ * made of those would exercise nothing: no note would ever be refused, the
+ * rejection pass would never run, and the no-ellipsis law — the reason this
+ * whole file exists — would be asserted against a corpus incapable of breaking
+ * it. So these stay, and they stay on purpose: the 224-character Napoleon note
+ * is the one that drove the three- and four-line tiers into existence and is
+ * still the longest string the band has ever been asked to set.
+ *
+ * WHAT THAT MEANS FOR A FAILURE HERE. A red case in this file is a claim about
+ * the FIT, not about the shipped programme notes — nothing below is on a screen
+ * today. The shipped corpus is measured against the fit separately (the wave-9b
+ * report carries those numbers); this is the adversary the fit has to survive.
  */
 const EROICA_FULL = Object.freeze({
   ...EROICA,
@@ -393,8 +407,18 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
   // transforms); the real frame drops them on the second animation frame. The
   // footer then takes the measured media box's width, and the collapse rule
   // fires off the height that produces.
-  await page.evaluate((footerFloor) => {
+  //
+  // ...AND THE LABEL FLOOR, which the same observer publishes (design wave 9b).
+  // Every ten-foot floor in the frame is an ANGULAR claim, so the frame measures
+  // the screen root it fills and publishes `--label-floor`; every module's
+  // stylesheet reads it. Emulated here with the SHIPPED function, on the width
+  // measured in this page — without it every label on this page would paint at
+  // the anchor root's 0.72rem on all three screens, and the floors this spec
+  // asserts would be measured against labels no screen actually shows.
+  const labelFloor = labelFloorPx(width);
+  await page.evaluate(({ footerFloor, labelFloorCss }) => {
     const root = document.querySelector('.surround-frame');
+    root.style.setProperty('--label-floor', `${labelFloorCss}px`);
     root.classList.remove('surround-frame--entering', 'surround-frame--arriving');
     const media = document.querySelector('[data-testid="surround-media"]');
     const footer = document.querySelector('[data-testid="surround-footer"]');
@@ -411,7 +435,7 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
         if (first) first.remove();
       }
     }
-  }, DEFINITION.collapse.footerFloor);
+  }, { footerFloor: DEFINITION.collapse.footerFloor, labelFloorCss: labelFloor });
 
   // EFFECT 3 — `CueTicker`'s fit, reproduced by calling it. The component runs
   // `fitBand(root, pools)` in a layout effect and publishes what it returns as
@@ -823,6 +847,81 @@ describe('the band, measured against the shipped stylesheet', () => {
     ).toBeGreaterThanOrEqual(ANGULAR_FLOOR - 1e-9);
   }, 60000);
 
+
+  /**
+   * ============================================================================
+   * ...AND THE LABEL FLOOR RIDES WITH IT — the invariant, as PAINTED.
+   * ============================================================================
+   *
+   * The arithmetic version of this is in `fit.test.js` and sweeps fourteen
+   * roots. This is the one that reads pixels: the standing label the band
+   * actually paints, on the three screens the fleet actually runs, against the
+   * note it stands over.
+   *
+   * WHY IT EXISTS. `PROSE_FLOOR_ANCHOR_PX` is defined as the LABEL floor plus
+   * 22% of x-height, and for one wave the prose floor scaled with the root while
+   * the label floor stayed a flat 0.72rem — which inverted the relationship on
+   * the living-room root: prose floored at 10.56px under a label set at 11.52px.
+   * A stylesheet is where that inversion would actually show, so a stylesheet is
+   * where it is measured.
+   *
+   * TO GO RED: return `LABEL_FLOOR_ANCHOR_PX` unconditionally from
+   * `labelFloorPx`, or put a bare `0.72rem` back in any rule that reads
+   * `var(--label-floor, …)`.
+   */
+  const LABEL_FLOORS = Object.freeze({
+    '960x540': 8.64,      // 0.54rem
+    '1280x720': 11.52,    // 0.72rem — the anchor, and the frame's stated floor
+    '1920x1080': 17.28,   // 1.08rem
+  });
+
+  it.each(FLEET)('$name — the standing label takes this root’s floor, and prose still clears it', async ({ width, height, name }) => {
+    const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
+
+    const painted = await page.evaluate(() => {
+      const head = document.querySelector('.surround-cue-ticker__piece-head');
+      const line = document.querySelector('[data-testid="surround-ticker-text"] .surround-cue-ticker__line');
+      const px = (el) => (el ? Number(parseFloat(getComputedStyle(el).fontSize).toFixed(2)) : null);
+      return {
+        label: px(head),
+        note: px(line),
+        published: getComputedStyle(document.querySelector('.surround-frame'))
+          .getPropertyValue('--label-floor').trim(),
+      };
+    });
+
+    expect(painted.label, 'no standing label in the band to measure').not.toBeNull();
+    expect(
+      painted.published,
+      `the frame published "${painted.published}" as the label floor at ${name}`,
+    ).toBe(`${LABEL_FLOORS[name]}px`);
+    expect(
+      painted.label,
+      `the standing label is painted at ${painted.label}px at ${name} where this root earns `
+      + `${LABEL_FLOORS[name]}px — ${painted.label > LABEL_FLOORS[name]
+        ? 'louder in angle than the same label on the office screen'
+        : 'under its own ten-foot floor'}`,
+    ).toBe(LABEL_FLOORS[name]);
+
+    // THE INVARIANT ITSELF, on the paint. The note the band sets must never be
+    // smaller than the standing label that introduces it — a programme note
+    // quieter than the word "PROGRAMME" over it is the derivation upside down.
+    expect(
+      painted.note,
+      `at ${name} the band paints its note at ${painted.note}px under a standing label at `
+      + `${painted.label}px — the note is SMALLER than the label over it, which inverts the `
+      + 'relationship the prose floor is defined by (+22% of x-height over the label floor)',
+    ).toBeGreaterThan(painted.label);
+
+    // ...and the floor it could have fallen to would still have cleared it, which
+    // is the stronger claim: not "this corpus happens to fit" but "nothing this
+    // band can ever set goes under the label".
+    expect(
+      fit.floorPx,
+      `at ${name} a note pinned at its ${fit.floorPx}px floor would be set under the `
+      + `${painted.label}px label over it`,
+    ).toBeGreaterThan(painted.label);
+  }, 60000);
 
   /**
    * A CUE IS A NOTE, AND THE LAW IS THE SAME ONE (review finding C-1).

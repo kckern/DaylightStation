@@ -88,12 +88,62 @@ export const FLOOR_ANCHOR_ROOT_PX = 1280;
 export const PROSE_FLOOR_ANCHOR_PX = 14.08;
 
 /**
- * The bounds the root-width scaling is clamped between — the fleet's own two
- * extremes, evaluated at the anchor: 0.66rem at a 960 root, 1.32rem at a 1920
- * one. Argued at `proseFloorPx` below, which is the only thing that reads them.
+ * The narrowest and widest roots in the fleet — the living-room Shield's 960 and
+ * the largest screen the frame is measured at. The scaling is linear between
+ * them and flat outside them; every clamp below is one of these two roots
+ * evaluated at its floor's anchor, rather than a hand-copied literal.
  */
-export const PROSE_FLOOR_MIN_PX = 10.56;
-export const PROSE_FLOOR_MAX_PX = 21.12;
+export const FLEET_MIN_ROOT_PX = 960;
+export const FLEET_MAX_ROOT_PX = 1920;
+
+/**
+ * The frame's ten-foot floor for LABELS at the anchor root — 0.72rem.
+ *
+ * The older of the two numbers, and the one `PROSE_FLOOR_ANCHOR_PX` is measured
+ * against: a label earns this floor by being a short, tracked, small-cap string
+ * with high context that the eye reads as a SHAPE, and prose, read glyph by
+ * glyph, needs 22% more x-height than it. Honoured by the map's place names, the
+ * band's standing labels, the rail's numeral gutter and the period line's era
+ * names — every one of which now reads it through `labelFloorPx`.
+ */
+export const LABEL_FLOOR_ANCHOR_PX = 11.52;
+
+const round2 = (n) => Number(n.toFixed(2));
+
+/**
+ * ONE SCALING, USED BY BOTH FLOORS — and that is the wave-9b-follow-up fix
+ * rather than tidying.
+ *
+ * The prose floor was made a function of the root and the LABEL floor was left a
+ * flat 0.72rem, which put the two out of step in exactly the way the derivation
+ * forbids: the prose floor is defined as +22% of x-height OVER the label floor,
+ * and on the 960 root the scaled prose floor (10.56px) fell BELOW the unscaled
+ * label's 11.52px. A note could have been set smaller than the standing label
+ * over it. Two floors derived from one ratio cannot be scaled by two different
+ * rules, so there is one rule and they both call it.
+ *
+ * @param {number} anchorPx the floor at `FLOOR_ANCHOR_ROOT_PX`.
+ * @param {number} rootWidthPx the root this band is painted on.
+ */
+function scaleFloor(anchorPx, rootWidthPx) {
+  const w = Number(rootWidthPx);
+  const at = (root) => anchorPx * (root / FLOOR_ANCHOR_ROOT_PX);
+  if (!(w > 0)) return round2(anchorPx);
+  return round2(Math.min(at(FLEET_MAX_ROOT_PX), Math.max(at(FLEET_MIN_ROOT_PX), at(w))));
+}
+
+/**
+ * The bounds the prose scaling is clamped between — the fleet's own two
+ * extremes, evaluated at the anchor: 0.66rem at a 960 root, 1.32rem at a 1920
+ * one. DERIVED, not written out, so that the two floors' clamps cannot drift
+ * apart the way the floors themselves did. Argued at `proseFloorPx` below.
+ */
+export const PROSE_FLOOR_MIN_PX = scaleFloor(PROSE_FLOOR_ANCHOR_PX, FLEET_MIN_ROOT_PX);
+export const PROSE_FLOOR_MAX_PX = scaleFloor(PROSE_FLOOR_ANCHOR_PX, FLEET_MAX_ROOT_PX);
+
+/** The same two roots, at the label anchor: 0.54rem and 1.08rem. */
+export const LABEL_FLOOR_MIN_PX = scaleFloor(LABEL_FLOOR_ANCHOR_PX, FLEET_MIN_ROOT_PX);
+export const LABEL_FLOOR_MAX_PX = scaleFloor(LABEL_FLOOR_ANCHOR_PX, FLEET_MAX_ROOT_PX);
 
 /**
  * The prose size floor is a FUNCTION OF THE ROOT WIDTH, not a constant.
@@ -153,17 +203,14 @@ export const PROSE_FLOOR_MAX_PX = 21.12;
  *     not fit is refused, which is the designed outcome — the alternative is a
  *     band that answers an unreal root with unreadable type.
  *
- *     ONE CONSEQUENCE, WRITTEN DOWN RATHER THAN LEFT TO BE FOUND. The frame's
- *     LABEL floor is a flat `0.72rem` in the stylesheet and does not scale with
- *     the root, so on the 960 root the prose floor (10.56px) now sits BELOW the
- *     size its own standing label is set at (11.52px). That is not the prose
- *     going under its readability floor — 10.56px on a 960 root subtends what
- *     14.08px does on a 1280 one, which is the floor — it is the LABEL being
- *     angularly oversized there, since its equal-angular floor at that root
- *     would be 0.54rem. It only becomes visible if the corpus is long enough to
- *     pin the ladder at the floor, at which point a note would be set smaller
- *     than the label above it. Scaling the labels is the fix, and it is a
- *     stylesheet-wide change this file has no business making on its own.
+ *     THE LABEL FLOOR RIDES THE SAME CLAMP, and it has to. For one wave this
+ *     floor scaled and the label's did not, which inverted the relationship the
+ *     prose floor is DEFINED by: at 960 the scaled prose floor (10.56px) sat
+ *     below the flat label's 11.52px, so a note pinned at its floor would have
+ *     been set smaller than the standing label over it. Both floors are one
+ *     call to `scaleFloor` now, so the +22% x-height step holds at every root
+ *     including outside the clamps — which is only true because the clamps are
+ *     the same two ROOTS rather than two pairs of literals.
  *   * HIGH, 21.12px / 1.32rem — the 1920 root's value. A floor that keeps
  *     climbing eventually meets `PROSE_CEILING_PX` (24px), and a floor equal to
  *     the ceiling is not a ladder — it is one rung, and every note that wants a
@@ -178,11 +225,33 @@ export const PROSE_FLOOR_MAX_PX = 21.12;
  * @returns {number} the smallest type a programme note may be set in here.
  */
 export function proseFloorPx(rootWidthPx) {
-  const w = Number(rootWidthPx);
-  if (!(w > 0)) return PROSE_FLOOR_ANCHOR_PX;
-  const scaled = PROSE_FLOOR_ANCHOR_PX * (w / FLOOR_ANCHOR_ROOT_PX);
-  const clamped = Math.min(PROSE_FLOOR_MAX_PX, Math.max(PROSE_FLOOR_MIN_PX, scaled));
-  return Number(clamped.toFixed(2));
+  return scaleFloor(PROSE_FLOOR_ANCHOR_PX, rootWidthPx);
+}
+
+/**
+ * THE LABEL FLOOR, on the same scaling — the frame's ten-foot floor for a short,
+ * tracked, small-cap string read as a shape: the map's place names, the band's
+ * standing labels, the rail's numeral gutter, the period line's era names.
+ *
+ * IT LIVES BESIDE THE PROSE FLOOR BECAUSE IT IS THE NUMBER THE PROSE FLOOR IS
+ * DERIVED FROM. `PROSE_FLOOR_ANCHOR_PX` is this floor plus 22% of x-height, and
+ * for one wave the two were scaled by different rules — this one not at all —
+ * which inverted the relationship on the living-room root and let prose floor
+ * BELOW its own standing label. Keeping them in two files is what made that
+ * possible; keeping them in one function is what makes it impossible.
+ *
+ * THE SAME ANGULAR ARGUMENT, UNCHANGED. A label on the 960 root is already
+ * physically larger at the same rem, because that root lays fewer CSS pixels
+ * across the same panel. Pinning it at a flat 0.72rem made it bigger in ANGLE
+ * than the office's, which is the same defect the prose floor had and is fixed
+ * the same way: 0.72rem at the 1280 anchor, 0.54rem at 960, 1.08rem at 1920.
+ *
+ * @param {number} rootWidthPx the CSS width of the screen root, unmeasurable
+ *   values falling back to the anchor.
+ * @returns {number} the smallest a label may be set in here, in px.
+ */
+export function labelFloorPx(rootWidthPx) {
+  return scaleFloor(LABEL_FLOOR_ANCHOR_PX, rootWidthPx);
 }
 
 /**
@@ -197,7 +266,7 @@ export function proseFloorPx(rootWidthPx) {
  * fills its screen root, so its own box IS the root — measured, so it cannot
  * drift from a config value nobody re-read.
  */
-function rootWidthOf(el) {
+export function rootWidthOf(el) {
   const frame = el?.closest?.('.surround-frame');
   const w = frame?.getBoundingClientRect?.().width ?? 0;
   return w > 0 ? w : 0;

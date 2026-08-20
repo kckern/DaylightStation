@@ -344,7 +344,13 @@ describe('EraTimeline — the shipped design', () => {
     const label = css.match(/\.surround-era-timeline__label \{[^}]*\}/)[0];
     expect(label).toContain('text-transform: uppercase');
     expect(Number(label.match(/letter-spacing: ([\d.]+)em/)[1])).toBeGreaterThanOrEqual(0.08);
-    expect(Number(label.match(/font-size: ([\d.]+)rem/)[1])).toBe(0.72);
+    // THE FLOOR IS PUBLISHED, NOT WRITTEN DOWN (design wave 9b). A ten-foot
+    // floor is an angular claim and a rem is not an angle, so the frame measures
+    // its screen root and publishes `--label-floor`; this rule reads it, with the
+    // anchor root's 11.52px (0.72rem) as the fallback a slide rendered outside a
+    // frame gets. A literal here would be right on one screen and wrong on the
+    // other two.
+    expect(label).toMatch(/font-size: var\(--label-floor, 11\.52px\)/);
     // The subject's name is one step up — in WEIGHT and VALUE, never in size,
     // which is the same law the map's subject country is drawn under.
     const subject = css.match(/\.surround-era-timeline__label--subject \{[^}]*\}/)[0];

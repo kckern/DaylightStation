@@ -5,6 +5,27 @@ import { render, act } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import MovementMap from './MovementMap.jsx';
 import { ACCORDION_MS } from '../band.js';
+import { LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
+
+/**
+ * The gloss's size in rem AT THE ANCHOR ROOT, read out of the compiled rule.
+ *
+ * It is no longer a literal. The frame's ten-foot label floor is measured per
+ * screen root and published as `--label-floor` (design wave 9b), and this gloss
+ * is defined as a fixed step above it — `calc(var(--label-floor, 11.52px) * 74 /
+ * 72)` — so that the step survives the scaling instead of inverting on the
+ * narrower root. What the arithmetic below needs is a number, so the FALLBACK is
+ * resolved: that is the anchor root's floor, which is the root every one of
+ * these derivations was solved on.
+ */
+function glossRemFrom(rule) {
+  const m = rule.match(/font-size:\s*calc\(var\(--label-floor,\s*([\d.]+)px\)\s*\*\s*(\d+)\s*\/\s*(\d+)\)/);
+  expect(m, `the gloss no longer reads the published label floor: ${rule.match(/font-size:[^;]*/)?.[0]}`)
+    .not.toBeNull();
+  expect(Number(m[1]), 'the sheet\'s fallback drifted from the anchor floor')
+    .toBe(LABEL_FLOOR_ANCHOR_PX);
+  return (Number(m[1]) * Number(m[2])) / Number(m[3]) / 16;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -607,7 +628,13 @@ describe('MovementMap — the movement translations', () => {
     expect(rule[0], 'the gloss is set in a serif — it reads as more programme')
       .toMatch(/font-family: var\(--surround-annotation,/);
     expect(rule[0]).not.toMatch(/font-family: var\(--surround-(display|body)/);
-    const size = Number(rule[0].match(/font-size: ([\d.]+)rem/)[1]);
+    // THE NUMERAL GUTTER'S GLOSS SITS A HAIR ABOVE THE TEN-FOOT FLOOR, and it is
+    // expressed as that RELATIONSHIP now rather than as 0.74rem (design wave
+    // 9b): the floor is measured per screen root and published as
+    // `--label-floor`, so a literal here would sit above the floor on the office
+    // screen and below it on the living room. 74/72 of whatever this root's
+    // floor is, with the anchor root's 11.52px as the fallback.
+    const size = glossRemFrom(rule[0]);
     expect(size, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
     // ...and quieter than the name it hangs under, which is 1.05rem/600.
     expect(size).toBeLessThan(1.05);
@@ -732,7 +759,7 @@ describe('MovementMap — the movement translations', () => {
     const headLh = parseFloat(heading.match(/line-height:\s*([\d.]+)/)[1]);
 
     const gloss = css.match(/\.surround-movement-map__translation\s*\{[^}]*\}/)[0];
-    const glossSize = parseFloat(gloss.match(/font-size:\s*([\d.]+)rem/)[1]) * 16;
+    const glossSize = glossRemFrom(gloss) * 16;
     const glossLh = parseFloat(gloss.match(/line-height:\s*([\d.]+)/)[1]);
     const glossClear = parseFloat(gloss.match(/margin-top:\s*([\d.]+)em/)[1]) * glossSize;
 
