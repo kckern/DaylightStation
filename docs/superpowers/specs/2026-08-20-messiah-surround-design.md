@@ -149,12 +149,15 @@ to a single segment and the **sounding** Part expands to its numbers:
 
 | sounding | rail draws | vs flat |
 |---|---|---|
-| Part One (№1–19) | 19 + 1 + 1 = **21** | 53 |
-| Part Two (№20–44) | 1 + 25 + 1 = **27** | 53 |
+| Part One (№1–21) | 21 + 1 + 1 = **23** | 53 |
+| Part Two (№22–44) | 1 + 23 + 1 = **25** | 53 |
 | Part Three (№45–53) | 1 + 1 + 9 = **11** | 53 |
 
-Bounded by the largest Part rather than the whole work, so the worst case is 27
-— the same count the étude season already draws.
+Messiah divides **21 / 23 / 9** — Part One ending at *His yoke is easy*, Part Two
+at *Hallelujah*, Part Three at the closing *Amen*.
+
+Bounded by the largest Part rather than the whole work, so the worst case is 25
+— two fewer than the étude season already draws.
 
 A collapsed Part is a **named** segment, not a chip: it has a real title
 (`Part Two`) and a real width (its whole sounding span), so it reads as a closed
@@ -187,10 +190,10 @@ derive the threshold from that measured fact rather than from the formula above,
 and the regression test — étude rail byte-for-byte unchanged at three roots — is
 what proves it.
 
-**Unverified and must be measured before this ships:** Part Two expanded is 27
+**Unverified and must be measured before this ships:** Part Two expanded is 25
 boxes, and at the 960 root that is chips at roughly the floor. The étude season
-draws 27 there today, so it is expected to hold — but the measurement harness
-says so before release, not after.
+draws 27 there today — two more — so it is expected to hold, but the measurement
+harness says so before release, not after.
 
 ## The timings
 
@@ -327,7 +330,7 @@ already exists.
 
 1. **Detection does not converge to 53.** Mitigated by the gate: fall back to
    three Parts rather than publish approximate boundaries.
-2. **Part Two at 27 boxes may not draw at the 960 root.** Measured before
+2. **Part Two at 25 boxes may not draw at the 960 root.** Measured before
    release; if it fails, the fallback is to collapse to Parts at that root only —
    the trigger is already per-root because the rule's width is.
 3. **The plate reads better with the composed-title work** from
