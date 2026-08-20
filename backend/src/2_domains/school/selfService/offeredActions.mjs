@@ -25,6 +25,10 @@
  *    Making it one tap means new edges on a schema every existing session
  *    replays through — separate work, deliberately not taken here.
  *
+ *    The one apparent exception is `outcome_recorded` + `needs_remediation`,
+ *    which offers `retry` — a FRESH session via `OpenRemediation`, never a
+ *    second print against the graded one.
+ *
  * 2. `bankPrintable` is PASSED IN, never decided here. Whether a bank unit has
  *    a sheet to hand out is `IssueDocument.canIssueBank`, which needs
  *    `worksheetInstances`, `assignments` and a bank reader — none of them
@@ -116,6 +120,23 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
     case 'media_stalled':
       return playAction(mediaSurface, PLAY_WORDING.again);
 
+    case 'outcome_recorded':
+      // A fresh sheet, NOT a reprint of this session. `IssueDocument`'s
+      // ISSUABLE set refuses at `outcome_recorded`, so a `print` here would
+      // loop the child through already-done slips until the 4am rollover;
+      // remediation is a NEW session with a fresh variant (`OpenRemediation`,
+      // the same use case the scan path reaches from this state). The paper
+      // path already routes here, so a card that offered only the exit would
+      // be a regression against the scan, not a narrowing.
+      //
+      // `passed` is the other outcome, and it is dead in practice rather than
+      // merely unhandled: the planner flips a passed entry to `completed`
+      // before this subject is resolved again.
+      if (resolution.state?.outcome?.result === 'needs_remediation') {
+        return action('retry', 'Print a fresh sheet');
+      }
+      return null;
+
     default:
       return null;
   }
@@ -175,11 +196,19 @@ function waitingSentence(resolution) {
       // Tell a grown-up." The card says the same.
       return TELL_A_GROWN_UP;
     default:
-      // Every other state is a wait for the card's purposes — including
-      // `outcome_recorded`, whose retry is a NEW session with a fresh variant
-      // (`OpenRemediation`) rather than anything this card can offer. Use the
-      // move's own label so the child is told something rather than left
-      // staring at a bare exit.
+      // Every other state is a wait for the card's purposes: `submitted`,
+      // `graded`, `launch_dispatched`, a passed `outcome_recorded`, and the
+      // terminal states. Use the move's own label so the child is told
+      // something rather than left staring at a bare exit.
+      //
+      // CAUTION for whoever adds a state here: that label ultimately comes
+      // from the reducer's `nextAction`, whose wording is written for PAPER —
+      // several of its entries read "Scan your ticket to…". None of those
+      // states reach this branch today (each is handled explicitly above), so
+      // what lands here is surface-neutral ("A grown-up will check this",
+      // "Waiting for the work to be done"). Widening this default without
+      // checking `computeNextAction` would put a scanner instruction on a
+      // keypad.
       return resolution.move?.label ?? TELL_A_GROWN_UP;
   }
 }
