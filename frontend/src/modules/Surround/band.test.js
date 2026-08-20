@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
-  placedSegments, activeSegmentIndex, roman,
+  placedSegments, activeSegmentIndex, roman, placedRailSegments, railGroups,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -609,5 +609,86 @@ describe('which segment is sounding', () => {
     expect(roman(undefined, 2)).toBe('III.');
     // Past the table, the number itself is a better answer than nothing.
     expect(roman(14, 0)).toBe('14.');
+  });
+});
+
+describe('placedRailSegments', () => {
+  const seg = (duration, extra = {}) => ({ name: 'x', duration, ...extra });
+
+  it('keeps every segment that has width, and remembers where it sat', () => {
+    expect(placedRailSegments([seg(10), seg(0), seg(5)]).map((p) => p.index)).toEqual([0, 2]);
+  });
+
+  /**
+   * A zero-duration segment is the store's documented "this segment's timing was
+   * never authored" — it shares its offset with whatever follows and can never
+   * be current. Drawing it would put a hairline on the rail claiming a piece of
+   * music occupies no time.
+   */
+  it('drops a segment with no width, whatever shape the absence takes', () => {
+    expect(placedRailSegments([seg(0), seg(undefined), seg(null), seg('nope'), seg(-4), null]))
+      .toEqual([]);
+  });
+
+  it('accepts a duration that survived YAML as a string', () => {
+    expect(placedRailSegments([seg('12')]).map((p) => p.index)).toEqual([0]);
+  });
+
+  it('answers with an empty rail for anything that is not one', () => {
+    expect(placedRailSegments(undefined)).toEqual([]);
+    expect(placedRailSegments('segments')).toEqual([]);
+  });
+});
+
+describe('railGroups', () => {
+  const run = (index, title, duration) => ({
+    segment: { duration, group: index === null ? null : { work: `w${index}`, title, index } },
+  });
+
+  it('gives one entry per consecutive run, sized by the run’s sounding seconds', () => {
+    expect(railGroups([run(0, 'Op. 10', 10), run(0, 'Op. 10', 10), run(1, 'Op. 25', 20)]))
+      .toEqual([
+        { title: 'Op. 10', index: 0, from: 0, count: 2, span: 20 },
+        { title: 'Op. 25', index: 1, from: 2, count: 1, span: 20 },
+      ]);
+  });
+
+  /**
+   * The case the work slug cannot answer. A container naming one work twice gets
+   * two headings — a set played twice is two appearances — and the store stamps
+   * the two runs with different indexes for exactly this reading. Object
+   * identity would say the same thing on the server and nothing at all here: the
+   * payload crosses the wire as JSON, and `JSON.parse` gives every segment its
+   * own group object.
+   */
+  it('separates two runs of the SAME work by their index, not their slug', () => {
+    const twice = railGroups([run(0, 'Op. 10', 10), run(1, 'Nocturne', 10), run(2, 'Op. 10', 10)]);
+    expect(twice.map((g) => g.title)).toEqual(['Op. 10', 'Nocturne', 'Op. 10']);
+    expect(twice.map((g) => g.from)).toEqual([0, 1, 2]);
+  });
+
+  it('folds consecutive ungrouped segments into ONE null run', () => {
+    expect(railGroups([run(null, null, 5), run(null, null, 5), run(null, null, 5)]))
+      .toEqual([{ title: null, index: null, from: 0, count: 3, span: 15 }]);
+  });
+
+  it('closes a run when an ungrouped segment interrupts it', () => {
+    expect(railGroups([run(0, 'A', 1), run(null, null, 1), run(0, 'A', 1)]).map((g) => g.title))
+      .toEqual(['A', null, 'A']);
+  });
+
+  /**
+   * The store stamps every group with a number. One that arrives without a
+   * usable index is malformed, and an unlabelled stretch of rail is the honest
+   * rendering of a heading we cannot place — better than guessing which run it
+   * belongs to and printing one heading over two different sets.
+   */
+  it('degrades a group with no usable index to ungrouped rather than guessing', () => {
+    const nameless = [{ segment: { duration: 4, group: { work: 'a', title: 'A' } } }];
+    expect(railGroups(nameless)).toEqual([{ title: null, index: null, from: 0, count: 1, span: 4 }]);
+  });
+
+  it('answers with no runs for anything that is not a rail', () => {
+    expect(railGroups(undefined)).toEqual([]);
   });
 });

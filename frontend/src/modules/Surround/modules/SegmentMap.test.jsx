@@ -1484,3 +1484,287 @@ describe('SegmentMap — logging the new decisions', () => {
     expect(logger.debug.mock.calls.filter(([n]) => n === 'surround.band.side')).toHaveLength(0);
   });
 });
+
+/* ---------------------------------------------------------------------------
+   THE COMPOSED RAIL — one frame across many media items.
+
+   `payload.segments` is not `payload.pieceSegments` with a longer name. It is
+   every PART's segments concatenated onto one sounding-time axis: each entry
+   knows the media item it lives in (`contentId`), its span inside that item
+   (`start`/`end`), and where it sits on the container (`offset`/`duration`).
+   `pieceSegments` is only what the work itself authored, which for a seven-part
+   recital is seven unplayable `work:` references and for a single polonaise is
+   one entry or none. Drawing the wrong one is why a seven-polonaise container
+   rendered as a single segment.
+
+   Every fixture below is the shape `YamlSurroundStore` actually publishes —
+   the Eroica's numbers are read off the production data volume — so a spec that
+   passes here is a spec about the payload the frame is handed, not about a
+   shape invented for a test.
+   --------------------------------------------------------------------------- */
+describe('SegmentMap — the composed rail', () => {
+  /** Two études in one episode, one in another: three segments, two groups. */
+  const TWO_OPUS = {
+    contentId: 'plex:ep1',
+    segments: [
+      { n: 1, name: 'One', contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10, part: 0, group: { work: 'a', title: 'Op. 10', index: 0 } },
+      { n: 2, name: 'Two', contentId: 'plex:ep1', start: 10, end: 20, offset: 10, duration: 10, part: 0, group: { work: 'a', title: 'Op. 10', index: 0 } },
+      { n: 1, name: 'Three', contentId: 'plex:ep2', start: 0, end: 20, offset: 20, duration: 20, part: 1, group: { work: 'b', title: 'Op. 25', index: 1 } },
+    ],
+    timeline: {
+      totalSounding: 40,
+      parts: [{ contentId: 'plex:ep1', index: 0, sounding: 20 }, { contentId: 'plex:ep2', index: 1, sounding: 20 }],
+    },
+  };
+
+  /**
+   * The recital the wave exists for: seven whole media items, seven works, and
+   * therefore seven headings. Durations are the polonaises' real running times.
+   */
+  const POLONAISE_NAMES = [
+    ['Polonaise No. 1 in C-sharp minor, Op. 26 No. 1', 543],
+    ['Polonaise No. 2 in E-flat minor, Op. 26 No. 2', 456],
+    ['Polonaise No. 3 in A major, Op. 40 No. 1', 292],
+    ['Polonaise No. 4 in C minor, Op. 40 No. 2', 431],
+    ['Polonaise No. 5 in F-sharp minor, Op. 44', 640],
+    ['Polonaise No. 6 in A-flat major, Op. 53', 388],
+    ['Polonaise-Fantaisie in A-flat major, Op. 61', 761],
+  ];
+  const POLONAISES = (() => {
+    let offset = 0;
+    const segments = POLONAISE_NAMES.map(([name, duration], i) => {
+      const segment = {
+        n: 1,
+        name,
+        contentId: `plex:69623${8 + i}`,
+        part: i,
+        start: 0,
+        end: duration,
+        offset,
+        duration,
+        group: { work: `chopin/polonaise-${i}`, title: name, index: i },
+      };
+      offset += duration;
+      return segment;
+    });
+    return {
+      contentId: 'plex:696238',
+      piece: { title: 'Polonaises' },
+      segments,
+      timeline: {
+        totalSounding: offset,
+        parts: segments.map((c, i) => ({ contentId: c.contentId, index: i, sounding: c.duration })),
+      },
+    };
+  })();
+
+  /**
+   * The Eroica as the store publishes it TODAY — one part, four segments, no
+   * groups. Read off the production data volume: the first movement starts at
+   * 21.35 s and the music stops at 2955, so the rail's sounding total is 2933.65
+   * rather than the file's 3223.
+   */
+  const EROICA_COMPOSED = {
+    contentId: 'plex:663134',
+    piece: { title: 'Symphony No. 3', musicEndsAt: 2955 },
+    segments: [
+      { n: 1, name: 'Allegro con brio', contentId: 'plex:663134', part: 0, start: 21.35, end: 976, offset: 0, duration: 954.65 },
+      { n: 2, name: 'Marcia funebre. Adagio assai', contentId: 'plex:663134', part: 0, start: 976, end: 1925, offset: 954.65, duration: 949 },
+      { n: 3, name: 'Scherzo. Allegro vivace', contentId: 'plex:663134', part: 0, start: 1925, end: 2278, offset: 1903.65, duration: 353 },
+      { n: 4, name: 'Finale. Allegro molto', contentId: 'plex:663134', part: 0, start: 2278, end: 2955, offset: 2256.65, duration: 677 },
+    ],
+    timeline: { totalSounding: 2933.65, parts: [{ contentId: 'plex:663134', index: 0, sounding: 2933.65 }] },
+  };
+
+  const labels = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-group-label"]')].map((e) => e.textContent);
+  const bases = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-group-label"]')].map((e) => parseFloat(e.style.flexBasis));
+
+  it('renders one segment per rail segment and one label per group', () => {
+    const { container } = renderMap({ data: TWO_OPUS, position: 5, duration: 40 });
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(3);
+    expect(labels(container)).toEqual(['Op. 10', 'Op. 25']);
+  });
+
+  /**
+   * THE ACCEPTANCE CASE. Seven media items, seven works, one rail. Before this
+   * wave the module drew `pieceSegments`, which for this container is seven
+   * `work:` references with no timing — so the rail rendered as one segment or
+   * as nothing at all.
+   */
+  it('draws seven polonaises as seven segments under seven headings', () => {
+    const { container } = renderMap({ data: POLONAISES, position: 0, duration: 543 });
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(7);
+    expect(labels(container)).toEqual(POLONAISE_NAMES.map(([name]) => name));
+  });
+
+  it('takes segment widths from `duration`, not from the gaps between starts', () => {
+    // Every part restarts its own clock at 0, so start deltas are meaningless
+    // across a boundary: segment 3 starts at 0 in its own file having begun at
+    // 20 s on the rail. Widths that read start deltas would make it zero-width.
+    const w = widths(renderMap({ data: TWO_OPUS, position: 5, duration: 40 }).container);
+    expect(w).toEqual([25, 25, 50]);
+  });
+
+  it('sizes each heading by the sounding seconds of the run it spans', () => {
+    const b = bases(renderMap({ data: TWO_OPUS, position: 5, duration: 40 }).container);
+    expect(b[0]).toBeCloseTo(50, 6);   // two ten-second études
+    expect(b[1]).toBeCloseTo(50, 6);   // one twenty-second étude
+  });
+
+  it('lights nothing while dead time plays', () => {
+    const dead = {
+      contentId: 'plex:ep1',
+      segments: [{ n: 1, name: 'One', contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10 }],
+      timeline: { totalSounding: 10, parts: [{ contentId: 'plex:ep1', index: 0, sounding: 10 }] },
+    };
+    const { container } = renderMap({ data: dead, position: 12, duration: 30 });
+    // The rail is DRAWN — asserting "nothing is active" against a rail that
+    // rendered nothing at all is the vacuous pass this codebase has been bitten
+    // by, and it is what an empty `segments` would give us here.
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(1);
+    expect(container.querySelectorAll('.surround-segment-map__segment--active')).toHaveLength(0);
+    expect(states(container)).toEqual(['elapsed']);
+  });
+
+  /**
+   * The whole reason `segmentAt` takes a contentId. Position 5 is inside the
+   * first étude of episode 1 and inside the third étude of episode 2, and the
+   * only thing that tells the two apart is which file is playing.
+   */
+  it('resolves the sounding segment by the media item, not by the number alone', () => {
+    expect(states(renderMap({ data: TWO_OPUS, position: 5, duration: 40 }).container))
+      .toEqual(['active', 'future', 'future']);
+    const inPartTwo = { ...TWO_OPUS, contentId: 'plex:ep2' };
+    expect(states(renderMap({ data: inPartTwo, position: 5, duration: 40 }).container))
+      .toEqual(['elapsed', 'elapsed', 'active']);
+  });
+
+  it('puts the playhead on the CONTAINER’s axis, not on the playing file’s', () => {
+    // 5 s into episode 2 is 25 s along a 40 s rail — 62.5%. Reading the file's
+    // own position instead would put it at 12.5%, inside the first étude.
+    const { container } = renderMap({ data: { ...TWO_OPUS, contentId: 'plex:ep2' }, position: 5, duration: 40 });
+    expect(headPct(container.querySelector('[data-testid="surround-playhead"]'))).toBeCloseTo(62.5, 3);
+  });
+
+  it('sweeps the sounding segment’s fill from the container’s own clock', () => {
+    const { container } = renderMap({ data: { ...TWO_OPUS, contentId: 'plex:ep2' }, position: 5, duration: 40 });
+    expect(fills(container)).toEqual([100, 100, 25]);
+  });
+
+  /**
+   * A container may name the same work twice — a set played twice is two
+   * appearances, and the store numbers them 0 and 1 for exactly this. Grouping
+   * by the work SLUG would print one heading over both runs; grouping by object
+   * identity cannot be done here at all, because the payload crosses the wire as
+   * JSON and `JSON.parse` gives every segment its own group object. The index is
+   * the identity that survives the crossing.
+   */
+  it('gives a work named twice two headings, not one', () => {
+    const twice = {
+      contentId: 'plex:ep1',
+      segments: [
+        { n: 1, name: 'First time', contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10, group: { work: 'a', title: 'Op. 10', index: 0 } },
+        { n: 1, name: 'Interlude', contentId: 'plex:ep2', start: 0, end: 10, offset: 10, duration: 10, group: { work: 'b', title: 'Nocturne', index: 1 } },
+        { n: 1, name: 'Second time', contentId: 'plex:ep3', start: 0, end: 10, offset: 20, duration: 10, group: { work: 'a', title: 'Op. 10', index: 2 } },
+      ],
+      timeline: { totalSounding: 30, parts: [] },
+    };
+    expect(labels(renderMap({ data: twice, position: 0, duration: 30 }).container))
+      .toEqual(['Op. 10', 'Nocturne', 'Op. 10']);
+  });
+
+  it('renders NO heading row at all when nothing on the rail is grouped', () => {
+    const { container } = renderMap({ data: EROICA_COMPOSED, position: 100, duration: DURATION });
+    // Four segments first: "no heading row" is only a claim about a rail that
+    // rendered, and an empty rail would satisfy the two assertions below for
+    // entirely the wrong reason.
+    expect(widths(container)).toHaveLength(4);
+    expect(container.querySelector('[data-testid="surround-segment-groups"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-segment-map"]').className)
+      .not.toContain('surround-segment-map--grouped');
+  });
+
+  /**
+   * THE MIGRATION SAFETY NET. The Eroica's payload has carried a composed rail
+   * since the store learned to publish one, so this module renders it through
+   * the new path on every screen in the fleet. Four segments, in the same order,
+   * proportional to the same music.
+   */
+  it('renders the Eroica as four segments, unchanged, through the composed path', () => {
+    const { container } = renderMap({ data: EROICA_COMPOSED, position: 100, duration: DURATION });
+    const w = widths(container);
+    expect(w).toHaveLength(4);
+    expect(w[0]).toBeCloseTo((954.65 / 2933.65) * 100, 3);
+    expect(w[1]).toBeCloseTo((949 / 2933.65) * 100, 3);
+    expect(w[2]).toBeCloseTo((353 / 2933.65) * 100, 3);
+    expect(w[3]).toBeCloseTo((677 / 2933.65) * 100, 3);
+    expect(w.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 6);
+    expect(states(container)).toEqual(['active', 'future', 'future', 'future']);
+  });
+
+  /**
+   * `musicEndsAt` is a fact about ONE file's applause. On a composed rail the
+   * axis ends at the container's sounding total, and reading the piece's field
+   * instead would end a 59-minute recital at the first polonaise's final chord.
+   */
+  it('ends the composed rail at the container’s sounding total, not at musicEndsAt', () => {
+    const shortEnd = { ...POLONAISES, piece: { title: 'Polonaises', musicEndsAt: 543 } };
+    const w = widths(renderMap({ data: shortEnd, position: 0, duration: 543 }).container);
+    expect(w).toHaveLength(7);
+    expect(w[0]).toBeCloseTo((543 / 3511) * 100, 3);
+  });
+
+  /**
+   * A zero-duration segment is the store's documented "this segment's timing was
+   * never authored". It has no width to draw and can never be current, so it is
+   * dropped from the rail — and the active index has to survive the renumbering
+   * that dropping it causes.
+   */
+  it('drops an untimed segment and still lights the right one after it', () => {
+    const untimed = {
+      contentId: 'plex:ep2',
+      segments: [
+        { n: 1, name: 'Timed', contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10 },
+        { n: 2, name: 'Untimed', contentId: 'plex:ep1', offset: 10, duration: 0 },
+        { n: 1, name: 'After', contentId: 'plex:ep2', start: 0, end: 10, offset: 10, duration: 10 },
+      ],
+      timeline: { totalSounding: 20, parts: [] },
+    };
+    const { container } = renderMap({ data: untimed, position: 5, duration: 20 });
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(2);
+    expect(states(container)).toEqual(['elapsed', 'active']);
+  });
+
+  /**
+   * Both lists are present on every container payload, and they disagree: the
+   * rail has seven entries and `pieceSegments` has seven references with no
+   * timing at all. Reading the wrong one renders nothing.
+   */
+  it('prefers the composed rail over the piece’s own segment list', () => {
+    const both = {
+      ...POLONAISES,
+      pieceSegments: POLONAISE_NAMES.map(([name], i) => ({ work: `chopin/polonaise-${i}`, name, start: undefined })),
+    };
+    expect(widths(renderMap({ data: both, position: 0, duration: 543 }).container)).toHaveLength(7);
+  });
+
+  it('falls back to the piece’s segments when the payload carries no rail', () => {
+    // A payload built before the store published `segments` at all. Four
+    // segments, off `pieceSegments`, exactly as the rest of this file asserts.
+    expect(widths(renderMap({ position: 976 }).container)).toHaveLength(4);
+  });
+
+  it('reserves the heading row’s height so a long set title cannot grow the band', async () => {
+    const rule = (await sass.compileAsync(path.join(__dirname, 'SegmentMap.scss'), {
+      loadPaths: [path.join(__dirname, '..')],
+    })).css;
+    const block = rule.match(/\.surround-segment-map--grouped\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(block, 'the grouped rail no longer declares a reserved row height').toMatch(/--group-row:\s*[\d.]+rem/);
+    expect(block, 'the grouped rail’s floor no longer accounts for the row').toMatch(/min-height:\s*calc\([^)]*--group-row/);
+    const label = rule.match(/\.surround-segment-map__group\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(label, 'a heading that wraps is a band that changes height').toMatch(/white-space:\s*nowrap/);
+    expect(label, 'a heading with no ellipsis is a heading cut mid-word').toMatch(/text-overflow:\s*ellipsis/);
+  });
+});
