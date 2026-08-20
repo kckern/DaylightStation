@@ -272,7 +272,11 @@ describe('SegmentMap', () => {
   it('logs the segment change once, with the contentId', () => {
     const logger = makeLogger();
     const { rerender } = renderMap({ position: 0, logger });
-    const changes = () => logger.debug.mock.calls.filter((c) => c[0] === 'surround.segment.change');
+    // INFO, NOT DEBUG. Debug events are dropped by the shipper and never reach
+    // the log store, so a rail state logged at debug is invisible the moment
+    // nobody is holding a devtools window open on the screen itself — which is
+    // exactly when you need to know what it drew.
+    const changes = () => logger.info.mock.calls.filter((c) => c[0] === 'surround.segment.change');
     expect(changes()).toHaveLength(1);
     expect(changes()[0][1]).toMatchObject({ contentId: 'plex:663134', n: 1 });
 
@@ -1475,7 +1479,7 @@ describe('SegmentMap — logging the new decisions', () => {
     }, () => {
       const logger = makeLogger();
       renderMap({ position: 2000, logger });
-      const density = logger.debug.mock.calls.filter(([n]) => n === 'surround.rail.density');
+      const density = logger.info.mock.calls.filter(([n]) => n === 'surround.rail.density');
       expect(density.length, 'the rail chose a density and said nothing about it')
         .toBeGreaterThanOrEqual(1);
       const last = density[density.length - 1][1];
