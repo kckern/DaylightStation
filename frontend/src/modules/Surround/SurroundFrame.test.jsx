@@ -600,7 +600,10 @@ describe('SurroundFrame — the shipped composition', () => {
   // That is what keeps the portrait plate and the city figure on real paper.
   it('leaves --programme alone so the rail’s mats stay paper', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const rail = css.match(/\.surround-frame__region--right \{[^}]*\}/)[0];
+    // The rail rule is shared with the lyric region (one column, two
+    // contents), so the selector is a LIST. Matching the whole list is
+    // the assertion that survives the next region joining it.
+    const rail = css.match(/\.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
     expect(rail).toContain('--ink:');
     expect(rail).not.toMatch(/--programme:\s/);
     expect(css).toMatch(/\.surround-frame \{[^}]*--programme: #efe6d2/);
@@ -628,7 +631,10 @@ describe('SurroundFrame — the shipped composition', () => {
 
   it('keeps the paper fibre on the dark rail so the stock keeps its tooth', () => {
     const css = withStyles().replace(/\s+/g, ' ');
-    const rail = css.match(/\.surround-frame__region--right \{[^}]*\}/)[0];
+    // The rail rule is shared with the lyric region (one column, two
+    // contents), so the selector is a LIST. Matching the whole list is
+    // the assertion that survives the next region joining it.
+    const rail = css.match(/\.surround-frame__region--right[^{]*\{[^}]*\}/)[0];
     expect(rail).toContain('var(--programme-fibre)');
     expect(rail).toContain('multiply');
   });

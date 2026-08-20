@@ -70,7 +70,7 @@ import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
-  placedRailSegments, railGroups, railIsFlat,
+  placedRailSegments, railGroups, railIsFlat, collapseInactiveGroups,
   soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
@@ -261,9 +261,60 @@ export default function SegmentMap({
   // can read. So an ancestry two deep or more prints its OUTERMOST level, and
   // everything shallower is unchanged — one level, its own group, as before.
   const nested = composed && placedRail.some(({ segment }) => (segment?.groupPath?.length ?? 0) > 1);
+
+  /**
+   * WHERE THE TRANSPORT IS ON THE RAIL — hoisted above the accordion, because
+   * which Part is drawn in full depends on which Part is sounding. It is the
+   * same `segmentAt` call the playhead uses further down; hoisting it means one
+   * answer, not two that could disagree at a boundary.
+   */
+  const mapped = useMemo(
+    () => (composed ? segmentAt({ segments: rail, contentId, position }) : null),
+    [composed, rail, contentId, position],
+  );
+
+  /**
+   * THE SOUNDING GROUP, at the level the headings print.
+   *
+   * In a gap — a Part break, the applause before the first number — nothing is
+   * sounding and `segmentAt` answers -1. The rail does NOT unfold there: it
+   * stays with the Part it last heard, because a rail that expanded to all 53
+   * for the ninety seconds between Parts and folded again on the downbeat would
+   * be doing its most violent redraw at the exact moment nobody asked for one.
+   */
+  const activeGroupIndex = useMemo(() => {
+    if (!nested) return null;
+    const indexOf = (p) => {
+      const path = p?.segment?.groupPath;
+      const raw = Number(path?.[0]?.index);
+      return Number.isFinite(raw) ? raw : null;
+    };
+    if (mapped && mapped.index >= 0) {
+      const here = placedRail.find((p) => p.index === mapped.index);
+      if (here) return indexOf(here);
+    }
+    let last = null;
+    for (const p of placedRail) {
+      if (p.segment.offset + p.segment.duration <= (mapped?.globalSeconds ?? 0)) last = p;
+      else break;
+    }
+    return last ? indexOf(last) : indexOf(placedRail[0]);
+  }, [nested, mapped, placedRail]);
+
+  /**
+   * THE DRAWN RAIL. On everything shipped today this IS `placedRail` — the same
+   * array, not a copy — so no instrumental work changes by a pixel. A Part >
+   * Scene > Number work folds its silent Parts to one segment each; see
+   * `collapseInactiveGroups` for why that keeps the axis intact.
+   */
+  const drawnRail = useMemo(
+    () => (nested ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 }) : placedRail),
+    [nested, placedRail, activeGroupIndex],
+  );
+
   const groups = useMemo(
-    () => (composed ? railGroups(placedRail, nested ? { depth: 0 } : {}) : []),
-    [composed, placedRail, nested],
+    () => (composed ? railGroups(drawnRail, nested ? { depth: 0 } : {}) : []),
+    [composed, drawnRail, nested],
   );
   const flat = composed && railIsFlat(groups);
   const grouped = !flat && groups.some((g) => g.title);
@@ -282,7 +333,7 @@ export default function SegmentMap({
   // part boundary to whichever segment happened to precede it.
   const segments = useMemo(() => {
     if (composed) {
-      return placedRail.map(({ segment: m }, i) => ({
+      return drawnRail.map(({ segment: m }, i) => ({
         ...engrave(m),
         // THE NUMBER THE GUTTER SETS. On a grouped rail it is the corpus's own:
         // étude 5 is `No. 5` under its opus heading, and the mark has to match
@@ -313,7 +364,7 @@ export default function SegmentMap({
         natural: (stop - start) / span,
       };
     });
-  }, [composed, placedRail, totalSounding, flat, placed, end]);
+  }, [composed, drawnRail, totalSounding, flat, placed, end]);
 
   const first = segments.length ? segments[0].start : 0;
 
@@ -326,10 +377,6 @@ export default function SegmentMap({
   // item's id: `SurroundFrame` stamps the seam's id onto the payload before any
   // module sees it, which is what makes this resolvable without widening the
   // module contract.
-  const mapped = useMemo(
-    () => (composed ? segmentAt({ segments: rail, contentId, position }) : null),
-    [composed, rail, contentId, position],
-  );
   const railPosition = composed ? mapped.globalSeconds : position;
 
   // -1 = NO SEGMENT IS SOUNDING — the applause after the final chord, and
@@ -345,10 +392,10 @@ export default function SegmentMap({
   const activeIndex = useMemo(() => {
     if (composed) {
       if (!mapped || mapped.index < 0) return -1;
-      return placedRail.findIndex((p) => p.index === mapped.index);
+      return drawnRail.findIndex((p) => p.index === mapped.index);
     }
     return activeSegmentIndex({ placed: segments, position, end });
-  }, [composed, mapped, placedRail, segments, position, end]);
+  }, [composed, mapped, drawnRail, segments, position, end]);
   /**
    * THE RAIL HAS NO SEGMENT FOR THE ITEM ON SCREEN.
    *

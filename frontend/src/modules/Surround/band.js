@@ -264,6 +264,104 @@ export function placedRailSegments(segments) {
 }
 
 /**
+ * THE ACCORDION: DRAW THE GROUP THAT IS SOUNDING, FOLD THE REST.
+ *
+ * Messiah is the piece this exists for. Fifty-three numbers on one rail chip at
+ * about fifteen pixels each on the office screen — narrower than a numeral —
+ * so the rail degrades to a row of ticks that names nothing and locates
+ * nothing. Every remedy that keeps all 53 drawn fails the same way, because the
+ * problem is not the label ladder; it is that 53 does not fit.
+ *
+ * So the rail stops drawing all of them. The Part that is sounding is drawn in
+ * full — its numbers get the width they always wanted — and every other Part
+ * folds into ONE segment carrying that Part's name. Three Parts become "Part
+ * One" + 23 numbers + "Part Three", which is a rail a viewer can read.
+ *
+ * IT IS THE SAME AXIS, NOT A ZOOM. A folded segment takes exactly the width of
+ * everything it replaced (its duration is their sum, its offset is the first
+ * one's), so the rule still runs from the work's first note to its last, the
+ * playhead still lands where the clock says, and the proportions the accordion,
+ * the bond and the numeral gutter all measure against are untouched. Nothing
+ * downstream learns a new coordinate system — which is why this is a filter on
+ * the placed list rather than a mode every consumer has to understand.
+ *
+ * A FOLDED SEGMENT CARRIES NO RAIL INDEX (`index: null`). The playhead is
+ * resolved by matching a rail index (see `SegmentMap`'s `activeIndex`), and a
+ * fold only ever replaces segments that are NOT sounding; a null makes that
+ * structural rather than merely true today.
+ *
+ * @param {Array<{index:number, segment:object}>} placed from `placedRailSegments`.
+ * @param {object} opts
+ * @param {number|null} opts.activeGroupIndex The `group.index` of the sounding
+ *   group at `depth`. Null (nothing sounding, no ancestry) folds nothing.
+ * @param {number} [opts.depth] Which level of the ancestry folds. 0 is outermost.
+ * @returns {Array<{index:number|null, segment:object}>}
+ */
+export function collapseInactiveGroups(placed, { activeGroupIndex = null, depth = 0 } = {}) {
+  const list = Array.isArray(placed) ? placed : [];
+  if (list.length === 0 || activeGroupIndex === null || activeGroupIndex === undefined) return list;
+
+  const groupOf = (segment) => {
+    const path = Array.isArray(segment?.groupPath) ? segment.groupPath : null;
+    if (!path?.length) return null;
+    return path[Math.min(depth, path.length - 1)] ?? null;
+  };
+  const indexOf = (segment) => {
+    const raw = Number(groupOf(segment)?.index);
+    return Number.isFinite(raw) ? raw : null;
+  };
+
+  // A rail with no ancestry, or one whose every segment is in the active group,
+  // has nothing to fold and must come back IDENTICAL — not a rebuilt copy. Every
+  // instrumental work in the corpus takes this path, and a new array identity
+  // would churn the memos downstream at the transport's 10 Hz.
+  const groups = new Set(list.map((p) => indexOf(p.segment)));
+  groups.delete(null);
+  if (groups.size <= 1) return list;
+
+  const out = [];
+  let open = null;
+  for (const entry of list) {
+    const gi = indexOf(entry.segment);
+    if (gi === activeGroupIndex || gi === null) {
+      open = null;
+      out.push(entry);
+      continue;
+    }
+    const duration = Number(entry.segment?.duration) || 0;
+    if (open && open.groupIndex === gi) {
+      open.segment.duration += duration;
+      open.segment.count += 1;
+      continue;
+    }
+    const group = groupOf(entry.segment);
+    const title = typeof group?.title === 'string' && group.title.trim() ? group.title.trim() : null;
+    open = {
+      groupIndex: gi,
+      index: null,
+      segment: {
+        contentId: entry.segment?.contentId ?? null,
+        // The fold's NAME is the group's title, because that is the only thing
+        // it can honestly claim to be: it stands in for the whole Part, not for
+        // any number inside it.
+        name: title,
+        group,
+        groupPath: entry.segment?.groupPath ?? null,
+        offset: Number(entry.segment?.offset) || 0,
+        duration,
+        // No numeral. A fold is not the nth number of anything, and a gutter
+        // mark under it would be a number the corpus never wrote.
+        n: null,
+        collapsed: true,
+        count: 1,
+      },
+    };
+    out.push(open);
+  }
+  return out.map(({ index, segment }) => ({ index, segment }));
+}
+
+/**
  * Consecutive runs of rail segments sharing one group — the labels above the rule.
  *
  * A RUN IS DETECTED BY `group.index`, AND THAT IS THE SERIALISED FORM OF
