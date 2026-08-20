@@ -3,6 +3,7 @@ import {
   TOKEN_CLASSES,
   TOKEN_PREFIX,
   createTokenRecord,
+  isAccessCodeLive,
   isSchoolToken,
   mintToken,
   resolveTokenState,
@@ -324,5 +325,128 @@ describe('resolveTokenState: recovery', () => {
       );
       expect(out.status).toBe('already_done');
     });
+  });
+});
+
+describe('access code on a token record', () => {
+  const base = {
+    tokenClass: 'subject_next',
+    subject: { learnerId: 'test-user', subject: 'mathematics' },
+    at: '2026-08-20T16:00:00Z',
+    expiresAt: '2026-08-27T16:00:00Z', // the QR's week
+  };
+  const TOKEN = 'sch:ABCDEFGHJKLMNPQR';
+  const CODE = '481920';
+  const CODE_EXPIRES = '2026-08-21T06:00:00Z'; // the code's study day
+
+  const withCode = (over = {}) => createTokenRecord({
+    token: TOKEN, ...base, accessCode: CODE, accessCodeExpiresAt: CODE_EXPIRES, ...over,
+  });
+
+  it('carries accessCode and accessCodeExpiresAt onto the record', () => {
+    const record = withCode();
+    expect(record.accessCode).toBe(CODE);
+    expect(record.accessCodeExpiresAt).toBe(CODE_EXPIRES);
+    // The token's own week is untouched by the code's day.
+    expect(record.expiresAt).toBe(base.expiresAt);
+  });
+
+  it.each([
+    ['too short', '4819'],
+    ['too long', '4819201'],
+    ['non-digits', '48192a'],
+    ['padded with spaces', ' 481920 '],
+    ['a number, not a string', 481920],
+    ['empty', ''],
+  ])('rejects a malformed code (%s)', (_label, accessCode) => {
+    expect(() => withCode({ accessCode }))
+      .toThrow(expect.objectContaining({ code: 'INVALID_SCHOOL_ACCESS_CODE' }));
+  });
+
+  it.each([
+    ['omitted', undefined],
+    ['null', null],
+    ['not a timestamp', 'tomorrow'],
+    ['empty', ''],
+  ])('rejects a code whose study-day clock is %s', (_label, accessCodeExpiresAt) => {
+    expect(() => createTokenRecord({ token: TOKEN, ...base, accessCode: CODE, accessCodeExpiresAt }))
+      .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_MISSING_EXPIRY' }));
+  });
+
+  it('rejects a clock with no code to expire', () => {
+    expect(() => createTokenRecord({ token: TOKEN, ...base, accessCodeExpiresAt: CODE_EXPIRES }))
+      .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_MISSING_CODE' }));
+  });
+
+  it('leaves a record with neither field exactly as it is today', () => {
+    const record = createTokenRecord({ token: TOKEN, ...base });
+    expect(Object.keys(record)).toEqual([
+      'token', 'tokenClass', 'subject', 'issuedAt', 'expiresAt', 'revokedAt',
+    ]);
+    expect(record).toEqual({
+      token: TOKEN,
+      tokenClass: 'subject_next',
+      subject: base.subject,
+      issuedAt: base.at,
+      expiresAt: base.expiresAt,
+      revokedAt: null,
+    });
+    expect(record.subject).not.toBe(base.subject);
+  });
+
+  it('kills the code at the study-day rollover while the printed QR keeps resolving', () => {
+    const record = withCode();
+    const now = '2026-08-21T09:00:00Z'; // past the code's day, inside the token's week
+    expect(isAccessCodeLive(record, now)).toBe(false);
+    expect(resolveTokenState(record, { now }).status).toBe('actionable');
+  });
+
+  it('is live before the rollover', () => {
+    expect(isAccessCodeLive(withCode(), '2026-08-20T18:00:00Z')).toBe(true);
+  });
+
+  it('is dead exactly AT the rollover, not a moment after', () => {
+    expect(isAccessCodeLive(withCode(), CODE_EXPIRES)).toBe(false);
+  });
+
+  it('is false for a revoked record even before the code expires', () => {
+    const record = { ...withCode(), revokedAt: '2026-08-20T17:00:00Z' };
+    expect(isAccessCodeLive(record, '2026-08-20T18:00:00Z')).toBe(false);
+  });
+
+  it.each([
+    ['a record with no code at all', () => createTokenRecord({ token: TOKEN, ...base })],
+    ['null', () => null],
+    ['undefined', () => undefined],
+    ['an array', () => []],
+  ])('is false for %s', (_label, make) => {
+    expect(isAccessCodeLive(make(), '2026-08-20T18:00:00Z')).toBe(false);
+  });
+
+  it.each([
+    ['unparseable accessCodeExpiresAt', { accessCodeExpiresAt: 'not-a-date' }],
+    ['missing accessCodeExpiresAt', { accessCodeExpiresAt: null }],
+    ['missing accessCode', { accessCode: null }],
+  ])('is false when the record is malformed after the fact (%s)', (_label, over) => {
+    // Records reach this predicate from the registry, not only from the constructor.
+    expect(isAccessCodeLive({ ...withCode(), ...over }, '2026-08-20T18:00:00Z')).toBe(false);
+  });
+
+  it('is false for an unparseable now', () => {
+    expect(isAccessCodeLive(withCode(), 'whenever')).toBe(false);
+  });
+
+  it('threads both fields through mintToken', () => {
+    const record = mintToken({
+      ...base, rng: seededRng(), accessCode: CODE, accessCodeExpiresAt: CODE_EXPIRES,
+    });
+    expect(record.accessCode).toBe(CODE);
+    expect(record.accessCodeExpiresAt).toBe(CODE_EXPIRES);
+    expect(record.token).toMatch(/^sch:[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{16}$/);
+  });
+
+  it('mintToken still refuses a code with no clock', () => {
+    expect(() => mintToken({ ...base, rng: seededRng(), accessCode: CODE }))
+      .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_MISSING_EXPIRY' }));
   });
 });
