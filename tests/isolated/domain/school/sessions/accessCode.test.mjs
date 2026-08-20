@@ -62,6 +62,10 @@ describe('mintAccessCode', () => {
     expect(mintAccessCode({ rng: () => 1, taken: free })).toBe('999999');
   });
 
+  it('clamps a negative draw to the bottom of the space, never a signed code', () => {
+    expect(mintAccessCode({ rng: () => -0.5, taken: free })).toBe('000000');
+  });
+
   it('retries until it draws a code that is not taken', () => {
     const code = mintAccessCode({
       rng: seq(0.111111, 0.222222), taken: (c) => c === '111111',
@@ -102,7 +106,7 @@ describe('mintAccessCode', () => {
   });
 
   it('always mints something normalizeAccessCode accepts', () => {
-    [0, 0.5, 1, 0.999999, 0.0000001].forEach((draw) => {
+    [0, 0.5, 1, 0.999999, 0.0000001, -0.5].forEach((draw) => {
       const code = mintAccessCode({ rng: () => draw, taken: free });
       expect(normalizeAccessCode(code)).toBe(code);
     });

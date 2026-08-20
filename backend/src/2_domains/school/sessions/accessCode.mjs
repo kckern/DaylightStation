@@ -94,9 +94,12 @@ export function mintAccessCode({ rng, taken } = {}) {
     // so a miswired rng would print the SAME code on every agenda for every
     // child and nothing downstream would notice.
     //
-    // The `typeof` half is doing real work, not belt-and-braces: `Number(null)`
-    // is 0 and `Number('0.5')` is 0.5, both finite, so a coerce-then-check guard
-    // would wave through exactly the miswirings this exists to catch.
+    // What matters is that this runs BEFORE any coercion. Guarding
+    // `Number(rng())` instead would not work: `Number(null)` is 0, a finite
+    // value that mints `000000`. `Number.isFinite` takes the raw draw directly
+    // because, unlike the global `isFinite`, it does not coerce — it is already
+    // false for null, `'0.5'` and `{}`. The `typeof` clause is belt-and-braces
+    // on top, kept so a future edit cannot reintroduce coercion unnoticed.
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
       throw new DomainInvariantError('mintAccessCode: rng returned a non-numeric draw', {
         code: 'SCHOOL_ACCESS_CODE_RNG_INVALID', details: { draw: raw },
