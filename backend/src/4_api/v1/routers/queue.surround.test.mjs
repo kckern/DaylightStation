@@ -4,6 +4,10 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createQueueRouter } from './queue.mjs';
+// Injected into the router in composition, and injected here for the same
+// reason: the router may not import 3_applications, so the tests exercise the
+// real wiring rather than a shape the router happens to accept.
+import { planSurroundQueue } from '#apps/content/services/surroundQueuePlan.mjs';
 
 const PAYLOAD = {
   id: 'concert-hall',
@@ -37,6 +41,7 @@ const makeApp = ({ items, surroundStore, logger = makeLogger(), localId = 'eroic
     contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId }) },
     queueService: { resolveQueue: vi.fn().mockResolvedValue(items) },
     surroundStore,
+    surroundPlanner: planSurroundQueue,
     logger,
     ...rest
   }));
@@ -178,10 +183,60 @@ describe('queue router container expansion', () => {
       contentIdResolver: { resolve: () => ({ adapter, source: 'plex', localId: '696233' }) },
       queueService: { resolveQueue: vi.fn().mockResolvedValue(shuffledEpisodes) },
       surroundStore: seasonStore(),
+      surroundPlanner: planSurroundQueue,
       logger: makeLogger()
     }));
     const res = await request(app).get('/api/v1/queue/plex:696233');
 
     expect(res.body.items.map((i) => i.contentId)).toEqual(['plex:696234', 'plex:696235']);
+  });
+
+  it('leaves an item the container does not claim with its own sidecar', async () => {
+    // A container covering a STRICT SUBSET of the queue — three of five. The
+    // two it does not name were framed before containers existed and must stay
+    // framed: absent from a rail is not the same as refused a rail.
+    const mixed = [
+      makeItem('plex:696235', 'Études, Op. 25'),
+      makeItem('plex:663134', 'Beethoven: 3. Sinfonie'),
+      makeItem('plex:696234', 'Études, Op. 10'),
+      makeItem('plex:696236', 'Trois nouvelles études'),
+      makeItem('plex:777', 'Unenriched')
+    ];
+    const surroundStore = {
+      lookup: vi.fn((id) => {
+        if (id === 'plex:696233') return SEASON;
+        if (id === 'plex:663134') return PAYLOAD;
+        return null;
+      })
+    };
+    const res = await get({ items: mixed, surroundStore, logger: makeLogger() });
+
+    const byId = Object.fromEntries(res.body.items.map((i) => [i.contentId, i]));
+    expect(byId['plex:696234'].surround.piece.title).toBe('Études');
+    expect(byId['plex:696234'].surroundPart).toBe(0);
+    // Off the rail, but it owns a sidecar — it keeps it, with no part index.
+    expect(byId['plex:663134'].surround).toEqual(PAYLOAD);
+    expect('surroundPart' in byId['plex:663134']).toBe(false);
+    expect(byId['plex:777'].surround).toBeUndefined();
+  });
+
+  it('refuses the whole queue, off-rail items included, when it refuses at all', async () => {
+    const mixed = [
+      makeItem('plex:696235', 'Études, Op. 25'),
+      makeItem('plex:663134', 'Beethoven: 3. Sinfonie'),
+      makeItem('plex:696234', 'Études, Op. 10')
+    ];
+    const surroundStore = {
+      lookup: vi.fn((id) => {
+        if (id === 'plex:696233') return SEASON;
+        if (id === 'plex:663134') return PAYLOAD;
+        return null;
+      })
+    };
+    const res = await get({ items: mixed, surroundStore, surroundEnforceOrder: false, logger: makeLogger() });
+
+    // A refusal is total: even the item with its own good sidecar goes unframed,
+    // because a queue this one cannot vouch for is a queue it frames not at all.
+    expect(res.body.items.every((i) => i.surround === undefined)).toBe(true);
   });
 });
