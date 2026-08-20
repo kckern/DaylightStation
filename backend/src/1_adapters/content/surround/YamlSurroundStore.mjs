@@ -487,6 +487,62 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
+   * Flatten a work's chapters, following `work:` references into their targets.
+   *
+   * A reference resolves to a SUBTREE, not a leaf: naming `chopin/etudes-op-10`
+   * brings its twelve études with it. `group` records which work a chapter came
+   * from, because the rail is flat but the labels above it are not.
+   *
+   * `chapters:` and `movements:` are one key under two names — the corpus has
+   * 1,492 files authored with `movements:` and nothing is being renamed, so a
+   * work that authors neither, or authors `chapters:` empty, resolves to nothing
+   * and the caller falls back to the movements list it always read.
+   *
+   * `group.index` numbers PARTS, not chapters, so it is carried by a counter
+   * threaded through the recursion rather than derived from whatever the last
+   * chapter happened to hold. Deriving it is wrong in two ways at once: an
+   * inline chapter between two references carries no group to read, and a
+   * reference whose target expands to nothing leaves the previous part's number
+   * standing. Both make the second part index 0 again, and the rail then labels
+   * two different sets with one heading.
+   *
+   * @param {Object} work
+   * @param {{works: Map<string,Object>}} library
+   * @param {Set<string>} seen - work keys on the path being expanded, to break cycles
+   * @param {{work: string, title: string, index: number}|null} group
+   * @param {{parts: number}} counter - Parts expanded so far, shared across the whole tree
+   */
+  #resolveChapters(work, library, seen, group = null, counter = { parts: 0 }) {
+    const own = asArray(work.chapters).length ? asArray(work.chapters) : asArray(work.movements);
+    const out = [];
+    for (const entry of own) {
+      if (!isPlainObject(entry)) continue;
+      const ref = typeof entry.work === 'string' ? entry.work.trim() : '';
+      if (!ref) { out.push(group ? { ...entry, group } : entry); continue; }
+
+      if (seen.has(ref)) {
+        this.logger?.warn?.('surround.chapter.cycle', { work: ref });
+        continue;
+      }
+      const target = library.works.get(ref);
+      if (!target) {
+        this.logger?.warn?.('surround.chapter.missing', { work: ref });
+        continue;
+      }
+      // Added before the descent and removed after it, exactly as #loadLibraryDir
+      // guards the corpus walk: the set records the path currently being
+      // expanded, not everything ever expanded. A container that names the same
+      // work twice is a repeat, and a repeat is not a cycle.
+      seen.add(ref);
+      const childGroup = { work: ref, title: target.title ?? ref, index: counter.parts };
+      counter.parts += 1;
+      out.push(...this.#resolveChapters(target, library, seen, childGroup, counter));
+      seen.delete(ref);
+    }
+    return out;
+  }
+
+  /**
    * Warn about authored titles that can never be told apart at rebind time.
    *
    * Once the index is built the collision is already knowable, so nobody should
@@ -614,7 +670,14 @@ export class YamlSurroundStore extends ISurroundStore {
     if (starts.some((v) => v === undefined)) soft.push('starts-entry-invalid');
     if (soft.length) this.#invalid(file, soft);
 
-    const movements = asArray(work.movements);
+    // Seeded with the sidecar's own work so a container that lists itself is a
+    // cycle on the first hop rather than the second. An empty resolution falls
+    // back to the raw movements list: that is the path every corpus file
+    // authored before chapter references existed still takes, and `starts`
+    // pairs positionally with whichever list wins here.
+    const seenRefs = new Set([doc.work]);
+    const resolved = this.#resolveChapters(work, library, seenRefs);
+    const movements = resolved.length ? resolved : asArray(work.movements);
     // Length, not content: an author who timed the wrong number of movements has
     // a different problem from one who mistyped a single value, and a dropped
     // entry above still counts toward the length it was authored at.

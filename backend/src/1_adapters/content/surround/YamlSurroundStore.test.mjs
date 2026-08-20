@@ -1272,3 +1272,154 @@ describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
     expect(store.lookup('plex:663134', '').definition.band).toBeUndefined();
   });
 });
+
+/**
+ * CHAPTER REFERENCES — a chapter may name another work instead of restating it.
+ *
+ * The corpus already authors this: `chopin/etudes.yml` lists its three opus sets
+ * as `- work: chopin/etudes-op-10` rather than copying twenty-seven études into
+ * one file. A reference resolves to a SUBTREE, so the rail stays flat while
+ * `group` records which part each chapter arrived from.
+ */
+describe('YamlSurroundStore — chapter references', () => {
+  // The corpus files the flagship sets under an era folder; the sidecar tree
+  // does not. Both shapes are exercised here because the reference key is
+  // `<composer>/<slug>` at whatever depth the corpus filed the work.
+  const writeChopinSet = (body) => {
+    writeLib('classical/0_flagship/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/0_flagship/chopin/etudes.yml', body);
+    write('classical/chopin/set.yml',
+      'work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:set }\n');
+  };
+
+  it('resolves a chapter that references another work, bringing its own chapters with it', () => {
+    writeLib('classical/0_flagship/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Études, Op. 10"\nmovements:\n  - { n: 1, name: "No. 1 in C major" }\n  - { n: 2, name: "No. 2 in A minor" }\n');
+    writeLib('classical/0_flagship/chopin/etudes.yml',
+      'title: "Études"\nchapters:\n  - work: chopin/etudes-op-10\n');
+    write('classical/chopin/set.yml',
+      'work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:set }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.chapters).toHaveLength(2);
+    expect(r.chapters[0]).toMatchObject({ name: 'No. 1 in C major' });
+    expect(r.chapters[0].group).toEqual({ work: 'chopin/etudes-op-10', title: 'Études, Op. 10', index: 0 });
+  });
+
+  it('breaks a reference cycle instead of recursing forever', () => {
+    writeLib('classical/0_flagship/chopin/a.yml', 'title: A\nchapters:\n  - work: chopin/b\n');
+    writeLib('classical/0_flagship/chopin/b.yml', 'title: B\nchapters:\n  - work: chopin/a\n');
+    write('classical/chopin/cyc.yml',
+      'work: chopin/a\nsurround: concert-hall\nmatch: { contentId: plex:cyc }\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(store.lookup('plex:cyc', '')).not.toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith('surround.chapter.cycle',
+      expect.objectContaining({ work: 'chopin/a' }));
+  });
+
+  it('numbers groups by part, not by whatever the previous chapter happened to carry', () => {
+    // Three chapters, and the middle one is authored inline rather than
+    // referenced — the shape a container takes when a stray movement sits
+    // between two published sets. The index of the SECOND reference is the
+    // assertion that matters: derived from the previous chapter it reads that
+    // inline entry, which belongs to no part and carries no group at all.
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Op. 10"\nmovements:\n  - { n: 1, name: "Op. 10 No. 1" }\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-25.yml',
+      'title: "Op. 25"\nmovements:\n  - { n: 1, name: "Op. 25 No. 1" }\n');
+    writeChopinSet('title: "Études"\nchapters:\n  - work: chopin/etudes-op-10\n'
+      + '  - { n: 0, name: "Interlude" }\n  - work: chopin/etudes-op-25\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.chapters.map((c) => c.name)).toEqual(['Op. 10 No. 1', 'Interlude', 'Op. 25 No. 1']);
+    // The inline chapter is ungrouped; the two referenced parts are 0 and 1.
+    expect(r.chapters.map((c) => c.group?.index)).toEqual([0, undefined, 1]);
+    expect(r.chapters[2].group).toEqual({ work: 'chopin/etudes-op-25', title: 'Op. 25', index: 1 });
+  });
+
+  it('expands the same work twice when two chapters reference it — a repeat is not a cycle', () => {
+    // The guard has to unwind: a set that opens and closes with the same piece
+    // is a legitimate container, and a `seen` that only ever grew would drop the
+    // second appearance and warn a cycle that does not exist.
+    writeLib('classical/0_flagship/chopin/nocturne.yml',
+      'title: Nocturne\nmovements:\n  - { n: 1, name: Nocturne }\n');
+    writeChopinSet('title: Recital\nchapters:\n  - work: chopin/nocturne\n  - work: chopin/nocturne\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.chapters.map((c) => c.name)).toEqual(['Nocturne', 'Nocturne']);
+    expect(r.chapters.map((c) => c.group.index)).toEqual([0, 1]);
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.chapter.cycle', expect.anything());
+  });
+
+  it('warns and drops a reference to a work the corpus does not hold', () => {
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Op. 10"\nmovements:\n  - { n: 1, name: "Op. 10 No. 1" }\n');
+    writeChopinSet('title: "Études"\nchapters:\n  - work: chopin/etudes-op-10\n  - work: chopin/etudes-op-99\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.chapters.map((c) => c.name)).toEqual(['Op. 10 No. 1']);
+    expect(logger.warn).toHaveBeenCalledWith('surround.chapter.missing',
+      expect.objectContaining({ work: 'chopin/etudes-op-99' }));
+  });
+
+  it('follows a reference through a work that is itself a container', () => {
+    // A reference resolves to a subtree, not a leaf: naming a container brings
+    // everything the container names, however deep it nests.
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Op. 10"\nmovements:\n  - { n: 1, name: "Op. 10 No. 1" }\n');
+    writeLib('classical/0_flagship/chopin/inner.yml',
+      'title: Inner\nchapters:\n  - work: chopin/etudes-op-10\n');
+    writeChopinSet('title: Outer\nchapters:\n  - work: chopin/inner\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.chapters.map((c) => c.name)).toEqual(['Op. 10 No. 1']);
+    // The innermost part is the one that owns the chapter: the rail labels a
+    // chapter with the work it was written in, not the container above it.
+    expect(r.chapters[0].group.work).toBe('chopin/etudes-op-10');
+  });
+
+  it('accepts an inline chapters: list as the alias movements: has always been', () => {
+    // Neither key is being renamed. A work may author `chapters:` with no
+    // references in it at all, and it must time exactly as `movements:` does.
+    writeChopinSet('title: "Études"\nchapters:\n  - { n: 1, name: One }\n  - { n: 2, name: Two }\n');
+    write('classical/chopin/set.yml',
+      'work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:set }\n'
+      + 'starts: [0, 60]\nmusicEndsAt: 150\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:set', '');
+
+    expect(r.movements).toEqual([{ n: 1, name: 'One', start: 0 }, { n: 2, name: 'Two', start: 60 }]);
+    expect(r.chapters[1]).toMatchObject({ n: 2, name: 'Two', start: 60, end: 150, offset: 60, duration: 90 });
+    expect(r.timeline.totalSounding).toBe(150);
+  });
+
+  it('leaves a work with no chapters: key resolving from movements, ungrouped', () => {
+    // The 1,492 corpus files that predate this feature all take this path. If
+    // the fallback ever stopped firing, every one of them would render an empty
+    // rail — so assert the Eroica payload is byte-for-byte what it was.
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+
+    expect(r.movements).toEqual([{ n: 1, name: 'Allegro con brio', start: 0 }]);
+    expect(r.chapters).toEqual([
+      { n: 1, name: 'Allegro con brio', start: 0, end: undefined, contentId: 'plex:663134', duration: 0, offset: 0 }
+    ]);
+    expect('group' in r.chapters[0]).toBe(false);
+  });
+});
