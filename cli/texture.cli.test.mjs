@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  bandProfile, textureNovelty, bestBoundaryIn, noveltyCurve,
+  bandProfile, textureNovelty, bestBoundaryIn, noveltyCurve, noveltyAt,
 } from './texture.cli.mjs';
 
 /** A frame is per-second dB in four bands: bass, low-mid, presence, brilliance. */
@@ -106,6 +106,46 @@ describe('bestBoundaryIn', () => {
   it('reports how far it moved from the prediction, so drift is visible', () => {
     const hit = bestBoundaryIn(frames, { centreS: 50, radiusS: 20, halfWindowS: 10 });
     expect(Math.abs(hit.offsetS)).toBeCloseTo(Math.abs(hit.t - 50), 6);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   FRAME RATE MUST NOT BE BAKED IN.
+
+   The four-band, one-second detector failed to localise (22% against 18% by
+   chance), and the diagnosis was that four one-second bands are too coarse a
+   timbre descriptor. Testing that diagnosis means running the same measurement
+   at finer resolution — but the window was expressed in integer seconds and
+   indexed by `t`, so quarter-second frames would silently find no neighbours and
+   return null everywhere.
+   --------------------------------------------------------------------------- */
+describe('noveltyAt — positional, so any frame rate works', () => {
+  const bassy = [-20, -40, -40, -40];
+  const bright = [-40, -40, -40, -20];
+
+  it('measures across a window counted in FRAMES, not seconds', () => {
+    // Quarter-second frames: fractional `t`, which a second-indexed lookup misses.
+    const frames = [
+      ...Array.from({ length: 40 }, (_, i) => ({ t: i * 0.25, bands: bassy })),
+      ...Array.from({ length: 40 }, (_, i) => ({ t: 10 + i * 0.25, bands: bright })),
+    ];
+    const atChange = noveltyAt(frames, 40, { halfWindowFrames: 20 });
+    const inside = noveltyAt(frames, 20, { halfWindowFrames: 20 });
+    expect(atChange).toBeGreaterThan(inside * 5);
+  });
+
+  it('declines at the edges rather than comparing half a window', () => {
+    const frames = Array.from({ length: 30 }, (_, i) => ({ t: i * 0.25, bands: bassy }));
+    expect(noveltyAt(frames, 2, { halfWindowFrames: 20 })).toBeNull();
+  });
+
+  it('handles any band count, so a twelve-band profile needs no new code', () => {
+    const wide = (v) => Array.from({ length: 12 }, (_, i) => (i === v ? -20 : -50));
+    const frames = [
+      ...Array.from({ length: 30 }, (_, i) => ({ t: i * 0.25, bands: wide(0) })),
+      ...Array.from({ length: 30 }, (_, i) => ({ t: 7.5 + i * 0.25, bands: wide(11) })),
+    ];
+    expect(noveltyAt(frames, 30, { halfWindowFrames: 20 })).toBeGreaterThan(0.5);
   });
 });
 

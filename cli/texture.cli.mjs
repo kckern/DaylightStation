@@ -87,6 +87,45 @@ export function textureNovelty(frames, t, { halfWindowS = 10 } = {}) {
   return p.reduce((s, v, i) => s + Math.abs(v - q[i]), 0) / 2;
 }
 
+/**
+ * Novelty at frame `i`, with the window counted in FRAMES.
+ *
+ * FRAME RATE MUST NOT BE BAKED IN. `textureNovelty` indexes neighbours by
+ * integer `t`, which is fine at one frame per second and silently returns null
+ * everywhere at quarter-second framing — so the finer-resolution run that the
+ * four-band failure calls for could not even be attempted through it. Working
+ * positionally makes the measurement independent of both the frame rate and the
+ * band count.
+ */
+export function noveltyAt(frames, i, { halfWindowFrames = 20 } = {}) {
+  if (i - halfWindowFrames < 0 || i + halfWindowFrames > frames.length) return null;
+  const p = meanProfile(frames.slice(i - halfWindowFrames, i));
+  const q = meanProfile(frames.slice(i, i + halfWindowFrames));
+  return p.reduce((s, v, k) => s + Math.abs(v - q[k]), 0) / 2;
+}
+
+/**
+ * The sharpest texture change within `radiusS` of a predicted time, positional.
+ *
+ * Same contract as `bestBoundaryIn` — including the `minNovelty` floor that lets
+ * it return `null` rather than invent a boundary — but frame-rate independent.
+ */
+export function bestBoundaryNear(frames, {
+  centreS, radiusS = 30, halfWindowFrames = 20, minNovelty = 0,
+} = {}) {
+  let best = null;
+  for (let i = 0; i < frames.length; i += 1) {
+    if (Math.abs(frames[i].t - centreS) > radiusS) continue;
+    const novelty = noveltyAt(frames, i, { halfWindowFrames });
+    if (novelty === null) continue;
+    if (!best || novelty > best.novelty) {
+      best = { t: frames[i].t, novelty, offsetS: frames[i].t - centreS };
+    }
+  }
+  if (!best || best.novelty < minNovelty) return null;
+  return best;
+}
+
 /** Novelty at every second that has a full window either side. */
 export function noveltyCurve(frames, { halfWindowS = 10 } = {}) {
   const byT = new Map(frames.map((f) => [f.t, f]));
