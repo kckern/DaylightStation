@@ -10,9 +10,9 @@ const NOOP = { info() {}, warn() {}, error() {}, debug() {} };
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-const mediaAppsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gameshow-media-'));
-fs.mkdirSync(path.join(mediaAppsDir, 'gameshow/classic'), { recursive: true });
-fs.writeFileSync(path.join(mediaAppsDir, 'gameshow/classic/correct.mp3'), 'fake-mp3');
+const mediaGameshowDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gameshow-media-'));
+fs.mkdirSync(path.join(mediaGameshowDir, 'classic'), { recursive: true });
+fs.writeFileSync(path.join(mediaGameshowDir, 'classic/correct.mp3'), 'fake-mp3');
 
 function makeApp() {
   const service = {
@@ -48,7 +48,7 @@ function makeApp() {
   const broadcastEvent = vi.fn();
   const app = express();
   app.use(express.json());
-  app.use('/gameshow', createGameshowRouter({ gameShowService: service, sessionStore: store, broadcastEvent, mediaAppsDir, logger: NOOP }));
+  app.use('/gameshow', createGameshowRouter({ gameShowService: service, sessionStore: store, broadcastEvent, mediaGameshowDir, logger: NOOP }));
   return { app, service, store, broadcastEvent };
 }
 
@@ -131,10 +131,10 @@ describe('gameshow router', () => {
     expect(bad.status).toBe(400);
   });
 
-  it('GET /media/* serves files from mediaAppsDir and blocks traversal', async () => {
-    const ok = await request(ctx.app).get('/gameshow/media/gameshow/classic/correct.mp3');
+  it('GET /media/* serves files from the Game Show media root and blocks traversal', async () => {
+    const ok = await request(ctx.app).get('/gameshow/media/classic/correct.mp3');
     expect(ok.status).toBe(200);
-    const missing = await request(ctx.app).get('/gameshow/media/gameshow/classic/nope.mp3');
+    const missing = await request(ctx.app).get('/gameshow/media/classic/nope.mp3');
     expect(missing.status).toBe(404);
     const traversal = await request(ctx.app).get('/gameshow/media/..%2F..%2Fetc%2Fpasswd');
     expect(traversal.status).toBe(404);

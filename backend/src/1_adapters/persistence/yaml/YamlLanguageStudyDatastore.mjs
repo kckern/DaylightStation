@@ -8,8 +8,8 @@
  *   corpus:     <dataDir>/content/language/{corpusId}.yml
  *   progress:   <userDir>/apps/school/language/{corpusId}/progress.yml
  *   log:        <userDir>/apps/school/language/{corpusId}/log/{YYYY-MM-DD}.yml   (append-only)
- *   audio:      <mediaDir>/apps/school/language/{corpusId}/{NNNN}-{LANG}.mp3
- *   recordings: <mediaDir>/apps/school/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.{ext}
+ *   audio:      <mediaDir>/audio/language/{corpusId}/{NNNN}-{LANG}.mp3
+ *   recordings: <mediaDir>/audio/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.{ext}
  *
  * Mirrors YamlSchoolDatastore's shape so the two read alike. Progress is the
  * ONLY mutable per-user file; the log is append-only and is the evidence the
@@ -59,7 +59,7 @@ export class YamlLanguageStudyDatastore {
 
   #mediaDir(corpusId) {
     if (!ID_RE.test(String(corpusId))) return null;
-    return path.join(this.#configService.getMediaDir(), 'apps', 'school', 'language', String(corpusId));
+    return path.join(this.#configService.getMediaDir(), 'audio', 'language', String(corpusId));
   }
 
   // -- corpus (shared, read-only) ------------------------------------------

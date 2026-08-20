@@ -6,7 +6,7 @@
  *   - Per-user preferences/progress    data/users/{id}/apps/piano/{preferences,progress}.yml
  *   - Household producer pool          <householdDataDir>/apps/piano/producer/{family}/{id}.yml
  *   - Lesson drills (read-only)        <mediaDir>/docs/piano-lessons/{collection}/{index,id}.yml
- *   - Always-on MIDI history (.mid)    <mediaDir>/apps/piano/log/{userId}/{date}/{takeId}.mid
+ *   - Always-on MIDI history (.mid)    <mediaDir>/midi/piano/log/{userId}/{date}/{takeId}.mid
  *   - Effect-audit clips + manifest    <mediaDir>/logs/piano/effect-audit/{runId}/…
  *   - Loop-library manifest            <mediaDir>/midi (walked + baked by getManifest)
  *   - Roster                           household.yml users (household order, hydrated)
@@ -235,9 +235,9 @@ export class YamlPianoStudioDatastore {
   writeHistoryMidi(userId, date, takeId, events) {
     // MIDI takes are binary and unbounded — media, not the committable tree.
     // NOTE for future greps: assembled with path.join, so a literal search for
-    // "piano/log" does NOT find this line. That shape is how the 2026-08-16
+    // "midi/piano/log" does NOT find this line. That shape is how the 2026-08-16
     // split-brain hid for a full day.
-    const dir = path.join(this.#configService.getMediaDir(), 'apps', 'piano', 'log', userId, date);
+    const dir = path.join(this.#configService.getMediaDir(), 'midi', 'piano', 'log', userId, date);
     ensureDir(dir);
     const buf = encodeMidiFile(events);
     const file = path.join(dir, `${takeId}.mid`);

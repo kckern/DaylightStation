@@ -1198,7 +1198,7 @@ export function createFitnessRouter(config) {
   /**
    * GET /api/fitness/menu-music
    * Returns list of menu music track paths + configured volume.
-   * Track paths are relative to the media root (media/apps/fitness/ux/menus/).
+   * Track paths are relative to the media root (media/fitness/ux/menus/).
    * Frontend passes them through DaylightMediaPath() to get full URLs.
    */
   router.get('/menu-music', asyncHandler(async (req, res) => {
