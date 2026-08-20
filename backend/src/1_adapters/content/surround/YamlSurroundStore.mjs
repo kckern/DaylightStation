@@ -379,13 +379,8 @@ export class YamlSurroundStore extends ISurroundStore {
       // A malformed root leaves whatever resolved so far; lookups miss quietly.
     }
 
-    // Second pass. Guarded on its own so a container that cannot be composed
-    // never costs the pieces that resolved perfectly well without it.
-    try {
-      this.#composeContainers(pieces);
-    } catch {
-      // Containers keep whatever their own resolution produced.
-    }
+    this.#composeContainers(pieces);
+    for (const resolved of pieces) this.#warnUntimed(resolved);
 
     for (const resolved of pieces) {
       // Last write wins, as before — walk order decides. That is an accident of
@@ -428,9 +423,10 @@ export class YamlSurroundStore extends ISurroundStore {
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
       pieces: index.size,
-      // Pieces whose rail spans more than one media item. Zero of these and the
-      // whole composition pass is inert, which is worth being able to see.
-      containers: pieces.filter((p) => (p.payload.timeline?.parts?.length ?? 0) > 1).length,
+      // Pieces that AUTHORED parts, not pieces that ended up with more than one
+      // — a container down to a single surviving part is exactly the case worth
+      // seeing, and counting the outcome would have reported it as zero.
+      containers: pieces.filter((p) => p.parts).length,
       skipped,
       composers: library.composers.size,
       definitions: definitions.size,
@@ -667,7 +663,7 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
-   * Give every container the chapters of the sidecars it names.
+   * Give every container its parts' chapters, on one rail.
    *
    * A part is a contentId, never a timing. The three étude episodes are already
    * authored as ordinary sidecars that resolve and play standalone; the
@@ -677,6 +673,16 @@ export class YamlSurroundStore extends ISurroundStore {
    * concatenation back onto ONE sounding rail with `withOffsets`. The rail is
    * global; the timings on it are local; that pairing is what lets one frame
    * span seven polonaises.
+   *
+   * BOTH part forms are resolved here, not just the reference one. The inline
+   * form — a one-off container that times its own resolved chapters because its
+   * media was never authored as separate sidecars — used to be handled while
+   * resolving the file, which made classification all-or-nothing: one entry
+   * carrying `work:` demoted every bare contentId beside it to an inline entry
+   * that matched no chapters and inherited the CONTAINER's id, so a third of the
+   * rail vanished and a phantom slot pointed at an unplayable season. Judging
+   * each entry on its own merits is only possible once both forms resolve in the
+   * same place, and it also leaves one rail-building loop rather than two.
    *
    * A part naming a contentId with no sidecar is warned and skipped rather than
    * faulting the container: six polonaises with a rail is worth more than seven
@@ -692,44 +698,175 @@ export class YamlSurroundStore extends ISurroundStore {
     for (const piece of pieces) byContentId.set(piece.contentId, piece);
 
     for (const container of pieces) {
-      if (!container.partRefs) continue;
-
-      const chapters = [];
-      const timelineParts = [];
-      container.partRefs.forEach((contentId, authored) => {
-        const part = byContentId.get(contentId);
-        // A container listing itself would otherwise compose its own empty
-        // provisional chapters into itself, which is a cycle wearing a
-        // different hat. `authored` is the position in the YAML, because that
-        // is the line the author has to go and fix.
-        if (!part || part === container) {
-          this.logger?.warn?.('surround.part.missing', { file: container.file, contentId, index: authored });
-          return;
-        }
-
-        const index = timelineParts.length;
-        // The heading above these chapters names the work the part PLAYS, which
-        // is the part's own `work:` — not the container's. A part that is itself
-        // a container brought its own inner groups along, and those are more
-        // specific than anything nameable from out here, so they stand.
-        const group = { work: part.work, title: part.payload.piece?.title ?? part.work, index };
-        for (const chapter of part.payload.chapters) {
-          chapters.push({ ...chapter, contentId, part: index, ...(chapter.group ? {} : { group }) });
-        }
-        timelineParts.push({ contentId, index, sounding: 0 });
-      });
-
-      const placed = withOffsets(chapters);
-      for (const chapter of placed) {
-        const slot = timelineParts[chapter.part];
-        if (slot) slot.sounding += chapter.duration;
+      if (!container.parts) continue;
+      // Per container, so one that throws costs only itself. The whole call used
+      // to be wrapped, which meant the first container to fail silently emptied
+      // the rail of every container after it — the same silent-partial-index
+      // shape this subsystem has already been bitten by once.
+      try {
+        this.#composeOne(container, byContentId);
+      } catch {
+        // Keeps its provisional empty rail; every other container is unaffected.
       }
-      container.payload.chapters = placed;
-      container.payload.timeline = {
-        totalSounding: placed.reduce((n, c) => n + c.duration, 0),
-        parts: timelineParts
-      };
     }
+  }
+
+  /**
+   * Build one container's rail. See #composeContainers for why both part forms
+   * land here.
+   *
+   * @param {Object} container - The resolved piece carrying `parts`
+   * @param {Map<string, Object>} byContentId - Every resolved piece, by id
+   * @private
+   */
+  #composeOne(container, byContentId) {
+    // Group the container's OWN resolved chapters by the work that performs
+    // them, so an inline part's spans pair with its own chapters. Pairing
+    // against the flat list would make one miscounted part shift every later
+    // part's timings.
+    const byWork = new Map();
+    for (const c of container.ownChapters) {
+      const key = c.group?.work ?? null;
+      if (!byWork.has(key)) byWork.set(key, []);
+      byWork.get(key).push(c);
+    }
+
+    const chapters = [];
+    const slots = [];
+    container.parts.forEach((entry, authored) => {
+      const ref = partRef(entry);
+      const index = slots.length;
+      // `authored` is the position in the YAML — the line an author has to go
+      // and fix — while `index` is the dense position on the composed rail.
+      const mine = ref
+        ? this.#referencedChapters(container, ref, authored, byContentId, index)
+        : this.#inlineChapters(container, entry, byWork);
+      if (!mine) return;
+
+      const contentId = ref ?? (entry?.contentId ? String(entry.contentId) : container.contentId);
+      const performance = isPlainObject(entry) && entry.performance ? entry.performance : undefined;
+      for (const chapter of mine) {
+        chapters.push({ ...chapter, contentId, part: index, ...(performance ? { performance } : {}) });
+      }
+      slots.push({ contentId, index, sounding: 0 });
+    });
+
+    const placed = withOffsets(chapters);
+    for (const chapter of placed) {
+      const slot = slots[chapter.part];
+      if (slot) slot.sounding += chapter.duration;
+    }
+    container.payload.chapters = placed;
+    container.payload.timeline = {
+      totalSounding: placed.reduce((n, c) => n + c.duration, 0),
+      parts: slots
+    };
+  }
+
+  /**
+   * Chapters of the sidecar a reference-form part names, or null to skip it.
+   *
+   * NESTING IS REFUSED, not supported. Composition runs in walk order, so an
+   * inner container may still be holding its provisional empty rail when an
+   * outer one reads it — the same data would compose or silently empty
+   * depending on how the two files happen to sort. Ordering that by dependency
+   * is easy; making it CORRECT is not, and that is the actual reason for the
+   * refusal. An inner container's chapters already carry groups numbered from
+   * zero within that container, so two nested parts would arrive on the outer
+   * rail both claiming `group.index: 0` and the band would print one heading
+   * over two different sets. Renumbering them is a decision about what a group
+   * means when rails nest, which belongs with the rail (Task 6) and not here.
+   * A loud refusal keeps that decision open; dependency ordering alone would
+   * have traded a silent empty rail for a silent wrong one.
+   *
+   * @private
+   */
+  #referencedChapters(container, contentId, authored, byContentId, index) {
+    const part = byContentId.get(contentId);
+    // A container listing itself is a cycle wearing a different hat.
+    if (!part || part === container) {
+      this.logger?.warn?.('surround.part.missing', { file: container.file, contentId, index: authored });
+      return null;
+    }
+    if (part.parts) {
+      this.logger?.warn?.('surround.part.nested', {
+        file: container.file, contentId, index: authored, partFile: part.file
+      });
+      return null;
+    }
+    // The heading above these chapters names the work the part PLAYS — the
+    // part's own `work:`, not the container's. Where a part's own corpus work
+    // used chapter references it arrived already grouped, and those inner
+    // labels are more specific than anything nameable from out here.
+    const group = { work: part.work, title: part.payload.piece?.title ?? part.work, index };
+    return part.payload.chapters.map((c) => (c.group ? c : { ...c, group }));
+  }
+
+  /**
+   * Chapters an inline-form part times itself, taken from the container's own
+   * resolved list and paired with the spans the entry authored.
+   *
+   * @private
+   */
+  #inlineChapters(container, entry, byWork) {
+    const key = typeof entry?.work === 'string' ? entry.work.trim() : null;
+    const mine = byWork.get(key) ?? [];
+    if (Array.isArray(entry?.spans) && entry.spans.length !== mine.length) {
+      this.logger?.warn?.('surround.spans.mismatch', {
+        file: container.file, work: key, spans: entry.spans.length, chapters: mine.length
+      });
+    }
+    const spans = toSpans({ spans: entry?.spans, count: mine.length });
+    return mine.map((c, i) => ({ ...c, ...spans[i] }));
+  }
+
+  /**
+   * Report chapters that occupy no width on the rail — where that is a gap
+   * rather than the normal authored state.
+   *
+   * A chapter with no usable end is placed at zero width deliberately:
+   * `withOffsets` puts only sounding time on the rail. The consequence is that
+   * it shares its offset with whatever follows, can never be the "current"
+   * chapter, and — in a container — puts a part boundary at an ambiguous
+   * position. The tie-break for anything mapping a position back to a chapter
+   * is stated on `withOffsets`: at a shared offset the LATER chapter wins.
+   *
+   * Two cases warn, and one deliberately does not:
+   *
+   * - A CONTAINER with any untimed chapter. This is Task 10's outstanding work
+   *   made visible. It is also the only place the gap lands mid-rail, at a part
+   *   boundary, where it can send the transport into the wrong media item.
+   * - Any piece with an untimed chapter that is NOT the last on its rail — a
+   *   piece whose timings were never authored at all, rather than one missing
+   *   its final bound.
+   * - A single item whose LAST chapter alone is unterminated stays quiet. That
+   *   is the authored shorthand for "runs to the end of the file": the media's
+   *   own duration supplies the end at playback and the store cannot know it.
+   *   Eight of the nineteen authored pieces are in exactly that state, and
+   *   warning about all of them would bury the two cases that matter.
+   *
+   * This is the successor to `surround.spans.mismatch` as the "timings pending"
+   * signal — that warning stood in for it under the superseded design, and the
+   * reference design correctly made it unreachable, leaving the gap invisible.
+   *
+   * @private
+   */
+  #warnUntimed(piece) {
+    const chapters = piece.payload.chapters;
+    const untimed = chapters.filter((c) => c.duration === 0);
+    if (!untimed.length) return;
+    const trailingOnly = untimed.length === 1 && untimed[0] === chapters[chapters.length - 1];
+    if (trailingOnly && !piece.parts) return;
+
+    this.logger?.warn?.('surround.chapters.untimed', {
+      file: piece.file,
+      untimed: untimed.length,
+      chapters: chapters.length,
+      // Which media items are short a timing, so a container names the sidecars
+      // to go and fix rather than only the season that surfaced the gap.
+      parts: [...new Set(untimed.map((c) => c.contentId))],
+      names: untimed.slice(0, 5).map((c) => c.name).filter((n) => typeof n === 'string')
+    });
   }
 
   /**
@@ -741,16 +878,35 @@ export class YamlSurroundStore extends ISurroundStore {
    * container has to win — while an item nobody contains still answers with its
    * own payload at part 0.
    *
+   * A composed container makes no claim on ITSELF: its slots name its parts, so
+   * `lookupByPart(seasonId)` is null by construction. That is right — a Plex
+   * season is not a media item and has no position on its own rail — but it
+   * means callers cannot migrate off `lookup` wholesale; ask this first and fall
+   * back to `lookup` for the id that has no part.
+   *
    * @param {Array<Object>} pieces
    * @returns {Map<string, {payload: Object, part: number}>}
    * @private
    */
   #indexParts(pieces) {
     const byPart = new Map();
+    const claimedBy = new Map();
     const claim = (piece, wantSelf) => {
       for (const slot of asArray(piece.payload.timeline?.parts)) {
+        const id = String(slot.contentId);
         if ((slot.contentId === piece.contentId) !== wantSelf) continue;
-        byPart.set(String(slot.contentId), { payload: piece.payload, part: slot.index });
+        // Only container claims can genuinely collide — a piece's claim on
+        // itself is unique because contentIds are already deduped upstream. Two
+        // containers naming one episode is an authoring mistake with no right
+        // answer, so name both files rather than let walk order decide in
+        // silence which rail that episode plays on.
+        if (!wantSelf && claimedBy.has(id)) {
+          this.logger?.warn?.('surround.part.claimed', {
+            contentId: id, keptFile: piece.file, droppedFile: claimedBy.get(id)
+          });
+        }
+        if (!wantSelf) claimedBy.set(id, piece.file);
+        byPart.set(id, { payload: piece.payload, part: slot.index });
       }
     };
     for (const piece of pieces) claim(piece, true);
@@ -850,57 +1006,25 @@ export class YamlSurroundStore extends ISurroundStore {
 
     const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
 
-    // Three ways a rail gets its timing, and a sidecar picks exactly one.
+    // Two ways a rail gets its timing, and a sidecar picks by whether it has
+    // `parts:` at all.
     //
-    // `partRefs` is the authored case: the parts are contentIds and every timing
-    // lives in the part's own sidecar, so nothing can be computed here — it is
-    // resolved in #composeContainers once the whole tree has been read.
-    //
-    // Inline parts are the fallback for a one-off container with no per-part
-    // sidecars to compose: it times its OWN resolved chapters, part by part.
+    // A container's rail is built in the second pass, by #composeContainers,
+    // because a part may name a sidecar this walk has not reached yet. Both part
+    // forms resolve there — see that method for why classifying them here made
+    // one inline entry silently demote every reference beside it. The rail is
+    // left EMPTY here on purpose: a container that never composes shows nothing
+    // rather than its untimed corpus chapters stamped with the season's own id,
+    // which would read as real.
     //
     // Everything else — every sidecar authored before any of this existed — is
     // one media item, which is part 0 of a one-part rail.
-    const parts = asArray(doc.parts);
-    const partRefs = parts.length && parts.every((p) => partRef(p) !== null) ? parts.map(partRef) : null;
+    const parts = Array.isArray(doc.parts) && doc.parts.length ? doc.parts : null;
     const selfId = String(doc.match.contentId);
     let chapters = [];
     let timelineParts = [];
 
-    if (partRefs) {
-      // Left empty on purpose: composition replaces both. A container that
-      // resolves alone shows an empty rail rather than twenty-seven untimed
-      // chapters stamped with the season's own id, which would read as real.
-    } else if (parts.length) {
-      // Group the resolved chapters by the part that performs them, so a part's
-      // spans pair with its OWN chapters. Pairing against the flat list would
-      // make one miscounted part shift every later part's timings.
-      const byWork = new Map();
-      for (const c of resolved) {
-        const key = c.group?.work ?? null;
-        if (!byWork.has(key)) byWork.set(key, []);
-        byWork.get(key).push(c);
-      }
-      parts.forEach((part, index) => {
-        const key = typeof part?.work === 'string' ? part.work.trim() : null;
-        const mine = byWork.get(key) ?? [];
-        const contentId = part?.contentId ? String(part.contentId) : selfId;
-        if (Array.isArray(part?.spans) && part.spans.length !== mine.length) {
-          this.logger?.warn?.('surround.spans.mismatch', { file, work: key, spans: part.spans.length, chapters: mine.length });
-        }
-        const partSpans = toSpans({ spans: part?.spans, count: mine.length });
-        mine.forEach((c, i) => chapters.push({
-          ...c, ...partSpans[i], contentId, part: index,
-          ...(part?.performance ? { performance: part.performance } : {})
-        }));
-        timelineParts.push({ contentId, index, sounding: 0 });
-      });
-      chapters = withOffsets(chapters);
-      for (const c of chapters) {
-        const slot = timelineParts[c.part];
-        if (slot) slot.sounding += c.duration;
-      }
-    } else {
+    if (!parts) {
       const spans = toSpans({
         starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: movements.length
       });
@@ -932,10 +1056,12 @@ export class YamlSurroundStore extends ISurroundStore {
       title: typeof doc.match.title === 'string' ? doc.match.title : '',
       normalized: normalizeTitle(doc.match.title),
       // Carried for the second pass and the warnings it emits: which file to
-      // name, which work this piece plays, and which parts it is still owed.
+      // name, which work this piece plays, the parts it is still owed, and the
+      // chapters an inline part times against.
       file,
       work: doc.work,
-      partRefs,
+      parts,
+      ownChapters: movements,
       payload: {
         id: doc.surround,
         // `band` joins `regions`/`collapse` as the third thing a definition
