@@ -254,7 +254,17 @@ export default function SegmentMap({
   // segment under it names, and the row was printing the same title a second
   // time in a second face — both copies ellipsized, neither of them whole. The
   // same decision then re-numbers the gutter below: see `segments`.
-  const groups = useMemo(() => (composed ? railGroups(placedRail) : []), [composed, placedRail]);
+  // WHICH LEVEL THE HEADING ROW PRINTS. A work nested Part > Scene > Number
+  // ships an ancestry on every segment, and the rail can only print one row: at
+  // the office's ~822px Messiah's 53 numbers chip at ~15px each, where sixteen
+  // scene titles is a row of ellipses and three Part names is a heading a viewer
+  // can read. So an ancestry two deep or more prints its OUTERMOST level, and
+  // everything shallower is unchanged — one level, its own group, as before.
+  const nested = composed && placedRail.some(({ segment }) => (segment?.groupPath?.length ?? 0) > 1);
+  const groups = useMemo(
+    () => (composed ? railGroups(placedRail, nested ? { depth: 0 } : {}) : []),
+    [composed, placedRail, nested],
+  );
   const flat = composed && railIsFlat(groups);
   const grouped = !flat && groups.some((g) => g.title);
 

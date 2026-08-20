@@ -286,11 +286,18 @@ export function placedRailSegments(segments) {
  *   `placed`; `span` is the run's sounding seconds, which is what its label is
  *   sized by.
  */
-export function railGroups(placed) {
+export function railGroups(placed, { depth = null } = {}) {
   const list = Array.isArray(placed) ? placed : [];
   const runs = [];
   list.forEach(({ segment }) => {
-    const group = segment?.group ?? null;
+    // TWO LEVELS OF GROUPING, ONE ROW OF HEADINGS. Messiah is Part > Scene >
+    // Number — 53 numbers under 16 scenes under 3 Parts — and at the office's
+    // ~822px the rail chips at ~15px a segment, where sixteen scene titles is a
+    // row of ellipses and three Part names is a heading somebody can read. So a
+    // caller may ask for a level of the ancestry; `depth: 0` is the outermost.
+    // Absent an ancestry this is the segment's own group, exactly as before.
+    const path = Array.isArray(segment?.groupPath) ? segment.groupPath : null;
+    const group = (depth !== null && path?.length ? path[Math.min(depth, path.length - 1)] : segment?.group) ?? null;
     // A group with no number is malformed — the store stamps every one of them
     // — and is degraded to "ungrouped" rather than guessed at: an unlabelled
     // stretch of rail is the honest rendering of a heading we cannot place.

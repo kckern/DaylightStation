@@ -1892,6 +1892,53 @@ describe('YamlSurroundStore — parts composed by contentId', () => {
     expect(store.lookup('plex:ep2', '').pieceSegments[0].short).toBe('Aeolian');
   });
 
+  /**
+   * THREE LEVELS: a work whose segments reference works that themselves
+   * reference works — Messiah's Part, Scene, Number.
+   *
+   * `#resolveSegments` already recurses to any depth, but `group` is ONE object
+   * and the inner call overwrites it, so a segment three levels down kept only
+   * its Scene and the Part was silently lost. `groupPath` carries the whole
+   * chain, outermost first, while `group` stays the innermost so every existing
+   * consumer reads exactly what it read before.
+   */
+  it('carries the whole ancestry when a work nests two levels deep', () => {
+    writeLib('classical/0_flagship/handel/_composer.yml', 'name: George Frideric Handel\n');
+    writeLib('classical/0_flagship/handel/scene-1.yml',
+      'title: "Scene 1"\nsegments:\n  - { n: 1, name: "First" }\n  - { n: 2, name: "Second" }\n');
+    writeLib('classical/0_flagship/handel/scene-2.yml',
+      'title: "Scene 2"\nsegments:\n  - { n: 3, name: "Third" }\n');
+    writeLib('classical/0_flagship/handel/part-1.yml',
+      'title: "Part One"\nsegments:\n  - work: handel/scene-1\n  - work: handel/scene-2\n');
+    writeLib('classical/0_flagship/handel/whole.yml',
+      'title: "The Whole Thing"\nsegments:\n  - work: handel/part-1\n');
+    write('classical/handel/whole.yml',
+      'work: handel/whole\nsurround: concert-hall\nmatch: { contentId: plex:whole }\n'
+      + 'starts: [0, 60, 120]\nmusicEndsAt: 180\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:whole', '');
+
+    expect(r.segments.map((c) => c.name)).toEqual(['First', 'Second', 'Third']);
+    // `group` is the INNERMOST — unchanged, so nothing downstream shifts.
+    expect(r.segments[0].group.title).toBe('Scene 1');
+    expect(r.segments[2].group.title).toBe('Scene 2');
+    // `groupPath` is the ancestry, outermost first.
+    expect(r.segments[0].groupPath.map((g) => g.title)).toEqual(['Part One', 'Scene 1']);
+    expect(r.segments[2].groupPath.map((g) => g.title)).toEqual(['Part One', 'Scene 2']);
+    // Both segments of Scene 1 share one Part and one Scene.
+    expect(r.segments[0].groupPath[0]).toEqual(r.segments[1].groupPath[0]);
+    expect(r.segments[0].groupPath[1]).toEqual(r.segments[1].groupPath[1]);
+  });
+
+  it('still gives a one-level work a single-entry ancestry', () => {
+    writeEtudes(SEASON);
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:ep1', '');
+    // A part played on its own has no group at all, and no path either.
+    expect(r.segments[0].groupPath ?? null).toBeNull();
+  });
+
   it('labels each part with the work that part plays, not the container above it', () => {
     writeEtudes(SEASON);
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
