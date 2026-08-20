@@ -16,6 +16,9 @@
 .surround-libretto {
   display: flex;
   flex-direction: column;
+  /* Claim the column the region gives us. `height: 100%` is kept as the
+     fallback for any mount that is not a flex parent. */
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   padding: 0.85rem 0.8rem 0.6rem;

@@ -458,6 +458,12 @@
   flex: 1 1 auto;
   height: 100%;
   min-height: 0;
+  /* A COLUMN, so the panel inside it stretches to the rail rather than being
+     sized by its own content. `height: 100%` alone did not do it — measured at
+     720px of region holding a 381px panel, which parked the composer plate in
+     the middle of the rail with dead ground beneath it. */
+  display: flex;
+  flex-direction: column;
 
   --ink: #e9dfc8;
   --ink-soft: #a89a80;

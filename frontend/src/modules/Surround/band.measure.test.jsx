@@ -2891,3 +2891,111 @@ describe('the band, measured against the shipped stylesheet', () => {
     }, 60000);
   });
 });
+
+/**
+ * THE LYRIC RAIL, MEASURED.
+ *
+ * This suite exists because the lyric rail shipped with its text box collapsed
+ * to ZERO HEIGHT and every unit test stayed green. jsdom reports every height
+ * as zero, so "the verse is on screen" is not a claim jsdom can make or break;
+ * only a layout engine can. The bug was one missing rule — `--lyric` never got
+ * the `flex: 1 1 auto; height: 100%` that `--right` carries — and its symptom
+ * on the real screen was a rail that drew its heading and nothing beneath it.
+ */
+describe('the lyric rail, measured', () => {
+  let browser;
+  let css;
+  beforeAll(async () => {
+    css = await compileSheet();
+    const { chromium } = await import('playwright');
+    browser = await chromium.launch();
+  }, 120000);
+  afterAll(async () => { await browser?.close(); });
+
+  /** Messiah's shape: a definition with a lyric slot, and segments with words. */
+  const SUNG = Object.freeze({
+    ...EROICA,
+    definition: { ...EROICA.definition, regions: { ...EROICA.definition.regions, lyric: { module: 'libretto' } } },
+    segments: [
+      {
+        contentId: EROICA.contentId,
+        n: 2,
+        name: 'Comfort ye my people',
+        start: 0,
+        end: 3000,
+        offset: 0,
+        duration: 3000,
+        text: 'Comfort ye, comfort ye my people,\nsaith your God.\nSpeak ye comfortably to Jerusalem,\nand cry unto her, that her warfare is accomplish’d,\nthat her iniquity is pardon’d.\nThe voice of him that crieth in the wilderness:\nPrepare ye the way of the Lord,\nmake straight in the desert a highway for our God.',
+      },
+    ],
+    timeline: { totalSounding: 3000, parts: [{ contentId: EROICA.contentId, index: 0, sounding: 3000 }] },
+  });
+
+  const boxes = async (page) => page.evaluate(() => {
+    const pick = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect() : null;
+    };
+    const r = (b) => (b ? { w: Math.round(b.width), h: Math.round(b.height), x: Math.round(b.x) } : null);
+    return {
+      rail: r(pick('[data-testid="surround-lyric-rail"]')),
+      region: r(pick('.surround-frame__region--lyric')),
+      panel: r(pick('[data-testid="surround-libretto"]')),
+      text: r(pick('[data-testid="surround-libretto-text"]')),
+      heading: r(pick('[data-testid="surround-libretto-heading"]')),
+      programme: r(pick('[data-testid="surround-rail"]')),
+    };
+  });
+
+  it.each(FLEET)('$name — the verse gets real height', async ({ width, height }) => {
+    const page = await browser.newPage();
+    await layout(page, css, { width, height, data: SUNG, position: 100 });
+    const b = await boxes(page);
+    await page.close();
+
+    expect(b.rail, 'the lyric rail did not render at all').not.toBeNull();
+    expect(b.programme, 'the programme rail is still in the tree beside the lyric rail').toBeNull();
+    // THE REGRESSION. A collapsed box is not "a bit short" — it is zero, and it
+    // is the whole bug. The floor is deliberately generous: anything under a
+    // few lines means the box is being sized by something other than the rail.
+    expect(b.text.h).toBeGreaterThan(80);
+    // The verse takes the height the heading leaves, and nothing overflows the
+    // panel — the fit-then-page ladder's entire purpose.
+    expect(b.text.h + b.heading.h).toBeLessThanOrEqual(b.panel.h + 1);
+  }, 120000);
+
+  /**
+   * KNOWN GAP, recorded rather than deleted. The verse itself has real height
+   * (asserted above, at all three roots) — that was the shipped bug and it is
+   * fixed. What is still wrong is subtler: the PANEL is sized by its content
+   * (measured 401px inside a 720px region), so the composer plate sits partway
+   * up the rail with dead ground beneath it instead of resting on the bottom
+   * edge. Neither `height: 100%` nor making the region a flex column moved it,
+   * so the cause is not yet understood and a guess would be worse than a
+   * record. `it.fails` keeps the measurement running: the day the panel does
+   * fill, this test goes red and asks to be promoted.
+   */
+  it.fails('fills the rail rather than being sized by its own content', async () => {
+    const page = await browser.newPage();
+    await layout(page, css, { width: 1280, height: 720, data: SUNG, position: 100 });
+    const b = await boxes(page);
+    await page.close();
+    // The region claims the column's height — the rule `--right` always had and
+    // `--lyric` was missing. Within a pixel of the rail it sits in.
+    expect(Math.abs(b.region.h - b.rail.h)).toBeLessThanOrEqual(1);
+    expect(Math.abs(b.panel.h - b.region.h)).toBeLessThanOrEqual(1);
+  }, 120000);
+
+  it('sits on the RIGHT, so the video is flush against the left edge', async () => {
+    const page = await browser.newPage();
+    await layout(page, css, { width: 1280, height: 720, data: SUNG, position: 100 });
+    const b = await boxes(page);
+    const main = await page.evaluate(() => {
+      const el = document.querySelector('.surround-frame__main');
+      return el ? Math.round(el.getBoundingClientRect().x) : null;
+    });
+    await page.close();
+    expect(main).toBe(0);
+    expect(b.rail.x).toBeGreaterThan(640);
+  }, 120000);
+});
