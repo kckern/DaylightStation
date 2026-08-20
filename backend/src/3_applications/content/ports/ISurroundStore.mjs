@@ -37,6 +37,25 @@ export class ISurroundStore {
   lookup(contentId, title) {
     throw new Error('ISurroundStore.lookup must be implemented');
   }
+
+  /**
+   * Find the surround whose rail this piece of content is a SEGMENT of.
+   *
+   * A surround may span several media items — a season of three étude episodes
+   * presents one twenty-seven chapter rail — so the payload a played item needs
+   * is not always the one authored against its own id. Where a container claims
+   * an item, this answers with the container and the item's position in it;
+   * where nothing does, an item is part 0 of its own single-item rail.
+   *
+   * Never throws, for the same reason `lookup` never does.
+   *
+   * @param {string} contentId - Canonical content identifier
+   * @returns {{ payload: Object, part: number }|null} The rail and the position
+   *   on it, or null when no surround covers this item
+   */
+  lookupByPart(contentId) {
+    throw new Error('ISurroundStore.lookupByPart must be implemented');
+  }
 }
 
 /**

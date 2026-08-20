@@ -49,6 +49,18 @@ const isPresent = (v) => v !== undefined && v !== null;
 // header at all where it is unauthored, so this field is optional in every
 // sense: absent is a supported state, not a gap.
 const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+// A part that NAMES another sidecar rather than restating its timing. The
+// authored form is a bare contentId string; a mapping is accepted too, but only
+// while it says nothing a reference cannot say — the moment it carries `work` or
+// `spans` it is the inline form, which times the CONTAINER's own chapters and
+// has to be resolved a different way entirely.
+const partRef = (part) => {
+  if (typeof part === 'string' && part.trim()) return part.trim();
+  if (isPlainObject(part) && part.contentId && part.work === undefined && part.spans === undefined) {
+    return String(part.contentId);
+  }
+  return null;
+};
 const pick = (obj, keys) => {
   const out = {};
   for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
@@ -67,6 +79,10 @@ export class YamlSurroundStore extends ISurroundStore {
   #byContentId = new Map();
   // Parallel to #byContentId: the rebind lane, walked only after an id miss.
   #byTitle = [];
+  // Every media item that appears on some payload's rail, mapped to the payload
+  // that carries it and its position on that rail. A single-item sidecar is its
+  // own part 0, so this answers for every indexed piece, not just containers.
+  #byPart = new Map();
   // When the serving index was built, and when the tree was last stat-ed.
   #builtAt = 0;
   #lastCheckedAt = 0;
@@ -151,6 +167,37 @@ export class YamlSurroundStore extends ISurroundStore {
       // contentId is otherwise indistinguishable from an unauthored item.
       this.logger?.debug?.('surround.lookup.miss', { contentId });
       return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve the surround payload that PLAYS a given media item, and where on it.
+   *
+   * `lookup` answers "what is authored against this id"; this answers "what rail
+   * is this id a segment of". The two differ only for a container: playing the
+   * second étude episode has to raise the whole twenty-seven-chapter rail with
+   * the position mapped into part 1, not the episode's own standalone frame.
+   *
+   * A container's claim beats the item's claim on itself, which is the whole
+   * point — the episode sidecar still exists and still resolves through
+   * `lookup`, it just is not what a caller asking this question wants.
+   *
+   * Never throws, and returns a fresh clone, for the same reasons `lookup` does.
+   *
+   * @param {string} contentId - Compound content ID of the played item
+   * @returns {{ payload: Object, part: number }|null}
+   */
+  lookupByPart(contentId) {
+    try {
+      this.#refreshIfStale();
+      const hit = this.#byPart.get(String(contentId));
+      if (!hit) {
+        this.logger?.debug?.('surround.part.miss', { contentId });
+        return null;
+      }
+      return { payload: structuredClone(hit.payload), part: hit.part };
     } catch {
       return null;
     }
@@ -283,12 +330,20 @@ export class YamlSurroundStore extends ISurroundStore {
    * mtime. Every counter and collision map here is build-local, so a rebuild
    * re-reports the corpus from scratch rather than inheriting a stale verdict.
    *
+   * The walk resolves each sidecar on its own, and composition of containers is
+   * a SECOND pass over the result. It has to be: a container names its parts by
+   * contentId, and the sidecar for a part may not be read until later in the
+   * walk, so nothing that runs inside a single file's resolution can see them.
+   *
    * @private
    */
   #build() {
     const startedAt = Date.now();
     const index = new Map();
     const titles = [];
+    // Every sidecar that resolved, in walk order — the input to composition and
+    // then to indexing, both of which need the whole set before they can run.
+    const pieces = [];
     // contentId -> the file that claimed it, so a collision can name both sides.
     const claimedBy = new Map();
     // Piece candidates read but rejected. A malformed definition shows up here too,
@@ -316,43 +371,55 @@ export class YamlSurroundStore extends ISurroundStore {
             const relFile = path.join(domain, composer, file);
             const resolved = this.#resolvePerformance(path.join(composerDir, file), domain, definitions, library, relFile);
             if (!resolved) { skipped += 1; continue; }
-
-            // Last write wins, as before — walk order decides. That is an
-            // accident of the filesystem, so name both files rather than
-            // letting one sidecar vanish under another without a trace.
-            const priorFile = claimedBy.get(resolved.contentId);
-            if (priorFile) {
-              this.logger?.warn?.('surround.sidecar.duplicate', {
-                contentId: resolved.contentId,
-                keptFile: relFile,
-                droppedFile: priorFile
-              });
-            }
-            claimedBy.set(resolved.contentId, relFile);
-            index.set(resolved.contentId, resolved.payload);
-            // Only pieces that authored a title are rebindable; the rest are
-            // reachable by contentId alone.
-            if (resolved.normalized) {
-              titles.push({
-                normalized: resolved.normalized,
-                title: resolved.title,
-                file: relFile,
-                contentId: resolved.contentId,
-                payload: resolved.payload
-              });
-            }
+            pieces.push(resolved);
           }
         }
       }
     } catch {
-      // A malformed root leaves whatever was indexed so far; lookups miss quietly.
+      // A malformed root leaves whatever resolved so far; lookups miss quietly.
     }
 
-    // Both lanes swap together: a lookup that misses on contentId falls straight
-    // through to #byTitle, so a half-swapped pair would rebind against payloads
-    // the rebuilt index no longer holds.
+    // Second pass. Guarded on its own so a container that cannot be composed
+    // never costs the pieces that resolved perfectly well without it.
+    try {
+      this.#composeContainers(pieces);
+    } catch {
+      // Containers keep whatever their own resolution produced.
+    }
+
+    for (const resolved of pieces) {
+      // Last write wins, as before — walk order decides. That is an accident of
+      // the filesystem, so name both files rather than letting one sidecar
+      // vanish under another without a trace.
+      const priorFile = claimedBy.get(resolved.contentId);
+      if (priorFile) {
+        this.logger?.warn?.('surround.sidecar.duplicate', {
+          contentId: resolved.contentId,
+          keptFile: resolved.file,
+          droppedFile: priorFile
+        });
+      }
+      claimedBy.set(resolved.contentId, resolved.file);
+      index.set(resolved.contentId, resolved.payload);
+      // Only pieces that authored a title are rebindable; the rest are
+      // reachable by contentId alone.
+      if (resolved.normalized) {
+        titles.push({
+          normalized: resolved.normalized,
+          title: resolved.title,
+          file: resolved.file,
+          contentId: resolved.contentId,
+          payload: resolved.payload
+        });
+      }
+    }
+
+    // All three lanes swap together: a lookup that misses on contentId falls
+    // straight through to #byTitle, so a half-swapped set would rebind against
+    // payloads the rebuilt index no longer holds.
     this.#byContentId = index;
     this.#byTitle = titles;
+    this.#byPart = this.#indexParts(pieces);
     // Stamped after the walk, so a sidecar edited while the build was reading it
     // still counts as newer and is picked up on the next window.
     this.#builtAt = Date.now();
@@ -361,6 +428,9 @@ export class YamlSurroundStore extends ISurroundStore {
     if (typeof this.logger?.info !== 'function') return;
     this.logger.info('surround.index.built', {
       pieces: index.size,
+      // Pieces whose rail spans more than one media item. Zero of these and the
+      // whole composition pass is inert, which is worth being able to see.
+      containers: pieces.filter((p) => (p.payload.timeline?.parts?.length ?? 0) > 1).length,
       skipped,
       composers: library.composers.size,
       definitions: definitions.size,
@@ -597,6 +667,98 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
+   * Give every container the chapters of the sidecars it names.
+   *
+   * A part is a contentId, never a timing. The three étude episodes are already
+   * authored as ordinary sidecars that resolve and play standalone; the
+   * container concatenates what they resolved, and restates nothing. So this
+   * takes each part's chapters verbatim — their `start`/`end` stay in their own
+   * media item's clock — stamps them with the part they came from, and lays the
+   * concatenation back onto ONE sounding rail with `withOffsets`. The rail is
+   * global; the timings on it are local; that pairing is what lets one frame
+   * span seven polonaises.
+   *
+   * A part naming a contentId with no sidecar is warned and skipped rather than
+   * faulting the container: six polonaises with a rail is worth more than seven
+   * with nothing. Surviving parts are numbered densely, so `timeline.parts[n]`
+   * is always the part that `chapter.part === n` belongs to — a gap there would
+   * make every later part's sounding total accrue to the wrong slot.
+   *
+   * @param {Array<Object>} pieces - Every sidecar that resolved, in walk order
+   * @private
+   */
+  #composeContainers(pieces) {
+    const byContentId = new Map();
+    for (const piece of pieces) byContentId.set(piece.contentId, piece);
+
+    for (const container of pieces) {
+      if (!container.partRefs) continue;
+
+      const chapters = [];
+      const timelineParts = [];
+      container.partRefs.forEach((contentId, authored) => {
+        const part = byContentId.get(contentId);
+        // A container listing itself would otherwise compose its own empty
+        // provisional chapters into itself, which is a cycle wearing a
+        // different hat. `authored` is the position in the YAML, because that
+        // is the line the author has to go and fix.
+        if (!part || part === container) {
+          this.logger?.warn?.('surround.part.missing', { file: container.file, contentId, index: authored });
+          return;
+        }
+
+        const index = timelineParts.length;
+        // The heading above these chapters names the work the part PLAYS, which
+        // is the part's own `work:` — not the container's. A part that is itself
+        // a container brought its own inner groups along, and those are more
+        // specific than anything nameable from out here, so they stand.
+        const group = { work: part.work, title: part.payload.piece?.title ?? part.work, index };
+        for (const chapter of part.payload.chapters) {
+          chapters.push({ ...chapter, contentId, part: index, ...(chapter.group ? {} : { group }) });
+        }
+        timelineParts.push({ contentId, index, sounding: 0 });
+      });
+
+      const placed = withOffsets(chapters);
+      for (const chapter of placed) {
+        const slot = timelineParts[chapter.part];
+        if (slot) slot.sounding += chapter.duration;
+      }
+      container.payload.chapters = placed;
+      container.payload.timeline = {
+        totalSounding: placed.reduce((n, c) => n + c.duration, 0),
+        parts: timelineParts
+      };
+    }
+  }
+
+  /**
+   * Map every media item on some rail to the payload that carries it.
+   *
+   * Two passes, and the order is the behavior: a piece's claim on ITSELF is laid
+   * down first, and a container's claim on its parts overwrites it. Playing the
+   * second étude episode inside the season has to raise the whole set, so the
+   * container has to win — while an item nobody contains still answers with its
+   * own payload at part 0.
+   *
+   * @param {Array<Object>} pieces
+   * @returns {Map<string, {payload: Object, part: number}>}
+   * @private
+   */
+  #indexParts(pieces) {
+    const byPart = new Map();
+    const claim = (piece, wantSelf) => {
+      for (const slot of asArray(piece.payload.timeline?.parts)) {
+        if ((slot.contentId === piece.contentId) !== wantSelf) continue;
+        byPart.set(String(slot.contentId), { payload: piece.payload, part: slot.index });
+      }
+    };
+    for (const piece of pieces) claim(piece, true);
+    for (const piece of pieces) claim(piece, false);
+    return byPart;
+  }
+
+  /**
    * Read one performance sidecar and resolve it against the knowledge corpus
    * into the payload the API attaches verbatim.
    *
@@ -654,6 +816,7 @@ export class YamlSurroundStore extends ISurroundStore {
     if (typeof doc.match.title !== 'string' || !doc.match.title.trim()) soft.push('missing-match-title');
     if (isPresent(doc.starts) && !Array.isArray(doc.starts)) soft.push('starts-not-a-list');
     if (isPresent(doc.cues) && !Array.isArray(doc.cues)) soft.push('cues-not-a-list');
+    if (isPresent(doc.parts) && !Array.isArray(doc.parts)) soft.push('parts-not-a-list');
     if (isPresent(doc.composer) && !isPlainObject(doc.composer)) soft.push('composer-not-a-mapping');
     if (isPresent(doc.piece) && !isPlainObject(doc.piece)) soft.push('piece-not-a-mapping');
 
@@ -686,10 +849,65 @@ export class YamlSurroundStore extends ISurroundStore {
     }
 
     const resolvedMovements = movements.map((m, i) => ({ ...m, start: starts[i] }));
-    const spans = toSpans({
-      starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: movements.length
-    });
-    const chapters = withOffsets(movements.map((m, i) => ({ ...m, ...spans[i], contentId: String(doc.match.contentId) })));
+
+    // Three ways a rail gets its timing, and a sidecar picks exactly one.
+    //
+    // `partRefs` is the authored case: the parts are contentIds and every timing
+    // lives in the part's own sidecar, so nothing can be computed here — it is
+    // resolved in #composeContainers once the whole tree has been read.
+    //
+    // Inline parts are the fallback for a one-off container with no per-part
+    // sidecars to compose: it times its OWN resolved chapters, part by part.
+    //
+    // Everything else — every sidecar authored before any of this existed — is
+    // one media item, which is part 0 of a one-part rail.
+    const parts = asArray(doc.parts);
+    const partRefs = parts.length && parts.every((p) => partRef(p) !== null) ? parts.map(partRef) : null;
+    const selfId = String(doc.match.contentId);
+    let chapters = [];
+    let timelineParts = [];
+
+    if (partRefs) {
+      // Left empty on purpose: composition replaces both. A container that
+      // resolves alone shows an empty rail rather than twenty-seven untimed
+      // chapters stamped with the season's own id, which would read as real.
+    } else if (parts.length) {
+      // Group the resolved chapters by the part that performs them, so a part's
+      // spans pair with its OWN chapters. Pairing against the flat list would
+      // make one miscounted part shift every later part's timings.
+      const byWork = new Map();
+      for (const c of resolved) {
+        const key = c.group?.work ?? null;
+        if (!byWork.has(key)) byWork.set(key, []);
+        byWork.get(key).push(c);
+      }
+      parts.forEach((part, index) => {
+        const key = typeof part?.work === 'string' ? part.work.trim() : null;
+        const mine = byWork.get(key) ?? [];
+        const contentId = part?.contentId ? String(part.contentId) : selfId;
+        if (Array.isArray(part?.spans) && part.spans.length !== mine.length) {
+          this.logger?.warn?.('surround.spans.mismatch', { file, work: key, spans: part.spans.length, chapters: mine.length });
+        }
+        const partSpans = toSpans({ spans: part?.spans, count: mine.length });
+        mine.forEach((c, i) => chapters.push({
+          ...c, ...partSpans[i], contentId, part: index,
+          ...(part?.performance ? { performance: part.performance } : {})
+        }));
+        timelineParts.push({ contentId, index, sounding: 0 });
+      });
+      chapters = withOffsets(chapters);
+      for (const c of chapters) {
+        const slot = timelineParts[c.part];
+        if (slot) slot.sounding += c.duration;
+      }
+    } else {
+      const spans = toSpans({
+        starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: movements.length
+      });
+      chapters = withOffsets(movements.map((m, i) => ({ ...m, ...spans[i], contentId: selfId, part: 0 })));
+      timelineParts = [{ contentId: selfId, index: 0, sounding: chapters.reduce((n, c) => n + c.duration, 0) }];
+    }
+
     const movementCues = movements
       .map((m, i) => ({ at: starts[i], text: m.note }))
       .filter((c) => typeof c.at === 'number' && typeof c.text === 'string' && c.text.trim())
@@ -710,9 +928,14 @@ export class YamlSurroundStore extends ISurroundStore {
     );
 
     return {
-      contentId: String(doc.match.contentId),
+      contentId: selfId,
       title: typeof doc.match.title === 'string' ? doc.match.title : '',
       normalized: normalizeTitle(doc.match.title),
+      // Carried for the second pass and the warnings it emits: which file to
+      // name, which work this piece plays, and which parts it is still owed.
+      file,
+      work: doc.work,
+      partRefs,
       payload: {
         id: doc.surround,
         // `band` joins `regions`/`collapse` as the third thing a definition
@@ -728,7 +951,7 @@ export class YamlSurroundStore extends ISurroundStore {
         piece,
         movements: resolvedMovements,
         chapters,
-        timeline: { totalSounding: chapters.reduce((n, c) => n + c.duration, 0) },
+        timeline: { totalSounding: chapters.reduce((n, c) => n + c.duration, 0), parts: timelineParts },
         cues,
         facts: asArray(work.facts),
         composer,

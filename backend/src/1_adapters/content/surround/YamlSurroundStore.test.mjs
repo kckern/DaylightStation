@@ -1417,9 +1417,279 @@ describe('YamlSurroundStore — chapter references', () => {
     const r = store.lookup('plex:663134', '');
 
     expect(r.movements).toEqual([{ n: 1, name: 'Allegro con brio', start: 0 }]);
+    // `part` is on every chapter, container or not: a lone media item is part 0
+    // of a one-part rail, so nothing downstream has to special-case its absence.
     expect(r.chapters).toEqual([
-      { n: 1, name: 'Allegro con brio', start: 0, end: undefined, contentId: 'plex:663134', duration: 0, offset: 0 }
+      { n: 1, name: 'Allegro con brio', start: 0, end: undefined, contentId: 'plex:663134', duration: 0, offset: 0, part: 0 }
     ]);
     expect('group' in r.chapters[0]).toBe(false);
+  });
+});
+
+/**
+ * PARTS — one rail, several media items.
+ *
+ * A container's `parts` name contentIds, not timings. Each part is an ordinary
+ * sidecar that already resolves and plays standalone; the container looks each
+ * one up among the pieces the walk resolved and concatenates what it found. The
+ * chapters keep their own media item's `start`/`end` and are laid back onto ONE
+ * sounding rail, which is what lets a single frame span three étude episodes.
+ */
+describe('YamlSurroundStore — parts composed by contentId', () => {
+  // Three sidecars that each resolve alone, plus the container that names them.
+  // Op. 10 stands for the real twelve; the shape is what is under test.
+  const writeEtudes = (containerBody) => {
+    writeLib('classical/0_flagship/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-10.yml',
+      'title: "Études, Op. 10"\nmovements:\n  - { n: 1, name: "Op. 10 No. 1" }\n  - { n: 2, name: "Op. 10 No. 2" }\n');
+    writeLib('classical/0_flagship/chopin/etudes-op-25.yml',
+      'title: "Études, Op. 25"\nmovements:\n  - { n: 1, name: "Op. 25 No. 1" }\n');
+    writeLib('classical/0_flagship/chopin/etudes.yml',
+      'title: "Études"\nchapters:\n  - work: chopin/etudes-op-10\n  - work: chopin/etudes-op-25\n');
+    write('classical/chopin/etudes-op-10.yml',
+      'work: chopin/etudes-op-10\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\n'
+      + 'starts: [10, 110]\nmusicEndsAt: 310\n');
+    write('classical/chopin/etudes-op-25.yml',
+      'work: chopin/etudes-op-25\nsurround: concert-hall\nmatch: { contentId: plex:ep2 }\n'
+      + 'starts: [5]\nmusicEndsAt: 45\n');
+    write('classical/chopin/etudes.season.yml', containerBody);
+  };
+  const SEASON = 'work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+    + 'parts:\n  - plex:ep1\n  - plex:ep2\n';
+
+  it('concatenates the parts’ own chapters onto one sounding rail', () => {
+    writeEtudes(SEASON);
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    // start/end stay in each part's OWN media clock — ep2's first chapter starts
+    // at 5 seconds into ep2, not 5 seconds into the season. Only `offset` is
+    // global, and it is the whole reason composition cannot be a concatenation
+    // of already-placed chapters: MUTATION PROOF — drop the withOffsets call in
+    // #composeContainers and ep2's chapter keeps its standalone offset of 0
+    // instead of 300, so the rail draws it on top of Op. 10 No. 1.
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.start, c.offset, c.duration])).toEqual([
+      ['Op. 10 No. 1', 'plex:ep1', 10, 0, 100],
+      ['Op. 10 No. 2', 'plex:ep1', 110, 100, 200],
+      ['Op. 25 No. 1', 'plex:ep2', 5, 300, 40]
+    ]);
+    expect(r.timeline).toEqual({
+      totalSounding: 340,
+      parts: [
+        { contentId: 'plex:ep1', index: 0, sounding: 300 },
+        { contentId: 'plex:ep2', index: 1, sounding: 40 }
+      ]
+    });
+  });
+
+  it('labels each part with the work that part plays, not the container above it', () => {
+    writeEtudes(SEASON);
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    expect(r.chapters.map((c) => c.part)).toEqual([0, 0, 1]);
+    expect(r.chapters[0].group).toEqual({ work: 'chopin/etudes-op-10', title: 'Études, Op. 10', index: 0 });
+    expect(r.chapters[2].group).toEqual({ work: 'chopin/etudes-op-25', title: 'Études, Op. 25', index: 1 });
+    // The container's own piece block still comes from its own work.
+    expect(r.piece.title).toBe('Études');
+  });
+
+  it('composes a part whose sidecar the walk has not reached yet', () => {
+    // The container sorts before its parts here (`a-season` < `z-part`), so a
+    // store that composed while resolving a single file would find nothing.
+    writeLib('classical/0_flagship/chopin/one.yml', 'title: One\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/set.yml', 'title: Set\nchapters:\n  - work: chopin/one\n');
+    write('classical/chopin/a-season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:late }\nparts:\n  - plex:z\n');
+    write('classical/chopin/z-part.yml',
+      'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:z }\nstarts: [0]\nmusicEndsAt: 60\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:late', '');
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.duration])).toEqual([['Solo', 'plex:z', 60]]);
+  });
+
+  it('warns surround.part.missing and keeps the rest of the rail', () => {
+    // MUTATION PROOF — make the missing part fault the whole container (return
+    // early, or push a placeholder slot) and the two surviving chapters vanish
+    // or renumber: Op. 25 would land at part 2 with a gap at index 1, and
+    // timeline.parts[2] would accrue its sounding into an empty slot.
+    writeEtudes('work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:ep1\n  - plex:gone\n  - plex:ep2\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:season', '');
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.part.missing', {
+      file: 'classical/chopin/etudes.season.yml', contentId: 'plex:gone', index: 1
+    });
+    expect(r.chapters.map((c) => c.name)).toEqual(['Op. 10 No. 1', 'Op. 10 No. 2', 'Op. 25 No. 1']);
+    // Surviving parts are numbered densely, so timeline.parts[c.part] is always
+    // the slot that chapter's sounding belongs to.
+    expect(r.chapters.map((c) => c.part)).toEqual([0, 0, 1]);
+    expect(r.timeline.parts).toEqual([
+      { contentId: 'plex:ep1', index: 0, sounding: 300 },
+      { contentId: 'plex:ep2', index: 1, sounding: 40 }
+    ]);
+    expect(r.timeline.totalSounding).toBe(340);
+  });
+
+  it('refuses to compose a container that names itself', () => {
+    writeEtudes('work: chopin/etudes\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:season\n  - plex:ep2\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:season', '');
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.part.missing',
+      expect.objectContaining({ contentId: 'plex:season' }));
+    expect(r.chapters.map((c) => c.contentId)).toEqual(['plex:ep2']);
+  });
+
+  it('leaves each part still playable on its own', () => {
+    // The parts are not consumed by the container: they are ordinary sidecars
+    // and their own frames are exactly what they were before it existed.
+    writeEtudes(SEASON);
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:ep2', '');
+
+    expect(r.piece.title).toBe('Études, Op. 25');
+    expect(r.chapters).toEqual([
+      { n: 1, name: 'Op. 25 No. 1', start: 5, end: 45, contentId: 'plex:ep2', duration: 40, offset: 0, part: 0 }
+    ]);
+    expect(r.timeline).toEqual({ totalSounding: 40, parts: [{ contentId: 'plex:ep2', index: 0, sounding: 40 }] });
+  });
+});
+
+describe('YamlSurroundStore.lookupByPart', () => {
+  const writeSeason = () => {
+    writeLib('classical/0_flagship/chopin/one.yml', 'title: One\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/set.yml', 'title: Set\nchapters:\n  - work: chopin/one\n');
+    write('classical/chopin/part.yml',
+      'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\nstarts: [0]\nmusicEndsAt: 60\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\nparts:\n  - plex:ep1\n');
+  };
+
+  it('answers with the container, not the item’s own standalone payload', () => {
+    writeSeason();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+
+    const hit = store.lookupByPart('plex:ep1');
+    expect(hit.part).toBe(0);
+    expect(hit.payload.piece.title).toBe('Set');
+    // ...while the standalone frame is untouched and still reachable.
+    expect(store.lookup('plex:ep1', '').piece.title).toBe('One');
+  });
+
+  it('treats an uncontained item as part 0 of its own rail', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const hit = store.lookupByPart('plex:663134');
+    expect(hit).toEqual({ payload: store.lookup('plex:663134', ''), part: 0 });
+  });
+
+  it('returns null for an id no surround covers, and hands out a clone', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookupByPart('plex:nothing')).toBeNull();
+
+    const first = store.lookupByPart('plex:663134');
+    first.payload.piece.title = 'Vandalised';
+    expect(store.lookupByPart('plex:663134').payload.piece.title).toBe('Symphony No. 3');
+  });
+});
+
+/**
+ * INLINE PARTS — the fallback for a one-off container with no per-part sidecars.
+ *
+ * Nothing in the authored corpus takes this path today; it exists so a container
+ * assembled from media that was never authored separately can still state its
+ * own timings, part by part, against the chapters its work already resolves.
+ */
+describe('YamlSurroundStore — parts timed inline', () => {
+  it('places each part’s chapters in its own media item', () => {
+    writeLib('classical/0_flagship/chopin/p1.yml', 'title: P1\nmovements:\n  - { n: 1, name: "One" }\n  - { n: 2, name: "Two" }\n');
+    writeLib('classical/0_flagship/chopin/p2.yml', 'title: P2\nmovements:\n  - { n: 1, name: "Three" }\n');
+    writeLib('classical/0_flagship/chopin/set.yml',
+      'title: Set\nchapters:\n  - work: chopin/p1\n  - work: chopin/p2\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - { work: chopin/p1, contentId: plex:ep1, spans: [[0, 10], [20, 35]] }\n'
+      + '  - { work: chopin/p2, contentId: plex:ep2 }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.offset, c.duration])).toEqual([
+      ['One', 'plex:ep1', 0, 10], ['Two', 'plex:ep1', 10, 15], ['Three', 'plex:ep2', 25, 0]
+    ]);
+    expect(r.timeline.parts).toEqual([
+      { contentId: 'plex:ep1', index: 0, sounding: 25 },
+      { contentId: 'plex:ep2', index: 1, sounding: 0 }
+    ]);
+  });
+
+  it('warns when a part times a different number of chapters than its work has', () => {
+    writeLib('classical/0_flagship/chopin/p1.yml', 'title: P1\nmovements:\n  - { n: 1, name: "One" }\n  - { n: 2, name: "Two" }\n');
+    writeLib('classical/0_flagship/chopin/set.yml', 'title: Set\nchapters:\n  - work: chopin/p1\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:s2 }\n'
+      + 'parts:\n  - { work: chopin/p1, contentId: plex:ep1, spans: [[0, 10]] }\n');
+
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.spans.mismatch',
+      expect.objectContaining({ work: 'chopin/p1', spans: 1, chapters: 2 }));
+  });
+
+  it('pairs a miscounted part’s spans with its OWN chapters, not the flat list', () => {
+    // The reason the inline path groups by work first. Part 1 times one span for
+    // a two-chapter work; if spans were consumed off the flat resolved list,
+    // part 2's span would be eaten as part 1's second chapter and every later
+    // timing would slide by one.
+    writeLib('classical/0_flagship/chopin/p1.yml', 'title: P1\nmovements:\n  - { n: 1, name: One }\n  - { n: 2, name: Two }\n');
+    writeLib('classical/0_flagship/chopin/p2.yml', 'title: P2\nmovements:\n  - { n: 1, name: Three }\n');
+    writeLib('classical/0_flagship/chopin/set.yml',
+      'title: Set\nchapters:\n  - work: chopin/p1\n  - work: chopin/p2\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - { work: chopin/p1, contentId: plex:ep1, spans: [[0, 10]] }\n'
+      + '  - { work: chopin/p2, contentId: plex:ep2, spans: [[0, 90]] }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.duration])).toEqual([
+      ['One', 'plex:ep1', 10], ['Two', 'plex:ep1', 0], ['Three', 'plex:ep2', 90]
+    ]);
+  });
+
+  it('carries a part’s performance credit onto its own chapters only', () => {
+    writeLib('classical/0_flagship/chopin/p1.yml', 'title: P1\nmovements:\n  - { n: 1, name: One }\n');
+    writeLib('classical/0_flagship/chopin/p2.yml', 'title: P2\nmovements:\n  - { n: 1, name: Two }\n');
+    writeLib('classical/0_flagship/chopin/set.yml',
+      'title: Set\nchapters:\n  - work: chopin/p1\n  - work: chopin/p2\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - { work: chopin/p1, contentId: plex:ep1, performance: Lortie }\n'
+      + '  - { work: chopin/p2, contentId: plex:ep2 }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+    expect(r.chapters.map((c) => c.performance)).toEqual(['Lortie', undefined]);
+  });
+
+  it('reports a parts: block that is not a list rather than coercing it', () => {
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n'
+      + 'starts: [0]\nparts: plex:nope\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.sidecar.invalid',
+      expect.objectContaining({ reasons: expect.arrayContaining(['parts-not-a-list']) }));
+    // Warn-then-continue: it still resolves down the single-item path.
+    expect(store.lookup('plex:663134', '').chapters).toHaveLength(1);
   });
 });
