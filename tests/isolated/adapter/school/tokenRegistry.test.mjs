@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
+import { YamlTokenRegistry, REBUILD_INTERVAL_MS } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { ITokenRegistry } from '#apps/school/ports/ITokenRegistry.mjs';
 import { mintToken, resolveTokenState } from '#domains/school/sessions/tokens.mjs';
+import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
+import { FakeTokenRegistry } from '#testlib/school/lifecycleFakes.mjs';
 
 const AT = '2026-07-27T10:00:00.000Z';
 const SID = 'ses_abc123';
@@ -425,6 +427,39 @@ describe('getByAccessCode', () => {
     expect(await reg.getByAccessCode('481920')).toBe(null);
   });
 
+  it.each([
+    ['a missing accessCodeExpiresAt', (r) => { const { accessCodeExpiresAt, ...rest } = r; return rest; }],
+    ['a null accessCodeExpiresAt', (r) => ({ ...r, accessCodeExpiresAt: null })],
+    ['a garbage accessCodeExpiresAt', (r) => ({ ...r, accessCodeExpiresAt: 'tomorrow' })],
+  ])('returns null for a half-written record — %s', async (_label, mangle) => {
+    const reg = at(DURING);
+    await reg.put(mangle(coded('481920')));
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+  });
+
+  it('returns null rather than throwing on an absurd clock', async () => {
+    await at(DURING).put(coded('481920'));
+    // Finite, so a `Number.isFinite` guard passes it straight into a Date that
+    // has no ISO string. Never-throw has to survive a miswired clock too.
+    const absurd = at(DURING, { now: () => 1e18 });
+    expect(await absurd.getByAccessCode('481920')).toBe(null);
+  });
+
+  it('resolves a correct code on the FIRST try after its index entry goes stale', async () => {
+    const reg = at(DURING);
+    const stale = coded('481920');
+    await reg.put(stale);
+    fs.unlinkSync(path.join(tokensRoot(), `${bodyOf(stale)}.yml`));
+    // Another process re-issues the same six digits against a new token.
+    const replacement = coded('481920', {
+      at: '2026-07-27T11:00:00.000Z', subject: { learnerId: 'kid2', subject: 'reading' },
+    });
+    await at(DURING).put(replacement);
+    // The child typed the RIGHT digits: healing the stale entry must not cost
+    // them a "try again".
+    expect((await reg.getByAccessCode('481920'))?.token).toBe(replacement.token);
+  });
+
   it('ignores a hand-edited record whose code is not six digits', async () => {
     const reg = at(DURING);
     const record = coded('481920');
@@ -435,5 +470,243 @@ describe('getByAccessCode', () => {
     );
     expect(await reg.getByAccessCode('42')).toBe(null);
     expect(await reg.getByAccessCode('481920')).toBe(null);
+  });
+
+  describe('duplicate codes', () => {
+    const KID1 = () => coded('481920', { at: '2026-07-27T10:00:00.000Z' });
+    const KID2 = () => coded('481920', {
+      at: '2026-07-27T11:00:00.000Z', subject: { learnerId: 'kid2', subject: 'reading' },
+    });
+
+    it.each([
+      ['oldest first', (a, b) => [a, b]],
+      ['newest first', (a, b) => [b, a]],
+    ])('resolves the same record in-process and after a restart (%s)', async (_label, order) => {
+      const reg = at(DURING);
+      const [first, second] = order(KID1(), KID2());
+      await reg.put(first);
+      await reg.put(second);
+      const inProcess = await reg.getByAccessCode('481920');
+      // A fresh index rebuilt from disk takes readdir order. It must not be
+      // allowed to answer with a DIFFERENT child's lesson than this process did.
+      const restarted = await at(DURING).getByAccessCode('481920');
+      expect(restarted).toEqual(inProcess);
+      // The newest paper wins, whichever order the two landed in.
+      expect(inProcess.issuedAt).toBe('2026-07-27T11:00:00.000Z');
+      expect(inProcess.subject.subject).toBe('reading');
+    });
+
+    it('names the collision instead of silently opening one of them', async () => {
+      const warns = [];
+      const reg = at(DURING, { logger: { warn: (event, data) => warns.push([event, data]) } });
+      await reg.put(KID1());
+      await reg.put(KID2());
+      const collision = warns.filter(([event]) => event === 'school.tokens.access-code-collision');
+      expect(collision).toHaveLength(1);
+      expect(collision[0][1]).toMatchObject({ code: '481920' });
+    });
+
+    it('counts a duplicated code once as taken', async () => {
+      const reg = at(DURING);
+      await reg.put(KID1());
+      await reg.put(KID2());
+      expect(await reg.liveAccessCodes()).toEqual(new Set(['481920']));
+    });
+  });
+});
+
+describe('liveAccessCodes', () => {
+  const TOKEN_EXPIRES = '2026-08-03T10:00:00.000Z';
+  const CODE_EXPIRES = '2026-07-28T04:00:00.000Z';
+  const DURING = '2026-07-27T14:00:00.000Z';
+  const AFTER_ROLLOVER = '2026-07-29T09:00:00.000Z';
+
+  const at = (iso, over = {}) => new YamlTokenRegistry({
+    configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` },
+    now: () => Date.parse(iso),
+    ...over,
+  });
+  const coded = (accessCode, over = {}) => mint({
+    tokenClass: 'subject_next',
+    subject: { learnerId: 'kid1', subject: 'mathematics' },
+    expiresAt: TOKEN_EXPIRES,
+    accessCode,
+    accessCodeExpiresAt: CODE_EXPIRES,
+    ...over,
+  });
+
+  it('hands back a plain Set — `getByAccessCode` is async and can never be the predicate', async () => {
+    const reg = at(DURING);
+    await reg.put(coded('481920'));
+    const live = await reg.liveAccessCodes();
+    expect(live).toBeInstanceOf(Set);
+    // Synchronous, which is the entire point: `mintAccessCode` tests `taken(code)`
+    // for truthiness, and any Promise is truthy.
+    expect(live.has('481920')).toBe(true);
+    expect(live.has('100001')).toBe(false);
+  });
+
+  it('drives a real mint around a code already on paper', async () => {
+    const reg = at(DURING);
+    await reg.put(coded('481920'));
+    const live = await reg.liveAccessCodes();
+    const draws = [0.48192, 0.1000015];
+    expect(mintAccessCode({ rng: () => draws.shift(), taken: (code) => live.has(code) }))
+      .toBe('100001');
+  });
+
+  it('is empty on a registry that never minted anything', async () => {
+    expect(await at(DURING).liveAccessCodes()).toEqual(new Set());
+  });
+
+  it('leaves out a revoked code', async () => {
+    const reg = at(DURING);
+    const revoked = coded('100001', { subject: { learnerId: 'kid2', subject: 'reading' } });
+    await reg.put(coded('481920'));
+    await reg.put(revoked);
+    await reg.revoke(revoked.token, { at: DURING });
+    expect(await reg.liveAccessCodes()).toEqual(new Set(['481920']));
+  });
+
+  it('leaves out a code whose study day has passed, though its token lives on', async () => {
+    const record = coded('481920');
+    await at(DURING).put(record);
+    const later = at(AFTER_ROLLOVER);
+    expect(await later.liveAccessCodes()).toEqual(new Set());
+    expect(await later.get(record.token)).toEqual(record); // the QR still scans
+  });
+
+  it('leaves out a record with no code at all', async () => {
+    const reg = at(DURING);
+    await reg.put(mint({ expiresAt: TOKEN_EXPIRES }));
+    expect(await reg.liveAccessCodes()).toEqual(new Set());
+  });
+
+  it('re-reads disk every call — a stale index must never decide a mint', async () => {
+    const reg = at(DURING);
+    await reg.put(coded('481920'));
+    // Written by something else after this registry last walked.
+    await at(DURING).put(coded('100001', { subject: { learnerId: 'kid2', subject: 'reading' } }));
+    expect(await reg.liveAccessCodes()).toEqual(new Set(['481920', '100001']));
+  });
+
+  it('does not index a code the domain would reject', async () => {
+    fs.mkdirSync(tokensRoot(), { recursive: true });
+    fs.writeFileSync(
+      path.join(tokensRoot(), 'HANDEDITED2345.yml'),
+      `token: sch:HANDEDITED2345\ntokenClass: subject_next\naccessCode: hello\naccessCodeExpiresAt: '${CODE_EXPIRES}'\n`,
+    );
+    const reg = at(DURING);
+    expect(await reg.liveAccessCodes()).toEqual(new Set());
+    expect(await reg.getByAccessCode('hello')).toBe(null);
+  });
+});
+
+describe('index rebuild', () => {
+  const TOKEN_EXPIRES = '2026-08-03T10:00:00.000Z';
+  const CODE_EXPIRES = '2026-07-28T04:00:00.000Z';
+  const DURING = '2026-07-27T14:00:00.000Z';
+
+  const build = (nowFn, over = {}) => new YamlTokenRegistry({
+    configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` },
+    now: nowFn,
+    ...over,
+  });
+  const at = (iso, over = {}) => build(() => Date.parse(iso), over);
+  const coded = (accessCode, over = {}) => mint({
+    tokenClass: 'subject_next',
+    subject: { learnerId: 'kid1', subject: 'mathematics' },
+    expiresAt: TOKEN_EXPIRES,
+    accessCode,
+    accessCodeExpiresAt: CODE_EXPIRES,
+    ...over,
+  });
+
+  it('does not re-walk the directory on every miss', async () => {
+    let nowMs = Date.parse(DURING);
+    const reg = build(() => nowMs);
+    expect(await reg.getByAccessCode('000000')).toBe(null); // first miss: one walk
+    const late = coded('481920');
+    await at(DURING).put(late); // another process writes AFTER that walk
+    // Throttled: a keypad mistype does not buy a fresh readdir of every record.
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+    nowMs += REBUILD_INTERVAL_MS;
+    expect((await reg.getByAccessCode('481920'))?.token).toBe(late.token);
+  });
+
+  it('a read never deletes, and never counts as the periodic sweep', async () => {
+    const dead = coded('481920');
+    await at(DURING).put(dead);
+    const later = at('2026-08-20T10:00:00.000Z'); // well past expiry + grace
+    expect(await later.getByAccessCode('000000')).toBe(null); // a miss walks the directory…
+    expect(fs.readdirSync(tokensRoot())).toHaveLength(1); // …and deletes nothing
+
+    // The sweep clock must not have moved either, or the next mint would skip
+    // its housekeeping because a child mistyped a digit.
+    const live = coded('100001', {
+      subject: { learnerId: 'kid2', subject: 'reading' },
+      expiresAt: '2026-09-01T00:00:00.000Z',
+      accessCodeExpiresAt: '2026-08-21T04:00:00.000Z',
+    });
+    await later.put(live);
+    expect(await later.get(dead.token)).toBe(null); // pruned by the put's sweep
+    expect(await later.get(live.token)).toMatchObject({ token: live.token });
+  });
+
+  it('does not warn about an unreadable neighbour on the read path', async () => {
+    const warns = [];
+    await at(DURING).put(coded('481920'));
+    fs.writeFileSync(path.join(tokensRoot(), 'CORRUPTCORRUPT.yml'), '{{{ not yaml');
+    const reg = at(DURING, { logger: { warn: (event, data) => warns.push([event, data]) } });
+    expect(await reg.getByAccessCode('000000')).toBe(null);
+    // A half-written file during a concurrent write is transient and expected;
+    // warning once per keystroke would bury the sweep's real report.
+    expect(warns).toEqual([]);
+    // …and the bad neighbour does not stop a good code resolving.
+    expect((await reg.getByAccessCode('481920'))?.accessCode).toBe('481920');
+  });
+
+  it('the in-memory double answers the code path like the real registry', async () => {
+    // Use-case tests run against FakeTokenRegistry. If the double does not know
+    // the panel code, Tasks 6/7 test a lifecycle the house does not have.
+    const real = at(DURING);
+    const fake = new FakeTokenRegistry({ now: () => DURING });
+    const record = coded('481920');
+    const revoked = coded('100001', { subject: { learnerId: 'kid2', subject: 'reading' } });
+    for (const registry of [real, fake]) {
+      // eslint-disable-next-line no-await-in-loop
+      await registry.put(record);
+      // eslint-disable-next-line no-await-in-loop
+      expect((await registry.claim(record)).status).toBe('duplicate');
+      // eslint-disable-next-line no-await-in-loop
+      await registry.put(revoked);
+      // eslint-disable-next-line no-await-in-loop
+      await registry.revoke(revoked.token, { at: DURING });
+      // eslint-disable-next-line no-await-in-loop
+      expect((await registry.getByAccessCode('481920'))?.token).toBe(record.token);
+      // eslint-disable-next-line no-await-in-loop
+      expect(await registry.getByAccessCode('100001')).toBe(null);
+      // eslint-disable-next-line no-await-in-loop
+      expect(await registry.getByAccessCode('000000')).toBe(null);
+      // eslint-disable-next-line no-await-in-loop
+      expect(await registry.liveAccessCodes()).toEqual(new Set(['481920']));
+    }
+  });
+
+  it('the in-memory double honours the code clock, not the token clock', async () => {
+    const record = coded('481920');
+    const fake = new FakeTokenRegistry({ now: () => '2026-07-29T09:00:00.000Z' });
+    await fake.put(record);
+    expect(await fake.getByAccessCode('481920')).toBe(null);
+    expect(await fake.get(record.token)).toEqual(record);
+  });
+
+  it('still names an unreadable record on a prune sweep', async () => {
+    const warns = [];
+    const reg = at(DURING, { logger: { warn: (event, data) => warns.push([event, data]) } });
+    fs.mkdirSync(tokensRoot(), { recursive: true });
+    fs.writeFileSync(path.join(tokensRoot(), 'CORRUPTCORRUPT.yml'), '{{{ not yaml');
+    await reg.prune();
+    expect(warns.map(([event]) => event)).toContain('school.tokens.record-unreadable');
   });
 });
