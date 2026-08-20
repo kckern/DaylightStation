@@ -23,13 +23,22 @@
  * a pruned one to "we do not know that ticket" — recently-expired paper
  * deserves the first. Records with no expiry are never pruned, and a
  * corrupt file is left alone (same posture as `get`: isolate, don't destroy).
+ *
+ * A SECOND KEY: the printed 6-digit panel code. Records are one-per-file keyed
+ * by token body, so resolving a typed code needs an index — an in-memory
+ * `Map<accessCode, body>` written on every store and rebuilt from disk on a
+ * miss. The rebuild is the same walk the sweep already does, not a second one.
+ * Every hit is verified against the file it points at before it is returned, so
+ * an entry that has gone stale (code changed, record revoked, file pruned)
+ * resolves to null and heals itself rather than serving the wrong work.
  */
 import path from 'path';
 import { promises as fs } from 'fs';
 import { isDeepStrictEqual } from 'node:util';
 import yaml from 'js-yaml';
 import { ITokenRegistry } from '#apps/school/ports/ITokenRegistry.mjs';
-import { TOKEN_PREFIX } from '#domains/school/sessions/tokens.mjs';
+import { TOKEN_PREFIX, isAccessCodeLive } from '#domains/school/sessions/tokens.mjs';
+import { normalizeAccessCode } from '#domains/school/sessions/accessCode.mjs';
 
 // The mint charset is [A-Z0-9]; the bound is wide enough for a future format and
 // narrow enough that "..", ".", "a/b" and hidden names cannot match.
@@ -58,6 +67,8 @@ export class YamlTokenRegistry extends ITokenRegistry {
   #graceMs;
   #logger;
   #lastSweepMs = -Infinity;
+  /** Secondary index: printed panel code → token body. Never authoritative. */
+  #bodyByCode = new Map();
 
   /**
    * @param {object} config
@@ -91,6 +102,25 @@ export class YamlTokenRegistry extends ITokenRegistry {
   async #write(body, record) {
     await fs.mkdir(this.#root(), { recursive: true });
     await fs.writeFile(this.#fileFor(body), dumpYaml(record), 'utf8');
+    this.#index(body, record);
+  }
+
+  /**
+   * Point a panel code at the body that carries it — or stop pointing, when the
+   * record that just landed is revoked. `revoke` writes through here like every
+   * other store, so cancelling a ticket cannot leave the index resolving it.
+   *
+   * Liveness is NOT decided here: the index is a hint, and every hit is
+   * re-checked against the file before it is returned.
+   */
+  #index(body, record) {
+    const code = record?.accessCode;
+    if (typeof code !== 'string' || code.length === 0) return;
+    if (record.revokedAt) {
+      if (this.#bodyByCode.get(code) === body) this.#bodyByCode.delete(code);
+      return;
+    }
+    this.#bodyByCode.set(code, body);
   }
 
   /** @inheritdoc */
@@ -142,8 +172,24 @@ export class YamlTokenRegistry extends ITokenRegistry {
   }
 
   async #sweep() {
+    return this.#walk({ prune: true });
+  }
+
+  /**
+   * One walk of the record directory, serving both jobs that need it: pruning
+   * long-expired files, and seeding the panel-code index from what survives.
+   *
+   * `prune: false` is the index rebuild after a code lookup misses. A miss is a
+   * child mistyping a digit, and a read must not delete anything, so that pass
+   * only reads — it does not unlink, does not log a prune, and does not count
+   * as the periodic sweep.
+   *
+   * @param {{ prune?: boolean }} opts
+   * @returns {Promise<{removed: number, kept: number}>}
+   */
+  async #walk({ prune = false } = {}) {
     const nowMs = this.#now();
-    this.#lastSweepMs = nowMs;
+    if (prune) this.#lastSweepMs = nowMs;
     let names;
     try {
       names = await fs.readdir(this.#root());
@@ -154,14 +200,16 @@ export class YamlTokenRegistry extends ITokenRegistry {
     let kept = 0;
     for (const name of names) {
       let expired = false;
+      let record = null;
       if (name.endsWith('.yml')) {
         try {
           // eslint-disable-next-line no-await-in-loop
           const raw = yaml.load(await fs.readFile(path.join(this.#root(), name), 'utf8'));
+          record = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
           const expiresMs = Date.parse(raw?.expiresAt ?? '');
           // Unparseable, corrupt, or unexpiring records are all KEPT: deletion
           // is only ever justified by a timestamp that is legibly long past.
-          expired = Number.isFinite(expiresMs) && nowMs - expiresMs > this.#graceMs;
+          expired = prune && Number.isFinite(expiresMs) && nowMs - expiresMs > this.#graceMs;
         } catch (err) {
           // Keeping an unreadable token is the safe answer — deletion needs a
           // legible timestamp — but a token record that cannot be read will be
@@ -173,13 +221,23 @@ export class YamlTokenRegistry extends ITokenRegistry {
       if (expired) {
         // eslint-disable-next-line no-await-in-loop
         await fs.unlink(path.join(this.#root(), name)).catch(() => {});
+        // The file it pointed at is gone, so the index entry goes with it.
+        this.#forget(name.slice(0, -'.yml'.length), record);
         removed += 1;
       } else {
+        if (record) this.#index(name.slice(0, -'.yml'.length), record);
         kept += 1;
       }
     }
     if (removed > 0) this.#logger?.info?.('school.tokens.pruned', { removed, kept });
     return { removed, kept };
+  }
+
+  /** Drop a code entry whose file no longer exists. */
+  #forget(body, record) {
+    const code = record?.accessCode;
+    if (typeof code !== 'string') return;
+    if (this.#bodyByCode.get(code) === body) this.#bodyByCode.delete(code);
   }
 
   /** @inheritdoc */
@@ -195,6 +253,42 @@ export class YamlTokenRegistry extends ITokenRegistry {
       // way, and one bad record must not poison the rest of the registry.
       return null;
     }
+  }
+
+  /** @inheritdoc */
+  async getByAccessCode(code) {
+    // What six digits means is `accessCode.mjs`'s rule, not this adapter's — but
+    // a keypad never dead-ends, so its ValidationError becomes a null here and
+    // a mistyped code costs no directory walk.
+    try {
+      normalizeAccessCode(code);
+    } catch {
+      return null;
+    }
+    let body = this.#bodyByCode.get(code);
+    if (body === undefined) {
+      // A miss is a child mistyping a digit, or the first lookup in a fresh
+      // process. Either way the file set is small: rebuild and ask once more.
+      await this.#walk({ prune: false });
+      body = this.#bodyByCode.get(code);
+    }
+    if (body === undefined) return null;
+
+    // The index is a hint; the file is the truth. Re-reading here is what makes
+    // a stale entry — pruned file, changed code — return null instead of the
+    // wrong lesson.
+    const record = await this.get(body);
+    if (!record || record.accessCode !== code) {
+      if (this.#bodyByCode.get(code) === body) this.#bodyByCode.delete(code);
+      return null;
+    }
+
+    // Expiry and revocation are the domain's rule, not the adapter's: the code
+    // dies at the study-day rollover while its token — and the QR printed
+    // beside it — lives on. Reading `expiresAt` here would fuse the two clocks.
+    const nowMs = this.#now();
+    const now = Number.isFinite(nowMs) ? new Date(nowMs).toISOString() : null;
+    return isAccessCodeLive(record, { now }) ? record : null;
   }
 
   /** @inheritdoc */
