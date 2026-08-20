@@ -198,12 +198,37 @@ export const FORM_DURATIONS = Object.freeze({
 /** A skipped number is normal here — this performance omits 8-12 of 53 — but not free. */
 export const SKIP_PENALTY = 40;
 
-/** How badly a span misses its form's prior, in seconds outside the range. */
+/**
+ * What ANY implausible span costs.
+ *
+ * THE SEARCH MUST OPTIMISE WHAT THE GATE MEASURES, and for one run of this
+ * pipeline it did not. `spanCost` grew linearly with the violation, so a span
+ * four seconds under its floor cost 4 while a skip cost 40 — and the search
+ * bought the bad candidate every time. But `validateSpans` is BINARY: any span
+ * outside its prior fails, so an alignment containing one is worthless however
+ * cheap the search thought it was. On the real recording that mismatch produced
+ * ONE omission where the duration arithmetic requires eight to twelve, and ten
+ * failures of which nine were within fifteen seconds of their floor.
+ *
+ * So the objective is lexicographic, expressed as a number: first minimise
+ * implausible spans, then minimise skips. This constant is what makes that true
+ * — it exceeds every skip the work could ever need (53 x SKIP_PENALTY = 2120),
+ * so no quantity of omissions is ever traded for a single bad span.
+ */
+export const IMPLAUSIBLE_COST = 100_000;
+
+/**
+ * What an assignment costs.
+ *
+ * Zero inside the form's prior. Outside it, `IMPLAUSIBLE_COST` plus the
+ * magnitude — the magnitude surviving only as a tie-break, so that when every
+ * candidate alignment has violations the least-wrong one still wins.
+ */
 export function spanCost(item, seconds) {
   const prior = FORM_DURATIONS[item.form];
-  if (!prior) return SKIP_PENALTY * 2;        // unknown form: never free
-  if (seconds < prior[0]) return prior[0] - seconds;
-  if (seconds > prior[1]) return seconds - prior[1];
+  if (!prior) return IMPLAUSIBLE_COST * 2;    // unknown form: never free
+  if (seconds < prior[0]) return IMPLAUSIBLE_COST + (prior[0] - seconds);
+  if (seconds > prior[1]) return IMPLAUSIBLE_COST + (seconds - prior[1]);
   return 0;
 }
 
