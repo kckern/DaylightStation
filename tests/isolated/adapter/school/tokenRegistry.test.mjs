@@ -270,3 +270,170 @@ describe('prune', () => {
     expect(await reg.prune()).toEqual({ removed: 0, kept: 1 });
   });
 });
+
+describe('getByAccessCode', () => {
+  // Two clocks on one record. The token lives a week so the printed QR outlives
+  // the agenda; the panel code dies at the 4am study-day rollover.
+  const TOKEN_EXPIRES = '2026-08-03T10:00:00.000Z'; // AT + 7 days
+  const CODE_EXPIRES = '2026-07-28T04:00:00.000Z'; // the next rollover after AT
+  const DURING = '2026-07-27T14:00:00.000Z'; // both clocks live
+  const AFTER_ROLLOVER = '2026-07-29T09:00:00.000Z'; // code dead, token still good
+
+  /** A registry whose ms clock is pinned to an instant. */
+  const at = (iso, over = {}) => new YamlTokenRegistry({
+    configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` },
+    now: () => Date.parse(iso),
+    ...over,
+  });
+
+  // Only a subject_next token may carry a code (tokens.mjs whitelist).
+  const coded = (accessCode, over = {}) => mint({
+    tokenClass: 'subject_next',
+    subject: { learnerId: 'kid1', subject: 'mathematics' },
+    expiresAt: TOKEN_EXPIRES,
+    accessCode,
+    accessCodeExpiresAt: CODE_EXPIRES,
+    ...over,
+  });
+
+  const bodyOf = (record) => record.token.slice('sch:'.length);
+
+  it('resolves a code that was put with its record', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    expect(await reg.getByAccessCode('481920')).toEqual(record);
+  });
+
+  it('resolves a code claimed rather than put', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    expect((await reg.claim(record)).status).toBe('accepted');
+    expect(await reg.getByAccessCode('481920')).toEqual(record);
+  });
+
+  it('rebuilds the index from disk on a miss — a fresh process still resolves', async () => {
+    const record = coded('481920');
+    await at(DURING).put(record);
+    // A second registry over the same directory has an empty in-memory index.
+    expect(await at(DURING).getByAccessCode('481920')).toEqual(record);
+  });
+
+  it('returns null for an unknown code — a keypad never dead-ends', async () => {
+    const reg = at(DURING);
+    await reg.put(coded('481920'));
+    expect(await reg.getByAccessCode('000000')).toBe(null);
+  });
+
+  it.each([null, undefined, 7, 481920, '', '12345', '1234567', ' 481920 ', '48192a', {}])(
+    'returns null rather than throwing for the malformed code %s',
+    async (code) => {
+      const reg = at(DURING);
+      await reg.put(coded('481920'));
+      expect(await reg.getByAccessCode(code)).toBe(null);
+    },
+  );
+
+  it('honours the CODE clock, not the token clock — the two-clock guarantee', async () => {
+    const record = coded('481920');
+    await at(DURING).put(record);
+    const later = at(AFTER_ROLLOVER); // past accessCodeExpiresAt, inside expiresAt
+    expect(await later.getByAccessCode('481920')).toBe(null);
+    // …while the printed QR beside it still scans perfectly.
+    expect(await later.get(record.token)).toEqual(record);
+  });
+
+  it('is dead AT the rollover instant — the boundary belongs to the next day', async () => {
+    const record = coded('481920');
+    await at(DURING).put(record);
+    expect(await at(CODE_EXPIRES).getByAccessCode('481920')).toBe(null);
+  });
+
+  it('returns null for a revoked record, whose file is still on disk', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    await reg.revoke(record.token, { at: DURING });
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+    expect((await reg.get(record.token)).revokedAt).toBe(DURING);
+  });
+
+  it('leaves no index entry pointing at a revoked record', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    await reg.revoke(record.token, { at: DURING });
+    // Even a rebuild from disk must not resurrect it.
+    expect(await at(DURING).getByAccessCode('481920')).toBe(null);
+  });
+
+  it('does not collide two records on different codes', async () => {
+    const reg = at(DURING);
+    const maths = coded('481920');
+    const reading = coded('100001', { subject: { learnerId: 'kid1', subject: 'reading' } });
+    await reg.put(maths);
+    await reg.put(reading);
+    expect(maths.token).not.toBe(reading.token);
+    expect((await reg.getByAccessCode('481920')).token).toBe(maths.token);
+    expect((await reg.getByAccessCode('100001')).token).toBe(reading.token);
+  });
+
+  it.each(['012345', '000000', '000001'])(
+    'keeps the zero-padded code %s a string across the YAML round-trip',
+    async (code) => {
+      const reg = at(DURING);
+      const record = coded(code);
+      await reg.put(record);
+      const raw = fs.readFileSync(path.join(tokensRoot(), `${bodyOf(record)}.yml`), 'utf8');
+      expect(raw).toMatch(new RegExp(`accessCode: '${code}'`));
+      expect((await reg.get(record.token)).accessCode).toBe(code);
+      expect((await reg.getByAccessCode(code)).accessCode).toBe(code);
+    },
+  );
+
+  it('returns null when the file behind an indexed code is gone', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    fs.unlinkSync(path.join(tokensRoot(), `${bodyOf(record)}.yml`));
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+  });
+
+  it('returns null for the code of a pruned record', async () => {
+    await at(DURING).put(coded('481920'));
+    const later = at('2026-08-20T10:00:00.000Z'); // token expiry + grace, all past
+    expect((await later.prune()).removed).toBe(1);
+    expect(await later.getByAccessCode('481920')).toBe(null);
+  });
+
+  it('stops resolving the old code when the same token is re-put with a new one', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    await reg.put({ ...record, accessCode: '100002' });
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+    expect((await reg.getByAccessCode('100002')).token).toBe(record.token);
+  });
+
+  it('leaves a record with no code untouched — six keys, and no code resolves to it', async () => {
+    const reg = at(DURING);
+    const plain = mint({ expiresAt: TOKEN_EXPIRES });
+    await reg.put(plain);
+    const stored = await reg.get(plain.token);
+    expect(stored).toEqual(plain);
+    expect(Object.keys(stored)).toEqual(['token', 'tokenClass', 'subject', 'issuedAt', 'expiresAt', 'revokedAt']);
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+  });
+
+  it('ignores a hand-edited record whose code is not six digits', async () => {
+    const reg = at(DURING);
+    const record = coded('481920');
+    await reg.put(record);
+    fs.writeFileSync(
+      path.join(tokensRoot(), `${bodyOf(record)}.yml`),
+      `token: ${record.token}\ntokenClass: subject_next\naccessCode: '42'\naccessCodeExpiresAt: '${CODE_EXPIRES}'\n`,
+    );
+    expect(await reg.getByAccessCode('42')).toBe(null);
+    expect(await reg.getByAccessCode('481920')).toBe(null);
+  });
+});

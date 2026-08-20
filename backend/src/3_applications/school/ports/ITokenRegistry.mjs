@@ -16,7 +16,10 @@ export class ITokenRegistry {
   /**
    * Store a minted token record.
    *
-   * @param {object} record - from `mintToken`: `{ token, tokenClass, subject, issuedAt, expiresAt, revokedAt }`
+   * @param {object} record - from `mintToken`: `{ token, tokenClass, subject, issuedAt, expiresAt,
+   *   revokedAt }`, and on a `subject_next` token optionally `{ accessCode, accessCodeExpiresAt }` —
+   *   the printed 6-digit panel alias and its own, shorter study-day clock. Both keys are absent
+   *   together on a token with no code; neither is ever stored as a null column.
    * @returns {Promise<object>} the stored record
    */
   async put(record) {
@@ -43,6 +46,20 @@ export class ITokenRegistry {
    */
   async get(token) {
     throw new Error('ITokenRegistry.get must be implemented');
+  }
+
+  /**
+   * Look up a token by its printed 6-digit panel code.
+   *
+   * The code has its OWN, shorter clock than the token it aliases: a code whose
+   * study day has passed must not resolve even though its printed QR still scans.
+   *
+   * @param {string} code - the six digits typed at the panel
+   * @returns {Promise<object|null>} null when unknown, expired, or revoked —
+   *   the caller says "Try again"; a keypad never dead-ends
+   */
+  async getByAccessCode(code) {
+    throw new Error('ITokenRegistry.getByAccessCode must be implemented');
   }
 
   /**
