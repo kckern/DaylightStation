@@ -357,6 +357,9 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
+        // No containerId: `/shuffle` reaches queries and containers alike, so
+        // this branch cannot claim playback started from a programme. Picking
+        // one item at random out of a season is not playing the season.
         return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
       }
 
@@ -400,7 +403,11 @@ export function createPlayRouter(config) {
           : finalSource;
         const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
 
-        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
+        // Playback started FROM the container, so its first playable is part 0
+        // of that programme and inherits its frame — see PlayResponseService.
+        return res.json(playResponseService.toPlayResponse(selectedItem, watchState, {
+          adapter, resume: resumeOverride, session, containerId: `${finalSource}:${finalLocalId}`
+        }));
       }
 
       // Return playable item
@@ -470,7 +477,10 @@ export function createPlayRouter(config) {
         ? await adapter.getStoragePath(selectedItem.id)
         : finalSource;
       const watchState = await playResponseService.getWatchState(selectedItem, storagePath, adapter);
-      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, { adapter, resume: resumeOverride, session }));
+      // Same container context as the splat route above.
+      return res.json(playResponseService.toPlayResponse(selectedItem, watchState, {
+        adapter, resume: resumeOverride, session, containerId: `${finalSource}:${finalLocalId}`
+      }));
     }
 
     const storagePath = typeof adapter.getStoragePath === 'function'

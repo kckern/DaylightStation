@@ -184,6 +184,7 @@ musicEndsAt: 2955                     # where the music stops and the applause s
 | `performance` | no | Free-text performers/venue/date. Reaches the payload as `piece.performance`; no shipped module renders it yet. |
 | `starts` | no | Seconds from the top of the media, positional — `starts[i]` is `movements[i]`'s start. |
 | `musicEndsAt` | no | Reaches the payload as `piece.musicEndsAt`; `MovementMap` uses it so the last movement's bar stops at the music rather than running to `duration`. |
+| `parts` | no | Makes this a container: the `contentId`s its programme is performed on, in playing order. See "One programme across several media items". |
 | `cues` | no | Performance-specific extras only, `{ at, render, text }`. Movement notes already produce their own. |
 | `composer` / `piece` | no | Per-key overrides applied last. Use sparingly — an override that belongs to the music belongs in the corpus. |
 
@@ -325,6 +326,40 @@ and the file, so the fix is a one-line edit rather than a mystery. **If two
 sidecars match the same title the store refuses and logs
 `surround.match.ambiguous`** rather than guessing — a wrong surround (Beethoven's
 facts over a Vivaldi video) is worse than none.
+
+### One programme across several media items
+
+A sidecar that carries `parts:` — a list of the `contentId`s its programme is
+performed on — is a **container**. Chopin's twenty-seven études are three Plex
+episodes; the season is one work with one rail, and the container concatenates
+what those three sidecars already resolved rather than restating their timings.
+Its rail is global, the timings on it stay in each media item's own clock, and
+`timeline.parts` records where each item sits on it.
+
+The same media id then has two true readings, and **how playback started decides
+which applies**:
+
+- **Play the episode** — `/play/plex:696235` — and it is a whole work. Its own
+  sidecar supplies the frame, exactly as it did before containers existed.
+- **Play the season**, or queue it, and that episode is part 1 of a programme.
+  It carries the *container's* rail and its own index on it, so the band shows
+  twelve études inside twenty-seven rather than twelve out of twelve.
+
+Nothing about the id distinguishes the two, so nothing tries to: the queue
+request names the container and the play request does not.
+
+**A container imposes its authored order over shuffle.** A programme is a
+programme, and playing the Revolutionary étude third would be wrong in a way no
+rail can rescue — so a queue built from an enriched container is reordered to
+the order its `parts:` were authored in, before any `limit` truncates it, and
+logs `surround.order.enforced`. Items the rail does not know keep their relative
+order and follow the programme.
+
+Setting `enforceOrder: false` in the household's `surround` config opts out. Then
+a queue whose order disagrees with the authored one gets **no surround at all** —
+not the container's rail, and not each episode's own standalone frame either —
+and logs `surround.order.mismatch` naming both orders. A frame with no rail is
+honest; a rail that lies about position is not.
 
 ---
 
