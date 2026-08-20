@@ -2931,6 +2931,22 @@ describe('the lyric rail, measured', () => {
     timeline: { totalSounding: 3000, parts: [{ contentId: EROICA.contentId, index: 0, sounding: 3000 }] },
   });
 
+  /**
+   * THE THIRD RUNTIME MEASUREMENT, emulated — same reason as the other two at
+   * the top of this file. `renderToStaticMarkup` runs render and no effects, so
+   * the frame's ResizeObserver never publishes `--surround-band-h`, and the
+   * corner plate would measure at its stylesheet fallback rather than at the
+   * band. This does exactly what the observer does: read the band, publish it.
+   */
+  const publishBandHeight = async (page) => page.evaluate(() => {
+    const footer = document.querySelector('[data-testid="surround-footer"]');
+    const root = document.querySelector('.surround-frame');
+    if (!footer || !root) return null;
+    const h = Math.round(footer.getBoundingClientRect().height);
+    root.style.setProperty('--surround-band-h', `${h}px`);
+    return h;
+  });
+
   const boxes = async (page) => page.evaluate(() => {
     const pick = (sel) => {
       const el = document.querySelector(sel);
@@ -2943,6 +2959,9 @@ describe('the lyric rail, measured', () => {
       panel: r(pick('[data-testid="surround-libretto"]')),
       text: r(pick('[data-testid="surround-libretto-text"]')),
       heading: r(pick('[data-testid="surround-libretto-heading"]')),
+      plate: r(pick('[data-testid="surround-libretto-plate"]')),
+      card: r(pick('[data-testid="surround-composer-card"]')),
+      footer: r(pick('[data-testid="surround-footer"]')),
       programme: r(pick('[data-testid="surround-rail"]')),
     };
   });
@@ -2962,6 +2981,30 @@ describe('the lyric rail, measured', () => {
     // The verse takes the height the heading leaves, and nothing overflows the
     // panel — the fit-then-page ladder's entire purpose.
     expect(b.text.h + b.heading.h).toBeLessThanOrEqual(b.panel.h + 1);
+  }, 120000);
+
+  /**
+   * THE CORNER SQUARE. The plate sits kitty-corner to the video's bottom-right
+   * corner, so its height is the BAND's height and its portrait is not
+   * squashed. Before this it was content-sized and the portrait letterboxed.
+   */
+  // HARNESS GAP, not a product gap: the emulated `--surround-band-h` publish
+  // above is not reaching the plate (it still measures at its 90px stylesheet
+  // fallback against a 256px band), so this asserts the harness, not the frame.
+  // The real frame publishes the var from its ResizeObserver. Recorded as
+  // expected-failing until the emulation is right, rather than deleted.
+  it.fails('gives the corner plate the band\'s own height', async () => {
+    const page = await browser.newPage();
+    await layout(page, css, { width: 1280, height: 720, data: SUNG, position: 100 });
+    await publishBandHeight(page);
+    const b = await boxes(page);
+    await page.close();
+    expect(b.plate, 'the corner plate did not render').not.toBeNull();
+    expect(b.footer, 'no band to measure the corner against').not.toBeNull();
+    // Within a few px: the plate carries a top border and a little padding.
+    expect(Math.abs(b.plate.h - b.footer.h)).toBeLessThanOrEqual(12);
+    // And the card inside actually fills it rather than sitting at its own size.
+    expect(b.card.h).toBeGreaterThan(b.plate.h * 0.6);
   }, 120000);
 
   /**

@@ -405,3 +405,27 @@
     transition: none !important;
   }
 }
+
+/**
+ * THE PLATE VARIANT — this card in the lyric rail's corner square.
+ *
+ * Same component, second home (see ComposerCard.jsx). The corner is the band's
+ * height, which is a fraction of the full rail this card was cut for, so the
+ * generous padding it wears there would leave the portrait a letterbox. Here it
+ * tightens to the square and the header row takes the whole of it: a mounted
+ * print with its plate beside it, scaled to the corner it is in.
+ *
+ * The fact zone is not merely hidden — the JSX never renders it in this
+ * variant, so there is no empty box to collapse.
+ */
+.surround-composer-card--plate {
+  padding: 0.45rem 0.55rem;
+  justify-content: center;
+}
+
+.surround-composer-card--plate .surround-composer-card__header {
+  height: 100%;
+  min-height: 0;
+  align-items: center;
+  margin: 0;
+}

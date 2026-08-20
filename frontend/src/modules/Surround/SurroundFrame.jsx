@@ -195,6 +195,14 @@ export default function SurroundFrame({
   const [collapsed, setCollapsed] = useState(false);
   const footerHeightRef = useRef(0);
   /**
+   * THE BAND'S HEIGHT, published. Measured already (it drives the collapse),
+   * but held in a ref, so no stylesheet could read it. The lyric rail's corner
+   * plate needs it: the plate is the square that sits KITTY-CORNER to the
+   * video's bottom-right corner, which means its height is the band's height
+   * and nothing else. Content-sizing it squashed the portrait.
+   */
+  const [bandHeight, setBandHeight] = useState(0);
+  /**
    * The frame's OWN width, which is the screen root's — and the only thing in
    * the frame that knows it. Every ten-foot type floor in the surround is an
    * ANGULAR claim, and a CSS pixel is not an angle: this fleet's screens are all
@@ -233,6 +241,7 @@ export default function SurroundFrame({
         } else if (entry.target === footerRef.current) {
           const h = Number(rect.height) || 0;
           footerHeightRef.current = h;
+          setBandHeight(h);
           // h === 0 means "not laid out yet", not "too short" — never collapse on it.
           setCollapsed(h > 0 && h < footerFloor);
         }
@@ -455,6 +464,10 @@ export default function SurroundFrame({
     ? {
       ...entranceVars(),
       ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      // The band's measured height, so the lyric rail's corner plate can be the
+      // square level with it. Absent until the footer lays out; the stylesheet
+      // carries a fallback rather than collapsing to zero in that first beat.
+      ...(bandHeight > 0 ? { '--surround-band-h': `${Math.round(bandHeight)}px` } : null),
       // The ten-foot LABEL floor for this root, read by every module's
       // stylesheet through `var(--label-floor, …)`. One published measurement
       // beats five copies of `0.72rem`, exactly as `--bond-ground` beat three

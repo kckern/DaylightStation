@@ -78,11 +78,33 @@
    gap wider than the stanza break the librettist wrote. */
 .surround-libretto__gap { height: 0.7em; }
 
+/**
+ * THE CORNER. This plate is the square KITTY-CORNER to the video's
+ * bottom-right corner, so its height is the BAND's height — published by the
+ * frame as `--surround-band-h` from the same measurement that drives the
+ * band's collapse. It was `flex: 0 0 auto` before, which content-sized it and
+ * squashed the portrait into a letterbox.
+ *
+ * The fallback is the band's own floor (`collapse.footerFloor`, 90px), not
+ * zero: for the one beat before the footer lays out, a plate at its minimum is
+ * right and a plate at nothing is a hole in the corner.
+ */
 .surround-libretto__plate {
-  flex: 0 0 auto;
+  flex: 0 0 var(--surround-band-h, 90px);
+  height: var(--surround-band-h, 90px);
+  min-height: 0;
   margin-top: 0.5rem;
   padding-top: 0.45rem;
   border-top: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+  /* The card inside fills the square rather than sitting at its natural size —
+     one mounted print with its plate beside it, scaled to the corner it is in. */
+  display: flex;
+  overflow: hidden;
+}
+
+.surround-libretto__plate > * {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
