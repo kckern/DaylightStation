@@ -8,9 +8,20 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  bandPools, fitBand, fitStyle,
-  PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
+  bandPools, fitBand, fitStyle, proseFloorPx,
+  PROSE_FLOOR_ANCHOR_PX, PROSE_FLOOR_MIN_PX, PROSE_FLOOR_MAX_PX,
+  FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
+
+/**
+ * THE FLOOR THAT APPLIES IN THIS FILE. `fitBand` measures the `.surround-frame`
+ * the band is painted in and scales the floor by its width; the bands built
+ * below are bare elements with no frame ancestor, so the root is unmeasurable
+ * and the fit falls back to the anchor. Written as the call rather than the
+ * constant so that a change to what an unmeasurable root falls back to moves
+ * these specs with it.
+ */
+const FLOOR = proseFloorPx(0);
 
 /**
  * THE FIT IS A CONSTANT OF THE PIECE. If the pool were "what is on screen right
@@ -82,13 +93,13 @@ describe('the ladder’s floors', () => {
   const X_HEIGHT = 0.42;
 
   it('sets prose above the label floor, by the x-height margin the argument claims', () => {
-    expect(PROSE_FLOOR_PX).toBeGreaterThan(LABEL_FLOOR_PX);
-    expect((PROSE_FLOOR_PX * X_HEIGHT) / (LABEL_FLOOR_PX * X_HEIGHT)).toBeGreaterThan(1.2);
-    expect(PROSE_FLOOR_PX * X_HEIGHT, 'the x-height at the floor').toBeCloseTo(5.91, 1);
+    expect(PROSE_FLOOR_ANCHOR_PX).toBeGreaterThan(LABEL_FLOOR_PX);
+    expect((PROSE_FLOOR_ANCHOR_PX * X_HEIGHT) / (LABEL_FLOOR_PX * X_HEIGHT)).toBeGreaterThan(1.2);
+    expect(PROSE_FLOOR_ANCHOR_PX * X_HEIGHT, 'the x-height at the floor').toBeCloseTo(5.91, 1);
   });
 
   it('keeps a ceiling under the note, so it cannot shout down the work’s own title', () => {
-    expect(PROSE_CEILING_PX).toBeGreaterThan(PROSE_FLOOR_PX);
+    expect(PROSE_CEILING_PX).toBeGreaterThan(PROSE_FLOOR_MAX_PX);
     expect(PROSE_CEILING_PX).toBe(1.5 * 16);
   });
 
@@ -107,6 +118,99 @@ describe('the ladder’s floors', () => {
     expect(LEADING_FLOOR / NORMAL, 'tighter than four fifths of the face’s own metrics')
       .toBeGreaterThan(0.8);
     expect(LEADING_MAX).toBeGreaterThan(LEADING_FLOOR);
+  });
+
+  /**
+   * AND THE LEADING FLOOR IS THE ONE THAT DOES NOT SCALE. The size floor became
+   * a function of the root because it is a LENGTH — 14.08 CSS px is a different
+   * angular size on a 960 root than on a 1280 one. This floor is a RATIO of the
+   * settled size, so it is already in the units the scaling converts to: on
+   * every root it leaves a quarter of the type size between lines. Asserted so
+   * that "it needs nothing" is a claim the suite holds rather than a sentence in
+   * a report.
+   */
+  it('leaves the same air between lines on every root, because it is a ratio', () => {
+    const air = (rootPx) => (LEADING_FLOOR - 1) * proseFloorPx(rootPx);
+    expect(air(960) / proseFloorPx(960)).toBeCloseTo(air(1920) / proseFloorPx(1920), 6);
+    expect(air(1280) / proseFloorPx(1280)).toBeCloseTo(LEADING_FLOOR - 1, 6);
+  });
+});
+
+/**
+ * THE FLOOR IS A FUNCTION OF THE ROOT — the wave-9b change.
+ *
+ * Every screen the surround runs on is a large television read from across a
+ * room, and its CSS root width tracks its physical size: the living room's 960
+ * root fills the same sort of panel the office's 1280 root does, so a CSS pixel
+ * is physically bigger there and an identical `rem` renders BIGGER. Equal
+ * angular size therefore means `size / root` held constant, not `size` held
+ * constant, which is what the old single 0.88rem floor did.
+ *
+ * The expected values here are WRITTEN OUT rather than derived from the same
+ * formula the implementation uses, because an assertion that recomputes what it
+ * is checking cannot fail.
+ */
+describe('proseFloorPx — the prose floor, per root', () => {
+  it('is 0.88rem at the office root and 0.66rem at the living room’s', () => {
+    expect(proseFloorPx(1280), 'the anchor root').toBe(14.08);
+    expect(proseFloorPx(960), 'the living-room Shield').toBe(10.56);
+    expect(proseFloorPx(1920), 'the largest root in the fleet').toBe(21.12);
+    expect(proseFloorPx(FLOOR_ANCHOR_ROOT_PX)).toBe(PROSE_FLOOR_ANCHOR_PX);
+  });
+
+  /**
+   * THE CLAIM ITSELF, stated as an invariant rather than as three numbers: the
+   * floor per unit of root width is one constant across the fleet, which is
+   * what "the same angular size on every screen" means when the root tracks the
+   * panel.
+   */
+  it('holds one angular size across the fleet', () => {
+    const angular = [960, 1280, 1920].map((w) => proseFloorPx(w) / w);
+    expect(angular[0]).toBeCloseTo(angular[1], 6);
+    expect(angular[1]).toBeCloseTo(angular[2], 6);
+    expect(angular[1]).toBeCloseTo(PROSE_FLOOR_ANCHOR_PX / FLOOR_ANCHOR_ROOT_PX, 6);
+  });
+
+  /**
+   * OUTSIDE THE FLEET THE PREMISE IS NOT BACKED BY A SCREEN ANYBODY HAS LOOKED
+   * AT, so the scaling goes flat rather than carrying on.
+   *
+   * LOW: a root narrower than the smallest screen in the fleet is not a smaller
+   * ten-foot display — it is a split pane or a phantom measurement mid-resize —
+   * and letting it drive the floor down hands the fit a size no viewer of any of
+   * these screens could use. HIGH: a floor that keeps climbing meets the
+   * ceiling, and a floor equal to the ceiling is not a ladder but one rung, on
+   * which every note that wants a smaller size is refused wholesale.
+   */
+  it('goes flat outside the fleet, at the fleet’s own two extremes', () => {
+    expect(proseFloorPx(320), 'a phone-sized root drove the floor below the fleet’s smallest')
+      .toBe(PROSE_FLOOR_MIN_PX);
+    expect(proseFloorPx(3840), 'a 4K root inflated the floor past the fleet’s largest')
+      .toBe(PROSE_FLOOR_MAX_PX);
+    expect(PROSE_FLOOR_MIN_PX).toBe(proseFloorPx(960));
+    expect(PROSE_FLOOR_MAX_PX).toBe(proseFloorPx(1920));
+  });
+
+  it('leaves the ladder real travel below the ceiling even at the high clamp', () => {
+    expect(
+      PROSE_CEILING_PX - PROSE_FLOOR_MAX_PX,
+      'the floor has climbed into the ceiling: the ladder has one rung left',
+    ).toBeGreaterThanOrEqual(2);
+    expect(PROSE_FLOOR_MAX_PX).toBeLessThan(PROSE_CEILING_PX);
+  });
+
+  /**
+   * AN UNMEASURABLE ROOT IS NOT A SMALL ONE. A server render, a `display: none`
+   * ancestor, a mount with no frame around it: the answer is the anchor — the
+   * number every wave before this one shipped on every screen — and not the low
+   * clamp, which would silently set prose at 0.66rem on an office screen whose
+   * frame nobody could measure.
+   */
+  it('falls back to the anchor when the root cannot be measured', () => {
+    [0, -1, NaN, undefined, null, 'wide'].forEach((bad) => {
+      expect(proseFloorPx(bad), `an unmeasurable root (${String(bad)}) did not fall back`)
+        .toBe(PROSE_FLOOR_ANCHOR_PX);
+    });
   });
 });
 
@@ -160,16 +264,16 @@ describe('the ladder’s search', () => {
    * TO GO RED: drop the `Math.max(lo, …)` clamp in `largestPassing`.
    */
   it('never returns a size below its own floor, even when only the floor fits', () => {
-    const root = ruledBand({ roomPx: 2 * PROSE_FLOOR_PX * LEADING_FLOOR, widthPx: 275 });
+    const root = ruledBand({ roomPx: 2 * FLOOR * LEADING_FLOOR, widthPx: 275 });
     document.body.appendChild(root);
     const fit = fitBand(root, { piece: ['x'.repeat(84)] });
     expect(fit, 'the ruler produced no fit at all').not.toBeNull();
     expect(
       fit.fontPx,
-      `the ladder settled at ${fit.fontPx}px against a ${PROSE_FLOOR_PX}px floor — `
+      `the ladder settled at ${fit.fontPx}px against a ${FLOOR}px floor — `
       + 'the snap to the search grid undercut the floor it was bounded by',
-    ).toBeGreaterThanOrEqual(PROSE_FLOOR_PX);
-    expect(fit.fontPx).toBe(PROSE_FLOOR_PX);
+    ).toBeGreaterThanOrEqual(FLOOR);
+    expect(fit.fontPx).toBe(FLOOR);
     expect(fit.leading).toBeGreaterThanOrEqual(LEADING_FLOOR);
     expect(fit.rejected, 'a note that fits at the floor was rejected').toEqual([]);
     root.remove();
@@ -215,7 +319,7 @@ describe('the ladder’s search', () => {
 
   /** What cannot be set at the floors is rejected, with a MEASURED budget. */
   it('rejects what the floors cannot hold, and bisects the character budget', () => {
-    const root = ruledBand({ roomPx: 2 * PROSE_FLOOR_PX * LEADING_FLOOR, widthPx: 275 });
+    const root = ruledBand({ roomPx: 2 * FLOOR * LEADING_FLOOR, widthPx: 275 });
     document.body.appendChild(root);
     const long = 'y'.repeat(400);
     const fit = fitBand(root, { piece: ['x'.repeat(84), long] });
@@ -227,7 +331,7 @@ describe('the ladder’s search', () => {
     expect(r.budget).toBeLessThan(400);
     expect(r.overflowPx).toBeGreaterThan(0);
     // ...and the surviving note is what the size was solved for.
-    expect(fit.fontPx).toBeGreaterThanOrEqual(PROSE_FLOOR_PX);
+    expect(fit.fontPx).toBeGreaterThanOrEqual(FLOOR);
     root.remove();
   });
 });

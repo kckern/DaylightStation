@@ -62,7 +62,8 @@ import {
   accordionShares, desiredWidth, placedMovements, SEGMENT_FLOOR_PX,
 } from './band.js';
 import {
-  bandPools, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
+  bandPools, proseFloorPx, PROSE_FLOOR_ANCHOR_PX, FLOOR_ANCHOR_ROOT_PX,
+  PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
 import { smartQuotes } from './typography.js';
 import { smartQuotesAll } from './typography.js';
@@ -334,7 +335,7 @@ async function injectFit(page) {
     .replace(/^export default .*$/m, '')
     .replace(/^export /gm, '');
   await page.addScriptTag({
-    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
+    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, proseFloorPx, rootWidthOf, PROSE_FLOOR_ANCHOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
   });
   const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function');
   expect(ok, 'fit.js did not load into the page — the injection stripped something it needed').toBe(true);
@@ -723,11 +724,13 @@ describe('the band, measured against the shipped stylesheet', () => {
   it.each(FLEET)('$name — the fitted type stays inside the ladder’s floors', async ({ width, height, name }) => {
     const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
     const m = await noteCut(page);
+    const floorPx = proseFloorPx(width);
     expect(
       m.fontSize,
-      `the note is set at ${m.fontSize}px at ${name}, below the ${PROSE_FLOOR_PX}px prose floor — `
-      + 'an x-height of ' + (m.fontSize * 0.42).toFixed(2) + 'px against the 5.91px the floor buys',
-    ).toBeGreaterThanOrEqual(PROSE_FLOOR_PX - 0.01);
+      `the note is set at ${m.fontSize}px at ${name}, below the ${floorPx}px prose floor this root `
+      + `earns — an x-height of ${(m.fontSize * 0.42).toFixed(2)}px against the `
+      + `${(floorPx * 0.42).toFixed(2)}px the floor buys`,
+    ).toBeGreaterThanOrEqual(floorPx - 0.01);
     expect(m.fontSize, 'the note is louder than the work’s own title on the plate')
       .toBeLessThanOrEqual(PROSE_CEILING_PX + 0.01);
     expect(
@@ -740,6 +743,86 @@ describe('the band, measured against the shipped stylesheet', () => {
       .toBeLessThanOrEqual(LEADING_MAX + 0.001);
     expect(fit.fontPx).toBeCloseTo(m.fontSize, 1);
   }, 60000);
+
+  /**
+   * ============================================================================
+   * THE FLOOR IS THIS ROOT'S FLOOR — one angular size on three screens.
+   * ============================================================================
+   *
+   * Design wave 9b. The floor used to be one constant, 0.88rem, applied to every
+   * root — and a rem is not an angular size. Every surface this frame renders on
+   * is a large television read from across a room, and its CSS root width tracks
+   * its physical size: the living room gives a 960 root to the same sort of
+   * 60-inch panel the office gives a 1280 root to, so a CSS pixel is physically
+   * BIGGER there and an identical rem renders bigger. Equal apparent size is
+   * `size / root` held constant, which is what this asserts.
+   *
+   * THE EXPECTED FLOORS ARE WRITTEN OUT, not recomputed from `proseFloorPx`. An
+   * assertion that calls the function it is checking is an assertion that cannot
+   * fail, and this spec's history includes two of those.
+   *
+   * TO GO RED: return `PROSE_FLOOR_ANCHOR_PX` unconditionally from
+   * `proseFloorPx` — the pre-wave-9b behaviour — and both the living room and
+   * the 1920 root report the office's floor.
+   */
+  const ROOT_FLOORS = Object.freeze({
+    '960x540': 10.56,     // the living-room Shield: 0.66rem
+    '1280x720': 14.08,    // the office kiosk, and the root every number is anchored to
+    '1920x1080': 21.12,   // 1.32rem, and the fleet's high clamp
+  });
+
+  it.each(FLEET)('$name — the prose floor is the one this root earns, and the type clears it', async ({ width, height, name }) => {
+    const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
+    expect(fit, 'the band was never laid out, so no floor was chosen').not.toBeNull();
+
+    // 1. IT MEASURED THE FRAME, NOT THE WINDOW. On the office PC the two differ
+    //    — `ScreenRenderer` letterboxes a fixed 1280 root inside a 1920 panel —
+    //    and scaling by the window there would set prose a third too large.
+    const frameWidth = await page.evaluate(
+      () => document.querySelector('.surround-frame').getBoundingClientRect().width,
+    );
+    expect(
+      fit.rootWidthPx,
+      `the fit scaled its floor by ${fit.rootWidthPx}px while the frame it paints in is `
+      + `${frameWidth.toFixed(2)}px wide`,
+    ).toBeCloseTo(frameWidth, 1);
+
+    // 2. THE FLOOR THIS ROOT EARNS.
+    expect(
+      fit.floorPx,
+      `at ${name} the band was floored at ${fit.floorPx}px where this root earns `
+      + `${ROOT_FLOORS[name]}px — ${fit.floorPx > ROOT_FLOORS[name]
+        ? 'too high, so notes this screen has room for are refused'
+        : 'too low, so prose can be set under the ten-foot floor'}`,
+    ).toBe(ROOT_FLOORS[name]);
+
+    // 3. ...AND IT IS THE SAME ANGULAR SIZE AS THE ANCHOR'S. This is the claim
+    //    itself rather than a third restatement of the numbers: whatever the
+    //    root, the floor subtends what 0.88rem subtends on the office screen.
+    expect(
+      fit.floorPx / fit.rootWidthPx,
+      `the floor is ${(fit.floorPx / fit.rootWidthPx * 1280).toFixed(2)}px of office-root type at `
+      + `${name} — the anchor is ${PROSE_FLOOR_ANCHOR_PX}px, so this screen reads a different size`,
+    ).toBeCloseTo(PROSE_FLOOR_ANCHOR_PX / FLOOR_ANCHOR_ROOT_PX, 4);
+
+    // 4. AND THE PAINT CLEARS IT — measured on the line the viewer reads, not on
+    //    what the fit reported. Stated angularly so that it is ONE readability
+    //    claim across three screens: whatever this root is, the prose is at
+    //    least as large as 0.88rem is on the office kiosk.
+    const m = await noteCut(page);
+    const ANGULAR_FLOOR = PROSE_FLOOR_ANCHOR_PX / FLOOR_ANCHOR_ROOT_PX;
+    expect(
+      m.fontSize,
+      `the painted note is ${m.fontSize}px against this root's ${fit.floorPx}px floor`,
+    ).toBeGreaterThanOrEqual(fit.floorPx - 0.01);
+    expect(
+      m.fontSize / frameWidth,
+      `the note is painted at ${m.fontSize}px on a ${frameWidth.toFixed(0)}px root — `
+      + `${(m.fontSize / frameWidth * FLOOR_ANCHOR_ROOT_PX).toFixed(2)}px of office-root type, under `
+      + `the ${PROSE_FLOOR_ANCHOR_PX}px ten-foot floor for prose`,
+    ).toBeGreaterThanOrEqual(ANGULAR_FLOOR - 1e-9);
+  }, 60000);
+
 
   /**
    * A CUE IS A NOTE, AND THE LAW IS THE SAME ONE (review finding C-1).
@@ -758,14 +841,20 @@ describe('the band, measured against the shipped stylesheet', () => {
    */
   it('960x540 — an over-long cue is refused and never painted', async () => {
     // Sized against the LIVING-ROOM root, which is where a cue of ordinary
-    // length actually overflows: that register holds ~126 characters at the
-    // fitted size and ~126 at the floor. (The office root's NOW register holds
-    // ~243 at its fitted size and ~329 at the floor, so a cue has to be absurd
-    // to fail there — which is why this case is set on the screen where the law
-    // actually bites.)
+    // length actually overflows. WAVE 9B MOVED THIS NUMBER, and the case had to
+    // be re-sized with it: that root's floor scaled from 0.88rem to 0.66rem, so
+    // its NOW register went from holding ~128 characters at the floor to ~248,
+    // and the 199-character cue this case used to carry now SETS WHOLE there —
+    // measured, not assumed. That is the change working, and a case that no
+    // longer refuses anything proves nothing, so the cue is now well past the
+    // measured capacity of the register it lands in. (The office root's NOW
+    // register holds ~329 at its floor, so this one is refused there too; the
+    // case stays on the living room because that is the screen the law bites on
+    // for a cue of ordinary length.)
     const OVERLONG = 'The funeral march, and the reason it is the centre of the symphony rather than an '
       + 'interlude: Beethoven puts a death where a minuet had always gone, and the whole shape of '
-      + 'the piece changes around it.';
+      + 'the piece changes around it — the hero of the first movement is buried here, and every bar '
+      + 'after it is written by somebody who has been to the funeral and come back.';
     const data = {
       ...EROICA_FULL,
       cues: [{ at: 976, render: 'docked', text: OVERLONG }],

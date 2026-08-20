@@ -8,7 +8,14 @@ import CueTicker, {
   LISTEN_INTERVAL_MS, phaseDelay,
 } from './CueTicker.jsx';
 import { ACCORDION_MS } from '../band.js';
-import { PROSE_FLOOR_PX } from '../fit.js';
+// THE ANCHOR FLOOR IS THE ONE THAT APPLIES HERE, and that is a fact about this
+// environment rather than a convenience. The prose floor is a function of the
+// screen root's width (`../fit.js`), measured off the `.surround-frame` the band
+// is painted in; happy-dom has no layout and these mounts have no frame
+// ancestor, so the root is unmeasurable and the fit falls back to the anchor —
+// 0.88rem, the number every root scales from. It is also the root the 0.72rem
+// label floor below was derived on, so the two are comparable here and only here.
+import { PROSE_FLOOR_ANCHOR_PX } from '../fit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1038,10 +1045,13 @@ describe('CueTicker — the bond, the header and the standing label (design wave
     const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
     const labelRem = Number(label.match(/font-size: ([\d.]+)rem/)[1]);
     expect(labelRem, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
-    // Quieter than the SMALLEST the note can ever be set at — the fit ladder's
-    // own floor, imported rather than re-stated.
+    // Quieter than the smallest the note can be set at ON THIS ROOT — the fit
+    // ladder's own anchor floor, imported rather than re-stated. Both numbers
+    // are rem constants derived on the 1280 root, which is what makes them
+    // comparable; on a narrower root the note's floor scales down and this one
+    // does not, so the comparison is only meaningful at the anchor.
     expect(labelRem * 16, 'the label competes with the note it labels')
-      .toBeLessThan(PROSE_FLOOR_PX);
+      .toBeLessThan(PROSE_FLOOR_ANCHOR_PX);
     // A standing label, not a headline: tracked small caps in the soft ink.
     expect(label).toMatch(/font-variant-caps: all-small-caps/);
     expect(label).toMatch(/color: var\(--ink-soft,/);
@@ -1630,7 +1640,7 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
   afterEach(() => { restore?.(); restore = null; });
 
   /** A tight band: two lines of room at the fit's own size floor. */
-  const TIGHT = { roomPx: 2 * PROSE_FLOOR_PX * 1.25, widthPx: 275 };
+  const TIGHT = { roomPx: 2 * PROSE_FLOOR_ANCHOR_PX * 1.25, widthPx: 275 };
 
   const LONG_CUE = 'The funeral march, and the reason it is the centre of the symphony rather than an interlude: Beethoven puts a death where a minuet had always gone, and the whole shape of the piece changes around it.';
   const SHORT_FACT = 'The published title page reads: composed to celebrate the memory of a great man.';
@@ -1716,7 +1726,7 @@ describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)
 
   /** A cue that FITS still preempts the register — the filter is a filter, not a ban. */
   it('still fires a cue that fits', () => {
-    withRuler({ roomPx: 6 * PROSE_FLOOR_PX * 1.35, widthPx: 420 });
+    withRuler({ roomPx: 6 * PROSE_FLOOR_ANCHOR_PX * 1.35, widthPx: 420 });
     const view = mount(500);
     expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').textContent)
       .toContain('Beethoven puts a death');

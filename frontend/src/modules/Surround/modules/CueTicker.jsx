@@ -402,6 +402,10 @@ export default function CueTicker({
       prev
       && prev.fontPx === next.fontPx
       && prev.leading === next.leading
+      // The floor moved even though the settled size did not: a different root,
+      // so a different set of notes was judged fittable and a different budget
+      // was warned about. Two fits that agree on the size are not the same fit.
+      && prev.floorPx === next.floorPx
       && prev.rejected.length === next.rejected.length
       && prev.rejected.every((r, i) => r.text === next.rejected[i].text)
         ? prev : next
@@ -415,8 +419,15 @@ export default function CueTicker({
    * The payload carries what the author needs — which register, how long the
    * note is, how long it may be, and by how much it overflowed — so the budget
    * can be read straight out of the log store.
+   *
+   * AND WHICH SCREEN SAID SO. The floor is a function of the root width, so the
+   * same note has a different budget on the office screen and on the living
+   * room; a budget in the log store without the root it was measured on is a
+   * re-authoring target nobody can act on. Both ride along.
    */
   const rejected = fit?.rejected ?? null;
+  const floorPx = fit?.floorPx ?? null;
+  const rootWidthPx = fit?.rootWidthPx ?? null;
   useEffect(() => {
     if (!rejected?.length) return;
     rejected.forEach((r) => {
@@ -427,10 +438,12 @@ export default function CueTicker({
         budget: r.budget,
         cut: r.chars - r.budget,
         overflowPx: r.overflowPx,
+        floorPx,
+        rootWidthPx,
         text: r.text,
       });
     });
-  }, [rejected, contentId, log]);
+  }, [rejected, floorPx, rootWidthPx, contentId, log]);
 
   /**
    * WHAT THE SCREEN DOES WITH ONE. It does not show it. The two alternatives
@@ -454,7 +467,9 @@ export default function CueTicker({
    * changes only when the fit does: once, a frame after mount, and again on a
    * real resize.
    */
-  const fitGen = fit ? `${fit.fontPx}:${fit.leading}:${fit.rejected.length}` : 'unfitted';
+  const fitGen = fit
+    ? `${fit.fontPx}:${fit.leading}:${fit.floorPx}:${fit.rejected.length}`
+    : 'unfitted';
 
   const pieceFacts = useMemo(() => withhold(facts, withheld?.piece), [facts, withheld]);
   const nowNotes = useMemo(() => withhold(nowPool, withheld?.now), [nowPool, withheld]);
