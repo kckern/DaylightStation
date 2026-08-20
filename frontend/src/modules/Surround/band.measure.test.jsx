@@ -2412,6 +2412,127 @@ describe('the band, measured against the shipped stylesheet', () => {
    * branch's `YamlSurroundStore` run against the production data volume (see
    * the fixture's own comment, above `ETUDE_ROWS`).
    */
+  /**
+   * ============================================================================
+   * THE SHORT LABEL, MEASURED — does the crowded form actually set?
+   * ============================================================================
+   *
+   * `short:` exists because head-truncation says nothing on a rail of works from
+   * one set: seven polonaises all begin "Polonaise", so seven segments read
+   * `Pol…`. The claim the field makes is that a floored segment can carry
+   * something a viewer can tell apart, and that claim is a LENGTH — so it is
+   * measured here rather than asserted in prose.
+   *
+   * What is measured is the label the rail paints, in its own face at its own
+   * size, in the box the accordion granted it: `scrollWidth` against
+   * `clientWidth`, the same reading the group-label legibility test takes.
+   *
+   * ONE CAVEAT ON THE HARNESS, stated because it would otherwise be a trap.
+   * `runAccordion` reads each segment's single-line need off its rendered
+   * `__heading`, and a segment showing a short label has no heading to read — so
+   * on a fixture that authors `short` the harness's `widestPx` (and therefore
+   * its `chips`) is measured from the sounding segment alone. The COMPONENT is
+   * unaffected: it measures every name on its ruler, which carries the full name
+   * whatever the segment is showing. Nothing about density is asserted here for
+   * that reason; the widths and the fit are.
+   */
+  describe('the polonaise season — the short label, measured', () => {
+    const SHORTS = Object.freeze([
+      'C-sharp minor', 'E-flat minor', 'Military', 'C minor', 'F-sharp minor', 'Heroic', 'Fantaisie',
+    ]);
+    const LABELLED = Object.freeze({
+      ...POLONAISES,
+      segments: POLONAISES.segments.map((m, i) => ({ ...m, short: SHORTS[i] })),
+    });
+
+    const railAt = async ({ width, height }) => {
+      await layout(page, css, { width, height, data: LABELLED, position: POLONAISE_POSITION });
+      const solved = await runAccordion(page);
+      const labels = await page.evaluate(() => [...document.querySelectorAll(
+        '.surround-segment-map__segment',
+      )].map((seg) => {
+        const short = seg.querySelector('.surround-segment-map__short');
+        const cell = seg.querySelector('.surround-segment-map__text');
+        return {
+          state: seg.getAttribute('data-state'),
+          text: short?.textContent ?? null,
+          segPx: Number(seg.getBoundingClientRect().width.toFixed(2)),
+          clientPx: short ? Number(short.getBoundingClientRect().width.toFixed(2)) : null,
+          scrollPx: short ? Number(short.scrollWidth.toFixed(2)) : null,
+          cellPx: cell ? Number(cell.getBoundingClientRect().width.toFixed(2)) : null,
+        };
+      }));
+      return { solved, labels };
+    };
+
+    /**
+     * WHAT EACH ROOT ACTUALLY DOES WITH THESE SEVEN — measured, and written out
+     * because the honest answer is not the same on all three and the differences
+     * are the whole argument for the field.
+     *
+     *   960x540    the rail CHIPS. No type on a silent segment at all, short or
+     *              long, and that decision predates this field: 608px of rule
+     *              cannot set six names beside a sounding one. Nothing to fit.
+     *   1280x720   ~822px of rule. The accordion opens the Heroic to its whole
+     *              name and leaves the other six 77-122px — of which 46.5px is
+     *              furniture (the numeral's gutter and the text insets), so the
+     *              RUN is 30-75px. Only `Fantaisie` sets whole, in the widest of
+     *              them. The rest are cut, and the cut is the point: `C-sh…`,
+     *              `E-fl…`, `Mili…`, `C mi…`, `F-sh…` are five different things
+     *              where `Pol…` five times was one thing said five times.
+     *   1920x1080  ~1251px of rule. Every one of the six sets whole.
+     *
+     * SO THE FIELD DOES NOT PROMISE A WHOLE LABEL, and this spec does not
+     * pretend it does. It promises that what the rail cuts is worth reading the
+     * first four glyphs of. A `short:` long enough to be cut is still doing its
+     * job; a `short:` that opens with the same word as its neighbours is not,
+     * whatever its length.
+     *
+     * TO GO RED: render the full name on inactive segments again — every `text`
+     * comes back null at 1280 and 1920 and the assertion names all six.
+     */
+    const RAIL_SETS = Object.freeze({
+      '960x540': { chips: true, whole: 0 },
+      '1280x720': { chips: false, whole: 1 },
+      '1920x1080': { chips: false, whole: 6 },
+    });
+    /** Sub-glyph: `scrollWidth` is an integer taken off a fractional layout. */
+    const HAIR_PX = 1.5;
+
+    it.each(FLEET)('$name — every silent segment sets its short label', async ({ width, height, name }) => {
+      const { solved, labels } = await railAt({ width, height });
+      expect(solved, 'no rail at all').not.toBeNull();
+      expect(labels).toHaveLength(7);
+      const expected = RAIL_SETS[name];
+
+      const sounding = labels.filter((l) => l.state === 'active');
+      expect(sounding, 'exactly one segment sounds at this position').toHaveLength(1);
+      // The sounding segment sets its NAME — it is the one segment the accordion
+      // guarantees room for, so it has nothing to gain from a compressed form.
+      expect(sounding[0].text, `the sounding segment set a short label at ${name}`).toBeNull();
+
+      const silent = labels.filter((l) => l.state !== 'active');
+      const report = JSON.stringify(silent.map((l) => ({
+        text: l.text, segPx: l.segPx, runPx: l.clientPx, needPx: l.scrollPx,
+        cutPx: l.scrollPx === null ? null : Number(Math.max(0, l.scrollPx - l.clientPx).toFixed(2)),
+      })));
+
+      if (expected.chips) {
+        // A chipped rail sets no type on a silent segment — the density decision
+        // outranks the label, and `short:` has nothing to do here.
+        expect(silent.map((l) => l.text), `${name} was expected to chip: ${report}`)
+          .toEqual([null, null, null, null, null, null]);
+        return;
+      }
+
+      expect(silent.map((l) => l.text), `silent segments at ${name}: ${report}`)
+        .toEqual(SHORTS.filter((_, i) => i !== 5));
+
+      const whole = silent.filter((l) => l.scrollPx <= l.clientPx + HAIR_PX);
+      expect(whole.length, `short labels set whole at ${name}: ${report}`).toBe(expected.whole);
+    }, 90000);
+  });
+
   describe('the étude season — 27 segments across three parts', () => {
     /**
      * ==========================================================================
