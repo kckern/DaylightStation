@@ -40,12 +40,21 @@ export function toSpans({ starts, musicEndsAt, spans, count }) {
  * chapter shares its offset with whatever follows it. Nine of the nineteen
  * authored pieces have one today, almost always a trailing chapter for want of
  * `musicEndsAt`, and in a composed container that lands exactly on a part
- * boundary. So anything mapping a rail position back to a chapter must state a
- * tie-break rather than take the first match, and the tie-break is: at a shared
- * offset the LATER chapter wins. A zero-width chapter has already finished by
- * the time the rail reaches it — treating it as current would strand the
- * transport in the previous part's media item at every boundary. The store
- * warns `surround.chapters.untimed` so the condition is visible while it lasts.
+ * boundary.
+ *
+ * THE TIE-BREAK, stated once here so position mapping does not have to decide
+ * it again: **a chapter owns the half-open interval `[offset, offset + duration)`,
+ * and where several chapters share one offset the LAST of them wins.** A
+ * zero-width chapter's interval is empty, so it is never current for any
+ * position; a position landing exactly on a boundary belongs to the chapter
+ * that is starting, not the one that just ended.
+ *
+ * Why: at a part boundary in a composed container the preceding chapter is
+ * usually the zero-width one. Resolving the boundary to it would name the
+ * previous part's media item, and the transport would seek into the file that
+ * has just finished — one wrong media item at every join, which reads as a
+ * mapping bug rather than as the missing timing it actually is. The store warns
+ * `surround.chapters.untimed` so the condition is visible while it lasts.
  */
 export function withOffsets(chapters) {
   let offset = 0;
