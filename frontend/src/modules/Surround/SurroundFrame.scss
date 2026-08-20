@@ -596,3 +596,79 @@
     transform: translate(-50%, var(--placard-straddle));
   }
 }
+
+/* ==========================================================================
+   THE SLIDE — the rails change places and the video runs between them
+   ==========================================================================
+
+   Only a piece that can show sung text takes this path (`--slides`, set by the
+   frame). Everything else keeps the flex row it always had, so no instrumental
+   work pays a pixel for a transition it will never run.
+
+   THE GEOMETRY IS ONE NUMBER: `--rail-w`, the authored rail width, published
+   by the frame. The main column is exactly the frame less one rail and sits at
+   `left: var(--rail-w)` with the programme rail beside it; when the words
+   start, main travels to `left: 0` while the programme rail slides out past
+   the left edge and the lyric rail slides in from the right. Three pieces, one
+   distance, one duration — so they read as one move.
+
+   THE VIDEO NEVER RESIZES. Main's width is identical in both states, which is
+   what makes this a translation rather than a reflow: no re-layout of the
+   band, no re-measure of the rail, no re-solve of the type mid-flight. */
+
+.surround-frame--slides {
+  position: relative;
+  overflow: hidden;
+}
+
+.surround-frame--slides .surround-frame__main {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-w, 20%);
+  width: calc(100% - var(--rail-w, 20%));
+  transition: left 460ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.surround-frame--slides.surround-frame--lyric .surround-frame__main {
+  left: 0;
+}
+
+.surround-frame--slides .surround-frame__rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  flex: none;
+  transition: transform 460ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Parked positions. The programme rail lives on the left and leaves to the
+   left; the lyric rail lives on the right and arrives from the right. Each
+   travels exactly its own width, so neither is ever half on screen at rest. */
+.surround-frame--slides .surround-frame__rail--programme {
+  left: 0;
+  transform: translateX(0);
+}
+
+.surround-frame--slides.surround-frame--lyric .surround-frame__rail--programme {
+  transform: translateX(-100%);
+}
+
+.surround-frame--slides .surround-frame__rail--lyric {
+  right: 0;
+  transform: translateX(100%);
+}
+
+.surround-frame--slides.surround-frame--lyric .surround-frame__rail--lyric {
+  transform: translateX(0);
+}
+
+/* The house contract, kept: under reduced motion the frame COMMITS rather than
+   travels. The same two states, reached in one frame. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-frame--slides .surround-frame__main,
+  .surround-frame--slides .surround-frame__rail {
+    transition: none;
+  }
+}

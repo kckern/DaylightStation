@@ -2973,7 +2973,10 @@ describe('the lyric rail, measured', () => {
     await page.close();
 
     expect(b.rail, 'the lyric rail did not render at all').not.toBeNull();
-    expect(b.programme, 'the programme rail is still in the tree beside the lyric rail').toBeNull();
+    // THE SLIDE'S RESTING GEOMETRY. Both rails are mounted; the programme one
+    // is parked exactly its own width off the left edge, so it is off screen
+    // rather than absent — which is what lets it travel back in.
+    expect(b.programme.x).toBe(-b.programme.w);
     // THE REGRESSION. A collapsed box is not "a bit short" — it is zero, and it
     // is the whole bug. The floor is deliberately generous: anything under a
     // few lines means the box is being sized by something other than the rail.
@@ -3030,8 +3033,9 @@ describe('the lyric rail, measured', () => {
   }, 120000);
 
   it('sits on the RIGHT, so the video is flush against the left edge', async () => {
+    const width = 1280;
     const page = await browser.newPage();
-    await layout(page, css, { width: 1280, height: 720, data: SUNG, position: 100 });
+    await layout(page, css, { width, height: 720, data: SUNG, position: 100 });
     const b = await boxes(page);
     const main = await page.evaluate(() => {
       const el = document.querySelector('.surround-frame__main');
@@ -3039,6 +3043,8 @@ describe('the lyric rail, measured', () => {
     });
     await page.close();
     expect(main).toBe(0);
-    expect(b.rail.x).toBeGreaterThan(640);
+    expect(b.rail.x).toBeGreaterThan(width / 2);
+    // The lyric rail rests flush against the right edge, not past it.
+    expect(b.rail.x + b.rail.w).toBe(width);
   }, 120000);
 });
