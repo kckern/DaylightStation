@@ -70,7 +70,7 @@ import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
-  placedRailSegments, railGroups, railIsFlat, collapseInactiveGroups,
+  placedRailSegments, railGroups, railIsFlat, collapseInactiveGroups, foldedShares,
   soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
@@ -333,6 +333,12 @@ export default function SegmentMap({
   // part boundary to whichever segment happened to precede it.
   const segments = useMemo(() => {
     if (composed) {
+      // WIDTHS, once the accordion is in play, are NOT duration/total. A folded
+      // Part is a marker and takes a placeholder share; the sounding Part takes
+      // everything the markers gave up. See `foldedShares` for why proportion
+      // is broken here on purpose. With nothing folded this returns exactly
+      // `duration / totalSounding`, which is what every other work still gets.
+      const shares = foldedShares(drawnRail.map(({ segment: m }) => m));
       return drawnRail.map(({ segment: m }, i) => ({
         ...engrave(m),
         // THE NUMBER THE GUTTER SETS. On a grouped rail it is the corpus's own:
@@ -344,7 +350,7 @@ export default function SegmentMap({
         n: flat ? i + 1 : m.n,
         start: m.offset,
         stop: m.offset + m.duration,
-        natural: m.duration / totalSounding,
+        natural: shares[i] ?? (m.duration / totalSounding),
       }));
     }
     if (!placed.length) return [];
