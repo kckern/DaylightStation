@@ -174,6 +174,99 @@ export function placedSegments(segments) {
 }
 
 /**
+ * The COMPOSED rail's drawable segments.
+ *
+ * `payload.segments` is a different list from `payload.pieceSegments` and the
+ * difference is the whole of this wave: it is every PART's segments
+ * concatenated onto one sounding-time rail, each carrying the media item it
+ * lives in (`contentId`), its span inside that item (`start`/`end`), and where
+ * it sits on the container's own axis (`offset`/`duration`). A single work has
+ * one part, so it has one of these too — the shape is the general case, not the
+ * container's special case.
+ *
+ * WHY A DIFFERENT FILTER FROM `placedSegments`. That one asks "did this
+ * recording tell us where this segment STARTS", because it has to derive every
+ * width from the gaps between starts. Here the backend has already done the
+ * arithmetic and published `duration`, so the only question left is whether the
+ * segment has any width at all. A zero-duration segment is the store's
+ * documented way of saying "this segment's timing was never authored" — it
+ * shares its offset with whatever follows and can never be current
+ * (`segments.js`) — and drawing it would put an unclickable hairline on the
+ * rail claiming a piece of music occupies no time.
+ *
+ * @param {Array<object>} segments `payload.segments`, in rail order.
+ * @returns {Array<{index:number, segment:object}>} the drawable subset, with
+ *   `index` naming the entry's position in the FULL rail — which is what
+ *   `segmentAt` returns, so a caller can map one onto the other.
+ */
+export function placedRailSegments(segments) {
+  const list = Array.isArray(segments) ? segments : [];
+  const out = [];
+  list.forEach((segment, index) => {
+    if (!segment) return;
+    const duration = Number(segment.duration);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    out.push({ index, segment });
+  });
+  return out;
+}
+
+/**
+ * Consecutive runs of rail segments sharing one group — the labels above the rule.
+ *
+ * A RUN IS DETECTED BY `group.index`, AND THAT IS THE SERIALISED FORM OF
+ * IDENTITY. The backend detects its own runs by object identity and stamps each
+ * one with a distinct `group.index` for exactly this purpose
+ * (`YamlSurroundStore#renumberGroups`) — including the case that makes the work
+ * slug useless, a container naming the same work twice, which must print two
+ * headings because a set played twice is two appearances. Identity itself cannot
+ * be read here: the payload crosses the wire as JSON, and `JSON.parse` gives
+ * every segment its own group object however many shared one on the server. The
+ * index survives the crossing; the pointer does not.
+ *
+ * Consecutive UNGROUPED segments are one run with a null group, so the ordinary
+ * single-work rail produces exactly one null run and the caller renders no label
+ * row at all.
+ *
+ * @param {Array<{segment:object}>} placed from `placedRailSegments`.
+ * @returns {Array<{title:string|null, index:number|null, from:number, count:number, span:number}>}
+ *   one entry per run, in rail order. `from` is the run's first position in
+ *   `placed`; `span` is the run's sounding seconds, which is what its label is
+ *   sized by.
+ */
+export function railGroups(placed) {
+  const list = Array.isArray(placed) ? placed : [];
+  const runs = [];
+  list.forEach(({ segment }) => {
+    const group = segment?.group ?? null;
+    // A group with no number is malformed — the store stamps every one of them
+    // — and is degraded to "ungrouped" rather than guessed at: an unlabelled
+    // stretch of rail is the honest rendering of a heading we cannot place.
+    const raw = Number(group?.index);
+    const index = group && Number.isFinite(raw) ? raw : null;
+    const duration = Number(segment?.duration) || 0;
+    const last = runs[runs.length - 1];
+    // Two ungrouped segments in a row are one run (both null); two runs of the
+    // same work are two runs (different indexes); an ungrouped segment between
+    // two runs of one work closes the first — the same rule the store numbers by.
+    if (last && last.index === index) {
+      last.count += 1;
+      last.span += duration;
+      return;
+    }
+    runs.push({
+      title: index === null ? null
+        : (typeof group.title === 'string' && group.title.trim() ? group.title.trim() : null),
+      index,
+      from: last ? last.from + last.count : 0,
+      count: 1,
+      span: duration,
+    });
+  });
+  return runs;
+}
+
+/**
  * Which placed segment is sounding, or -1 when none is.
  *
  * ONE derivation, called by the rail and by the listening band, because the two

@@ -90,6 +90,96 @@
   min-height: calc(4px + var(--band-pad-bottom));
 }
 
+/* ---------------------------------------------------------------------------
+   THE GROUP HEADINGS — the composed rail only.
+
+   A container's rail is a PROGRAMME, and a programme names the set once above
+   the works it contains: "Études, Op. 10" over its twelve, "Polonaise No. 6"
+   over its own single entry. The rule and the segment names below it are
+   untouched; this is one row added above them.
+
+   IT COSTS THE RULE ITS TOP EDGE, and that is deliberate. Design wave 4 put the
+   rule tight against the video's bottom edge because there was nothing above it
+   to put; a set heading is content that belongs above the works it names, and
+   the alternative — labels below the segment names — would put a heading under
+   the thing it heads. The band grows by exactly this row (the bottom region's
+   authored height is a FLOOR, so the frame lets it), and only for a rail that
+   has groups: a single work renders no row at all, so the Eroica's geometry is
+   unchanged to the pixel.
+
+   ITS HEIGHT IS RESERVED, NOT CONTENT-DERIVED. One line, `nowrap`, ellipsized,
+   at a fixed height — so a long set title, or a run whose label does not fit,
+   cannot make the band taller mid-programme. That is the frame's no-rug-pull
+   law, and it is the same reason the segment names below stopped wrapping in
+   wave 7.
+   --------------------------------------------------------------------------- */
+.surround-segment-map--grouped {
+  /* The row's reserved height: one line of the label face (0.76rem) at 1.2, plus
+     the clearance that separates it from the rule under it. Constant, and
+     declared once — the min-height below and the rule's own height both read
+     it, so the three cannot drift. */
+  --group-row: 1.2rem;
+  /* The row and the rule stack; the root is a row-flex everywhere else and one
+     child is all it has ever had. */
+  flex-direction: column;
+  align-items: stretch;
+  /* The named rail's floor plus the row. Not `auto`: the floor is what the band
+     IS (see the block at the top of this file), and a rail with groups has one
+     more line in it. */
+  min-height: calc(3.9rem + var(--group-row));
+}
+
+.surround-segment-map--grouped .surround-segment-map__groups {
+  flex: 0 0 var(--group-row);
+  height: var(--group-row);
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The rule takes what is left, so `height: 100%` on the segments inside it still
+   resolves against a definite box — the same box they have always had, moved
+   down by the row above. */
+.surround-segment-map--grouped .surround-segment-map__rule {
+  flex: 1 1 auto;
+  height: calc(100% - var(--group-row));
+}
+
+/* One heading per run. Set in the DISPLAY face, quieter and smaller than the
+   segment names under the rule: the eye should find the work first and the set
+   second, which is the opposite weighting from a title bar.
+
+   NOT SET IN CAPS, AND THAT IS A MEASUREMENT, NOT A TASTE. The first draft was
+   uppercase with 0.06em of tracking, which is the conventional way to set a
+   programme's set heading — and at 1280x720 it cost about a third of the
+   characters. Every one of the seven polonaise headings ellipsized to
+   "POLONAISE NO. …", which names nothing; in mixed case at the same measure
+   they read. A heading nobody can finish reading is not a heading, and the
+   convention is worth less than the words.
+
+   `flex-basis` is the run's share of the rail's sounding time and comes from the
+   component; `min-width: 0` is what lets the ellipsis happen at all inside a
+   flex item. */
+.surround-segment-map__group {
+  flex: 0 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  /* The same text inset the segment's own text column carries, so a heading
+     starts on the left edge of the first work it names rather than a hair
+     inside it. */
+  padding-inline: 0.55em 0.5em;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--ink-soft, #6b6152);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The staff rule itself. Segments hang from it; the playhead rides over it. */
 .surround-segment-map__rule {
   position: relative;
