@@ -98,7 +98,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 });
 
 export class RunSelfServiceAction {
-  #resolver; #sessions; #issue; #media; #remediation; #donow; #close;
+  #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers;
   #newSessionId; #clock; #logger;
 
   /**
@@ -111,6 +111,11 @@ export class RunSelfServiceAction {
    * @param {import('./DispatchMedia.mjs').DispatchMedia} [deps.dispatchMedia]
    * @param {import('./OpenRemediation.mjs').OpenRemediation} [deps.openRemediation]
    * @param {import('../../donow/DoNowService.mjs').DoNowService} [deps.donow]
+   * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
+   *   program id -> launcher, the SAME map `ResolveScanAction` gets. Without
+   *   it this use case cannot tell a Portal program from a garage one and
+   *   would tell every child their work is opening on the screen in front of
+   *   them — see `#program`.
    * @param {import('./CloseSessionOutcome.mjs').CloseSessionOutcome} [deps.closeSessionOutcome]
    *   honours a `launch:` unit the moment DoNow reports `dispatched`, as
    *   `ResolveScanAction#dispatchLaunch` does — never with `signedOffBy`, that
@@ -127,7 +132,7 @@ export class RunSelfServiceAction {
   constructor({
     resolveAccessCode, sessions,
     issueDocument = null, dispatchMedia = null, openRemediation = null,
-    donow = null, closeSessionOutcome = null,
+    donow = null, closeSessionOutcome = null, launchers = new Map(),
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -141,6 +146,7 @@ export class RunSelfServiceAction {
     this.#remediation = openRemediation;
     this.#donow = donow;
     this.#close = closeSessionOutcome;
+    this.#launchers = launchers instanceof Map ? launchers : new Map();
     this.#newSessionId = newSessionId;
     this.#clock = clock;
     this.#logger = logger;
@@ -173,7 +179,14 @@ export class RunSelfServiceAction {
     }
     const answer = {
       outcome: result.outcome,
-      sentence: result.sentence,
+      // THE NON-EMPTY SENTENCE IS AN INVARIANT, not a convention every branch
+      // is trusted to keep. No path below produces a blank one today, but the
+      // panel's play/launch branch shows whatever arrives with no fallback of
+      // its own — so this is the only thing standing between a use case that
+      // one day answers `message: ''` and a card with nothing on it. Enforced
+      // once, here, so a branch added later is safe by construction.
+      sentence: (typeof result.sentence === 'string' && result.sentence.trim())
+        ? result.sentence : TELL_A_GROWN_UP,
       action: kind,
       sessionId: result.sessionId ?? null,
       effect: result.effect ?? null,
@@ -218,20 +231,12 @@ export class RunSelfServiceAction {
     // the code stays valid and the panel goes back to the keypad.
     if (kind === 'exit') return { outcome: 'done', sentence: 'Okay — see you next time.' };
 
-    // A program opens IN PLACE on the panel (`offeredActions`: "no room to
-    // walk to"), so there is nothing to dispatch and no work session — the
-    // program owns its own record of what a child did.
     if (kind === 'program') {
-      return {
-        outcome: 'mount',
-        sentence: 'Opening it here on the screen.',
-        effect: {
-          kind: 'program',
-          programId: offered.target ?? resolution?.programId ?? null,
-          unitId: resolution?.unit?.unitId ?? null,
-          learnerId: card.learner,
-        },
-      };
+      return this.#program({
+        programId: offered.target ?? resolution?.programId ?? null,
+        unitId: resolution?.unit?.unitId ?? null,
+        learnerId: card.learner,
+      });
     }
 
     if (!NEEDS_SESSION.has(kind) || resolution?.kind !== 'move') {
@@ -459,6 +464,93 @@ export class RunSelfServiceAction {
       sentence: result?.message || 'Could not start that. Ask a grown-up to set this up.',
       sessionId,
       effect: { decision, surface, approvalId: result?.approvalId ?? null },
+    };
+  }
+
+  /**
+   * A `program:` unit. There is no work session here — a program owns its own
+   * record of what a child did — but there IS a question this file must not
+   * get wrong: does the program open where the child is standing, or
+   * somewhere else entirely?
+   *
+   * `school.yml`'s `programs:` entries build `SurfaceProgramLauncher`s
+   * pointing at arbitrary DoNow surfaces. Answering `mount` for all of them
+   * told a child tapping a `garage-fitness` program that the work was opening
+   * on the screen in front of them, while nothing happened anywhere — a dead
+   * end wearing the words of a success, which is worse than a plain refusal.
+   *
+   * So the launcher is asked STRUCTURALLY (`surface`, never `locationHint`'s
+   * display prose):
+   *
+   *   - `'portal'`  -> mounted here. `data/household/screens/portal.yml` is the
+   *                    only screen in the house that mounts School, and it is
+   *                    this panel — so a Portal program really does open in
+   *                    place, and mounting beats a DoNow round trip back to
+   *                    the device the request came from.
+   *   - anything else, or a launcher that declares no surface at all ->
+   *                    `launch()`, which routes through DoNow exactly as
+   *                    `ResolveScanAction#subjectNext`'s program branch does,
+   *                    so occupancy and the pending-approval ladder apply
+   *                    uniformly and the sentence names the REAL surface.
+   *
+   * The `null`/undeclared case dispatches on purpose: a truthful dispatch is
+   * the fail-safe direction, and "it opens here" must never be assumed on a
+   * launcher's behalf.
+   *
+   * A program with no launcher registered gets the house wording for an
+   * unwired thing rather than a claim that it started.
+   */
+  async #program({ programId, unitId, learnerId }) {
+    const launcher = programId ? this.#launchers.get(programId) : null;
+    if (!launcher || typeof launcher.launch !== 'function') {
+      this.#logger.warn?.('school.selfservice.program.no-launcher', { programId, unitId });
+      return {
+        outcome: 'failed',
+        sentence: 'Ask a grown-up to set this up.',
+        effect: { programId, unitId },
+      };
+    }
+
+    let surface = null;
+    try {
+      surface = launcher.surface ?? null;
+    } catch (error) {
+      // A launcher whose accessor throws has told us nothing, which means
+      // "not known to be here" — dispatch.
+      this.#logger.warn?.('school.selfservice.program.surface-failed', {
+        programId, error: error?.message ?? String(error),
+      });
+    }
+
+    if (surface === 'portal') {
+      this.#logger.info?.('school.selfservice.program.mounted', { programId, unitId });
+      return {
+        outcome: 'mount',
+        sentence: 'Opening it here on the screen.',
+        effect: { kind: 'program', programId, unitId, learnerId },
+      };
+    }
+
+    let result;
+    try {
+      result = await launcher.launch({ userId: learnerId });
+    } catch (error) {
+      this.#logger.warn?.('school.selfservice.program.launch-threw', {
+        programId, surface, error: error?.message ?? String(error),
+      });
+      result = { decision: 'failed', message: 'Could not start that. Ask a grown-up to set this up.' };
+    }
+
+    const decision = result?.decision ?? 'failed';
+    return {
+      outcome: LAUNCH_OUTCOMES[decision] ?? 'failed',
+      // DoNow's own wording, verbatim — it names the real surface through
+      // that surface's adapter label, which is why nothing here re-words it.
+      sentence: result?.message || 'Could not start that. Ask a grown-up to set this up.',
+      // Deliberately NOT `kind: 'program'`: there is nothing here for a panel
+      // to mount, and an effect that looks mountable would invite exactly the
+      // false "opening here" this method exists to remove.
+      effect: { decision, surface, programId, unitId },
     };
   }
 

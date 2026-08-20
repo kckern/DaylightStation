@@ -51,6 +51,8 @@ const build = async ({
   canIssueBank = () => false,
   mediaSurface = MEDIA_SURFACE,
   codes = [{ code: CODE, learnerId: 'kid1', subject: 'math' }],
+  programIds = [],
+  launchers = new Map(),
 } = {}) => {
   clock = fakeClock();
   appended = [];
@@ -59,7 +61,7 @@ const build = async ({
     units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests(),
   });
   const curriculum = new CurriculumAccess({
-    catalog, bankIds: () => BANK_IDS, programIds: () => [],
+    catalog, bankIds: () => BANK_IDS, programIds: () => programIds,
     clock: clock.epoch, logger: silentLogger,
   });
   sessions = new FakeSessionRepository();
@@ -88,6 +90,7 @@ const build = async ({
     curriculum,
     assignments,
     sessions: recordingSessions(sessions, appended),
+    launchers,
     issueDocument: {
       canIssueBank: (bankId) => { bankAsked.push(bankId); return canIssueBank(bankId); },
     },
@@ -162,6 +165,44 @@ describe('reading a code', () => {
 // ---------------------------------------------------------------------------
 // never a dead end
 // ---------------------------------------------------------------------------
+
+describe('telling a bad code apart from a broken backend', () => {
+  /**
+   * The two refusals are both `{ok: false}` 200s and mean opposite things: a
+   * bad code keeps the child on the keypad, a fault has to offer a retry.
+   * Without `reason` a panel can only tell them apart by matching the
+   * user-facing sentence — so rewording that copy for a child would take the
+   * retry button away with nothing to notice. These assertions are what stop
+   * the field being dropped in a later tidy-up.
+   */
+  it('marks an unusable code unknown_code', async () => {
+    const card = await useCase.execute({ code: '000000' });
+    expect(card.ok).toBe(false);
+    expect(card.reason).toBe('unknown_code');
+  });
+
+  it('marks a backend fault not_answering', async () => {
+    const broken = new ResolveAccessCode({
+      tokens,
+      curriculum: { listUnits: async () => { throw new Error('catalog on fire'); }, listWorks: async () => [] },
+      assignments,
+      sessions: recordingSessions(sessions, appended),
+      clock: clock.now,
+      logger: silentLogger,
+    });
+    const card = await broken.execute({ code: CODE });
+    expect(card.ok).toBe(false);
+    expect(card.reason).toBe('not_answering');
+    // The two must never collide, or the discriminator discriminates nothing.
+    expect(card.reason).not.toBe('unknown_code');
+  });
+
+  it('carries the reason through the resolve() shape /act reads', async () => {
+    const { card, resolution } = await useCase.resolve({ code: '000000' });
+    expect(card.reason).toBe('unknown_code');
+    expect(resolution).toBeNull();
+  });
+});
 
 describe('a code that does not work', () => {
   it('answers try again for a code that was never minted', async () => {
@@ -269,6 +310,66 @@ describe('a code that works', () => {
     expect(theirs.title).toBe(fixtureUnit(MEDIA_UNIT).title);
     // And still not one event written into either child's history.
     expect(appended).toEqual([]);
+  });
+});
+
+describe('a subject behind a program', () => {
+  /**
+   * The program fan-out — `#collectProgramStatuses` and the `program` card —
+   * is reached only when the catalog knows a program id, so a harness with
+   * none never executes it at all. These two cases run both halves: the happy
+   * one, and the degrade that must NOT become a rethrow (a launcher that
+   * throws has to blank the button, not the whole card).
+   */
+  const languageProgram = (launcher) => ({
+    assignmentSeed: [{ learnerId: 'kid1', units: ['language-daily'] }],
+    codes: [{ code: CODE, learnerId: 'kid1', subject: 'language' }],
+    programIds: ['language'],
+    launchers: new Map([['language', launcher]]),
+  });
+
+  it('offers the program itself when its launcher answers', async () => {
+    await build(languageProgram({
+      status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+    }));
+
+    const card = await useCase.execute({ code: CODE });
+
+    expect(card.ok).toBe(true);
+    expect(card.subject).toBe('language');
+    expect(card.actions).toEqual([
+      { kind: 'program', label: `Open ${fixtureUnit('language-daily').title}`, target: 'language' },
+      { kind: 'exit', label: 'Go back' },
+    ]);
+    expect(appended).toEqual([]);
+  });
+
+  it('degrades a throwing launcher to a card with words, never a thrown error', async () => {
+    await build(languageProgram({
+      status: async () => { throw new Error('language service down'); },
+    }));
+
+    const card = await useCase.execute({ code: CODE });
+
+    // `{error: true}` -> `programUnavailable` -> a card, not a 500.
+    expect(card.ok).toBe(true);
+    expect(card.sentence).toBe('Tell a grown-up.');
+    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(appended).toEqual([]);
+  });
+
+  it('degrades the same way when no launcher is registered at all', async () => {
+    await build({
+      assignmentSeed: [{ learnerId: 'kid1', units: ['language-daily'] }],
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'language' }],
+      programIds: ['language'],
+    });
+
+    const card = await useCase.execute({ code: CODE });
+
+    expect(card.ok).toBe(true);
+    expect(card.sentence).toBe('Tell a grown-up.');
+    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
   });
 });
 

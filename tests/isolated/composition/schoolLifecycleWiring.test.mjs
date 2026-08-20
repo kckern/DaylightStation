@@ -70,6 +70,34 @@ describe('fail closed', () => {
     expect(result.devices).toEqual({});
   });
 
+  /**
+   * `selfService.enabled` has to be a KILL switch, not merely a mint switch.
+   * `BuildAgenda` reads the same flag to decide whether to print a code beside
+   * a lesson — but a code already on paper stays redeemable until
+   * `accessCodeExpiresAt`, up to a whole study day. If the router survived the
+   * flag going false, an operator shutting the feature down because something
+   * was wrong would keep serving it to every sheet already in a child's hands.
+   */
+  it('does NOT mount the panel keypad unless self-service is switched on', async () => {
+    for (const selfService of [undefined, {}, { enabled: false }, { enabled: 'true' }, { enabled: 1 }]) {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await wire({ lifecycle: { enabled: true }, printing: { host: 'printer.local' }, selfService });
+      expect(result.wired).toBe(true);
+      expect(result.selfServiceRouter).toBeNull();
+    }
+  });
+
+  it('mounts the panel keypad when self-service is switched on', async () => {
+    const result = await wire({
+      lifecycle: { enabled: true }, printing: { host: 'printer.local' }, selfService: { enabled: true },
+    });
+    expect(result.wired).toBe(true);
+    expect(result.selfServiceRouter).toBeTruthy();
+    // Both halves of the panel, or a locked panel resolves cards it cannot act on.
+    expect(result.useCases.resolveAccessCode).toBeTruthy();
+    expect(result.useCases.runSelfServiceAction).toBeTruthy();
+  });
+
   it('wires the doubles ONLY on the explicit virtualDevices flag', async () => {
     const result = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(result.wired).toBe(true);
@@ -90,10 +118,12 @@ describe('fail closed', () => {
   it('exposes the whole use-case graph once wired', async () => {
     const { useCases } = await wire({ lifecycle: { enabled: true }, virtualDevices: true });
     expect(Object.keys(useCases).sort()).toEqual([
-      'buildAgenda', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia', 'gradeSubmission',
+      'buildAgenda', 'closeSessionOutcome', 'createLostAnswerSheetTicket', 'dispatchMedia',
+      'enrollLearner', 'gradeSubmission',
       'issueDocument', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
-      'recordMediaCompletion', 'replaceLostAnswerSheet', 'resolvePersonalCard', 'resolveReviewItem',
-      'resolveScanAction', 'setAssignments', 'submitPaperWork',
+      'recordMediaCompletion', 'replaceLostAnswerSheet', 'resolveAccessCode', 'resolvePersonalCard',
+      'resolveReviewItem', 'resolveScanAction', 'runSelfServiceAction', 'setAssignments',
+      'submitPaperWork', 'unenrollLearner',
     ]);
   });
 
