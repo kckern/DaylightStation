@@ -4,7 +4,7 @@
  *
  * `/resolve` (Task 6) reads and only reads. This is the other half: the child
  * has pressed the button, so a session may now be opened for real and a use
- * case may now be called. Three properties are load-carrying enough that a
+ * case may now be called. Three properties matter enough that a
  * mutation to the implementation must turn one of them red:
  *
  *   1. THE SYNTHETIC-ID GUARD. `ResolveAccessCode` reduces a sessionless entry
@@ -72,7 +72,7 @@ const build = ({
     message: 'Printing a fresh sheet to try again.', document: null,
   },
   donow = { decision: 'dispatched', message: 'Starting the garage bike now.' },
-  launchers = new Map(),
+  program = null,
   wire = {},
 } = {}) => {
   clock = fakeClock();
@@ -106,6 +106,37 @@ const build = ({
     });
     await tokens.put(record);
 
+    spies = {
+      issueDocument: { execute: spy(issue) },
+      dispatchMedia: { execute: spy(media) },
+      openRemediation: { execute: spy(remediation) },
+      donow: { dispatch: spy(donow) },
+      closeSessionOutcome: { execute: spy({ status: 'closed' }) },
+    };
+
+    // A program launcher declares WHERE it sends a child (`surface`). That is
+    // the only structural answer to "does this open here, or somewhere else" —
+    // `locationHint` is display wording and must never be routed on.
+    let launchers = new Map();
+    if (program) {
+      spies.launcher = { launch: spy(program.launch ?? { decision: 'dispatched', message: 'Starting the garage bike now.' }) };
+      const entry = {
+        id: program.id ?? PROGRAM_ID,
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        launch: spies.launcher.launch,
+      };
+      // `undefined` means a launcher that declares no surface at all — the
+      // legacy/third-party shape, which must still not claim to open here.
+      if (program.surface !== undefined) Object.defineProperty(entry, 'surface', { get: () => program.surface });
+      launchers = new Map([[program.id ?? PROGRAM_ID, entry]]);
+    }
+    // A launcher missing from the CARD's map degrades the card itself (the
+    // program resolves `unavailable` and no button is offered), so that is not
+    // the case `#program`'s no-launcher branch guards. The case it guards is
+    // the composition bug the reviewer found: the card has the launcher, the
+    // action runner was never handed it. Hence two maps.
+    const runnerLaunchers = program?.unregistered ? new Map() : launchers;
+
     card = new ResolveAccessCode({
       tokens,
       curriculum,
@@ -118,17 +149,10 @@ const build = ({
       logger: silentLogger,
     });
 
-    spies = {
-      issueDocument: { execute: spy(issue) },
-      dispatchMedia: { execute: spy(media) },
-      openRemediation: { execute: spy(remediation) },
-      donow: { dispatch: spy(donow) },
-      closeSessionOutcome: { execute: spy({ status: 'closed' }) },
-    };
-
     useCase = new RunSelfServiceAction({
       resolveAccessCode: card,
       sessions,
+      launchers: runnerLaunchers,
       newSessionId: sequentialIds('ses_new_'),
       clock: clock.now,
       logger: silentLogger,
@@ -161,7 +185,7 @@ const launchUnit = () => ({
 });
 
 /** Unit 2 turned into a standalone `program:` unit on the language shelf. */
-const programUnit = () => ({
+const programUnit = (program = { surface: 'portal' }) => ({
   units: rawUnits({
     [WORKSHEET_UNIT]: {
       subject: 'language', program: PROGRAM_ID, cadence: 'once',
@@ -171,7 +195,7 @@ const programUnit = () => ({
   }),
   assignmentSeed: [{ learnerId: 'kid1', units: [WORKSHEET_UNIT] }],
   subject: 'language',
-  launchers: new Map([[PROGRAM_ID, { status: async () => ({ doneToday: false, progressLabel: null, score: null }) }]]),
+  program,
 });
 
 beforeEach(async () => { await build(); });
@@ -317,6 +341,11 @@ describe('print', () => {
       sentence: 'Printing your sheet.',
     });
     expect(result.effect).toMatchObject({ status: 'issued', artifactId: 'art_1' });
+    // PRINTING NEVER RETIRES WORK (offerSession.mjs: only an OMR/grade event
+    // does). A close here would retire the worksheet the instant it printed,
+    // and the child's "No, it didn't print" reprint would start refusing —
+    // which is exactly what `IssueDocument`'s ISSUABLE set exists to allow.
+    expect(spies.closeSessionOutcome.execute.calls).toEqual([]);
   });
 
   it('rewords a scanner instruction for a keypad', async () => {
@@ -400,6 +429,9 @@ describe('retry', () => {
       sentence: 'Printing a fresh sheet to try again.',
     });
     expect(result.effect).toMatchObject({ remediationOf: 'ses_failed', variant: 1 });
+    // Same rule on the retry's print: the fresh sheet is not retired by
+    // coming out of the printer either.
+    expect(spies.closeSessionOutcome.execute.calls).toEqual([]);
   });
 
   it('says so, and prints nothing, when there is nothing to try again', async () => {
@@ -503,8 +535,10 @@ describe('screen and program', () => {
     expect(allCalls()).toEqual([]);
   });
 
-  it('hands the panel the program to mount, opening no session', async () => {
-    await build(programUnit());
+  it('hands the panel a PORTAL program to mount, opening no session', async () => {
+    // The Portal IS this panel, so a Portal-hosted program really does open
+    // here — the one case where "Opening it here on the screen." is true.
+    await build(programUnit({ surface: 'portal' }));
 
     const result = await useCase.execute({ code: CODE, action: 'program' });
 
@@ -512,7 +546,90 @@ describe('screen and program', () => {
     expect(result.effect).toMatchObject({ kind: 'program', programId: PROGRAM_ID });
     expect(result.sentence.length).toBeGreaterThan(0);
     expect(sessions.ids()).toEqual([]);
+    // Mounted here, so nothing was dispatched anywhere.
     expect(allCalls()).toEqual([]);
+  });
+
+  it('DISPATCHES a surface program instead of claiming it opens here', async () => {
+    // `pe-daily` dispatches to `garage-fitness`. Answering `mount` would tell
+    // a child the work is opening on the screen in front of them while
+    // nothing happens anywhere — a dead end wearing the words of a success.
+    await build(programUnit({
+      surface: 'garage-fitness',
+      launch: { decision: 'dispatched', message: 'Starting the garage bike now.' },
+    }));
+
+    const result = await useCase.execute({ code: CODE, action: 'program' });
+
+    expect(spies.launcher.launch.calls).toEqual([{ userId: 'kid1' }]);
+    expect(result.outcome).not.toBe('mount');
+    expect(result.outcome).toBe('done');
+    // DoNow's own wording, verbatim — it names the real surface.
+    expect(result.sentence).toBe('Starting the garage bike now.');
+    expect(result.sentence).not.toMatch(/here on the screen/);
+    expect(result.sentence).not.toMatch(/on the screen/);
+    expect(result.effect).toMatchObject({ decision: 'dispatched', surface: 'garage-fitness' });
+    // Nothing for a panel to mount, so nothing that names a mountable target.
+    expect(result.effect.kind).toBeUndefined();
+    expect(sessions.ids()).toEqual([]);
+  });
+
+  it('shows a busy surface program\'s pending approval verbatim', async () => {
+    await build(programUnit({
+      surface: 'garage-fitness',
+      launch: {
+        decision: 'pending_approval', approvalId: 'dnr_9',
+        message: 'The garage bike is busy — we asked a grown-up.',
+      },
+    }));
+
+    const result = await useCase.execute({ code: CODE, action: 'program' });
+
+    expect(spies.launcher.launch.calls).toHaveLength(1);
+    expect(result.outcome).toBe('pending');
+    expect(result.sentence).toBe('The garage bike is busy — we asked a grown-up.');
+    expect(result.outcome).not.toBe('mount');
+  });
+
+  it('dispatches rather than mounts a launcher that declares no surface', async () => {
+    // The fail-safe direction: a launcher that never said where it sends a
+    // child must not have "it opens here" assumed on its behalf.
+    await build(programUnit({ surface: undefined }));
+
+    const result = await useCase.execute({ code: CODE, action: 'program' });
+
+    expect(spies.launcher.launch.calls).toHaveLength(1);
+    expect(result.outcome).not.toBe('mount');
+    expect(result.sentence).not.toMatch(/on the screen/);
+  });
+
+  it('says ask a grown-up when the runner was never handed the launcher', async () => {
+    // The exact composition bug this fix came from: `RunSelfServiceAction`
+    // with no `launchers` cannot tell a Portal program from a garage one.
+    // It must say so, not claim the work opened.
+    await build(programUnit({ surface: 'garage-fitness', unregistered: true }));
+
+    const result = await useCase.execute({ code: CODE, action: 'program' });
+
+    expect(result.outcome).not.toBe('mount');
+    expect(result.outcome).toBe('failed');
+    expect(result.sentence).toBe('Ask a grown-up to set this up.');
+    expect(result.sentence).not.toMatch(/on the screen/);
+  });
+
+  it('says so, rather than claiming success, when a launcher throws', async () => {
+    await build(programUnit({
+      surface: 'garage-fitness',
+      launch: () => { throw new Error('donow unreachable'); },
+    }));
+
+    const result = await useCase.execute({ code: CODE, action: 'program' });
+
+    expect(spies.launcher.launch.calls).toHaveLength(1);
+    expect(result.outcome).not.toBe('mount');
+    expect(result.outcome).toBe('failed');
+    expect(result.sentence.length).toBeGreaterThan(0);
+    expect(result.sentence).not.toMatch(/on the screen/);
   });
 });
 
@@ -593,6 +710,37 @@ describe('never a dead end', () => {
 // ---------------------------------------------------------------------------
 
 describe('the response shape', () => {
+  /**
+   * The panel's play/launch branch shows whatever sentence arrives, with no
+   * fallback of its own — so a use case that answers with a blank message
+   * would put an empty card in front of a child. `execute` enforces the
+   * non-empty sentence itself rather than trusting every branch to.
+   */
+  it('supplies words when a use case answers with a blank sentence', async () => {
+    await build({
+      media: {
+        status: 'dispatched', dispatchId: 'dsp_1', target: 'livingroom-tv',
+        message: '   ', document: null,
+      },
+    });
+
+    const result = await useCase.execute({ code: CODE, action: 'play' });
+
+    expect(spies.dispatchMedia.execute.calls).toHaveLength(1);
+    expect(result.sentence.trim().length).toBeGreaterThan(0);
+    expect(result.sentence).not.toBe('   ');
+  });
+
+  it('supplies words when DoNow answers with a blank message', async () => {
+    await build({ ...launchUnit(), donow: { decision: 'dispatched', message: '' } });
+
+    const result = await useCase.execute({ code: CODE, action: 'launch' });
+
+    expect(spies.donow.dispatch.calls).toHaveLength(1);
+    expect(result.outcome).toBe('done');
+    expect(result.sentence.trim().length).toBeGreaterThan(0);
+  });
+
   it('always carries outcome, sentence, action, sessionId and effect', async () => {
     const runs = [
       await useCase.execute({ code: CODE, action: 'play' }),

@@ -45,6 +45,14 @@ export class LanguageProgramLauncher {
   get locationHint() { return 'on the Portal'; }
 
   /**
+   * The surface `launch()` below dispatches to, stated structurally so a
+   * caller can branch on it without parsing `locationHint`'s prose. The
+   * school-room panel is the Portal, so this is the one program family that
+   * really does open where the child is standing.
+   */
+  get surface() { return 'portal'; }
+
+  /**
    * @param {{userId: string}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
    */

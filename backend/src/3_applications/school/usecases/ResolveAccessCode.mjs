@@ -28,7 +28,7 @@
  *                                        `sessionId: null`.
  *
  * A `created` state needs no real session to predict the move, which is what
- * makes the synthetic reduction honest rather than a guess. `sessionId` is
+ * makes the synthetic reduction accurate rather than a guess. `sessionId` is
  * deliberately `null` in that case: an id for a session that does not exist is
  * a trap for whoever acts on this card next, and opening one for real is
  * `/act`'s job, not this one's.
@@ -38,7 +38,7 @@
  * inputs, the attestation gate-unlock, or the daily sectioning belongs in both.
  * The alternative — a `writes: false` flag threaded through the scan-time
  * resolver — puts the no-write guarantee inside the file whose default is to
- * write, where a later edit can lose it silently.
+ * write, where a later edit can drop it with nothing to notice.
  *
  * NEVER A DEAD END. Every failure — an unknown code, an expired one, a revoked
  * one, junk, or a catalog that will not load — comes back as a card with a
@@ -59,16 +59,38 @@ import { nextMove } from './offerSession.mjs';
  */
 export const SYNTHETIC_SESSION_ID = 'synthetic:unopened';
 
+/**
+ * WHY A REFUSAL CARD CARRIES A `reason`.
+ *
+ * Both refusals below are `{ok: false}` 200s — this use case never throws, so
+ * HTTP status cannot tell them apart. But they mean opposite things to a child
+ * standing at the panel, and they earn opposite affordances: a bad code means
+ * stay on the keypad and type a better one, while a backend fault means show
+ * the message AND a retry button, because there is nothing the child can type
+ * that would help.
+ *
+ * `reason` is the machine-readable discriminator, and it exists so the panel
+ * does not have to recognise the refusal by string-matching `sentence`.
+ * Duplicating a user-facing string across two layers means rewording this copy
+ * for a child reclassifies an outage as a wrong code and removes the
+ * retry button — the same dead end, reintroduced by a typo.
+ *
+ * FOR WHOEVER ADDS A THIRD VALUE (`expired`, `revoked`, …): a consumer must
+ * treat an UNRECOGNISED `reason` as a FAULT, never as a bad code. The failure
+ * modes are not symmetric — a spurious retry button is a wasted tap, while a
+ * missing one strands a child in front of a keypad that cannot help them.
+ */
+
 /** Wrong code, dead code, revoked code, junk. The keypad stays alive. */
 const TRY_AGAIN = Object.freeze({
-  ok: false, learner: null, subject: null, title: null,
+  ok: false, reason: 'unknown_code', learner: null, subject: null, title: null,
   sentence: 'Try again.', actions: Object.freeze([]),
 });
 
 /** The backend broke, not the child. Distinct wording so the logs and the
  * child's face agree about which of the two happened. */
 const NOT_ANSWERING = Object.freeze({
-  ok: false, learner: null, subject: null, title: null,
+  ok: false, reason: 'not_answering', learner: null, subject: null, title: null,
   sentence: "The school computer isn't answering. Tell a grown-up.",
   actions: Object.freeze([]),
 });
@@ -120,11 +142,14 @@ export class ResolveAccessCode {
   /**
    * @param {object} args
    * @param {string} args.code - the six digits, as typed
-   * @returns {Promise<{ok: boolean, learner: string|null, subject: string|null,
+   * @returns {Promise<{ok: boolean, reason?: 'unknown_code'|'not_answering',
+   *                    learner: string|null, subject: string|null,
    *                    title: string|null, sentence: string|null,
    *                    actions: Array<{kind: string, label: string, target?: string}>}>}
    *   `sentence` is null when the buttons say it all; `actions` always ends
-   *   with the exit on a card, and is empty on a refusal.
+   *   with the exit on a card, and is empty on a refusal. `reason` is present
+   *   only on a refusal, and is what a caller branches on — see the constants
+   *   above, including why an unrecognised value must be read as a fault.
    */
   async execute({ code } = {}) {
     return (await this.resolve({ code })).card;

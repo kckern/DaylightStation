@@ -815,6 +815,11 @@ export async function createSchoolLifecycle({
     openRemediation,
     donow,
     closeSessionOutcome,
+    // The SAME launcher map `resolveScanAction` and `resolveAccessCode` get.
+    // Without it the panel cannot tell a Portal program (which really does
+    // open on this screen) from a `garage-fitness` one, and would tell every
+    // child their work was opening in front of them.
+    launchers,
     newSessionId,
     clock,
     logger,
@@ -845,7 +850,25 @@ export async function createSchoolLifecycle({
   // `lifecycle.enabled` gate — a panel configured `mode: locked` against a
   // disabled lifecycle would otherwise show a keypad whose /resolve 404s, and
   // per-screen lock config ships independently of `school.yml`.
-  const selfServiceRouter = createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction });
+  //
+  // `selfService.enabled` GATES THE ROUTER, not just minting. `BuildAgenda`
+  // reads the same flag to decide whether to print a code beside a lesson, but
+  // codes already on paper stay live until `accessCodeExpiresAt` — up to a
+  // whole study day. Without this gate, an operator who switches the feature
+  // off because something is wrong keeps serving the thing they just switched
+  // off, for every sheet already in a child's hands. A 404 here is a contract
+  // the panel already handles: it shows the degraded sentence and a retry, so
+  // the child gets words and a way forward rather than a dead keypad.
+  //
+  // Household app config is cached in memory at startup, so flipping this in
+  // `school.yml` needs a restart to take effect.
+  const selfServiceEnabled = cfg.selfService?.enabled === true;
+  const selfServiceRouter = selfServiceEnabled
+    ? createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction })
+    : null;
+  if (!selfServiceEnabled) {
+    logger.info?.('school.lifecycle.self-service-off', { reason: 'selfService.enabled is not true' });
+  }
 
   // Only when the doubles exist; the factory itself also refuses to register a
   // route for a device it was not handed.
