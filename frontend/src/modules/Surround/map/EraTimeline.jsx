@@ -33,6 +33,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { surroundLogger } from '../moduleKit.js';
 import { smartQuotes } from '../typography.js';
+import { LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
+import { useLabelFloorPx } from '../useLabelFloor.js';
 import './EraTimeline.scss';
 
 /**
@@ -60,8 +62,14 @@ export const ERAS = Object.freeze([
   Object.freeze({ name: 'Romantic', from: 1820, to: 1910 }),
 ]);
 
-/** Design floor: nothing below 0.72rem, read at ten feet. Same law as the map. */
-export const ERA_LABEL_PX = 0.72 * 16;
+/**
+ * Design floor: nothing below the frame's ten-foot label floor. Same law as the
+ * map, and the same number, now that the floor is measured per screen root
+ * (`../fit.js`): this is its value at the 1280 anchor, and it is what a timeline
+ * rendered outside a frame is laid out at. The component below reads the live
+ * one and passes it in.
+ */
+export const ERA_LABEL_PX = LABEL_FLOOR_ANCHOR_PX;
 /**
  * Average advance per character for the tracked uppercase display face, in ems
  * of the label's own size, and the tracking added to it. Used only to give a
@@ -131,9 +139,16 @@ export function subjectErasFor(period) {
   return ERAS.filter((era) => new RegExp(`\\b${era.name}\\b`, 'i').test(text)).map((era) => era.name);
 }
 
-/** A label's estimated width in px at the floor size. */
-export function eraLabelWidthPx(name) {
-  return String(name).length * (ERA_LABEL_EM_PER_CHAR + ERA_LABEL_TRACKING_EM) * ERA_LABEL_PX;
+/**
+ * A label's estimated width in px at the floor size.
+ *
+ * `labelPx` is the floor THIS ROOT gets. It has to be an argument rather than a
+ * constant: the placement below decides which era names survive, and solving
+ * that against the office screen's floor on the living room would drop names
+ * that fit there and keep names that do not.
+ */
+export function eraLabelWidthPx(name, labelPx = ERA_LABEL_PX) {
+  return String(name).length * (ERA_LABEL_EM_PER_CHAR + ERA_LABEL_TRACKING_EM) * labelPx;
 }
 
 /**
@@ -157,11 +172,16 @@ export function eraLabelWidthPx(name) {
  *
  * @param {object} opts
  * @param {number} opts.widthPx  Measured width of the rule, in CSS px.
+ * @param {number} opts.labelPx  The ten-foot label floor for THIS screen root.
+ *   Defaults to the anchor's, which is what a timeline outside a frame gets.
  * @param {string[]} opts.subjects Era names the period lights up.
  * @returns {Array<{name, role, leftPct}>} placed labels, `leftPct` being the
  *          CENTRE of the label as a percentage of the rule's width.
  */
-export function layoutEraLabels({ widthPx = NOMINAL_WIDTH_PX, subjects = [] } = {}) {
+export function layoutEraLabels({
+  widthPx = NOMINAL_WIDTH_PX, subjects = [], labelPx = ERA_LABEL_PX,
+} = {}) {
+  const labelWidth = (name) => eraLabelWidthPx(name, labelPx);
   const width = Number(widthPx) > 0 ? Number(widthPx) : NOMINAL_WIDTH_PX;
   const isSubject = (name) => subjects.includes(name);
   const centreOf = (era) => ((era.from + era.to) / 2 - TIMELINE_SPAN.from) / SPAN * width;
@@ -188,10 +208,10 @@ export function layoutEraLabels({ widthPx = NOMINAL_WIDTH_PX, subjects = [] } = 
   //    the two passes always converge.
   const spread = ERAS.filter((era) => isSubject(era.name)).map((era) => ({
     name: era.name,
-    w: eraLabelWidthPx(era.name),
+    w: labelWidth(era.name),
     centre: Math.min(
-      Math.max(centreOf(era), eraLabelWidthPx(era.name) / 2),
-      width - eraLabelWidthPx(era.name) / 2,
+      Math.max(centreOf(era), labelWidth(era.name) / 2),
+      width - labelWidth(era.name) / 2,
     ),
   }));
   for (let i = 1; i < spread.length; i += 1) {
@@ -215,7 +235,7 @@ export function layoutEraLabels({ widthPx = NOMINAL_WIDTH_PX, subjects = [] } = 
   ERAS.filter((era) => !isSubject(era.name))
     .sort((a, b) => (b.to - b.from) - (a.to - a.from))
     .forEach((era) => {
-      const w = eraLabelWidthPx(era.name);
+      const w = labelWidth(era.name);
       if (w > bandOf(era) * ERA_LABEL_OVERHANG) return;
       const centre = Math.min(Math.max(centreOf(era), w / 2), width - w / 2);
       const box = boxAt(centre, w);
@@ -238,6 +258,10 @@ export default function EraTimeline({
 }) {
   const log = useMemo(() => surroundLogger(logger, 'era-timeline'), [logger]);
   const ruleRef = useRef(null);
+  // The ten-foot label floor for the screen root this slide is painted on. The
+  // stylesheet reads the same number as a custom property; the placement below
+  // has to know it in JS, because it decides which era names survive.
+  const labelPx = useLabelFloorPx(ruleRef);
   // Seeded, not zero: happy-dom measures every box as 0x0 and a real browser
   // has not measured anything on the first paint either. The nominal width is
   // the rail's own, so the first painted frame is already close to right and
@@ -259,7 +283,7 @@ export default function EraTimeline({
 
   const subjects = useMemo(() => subjectErasFor(period), [period]);
   const labels = useMemo(
-    () => layoutEraLabels({ widthPx, subjects }), [widthPx, subjects],
+    () => layoutEraLabels({ widthPx, subjects, labelPx }), [widthPx, subjects, labelPx],
   );
   const markerFrac = useMemo(() => fractionFor(year), [year]);
 

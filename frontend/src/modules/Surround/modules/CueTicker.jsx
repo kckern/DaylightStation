@@ -356,6 +356,21 @@ export default function CueTicker({
       frame = requestAnimationFrame(() => { frame = 0; setLayoutTick((n) => n + 1); });
     });
     observer.observe(root);
+    // ...AND THE BOXES THE FIT IS ACTUALLY SOLVED AGAINST, not only the ticker
+    // around them. The note's room is what the standing label and the header
+    // leave over, so it can change while the ticker's own box does not — and
+    // then the type would stay solved against room that no longer exists. It is
+    // not hypothetical: the frame publishes `--label-floor` from a measurement
+    // (design wave 9b), so on the very first mount the labels resize one commit
+    // AFTER this fit has run, giving the note more room than it was fitted for.
+    // Anything else that moves the header — the faces landing, the `@container`
+    // query printing a translation — lands here too, for free.
+    //
+    // It cannot feed itself: the fit sets only `--note-size`/`--note-leading` on
+    // the ticker root, and these boxes are `flex: 1 1 0%` of their zone, so their
+    // height is independent of the note inside them. That is the same property
+    // the reserved-height law rests on.
+    root.querySelectorAll('.surround-cue-ticker__text').forEach((box) => observer.observe(box));
     return () => {
       if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
       observer.disconnect();

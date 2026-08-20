@@ -32,6 +32,9 @@
  * `overflow: hidden` is the last resort, not the budget.
  */
 
+/* The frame's shared literals - see `_tokens.scss`. */
+@use "../tokens" as *;
+
 .surround-composer-card {
   height: 100%;
   /* A SIZE CONTAINER (design wave 5), so the fact below can size itself against
@@ -278,7 +281,7 @@
 .surround-composer-card__period {
   margin: 0.32rem 0 0;
   text-align: center;
-  font-size: 0.72rem;              /* the ten-foot floor itself */
+  font-size: var(--label-floor, #{$label-floor});   /* the ten-foot floor itself, scaled to this root */
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;

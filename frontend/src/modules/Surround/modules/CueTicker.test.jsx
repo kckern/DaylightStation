@@ -15,7 +15,7 @@ import { ACCORDION_MS } from '../band.js';
 // ancestor, so the root is unmeasurable and the fit falls back to the anchor —
 // 0.88rem, the number every root scales from. It is also the root the 0.72rem
 // label floor below was derived on, so the two are comparable here and only here.
-import { PROSE_FLOOR_ANCHOR_PX } from '../fit.js';
+import { PROSE_FLOOR_ANCHOR_PX, LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -887,7 +887,9 @@ describe('CueTicker — the split band’s shipped design', () => {
     const gloss = css.match(/\.surround-cue-ticker__now-translation \{[^}]*\}/)[0];
     expect(gloss, 'the translation is set in a serif — it reads as more programme')
       .toMatch(/font-family: var\(--surround-annotation,/);
-    expect(Number(gloss.match(/font-size: ([\d.]+)rem/)[1]),
+    // The published, per-root ten-foot floor (design wave 9b) with the anchor
+    // root's 0.72rem as the fallback — see `_tokens.scss`.
+    expect(Number(gloss.match(/font-size: var\(--label-floor, ([\d.]+)px\)/)[1]) / 16,
       'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
   });
 
@@ -1043,7 +1045,14 @@ describe('CueTicker — the bond, the header and the standing label (design wave
   it('sets the label quieter and smaller than the note it stands over', () => {
     const css = withStyles().replace(/\s+/g, ' ');
     const label = css.match(/\.surround-cue-ticker__piece-head \{[^}]*\}/)[0];
-    const labelRem = Number(label.match(/font-size: ([\d.]+)rem/)[1]);
+    // The standing label takes the frame's PUBLISHED label floor, so it scales
+    // with the root exactly as the note's own floor does (design wave 9b). The
+    // fallback in the sheet is the anchor root's, and it is the number this
+    // comparison is meaningful against: both floors below are anchor-root
+    // values, which is what makes them comparable at all.
+    const labelPx = Number(label.match(/font-size: var\(--label-floor, ([\d.]+)px\)/)[1]);
+    expect(labelPx, 'the sheet no longer reads the published floor').toBe(LABEL_FLOOR_ANCHOR_PX);
+    const labelRem = labelPx / 16;
     expect(labelRem, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
     // Quieter than the smallest the note can be set at ON THIS ROOT — the fit
     // ladder's own anchor floor, imported rather than re-stated. Both numbers

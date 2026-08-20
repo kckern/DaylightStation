@@ -8,8 +8,9 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  bandPools, fitBand, fitStyle, proseFloorPx,
+  bandPools, fitBand, fitStyle, proseFloorPx, labelFloorPx,
   PROSE_FLOOR_ANCHOR_PX, PROSE_FLOOR_MIN_PX, PROSE_FLOOR_MAX_PX,
+  LABEL_FLOOR_ANCHOR_PX, LABEL_FLOOR_MIN_PX, LABEL_FLOOR_MAX_PX,
   FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
 
@@ -89,7 +90,7 @@ describe('the ladder’s floors', () => {
    * x-height and this one buys 5.91px — 22% more, on a fleet running at device
    * pixel ratio 1, where an x-height is exactly that many device rows.
    */
-  const LABEL_FLOOR_PX = 0.72 * 16;
+  const LABEL_FLOOR_PX = LABEL_FLOOR_ANCHOR_PX;
   const X_HEIGHT = 0.42;
 
   it('sets prose above the label floor, by the x-height margin the argument claims', () => {
@@ -211,6 +212,97 @@ describe('proseFloorPx — the prose floor, per root', () => {
       expect(proseFloorPx(bad), `an unmeasurable root (${String(bad)}) did not fall back`)
         .toBe(PROSE_FLOOR_ANCHOR_PX);
     });
+  });
+});
+
+/**
+ * ============================================================================
+ * THE INVARIANT THE WHOLE DERIVATION RESTS ON — at EVERY root, prose floors
+ * above labels, by the x-height margin that defines it.
+ * ============================================================================
+ *
+ * `PROSE_FLOOR_ANCHOR_PX` is not an independent number: it IS the label floor
+ * plus 22% of x-height, because a label is a short tracked small-cap string the
+ * eye reads as a shape and prose is read glyph by glyph. Everything else in
+ * `fit.js` — the ladder's bottom rung, the rejection pass, the character budgets
+ * warned to the log store — is downstream of that one relationship.
+ *
+ * IT HAS ALREADY BEEN BROKEN ONCE, which is why it is asserted here rather than
+ * assumed. Design wave 9b scaled the PROSE floor by the root and left the LABEL
+ * floor a flat 0.72rem, and on the living-room root that inverted it: prose
+ * floored at 10.56px under a label set at 11.52px, so a note pinned at its floor
+ * would have been set SMALLER than the standing label above it. The fix is that
+ * both floors are one call to `scaleFloor`; this is the assertion that says so.
+ *
+ * SWEPT ACROSS ROOTS, not checked at three, and deliberately including roots
+ * outside the clamps — a clamp is exactly where two independently-written bounds
+ * would come apart, and the reason `PROSE_FLOOR_MIN_PX` and `LABEL_FLOOR_MIN_PX`
+ * are the same two ROOTS evaluated at two anchors rather than four literals.
+ *
+ * TO GO RED: return `LABEL_FLOOR_ANCHOR_PX` unconditionally from `labelFloorPx`
+ * — the state this follow-up fixed — or move either pair of clamps alone.
+ */
+describe('prose over labels — the +22% x-height step, at every root', () => {
+  /**
+   * Every root worth asking about — THE FLEET FIRST, so that a failure names a
+   * screen somebody owns before it names a hypothetical one, then the gaps
+   * between the fleet's sizes, then well outside the clamps at both ends.
+   */
+  const ROOTS = [960, 1280, 1920, 1024, 1100, 1440, 1600, 800, 640, 320, 240, 2560, 3840, 7680];
+  const X_HEIGHT = 0.42;
+
+  it('never lets prose floor below the label floor on any root', () => {
+    ROOTS.forEach((root) => {
+      const prose = proseFloorPx(root);
+      const label = labelFloorPx(root);
+      expect(
+        prose,
+        `on a ${root}px root the prose floor is ${prose}px and the LABEL floor is ${label}px — `
+        + 'a note pinned at its floor would be set smaller than the standing label over it, '
+        + 'which inverts the relationship the prose floor is defined by',
+      ).toBeGreaterThan(label);
+    });
+  });
+
+  it('keeps the margin at the 22% of x-height the derivation claims', () => {
+    ROOTS.forEach((root) => {
+      const prose = proseFloorPx(root);
+      const label = labelFloorPx(root);
+      const gained = (prose * X_HEIGHT) / (label * X_HEIGHT);
+      expect(
+        gained,
+        `on a ${root}px root prose buys ${((gained - 1) * 100).toFixed(1)}% more x-height than a `
+        + `label (${(prose * X_HEIGHT).toFixed(2)}px against ${(label * X_HEIGHT).toFixed(2)}px) — `
+        + 'the label-to-prose step is 22%',
+      // TO TWO DECIMALS, because both floors are quantised to a hundredth of a
+      // pixel and a ratio of two rounded numbers is not exact — at a 1024 root
+      // the pair is 11.26/9.22, which is 1.2213 rather than 1.2222. That is a
+      // tenth of a percent of drift from ROUNDING, and it is the only slack this
+      // assertion has: a floor that stopped scaling is out by a third.
+      ).toBeCloseTo(PROSE_FLOOR_ANCHOR_PX / LABEL_FLOOR_ANCHOR_PX, 2);
+      expect(gained, 'prose no longer buys the 20%+ of x-height that defines it')
+        .toBeGreaterThan(1.2);
+    });
+  });
+
+  /**
+   * ...and the two floors are the SAME SHAPE, which is what makes the margin
+   * hold rather than merely happen to. Both are one anchor scaled by one rule
+   * between one pair of roots.
+   */
+  it('scales both floors by one rule, so they cannot come apart', () => {
+    ROOTS.forEach((root) => {
+      expect(
+        proseFloorPx(root) / labelFloorPx(root),
+        `the two floors scale differently at ${root}px`,
+      ).toBeCloseTo(PROSE_FLOOR_MIN_PX / LABEL_FLOOR_MIN_PX, 2);
+    });
+    expect(LABEL_FLOOR_MIN_PX).toBe(labelFloorPx(960));
+    expect(LABEL_FLOOR_MAX_PX).toBe(labelFloorPx(1920));
+    expect(labelFloorPx(1280)).toBe(LABEL_FLOOR_ANCHOR_PX);
+    // The three the coordinator named, written out.
+    expect([labelFloorPx(960), labelFloorPx(1280), labelFloorPx(1920)])
+      .toEqual([8.64, 11.52, 17.28]);
   });
 });
 

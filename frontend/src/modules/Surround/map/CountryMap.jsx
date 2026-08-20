@@ -38,10 +38,12 @@
 // country -> context map with no highlight; no lat/lon -> map with no marker;
 // no geodata at all -> nothing, and the card around it stays composed.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { surroundLogger } from '../moduleKit.js';
+import { LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
+import { useLabelFloorPx } from '../useLabelFloor.js';
 import './CountryMap.scss';
 
 /** The shared geodata: Natural Earth 1:110m, public domain, ~41 KB, 52 features. */
@@ -115,12 +117,26 @@ const MAX_LAT = 85;
 const STRAY_CITY_SPAN = 22;
 const EUROPE_FALLBACK = { west: -13, east: 42, south: 34, north: 71 };
 
-/** Design floor: nothing below 0.72rem, read at ten feet. */
-const LABEL_PX = 0.72 * 16;
+/**
+ * Design floor: nothing below the frame's ten-foot label floor, which is
+ * MEASURED PER SCREEN ROOT (`../fit.js`) rather than fixed at 0.72rem — every
+ * screen here is a large television read from across a room and each lays a
+ * different number of CSS pixels across a panel of much the same size, so a flat
+ * rem is a different apparent size on each. These are the anchor root's values,
+ * and they are what a map rendered outside a frame is drawn at; the component
+ * reads the live floor and scales all three by the same factor.
+ *
+ * They stay in one RATIO to each other whatever the root — the subject's name is
+ * one step up from the floor, a neighbour's is at it — because that ratio is the
+ * map's own hierarchy and has nothing to do with which screen it is on.
+ */
+const LABEL_PX = LABEL_FLOOR_ANCHOR_PX;
 /** The subject country's own name — the map's primary label, one step up. */
 export const COUNTRY_LABEL_PX = 0.9 * 16;
 /** A neighbour's name: quieter, but never below the ten-foot floor. */
 export const NEIGHBOUR_LABEL_PX = LABEL_PX;
+/** The subject's step up, as a multiple of the floor: 0.9rem / 0.72rem. */
+const SUBJECT_STEP = COUNTRY_LABEL_PX / LABEL_FLOOR_ANCHOR_PX;
 const STAR_R = 6.5;
 const LABEL_GAP = 11;
 /** Past this fraction of the frame the label would run off the edge, so it flips. */
@@ -489,9 +505,25 @@ export default function CountryMap({
    * and is still used for FRAMING (it picks which landmass of a multi-part
    * country to frame on); it is only the drawn star and its name that go.
    */
+  const svgRef = useRef(null);
   const showCity = showCityProp === null || showCityProp === undefined
     ? preset.showCity
     : !!showCityProp;
+
+  /**
+   * THE MAP'S TYPE, SCALED TO THIS SCREEN ROOT. Every size drawn below is a
+   * multiple of the frame's ten-foot label floor, which is measured rather than
+   * fixed: the living room lays 960 CSS pixels across a panel slightly larger
+   * than the office's 1280, so a flat rem is physically bigger there and would
+   * be drawn LOUDER than the same label on the office screen.
+   *
+   * It is not only a size. These numbers feed `labelBox` and the collision
+   * tests, so the floor decides which neighbours are named at all — solving that
+   * against the wrong screen's floor would keep names that do not fit and drop
+   * names that do.
+   */
+  const labelPx = useLabelFloorPx(svgRef);
+  const subjectPx = labelPx * SUBJECT_STEP;
   const marker = useMemo(() => {
     if (!point || !frame || !showCity) return null;
     const fracX = (point.x - frame.x) / frame.w;
@@ -500,9 +532,9 @@ export default function CountryMap({
       anchor: flip ? 'end' : 'start',
       dx: flip ? -LABEL_GAP : LABEL_GAP,
       // Near the top edge the label drops below the star instead of off the frame.
-      dy: (point.y - frame.y) / frame.h < 0.1 ? LABEL_PX * 1.1 : LABEL_PX * 0.36,
+      dy: (point.y - frame.y) / frame.h < 0.1 ? labelPx * 1.1 : labelPx * 0.36,
     };
-  }, [point, frame, showCity]);
+  }, [point, frame, showCity, labelPx]);
 
   /**
    * Who gets named.
@@ -534,7 +566,7 @@ export default function CountryMap({
         x: point.x + marker.dx * unitsPerPx,
         y: point.y + marker.dy * unitsPerPx,
         text: city,
-        sizePx: LABEL_PX,
+        sizePx: labelPx,
         anchor: marker.anchor,
         unitsPerPx,
       }));
@@ -546,7 +578,7 @@ export default function CountryMap({
       if (spot) {
         let { y } = spot;
         let box = labelBox({
-          x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
+          x: spot.x, y, text: subject.name, sizePx: subjectPx, unitsPerPx,
         });
         // Two reasons to relocate: sitting on top of the star itself (the old
         // radius test), or the candidate box overlapping something already
@@ -559,9 +591,9 @@ export default function CountryMap({
         // point, so gating the whole relocation on `point` loses nothing.)
         const onTheStar = point && marker && Math.hypot(spot.x - point.x, y - point.y) < clearance;
         if (point && marker && (onTheStar || taken.some((t) => overlaps(t, box)))) {
-          y = point.y + COUNTRY_LABEL_PX * 2.4 * unitsPerPx;
+          y = point.y + subjectPx * 2.4 * unitsPerPx;
           box = labelBox({
-            x: spot.x, y, text: subject.name, sizePx: COUNTRY_LABEL_PX, unitsPerPx,
+            x: spot.x, y, text: subject.name, sizePx: subjectPx, unitsPerPx,
           });
         }
         taken.push(box);
@@ -571,7 +603,7 @@ export default function CountryMap({
           role: 'subject',
           x: spot.x,
           y,
-          size: COUNTRY_LABEL_PX,
+          size: subjectPx,
         });
       }
     }
@@ -585,7 +617,7 @@ export default function CountryMap({
       .forEach(({ shape, spot }) => {
         if (placed.filter((p) => p.role === 'neighbour').length >= MAX_NEIGHBOUR_LABELS) return;
         const box = labelBox({
-          x: spot.x, y: spot.y, text: shape.name, sizePx: NEIGHBOUR_LABEL_PX, unitsPerPx,
+          x: spot.x, y: spot.y, text: shape.name, sizePx: labelPx, unitsPerPx,
         });
         if (taken.some((t) => overlaps(t, box))) return;
         taken.push(box);
@@ -595,12 +627,12 @@ export default function CountryMap({
           role: 'neighbour',
           x: spot.x,
           y: spot.y,
-          size: NEIGHBOUR_LABEL_PX,
+          size: labelPx,
         });
       });
 
     return placed;
-  }, [shapes, frame, point, marker, city, unitsPerPx]);
+  }, [shapes, frame, point, marker, city, unitsPerPx, labelPx, subjectPx]);
 
   if (!shapes.length || !frame) return null;
 
@@ -608,6 +640,7 @@ export default function CountryMap({
 
   return (
     <svg
+      ref={svgRef}
       className={`surround-country-map ${className}`.trim()}
       data-testid="country-map"
       viewBox={viewBox}
@@ -678,7 +711,7 @@ export default function CountryMap({
               x={marker.dx}
               y={marker.dy}
               textAnchor={marker.anchor}
-              fontSize={LABEL_PX}
+              fontSize={labelPx}
               fill="var(--brass, #c79a3e)"
             >
               {city}

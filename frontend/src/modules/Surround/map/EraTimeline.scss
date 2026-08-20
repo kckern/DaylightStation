@@ -18,6 +18,9 @@
  * this sheet must not do is carry a year.
  */
 
+/* The frame's shared literals - see `_tokens.scss`. */
+@use "../tokens" as *;
+
 .surround-era-timeline {
   width: 100%;
   height: 100%;
@@ -149,7 +152,7 @@
   top: 0;
   transform: translateX(-50%);
   white-space: nowrap;
-  font-size: 0.72rem;              /* the ten-foot floor itself */
+  font-size: var(--label-floor, #{$label-floor});   /* the ten-foot floor itself, scaled to this root */
   line-height: 1.15;
   text-transform: uppercase;
   color: var(--ink-soft, #6b6152);

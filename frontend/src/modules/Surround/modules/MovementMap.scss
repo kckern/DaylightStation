@@ -337,7 +337,12 @@
   display: block;
   margin-top: 0.2em;
   font-family: var(--surround-annotation, ui-sans-serif, system-ui, Arial, sans-serif);
-  font-size: 0.74rem;              /* above the 0.72rem ten-foot floor */
+  /* Deliberately a hair ABOVE the ten-foot floor, and expressed as that
+     relationship rather than as 0.74rem: the floor is measured per root now
+     (`_tokens.scss`), so a literal here would sit above the floor on the office
+     screen and below it on the living room. 74/72 of whatever this root's floor
+     is. */
+  font-size: calc(var(--label-floor, #{$label-floor}) * 74 / 72);
   font-weight: 400;
   font-style: normal;              /* it is NOT the tempo term — see __tempo */
   line-height: 1.2;

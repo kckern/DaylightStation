@@ -44,6 +44,7 @@ import { getSurroundRegistry } from './registry.js';
 import {
   ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
 } from './entrance.js';
+import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from './fit.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -181,6 +182,22 @@ export default function SurroundFrame({
   const [mediaWidth, setMediaWidth] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const footerHeightRef = useRef(0);
+  /**
+   * The frame's OWN width, which is the screen root's — and the only thing in
+   * the frame that knows it. Every ten-foot type floor in the surround is an
+   * ANGULAR claim, and a CSS pixel is not an angle: this fleet's screens are all
+   * large televisions read from across a room, and each lays a different number
+   * of CSS pixels across a panel of much the same physical size, so the same rem
+   * is a different apparent size on each. The floors therefore scale with this
+   * number (`fit.js`), and it is published below as one custom property so that
+   * every stylesheet in the frame reads one measurement rather than restating a
+   * constant that is only right on one screen.
+   *
+   * The ANCHOR until it is measured, never zero: a frame that has not been laid
+   * out yet must paint the number the office screen would get, not the smallest
+   * one in the fleet.
+   */
+  const [labelFloor, setLabelFloor] = useState(LABEL_FLOOR_ANCHOR_PX);
 
   // One observer watching both boxes: the media box drives the footer's width,
   // the footer's own height drives the collapse rule.
@@ -194,6 +211,13 @@ export default function SurroundFrame({
         if (entry.target === mediaRef.current) {
           const w = Number(rect.width) || 0;
           setMediaWidth(w > 0 ? w : null);
+        } else if (entry.target === rootRef.current) {
+          // The screen root's width, which every type floor in the frame scales
+          // by. Measured rather than read from screen config: `ScreenRenderer`
+          // letterboxes a fixed `resolution` box inside whatever viewport the
+          // display has, so the window is the wrong number on the office PC and
+          // a config value is a number nobody re-reads.
+          setLabelFloor(labelFloorPx(Number(rect.width) || 0));
         } else if (entry.target === footerRef.current) {
           const h = Number(rect.height) || 0;
           footerHeightRef.current = h;
@@ -204,6 +228,7 @@ export default function SurroundFrame({
     });
     if (mediaRef.current) observer.observe(mediaRef.current);
     if (footerRef.current) observer.observe(footerRef.current);
+    if (rootRef.current) observer.observe(rootRef.current);
     return () => observer.disconnect();
   }, [enabled, footerFloor, footerRegions.length]);
 
@@ -394,6 +419,11 @@ export default function SurroundFrame({
     ? {
       ...entranceVars(),
       ...(mediaWidth ? { '--surround-media-w': `${mediaWidth}px` } : null),
+      // The ten-foot LABEL floor for this root, read by every module's
+      // stylesheet through `var(--label-floor, …)`. One published measurement
+      // beats five copies of `0.72rem`, exactly as `--bond-ground` beat three
+      // copies of a hex.
+      '--label-floor': `${labelFloor}px`,
       ...(shrink ? {
         '--enter-media-scale': String(shrink.scale),
         '--enter-media-dx': `${shrink.dx}px`,

@@ -53,3 +53,29 @@ $bond-ground: #341019;
  * hairline and the cue accent for exactly that reason).
  */
 $bond-radius: 5px;
+
+/**
+ * THE TEN-FOOT LABEL FLOOR — the smallest a short, tracked, small-cap string may
+ * be set in anywhere in the frame: the map's place names, the band's standing
+ * labels, the rail's numeral gutter, the period line's era names.
+ *
+ * IT IS A MEASUREMENT NOW, NOT A CONSTANT, and this literal is only the fallback.
+ * `SurroundFrame` measures the screen root it fills and publishes
+ * `--label-floor` from `labelFloorPx` (`fit.js`); every rule below reads that.
+ * The reason is the same one that moved the prose floor in design wave 9b: a
+ * ten-foot floor is an ANGULAR claim, and a rem is not an angle. Every screen in
+ * this fleet is a large television read from across a room, and the living room
+ * lays 960 CSS pixels across a panel slightly LARGER than the office's 1280, so
+ * a flat 0.72rem is bigger in angle there than here. Scaled by the root it is
+ * 0.72rem at the 1280 anchor, 0.54rem at 960 and 1.08rem at 1920 — one apparent
+ * size on every screen.
+ *
+ * 11.52px IS 0.72rem AT THE ANCHOR, which is what a module rendered outside the
+ * frame (a spec, a storybook, a rail on its own) should get: the number the
+ * office screen would give it, never the smallest in the fleet.
+ *
+ * The prose floor is derived from THIS number — plus 22% of x-height — and the
+ * two must scale by one rule or the derivation inverts. They do: `fit.js`
+ * `scaleFloor`.
+ */
+$label-floor: 11.52px;

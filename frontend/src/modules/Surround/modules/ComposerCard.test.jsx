@@ -992,11 +992,17 @@ describe('ComposerCard — the period line', () => {
     expect(rule[0]).toContain('text-transform: uppercase');
     expect(Number(rule[0].match(/letter-spacing: ([\d.]+)em/)[1])).toBeGreaterThanOrEqual(0.08);
     expect(rule[0]).toMatch(/color: var\(--ink-soft,/);
-    const size = Number(rule[0].match(/font-size: ([\d.]+)rem/)[1]);
-    expect(size, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
+    // THE FLOOR IS PUBLISHED, NOT WRITTEN DOWN (design wave 9b). A ten-foot floor
+    // is an angular claim and a rem is not an angle, so `SurroundFrame` measures
+    // the screen root it fills and publishes `--label-floor`; this rule reads it.
+    // The fallback is the anchor root's 11.52px — 0.72rem, the number a card
+    // rendered outside a frame is set at, and the one every other root scales
+    // from.
+    const fallbackPx = Number(rule[0].match(/font-size: var\(--label-floor, ([\d.]+)px\)/)[1]);
+    expect(fallbackPx / 16, 'below the 0.72rem ten-foot floor').toBeGreaterThanOrEqual(0.72);
     // Quieter than the birthplace above it is not the goal — it must not be
     // LOUDER than the name on the brass, which is 1.75rem.
-    expect(size).toBeLessThan(1.75);
+    expect(fallbackPx / 16).toBeLessThan(1.75);
   });
 
   /**
