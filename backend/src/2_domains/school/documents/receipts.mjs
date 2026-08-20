@@ -19,6 +19,8 @@
  * whole point of the token model.
  */
 
+import { SCHOOL_ACCESS_CODE_DIGITS } from '../sessions/accessCode.mjs';
+
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
 /**
@@ -47,6 +49,32 @@ function lessonAction({ token, eyebrow, title, description = null, icon = null, 
     ...(isNonEmptyString(meta) ? { meta } : {}),
     ...(taxonomy ? { taxonomy } : {}),
   };
+}
+
+/** Derived from the code itself, never restated — see `accessCode.mjs`. */
+const PANEL_CODE = new RegExp(`^\\d{${SCHOOL_ACCESS_CODE_DIGITS}}$`);
+
+/**
+ * The panel access code that goes with a lesson card (self-service).
+ *
+ * Body-size blocks BESIDE the card rather than a field on it: no renderer
+ * draws an unrecognised `scan_action` field, so a code carried inside the
+ * block would be a code that never reached the paper — and this one is meant
+ * to be read across a room and typed by a child.
+ *
+ * One agenda can carry TWO six-digit codes for two different machines: the
+ * SchoolCalc study code (`001 234`, "Enter on calculator.") and this one. They
+ * are printed deliberately unalike — the panel code wears a label in FRONT of
+ * its digits, is not spaced into threes, and its instruction names the screen —
+ * so a child never has to work out which code belongs to which device.
+ *
+ * A malformed code prints nothing at all. Digits a child cannot type are worse
+ * than no code (they ask a grown-up), and a receipt builder must not throw the
+ * agenda away over a decoration.
+ */
+function panelCodeBlocks(code) {
+  if (typeof code !== 'string' || !PANEL_CODE.test(code)) return [];
+  return [text(`PANEL CODE ${code}`), text('Type it on the school screen.')];
 }
 
 /**
@@ -163,6 +191,9 @@ function appendNoteLines(blocks, noteLines) {
  *   programUnavailable?: boolean,
  * }>} args.sections   `planDailyAgenda` sections, one per subject
  * @param {Record<string, string>} [args.tokensBySubject] subject -> opaque scan token, for that section's `next`
+ * @param {Record<string, string>} [args.accessCodesBySubject] subject -> six-digit
+ *   panel code aliasing that section's token (self-service). Absent or empty,
+ *   the receipt is byte-identical to one built before the feature existed.
  * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
  *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
  *   so a grown-up's feedback reaches the child without pretending to be a
@@ -172,7 +203,7 @@ function appendNoteLines(blocks, noteLines) {
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  sections = [], tokensBySubject = {}, footer = null, notes = [],
+  sections = [], tokensBySubject = {}, accessCodesBySubject = {}, footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -255,6 +286,10 @@ export function agendaDocument({
         ].filter(isNonEmptyString).join(' · '),
         taxonomy: next.taxonomy,
       }));
+      // Only ever beside a TOKENED card: the code is an alias for that token,
+      // so a section with nothing to alias prints no code, whatever it was
+      // handed.
+      blocks.push(...panelCodeBlocks(accessCodesBySubject?.[section.subject]));
     } else {
       blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(label));

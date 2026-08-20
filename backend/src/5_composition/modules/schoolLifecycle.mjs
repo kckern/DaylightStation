@@ -504,6 +504,10 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue, logger,
     schoolCalcStudies,
     schoolCalcMode: schoolCalcStudies ? 'issue' : 'off',
+    // `school.yml`'s own `selfService` block, passed through untouched. Off (or
+    // absent) means BuildAgenda mints no panel codes and the receipt is exactly
+    // what it printed before the feature existed.
+    selfService: cfg.selfService,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     attestations,
@@ -527,7 +531,13 @@ export async function createSchoolLifecycle({
   const previewAgenda = new BuildAgenda({
     attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: previewSessions,
-    tokens: { put: async () => {} },
+    // Write path stubbed, READ path real: a preview must never persist a
+    // ticket, but it must see the codes that are already live, or it would
+    // show a parent a code that belongs to a different child's lesson.
+    tokens: {
+      put: async () => {},
+      liveAccessCodes: () => stores.tokens.liveAccessCodes(),
+    },
     launchers, timezone, clock, rng: draw, newSessionId,
     subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
     // Same real, read-only review queue as `buildAgenda` — a preview showing
@@ -535,6 +545,7 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue,
     schoolCalcStudies,
     schoolCalcMode: schoolCalcStudies ? 'preview' : 'off',
+    selfService: cfg.selfService,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
   // `receiptPngRenderer` (the canvas renderer) is already built above,
