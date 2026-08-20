@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  parseLibretto, assignParts, splitColumns, PART_ANCHORS, RECOGNISED_FORMS,
+  parseLibretto, assignParts, splitColumns, parseBbox, columnize, PART_ANCHORS, RECOGNISED_FORMS,
 } from './libretto.cli.mjs';
 
 const SAMPLE = [
@@ -95,6 +95,32 @@ describe('parseLibretto', () => {
     expect(warnings.join(' ')).toMatch(/sequence break: PDF 2 followed by 4/);
   });
 
+  /**
+   * A LETTERED PAIR IS ONE NUMBER. Messiah's editions split some movements as
+   * `15a` / `15b` — here, the two shepherd recitatives. They are one entry in
+   * the count of 53, so the reader takes the pair as a single number and joins
+   * their text. A regex demanding whitespace after the digits skips both, which
+   * is how one movement vanished with no other symptom than the checksum.
+   */
+  it('reads a lettered pair as one number', () => {
+    const pair = [
+      'Recitative (Soprano)',
+      '15a First half of the movement',
+      '(Luke 2: 8)',
+      'Recitative (Accompanied – Soprano)',
+      '15b Second half of the movement',
+      '(Luke 2: 9)',
+      'Chorus',
+      '16 The next movement',
+      '(Luke 2: 10)',
+    ].join('\n');
+    const { items, warnings } = parseLibretto(pair);
+    expect(items).toHaveLength(2);
+    expect(items[0].incipit).toBe('First half of the movement');
+    expect(items[0].scripture).toBe('Luke 2: 8; Luke 2: 9');
+    expect(warnings.filter((w) => /sequence break/.test(w))).toEqual([]);
+  });
+
   it('warns when a number repeats — the page-number trap', () => {
     const dupe = [
       'Chorus', '12 First', '(A 1: 1)',
@@ -154,6 +180,102 @@ describe('splitColumns', () => {
       'a second line of continuous prose with no gutter anywhere within it at',
     ].join('\n');
     expect(splitColumns(prose)).toBe(prose);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   COORDINATES, NOT WHITESPACE.
+
+   `splitColumns` guesses a gutter from which text column is most often blank,
+   and on the real libretto it lost three movements outright and emitted one out
+   of order. `pdftotext -bbox` gives every word's extent, which turns the same
+   question into an exact one: a valid gutter is an x that NO word crosses.
+   --------------------------------------------------------------------------- */
+describe('parseBbox', () => {
+  const XML = `<doc>
+    <page width="343" height="340">
+      <word xMin="36.8" yMin="15.6" xMax="108.5" yMax="32.1">HANDEL</word>
+      <word xMin="179.2" yMin="23.9" xMax="183.3" yMax="31.6">6</word>
+    </page>
+  </doc>`;
+
+  it('reads every word with its page and extent', () => {
+    const pages = parseBbox(XML);
+    expect(pages).toHaveLength(1);
+    expect(pages[0].width).toBeCloseTo(343, 3);
+    expect(pages[0].words).toHaveLength(2);
+    expect(pages[0].words[0]).toMatchObject({ text: 'HANDEL', xMin: 36.8, xMax: 108.5 });
+  });
+
+  it('unescapes XML entities in the text', () => {
+    const pages = parseBbox('<doc><page width="1" height="1">'
+      + '<word xMin="0" yMin="0" xMax="1" yMax="1">a &amp; b</word></page></doc>');
+    expect(pages[0].words[0].text).toBe('a & b');
+  });
+});
+
+describe('columnize', () => {
+  /** Two columns, two lines each. y groups the lines; x decides the column. */
+  const page = {
+    width: 100,
+    words: [
+      { text: 'left', xMin: 5, xMax: 20, yMin: 10, yMax: 18 },
+      { text: 'one', xMin: 22, xMax: 35, yMin: 10, yMax: 18 },
+      { text: 'right', xMin: 60, xMax: 78, yMin: 10, yMax: 18 },
+      { text: 'one', xMin: 80, xMax: 92, yMin: 10, yMax: 18 },
+      { text: 'left', xMin: 5, xMax: 20, yMin: 30, yMax: 38 },
+      { text: 'two', xMin: 22, xMax: 35, yMin: 30, yMax: 38 },
+      { text: 'right', xMin: 60, xMax: 78, yMin: 30, yMax: 38 },
+      { text: 'two', xMin: 80, xMax: 92, yMin: 30, yMax: 38 },
+    ],
+  };
+
+  it('reads the left column entirely, then the right', () => {
+    expect(columnize(page).split('\n')).toEqual([
+      'left one', 'left two', 'right one', 'right two',
+    ]);
+  });
+
+  it('keeps a single-column page in plain reading order', () => {
+    const single = {
+      width: 100,
+      words: [
+        { text: 'a', xMin: 5, xMax: 40, yMin: 10, yMax: 18 },
+        { text: 'wide', xMin: 42, xMax: 90, yMin: 10, yMax: 18 },
+        { text: 'line', xMin: 5, xMax: 40, yMin: 30, yMax: 38 },
+      ],
+    };
+    expect(columnize(single).split('\n')).toEqual(['a wide', 'line']);
+  });
+
+  /**
+   * THE FAILURE THAT COST THREE MOVEMENTS. A heading spanning both columns must
+   * not be cut in half — and if it were, the halves would fall through the
+   * parser's catch-all into the previous number's verse, silently.
+   */
+  it('does not split a page whose heading crosses the gutter', () => {
+    const straddle = {
+      width: 100,
+      words: [
+        { text: 'A-HEADING-ACROSS-BOTH', xMin: 10, xMax: 90, yMin: 5, yMax: 12 },
+        { text: 'left', xMin: 5, xMax: 20, yMin: 20, yMax: 28 },
+        { text: 'right', xMin: 60, xMax: 78, yMin: 20, yMax: 28 },
+      ],
+    };
+    // No x is free of every word, so the page stays in plain reading order.
+    expect(columnize(straddle).split('\n')).toEqual(['A-HEADING-ACROSS-BOTH', 'left right']);
+  });
+
+  it('groups words into a line by their baseline, not by exact equality', () => {
+    const jitter = {
+      width: 100,
+      words: [
+        { text: 'same', xMin: 5, xMax: 20, yMin: 10.0, yMax: 18 },
+        { text: 'line', xMin: 22, xMax: 35, yMin: 10.4, yMax: 18.4 },
+        { text: 'next', xMin: 5, xMax: 20, yMin: 30.0, yMax: 38 },
+      ],
+    };
+    expect(columnize(jitter).split('\n')).toEqual(['same line', 'next']);
   });
 });
 
