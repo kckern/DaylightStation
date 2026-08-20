@@ -45,6 +45,7 @@ import {
   ENTER_TOTAL_MS, ENTER_UNCLIP_MS, entranceVars, shrinkFrom,
 } from './entrance.js';
 import { labelFloorPx, LABEL_FLOOR_ANCHOR_PX } from './fit.js';
+import { lyricStateAt } from './lyrics.js';
 import './SurroundFrame.scss';
 
 const DEFAULT_RAIL_WIDTH = '20%';
@@ -166,6 +167,17 @@ export default function SurroundFrame({
     () => normalizeRegions(definition?.regions?.right, 'right'), [definition]);
   const footerRegions = useMemo(
     () => normalizeRegions(definition?.regions?.bottom, 'bottom'), [definition]);
+  /**
+   * THE LYRIC SLOT. Authored as a sibling of `right`, never inside it, because
+   * the frame renders exactly ONE of the two: when a piece's segments carry
+   * sung text this rail takes the right-hand column and the programme rail
+   * slides out. A definition with no `lyric:` slot behaves precisely as it did
+   * before this existed — which is what makes the feature dormant rather than
+   * conditional, and why no shipped piece changes shape until its corpus grows
+   * words.
+   */
+  const lyricRegions = useMemo(
+    () => normalizeRegions(definition?.regions?.lyric, 'lyric'), [definition]);
 
   // The module contract is exactly { position, duration, playing, seeking, data,
   // region }. contentId is not a seventh prop — it rides inside `data`, so every
@@ -247,8 +259,8 @@ export default function SurroundFrame({
 
   const registry = getSurroundRegistry();
   const allRegions = useMemo(
-    () => [...topRegions, ...rightRegions, ...footerRegions],
-    [topRegions, rightRegions, footerRegions],
+    () => [...topRegions, ...rightRegions, ...lyricRegions, ...footerRegions],
+    [topRegions, rightRegions, lyricRegions, footerRegions],
   );
   const resolved = useMemo(
     () => new Map(allRegions.map((r) => [r.key, registry.get(r.module)])),
@@ -401,9 +413,33 @@ export default function SurroundFrame({
     );
   };
 
+  /**
+   * WHICH RAIL THIS FRAME IS WEARING.
+   *
+   * The decision lives HERE, in the frame, and is read from the same pure
+   * function the libretto module reads (`./lyrics.js`). Having the module
+   * report its own emptiness upward would make the layout depend on a child's
+   * render, which is the shape that flashes the wrong column for one frame on
+   * every segment boundary.
+   *
+   * `lyricRegions.length` gates it first, so a definition that never authored a
+   * lyric slot does not pay for a rail scan at 10 Hz.
+   */
+  const lyricState = useMemo(
+    () => (enabled && lyricRegions.length > 0
+      ? lyricStateAt({ segments: data?.segments, contentId, position })
+      : { active: false }),
+    [enabled, lyricRegions.length, data, contentId, position],
+  );
+  const lyricUp = lyricState.active;
+  /** Exactly one of the two is ever in the tree — never both, never neither. */
+  const sideRegions = lyricUp ? lyricRegions : rightRegions;
+  const sideSide = lyricUp ? 'right' : railSide;
+
   const rootClass = [
     'surround-frame',
-    railSide === 'left' && 'surround-frame--rail-left',
+    sideSide === 'left' && 'surround-frame--rail-left',
+    lyricUp && 'surround-frame--lyric',
     !entered && 'surround-frame--entering',
     arriving && 'surround-frame--arriving',
     className,
@@ -478,13 +514,14 @@ export default function SurroundFrame({
         )}
       </div>
 
-      {enabled && rightRegions.length > 0 && (
+      {enabled && sideRegions.length > 0 && (
         <aside
           className="surround-frame__rail"
-          data-testid="surround-rail"
+          data-testid={lyricUp ? 'surround-lyric-rail' : 'surround-rail'}
+          data-rail={lyricUp ? 'lyric' : 'programme'}
           style={{ width: railWidth, flex: `0 0 ${railWidth}` }}
         >
-          {rightRegions.map(renderRegion)}
+          {sideRegions.map(renderRegion)}
         </aside>
       )}
     </div>

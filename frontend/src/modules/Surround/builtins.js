@@ -26,6 +26,7 @@ import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
 import PlaceCarousel from './modules/PlaceCarousel.jsx';
 import WorkPlacard from './modules/WorkPlacard.jsx';
+import LibrettoRail from './modules/LibrettoRail.jsx';
 
 /**
  * Every built-in, as `[name, Component, meta]`. The single source the
@@ -40,6 +41,11 @@ const BUILTIN_MODULES = [
   ['country-map', CountryMapModule, { regions: ['right', 'bottom'] }],
   ['place-carousel', PlaceCarousel, { regions: ['right'] }],
   ['work-placard', WorkPlacard, { regions: ['top'] }],
+  // The lyric rail. `lyric` is its OWN slot, not `right`: the frame renders
+  // exactly one of the two, and declaring it as a right-hand module would
+  // make every definition that already authors a right rail look like it
+  // wanted both.
+  ['libretto', LibrettoRail, { regions: ['lyric'] }],
 ];
 
 /**

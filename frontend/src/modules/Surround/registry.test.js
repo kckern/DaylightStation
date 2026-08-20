@@ -99,7 +99,7 @@ describe('surround builtins', () => {
     const { SURROUND_BUILTIN_MODULES } = await import('./builtins.js');
     expect([...SURROUND_BUILTIN_MODULES].sort())
       .toEqual([
-        'composer-card', 'country-map', 'cue-ticker', 'movement-map',
+        'composer-card', 'country-map', 'cue-ticker', 'libretto', 'movement-map',
         'place-carousel', 'segment-map', 'work-placard',
       ]);
   });
