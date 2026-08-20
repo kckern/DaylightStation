@@ -35,7 +35,67 @@ import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import { useSchoolLaunch } from './useSchoolLaunch.js';
 import { moduleLaunchAllowed } from './catalog/certification.js';
+import Keypad from './selfService/Keypad.jsx';
+import LaunchCard from './selfService/LaunchCard.jsx';
+import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 import './School.scss';
+
+/**
+ * Lock mode (self-service access codes design, D6): PER-SCREEN, never
+ * household-wide. `data/household/screens/<id>.yml` carries
+ * `school: { mode: locked }`, so the school-room panel shows a keypad while a
+ * parent's `/school` in a browser stays fully browsable — which is exactly why
+ * no master code or parent bypass has to exist.
+ *
+ * The widget config is spread onto this component as props by WidgetWrapper, so
+ * an explicit `mode` prop wins outright; otherwise the screen's own config is
+ * read. A standalone app mount ('browser') never asks.
+ *
+ * Fails OPEN — an unreachable/absent screen config leaves the panel browsable.
+ * "Config absent" and "fetch failed" are indistinguishable from here, and
+ * "both switches off is today, exactly" is the rollout contract; locking on a
+ * failed read would lock panels nobody configured.
+ *
+ * `resolved` gates the first render so a locked panel never flashes the
+ * browsable home before the config lands.
+ */
+function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds }) {
+  const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
+  const [state, setState] = useState(() => (
+    explicit || screenId === 'browser'
+      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null }
+      : { resolved: false, locked: false, idleTimeoutSeconds: null }
+  ));
+
+  useEffect(() => {
+    if (explicit || screenId === 'browser') {
+      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null });
+      return undefined;
+    }
+    let alive = true;
+    schoolApi.screenSchoolConfig(screenId).then(({ ok, data }) => {
+      if (!alive) return;
+      const cfg = (ok && data && typeof data.school === 'object') ? data.school : null;
+      setState({
+        resolved: true,
+        locked: cfg?.mode === 'locked',
+        idleTimeoutSeconds: Number.isFinite(Number(cfg?.idleTimeoutSeconds))
+          ? Number(cfg.idleTimeoutSeconds)
+          : null,
+      });
+    });
+    return () => { alive = false; };
+  }, [explicit, mode, screenId]);
+
+  return {
+    resolved: state.resolved,
+    locked: state.locked,
+    // Prop (widget config) → screen config → the design's default.
+    idleTimeoutSeconds: Number.isFinite(Number(idleTimeoutSeconds))
+      ? Number(idleTimeoutSeconds)
+      : (state.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS),
+  };
+}
 
 /**
  * Deep-link URL model. Active for the standalone app mount (/school,
@@ -128,7 +188,7 @@ export function schoolPathFor(urlBase, section, materialPath = []) {
   return `${base}/${materialPath.map((id) => encodeURIComponent(stripSource(id))).join('/')}`;
 }
 
-function SchoolShell({ clear }) {
+function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
@@ -346,7 +406,28 @@ function SchoolShell({ clear }) {
     }
   }, [courses, banks, openSection, start]);
 
+  // Lock mode is a NARROWING of a surface that is already terminal (the Portal
+  // mounts School with no `clear`), not a new cage.
+  const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds });
+
+  // The `school.launch` subscription stays live in lock mode, deliberately.
+  // `portal.yml` is the ONLY screen in the house that mounts School, so
+  // `PortalSurface.dispatch`'s broadcast has exactly one recipient — this
+  // panel. A locked panel that ignored it would break today's QR "answer on
+  // the screen" path outright: the printed slip promises "Starting on the
+  // school screen" and there is no other screen to catch it.
   useSchoolLaunch({ claim, onLaunch: onPortalLaunch });
+
+  // The keypad routes on-screen work through `onPortalLaunch` — the SAME
+  // callback the broadcast lands on, and therefore the same `start()` →
+  // `schoolApi.openSession` → SchoolService path. That is what registers the
+  // sitting `PortalSurface.occupancy()` reads; a runner mounted any other way
+  // would be invisible to DoNow's clobber protection.
+  const selfService = useSelfService({
+    idleTimeoutSeconds: lock.idleTimeoutSeconds,
+    claim,
+    onLaunch: onPortalLaunch,
+  });
 
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
@@ -474,9 +555,12 @@ function SchoolShell({ clear }) {
     ? extraCrumbs
     : (section ? [{ label: sectionLabel }] : []);
 
-  if (status !== 'ready') return <div className="school-app school-app--loading">Loading…</div>;
+  // `!lock.resolved` is part of this gate on purpose: a locked panel must never
+  // flash the browsable home for the beat it takes the screen config to land.
+  if (status !== 'ready' || !lock.resolved) return <div className="school-app school-app--loading">Loading…</div>;
   return (
-    <div className="school-app">
+    <div className={`school-app${lock.locked ? ' school-app--locked' : ''}`}>
+      {!lock.locked && (
       <header className="school-app__header">
         {/* Breadcrumb model (Piano-style): a fixed home anchor on the left,
             then the trail. The apple always returns to the subject wall from
@@ -523,7 +607,35 @@ function SchoolShell({ clear }) {
           </div>
         )}
       </header>
+      )}
       <main className="school-app__body">
+        {/* LOCKED PANEL (design §3). The keypad IS the resting state; a
+            resolved code puts the launch card over it. Runners are rendered
+            below, OUTSIDE this branch, so on-screen work mounted from a code —
+            or from a `school.launch` broadcast — looks the same either way. */}
+        {lock.locked && !active && (
+          selfService.view === 'keypad' ? (
+            <Keypad
+              onSubmit={selfService.submit}
+              busy={selfService.busy}
+              message={selfService.message}
+              degraded={selfService.degraded}
+              onRetry={selfService.retry}
+            />
+          ) : (
+            <LaunchCard
+              card={selfService.card}
+              view={selfService.view}
+              sentence={selfService.sentence}
+              printAgain={selfService.printAgain}
+              busy={selfService.busy}
+              onAction={selfService.runAction}
+              onConfirm={selfService.confirmPrint}
+              onExit={selfService.exit}
+            />
+          )
+        )}
+        {!lock.locked && (<>
         {/* One home for claimed and unclaimed alike: the subject shelves are
             the same wall either way, and the student panel itself carries the
             claim affordance when nobody has tapped in. An explicit guest still
@@ -582,6 +694,12 @@ function SchoolShell({ clear }) {
             onMaterialNav={onMaterialNav}
           />
         )}
+        </>)}
+        {/* Runners sit outside the lock branch: the locked panel mounts the
+            SAME QuizRunner/FlashcardRunner the SPA does, via the same
+            `start()`, which is what opens the SchoolService sitting that
+            `PortalSurface.occupancy()` reads. Exiting one lands back on the
+            keypad. */}
         {active?.mode === 'quiz' && (
           <QuizRunner
             key={`quiz:${active.bank.id}:${runNonce}`}
@@ -627,6 +745,11 @@ function SchoolShell({ clear }) {
           />
         )}
       </main>
+      {/* No picker on a locked panel: the code already named the learner, and
+          a face row is the one thing that WOULD put names on the lock screen.
+          Nothing in lock mode calls openPicker() — the keypad and card never
+          route through onLaunch's unclaimed branch. */}
+      {!lock.locked && (
       <ProfilePicker
         open={pickerOpen}
         users={roster}
@@ -639,6 +762,7 @@ function SchoolShell({ clear }) {
         title="Who's here?"
         showCountdown
       />
+      )}
     </div>
   );
 }
@@ -648,12 +772,17 @@ function SchoolShell({ clear }) {
  *  - as a registered app via AppContainer, which passes `clear` to exit;
  *  - as the `school` screen widget, where it IS the screen (the Portal) and no
  *    `clear` exists because there is nothing behind it.
+ *
+ * `mode` / `idleTimeoutSeconds` arrive either as widget config (WidgetWrapper
+ * spreads a layout child's keys onto the widget) or, more usually, from the
+ * screen's own `school:` block, which `useSchoolLockMode` fetches. Both absent
+ * is today, exactly: a browsable School.
  */
-export default function SchoolApp({ clear }) {
+export default function SchoolApp({ clear, mode = null, idleTimeoutSeconds = null }) {
   return (
     <SchoolProfileProvider>
       <SchoolBreadcrumbProvider>
-        <SchoolShell clear={clear} />
+        <SchoolShell clear={clear} mode={mode} idleTimeoutSeconds={idleTimeoutSeconds} />
       </SchoolBreadcrumbProvider>
     </SchoolProfileProvider>
   );
