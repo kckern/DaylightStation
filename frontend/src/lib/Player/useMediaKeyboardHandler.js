@@ -5,6 +5,11 @@ import { acquirePlayerKeyboard } from './playerKeyboardOwnership.js';
 import { createMediaTransportAdapter } from './mediaTransportAdapter.js';
 import { playbackLog } from '../../modules/Player/lib/playbackLogger.js';
 import { getChildLogger } from '../logging/singleton.js';
+import { resolveContentId } from '../../modules/Surround/segments.js';
+// The restart grace period that used to be a literal `5` in `previousTrack`
+// lives in segmentNav now, as the one rule it always was — `previousSegmentAction`
+// applies it, so there is nothing left to compare against here.
+import { nextSegmentAction, previousSegmentAction } from '../../modules/Surround/segmentNav.js';
 
 /**
  * Custom hook for handling media playback keyboard shortcuts
@@ -134,10 +139,91 @@ export function useMediaKeyboardHandler(config) {
     setCurrentTime && setCurrentTime(finalTime);
   };
 
+  // What `next`/`previous` have to know about the piece, read off the SAME
+  // object the surround host reads (`meta.surround`) so the transport can never
+  // be walking a different piece than the rail is drawing. An item with no
+  // sidecar yields an empty list, which segmentNav treats as the un-segmented
+  // case by construction — no flag, no branch here.
+  const segmentInput = (position) => ({
+    segments: meta?.surround?.segments,
+    contentId: resolveContentId(meta),
+    position
+  });
+
+  /**
+   * Move the playhead inside the current file. Tagged `'segment'` rather than
+   * `'bump'`: a movement jump is a long seek that will rebuffer, so it should
+   * read like a progress-bar click to the resilience layer, not like an arrow
+   * key — while still being distinguishable from one in the logs.
+   */
+  const seekToSegment = (seconds) => {
+    try { const el = getMediaEl?.(); if (el) el.__seekSource = 'segment'; } catch { /* ignore */ }
+    const next = mediaController.seek?.(seconds);
+    setCurrentTime && setCurrentTime(Number.isFinite(next) ? next : seconds);
+  };
+
+  /**
+   * THE LINE THAT WILL BE ARGUED ABOUT LATER.
+   *
+   * Every press that ends up moving the QUEUE instead of the playhead says so
+   * under one event name, with the reason it fell through — `no-segments` (the
+   * item was never segmented), `last-segment` (the piece is over), `next-part` /
+   * `prev-part` (the neighbouring segment lives in another file, which only the
+   * queue can reach), `first-segment` / `before-first-segment`. Without this, a
+   * queue advance that ends a one-item piece is indistinguishable in the log
+   * store from one the user meant.
+   */
+  const logSegmentFallthrough = (direction, action, position) => {
+    const data = {
+      direction,
+      reason: action.reason,
+      step: action.step,
+      seconds: Number.isFinite(position) ? position : null,
+      contentId: resolveContentId(meta),
+      segmentCount: Array.isArray(meta?.surround?.segments) ? meta.surround.segments.length : 0,
+      surroundId: meta?.surround?.id ?? null,
+      mediaKey: mediaIdentityKey,
+      title: mediaTitle,
+      queuePosition,
+      trigger: 'keyboard'
+    };
+    playbackLog('player.segment-fallthrough', data, {
+      level: 'info',
+      context: { source: 'useMediaKeyboardHandler', mediaKey: mediaIdentityKey, queuePosition }
+    });
+    try {
+      logger.info('player.segment-fallthrough', data, {
+        context: { mediaKey: mediaIdentityKey, queuePosition },
+        tags: ['keyboard', 'segment']
+      });
+    } catch (_) {
+      // logger best effort
+    }
+  };
+
   // Custom action handlers for Player-specific logging
   const customActionHandlers = {
     nextTrack: () => {
       const { currentTime, percent } = readProgressSnapshot();
+
+      // Inside a segmented piece, `next` is the next MOVEMENT. The queue is
+      // where it goes only when the piece has no further segment in this file —
+      // which is what stopped a press during the Eroica's first movement from
+      // ending the symphony.
+      const segmentPlan = nextSegmentAction(segmentInput(currentTime));
+      if (segmentPlan.kind === 'seek') {
+        logUserAction('segment-skip', {
+          direction: 'next',
+          seconds: Number.isFinite(currentTime) ? currentTime : null,
+          toSeconds: segmentPlan.seconds,
+          segmentIndex: segmentPlan.segmentIndex,
+          trigger: 'keyboard'
+        });
+        seekToSegment(segmentPlan.seconds);
+        return;
+      }
+      logSegmentFallthrough('next', segmentPlan, currentTime);
+
       logUserAction('queue-skip', {
         direction: 'next',
         seconds: Number.isFinite(currentTime) ? currentTime : null,
@@ -159,17 +245,32 @@ export function useMediaKeyboardHandler(config) {
     previousTrack: () => {
       const { currentTime } = readProgressSnapshot();
       const resolvedCurrent = Number.isFinite(currentTime) ? currentTime : 0;
+
+      // Same rule as before the piece had segments — restart what is playing if
+      // we are more than the grace period into it, otherwise step back — except
+      // that "what is playing" is now the SEGMENT when there is one. With no
+      // segments the item is one segment starting at 0, so this is byte-for-byte
+      // today's behaviour, arrived at by the same arithmetic.
+      const segmentPlan = previousSegmentAction(segmentInput(resolvedCurrent));
+      if (segmentPlan.kind === 'seek') {
+        logUserAction(segmentPlan.segmentIndex === -1 ? 'queue-skip' : 'segment-skip', {
+          direction: segmentPlan.restart ? 'restart-current' : 'previous',
+          seconds: resolvedCurrent,
+          toSeconds: segmentPlan.seconds,
+          segmentIndex: segmentPlan.segmentIndex,
+          trigger: 'keyboard'
+        });
+        seekToSegment(segmentPlan.seconds);
+        return;
+      }
+
+      logSegmentFallthrough('previous', segmentPlan, resolvedCurrent);
       logUserAction('queue-skip', {
-        direction: resolvedCurrent > 5 ? 'restart-current' : 'previous',
+        direction: 'previous',
         seconds: resolvedCurrent,
         trigger: 'keyboard'
       });
-      if (resolvedCurrent > 5) {
-        const next = mediaController.seek?.(0);
-        setCurrentTime && setCurrentTime(Number.isFinite(next) ? next : 0);
-      } else {
-        onEnd && onEnd(-1);
-      }
+      onEnd && onEnd(-1);
     },
 
     // Override default seek to use Player-specific increment calculation
