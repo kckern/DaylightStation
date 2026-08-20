@@ -138,10 +138,31 @@ export function createMeasurementDocument({ theme = documentPdfTheme, fontDir = 
 const stringWidth = (doc, theme, fontKey, sizePt, text) =>
   doc.font(theme.fonts[fontKey].name).fontSize(sizePt).widthOfString(text);
 
+/**
+ * Typographic quotes. A worksheet is typeset, not code: it must never show a
+ * straight quote or apostrophe. This runs at the rendering boundary — on every
+ * paragraph of rich text and on every choice label read from a bank — so the
+ * guarantee holds no matter which pipeline produced the document, including a
+ * hand-authored one that never passed through `issueWorksheet`.
+ *
+ * A quote opens after start-of-string, whitespace or an opening bracket and
+ * closes otherwise, which makes `don't` an apostrophe without having to know
+ * it is a contraction.
+ */
+export function curlyQuotes(text) {
+  if (typeof text !== 'string' || !text) return text;
+  return text
+    .replace(/"([^"]*)"/g, '\u201c$1\u201d')
+    .replace(/(^|[\s([{<\u2014\u2013-])'/g, '$1\u2018')
+    .replace(/'/g, '\u2019')
+    .replace(/(^|[\s([{<\u2014\u2013-])"/g, '$1\u201c')
+    .replace(/"/g, '\u201d');
+}
+
 /** Paragraph descriptors from a constrained-Markdown source. */
 function splitParagraphs(md) {
   const paragraphs = [];
-  for (const chunk of String(md).split(/\n\s*\n/)) {
+  for (const chunk of curlyQuotes(String(md)).split(/\n\s*\n/)) {
     const lines = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
     if (!lines.length) continue;
     let buffer = [];

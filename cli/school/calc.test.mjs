@@ -8,7 +8,7 @@ import {
   main,
   resolveSchoolCalcContentPaths,
   runSchoolCalcPublicationValidation,
-} from './schoolcalc-catalog.cli.mjs';
+} from './calc.mjs';
 
 describe('schoolcalc-catalog CLI', () => {
   it('resolves default and explicit mounted-content paths without a household graph', () => {

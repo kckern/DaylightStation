@@ -9,7 +9,7 @@
  * and reset gating while the old id haunts the pickers.
  *
  * Usage:
- *   node cli/school-rekey-learner.cli.mjs <oldId> <newId> [--data-dir <path>] [--apply]
+ *   node cli/school.mjs learner <oldId> <newId> [--data-dir <path>] [--apply]
  *
  * DRY RUN BY DEFAULT: prints what would change; nothing moves without
  * --apply. Refuses when <newId> already exists in either root.
@@ -124,15 +124,14 @@ export function runRekey({ dataDir, oldId, newId, apply = false }) {
   return { moves, edits: edits.map(({ file, hits }) => ({ file, hits })), warnings, errors };
 }
 
-const ENTRYPOINT = path.resolve(new URL(import.meta.url).pathname);
-if (process.argv[1] && path.resolve(process.argv[1]) === ENTRYPOINT) {
-  const args = process.argv.slice(2);
+export function main(argv = process.argv.slice(2)) {
+  const args = argv;
   const apply = args.includes('--apply');
   const dataDirFlag = args.includes('--data-dir') ? args[args.indexOf('--data-dir') + 1] : null;
   const positional = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--data-dir');
   if (positional.length !== 2) {
-    process.stderr.write('Usage: school-rekey-learner.cli.mjs <oldId> <newId> [--data-dir <path>] [--apply]\n');
-    process.exit(2);
+    process.stderr.write('Usage: school learner rekey <oldId> <newId> [--data-dir <path>] [--apply]\n');
+    return 2;
   }
   const dataDir = dataDirFlag ?? path.join(process.env.DAYLIGHT_BASE_PATH ?? process.cwd(), 'data');
   const [oldId, newId] = positional;
@@ -146,5 +145,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === ENTRYPOINT) {
       ? `Rekeyed '${oldId}' -> '${newId}'. NOW EDIT school.yml by hand (students:, schoolcalc.continuation.learner_slots) and restart the container.\n`
       : 'DRY RUN — nothing changed. Re-run with --apply to execute.\n');
   }
-  process.exit(result.errors.length ? 1 : 0);
+  return result.errors.length ? 1 : 0;
 }

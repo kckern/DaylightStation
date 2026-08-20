@@ -89,11 +89,11 @@ const MANIFEST_ARCHETYPES = new Set(['worksheet']);
  * Reads from `<dataDir>/content/school/learning-catalog/question-banks` — the SAME
  * layout `schoolCatalog.mjs`'s composition wiring resolves (against the
  * process's own `DAYLIGHT_BASE_PATH`) and the same data-root convention
- * `school-docs.cli.mjs`'s `resolveSchoolDocsContentPaths` resolves against
+ * `school.mjs docs`'s `resolveSchoolDocsContentPaths` resolves against
  * `--data-dir`/`$DAYLIGHT_BASE_PATH`.
  *
  * EXPORTED (review finding F5) so a caller that has ALREADY resolved its own
- * `dataDir` — `school-docs.cli.mjs`'s `--data-dir` flag, in particular — can
+ * `dataDir` — `school.mjs docs`'s `--data-dir` flag, in particular — can
  * root this reader there instead of silently falling back to
  * `defaultBankReader`'s own `$DAYLIGHT_BASE_PATH`/`/usr/src/app/data` guess,
  * which never sees a CLI-supplied override. `defaultBankReader` (this
@@ -163,7 +163,12 @@ function expandedQuestionBlock(item, { number, points }) {
     points,
     blocks: [
       { type: 'rich_text', md: item.prompt },
-      { type: 'omr_response', itemId: item.id, choices: item.choices.length },
+      // `compact` puts the letter inline with its choice ("A. A pure heart").
+      // The default `row` geometry exists to sit a letter beside a bubble;
+      // no sheet prints bubbles, so `row` would strand the letter above its
+      // own text. `worksheetInstanceDocument` already emits compact — this
+      // makes a bank-select document match it.
+      { type: 'omr_response', itemId: item.id, choices: item.choices.length, layout: 'compact' },
     ],
   };
 }

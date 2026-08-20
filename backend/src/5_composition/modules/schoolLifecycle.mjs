@@ -543,7 +543,7 @@ export async function createSchoolLifecycle({
   // agenda and a child holding the printed one are always looking at the
   // output of the same renderer instance.
   // --- print documents (Task 7, spec §9): tracked quizzes through IssueDocument ---
-  // Rooted at the SAME content root `school-docs.cli.mjs` defaults to
+  // Rooted at the SAME content root `school.mjs docs` defaults to
   // (`<dataDir>/household/apps/school/print-documents`) — a unit
   // authored/published via the CLI is exactly what a child's scan resolves
   // against here. These are machine-written artifacts, so they live with the

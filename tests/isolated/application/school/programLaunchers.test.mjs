@@ -93,7 +93,7 @@ const CORPUS = {
   id: 'test-korean',
   label: 'Test Korean',
   languages: { source: 'EN', target: 'KR' },
-  audio_base: 'apps/school/language/test-korean',
+  audio_base: 'audio/language/test-korean',
   sentences: [
     { seq: 1, text: { EN: "The weather's nice today.", KR: '오늘 날씨가 좋아요.' } },
     { seq: 2, text: { EN: "I'm not rich.", KR: '저는 부자가 아니예요.' } },

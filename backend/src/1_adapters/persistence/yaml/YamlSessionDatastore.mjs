@@ -3,7 +3,7 @@
  *
  * Implements ISessionDatastore port for fitness session storage.
  * Sessions are stored at: household[-{id}]/fitness/log/{YYYY-MM-DD}/{sessionId}.yml
- * Screenshots at: {mediaRoot}/apps/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
+ * Screenshots at: {mediaRoot}/fitness/sessions/{YYYY-MM-DD}/{sessionId}/screenshots/
  */
 import path from 'path';
 import moment from 'moment-timezone';
@@ -107,7 +107,6 @@ export class YamlSessionDatastore extends ISessionDatastore {
 
     const screenshotsDir = path.join(
       this.mediaRoot,
-      'apps',
       'fitness',
       'sessions',
       sessionDate,
@@ -116,14 +115,13 @@ export class YamlSessionDatastore extends ISessionDatastore {
     );
 
     // Relative path for API responses
-    const screenshotsRelativeBase = `apps/fitness/sessions/${sessionDate}/${canonicalId}/screenshots`;
+    const screenshotsRelativeBase = `fitness/sessions/${sessionDate}/${canonicalId}/screenshots`;
 
     // Soft-delete destination: frames are moved here (not hard-deleted) after a
     // confirmed recap, then aged out by the trash-retention sweep. Mirrors the
     // session layout under a sibling `_trash` root so entries stay date/id keyed.
     const trashDir = path.join(
       this.mediaRoot,
-      'apps',
       'fitness',
       '_trash',
       sessionDate,
@@ -137,7 +135,6 @@ export class YamlSessionDatastore extends ISessionDatastore {
     // assets is media.
     const snapshotsFilePath = path.join(
       this.mediaRoot,
-      'apps',
       'fitness',
       'sessions',
       sessionDate,

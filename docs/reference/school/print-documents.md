@@ -490,7 +490,7 @@ record — recover with `release-card`. Accepted at household scale.
 
 ## 7. The CLI
 
-`node cli/school-docs.cli.mjs` (`npm run school:docs`):
+`node cli/school.mjs docs` (`npm run school:docs`):
 
 - `validate <file|dir>` — parse + validate, render-free, sub-second (the AI
   repair loop's inner step).
@@ -559,7 +559,7 @@ record — recover with `release-card`. Accepted at household scale.
   false pass.
 
 `node cli/barcode-scan-sim.cli.mjs proof <learnerId> <courseId> --out <directory>`
-is the file-only lifecycle proof (formerly `school-atlas-sim.cli.mjs`,
+is the file-only lifecycle proof (formerly `school.mjs sim`,
 generalized and folded into this file — see that CLI's own header comment). It
 builds the learner's real agenda, scans the agenda QR, issues and renders the
 enrollment-bound worksheet, submits a perfect simulated card scan, renders the
@@ -742,7 +742,7 @@ Known, accepted limits (each was reviewed, not overlooked):
 | PDF rendering | `backend/src/1_rendering/school/documents/` — workbook theme, measure/place, draw, furniture |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `GET /api/v1/school/print/*` (proof renders + card lookup) and `POST /api/v1/school/print/render` (card-minting renders) |
 | Scan wiring | `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs` |
-| CLI | `cli/school-docs.cli.mjs` |
+| CLI | `cli/school.mjs docs` |
 | Content (sources) | `data/content/school/catalog/documents/` — hand-authored, by taxonomy path (CLI: `--source-root`) |
 | Content (artifacts) | `data/content/school/print-documents/` — `published/`, `derived-banks/`, `allocations/` only (CLI: `--content-root`) |
 | Evidence | `data/users/{id}/apps/school/attempts/` (shared with the on-screen engine) |
