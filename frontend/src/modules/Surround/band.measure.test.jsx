@@ -59,7 +59,7 @@ import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
 import {
-  accordionShares, soundingWidth, idealWidth, placedSegments, nameFloorPx, railWearsChips,
+  accordionShares, soundingWidth, idealWidth, placedSegments, nameFloorPx, railFloorPx, railWearsChips,
   inactiveRoomPx, numeralStyle, numeralText,
   SEGMENT_FLOOR_PX, SEGMENT_NAME_RUN_PX, SEGMENT_CHIP_FLOOR_PX,
 } from './band.js';
@@ -798,7 +798,7 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
  *
  * @returns the numbers every decision was made from, so a failure can report them.
  */
-async function runAccordion(page) {
+async function runAccordion(page, { shorts = null } = {}) {
   // The DOM READS, and only the DOM reads. Not one of these numbers is combined
   // here; the arithmetic on top of them is imported from the module the
   // component imports it from.
@@ -835,8 +835,32 @@ async function runAccordion(page) {
     natural, activeIndex, railPx, chromePx, needs,
   } = measured;
 
+  // THE SHORT LABELS, ON THE COMPONENT'S OWN RULER. A silent segment's label is
+  // measured in the probe's heading — the same element, the same face, the same
+  // size the component measures it in — rather than off a rendered `__short`,
+  // because the SOUNDING segment renders no short label and the floor is a fact
+  // about the whole rail. Passed in because the page holds strings, not data.
+  const shortNeeds = shorts
+    ? await page.evaluate((list) => {
+      const heading = document.querySelector('.surround-segment-map__probe .surround-segment-map__heading');
+      if (!heading) return list.map(() => 0);
+      const out = list.map((s) => {
+        if (!s) return 0;
+        heading.innerHTML = '';
+        heading.textContent = s;
+        return heading.getBoundingClientRect().width;
+      });
+      heading.innerHTML = '';
+      return out;
+    }, shorts)
+    : [];
+
   // THE RAIL'S OWN FLOOR, AND THE DENSITY IT DRIVES — both from `band.js`.
-  const floorPx = nameFloorPx(chromePx);
+  const everyShort = Boolean(shorts?.length) && shorts.every(Boolean);
+  const floorPx = railFloorPx({
+    chromePx,
+    labelPx: everyShort && shortNeeds.length ? Math.max(...shortNeeds) : null,
+  });
   const widestPx = needs.length
     ? idealWidth({ chromePx, needPx: Math.max(...needs) }) : 0;
   const count = natural.length;
@@ -2447,7 +2471,7 @@ describe('the band, measured against the shipped stylesheet', () => {
 
     const railAt = async ({ width, height }) => {
       await layout(page, css, { width, height, data: LABELLED, position: POLONAISE_POSITION });
-      const solved = await runAccordion(page);
+      const solved = await runAccordion(page, { shorts: SHORTS });
       const labels = await page.evaluate(() => [...document.querySelectorAll(
         '.surround-segment-map__segment',
       )].map((seg) => {
@@ -2470,30 +2494,35 @@ describe('the band, measured against the shipped stylesheet', () => {
      * because the honest answer is not the same on all three and the differences
      * are the whole argument for the field.
      *
-     *   960x540    the rail CHIPS. No type on a silent segment at all, short or
-     *              long, and that decision predates this field: 608px of rule
-     *              cannot set six names beside a sounding one. Nothing to fit.
-     *   1280x720   ~822px of rule. The accordion opens the Heroic to its whole
-     *              name and leaves the other six 77-122px — of which 46.5px is
-     *              furniture (the numeral's gutter and the text insets), so the
-     *              RUN is 30-75px. Only `Fantaisie` sets whole, in the widest of
-     *              them. The rest are cut, and the cut is the point: `C-sh…`,
-     *              `E-fl…`, `Mili…`, `C mi…`, `F-sh…` are five different things
-     *              where `Pol…` five times was one thing said five times.
-     *   1920x1080  ~1251px of rule. Every one of the six sets whole.
+     *   960x540    the rail CHIPS. 608px of rule cannot set six labels beside a
+     *              sounding name, and that was already true before this field.
+     *   1280x720   the rail CHIPS — and this is the case the label-aware floor
+     *              exists for. The old floor (three glyphs and an ellipsis, 74px)
+     *              said names, and the rail then drew `C-sh…`, `E-fl…`, `Mili…`,
+     *              `C mi…`, `F-sh…`: five cut stubs of the very strings the
+     *              corpus wrote so that nothing would need cutting. 822px of rule
+     *              cannot hold the widest of them (96px + 46.5px of furniture)
+     *              six times beside a sounding name, so the rail says so with
+     *              chips instead of pretending with ellipses.
+     *   1920x1080  ~1251px of rule, and every one of the six sets WHOLE. The
+     *              same corpus, the same labels, a rule wide enough — so this is
+     *              the root that proves the floor is a measurement and not a
+     *              blanket refusal to set type.
      *
-     * SO THE FIELD DOES NOT PROMISE A WHOLE LABEL, and this spec does not
-     * pretend it does. It promises that what the rail cuts is worth reading the
-     * first four glyphs of. A `short:` long enough to be cut is still doing its
-     * job; a `short:` that opens with the same word as its neighbours is not,
-     * whatever its length.
+     * SO THE FIELD PROMISES A WHOLE LABEL OR NO LABEL, never a cut one. That is
+     * the difference between `short:` and `name`: a name is cut to three glyphs
+     * because a stub of a long title is the best a crowded rail can do, and a
+     * `short:` is not, because the corpus has already compressed it as far as it
+     * goes and a rail that cuts it has nothing left to try.
      *
-     * TO GO RED: render the full name on inactive segments again — every `text`
-     * comes back null at 1280 and 1920 and the assertion names all six.
+     * TO GO RED (the floor): put `nameFloorPx` back in `railFloorPx`'s place —
+     * 1280 returns to names and the report prints five cut labels with their
+     * measured overflow. TO GO RED (the render): set the full name on inactive
+     * segments again and 1920's six labels come back null.
      */
     const RAIL_SETS = Object.freeze({
       '960x540': { chips: true, whole: 0 },
-      '1280x720': { chips: false, whole: 1 },
+      '1280x720': { chips: true, whole: 0 },
       '1920x1080': { chips: false, whole: 6 },
     });
     /** Sub-glyph: `scrollWidth` is an integer taken off a fractional layout. */

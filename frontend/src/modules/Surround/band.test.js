@@ -3,7 +3,7 @@ import {
   resolveBandConfig, showsNowHeading, nowSideFor, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
   placedSegments, activeSegmentIndex, numeral, numeralText, numeralStyle, ROMAN_CEILING,
-  placedRailSegments, railGroups, railIsFlat,
+  placedRailSegments, railGroups, railIsFlat, railFloorPx, nameFloorPx, idealWidth,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -743,6 +743,43 @@ describe('railGroups', () => {
  * two things the screen got wrong at once: whether a heading row is printed
  * above the rule, and what the numeral gutter counts.
  */
+/**
+ * THE FLOOR ASKS WHETHER THE LABEL CAN BE READ, once the corpus has said what
+ * the label is.
+ *
+ * `nameFloorPx` tolerates a cut: three glyphs and an ellipsis is its whole
+ * derivation, which is the right tolerance for a long authored NAME, where a
+ * stub is the best a crowded rail can do. It is the wrong tolerance for a
+ * `short:` — the corpus has already compressed that string as far as it goes,
+ * so a `short:` that still does not fit is not a rail that should try harder,
+ * it is a rail that should stop setting type and wear its chips.
+ */
+describe('railFloorPx', () => {
+  it('is the name floor when the rail has no authored labels to measure', () => {
+    expect(railFloorPx({ chromePx: 46.5 })).toBe(nameFloorPx(46.5));
+    expect(railFloorPx({ chromePx: 46.5, labelPx: null })).toBe(nameFloorPx(46.5));
+    expect(railFloorPx({ chromePx: 46.5, labelPx: 0 })).toBe(nameFloorPx(46.5));
+  });
+
+  it('is the width the widest LABEL needs whole, when every segment has one', () => {
+    // The office polonaise rail, measured: 46.5px of furniture and a 96px
+    // `C-sharp minor`. A floor of 74px would let that segment be drawn at 74px
+    // and cut the label the corpus wrote to avoid being cut.
+    expect(railFloorPx({ chromePx: 46.5, labelPx: 96 })).toBe(idealWidth({ chromePx: 46.5, needPx: 96 }));
+    expect(railFloorPx({ chromePx: 46.5, labelPx: 96 })).toBeGreaterThan(nameFloorPx(46.5));
+  });
+
+  /** A short label shorter than the three-glyph run does not LOWER the floor. */
+  it('never floors a rail below what a named segment already needs', () => {
+    expect(railFloorPx({ chromePx: 46.5, labelPx: 8 })).toBe(nameFloorPx(46.5));
+  });
+
+  it('degrades to the unmeasured floor when the chrome has not been read', () => {
+    expect(railFloorPx({ chromePx: 0, labelPx: 96 })).toBe(SEGMENT_FLOOR_PX);
+    expect(railFloorPx({ chromePx: NaN, labelPx: 96 })).toBe(SEGMENT_FLOOR_PX);
+  });
+});
+
 describe('railIsFlat', () => {
   const run = (index, title, count) => Array.from({ length: count }, () => ({
     segment: { duration: 10, group: { work: `w${index}`, title, index } },
