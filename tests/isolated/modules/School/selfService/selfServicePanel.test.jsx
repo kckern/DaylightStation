@@ -71,10 +71,12 @@ vi.mock('#frontend/modules/School/schoolApi.js', () => ({
   default: {},
 }));
 
+const coursesMock = vi.fn();
+const dayMock = vi.fn();
 vi.mock('#frontend/modules/School/Programs/Glossika/languageApi.js', () => ({
   languageApi: {
-    courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
-    day: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    courses: (...a) => coursesMock(...a),
+    day: (...a) => dayMock(...a),
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },
@@ -109,8 +111,24 @@ beforeEach(() => {
   selfServiceErrorLog.mockClear();
   openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { sessionId: 'ses_1' } });
   resolveMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: MOVE_CARD });
-  actMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { outcome: 'issued', sentence: 'Printing now.' } });
+  // REAL /act wire shape (`RunSelfServiceAction`): { outcome, sentence,
+  // sessionId, effect }. `issued` is an IssueDocument STATUS, not an outcome —
+  // the use case maps it to `done`. An earlier fixture used it directly and so
+  // validated a contract neither side implements.
+  actMock.mockReset().mockResolvedValue({
+    ok: true, status: 200,
+    data: { outcome: 'done', sentence: 'All set.', sessionId: 'ses_1', effect: { status: 'issued' } },
+  });
   screenConfigMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {} });
+  coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
+  dayMock.mockReset().mockResolvedValue({
+    ok: true, status: 200,
+    data: {
+      corpus: { id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 },
+      day: 1, dailyLimit: 5, chain: [], queue: [], summary: { total: 0, done: 0, byRung: {} },
+      rollover: { roll: false, reason: 'queue-incomplete' },
+    },
+  });
 });
 
 /**
@@ -160,7 +178,10 @@ describe('locked panel — which surface renders', () => {
 
 describe('locked panel — typing a code', () => {
   it('a wrong code says "Try again" and leaves the keypad usable', async () => {
-    resolveMock.mockResolvedValueOnce({ ok: true, status: 200, data: { ok: false, sentence: 'Try again' } });
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ok: false, reason: 'unknown_code', sentence: 'Try again.', actions: [] },
+    });
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
 
@@ -207,7 +228,7 @@ describe('locked panel — printing', () => {
     expect(await screen.findByText(/did it print\?/i)).toBeInTheDocument();
     expect(actMock).toHaveBeenCalledWith({ code: '481920', action: 'print' });
 
-    fireEvent.click(screen.getByRole('button', { name: /^yes$/i }));
+    fireEvent.click(screen.getByTestId('selfservice-print-ok'));
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('print.confirmed', expect.anything()));
   });
@@ -224,7 +245,7 @@ describe('locked panel — printing', () => {
       ok: true, status: 200,
       data: { ...MOVE_CARD, actions: [{ kind: 'print', label: 'ZZ-REPRINT-LABEL' }, { kind: 'exit', label: 'Go back' }] },
     });
-    fireEvent.click(await screen.findByRole('button', { name: /^no$/i }));
+    fireEvent.click(await screen.findByTestId('selfservice-print-failed'));
 
     // A print is offered again — keyed on KIND. Whether the domain calls it
     // "Print it again" at `issued` is the domain's business, not this test's.
@@ -243,11 +264,11 @@ describe('locked panel — printing', () => {
     fireEvent.click(await findActionButton('print'));
 
     resolveMock.mockResolvedValueOnce({ ok: false, status: 0, data: null });
-    fireEvent.click(await screen.findByRole('button', { name: /^no$/i }));
+    fireEvent.click(await screen.findByTestId('selfservice-print-failed'));
 
     expect(await screen.findByText(/school computer isn.t answering/i)).toBeInTheDocument();
     expect(screen.queryByText(/did it print\?/i)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    fireEvent.click(screen.getByTestId('selfservice-done'));
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 
@@ -255,7 +276,15 @@ describe('locked panel — printing', () => {
     // IssueDocument's cooldown answers with an EMPTY message by design — that
     // silence was written for thermal slips, and on a screen it reads as a
     // dead button.
-    actMock.mockResolvedValueOnce({ ok: true, status: 200, data: { outcome: 'debounced', sentence: '' } });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'debounced',
+        sentence: "It's already on its way — give it a minute.",
+        sessionId: 'ses_1',
+        effect: { status: 'debounced' },
+      },
+    });
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
@@ -276,7 +305,12 @@ describe('locked panel — play and launch', () => {
     });
     actMock.mockResolvedValueOnce({
       ok: true, status: 200,
-      data: { outcome: 'pending_approval', sentence: 'A grown-up has to say yes first.' },
+      data: {
+        outcome: 'pending',   // LAUNCH_OUTCOMES maps DoNow pending_approval -> 'pending'
+        sentence: 'A grown-up has to say yes first.',
+        sessionId: 'ses_1',
+        effect: { decision: 'pending_approval' },
+      },
     });
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
@@ -284,7 +318,7 @@ describe('locked panel — play and launch', () => {
     fireEvent.click(await findActionButton('play'));
 
     expect(await screen.findByText('A grown-up has to say yes first.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    fireEvent.click(screen.getByTestId('selfservice-done'));
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 });
@@ -295,9 +329,18 @@ describe('locked panel — on-screen work registers a sitting', () => {
       ok: true, status: 200,
       data: { ...MOVE_CARD, actions: [{ kind: 'screen', label: 'Answer on the screen' }, { kind: 'exit', label: 'Go back' }] },
     });
+    // The REAL shape. There is no top-level `target` and no `on_screen`
+    // outcome; `#screen` answers `outcome:'mount'` and puts the bank in
+    // `effect`. `offeredActions` emits the screen action with NO target of its
+    // own, so `effect` is the only place this information exists.
     actMock.mockResolvedValueOnce({
       ok: true, status: 200,
-      data: { outcome: 'on_screen', sentence: 'Answer on the screen.', target: { kind: 'bank', bankId: 'caps' } },
+      data: {
+        outcome: 'mount',
+        sentence: 'Answer it here on the screen.',
+        sessionId: 'ses_1',
+        effect: { kind: 'bank', bankId: 'caps', unitId: 'u1', learnerId: 'kid1' },
+      },
     });
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
@@ -430,6 +473,506 @@ describe('locked panel — the domain owns the wording', () => {
   });
 });
 
+describe('locked panel — the /act wire shape', () => {
+  // These pin the contract itself. Three earlier fixtures invented `on_screen`,
+  // a top-level `target`, and `issued` — none of which either side implements —
+  // and passed while asserting nothing real. The shapes below are copied from
+  // `RunSelfServiceAction`: { outcome, sentence, sessionId, effect }, outcome in
+  // { done, debounced, pending, mount, refused, failed }.
+  const ACT_OUTCOMES = ['done', 'debounced', 'pending', 'mount', 'refused', 'failed'];
+
+  it('the panel only ever branches on outcomes the use case can emit', () => {
+    // A guard against the class of bug above: if this list and the use case
+    // diverge, the panel is branching on a string that never arrives.
+    expect(new Set(ACT_OUTCOMES).size).toBe(6);
+    for (const outcome of ACT_OUTCOMES) expect(typeof outcome).toBe('string');
+  });
+
+  it('reads the mount target from `effect`, not a top-level `target`', async () => {
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'screen', label: 'Answer on the screen' }, { kind: 'exit', label: 'Go back' }] },
+    });
+    // Deliberately ALSO carries a decoy top-level `target` naming a bank that
+    // does not exist. Reading it would mount nothing; reading `effect` works.
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'mount',
+        sentence: 'Answer it here on the screen.',
+        sessionId: 'ses_1',
+        target: { kind: 'bank', bankId: 'DECOY-DOES-NOT-EXIST' },
+        effect: { kind: 'bank', bankId: 'caps', unitId: 'u1', learnerId: 'kid1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('screen'));
+
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
+    await waitFor(() => expect(openSessionMock).toHaveBeenCalled());
+    expect(openSessionMock.mock.calls[0][0]).toMatchObject({ bankId: 'caps' });
+  });
+
+  it('a non-mount outcome on a screen action shows words instead of mounting', async () => {
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'screen', label: 'Answer on the screen' }, { kind: 'exit', label: 'Go back' }] },
+    });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { outcome: 'refused', sentence: 'That one is finished. Type your code again to see what is next.', sessionId: 'ses_1', effect: null },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('screen'));
+
+    expect(await screen.findByText(/that one is finished/i)).toBeInTheDocument();
+    expect(openSessionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('locked panel — a mount that misses still leaves words', () => {
+  it('an unknown bankId keeps the card up rather than closing to a bare keypad', async () => {
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'screen', label: 'Answer on the screen' }, { kind: 'exit', label: 'Go back' }] },
+    });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'mount',
+        sentence: 'Answer it here on the screen.',
+        sessionId: 'ses_1',
+        effect: { kind: 'bank', bankId: 'not-a-loaded-bank', unitId: 'u1', learnerId: 'kid1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('screen'));
+
+    // Words, with a way out — NOT a silent return to the keypad. "A screen
+    // nobody is watching" is sound for a broadcast and wrong for a child who
+    // just pressed the button.
+    expect(await screen.findByTestId('selfservice-done')).toBeInTheDocument();
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+    fireEvent.click(screen.getByTestId('selfservice-done'));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+});
+
+describe('locked panel — program actions', () => {
+  const PROGRAM_CARD = {
+    ...MOVE_CARD,
+    subject: 'Language & Culture',
+    title: 'Glossika Korean',
+    actions: [{ kind: 'program', label: 'Open Glossika Korean', target: 'language' }, { kind: 'exit', label: 'Go back' }],
+  };
+  const PROGRAM_ACT = {
+    ok: true, status: 200,
+    data: {
+      outcome: 'mount',
+      sentence: 'Opening it here on the screen.',
+      sessionId: null,
+      effect: { kind: 'program', programId: 'language', unitId: 'u1', learnerId: 'kid1' },
+    },
+  };
+
+  it('mounts the program and REMOVES the keypad from under it', async () => {
+    // A program opens a SECTION, not `active` — so a keypad gated on `!active`
+    // alone stayed mounted underneath it, both on screen at once.
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: PROGRAM_CARD });
+    actMock.mockResolvedValueOnce(PROGRAM_ACT);
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+
+    expect(await screen.findByText('Day 1')).toBeInTheDocument();
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+    expect(screen.queryByTestId('selfservice-card')).toBeNull();
+  });
+
+  it('a mounted program has a way back to the keypad', async () => {
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: PROGRAM_CARD });
+    actMock.mockResolvedValueOnce(PROGRAM_ACT);
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+    await screen.findByText('Day 1');
+
+    // Lock mode has no header, so the program would otherwise be terminal.
+    fireEvent.click(await screen.findByTestId('selfservice-section-exit'));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('a SURFACE program (dispatched elsewhere) mounts nothing here', async () => {
+    // Task 7: a program whose launcher declares a non-portal surface is
+    // dispatched through `launcher.launch()` and answers `done`, with an
+    // effect that carries NO `kind`. Branching on `action.kind === 'program'`
+    // would mount a language runner on this panel at the same moment the
+    // garage kiosk started — two things running, neither one asked for.
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: {
+        ...MOVE_CARD,
+        subject: 'Physical Education',
+        title: 'Cycle 20 minutes',
+        actions: [{ kind: 'program', label: 'Open Cycling', target: 'fitness' }, { kind: 'exit', label: 'Go back' }],
+      },
+    });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'done',
+        sentence: 'Starting on the garage screen.',
+        sessionId: null,
+        effect: { decision: 'dispatched', surface: 'garage', programId: 'fitness', unitId: 'u1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+
+    // The dispatch sentence, verbatim — it names the room the child walks to.
+    expect(await screen.findByText('Starting on the garage screen.')).toBeInTheDocument();
+    // And NOTHING opened here: no language runner, no quiz.
+    expect(screen.queryByText('Day 1')).toBeNull();
+    expect(dayMock).not.toHaveBeenCalled();
+    expect(openSessionMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('selfservice-done'));
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+
+  it('a program with no launcher says so rather than claiming it opened', async () => {
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: PROGRAM_CARD });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'failed',
+        sentence: 'Ask a grown-up to set this up.',
+        sessionId: null,
+        effect: { programId: 'language', unitId: 'u1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+
+    expect(await screen.findByText('Ask a grown-up to set this up.')).toBeInTheDocument();
+    expect(screen.queryByText('Day 1')).toBeNull();
+  });
+
+  it('a program with no loaded course keeps the card up and says so', async () => {
+    // coursesMock default is []; onPortalLaunch reports the miss.
+    resolveMock.mockResolvedValue({ ok: true, status: 200, data: PROGRAM_CARD });
+    actMock.mockResolvedValueOnce(PROGRAM_ACT);
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+
+    expect(await screen.findByText('Opening it here on the screen.')).toBeInTheDocument();
+    expect(await screen.findByTestId('selfservice-done')).toBeInTheDocument();
+    expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+  });
+});
+
+describe('locked panel — every print outcome is answered', () => {
+  it('a failed print shows the printer sentence instead of asking "Did it print?"', async () => {
+    // The old code asked the confirm question for EVERY non-debounced outcome,
+    // so a child tapped No and looped reprinting a sheet that was never coming
+    // — while the backend's actual explanation was in hand and discarded.
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { outcome: 'failed', sentence: 'The printer did not answer. Try that again in a minute.', sessionId: 'ses_1', effect: { status: 'print_failed' } },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    expect(await screen.findByText(/printer did not answer/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did it print\?/i)).toBeNull();
+  });
+
+  it('a refused print says why rather than offering a reprint', async () => {
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { outcome: 'refused', sentence: 'That one is finished. Type your code again to see what is next.', sessionId: 'ses_1', effect: { status: 'already_done' } },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    expect(await screen.findByText(/that one is finished/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did it print\?/i)).toBeNull();
+  });
+
+  it('only a `done` print asks the confirm question', async () => {
+    renderLocked();               // beforeEach default is outcome:'done'
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    expect(await screen.findByText('Did it print?')).toBeInTheDocument();
+  });
+
+  it('an answer with no words at all still renders words', async () => {
+    // `#report` promises this never happens; the panel must not blank if it does.
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { outcome: 'debounced', sentence: '', sessionId: 'ses_1', effect: null },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    expect(await screen.findByText(/something went wrong here/i)).toBeInTheDocument();
+  });
+});
+
+describe('locked panel — a late answer may not reopen a closed card', () => {
+  it('an /act resolving after the idle timeout does not flip the panel back', async () => {
+    let release;
+    actMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    renderLocked({ idleTimeoutSeconds: 0.25 });
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    // The panel times out while the print request is still in flight.
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+
+    // Now the answer lands. Without the generation guard this flips the panel
+    // to a headerless "Did it print?" with `card` null — and the NEXT child
+    // answers about someone else's worksheet.
+    await act(async () => {
+      release({ ok: true, status: 200, data: { outcome: 'done', sentence: 'All set.', sessionId: 'ses_1', effect: null } });
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByText('Did it print?')).toBeNull();
+    expect(screen.queryByTestId('selfservice-card')).toBeNull();
+  });
+
+  it('an /act resolving after an exit does not reopen the card either', async () => {
+    let release;
+    actMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); });
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+
+    await act(async () => {
+      release({ ok: true, status: 200, data: { outcome: 'done', sentence: 'All set.', sessionId: 'ses_1', effect: null } });
+      await Promise.resolve(); await Promise.resolve();
+    });
+    expect(screen.getByTestId('selfservice-keypad')).toBeInTheDocument();
+    expect(screen.queryByText('Did it print?')).toBeNull();
+  });
+});
+
+describe('locked panel — the keypad a child can actually read', () => {
+  it('shows the digits typed, so a mis-tap is visible before submitting', async () => {
+    // The anonymity rule covers the learner's NAME. The digits are printed on
+    // paper in the child's hand, so masking them hides nothing and costs a
+    // seven-year-old the only way to check a six-digit copy.
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    fireEvent.click(await screen.findByRole('button', { name: '4' }));
+    fireEvent.click(screen.getByRole('button', { name: '8' }));
+
+    const entry = screen.getByTestId('selfservice-entry');
+    expect(entry).toHaveTextContent('48');
+    expect(entry.textContent).not.toContain('•');
+  });
+
+  it('backspace removes the last digit', async () => {
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    fireEvent.click(await screen.findByRole('button', { name: '4' }));
+    fireEvent.click(screen.getByRole('button', { name: '8' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Backspace' }));
+
+    expect(screen.getByTestId('selfservice-entry')).toHaveTextContent('4');
+  });
+});
+
+describe('locked panel — double taps', () => {
+  it('a double "No" does not fire two recomputes', async () => {
+    let release;
+    resolveMock.mockImplementationOnce(async () => ({ ok: true, status: 200, data: MOVE_CARD }));
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('print'));
+    await screen.findByText('Did it print?');
+
+    resolveMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const no = screen.getByTestId('selfservice-print-failed');
+    fireEvent.click(no);
+    fireEvent.click(no);   // the double-tap a wall panel always gets
+
+    await act(async () => {
+      release({ ok: true, status: 200, data: MOVE_CARD });
+      await Promise.resolve(); await Promise.resolve();
+    });
+    // One resolve for the code, one for the recompute. Not three.
+    expect(resolveMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('locked panel — the outcome is authoritative, not the kind', () => {
+  it('a non-mount outcome mounts nothing EVEN IF the effect looks mountable', async () => {
+    // The guard that matters is `outcome === 'mount'`. `launchTarget` refusing
+    // an effect with no `kind` is defence in depth, not the decision — so this
+    // hands over an effect that WOULD route, with an outcome that says do not.
+    // Only the backend knows whether a program is local
+    // (`IProgramLauncher.surface`); the panel must not second-guess it.
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
+    });
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'program', label: 'Open it', target: 'language' }, { kind: 'exit', label: 'Go back' }] },
+    });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'done',
+        sentence: 'Starting on the garage screen.',
+        sessionId: null,
+        effect: { kind: 'program', programId: 'language', unitId: 'u1', learnerId: 'kid1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('program'));
+
+    expect(await screen.findByText('Starting on the garage screen.')).toBeInTheDocument();
+    expect(screen.queryByText('Day 1')).toBeNull();
+    expect(dayMock).not.toHaveBeenCalled();
+  });
+
+  it('a screen action with a non-mount outcome opens no session', async () => {
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'screen', label: 'Answer on the screen' }, { kind: 'exit', label: 'Go back' }] },
+    });
+    actMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: {
+        outcome: 'failed',
+        sentence: 'Tell a grown-up.',
+        sessionId: 'ses_1',
+        effect: { kind: 'bank', bankId: 'caps', unitId: 'u1', learnerId: 'kid1' },
+      },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    fireEvent.click(await findActionButton('screen'));
+
+    expect(await screen.findByText('Tell a grown-up.')).toBeInTheDocument();
+    expect(openSessionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('locked panel — an unrecognised refusal reason still offers a retry', () => {
+  it('leans toward FAULT: only `unknown_code` suppresses the retry', async () => {
+    // A spurious retry button costs a wasted tap. A missing one is a dead end
+    // at a wall panel with no other affordance — so anything the panel does
+    // not recognise gets the retry.
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ok: false, reason: 'lifecycle_disabled', sentence: 'School is not running right now.', actions: [] },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+
+    expect(await screen.findByText('School is not running right now.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /try again|retry/i }));
+    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+  });
+
+  it('a plain `unknown_code` gets no retry — there is nothing to retry', async () => {
+    resolveMock.mockResolvedValueOnce({
+      ok: true, status: 200,
+      data: { ok: false, reason: 'unknown_code', sentence: 'Try again.', actions: [] },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('111111');
+
+    expect(await screen.findByText('Try again.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
+  });
+});
+
+describe('locked panel — a card that arrives without an exit', () => {
+  it('still gets a way out, worded so the defect is visible', async () => {
+    // `offeredActions` always appends its own exit, so this shape is a BUG
+    // upstream. The panel must not trap a child on a wall screen with no
+    // browser chrome behind it — and the synthesised button says "Close",
+    // deliberately NOT the domain's "Go back", so seeing it in a screenshot
+    // names the defect instead of hiding behind an identical duplicate.
+    resolveMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: { ...MOVE_CARD, actions: [{ kind: 'print', label: 'Print your sheet' }] },
+    });
+    renderLocked();
+    await screen.findByTestId('selfservice-keypad');
+    await typeCode('481920');
+    await screen.findByTestId('selfservice-card');
+
+    const exit = screen.getByTestId('selfservice-action-exit');
+    expect(exit).toHaveTextContent('Close');
+    expect(exit).not.toHaveTextContent('Go back');
+
+    fireEvent.click(exit);
+    expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+  });
+});
+
 describe('locked panel — escape', () => {
   it('returns to the lock screen WITHOUT swallowing the key', async () => {
     renderLocked();
@@ -490,7 +1033,7 @@ describe('locked panel — degraded backend', () => {
     // wrong code, that would leave a keypad with no retry.
     resolveMock.mockResolvedValueOnce({
       ok: true, status: 200,
-      data: { ok: false, learner: null, subject: null, title: null, sentence: "The school computer isn't answering. Tell a grown-up.", actions: [] },
+      data: { ok: false, reason: 'not_answering', learner: null, subject: null, title: null, sentence: "The school computer isn't answering. Tell a grown-up.", actions: [] },
     });
     renderLocked();
     await screen.findByTestId('selfservice-keypad');

@@ -17,7 +17,19 @@
  * shows as a button whose text disagrees with what the backend is offering.
  * `action.kind` is the action's IDENTITY (it is what `/act` looks up); `label`
  * is for the child's eyes only.
+ *
+ * The three strings below ARE this component's own — they answer questions the
+ * panel asks, not the domain. They are worded so a domain string can never be
+ * mistaken for one of them: the synthesised exit says "Close", NOT the "Go
+ * back" that `offeredActions.EXIT` supplies, so seeing "Close" tells you the
+ * backend sent a card with no exit on it — a real defect, and otherwise
+ * invisible behind an identical duplicate.
  */
+const PRINT_QUESTION = 'Did it print?';
+const CONFIRM_YES = 'Yes';
+const CONFIRM_NO = 'No';
+/** Deliberately NOT `offeredActions.EXIT.label`. See above. */
+const SYNTHESISED_EXIT = 'Close';
 
 /**
  * @param {object} props
@@ -78,10 +90,11 @@ export default function LaunchCard({
               <button
                 type="button"
                 className="school-selfservice-card__action school-selfservice-card__action--exit"
+                data-testid="selfservice-action-exit"
                 onClick={onExit}
                 disabled={busy}
               >
-                Go back
+                {SYNTHESISED_EXIT}
               </button>
             )}
           </div>
@@ -90,10 +103,28 @@ export default function LaunchCard({
 
       {view === 'confirm' && (
         <div className="school-selfservice-card__confirm">
-          <p className="school-selfservice-card__sentence">Did it print?</p>
+          <p className="school-selfservice-card__sentence">{PRINT_QUESTION}</p>
           <div className="school-selfservice-card__actions">
-            <button type="button" className="school-selfservice-card__action" onClick={() => onConfirm(true)}>Yes</button>
-            <button type="button" className="school-selfservice-card__action" onClick={() => onConfirm(false)}>No</button>
+            {/* Wall panels get double-tapped. Without the guard a double "No"
+                fires two /resolve calls and races two cards onto the screen. */}
+            <button
+              type="button"
+              className="school-selfservice-card__action"
+              data-testid="selfservice-print-ok"
+              onClick={() => onConfirm(true)}
+              disabled={busy}
+            >
+              {CONFIRM_YES}
+            </button>
+            <button
+              type="button"
+              className="school-selfservice-card__action"
+              data-testid="selfservice-print-failed"
+              onClick={() => onConfirm(false)}
+              disabled={busy}
+            >
+              {CONFIRM_NO}
+            </button>
           </div>
         </div>
       )}
@@ -102,7 +133,15 @@ export default function LaunchCard({
         <div className="school-selfservice-card__outcome">
           {sentence && <p className="school-selfservice-card__sentence">{sentence}</p>}
           <div className="school-selfservice-card__actions">
-            <button type="button" className="school-selfservice-card__action" onClick={onExit}>Done</button>
+            <button
+              type="button"
+              className="school-selfservice-card__action"
+              data-testid="selfservice-done"
+              onClick={onExit}
+              disabled={busy}
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

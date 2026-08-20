@@ -1637,6 +1637,14 @@
 .school-selfservice-card__actions {
   display: flex; flex-wrap: wrap; justify-content: center; gap: 0.9rem; width: 100%;
 }
+// The lock-mode exit for a mounted SECTION (a program). Runners carry their
+// own onExit; a section does not, and lock mode has no header to fall back on.
+.school-app__locked-exit {
+  position: absolute; right: 1rem; bottom: 1rem; z-index: 5;
+  flex: 0 0 auto; min-height: 56px; padding: 0 1.5rem;
+}
+.school-app--locked .school-app__body { position: relative; }
+
 .school-selfservice-card__action {
   flex: 1 1 12rem; min-height: 76px; padding: 0 1.4rem;
   border: 1px solid var(--school-border); border-radius: 14px;

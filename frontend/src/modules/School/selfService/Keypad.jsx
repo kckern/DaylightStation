@@ -6,6 +6,14 @@
  * lock screen would only tell a child whose codes to guess. The one thing on
  * screen besides the digits is whatever the last attempt had to say.
  *
+ * THE DIGITS ARE SHOWN, NOT MASKED. The anonymity rule covers the learner's
+ * NAME; the digits are printed on a sheet of paper in the child's hand, so
+ * masking them hides nothing from anyone and costs a seven-year-old the only
+ * way to check a six-digit copy before committing to a round trip. A masked
+ * mis-tap is indistinguishable from a correct entry until the server says
+ * "Try again.", which reads as "your code is wrong" rather than "you fumbled
+ * a key".
+ *
  * Presentational — every decision (wrong code vs. dead backend, what to do
  * next) belongs to useSelfService.
  */
@@ -58,7 +66,7 @@ export default function Keypad({
             key={i}
             className={`school-selfservice__slot${digit ? ' is-filled' : ''}`}
           >
-            {digit ? '•' : ''}
+            {digit ?? ''}
           </span>
         ))}
       </div>
