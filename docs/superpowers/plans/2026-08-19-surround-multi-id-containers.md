@@ -901,3 +901,54 @@ sudo docker exec daylight-station sh -c "echo $b | base64 -d > data/content/surr
 **Type consistency:** `toSpans`/`withOffsets` (Task 1) are used verbatim in Task 3. `chapterAt` (Task 5) is used in Tasks 6 and 8. `placedChapters`/`chapterGroups` (Task 6) match their test usage. `lookupByPart` returns `{ payload, part }` in Task 4 and is consumed as such.
 
 **Known gap, deliberate:** Task 4 Step 5 describes queue ordering against "the queue-building path" without naming a line, because that path is reached through `/api/v1/queue` and the exact function must be located by the implementer — the plan names the behaviour, the log events and the config key precisely, which is what the reviewer will check.
+
+---
+
+### Task 11: The index must fail loudly, not empty itself
+
+**Added 2026-08-19 from the Task 2 review.** `#build`'s bare `catch {}`
+(`backend/src/1_adapters/content/surround/YamlSurroundStore.mjs:344-346`) swallows any throw
+from `#resolvePerformance`, so one bad sidecar can silently drop every piece indexed after it.
+The same silent-empty signature — `surround.index.built pieces: 0` with no error — took the
+frame off the office screen in production earlier today via a different cause, and cost a
+diagnosis that only went quickly because a *different* warning happened to name its path.
+
+**Files:**
+- Modify: `backend/src/1_adapters/content/surround/YamlSurroundStore.mjs:344-346`
+- Test: `backend/src/1_adapters/content/surround/YamlSurroundStore.test.mjs`
+
+- [ ] **Step 1: Write the failing test**
+
+```javascript
+  it('keeps indexing after one sidecar throws, and names the one that did', () => {
+    write('classical/beethoven/good.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:good }\n');
+    write('classical/beethoven/bad.yml', 'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:bad }\n');
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger, __throwOn: 'plex:bad' });
+    expect(store.lookup('plex:good', '')).not.toBeNull();
+    expect(logger.error).toHaveBeenCalledWith('surround.sidecar.threw',
+      expect.objectContaining({ file: expect.stringContaining('bad.yml') }));
+  });
+```
+
+- [ ] **Step 2: Run it and watch it fail** — the good sidecar resolves to null because the throw
+      aborted the whole walk, and no `surround.sidecar.threw` is logged.
+
+- [ ] **Step 3: Implement.** Move the try/catch inside the per-sidecar loop so one throw costs one
+      sidecar; log `surround.sidecar.threw` with the file and the error message at `error` level.
+      Keep an outer guard for a tree that vanishes mid-walk, but have it log too — a silent
+      `catch {}` at index level is what this task exists to remove.
+
+- [ ] **Step 4: Add the 3-hop cycle assertion** deferred from Task 2: `a → b → c → a` must warn
+      `surround.chapter.cycle` and still resolve, proving the guard covers indirect cycles by
+      assertion rather than by inspection.
+
+- [ ] **Step 5: Mutation-prove** by restoring the outer-only catch; the new test must go red.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/src/1_adapters/content/surround/
+git commit -m "fix(surround): one bad sidecar costs one sidecar, not the whole index"
+```
