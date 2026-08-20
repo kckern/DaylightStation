@@ -264,6 +264,98 @@ export function placedRailSegments(segments) {
 }
 
 /**
+ * WIDTHS IN HIGH DENSITY: TYPOGRAPHY, NOT TIME.
+ *
+ * The rail has measured width in sounding seconds since it was built, and for
+ * a symphony that is right — four segments across a rule, and the long one
+ * looks long. It stops being right the moment the rail chips. A 29px segment
+ * cannot tell anyone that a movement runs four and a half minutes; the pixel is
+ * too small to carry the number. Spending width on proportion there buys
+ * nothing, and it costs the one thing the rail still could communicate, which
+ * is WHAT each segment is.
+ *
+ * So in chip mode width is a typographic measurement:
+ *
+ *   - a CHIP takes the same width as every other chip. They are all setting a
+ *     numeral, so they all need the same room, and equal widths make them read
+ *     as a countable series rather than as a ragged bar chart.
+ *   - the SOUNDING segment takes the width its own title needs, set whole.
+ *   - a FOLDED Part takes the width its Part title needs. A fold is a label,
+ *     and a label nobody can read is a hatched stub.
+ *
+ * The claims are measured in px and then normalised to the rule, so the RATIOS
+ * are text-driven even where the absolute pixels get scaled.
+ *
+ * WHEN THE CLAIMS OVERRUN, THE CHIPS GIVE. The titles are the things that must
+ * stay whole — that is the guarantee the whole density ladder exists to keep —
+ * so the chips compress first, down to their floor and past it if the rail is
+ * genuinely out of room. A rail that cannot seat its chips at the floor has
+ * already failed to a lower tier by other means; this never cuts a title to
+ * rescue it.
+ *
+ * COMPOSES WITH THE ACCORDION rather than fighting it. `accordionShares` widens
+ * the sounding segment toward `desiredPx` and gives up when the segment is
+ * already that wide — which, on this vector, it always is. So the accordion
+ * becomes a no-op in chip mode instead of widening a segment that was already
+ * sized to its title.
+ *
+ * @param {object} args
+ * @param {Array<{collapsed?:boolean}>} args.segments the drawn rail.
+ * @param {number[]} args.needs   each segment's own label width in px, chrome excluded.
+ * @param {number} args.chromePx  the segment furniture, measured once.
+ * @param {number} args.railPx    the rule's width.
+ * @param {number} args.activeIndex the sounding segment, or -1.
+ * @param {number} [args.chipPx]  the uniform chip claim.
+ * @returns {number[]} shares summing to 1.
+ */
+export function densityShares({
+  segments, needs, chromePx, railPx, activeIndex, chipPx = SEGMENT_CHIP_FLOOR_PX,
+}) {
+  const list = Array.isArray(segments) ? segments : [];
+  const n = list.length;
+  if (n === 0) return [];
+
+  const need = (i) => {
+    const v = Number(needs?.[i]);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  const rail = Number(railPx);
+
+  // Unmeasured: nothing to be text-driven ABOUT yet, so an even rail — which is
+  // also the honest first paint, since every segment is about to be measured.
+  if (!Number.isFinite(rail) || !(rail > 0)) return list.map(() => 1 / n);
+
+  const isTitled = (i) => i === activeIndex || !!list[i]?.collapsed;
+  // A titled segment claims chrome + its text; a chip claims the uniform chip.
+  const claims = list.map((_, i) => (isTitled(i)
+    ? idealWidth({ chromePx, needPx: need(i) })
+    : Math.max(1, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)));
+
+  const total = claims.reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return list.map(() => 1 / n);
+
+  // Fits: normalise, which scales every claim by the same factor and so keeps
+  // the RATIOS the text asked for while filling the rule. Handing the surplus
+  // to the chips instead was tried and is wrong — with few chips it inflates
+  // one of them into the widest thing on the rail, which is the ragged bar
+  // chart this mode exists to abolish.
+  if (total <= rail) return claims.map((c) => c / total);
+
+  // Overrun: the CHIPS give. Titles keep what they asked for as long as they
+  // fit at all; if the titles alone overrun, everything scales together —
+  // there is no arrangement left and pretending otherwise would cut a title.
+  const titled = claims.reduce((a, c, i) => a + (isTitled(i) ? c : 0), 0);
+  const chipCount = n - claims.filter((_, i) => isTitled(i)).length;
+  if (chipCount > 0 && titled < rail) {
+    const perChip = (rail - titled) / chipCount;
+    const out = claims.map((c, i) => (isTitled(i) ? c : perChip));
+    const s = out.reduce((a, b) => a + b, 0);
+    return out.map((c) => c / s);
+  }
+  return claims.map((c) => c / total);
+}
+
+/**
  * WHAT A FOLDED PART IS WORTH ON THE RAIL — a placeholder, not its own time.
  *
  * THIS DELIBERATELY BREAKS PROPORTION, and that is the whole feature. The first

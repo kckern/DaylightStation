@@ -70,7 +70,7 @@ import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
-  placedRailSegments, railGroups, railIsFlat, collapseInactiveGroups, foldedShares,
+  placedRailSegments, railGroups, railIsFlat, collapseInactiveGroups, foldedShares, densityShares,
   soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
@@ -632,8 +632,29 @@ export default function SegmentMap({
     });
   }, [desiredPx, activeIndex, metrics, railPx, contentId, log]);
 
+  /**
+   * THE WIDTH SOURCE. In name mode it is the clock, as it always was. In CHIP
+   * mode it is the type: uniform chips, the sounding segment at its title's
+   * width, a folded Part at its Part title's width — see `densityShares`, and
+   * `metrics.needs` is already the measurement it wants, because a fold's
+   * `name` IS its parent Part's title (`collapseInactiveGroups`), so the same
+   * probe pass that measures every other label measures the folds too.
+   */
+  const widthBasis = useMemo(() => (chips
+    ? densityShares({
+      segments,
+      needs: metrics.needs,
+      chromePx: metrics.chromePx,
+      railPx,
+      activeIndex,
+    })
+    : segments.map((s) => s.natural)), [chips, segments, metrics, railPx, activeIndex]);
+
   const targetShares = useMemo(() => accordionShares({
-    natural: segments.map((s) => s.natural),
+    // In chip mode the sounding segment is ALREADY its title's width here, so
+    // `accordionShares` finds no extra to ask for and returns this untouched —
+    // the two mechanisms compose rather than each widening the same segment.
+    natural: widthBasis,
     activeIndex,
     railPx,
     desiredPx,
@@ -643,7 +664,7 @@ export default function SegmentMap({
     // could donate nothing and the sounding segment could never have its name
     // whole — the guarantee this mode exists to keep.
     floorPx: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
-  }), [segments, activeIndex, railPx, desiredPx, chips, floorPx]);
+  }), [widthBasis, activeIndex, railPx, desiredPx, chips, floorPx]);
 
   // ---- the bond -------------------------------------------------------------
   // ONE definition of "how far through the piece" (review finding I3) — see
@@ -991,7 +1012,7 @@ export default function SegmentMap({
               data-state={state}
               data-index={i}
               data-natural={seg.natural.toFixed(6)}
-              style={{ width: `${(shares[i] ?? seg.natural) * 100}%` }}
+              style={{ width: `${(shares[i] ?? widthBasis[i] ?? seg.natural) * 100}%` }}
             >
               {/* ONE quiet separator between segments. The double barline was
                   correct notation and too much ink at this size — it read as
@@ -1033,7 +1054,25 @@ export default function SegmentMap({
                   named one and buy nothing.
                   A CHIPPED rail omits it for every segment but the sounding one,
                   for the same reason and one step further — see the chip. */}
-              {named && chips && state !== 'active' && (
+              {/* A FOLD IS NOT A CHIP. It was given its Part title's width
+                  (`densityShares`), so it sets that title — the whole reason a
+                  fold is wider than its neighbours. A numeral here was the old
+                  bug in a new place: a chip reading "1" over twenty-one
+                  numbers. The count rides alongside as a multiplier, which is
+                  the one thing the title alone cannot say. */}
+              {named && chips && state !== 'active' && seg.collapsed && (
+                <span
+                  className="surround-segment-map__chip surround-segment-map__chip--fold"
+                  data-testid="surround-segment-fold"
+                  aria-hidden="true"
+                >
+                  <span className="surround-segment-map__fold-title">{seg.name ?? ''}</span>
+                  {seg.count > 0 && (
+                    <span className="surround-segment-map__fold-count">{`×${seg.count}`}</span>
+                  )}
+                </span>
+              )}
+              {named && chips && state !== 'active' && !seg.collapsed && (
                 <span
                   className="surround-segment-map__chip"
                   data-testid="surround-segment-chip"
