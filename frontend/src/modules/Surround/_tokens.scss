@@ -2,45 +2,118 @@
  * The band's shared literals — the values that exist in more than one stylesheet
  * and MUST be one value.
  *
- * The frame publishes both of these as custom properties on the band's region
+ * The frame publishes these as custom properties on the regions they paint
  * (`SurroundFrame.scss`), and that is how the modules read them at runtime. What
  * this file is for is the FALLBACK in each module's `var(…, …)`: those fallbacks
- * keep a module honest when it is rendered outside the frame, and three hand-
- * copied hex literals is exactly the drift the token was published to prevent —
- * the bond stops being one colour the moment one of them is retuned alone.
+ * keep a module honest when it is rendered outside the frame, and hand-copied
+ * hex literals are exactly the drift the token was published to prevent — the
+ * bond stops being one colour the moment one of them is retuned alone.
  *
  * So there is one literal per token, here, and everything else interpolates it.
  */
+
+/* ===========================================================================
+   THE MAHOGANY RAMP — one stained-wood family.
+
+   The frame used to carry TWO palettes and nobody had decided that. The band's
+   ground was an olive-brown at hue 50-70deg; the rail, the bond and the drape
+   were maroons at 8-21deg. Thirteen hex literals spanning 61.8deg of hue, of
+   which two were tokens and eleven were typed into gradients by hand. Two of
+   them (the bond's ground and the rail's) had drifted to within dE00 2.20 of
+   each other — a difference nobody can see, authored twice, with the tokens
+   file's own comment claiming they were deliberately related.
+
+   The family is now ONE, and it is the hall's own material: mahogany. It is the
+   wood the room is actually made of — the piano's case, the stage floor, the
+   panelling, the back of a violin — so the frame is finished in the same timber
+   as the instruments inside it.
+
+   HUE RISES WITH LIGHTNESS, which is not a gradient trick but how stained wood
+   behaves: deep grain reads winier and darker, the lit face reads warmer and
+   browner. So the deepest folds sit near 9-13deg (burgundy) and the lit timber
+   near 27-28deg (mahogany), and the whole ramp reads as one board under one
+   lamp rather than as a hue picked per surface.
+
+   TWO MATERIALS INSIDE ONE FAMILY. The house's own surfaces — the band's
+   ground, the rail, the mats — are the timber, low in chroma where they are
+   unlit. The LIT surfaces — the bond's panel and the drape — are the cloth,
+   and they carry the chroma. That is what lets the bond read as velvet laid on
+   wood rather than as a lighter patch of the same board.
+
+   MEASURED, and these are the numbers the design's own mechanisms depend on:
+
+                    L*      C*     hue      ink       vs the shipped palette
+     hall-shadow   3.20   11.11   13.2deg  14.80:1
+     drape-edge    2.92    9.82   14.7deg  14.89:1
+     drape-back    4.73   15.66   12.0deg  14.35:1
+     hall-ink      4.66    3.32   19.4deg  14.37:1
+     mat           5.76    6.86   19.4deg  14.06:1
+     hall-ground   6.71    4.10   28.0deg  13.80:1
+     band-lit      8.44    5.52   28.0deg  13.36:1
+     rail-deep     8.32   12.49   27.1deg  13.39:1
+     bond-ground  10.01   24.85    9.3deg  12.94:1   (was 12.85:1)
+     drape-fold   11.24   23.95   19.3deg  12.59:1
+     rail-ground  11.50   16.21   27.0deg  12.52:1
+     rail-lit     12.96   17.69   27.1deg  12.09:1
+     velvet       15.22   30.79   19.6deg  11.41:1
+
+     bond vs band      dE00 15.84   (was 15.10) — the separation the bond IS
+     bond vs band     ratio  1.067  (was  1.081) — still chroma, not lightness
+     bond vs rail      dE00  7.09   (was  2.20) — kin now, not accidental twins
+     mat  vs rail      dE00  8.24              — a mount still recedes
+     hue span         18.7deg       (was 61.8deg across two families)
+
+   Nothing the old design proved has been traded away: the bond is still darker
+   than the rail, still separated from the band by chroma rather than by half a
+   point of lightness, and the parchment ink on it gained a little contrast
+   rather than losing any. `band.measure.test.jsx` asserts the ink floors in
+   Chromium against the compiled sheet, so this table is checkable rather than
+   claimed.
+
+   THE GRADIENT STOPS ARE DERIVED, NOT TYPED. Each one is its token stepped in
+   L* with chroma scaled by (L'/L)^0.85 — darker wood carrying less chroma — so
+   retuning a surface moves its highlights and shadows with it. That is the
+   whole reason eleven literals collapsed into six tokens and seven derivations.
+   =========================================================================== */
+
+/** The deepest ground in the frame: the drape's folds. */
+$hall-shadow: #1e0306;
+/** Where the drape meets the frame's edge. */
+$drape-edge: #1c0305;
+/** The stage's flat backdrop, behind the drape's weave. */
+$drape-back: #25050a;
+/** The drape's shadowed fold — the dark half of its 90deg gradient. */
+$drape-fold: #3b0e14;
+/** The drape's lit fold. The most saturated thing in the frame. */
+$velvet: #4c0f19;
+
+/** The band's own unlit ground — timber, not cloth, so low in chroma. */
+$hall-ground: #1b1312;
+/** The band's gradient: lit at the top, sinking to `$hall-ink` at the bottom. */
+$band-lit: #201615;
+/** The darkest timber tone. The band's floor, and the map's halo fallback. */
+$hall-ink: #160e0e;
+
+/** The programme rail's ground — oxblood-stained timber. */
+$rail-ground: #331615;
+/** The rail's gradient, top and bottom. */
+$rail-lit: #381817;
+$rail-deep: #281210;
+
+/** Picture mounts. Dark and quiet: a mat's only job is to not be the subject. */
+$mat: #1d0f0f;
 
 /**
  * THE BOND'S GROUND — the sounding segment's panel, the waist that joins them,
  * and the NOW register's panel, all in one colour. That single colour is the
  * whole mechanism by which the three read as one shape.
  *
- * MAROON, NOT BROWN (design wave 9). It was #241c15, a warm brown a few points
- * lighter than the band; the user's note was that it read as brown rather than
- * as house material — "a little less yellow and more tinted towards blue, so it
- * gives us more of a maroon feel, maybe to match the curtain cues at the top".
- * Measured in CIELAB against the frame's own palette:
- *
- *                       L*      C*     hue     dE00 vs the band's unlit ground
- *   band (unlit)       6.41    3.40   50.7deg   —
- *   #241c15 (was)     10.99    6.79   67.8deg   4.20
- *   #341019 (is)      10.34   19.37    8.4deg   15.10
- *   rail region       10.88   17.26    9.3deg   —
- *   velvet (drape)    14.91   29.72   20.8deg   —
- *
- * It is the velvet drape's own family (the rail's ground is 9.3deg, the drape's
- * burgundy 18.8-20.8deg; this sits at 8.4deg between them), it is DARKER than the
- * rail's ground in L* as asked, and it is three and a half times as distinct from
- * the band's unlit ground as the brown was — because the separation is now
- * carried by chroma rather than by half a point of lightness. The lightness step
- * itself is almost unchanged (contrast ratio 1.081 against the band, from 1.096),
- * so nothing the mechanism depended on has been traded away, and the parchment
- * ink on top gains contrast rather than losing it (12.85:1, from 12.66:1) because
- * the ground is darker.
+ * It is the ramp's CLOTH, not its timber: the most chromatic tone in the band,
+ * laid on the band's low-chroma ground. That is what separates it — dE00 15.84
+ * at a contrast ratio of 1.067, so the eye reads a change of material rather
+ * than a change of light. See the ramp's table above for the full derivation.
  */
-$bond-ground: #341019;
+$bond-ground: #390917;
 
 /**
  * THE BAND'S ONE RADIUS.

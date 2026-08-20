@@ -14,6 +14,8 @@
  * a map rendered outside the surround entirely.
  */
 
+@use "../tokens" as *;
+
 .surround-country-map {
   display: block;
   width: 100%;
@@ -40,7 +42,7 @@
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
   text-transform: uppercase;
   paint-order: stroke fill;
-  stroke: var(--map-halo, var(--hall-ink, #14100c));
+  stroke: var(--map-halo, var(--hall-ink, #{$hall-ink}));
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }

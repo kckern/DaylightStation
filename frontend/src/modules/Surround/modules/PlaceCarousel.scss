@@ -21,6 +21,8 @@
  * and an engraving can sit on. One mat, one box, one dissolve.
  */
 
+@use "../tokens" as *;
+
 .surround-place-carousel {
   height: 100%;
   padding: 0.8rem 1rem 0.9rem;
@@ -60,7 +62,7 @@
 .surround-place-carousel__mat {
   width: 100%;
   aspect-ratio: 5 / 3;
-  background: var(--mat, #1d0f11);
+  background: var(--mat, #{$mat});
   box-shadow:
     inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
     0 1px 3px rgba(0, 0, 0, 0.45);
@@ -85,7 +87,7 @@
    the swap between a photograph and an engraving remains a pure dissolve. */
 .surround-place-carousel__mat--map,
 .surround-place-carousel__mat--city-map {
-  --map-halo: var(--mat, #1d0f11);
+  --map-halo: var(--mat, #{$mat});
 }
 
 /* The era slide is TYPE, not a picture: it fills the plate the same way the map
