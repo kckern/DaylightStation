@@ -255,7 +255,14 @@ export default function ComposerCard({
                   is an editor's classification, not something a museum casts
                   in metal. Place first, then time: the birthplace is a fact
                   about the person, the era is a fact about their music. */}
-              {period && (
+              {/* NOT IN THE CORNER PLATE. The plate is the band's height —
+                  a fraction of the rail this card was cut for — and the era is
+                  the least load-bearing line it carries. Clamping it there cut
+                  it mid-word, which is worse than the frame's standing law
+                  allows: nothing is ever cut, so what will not fit is not
+                  shown. Name, dates and birthplace stay; the era is in the
+                  full card, one rail-swap away. */}
+              {!plateOnly && period && (
                 <p
                   className="surround-composer-card__period"
                   data-testid="surround-composer-period"

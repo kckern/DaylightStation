@@ -429,3 +429,23 @@
   align-items: center;
   margin: 0;
 }
+
+/* THE PORTRAIT IN THE CORNER, sized by HEIGHT rather than width.
+   In the full rail the width is the binding constraint and `height: auto`
+   keeps the 4:5 aspect honestly. In the corner square the opposite is true —
+   the square is short and wide — so `width: 100%` demanded more height than
+   the box had and the flex row squashed the picture out of aspect. Here the
+   height binds and the width follows it, so a 4:5 painting stays 4:5. */
+.surround-composer-card--plate .surround-composer-card__portrait-col {
+  flex: 0 0 auto;
+  height: 100%;
+  min-height: 0;
+  max-width: 45%;
+}
+
+.surround-composer-card--plate .surround-composer-card__portrait {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}

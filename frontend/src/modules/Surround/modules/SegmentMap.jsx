@@ -347,7 +347,13 @@ export default function SegmentMap({
         // contributing the one movement it has — every part authored `n: 1`
         // about itself, so the authored numbers say `I.` all the way along and
         // number nothing. There the mark counts along the rail.
-        n: flat ? i + 1 : m.n,
+        // A FOLD IS NOT THE nth OF ANYTHING. On a flat rail the gutter counts
+        // along the rail (`i + 1`), which handed a folded Part the mark "1" and
+        // made it read as a Part containing one number. It carries its COUNT
+        // instead, below.
+        n: m.collapsed ? null : (flat ? i + 1 : m.n),
+        collapsed: !!m.collapsed,
+        count: Number(m.count) || 0,
         start: m.offset,
         stop: m.offset + m.duration,
         natural: shares[i] ?? (m.duration / totalSounding),
@@ -697,6 +703,35 @@ export default function SegmentMap({
   const { shares: vector, moving } = useEasedVector(geometry, ACCORDION_MS);
   const shares = useMemo(() => vector.slice(0, targetShares.length), [vector, targetShares.length]);
 
+  /**
+   * A HEADING'S WIDTH IS ITS SEGMENTS' RENDERED WIDTHS, summed.
+   *
+   * `railGroups` reports each run's `from` and `count`, which index straight
+   * into the drawn rail and therefore into the share vector the rule is
+   * actually painted with. Those were the same number as the run's duration
+   * share until the accordion: a folded Part now takes a marker's width rather
+   * than its own time, so a heading placed by duration sat over the wrong
+   * stretch of rule entirely. "Part Two" belongs above the first number of Part
+   * Two, wherever the fold moved it.
+   *
+   * Falls back to the duration share only before the vector exists, where the
+   * two agree anyway.
+   */
+  const groupBasis = useCallback((group) => {
+    const from = Number(group?.from) || 0;
+    const count = Number(group?.count) || 0;
+    if (!(count > 0)) return 0;
+    let sum = 0;
+    let sawShare = false;
+    for (let i = from; i < from + count; i += 1) {
+      const v = Number(shares?.[i]);
+      if (Number.isFinite(v)) { sum += v; sawShare = true; }
+    }
+    if (sawShare) return sum;
+    const span = Number(group?.span) || 0;
+    return end > 0 ? span / end : 0;
+  }, [shares, end]);
+
   // THE ONE GUARANTEE THIS MODE MAKES, AND WHAT HAPPENS WHEN IT CANNOT BE KEPT.
   // The sounding segment always shows its name whole; chip mode is what buys the
   // room for that on a crowded rail. When even a fully chipped rail cannot spare
@@ -841,7 +876,7 @@ export default function SegmentMap({
               // rather than `width`: the row is a flex line, and a basis lets
               // the last label absorb the rounding rather than leaving a hairline
               // of unpainted rule at the right edge.
-              style={{ flexBasis: `${(group.span / end) * 100}%` }}
+              style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
               {group.title ?? ''}
             </span>
@@ -950,7 +985,8 @@ export default function SegmentMap({
           return (
             <div
               key={`${seg.n ?? i}:${seg.start}`}
-              className={`surround-segment-map__segment surround-segment-map__segment--${state}`}
+              className={`surround-segment-map__segment surround-segment-map__segment--${state}${seg.collapsed ? ' surround-segment-map__segment--fold' : ''}`}
+              data-fold={seg.collapsed ? seg.count : undefined}
               data-testid="surround-segment"
               data-state={state}
               data-index={i}
