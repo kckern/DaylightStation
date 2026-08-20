@@ -5,7 +5,7 @@ export const CERTIFICATION_MANIFEST_SCHEMA = 'school.certification-manifest/v1';
 /**
  * Recursively sort object keys so structurally-equal values serialize
  * identically. Exported so other callers producing byte-stable JSON from
- * certification rows (e.g. `school-certify.cli.mjs`'s `--json` output) can
+ * certification rows (e.g. `school.mjs certify`'s `--json` output) can
  * reuse the same canonical serialization instead of relying on incidental
  * object-construction key order (F13, 2026-08-04 acceptance audit).
  */

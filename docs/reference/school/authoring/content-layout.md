@@ -158,10 +158,10 @@ know which one your content belongs to (admin advocacy #17):
 
 | tree | system | validator / CLI |
 |---|---|---|
-| `content/school/{subject}/{course}/…` (courses, units, lessons, documents, quizzes) | lifecycle curriculum | `node cli/school-catalog.cli.mjs validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
+| `content/school/{subject}/{course}/…` (courses, units, lessons, documents, quizzes) | lifecycle curriculum | `node cli/school.mjs catalog validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
 | `content/school/learning-catalog/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
-| `content/school/learning-catalog/documents/…` | print document SOURCES (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school-docs.cli.mjs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
-| `household/apps/school/print-documents/…` | print ARTIFACTS — published revisions, derived banks, allocations | `node cli/school-docs.cli.mjs audit` |
+| `content/school/learning-catalog/documents/…` | print document SOURCES (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school.mjs docs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
+| `household/apps/school/print-documents/…` | print ARTIFACTS — published revisions, derived banks, allocations | `node cli/school.mjs docs audit` |
 
 `school:certify` does NOT cover the lifecycle curriculum; run the
 school-catalog CLI before mounting new works.

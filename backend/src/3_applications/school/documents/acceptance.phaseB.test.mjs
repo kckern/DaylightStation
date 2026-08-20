@@ -109,7 +109,7 @@ function assertNoAnswerFields(value, at = '') {
  * already establishes (`get`/`writePublished`), extended with
  * `getDerivedBank` so a PERSISTED publish can round-trip through a real
  * `RenderPrintDocument` teacher-key render (the repository-backed path
- * `school-docs.cli.mjs`'s `publish` + `render --teacher` actually use), not
+ * `school.mjs docs`'s `publish` + `render --teacher` actually use), not
  * just the in-memory source auto-publish path.
  */
 function fakeRepository(sourcesById = {}) {
@@ -316,7 +316,7 @@ describe('Phase B acceptance sweep (spec §12, items tagged [B], plus the Phase-
       expect(repository.store.size).toBe(0);
     });
 
-    it('a PERSISTED (repository round-tripped) publish resolves its teacher key from the repository-fetched derived bank — the same real path school-docs.cli.mjs\'s publish + render --teacher use, not the in-memory source auto-publish shortcut', async () => {
+    it('a PERSISTED (repository round-tripped) publish resolves its teacher key from the repository-fetched derived bank — the same real path school.mjs docs\'s publish + render --teacher use, not the in-memory source auto-publish shortcut', async () => {
       const repository = fakeRepository();
       const publisher = new PublishPrintDocument({ repository });
       const { id, rev } = await publisher.execute({ source: kitchenSinkSource({ variant: 0 }) });

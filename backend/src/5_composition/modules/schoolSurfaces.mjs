@@ -4,7 +4,7 @@
  * codec baseline into a `SurfaceRegistry`, then exposes a `certification`
  * facade the HTTP router can call per-request.
  *
- * Mirrors `cli/school-certify.cli.mjs`'s `buildRegistry` — same profile
+ * Mirrors `cli/school.mjs certify`'s `buildRegistry` — same profile
  * repository, same ports, same baseline — so a lesson certifies identically
  * whether queried from the CLI or from `/api/v1/school/certification`.
  *

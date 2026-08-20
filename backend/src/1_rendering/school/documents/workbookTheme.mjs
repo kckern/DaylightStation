@@ -298,6 +298,14 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       choiceSizePt: styles.body.sizePt,
       choiceLeadingPt: styles.body.leadingPt,
       choiceGapPt: density === 'compact' ? 2 : 3,
+      // Padding on each row of a `layout: compact` omr response. `measure.mjs`
+      // reads this for EVERY compact row; it existed only on
+      // `documentPdfTheme` — where its own comment notes it is never read,
+      // because compact layout is a v2 concept and v2 renders with THIS
+      // theme. Its absence measured every compact question as NaN, which made
+      // the fit stage reject every block as exceeding the page: worksheets
+      // could not render at all.
+      compactRowPadPt: 5,
       /** Lines of choice text reserved when the probe has no bank to measure. */
       probeChoiceLines: 2,
       /**

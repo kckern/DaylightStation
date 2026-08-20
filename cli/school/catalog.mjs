@@ -12,7 +12,7 @@
  * domain validators, which carry their own tests.
  *
  * Usage:
- *   node cli/school-catalog.cli.mjs validate [--data-dir <path>] [--render-probe]
+ *   node cli/school.mjs catalog validate [--data-dir <path>] [--render-probe]
  *
  * Flags:
  *   --data-dir <path>  data directory to validate (default: $DAYLIGHT_BASE_PATH/data,
@@ -32,8 +32,8 @@
  *   2  usage error
  *
  * Manual run:
- *   node cli/school-catalog.cli.mjs validate
- *   node cli/school-catalog.cli.mjs validate --data-dir /tmp/fixture-data
+ *   node cli/school.mjs catalog validate
+ *   node cli/school.mjs catalog validate --data-dir /tmp/fixture-data
  *
  * @module cli/school-catalog
  */
@@ -43,8 +43,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-import { parseArgv } from './_argv.mjs';
-import { getConfigService } from './_bootstrap.mjs';
+import { parseArgv } from '../_argv.mjs';
+import { getConfigService } from '../_bootstrap.mjs';
 import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 import { ValidateCatalog } from '#apps/school/usecases/ValidateCatalog.mjs';
@@ -80,7 +80,7 @@ function surfaceValidatorsForCli() {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // quiet: the report is the output; a dotenv banner on stdout is noise in CI.
-dotenv.config({ path: path.join(__dirname, '..', '.env'), quiet: true });
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), quiet: true });
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -89,7 +89,7 @@ const EXIT_USAGE = 2;
 const HELP = `school-catalog — validate the published curriculum catalog
 
 Usage:
-  school-catalog.cli.mjs validate [--data-dir <path>] [--render-probe]
+  school.mjs catalog validate [--data-dir <path>] [--render-probe]
 
 Flags:
   --data-dir <path>  data directory to validate (default: $DAYLIGHT_BASE_PATH/data)
@@ -215,8 +215,8 @@ async function cmdValidate({ dataDirFlag, renderProbe }) {
   return result.ok ? EXIT_OK : EXIT_FAIL;
 }
 
-async function main() {
-  const { subcommand, flags, help } = parseArgv(process.argv.slice(2));
+export async function main(argv = process.argv.slice(2)) {
+  const { subcommand, flags, help } = parseArgv(argv);
   if (help || !subcommand) {
     process.stdout.write(HELP);
     return help ? EXIT_OK : EXIT_USAGE;
@@ -234,9 +234,12 @@ async function main() {
   return cmdValidate({ dataDirFlag, renderProbe: flags['render-probe'] === true });
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    process.stderr.write(`${err.stack || err.message}\n`);
-    process.exit(EXIT_FAIL);
-  });
+const ENTRYPOINT = fileURLToPath(import.meta.url);
+if (process.argv[1] && path.resolve(process.argv[1]) === ENTRYPOINT) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      process.stderr.write(`${err.stack || err.message}\n`);
+      process.exit(EXIT_FAIL);
+    });
+}

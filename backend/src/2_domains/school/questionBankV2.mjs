@@ -52,6 +52,27 @@ function profileSpec(profile) {
 }
 
 /** Issue a fully self-contained worksheet. No later bank lookup is needed to grade it. */
+/**
+ * Worksheets are typeset, not code: they must never show a straight quote or
+ * apostrophe. Authoring discipline is not enough — a bank edited by hand, or
+ * generated, will eventually carry `'` — so every prompt and every option
+ * label is curled HERE, once, on the way into a worksheet. Everything
+ * downstream (the printed sheet, the CLI preview, the answer key) inherits it.
+ *
+ * A quote opens after start-of-string, whitespace, or an opening bracket, and
+ * closes otherwise; that rule makes `don't` an apostrophe (closing form, the
+ * correct glyph) without needing to know it is a contraction.
+ */
+export function curlyQuotes(text) {
+  if (typeof text !== 'string' || !text) return text;
+  return text
+    .replace(/"([^"]*)"/g, '\u201c$1\u201d')
+    .replace(/(^|[\s([{<\u2014\u2013-])'/g, '$1\u2018')
+    .replace(/'/g, '\u2019')
+    .replace(/(^|[\s([{<\u2014\u2013-])"/g, '$1\u201c')
+    .replace(/"/g, '\u201d');
+}
+
 export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profile, seed, itemIds = null }) {
   const normalized = bank.revision ? bank : normalizeQuestionBankV2(bank);
   const spec = profileSpec(profile);
@@ -80,10 +101,10 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
       .slice(0, visibleCount - correct.length);
     const visible = shuffled([...correct, ...distractors], random);
     return {
-      itemId: item.id, type: item.type, prompt: item.prompt,
+      itemId: item.id, type: item.type, prompt: curlyQuotes(item.prompt),
       source: item.source ? { ...item.source } : null,
       options: visible.map((choice, index) => ({
-        id: choice.id, label: choice.label, letter: LETTERS[index], correct: choice.correct,
+        id: choice.id, label: curlyQuotes(choice.label), letter: LETTERS[index], correct: choice.correct,
       })),
     };
   });
@@ -153,6 +174,24 @@ export function worksheetInstanceRoster(instance) {
   return ids ? [...new Set(ids)] : null;
 }
 
+/**
+ * "673, 674, 675, 680" reads as four separate pages and "673–674–675–680"
+ * reads as one range; neither is what a child scanning the header needs.
+ * Collapse consecutive runs into ranges and comma-separate the groups, so a
+ * reading lands as `673–675, 680`. A run of two stays a range (`82–83`),
+ * which is what this line already printed for the common two-page case.
+ */
+export function formatPageSpans(pages) {
+  const sorted = [...new Set(pages.map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+  const groups = [];
+  for (const page of sorted) {
+    const last = groups[groups.length - 1];
+    if (last && page === last[last.length - 1] + 1) last.push(page);
+    else groups.push([page]);
+  }
+  return groups.map((g) => (g.length === 1 ? `${g[0]}` : `${g[0]}\u2013${g[g.length - 1]}`)).join(', ');
+}
+
 /** Convert an instance into a self-contained publishable OMR document source. */
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
@@ -193,7 +232,7 @@ export function worksheetInstanceDocument(instance, {
       name: true, date: true, scoreBox: false, metaFirst: true, rule: false, frame: 'double',
       ...(description ? { subtitle: description } : {}),
       ...(sourceTitle ? {
-        reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${printedPages.join('–')}.`,
+        reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${formatPageSpans(printedPages)}.`,
       } : {}),
     },
     blocks: [

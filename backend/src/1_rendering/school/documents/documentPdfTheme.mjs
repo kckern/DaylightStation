@@ -71,6 +71,13 @@ export const documentPdfTheme = Object.freeze({
     ruleGapPt: 7,
     ruleWidthPt: 0.8,
     gapBelowPt: 10,
+    // Gap between the meta row (Name/Date) and the title when the document
+    // asks for `header.metaFirst`. `workbookTheme` has always carried this;
+    // its absence here made every `metaFirst` document measure a NaN header
+    // height, which poisoned the fit comparison and reported EVERY block as
+    // exceeding the page — the symptom that made worksheets unrenderable
+    // under this theme. Same value workbookTheme uses at normal density.
+    metaTitleGapPt: 9,
     blankFieldPt: 150,
     // Matches `measure.mjs`'s prior bare-literal default exactly — legacy
     // v1 rendering never sets `header.frame: 'double'` (that field is a v2

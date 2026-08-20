@@ -32,7 +32,7 @@ import QRCode from 'qrcode';
 import { placeFragments } from './layout.mjs';
 import {
   measureDocumentFragments, createMeasurementDocument, registerDocumentFonts,
-  MissingChoicesError, UnresolvedAssetError,
+  MissingChoicesError, UnresolvedAssetError, curlyQuotes,
 } from './measure.mjs';
 import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
@@ -138,7 +138,9 @@ function createChoiceResolver(bank) {
         path, itemId,
       );
     }
-    const labels = item.choices.map((choice) => String(choice));
+    // Bank choice text reaches the page without passing through rich text,
+    // so it is curled here too (see `curlyQuotes` in measure.mjs).
+    const labels = item.choices.map((choice) => curlyQuotes(String(choice)));
     // multi_select (spec §5.5): the richer `{labels, multiSelect, maxSelect}`
     // shape `measure.mjs`'s `measureOmrNode` knows how to read — square
     // checkboxes + an instruction caption instead of circles. Every OTHER
