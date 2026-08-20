@@ -2185,12 +2185,15 @@ describe('the band, measured against the shipped stylesheet', () => {
     expect(m.fontSize, 'and still at or above the readability floor')
       .toBeGreaterThanOrEqual(fit.floorPx - 0.01);
 
-    // 2. THE LEADING. EB Garamond's own `line-height: normal` is 1.31, so the
-    //    loose end of the ladder now stops at the face's metrics.
+    // 2. THE LEADING. EB Garamond's own `line-height: normal` is 1.31, and the
+    //    loose end of the ladder now sits below it — see `LEADING_MAX`.
+    //    BOUNDED BY THE CONSTANT, NOT BY A NUMBER TYPED HERE. This read
+    //    `<= 1.30` while the module said 1.26, so it guarded a value the design
+    //    had already left behind and would have stayed green if 1.30 came back.
     expect(
       m.leading,
-      `the note is leaded at ${m.leading} at ${name} — looser than the 1.30 the compacting set`,
-    ).toBeLessThanOrEqual(1.30 + 0.001);
+      `the note is leaded at ${m.leading} at ${name} — looser than the ${LEADING_MAX} the band is set at`,
+    ).toBeLessThanOrEqual(LEADING_MAX + 0.001);
     expect(m.leading, 'and never under the measured floor').toBeGreaterThanOrEqual(LEADING_FLOOR - 0.001);
 
     // 3. THE FOOT. Measured as the run of band between the last line of each

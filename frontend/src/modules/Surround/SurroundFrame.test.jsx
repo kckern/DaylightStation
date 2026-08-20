@@ -862,14 +862,38 @@ describe('SurroundFrame — the curtain’s bleed', () => {
   it('is the SAME cloth as the drape above it, faded out — not a black bar', () => {
     const veil = sheet().match(/\.surround-frame__stage::after \{[^}]*\}/)[0];
     const stage = sheet().match(/\.surround-frame__stage \{[^}]*\}/)[0];
-    // The two horizontal layers are the stage's own, verbatim: same fold
-    // stripes at the same `vw` phase, same burgundy ramp across the same width.
-    // That is what makes the join invisible rather than merely soft.
-    for (const layer of [
-      'repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw, rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw)',
-      'linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407)',
-    ]) {
-      expect(stage, 'the stage no longer paints this layer').toContain(layer);
+    // The two horizontal layers are the stage's own, VERBATIM: same fold stripes
+    // at the same `vw` phase, same ramp across the same width. That is what
+    // makes the join invisible rather than merely soft.
+    //
+    // The layers are read off the stage rather than spelled out here, and that
+    // is the point of the assertion: what has to hold is that the two rules
+    // paint the SAME cloth, not that the cloth is any particular colour. A
+    // spelled-out gradient pinned the palette in a layout spec — so retuning the
+    // drape turned this test red while the join it guards was still perfect.
+    // The palette has its own home (`_tokens.scss`) and its own measurements
+    // (`band.measure.test.jsx`); this spec is about the seam.
+    // Paren-BALANCED, not a regex: these gradients nest `rgba(…)`, so any
+    // non-greedy match ends at the first inner bracket and returns half a layer.
+    const horizontals = (rule) => {
+      const out = [];
+      const re = /(?:repeating-)?linear-gradient\(90deg/g;
+      let m;
+      while ((m = re.exec(rule)) !== null) {
+        let depth = 0;
+        for (let i = m.index; i < rule.length; i += 1) {
+          if (rule[i] === '(') depth += 1;
+          else if (rule[i] === ')') {
+            depth -= 1;
+            if (depth === 0) { out.push(rule.slice(m.index, i + 1)); break; }
+          }
+        }
+      }
+      return out;
+    };
+    const stageLayers = horizontals(stage);
+    expect(stageLayers, 'the stage paints no horizontal cloth at all').toHaveLength(2);
+    for (const layer of stageLayers) {
       expect(veil, 'the veil is not the drape’s own cloth').toContain(layer);
     }
     // ...and it is a MASK that fades it out, held opaque at the join so the

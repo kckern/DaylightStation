@@ -21,10 +21,10 @@
 @use "./tokens" as *;
 
 .surround-frame {
-  --hall-ink: #14100c;
+  --hall-ink: #{$hall-ink};
   --programme: #efe6d2;
   --programme-edge: #ddd0b4;
-  --velvet: #4a1018;
+  --velvet: #{$velvet};
   --brass: #c79a3e;
   --brass-lit: #f6e3a0;
   --ink: #2a1d07;
@@ -39,7 +39,7 @@
      as well, so an image never bleeds into the panel behind it.
      `--programme` survives untouched — it is the programme STOCK (the panels
      themselves), not the mats. */
-  --mat: #1d0f11;
+  --mat: #{$mat};
   --mat-edge: rgba(8, 5, 5, 0.9);
 
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
@@ -171,13 +171,13 @@
      own oxblood, the band its own stone, the plate its own stone; nothing here
      changes any of them. And the whole rule is dead on the inactive shell,
      which has no class and generates no box. */
-  background-color: #240609;
+  background-color: #{$drape-back};
   background-image:
     linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.5) 100%),
     repeating-linear-gradient(90deg,
       rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
       rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
-    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+    linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
   box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
 }
 
@@ -220,7 +220,7 @@
     repeating-linear-gradient(90deg,
       rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
       rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
-    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+    linear-gradient(90deg, #{$drape-edge}, var(--velvet, #{$velvet}) 42%, #{$drape-fold} 68%, #{$drape-edge});
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
   pointer-events: none;
@@ -294,7 +294,7 @@
   right: 0;
   bottom: 100%;
   height: 22px;
-  background: linear-gradient(to top, rgba(20, 16, 12, 0.92), rgba(20, 16, 12, 0));
+  background: linear-gradient(to top, rgba($hall-ink, 0.92), rgba($hall-ink, 0));
   pointer-events: none;
 }
 
@@ -426,8 +426,8 @@
      of the bond's silhouette carries it, every corner where its parts weld is
      square, and nothing else in the band is rounded. */
   --bond-radius: #{$bond-radius};
-  background-color: #191310;
-  background-image: linear-gradient(180deg, #1e1712 0%, #14100c 100%);
+  background-color: #{$hall-ground};
+  background-image: linear-gradient(180deg, #{$band-lit} 0%, #{$hall-ink} 100%);
   box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
 }
 
@@ -454,11 +454,11 @@
   --ink: #e9dfc8;
   --ink-soft: #a89a80;
   --programme-edge: rgba(233, 223, 200, 0.26);
-  --map-halo: #33131a;
-  background-color: #33131a;
+  --map-halo: #{$rail-ground};
+  background-color: #{$rail-ground};
   background-image:
     var(--programme-fibre),
-    linear-gradient(180deg, #3a1418 0%, #2a0f12 100%);
+    linear-gradient(180deg, #{$rail-lit} 0%, #{$rail-deep} 100%);
   background-size: 180px 180px, cover;
   background-blend-mode: multiply, normal;
   box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.1);

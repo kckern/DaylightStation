@@ -327,14 +327,19 @@ export function proseCeilingPx(rootWidthPx) {
 /**
  * The leading a note is set at when the room is there.
  *
- * 1.30 SINCE TASK 6C, from 1.35 — the other half of "make them more compact".
- * It is not an arbitrary tightening: EB Garamond's own `line-height: normal` is
- * 1.31 (measured against the vendored binary), so the loose end of the ladder
- * now stops at the face's own metrics instead of sitting above them. The FLOOR
- * (1.25) is untouched: that one is measured against the face's ink extent and
- * is what keeps line tracking possible at ten feet.
+ * 1.26, FROM 1.30 — and 1.30 was itself from 1.35. Each step has been the same
+ * request said again: the band's notes read as too airy for the amount of black
+ * around them. EB Garamond's own `line-height: normal` is 1.31 (measured against
+ * the vendored binary), so the loose end now sits BELOW the face's own metrics
+ * rather than on them — a deliberate tightening within its tolerance, not a
+ * re-metric of it. At the type floor that is 3.6px of air rather than 4.2px.
+ *
+ * The ladder still has a rung to spend: `LEADING_FLOOR` moved with it, to 1.22,
+ * so a cramped note still tightens before anything gets smaller. Collapsing the
+ * two onto one number would look like more compacting and deliver less — the
+ * fit would go straight to shrinking the type.
  */
-export const LEADING_MAX = 1.30;
+export const LEADING_MAX = 1.26;
 
 /**
  * The tightest leading a programme note may be set at.
@@ -344,9 +349,10 @@ export const LEADING_MAX = 1.30;
  * a `g` to the top of an `h`. So the clear space between the descenders of one
  * line and the ascenders of the next is `leading - 1.00`, in ems, directly:
  *
- *   1.35 (the loose end)  ->  0.35em of air
+ *   1.35 (the loose end, two tightenings ago)  ->  0.35em of air
  *   1.31 (the face's own `line-height: normal`, measured)  ->  0.31em
- *   1.25 (this floor)     ->  0.25em, or 3.5px at the type floor above
+ *   1.26 (the loose end now) ->  0.26em
+ *   1.22 (this floor)     ->  0.22em, or 3.1px at the type floor above
  *   1.20 (the classic prose minimum)  ->  0.20em
  *   1.00                  ->  the lines interlock
  *
@@ -362,16 +368,20 @@ export const LEADING_MAX = 1.30;
  * back at three quarters of the air the office gives it, tighter than the floor
  * the measurements say is the minimum, on the screen with the smaller root.
  *
- * 1.25 is 80% of what the type designer's own metrics reserve. That is a
- * tightening within the face's tolerance rather than a re-metric of it, and it
- * still leaves a quarter of the type size between lines. Below it the failure
- * mode is not collision, it is LINE TRACKING: at ten feet the eye returning from
- * the end of one line has to find the start of the next, and closely-set lines
- * of an old-style face with fine serifs are exactly what makes that fail. Prose
- * at distance wants MORE leading than prose in the hand, so this floor is
- * deliberately above the 1.20 a print page would allow.
+ * 1.22 is 93% of what the type designer's own metrics reserve, and it is
+ * deliberately still ABOVE the 1.20 a print page would allow. That last two
+ * hundredths is the whole margin, and it is kept on purpose: below 1.20 the
+ * failure mode is not collision, it is LINE TRACKING — at ten feet the eye
+ * returning from the end of one line has to find the start of the next, and
+ * closely-set lines of an old-style face with fine serifs are exactly what makes
+ * that fail. Prose at distance wants MORE leading than prose in the hand.
+ *
+ * So this floor is where the two pressures meet: as tight as the band has been
+ * asked to be, and not one step past the point where the reason for a floor
+ * starts to bite. A further tightening is a legibility decision, not a density
+ * one, and should be taken as such.
  */
-export const LEADING_FLOOR = 1.25;
+export const LEADING_FLOOR = 1.22;
 
 /** The search's resolutions. Finer than a viewer can see; coarse enough to end. */
 export const FONT_STEP_PX = 0.25;
