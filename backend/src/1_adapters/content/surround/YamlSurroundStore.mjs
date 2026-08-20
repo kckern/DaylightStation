@@ -210,18 +210,28 @@ export class YamlSurroundStore extends ISurroundStore {
       consider(path.join(definitionsDir, file));
     }
 
-    consider(this.libraryDir);
-    for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
-      const domainDir = path.join(this.libraryDir, domain);
-      consider(domainDir);
-      for (const composer of listDirs(domainDir).filter((d) => !isReserved(d))) {
-        const composerDir = path.join(domainDir, composer);
-        consider(composerDir);
-        for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
-          consider(path.join(composerDir, file));
-        }
+    // Must descend exactly as far as #loadLibraryDir does. When this walk was
+    // hard-coded to domain/composer and the corpus grew an era level, editing a
+    // work file went unnoticed: the loader read the new corpus but was never
+    // asked to, so authoring silently required a restart. A directory's own
+    // mtime does not move when a file inside it is rewritten, so stopping short
+    // of the files is the same as not watching at all.
+    const seen = new Set();
+    const descend = (dir) => {
+      let real;
+      try { real = realpathSync(dir); } catch { real = dir; }
+      if (seen.has(real)) return;
+      seen.add(real);
+
+      consider(dir);
+      for (const file of listYamlFiles(dir, { stripExtension: false })) {
+        consider(path.join(dir, file));
       }
-    }
+      for (const child of listDirs(dir).filter((d) => !isReserved(d))) {
+        descend(path.join(dir, child));
+      }
+    };
+    descend(this.libraryDir);
 
     for (const domain of listDirs(this.rootDir).filter((d) => !isReserved(d))) {
       const domainDir = path.join(this.rootDir, domain);
