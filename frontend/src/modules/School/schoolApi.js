@@ -128,6 +128,26 @@ export const schoolApi = {
   offerRetake: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/remediation`, {}),
   requestRetake: (body) => req('/retake-requests', body),
   flagConcern: (body) => req('/flags', body),
+  // --- Self-service access codes (design §4) -------------------------------
+  // `/resolve` NEVER answers with an error status for a bad code: an unknown,
+  // expired or revoked code is a 200 carrying `{ ok: false, sentence }`. So a
+  // non-2xx here means the backend itself is unwell (down, lifecycle disabled
+  // → 404, or 500) and the panel shows its degraded message instead of "Try
+  // again" — the two must not be confused.
+  selfServiceResolve: (code) => req('/self-service/resolve', { code }),
+  // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
+  // `program` | `retry`); `exit` never reaches the wire.
+  selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
+  // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
+  // Different base to BASE, hence the raw fetch — same never-throws contract.
+  screenSchoolConfig: async (screenId) => {
+    try {
+      const r = await fetch(`/api/v1/screens/${encodeURIComponent(screenId)}`);
+      const data = await r.json().catch(() => null);
+      return { ok: r.ok, status: r.status, data };
+    } catch { return { ok: false, status: 0, data: null }; }
+  },
   // The coin balance lives on the economy API (different base) — same
   // never-throws contract as req().
   wallet: async (userId) => {
