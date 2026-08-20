@@ -246,10 +246,17 @@ export function ScreenActionHandler({ actions = {}, inputType = null }) {
     }
 
     // Default: dispatch synthetic keydown
+    // Keyed on the LOWERCASED command, so every spelling a caller might send
+    // has to appear in lower case here. `skipNext`/`skipPrev` are the transport
+    // vocabulary the WebSocket command envelope actually uses
+    // (shared/contracts/media/commands.mjs, via useScreenCommands'
+    // `media:playback` emit) — they were missing, so every remote skip landed on
+    // `playback.unknown-command` and did nothing at all. The numpad's own next
+    // reaches the same Tab keydown, and now so does a WS skipNext.
     const keyMapping = {
       play: 'Enter', pause: 'Enter', toggle: 'Enter',
-      next: 'Tab', skip: 'Tab',
-      prev: 'Backspace', previous: 'Backspace', back: 'Backspace',
+      next: 'Tab', skip: 'Tab', skipnext: 'Tab',
+      prev: 'Backspace', previous: 'Backspace', back: 'Backspace', skipprev: 'Backspace',
       fwd: 'ArrowRight', forward: 'ArrowRight', ff: 'ArrowRight',
       rew: 'ArrowLeft', rewind: 'ArrowLeft', rw: 'ArrowLeft',
       stop: 'Escape', clear: 'Escape',

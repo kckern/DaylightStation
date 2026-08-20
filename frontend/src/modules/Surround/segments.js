@@ -30,6 +30,38 @@
 // part boundary it would still happen to land on the right segment (the
 // untimed one never matches), but the moment two real spans genuinely
 // overlap it silently reports the wrong one.
+
+/**
+ * Identity keys, in the order `playerSessionBridge.normalizePlayableItem` reads
+ * them. `plex` sits below `id`/`assetId` deliberately: it carries a bare rating
+ * key ('663134') where the others carry the addressable id ('plex:663134'), and
+ * segments are stamped with the addressable one.
+ */
+const ID_KEYS = ['contentId', 'assetId', 'id', 'plex', 'key'];
+
+/**
+ * Which media item a payload names — the `contentId` every segment is stamped
+ * with, read off whatever shape the item arrived in.
+ *
+ * Two callers need the same answer from the same objects: the host, deciding
+ * which item is on screen, and the transport, deciding which segments are
+ * seekable from here. Two copies of this would be two ways to be on a different
+ * item than the rail says.
+ */
+export function resolveContentId(item) {
+  if (item == null) return null;
+  if (typeof item === 'string' || typeof item === 'number') {
+    const s = String(item);
+    return s.length > 0 ? s : null;
+  }
+  if (typeof item !== 'object') return null;
+  for (const k of ID_KEYS) {
+    const v = item[k];
+    if (v != null && String(v).length > 0) return String(v);
+  }
+  return null;
+}
+
 export function segmentAt({ segments, contentId, position }) {
   const id = String(contentId ?? '');
   const list = Array.isArray(segments) ? segments : [];

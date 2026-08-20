@@ -395,6 +395,46 @@ Two things to know before building on this:
 
 ---
 
+## Transport: next and previous walk the segments
+
+Inside a piece that has segments, **next** and **previous** move the playhead,
+not the queue. They are the same two buttons every input route ends up on —
+keyboard, office numpad, Shield remote, gamepad, and the WebSocket `skipNext` /
+`skipPrev` commands all become the same keypress — so there is one rule and it
+holds everywhere:
+
+- **next** seeks to the start of the next segment after the current position. If
+  there is none, it advances the queue as it always did.
+- **previous** restarts the current segment when more than five seconds into it,
+  and otherwise steps back to the previous segment's start. With no previous
+  segment it walks the queue backwards.
+
+Three consequences worth stating, because each is a place the naive rule would
+be wrong:
+
+- **A seek never crosses a media item.** Only the segments stamped with the
+  currently playing `contentId` are candidates. In a container the neighbouring
+  segment usually lives in the next episode, and the only thing that can reach it
+  is the queue — so that press advances, which is both correct and the same path
+  as running out of segments.
+- **The dead time at either end is real and live.** The Eroica's first segment
+  starts twenty-one seconds in, because the recording opens on applause: `next`
+  there skips the applause, and `previous` there means the previous item, since
+  there is nothing yet to restart. The tail after the last segment ends behaves
+  like the last segment — `previous` restarts it.
+- **An item with no segments behaves exactly as it always has**, and does so by
+  construction rather than by a flag: it has nothing to seek forward to, and for
+  `previous` the item is itself one segment starting at zero — which is precisely
+  the old "restart if more than five seconds in, otherwise go back one."
+
+Every press that ends up moving the queue logs `player.segment-fallthrough` with
+the reason it fell through — `no-segments`, `last-segment`, `next-part`,
+`prev-part`, `first-segment`, `before-first-segment`. A queue advance that ends a
+one-item piece is otherwise indistinguishable in the log store from one the
+listener meant.
+
+---
+
 ## Authoring workflow
 
 ### 1. Find the piece

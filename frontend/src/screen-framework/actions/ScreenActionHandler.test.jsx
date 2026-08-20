@@ -588,6 +588,40 @@ describe('ScreenActionHandler', () => {
     });
   });
 
+  describe('WebSocket skip commands', () => {
+    /** Every synthetic keydown this render dispatched, in order. */
+    const pressKeysFor = (command) => {
+      const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+      const { unmount } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'dispatch' } }} />
+        </ScreenOverlayProvider>
+      );
+      act(() => {
+        getActionBus().emit('media:playback', { command });
+      });
+      const keys = dispatchSpy.mock.calls
+        .filter(([e]) => e instanceof KeyboardEvent && e.type === 'keydown')
+        .map(([e]) => e.key);
+      dispatchSpy.mockRestore();
+      unmount();
+      return keys;
+    };
+
+    // The WS envelope's transport vocabulary is skipNext/skipPrev
+    // (shared/contracts/media/commands.mjs). Before these were mapped, a remote
+    // skip hit `playback.unknown-command` and silently did nothing.
+    it('a WS skipNext produces the same keydown as the numpad\'s next', () => {
+      expect(pressKeysFor('skipNext')).toEqual(pressKeysFor('next'));
+      expect(pressKeysFor('skipNext')).toEqual(['Tab']);
+    });
+
+    it('a WS skipPrev produces the same keydown as the numpad\'s prev', () => {
+      expect(pressKeysFor('skipPrev')).toEqual(pressKeysFor('prev'));
+      expect(pressKeysFor('skipPrev')).toEqual(['Backspace']);
+    });
+  });
+
   describe('playback secondary fallback', () => {
     it('uses secondary action when idle and when_idle is "secondary"', () => {
       render(

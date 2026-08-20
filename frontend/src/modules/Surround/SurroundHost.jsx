@@ -44,6 +44,7 @@ import PropTypes from 'prop-types';
 import getLogger from '../../lib/logging/Logger.js';
 import { useMediaClockState } from '../../lib/Player/useMediaClock.js';
 import SurroundFrame from './SurroundFrame.jsx';
+import { resolveContentId } from './segments.js';
 import { useSurroundSetting, SURROUND_OFF } from './SurroundSettingContext.js';
 // Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
@@ -51,9 +52,6 @@ import './builtins.js';
 
 /** Matches the session bridge's 1 Hz cadence. */
 const DEFAULT_POLL_MS = 1000;
-
-/** Identity keys, in the order `playerSessionBridge.normalizePlayableItem` reads them. */
-const ID_KEYS = ['contentId', 'assetId', 'id', 'plex', 'key'];
 
 /** Handed to the clock while the frame is off: attaches to nothing, ticks nothing. */
 const NO_MEDIA = () => null;
@@ -90,20 +88,6 @@ export function definitionModules(definition) {
       .map((r) => (r && typeof r === 'object' ? r.module : null))
       .filter((m) => typeof m === 'string' && m);
   });
-}
-
-function resolveContentId(item) {
-  if (item == null) return null;
-  if (typeof item === 'string' || typeof item === 'number') {
-    const s = String(item);
-    return s.length > 0 ? s : null;
-  }
-  if (typeof item !== 'object') return null;
-  for (const k of ID_KEYS) {
-    const v = item[k];
-    if (v != null && String(v).length > 0) return String(v);
-  }
-  return null;
 }
 
 /** The backend omits the key entirely when there is no sidecar — test truthiness. */
