@@ -11,7 +11,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseSilences, candidateBoundaries, applauseRuns, rejectApplauseCandidates, parseAstats, zipFrames,
-  FORM_DURATIONS, spanCost, alignLibretto, validateSpans, SKIP_PENALTY,
+  FORM_DURATIONS, spanCost, alignLibretto, validateSpans, SKIP_PENALTY, IMPLAUSIBLE_COST,
+  matchReference, reconcileReferences,
 } from './segment-timings.cli.mjs';
 import { RECOGNISED_FORMS } from './libretto.cli.mjs';
 
@@ -151,6 +152,85 @@ describe('rejectApplauseCandidates', () => {
 
   it('leaves every candidate alone when no applause was detected', () => {
     expect(rejectApplauseCandidates([50, 99, 130], [])).toEqual([50, 99, 130]);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   PER-NUMBER PRIORS FROM REFERENCE RECORDINGS.
+
+   Per-FORM ranges cannot select an alignment — measured: the old gate held for
+   four values of musicEndsAt twelve minutes apart. A reference recording turns
+   "a chorus runs 60-420s" into "this chorus runs 450s", which is a target
+   rather than a range.
+   --------------------------------------------------------------------------- */
+describe('matchReference', () => {
+  const items = [
+    { n: 1, form: 'Sinfonia', incipit: 'Sinfonia' },
+    { n: 2, form: 'Recitative', incipit: 'Comfort ye, comfort ye my people,' },
+    { n: 3, form: 'Air', incipit: "Ev'ry valley shall be exalted," },
+  ];
+  const tracks = [
+    { title: 'Sinfony (Grave -- Allegro moderato)', seconds: 203 },
+    { title: 'Accompagnato (Tenor)- Comfort ye my people', seconds: 205 },
+    { title: "Air (Tenor)- Ev'ry valley shall be exalted", seconds: 211 },
+  ];
+
+  it('matches a libretto number to its track by the words they share', () => {
+    const { expected, report } = matchReference({ items, tracks });
+    expect(expected).toEqual([203, 205, 211]);
+    expect(report.matched).toBe(3);
+  });
+
+  it('sees through a different form prefix and different punctuation', () => {
+    const live = [
+      { title: 'SINFONY', seconds: 214 },
+      { title: 'Recitative, accompanied - Tenor - Comfort ye, my people', seconds: 181 },
+      { title: 'Aria - Tenor - Ev’ry Valley shall be exalted', seconds: 203 },
+    ];
+    expect(matchReference({ items, tracks: live }).expected).toEqual([214, 181, 203]);
+  });
+
+  it('leaves a number unmatched rather than guessing at it', () => {
+    const { expected, report } = matchReference({
+      items: [...items, { n: 4, form: 'Chorus', incipit: 'Something never recorded here' }],
+      tracks,
+    });
+    expect(expected[3]).toBeNull();
+    expect(report.unmatched).toEqual(['No. 4 Something never recorded here']);
+  });
+
+  /** Each track is spent once: two numbers cannot both claim the same recording. */
+  it('never assigns one track to two numbers', () => {
+    const dupes = [
+      { n: 1, form: 'Chorus', incipit: 'Hallelujah' },
+      { n: 2, form: 'Chorus', incipit: 'Hallelujah' },
+    ];
+    const { expected } = matchReference({ items: dupes, tracks: [{ title: 'Chorus - Hallelujah', seconds: 218 }] });
+    expect(expected.filter((e) => e !== null)).toHaveLength(1);
+  });
+});
+
+describe('reconcileReferences', () => {
+  /**
+   * TWO SOURCES THAT DISAGREE INFORMATIVELY. The studio album has one 450s track
+   * for the closing chorus where the live performance splits it in two
+   * (198 + 263 = 461). Those reconcile; averaging them would not.
+   */
+  it('takes the duration where the two agree', () => {
+    const { expected, disputed } = reconcileReferences([450, 402], [461, 424], { tolerance: 0.15 });
+    expect(expected[0]).toBe(456);   // (450 + 461) / 2, rounded
+    expect(disputed).toEqual([]);
+  });
+
+  it('flags a disagreement instead of averaging it into a wrong number', () => {
+    const { expected, disputed } = reconcileReferences([450], [198], { tolerance: 0.15 });
+    expect(expected[0]).toBeNull();
+    expect(disputed).toEqual([0]);
+  });
+
+  it('uses whichever source has the number when only one does', () => {
+    expect(reconcileReferences([450, null], [null, 424], { tolerance: 0.15 }).expected)
+      .toEqual([450, 424]);
   });
 });
 
