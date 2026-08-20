@@ -58,15 +58,16 @@
      shrinking. */
   container-type: size;
   container-name: ticker;
-  /* The floor is the SMALL layout, measured: one line of now-header (0.78rem x
-     1.2 = 14.98px) + its margin (0.1rem = 1.6px) + one line of note at the
-     clamp's floor (0.88rem x 1.35 = 19.0px) = 35.58px of content, plus this
-     box's own padding (fix round 2: 0.2rem = 3.2px, see below) = 38.78px, so
-     2.7rem (43.2px) still clears it with 4.4px to spare. It went DOWN from
-     wave 5's 3.4rem, and deliberately: that number was a floor under a
-     two-line reserve that no longer applies unconditionally, and left where
-     it was it would have overflowed its own region on the tightest screen in
-     the fleet rather than letting the container query do its job. */
+  /* The floor is the SMALLEST BAND THIS MODULE CAN BE and still be itself: one
+     line of the NOW header (0.78rem x 1.2 = 14.98px) + its margin (0.1rem =
+     1.6px) + one line of note at the FIT's own size floor (0.88rem x 1.25 =
+     17.6px) = 34.18px of content, plus this box's own padding (0.2rem = 3.2px)
+     = 37.38px, so 2.7rem (43.2px) clears it with 5.8px to spare.
+     It matters because `container-type: size` removes a box's own contribution
+     to its height: a definition that did NOT give the ticker `height: fill`
+     would otherwise compute it to zero, and the fit would then be solved against
+     a box of no height (`../fit.js` declines to fit one at all). This is the
+     guard that makes that unreachable. */
   min-height: 2.7rem;
   /* The floor is the PANEL, padding included. Without this the floor is the
      content box and the module is taller than it says it is — measured in wave
@@ -145,9 +146,14 @@
    IT SLIDES rather than being a background on the zone, because with
    `nowSide: dynamic` it has to travel from one half of the band to the other,
    and a background cannot travel. `left` (not a transform) because the panel's
-   radius and its edge rule would both be dragged out of shape by a `scaleX`,
-   and because this moves once in a fifty-minute symphony rather than at 10 Hz —
-   the wave-5 pixel-snapping law is about the two marks that move continuously.
+   radius would be dragged out of shape by a `scaleX`, and because this moves
+   once in a fifty-minute symphony rather than at 10 Hz — the wave-5
+   pixel-snapping law is about the two marks that move continuously.
+   AND IT TRAVELS ON THE RAIL'S CLOCK, not its own (design wave 9, review
+   finding I-6). There is no `transition: left` here any more: `--now-left` is
+   published per frame by `useEasedVector` from the component, because the rail's
+   waist has to stay welded to this panel's whole top edge THROUGHOUT the swap
+   and a CSS transition is a second clock the waist cannot be on.
 
    SQUARE AT THE TOP, ROUNDED AT THE FOOT — the band's one corner rule (design
    wave 9, `_tokens.scss`). The top edge is not an edge: it is where this panel
@@ -172,9 +178,9 @@
   background: var(--bond-ground, #{$bond-ground});
   border-radius: 0 0 var(--bond-radius, #{$bond-radius}) var(--bond-radius, #{$bond-radius});
   pointer-events: none;
-  transition:
-    left var(--accordion-ms, 420ms) var(--enter-ease, cubic-bezier(0.2, 0.8, 0.2, 1)),
-    opacity var(--accordion-ms, 420ms) linear;
+  /* The FADE only. `left` is interpolated in JS with the rail's own geometry —
+     see the note above and `../band.js`, `useEasedVector`. */
+  transition: opacity var(--accordion-ms, 420ms) linear;
 }
 
 /* NOTHING IS SOUNDING (design wave 9) — the tuning and the walk-on before the

@@ -1085,6 +1085,9 @@ describe('CueTicker — which side the NOW register sits on (design wave 7)', ()
   it('defaults to the right — today’s behaviour, unchanged', () => {
     const view = mount(SPLIT);
     expect(view.side()).toBe('right');
+    // A FRESH MOUNT DOES NOT ANIMATE: `useEasedVector` seeds itself with its
+    // first target, so the panel is at its side from the first frame and only
+    // a LATER change travels.
     expect(view.ground().style.getPropertyValue('--now-left')).toBe('50%');
   });
 
@@ -1127,7 +1130,16 @@ describe('CueTicker — which side the NOW register sits on (design wave 7)', ()
     // THE PANEL MOVES FIRST. Its side is the raw decision, so it starts
     // travelling in the same frame the rail's connector does.
     expect(view.side()).toBe('right');
-    expect(view.ground().style.getPropertyValue('--now-left')).toBe('50%');
+    // ...and the panel TRAVELS there rather than jumping (review finding I-6).
+    // `--now-left` is published per frame by `useEasedVector`, so in the commit
+    // the side flips it is still at the edge it is leaving and eases from
+    // there — which is what keeps it welded to the rail's waist, now
+    // interpolating the same number. Under jsdom no frame is pumped, so what
+    // is read here is the start of the journey; a jump would already read 50%.
+    expect(
+      view.ground().style.getPropertyValue('--now-left'),
+      'the panel teleported to its new side instead of travelling there',
+    ).toBe('0%');
     // THE WORDS FOLLOW, on the house dissolve: out to the ground, a held beat,
     // then in with the registers on their new sides — the same choreography
     // every other content change in the frame plays, so the band cannot
@@ -1138,10 +1150,26 @@ describe('CueTicker — which side the NOW register sits on (design wave 7)', ()
     expect(view.zones().className).not.toContain('--swapping');
   });
 
-  it('slides the panel across on the shared accordion clock', () => {
-    const css = withStyles().replace(/\s+/g, ' ');
+  /**
+   * ONE CLOCK FOR THE WHOLE SHAPE, INCLUDING THE SWAP (review finding I-6).
+   *
+   * The panel used to travel on a CSS `transition: left var(--accordion-ms)`
+   * while the rail's waist — which must stay welded to this panel's WHOLE top
+   * edge — jumped to the new hull in the frame the side flipped, because
+   * `bondConnector` took the side discretely. For 420ms the two halves of "one
+   * shape" were in different places. `--now-left` is now interpolated in JS by
+   * the same hook the rail's geometry rides in, and the CSS clock is gone.
+   *
+   * TO GO RED: put `transition: left …` back on `__ground`, or publish
+   * `--now-left` straight from `side` instead of from the eased vector.
+   */
+  it('travels the panel on the rail’s clock, with no CSS transition of its own', () => {
+    const css = withStyles().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
     const ground = css.match(/\.surround-cue-ticker__ground \{[^}]*\}/)[0];
-    expect(ground).toMatch(/transition: left var\(--accordion-ms/);
+    const t = ground.match(/transition: ([^;]*);/);
+    expect(t, 'the panel lost its fade').not.toBeNull();
+    expect(t[1], 'the panel is back on a second, CSS clock for its position')
+      .not.toMatch(/\bleft\b/);
     const view = mount(SPLIT);
     const root = view.container.querySelector('[data-testid="surround-cue-ticker"]');
     expect(root.style.getPropertyValue('--accordion-ms')).toBe(`${ACCORDION_MS}ms`);
@@ -1522,5 +1550,175 @@ describe('CueTicker — the two registers never blink together (wave 8)', () => 
         `elapsed ${elapsed}ms -> swap at ${landsAt}ms, which is ${landsAt % period}ms into the period`,
       ).toBeCloseTo(period / 2, 6);
     }
+  });
+});
+
+/**
+ * ============================================================================
+ * A NOTE THE FIT HAS REFUSED MUST NOT REACH THE SCREEN — including a CUE.
+ * ============================================================================
+ *
+ * Review finding C-1, and it was a real hole in the law. `bandPools` measures
+ * every cue, so an over-long one IS rejected and the surviving type size is
+ * solved EXCLUDING it — and then `activeCue` was chosen from the unfiltered
+ * `cues` and painted at that size, in a box with `overflow: hidden` and no
+ * ellipsis. The one string the fit had certified as unsettable was the one
+ * string that could preempt the panel.
+ *
+ * WHY THERE IS A STAND-IN RULER HERE, AND WHAT IT IS NOT. happy-dom has no
+ * layout: every box is 0x0, so `fitBand` declines to fit and nothing is ever
+ * rejected — which is exactly why this defect could not be seen from jsdom. The
+ * REAL ruler is measured in Chromium against the compiled stylesheet and the
+ * vendored faces (`band.measure.test.jsx`); what is under test HERE is the
+ * WIRING — does a string the fit refused reach the register? — and for that
+ * question any monotone ruler will do, provided it is honest about being one.
+ * So this one is a plain model (characters per line from the box's width and
+ * the trial size, lines times the trial leading) installed on the prototype for
+ * the length of the case and removed after.
+ */
+describe('CueTicker — nothing the fit refuses reaches the screen (wave 9, C-1)', () => {
+  const ORIGINAL_RECT = Element.prototype.getBoundingClientRect;
+  let restore = null;
+
+  /** A monotone stand-in for layout. See the block comment above. */
+  const withRuler = ({ roomPx, widthPx, emPerChar = 0.46 }) => {
+    const isBox = (el) => el?.classList?.contains('surround-cue-ticker__text');
+    const isProbe = (el) => el?.classList?.contains('surround-cue-ticker__probe');
+    // The DOM implementation decides which prototype in the chain owns
+    // `clientHeight`; patching the wrong one is silently shadowed by the right
+    // one, so the owner is found rather than assumed.
+    const ownerOf = (prop) => {
+      let proto = HTMLElement.prototype;
+      while (proto && !Object.getOwnPropertyDescriptor(proto, prop)) {
+        proto = Object.getPrototypeOf(proto);
+      }
+      return proto || HTMLElement.prototype;
+    };
+    const defs = ['clientHeight', 'clientWidth'].map((prop) => {
+      const owner = ownerOf(prop);
+      const prev = Object.getOwnPropertyDescriptor(owner, prop);
+      Object.defineProperty(owner, prop, {
+        configurable: true,
+        get() {
+          if (isBox(this)) return prop === 'clientHeight' ? roomPx : widthPx;
+          return prev?.get ? prev.get.call(this) : 0;
+        },
+      });
+      return [prop, prev, owner];
+    });
+    Element.prototype.getBoundingClientRect = function rect() {
+      if (!isProbe(this)) return ORIGINAL_RECT.call(this);
+      const size = parseFloat(this.style.fontSize) || 16;
+      const leading = parseFloat(this.style.lineHeight) || 1.35;
+      const box = parseFloat(this.style.width) || widthPx;
+      const perLine = Math.max(1, Math.floor(box / (emPerChar * size)));
+      const lines = Math.max(1, Math.ceil((this.textContent?.length ?? 0) / perLine));
+      const height = lines * size * leading;
+      return {
+        width: box, height, top: 0, left: 0, right: box, bottom: height, x: 0, y: 0,
+      };
+    };
+    restore = () => {
+      defs.forEach(([prop, prev, owner]) => {
+        if (prev) Object.defineProperty(owner, prop, prev);
+        else delete owner[prop];
+      });
+      Element.prototype.getBoundingClientRect = ORIGINAL_RECT;
+    };
+  };
+
+  afterEach(() => { restore?.(); restore = null; });
+
+  /** A tight band: two lines of room at the fit's own size floor. */
+  const TIGHT = { roomPx: 2 * PROSE_FLOOR_PX * 1.25, widthPx: 275 };
+
+  const LONG_CUE = 'The funeral march, and the reason it is the centre of the symphony rather than an interlude: Beethoven puts a death where a minuet had always gone, and the whole shape of the piece changes around it.';
+  const SHORT_FACT = 'The published title page reads: composed to celebrate the memory of a great man.';
+
+  const DATA = {
+    contentId: 'plex:663134',
+    piece: { musicEndsAt: 2955 },
+    movements: [
+      { n: 1, name: 'Allegro con brio', start: 0, listen: ['Two hammered chords.'] },
+      { n: 2, name: 'Marcia funebre', start: 976, listen: ['The basses mutter.'] },
+    ],
+    cues: [{ at: 500, text: LONG_CUE }],
+    facts: [SHORT_FACT],
+  };
+
+  const mount = (position) => render(
+    <CueTicker
+      position={position} duration={3223} playing seeking={false}
+      data={DATA} region={{ module: 'cue-ticker' }} logger={makeLogger()}
+    />,
+  );
+
+  /**
+   * TO GO RED: choose `activeCue` from `cues` rather than from `fittableCues`
+   * (`CueTicker.jsx`) — i.e. revert C-1. The register then paints the whole
+   * 199-character cue in a box two lines tall, and the bottom of it is clipped
+   * away in silence.
+   */
+  it('does not fire a cue the fit refused, and keeps rotating instead', () => {
+    withRuler(TIGHT);
+    const view = mount(500);   // inside the cue's 12s dwell
+    const listen = view.container.querySelector('[data-testid="surround-ticker-listen"]');
+    expect(
+      listen.textContent,
+      'the register is painting a cue the fit certified as unsettable — at a size solved '
+      + 'without it, in a box with overflow: hidden and no ellipsis',
+    ).not.toContain('Beethoven puts a death');
+    // ...and the register is not left blank by the refusal: the movement's own
+    // rotation carries on underneath.
+    expect(listen.textContent).toBe('Two hammered chords.');
+  });
+
+  it('warns with the cue’s own budget, so the corpus can be fixed', () => {
+    withRuler(TIGHT);
+    const logger = makeLogger();
+    render(
+      <CueTicker
+        position={500} duration={3223} playing seeking={false}
+        data={DATA} region={{ module: 'cue-ticker' }} logger={logger}
+      />,
+    );
+    const warn = logger.warn.mock.calls.find(([event]) => event === 'surround.note.unfittable');
+    expect(warn, 'nothing was warned about a cue the band refused to show').toBeTruthy();
+    const cut = logger.warn.mock.calls
+      .filter(([event]) => event === 'surround.note.unfittable')
+      .map(([, payload]) => payload)
+      .find((payload) => payload.chars === LONG_CUE.length);
+    expect(cut, `no warn names the ${LONG_CUE.length}-character cue`).toBeTruthy();
+    expect(cut.zone).toBe('now');
+    expect(cut.budget).toBeGreaterThan(0);
+    expect(cut.budget).toBeLessThan(LONG_CUE.length);
+    expect(cut.cut).toBe(LONG_CUE.length - cut.budget);
+  });
+
+  /**
+   * THE SAME RULE IN THE UNSPLIT BAND, where a cue belongs to the PIECE
+   * register — which is the zone `bandPools` measures it against, so it is the
+   * zone the filter has to read.
+   */
+  it('withholds an unfittable cue from the single register of an unsplit band', () => {
+    withRuler(TIGHT);
+    const view = render(
+      <CueTicker
+        position={500} duration={3223} playing seeking={false}
+        data={{ ...DATA, movements: [] }}
+        region={{ module: 'cue-ticker' }} logger={makeLogger()}
+      />,
+    );
+    const text = view.container.querySelector('[data-testid="surround-ticker-text"]');
+    expect(text.textContent).not.toContain('Beethoven puts a death');
+    expect(text.textContent).toBe(SHORT_FACT);
+  });
+
+  /** A cue that FITS still preempts the register — the filter is a filter, not a ban. */
+  it('still fires a cue that fits', () => {
+    withRuler({ roomPx: 6 * PROSE_FLOOR_PX * 1.35, widthPx: 420 });
+    const view = mount(500);
+    expect(view.container.querySelector('[data-testid="surround-ticker-listen"]').textContent)
+      .toContain('Beethoven puts a death');
   });
 });
