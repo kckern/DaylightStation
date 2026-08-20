@@ -533,6 +533,25 @@
   font-weight: 600;
 }
 
+/* THE SHORT LABEL — the same line as the heading it stands in for, in the same
+   face at the same size, so a rail does not change texture as segments take and
+   give up the sounding state. It is a NAME, never a tempo term, so it is set
+   roman: `Heroic` and `Military` are what the piece is called, and the italic in
+   this rail means "this is the tempo marking".
+   It is still `nowrap` + ellipsis. A short label is authored to fit a crowded
+   segment, not guaranteed to — and where it does not, the rail cuts it exactly
+   as it cuts everything else rather than wrapping into the rule above. */
+.surround-segment-map__short {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.15;
+  font-size: 1em;
+  font-weight: 600;
+  font-style: normal;
+}
+
 /* THE TRANSLATION (design wave 6) — the editor's gloss, one register down and
    in a DIFFERENT FACE. Every other word in this frame is one of two Garamonds;
    a translation set in a third weight of the same family would read as quieter

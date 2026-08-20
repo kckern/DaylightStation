@@ -62,6 +62,45 @@ export function resolveContentId(item) {
   return null;
 }
 
+/**
+ * WHICH MEDIA ITEM THE RAIL IS ON — the id every derivation below matches
+ * segments against.
+ *
+ * `resolveContentId` answers it from the item, and that is right for an ordinary
+ * piece. On a container it is right only as long as whatever handed the player
+ * its queue kept the PART's id on the item, and one route does not: the office
+ * screen played the étude season with `item.contentId` set to the season's own
+ * id while the media playing was part three. Every segment on the rail is
+ * stamped with a part's id, so the match found nothing — no segment sounding, no
+ * playhead, no bond, and twenty-seven segments painted as though the recital had
+ * already finished. A confident, complete, wrong rail.
+ *
+ * The queue publishes the pairing that settles it. An item enriched by a
+ * container carries `surroundPart` — the part's DENSE index on the composed
+ * rail, the same number `segment.part` carries — and `timeline.parts[i]` is that
+ * part's slot. Together they are a statement about this rail, where the item's
+ * id is a statement about whatever the player happened to be handed, so where
+ * both exist the pairing wins.
+ *
+ * It degrades in one direction only: an index that names no slot, a payload with
+ * no timeline, or an ordinary item with no part index at all falls through to
+ * the id, which is what every caller read before this existed.
+ *
+ * @param {object|null} item the now-playing item.
+ * @param {object|null} surround its attached payload.
+ * @returns {string|null} the contentId the rail's segments are stamped with.
+ */
+export function railContentId(item, surround) {
+  const part = item?.surroundPart;
+  if (Number.isInteger(part) && part >= 0) {
+    const slots = surround?.timeline?.parts;
+    const slot = Array.isArray(slots) ? slots[part] : null;
+    const id = slot?.contentId;
+    if (id != null && String(id).length > 0) return String(id);
+  }
+  return resolveContentId(item);
+}
+
 export function segmentAt({ segments, contentId, position }) {
   const id = String(contentId ?? '');
   const list = Array.isArray(segments) ? segments : [];

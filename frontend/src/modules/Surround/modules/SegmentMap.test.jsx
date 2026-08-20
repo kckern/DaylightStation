@@ -1741,10 +1741,113 @@ describe('SegmentMap — the composed rail', () => {
    * `work:` references with no timing — so the rail rendered as one segment or
    * as nothing at all.
    */
-  it('draws seven polonaises as seven segments under seven headings', () => {
+  it('draws seven polonaises as seven segments', () => {
     const { container } = renderMap({ data: POLONAISES, position: 0, duration: 543 });
     expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(7);
-    expect(labels(container)).toEqual(POLONAISE_NAMES.map(([name]) => name));
+  });
+
+  /**
+   * A FLAT RAIL IS ONE TIER. Seven works, one segment each: the heading over a
+   * segment names the same work the segment does, so the row printed
+   * `Polonaise No. 1 in C-sharp minor, Op. 26 No. 1` above the rule and
+   * `Polonaise in C-sharp minor, Op. 26 No. 1` below it — the same name, twice,
+   * both cut short. The row is dropped, not hidden: the band's height is its
+   * content.
+   */
+  it('prints NO heading row on a rail whose every heading names one segment', () => {
+    const { container } = renderMap({ data: POLONAISES, position: 0, duration: 543 });
+    expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(7);
+    expect(container.querySelector('[data-testid="surround-segment-groups"]')).toBeNull();
+    expect(container.querySelector('[data-testid="surround-segment-map"]').dataset.grouped).toBe('false');
+  });
+
+  /** Op. 10 spans two segments, so that heading is a heading and the row stays. */
+  it('keeps the heading row where a heading spans more than one segment', () => {
+    const { container } = renderMap({ data: TWO_OPUS, position: 5, duration: 40 });
+    expect(labels(container)).toEqual(['Op. 10', 'Op. 25']);
+  });
+
+  /**
+   * THE SEQUENCE THE VIEWER WANTS. Every part authored `n: 1` for its own single
+   * movement — it is movement one OF ITS OWN WORK — so the gutter read `I.`
+   * seven times and numbered nothing. On a flat rail the numeral counts along
+   * the rail.
+   */
+  it('numbers a flat rail by position on the rail, not by the part’s own `n`', () => {
+    const { container } = renderMap({ data: POLONAISES, position: 0, duration: 543 });
+    const marks = [...container.querySelectorAll('.surround-segment-map__numeral')]
+      .map((el) => el.textContent);
+    expect(marks).toEqual(['I.', 'II.', 'III.', 'IV.', 'V.', 'VI.', 'VII.']);
+  });
+
+  /**
+   * And a GROUPED rail keeps the corpus's own numbers, because there they match
+   * the names printed beside them: étude 1 and étude 2 of Op. 10, then étude 1
+   * of Op. 25 under its own heading. Renumbering that rail 1, 2, 3 would make
+   * the gutter contradict the heading above it.
+   */
+  it('leaves a grouped rail’s authored numerals alone', () => {
+    const { container } = renderMap({ data: TWO_OPUS, position: 5, duration: 40 });
+    const marks = [...container.querySelectorAll('.surround-segment-map__numeral')]
+      .map((el) => el.textContent);
+    expect(marks).toEqual(['I.', 'II.', 'I.']);
+  });
+
+  /* ---------------------------------------------------------------------------
+     THE SHORT LABEL (`short:` on an authored segment).
+
+     Truncation assumes the distinguishing part of a name comes first. On a rail
+     of works from one set it never does — seven polonaises truncate to seven
+     `Pol…`, which is a rail that has spent its whole width saying nothing. The
+     corpus answers with a second, deliberately short name for the crowded state;
+     the sounding segment is unaffected, because it is the one segment the
+     accordion guarantees room for.
+     --------------------------------------------------------------------------- */
+  const SHORT_LABELS = ['C-sharp', 'E-flat', 'Military', 'C minor', 'F-sharp', 'Heroic', 'Fantaisie'];
+  const POLONAISES_SHORT = {
+    ...POLONAISES,
+    segments: POLONAISES.segments.map((c, i) => ({ ...c, short: SHORT_LABELS[i] })),
+  };
+  const headings = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-segment"]')]
+      .map((el) => el.querySelector('.surround-segment-map__heading')?.textContent ?? null);
+  const shorts = (container) =>
+    [...container.querySelectorAll('[data-testid="surround-segment"]')]
+      .map((el) => el.querySelector('[data-testid="surround-segment-short"]')?.textContent ?? null);
+
+  it('sets a segment’s `short` label while it is not sounding', () => {
+    const { container } = renderMap({ data: POLONAISES_SHORT, position: 0, duration: 543 });
+    expect(shorts(container).slice(1)).toEqual(SHORT_LABELS.slice(1));
+  });
+
+  it('sets the SOUNDING segment’s whole name, never its short label', () => {
+    const { container } = renderMap({ data: POLONAISES_SHORT, position: 0, duration: 543 });
+    expect(shorts(container)[0]).toBeNull();
+    expect(headings(container)[0]).toBe(POLONAISE_NAMES[0][0]);
+  });
+
+  /** One line, not two: the gloss belongs to the name, and the name is not here. */
+  it('prints no gloss under a short label', () => {
+    const glossed = {
+      ...POLONAISES_SHORT,
+      segments: POLONAISES_SHORT.segments.map((c) => ({ ...c, translation: 'A stately Polish dance' })),
+    };
+    const { container } = renderMap({ data: glossed, position: 0, duration: 543 });
+    const segs = [...container.querySelectorAll('[data-testid="surround-segment"]')];
+    expect(segs[1].querySelector('[data-testid="surround-segment-translation"]')).toBeNull();
+    // The sounding one keeps both, exactly as it always has.
+    expect(segs[0].querySelector('[data-testid="surround-segment-translation"]')).not.toBeNull();
+  });
+
+  /** An unauthored `short` changes nothing: the rail truncates as it always did. */
+  it('falls back to the full name for a segment with no short label', () => {
+    const partial = {
+      ...POLONAISES,
+      segments: POLONAISES.segments.map((c, i) => (i === 1 ? { ...c, short: 'E-flat' } : c)),
+    };
+    const { container } = renderMap({ data: partial, position: 0, duration: 543 });
+    expect(shorts(container)[2]).toBeNull();
+    expect(headings(container)[2]).toBe(POLONAISE_NAMES[2][0]);
   });
 
   it('takes segment widths from `duration`, not from the gaps between starts', () => {
@@ -1759,6 +1862,49 @@ describe('SegmentMap — the composed rail', () => {
     const b = bases(renderMap({ data: TWO_OPUS, position: 5, duration: 40 }).container);
     expect(b[0]).toBeCloseTo(50, 6);   // two ten-second études
     expect(b[1]).toBeCloseTo(50, 6);   // one twenty-second étude
+  });
+
+  /* ---------------------------------------------------------------------------
+     NOTHING SOUNDING HAS TWO OPPOSITE MEANINGS, AND A COMPOSED RAIL COULD ONLY
+     EVER SAY ONE OF THEM.
+
+     `unsounded` asked whether the rail position was BEFORE the first segment's
+     start. On a composed rail every position is measured in sounding seconds and
+     the first segment starts at 0, so `railPosition < 0` is never true and the
+     lead-in — the applause and the settling before the first note, which the
+     store explicitly supports — painted the entire rule as already played.
+
+     The same wrong answer covers the worse case. When the payload names a media
+     item the rail has no segment for, `segmentAt` reports nothing sounding at
+     second zero, and twenty-seven études rendered as a finished recital with no
+     playhead. That state is not "the piece is over", it is "the rail cannot
+     place the transport", and it is worth a warn: it is invisible on screen
+     (a full rule looks like a full rule) and it is always a wiring fault.
+     --------------------------------------------------------------------------- */
+  it('reads the lead-in before the first note as NOT YET SOUNDED, not as finished', () => {
+    const leadIn = {
+      ...TWO_OPUS,
+      segments: TWO_OPUS.segments.map((c) => ({ ...c, start: c.start + 30, end: c.end + 30 })),
+    };
+    // 12 s into episode 1, whose first étude does not begin until 30 s.
+    expect(states(renderMap({ data: leadIn, position: 12, duration: 400 }).container))
+      .toEqual(['future', 'future', 'future']);
+  });
+
+  it('paints nothing as played when the payload names a media item the rail has not got', () => {
+    const logger = makeLogger();
+    const stranger = { ...TWO_OPUS, contentId: 'plex:the-season-itself' };
+    const { container } = renderMap({ data: stranger, position: 300, duration: 400, logger });
+    expect(states(container)).toEqual(['future', 'future', 'future']);
+    const warned = logger.warn.mock.calls.filter(([n]) => n === 'surround.rail.unmapped');
+    expect(warned).toHaveLength(1);
+    expect(warned[0][1]).toMatchObject({ contentId: 'plex:the-season-itself', segments: 3 });
+  });
+
+  it('does not cry unmapped when the rail simply has nothing sounding', () => {
+    const logger = makeLogger();
+    renderMap({ data: TWO_OPUS, position: 5, duration: 40, logger });
+    expect(logger.warn.mock.calls.filter(([n]) => n === 'surround.rail.unmapped')).toHaveLength(0);
   });
 
   it('lights nothing while dead time plays', () => {
@@ -1810,16 +1956,29 @@ describe('SegmentMap — the composed rail', () => {
    * the identity that survives the crossing.
    */
   it('gives a work named twice two headings, not one', () => {
+    // Two segments per run, because a run of one prints no heading at all now —
+    // and this is a test about which heading a run gets, not about whether the
+    // row is drawn.
+    const pair = (work, title, index, part) => [0, 1].map((k) => ({
+      n: k + 1,
+      name: `${title} ${k + 1}`,
+      contentId: `plex:ep${part}`,
+      start: k * 10,
+      end: (k + 1) * 10,
+      offset: part * 20 + k * 10,
+      duration: 10,
+      group: { work, title, index },
+    }));
     const twice = {
-      contentId: 'plex:ep1',
+      contentId: 'plex:ep0',
       segments: [
-        { n: 1, name: 'First time', contentId: 'plex:ep1', start: 0, end: 10, offset: 0, duration: 10, group: { work: 'a', title: 'Op. 10', index: 0 } },
-        { n: 1, name: 'Interlude', contentId: 'plex:ep2', start: 0, end: 10, offset: 10, duration: 10, group: { work: 'b', title: 'Nocturne', index: 1 } },
-        { n: 1, name: 'Second time', contentId: 'plex:ep3', start: 0, end: 10, offset: 20, duration: 10, group: { work: 'a', title: 'Op. 10', index: 2 } },
+        ...pair('a', 'Op. 10', 0, 0),
+        ...pair('b', 'Nocturne', 1, 1),
+        ...pair('a', 'Op. 10', 2, 2),
       ],
-      timeline: { totalSounding: 30, parts: [] },
+      timeline: { totalSounding: 60, parts: [] },
     };
-    expect(labels(renderMap({ data: twice, position: 0, duration: 30 }).container))
+    expect(labels(renderMap({ data: twice, position: 0, duration: 60 }).container))
       .toEqual(['Op. 10', 'Nocturne', 'Op. 10']);
   });
 

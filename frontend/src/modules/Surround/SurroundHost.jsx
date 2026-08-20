@@ -44,7 +44,7 @@ import PropTypes from 'prop-types';
 import getLogger from '../../lib/logging/Logger.js';
 import { useMediaClockState } from '../../lib/Player/useMediaClock.js';
 import SurroundFrame from './SurroundFrame.jsx';
-import { resolveContentId } from './segments.js';
+import { resolveContentId, railContentId } from './segments.js';
 import { useSurroundSetting, SURROUND_OFF } from './SurroundSettingContext.js';
 // Side-effect import: registers segment-map / cue-ticker / composer-card, so
 // neither seam needs a registration call of its own.
@@ -244,8 +244,11 @@ export default function SurroundHost({
       } catch (_) {
         item = null;
       }
-      const nextId = resolveContentId(item);
       const surround = resolveSurround(item);
+      // Not `resolveContentId` alone: on a container the item's own id may be
+      // the container's, and the rail matches segments on the PART's.
+      // `railContentId` prefers the queue's own pairing and falls back to the id.
+      const nextId = railContentId(item, surround);
       const surroundId = surround?.id ?? null;
       if (nextId === seen.contentId && surroundId === seen.surroundId) return;
 

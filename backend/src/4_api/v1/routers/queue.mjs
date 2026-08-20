@@ -195,7 +195,23 @@ export function createQueueRouter(config) {
           ?? (surroundPlan?.refused ? null : surroundStore?.lookup(qi.contentId, qi.title));
         if (surround) {
           qi.surround = surround;
-          if (part) qi.surroundPart = part.part;
+          if (part) {
+            qi.surroundPart = part.part;
+            // A PROGRAMME STARTS AT THE TOP OF EACH WORK. Every part is its own
+            // media item with its own saved playhead, so a season played end to
+            // end dropped into the middle of part two — wherever that episode
+            // was last abandoned — while the rail, which is right, drew the
+            // playhead a third of the way along a work that had just started.
+            // Resume is a fact about watching ONE thing; `parts:` is the
+            // statement that these seven are one thing, and it outranks it.
+            //
+            // The SUPPRESSION is all that happens here: `watchProgress` still
+            // reports what the file has seen, and playing that episode on its
+            // own resumes exactly as it always did — this is the container's
+            // reading of it, not a rewrite of the watch state.
+            qi.resumePosition = null;
+            qi.resume = false;
+          }
           surroundLogger?.debug?.('surround.attach', {
             contentId: qi.contentId,
             surroundId: surround.id,

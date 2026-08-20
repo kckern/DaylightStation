@@ -70,7 +70,7 @@ import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
-  placedRailSegments, railGroups,
+  placedRailSegments, railGroups, railIsFlat,
   soundingWidth, idealWidth, nameFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
@@ -123,10 +123,16 @@ const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
  * A segment name is set in Garamond on stock; a straight apostrophe in it is
  * the only unset mark on the screen. The gloss is OPTIONAL: an unauthored
  * translation renders no element at all, never an empty line holding space.
+ *
+ * `short` is the same string's crowded form (`short:` in the corpus), and it is
+ * optional in exactly the same way — where nobody authored one the rail sets
+ * the full name and cuts it, which is what it has always done.
  */
 const engrave = (m) => ({
   n: m?.n,
   name: smartQuotes(m?.name ?? ''),
+  short: typeof m?.short === 'string' && m.short.trim()
+    ? smartQuotes(m.short.trim()) : null,
   translation: typeof m?.translation === 'string' && m.translation.trim()
     ? smartQuotes(m.translation.trim()) : null,
 });
@@ -238,6 +244,20 @@ export default function SegmentMap({
     });
   }, [composed, placed, pieceSegments, contentId, log]);
 
+  // ---- ONE TIER OR TWO ------------------------------------------------------
+  // The labels above the rule: one per consecutive run sharing a group. A
+  // single work's rail is one ungrouped run, and renders no row at all — the
+  // band keeps exactly the height and the geometry it has today.
+  //
+  // AND A FLAT RAIL RENDERS NO ROW EITHER (`railIsFlat`). Seven polonaises are
+  // seven works of one segment each, so every heading names exactly what the
+  // segment under it names, and the row was printing the same title a second
+  // time in a second face — both copies ellipsized, neither of them whole. The
+  // same decision then re-numbers the gutter below: see `segments`.
+  const groups = useMemo(() => (composed ? railGroups(placedRail) : []), [composed, placedRail]);
+  const flat = composed && railIsFlat(groups);
+  const grouped = !flat && groups.some((g) => g.title);
+
   // ONE COORDINATE SYSTEM FOR EVERYTHING BELOW, whichever list produced it.
   // A composed rail is measured in the container's SOUNDING seconds (`offset`);
   // a single work's rail is measured in that file's media seconds. Both are
@@ -252,8 +272,15 @@ export default function SegmentMap({
   // part boundary to whichever segment happened to precede it.
   const segments = useMemo(() => {
     if (composed) {
-      return placedRail.map(({ segment: m }) => ({
+      return placedRail.map(({ segment: m }, i) => ({
         ...engrave(m),
+        // THE NUMBER THE GUTTER SETS. On a grouped rail it is the corpus's own:
+        // étude 5 is `No. 5` under its opus heading, and the mark has to match
+        // the name beside it. On a FLAT rail — a list of works, each
+        // contributing the one movement it has — every part authored `n: 1`
+        // about itself, so the authored numbers say `I.` all the way along and
+        // number nothing. There the mark counts along the rail.
+        n: flat ? i + 1 : m.n,
         start: m.offset,
         stop: m.offset + m.duration,
         natural: m.duration / totalSounding,
@@ -276,7 +303,7 @@ export default function SegmentMap({
         natural: (stop - start) / span,
       };
     });
-  }, [composed, placedRail, totalSounding, placed, end]);
+  }, [composed, placedRail, totalSounding, flat, placed, end]);
 
   const first = segments.length ? segments[0].start : 0;
 
@@ -312,14 +339,48 @@ export default function SegmentMap({
     }
     return activeSegmentIndex({ placed: segments, position, end });
   }, [composed, mapped, placedRail, segments, position, end]);
-  /** Nothing has sounded YET — as against nothing sounding any more. */
-  const unsounded = activeIndex < 0 && segments.length > 0 && railPosition < segments[0].start;
+  /**
+   * THE RAIL HAS NO SEGMENT FOR THE ITEM ON SCREEN.
+   *
+   * Not a state the music can be in — a wiring fault. The office played the
+   * étude season with the CONTAINER's id on the item while part three sounded,
+   * and since every segment is stamped with a part's id the match found nothing:
+   * `segmentAt` reported nothing sounding at second zero and the rule painted
+   * twenty-seven segments as a finished recital, with no playhead and no bond.
+   *
+   * It is a warn because it is invisible on the screen it ruins — a full rule
+   * looks exactly like a full rule — and because nothing about the corpus can
+   * cause it. `railContentId` (`../segments.js`) is the fix for the known route;
+   * this is how the next one announces itself.
+   */
+  const unmapped = composed && contentId != null && rail.length > 0
+    && !rail.some((c) => String(c.contentId) === String(contentId));
+  const lastUnmapped = useRef(null);
+  useEffect(() => {
+    const key = unmapped ? String(contentId) : null;
+    if (lastUnmapped.current === key) return;
+    lastUnmapped.current = key;
+    if (!unmapped) return;
+    log.warn('surround.rail.unmapped', {
+      contentId,
+      segments: rail.length,
+      parts: [...new Set(rail.map((c) => c.contentId))].slice(0, 12),
+    });
+  }, [unmapped, contentId, rail, log]);
 
-  // The labels above the rule: one per consecutive run sharing a group. A
-  // single work's rail is one ungrouped run, and renders no row at all — the
-  // band keeps exactly the height and the geometry it has today.
-  const groups = useMemo(() => (composed ? railGroups(placedRail) : []), [composed, placedRail]);
-  const grouped = groups.some((g) => g.title);
+  /**
+   * Nothing has sounded YET — as against nothing sounding any more.
+   *
+   * THE COMPARISON IS `<=`, NOT `<`, and on a composed rail that is the whole
+   * difference. There the axis is sounding seconds, the first segment starts at
+   * 0, and `segmentAt` reports the lead-in as second zero — so `< 0` was
+   * unsatisfiable and every recording that opens on applause or a walk-on
+   * painted its whole rule as already played, which says the programme is over
+   * before it has begun. An unmappable item reads the same way for the same
+   * reason, and reads as not-yet rather than as finished.
+   */
+  const unsounded = activeIndex < 0 && segments.length > 0
+    && (unmapped || railPosition <= segments[0].start);
 
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
@@ -860,6 +921,26 @@ export default function SegmentMap({
               <span className="surround-segment-map__text-row">
                 <span className="surround-segment-map__numeral">{numeral(seg.n, i, style)}</span>
                 <span className="surround-segment-map__text">
+                  {/* THE SHORT LABEL (`short:` in the corpus). Truncation assumes
+                      the distinguishing part of a name comes first, and on a rail
+                      of works from one set it never does: seven polonaises all
+                      truncate to `Pol…`, which is a rail that has spent its whole
+                      width saying nothing seven times. So the corpus authors a
+                      second, deliberately short name and the rail sets THAT while
+                      the segment is not sounding — one line, no gloss, because
+                      the gloss belongs to the name and the name is not here.
+                      The SOUNDING segment always sets its whole name: it is the
+                      one segment the accordion guarantees the room for, so it has
+                      nothing to gain from a compressed form. */}
+                  {state !== 'active' && seg.short ? (
+                    <span
+                      className="surround-segment-map__short"
+                      data-testid="surround-segment-short"
+                    >
+                      {seg.short}
+                    </span>
+                  ) : (
+                  <>
                   <span className="surround-segment-map__heading">
                     {title && <span className="surround-segment-map__title">{title}</span>}
                     {tempo && <span className="surround-segment-map__tempo">{tempo}</span>}
@@ -877,6 +958,8 @@ export default function SegmentMap({
                     >
                       {seg.translation}
                     </span>
+                  )}
+                  </>
                   )}
                 </span>
               </span>
