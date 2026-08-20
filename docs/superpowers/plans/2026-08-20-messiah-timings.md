@@ -4,7 +4,7 @@
 
 **Goal:** Derive and verify the 53 movement boundaries of `plex:6918` (Handel's *Messiah*, Sydney Opera House 2009), and ship a performance sidecar that gives the item a working — if coarse — surround today.
 
-**Architecture:** Three pure, separately-tested stages behind one CLI: a **libretto reader** (PDF → 53 structured numbers), a **candidate finder** (audio → boundary candidates), and a **validator** that selects 52 internal boundaries from the candidates by matching span durations against the libretto's own form sequence. The validator is a publish gate: if it cannot resolve 53 sane spans, the plan ships the three Part boundaries alone rather than 53 approximate ones. All file I/O lives in a thin shell around the pure functions so the logic is unit-testable without a 3 GB video.
+**Architecture:** Three pure, separately-tested stages behind one CLI: a **libretto reader** (PDF → 53 structured numbers), a **candidate finder** (audio → boundary candidates), and an **aligner** that maps the libretto's sequence onto the audible spans, allowing merges and omissions, scored by whether each span is plausible for its own form. The aligner is a publish gate: if it cannot account for the audible span without contradictions, the plan ships the three Part boundaries alone rather than 53 approximate ones. All file I/O lives in a thin shell around the pure functions so the logic is unit-testable without a 3 GB video.
 
 **Tech Stack:** Node ESM (`cli/*.cli.mjs` + `cli/*.cli.test.mjs`, vitest), `pdftotext` (poppler), `ffmpeg`/`ffprobe`, `js-yaml`.
 
@@ -45,6 +45,23 @@ Do not re-derive these; they are the plan's starting facts.
 | Spans under 30 s (false splits: rests, fermatas, breaths) | **84** |
 | Spans over 400 s (a possibly-missed boundary) | **1** |
 | Longest silences — the two Part breaks, found without the libretto | **48.6 min** and **~111 min** |
+| Audible span (music + applause + interval) | **~118 min** |
+| Complete Messiah, music alone | **~140 min** |
+
+**This performance is cut by roughly twenty minutes** — eight to twelve numbers.
+Both PDFs are titled *"Messiah Download"*, which reads as a generic libretto
+rather than this concert's running order, so the printed sequence cannot be
+assumed to be the running order. **The libretto is the work; the file is a
+performance.** Reconciling them is alignment, not selection, and the four cases
+are 1:1, n:1 (attacca joins with no gap to detect), 1:0 (cut), and 1:n (a break
+inside a number).
+
+**A cut number gets a `null` start.** The store drops an invalid `starts` entry
+to `undefined` and preserves positions rather than compacting, so the segment
+keeps its name and notes while the rail declines to draw it
+(`surround.segments.unplaceable`). No new syntax is needed, and the division of
+labour is: the corpus records the work, the sidecar records the performance, the
+rail draws the recording.
 
 **Over-triggering ~2.7× is the good outcome.** A false candidate can be filtered; a boundary never detected cannot be recovered. The job is selection from a superset.
 
@@ -581,16 +598,34 @@ Zip the two into per-second `{t, full, hf}` frames, run `applauseRuns`, and repo
 
 **Acceptance:** at least two sustained runs, one near **48.6 min** and one near **111 min**, matching what the silence pass found independently. If they do not appear, sweep `hfFloorDb` from −30 to −20 and report the sweep rather than picking a value that produces the hoped-for answer.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Aim the texture detector inside over-long spans**
+
+The aligner (Task 4) reports which spans are **too long for their form** — those
+are attacca joins, where two numbers share one audible span because there is no
+gap between them. Sweeping 134 minutes for texture changes would be hopeless;
+searching a known 6-minute span for exactly one join is tractable.
+
+So this step runs only after a first alignment pass, over the spans it flagged:
+compute the per-second full/HF frames for that span alone, and look for the
+largest sustained change in the HF-to-full ratio away from the span's own
+baseline — a recitative over continuo giving way to a full-orchestra air is a
+different spectral picture even when nothing goes quiet.
+
+**Report candidates; do not auto-insert them.** Each proposed join goes back
+through `validateSpans`, and it is kept only if it makes *both* resulting spans
+plausible for their own forms. A join that fixes one number and breaks the next
+is not a join.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add cli/segment-timings.cli.mjs cli/segment-timings.cli.test.mjs
-git commit -m "feat(cli): anchor the Part breaks by detecting applause"
+git commit -m "feat(cli): anchor the Part breaks, and find attacca joins by texture"
 ```
 
 ---
 
-### Task 4: The validator — the publish gate
+### Task 4: The aligner — the publish gate
 
 **Files:**
 - Modify: `cli/segment-timings.cli.mjs`
@@ -598,7 +633,12 @@ git commit -m "feat(cli): anchor the Part breaks by detecting applause"
 
 **Interfaces:**
 - Consumes: the libretto items from Task 1, candidates from Task 2, applause runs from Task 3.
-- Produces: `FORM_DURATIONS` (the priors) and `validateSpans({items, starts, endS})` → `{ ok:boolean, spans:Array<{n, form, seconds, plausible:boolean}>, failures:string[] }`.
+- Produces: `FORM_DURATIONS` (the priors) and `validateSpans({ items, starts, endS })` → `{ ok:boolean, spans:Array<{n, form, seconds:number|null, plausible:boolean, omitted:boolean}>, failures:string[] }`.
+
+`starts` is **always length 53**, positional against the libretto, and an entry
+may be `null` — meaning this performance omits that number. A number's span runs
+from its own start to the **next non-null start**, so an omission never shifts a
+neighbour's timing.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -625,10 +665,29 @@ describe('validateSpans', () => {
     expect(r.failures.join(' ')).toMatch(/Recitative/);
   });
 
-  it('rejects when the count does not match the libretto', () => {
+  it('rejects when the starts do not pair positionally with the libretto', () => {
     const r = validateSpans({ items, starts: [0, 180], endS: 500 });
     expect(r.ok).toBe(false);
     expect(r.failures.join(' ')).toMatch(/3 numbers.*2 starts/);
+  });
+
+  /**
+   * THE CUT. This performance omits roughly a fifth of the work, so an omitted
+   * number is an ordinary state, not a failure — it carries a null start, is
+   * reported as omitted, and crucially does NOT consume its neighbour's span.
+   */
+  it('accepts a null start as an omission and does not shift the next number', () => {
+    const r = validateSpans({ items, starts: [0, null, 180], endS: 430 });
+    expect(r.ok).toBe(true);
+    expect(r.spans[1]).toMatchObject({ n: 2, omitted: true, seconds: null });
+    // No. 1 runs to the next NON-NULL start (180), not to the null one.
+    expect(r.spans[0].seconds).toBe(180);
+    expect(r.spans[2].seconds).toBe(250);
+  });
+
+  it('reports how much of the work this performance leaves out', () => {
+    const r = validateSpans({ items, starts: [0, null, 180], endS: 430 });
+    expect(r.spans.filter((s) => s.omitted).map((s) => s.n)).toEqual([2]);
   });
 
   it('publishes a prior for every form the libretto uses', () => {
@@ -677,14 +736,28 @@ export function validateSpans({ items, starts, endS }) {
     failures.push(`${items.length} numbers but ${starts.length} starts`);
     return { ok: false, spans: [], failures };
   }
+  /** The next start that actually sounds — an omitted number owns no time. */
+  const nextSounding = (from) => {
+    for (let j = from; j < starts.length; j += 1) {
+      if (Number.isFinite(starts[j])) return starts[j];
+    }
+    return endS;
+  };
   const spans = items.map((it, i) => {
-    const seconds = Math.round((i + 1 < starts.length ? starts[i + 1] : endS) - starts[i]);
+    if (!Number.isFinite(starts[i])) {
+      return { n: it.n, form: it.form, seconds: null, plausible: true, omitted: true };
+    }
+    const seconds = Math.round(nextSounding(i + 1) - starts[i]);
     const prior = FORM_DURATIONS[it.form];
     const plausible = !prior || (seconds >= prior[0] && seconds <= prior[1]);
     if (!plausible) {
-      failures.push(`No. ${it.n} "${it.incipit}" (${it.form}) ran ${seconds}s, expected ${prior[0]}-${prior[1]}s`);
+      // TOO LONG means a hidden attacca join — two numbers sharing one span, and
+      // the place to aim the texture detector. TOO SHORT means a break inside a
+      // number. The message says which, because the two need opposite fixes.
+      const how = seconds > prior[1] ? 'too long — a hidden join?' : 'too short — a break inside it?';
+      failures.push(`No. ${it.n} "${it.incipit}" (${it.form}) ran ${seconds}s, expected ${prior[0]}-${prior[1]}s — ${how}`);
     }
-    return { n: it.n, form: it.form, seconds, plausible };
+    return { n: it.n, form: it.form, seconds, plausible, omitted: false };
   });
   return { ok: failures.length === 0, spans, failures };
 }
@@ -697,7 +770,9 @@ Expected: PASS
 
 - [ ] **Step 4: Run the real selection**
 
-Select 52 internal boundaries from the candidate superset such that `validateSpans` returns `ok`, with the Part breaks pinned to the applause anchors from Task 3. Report:
+Align the libretto's 53 numbers onto the candidate spans such that
+`validateSpans` returns `ok`, with the Part breaks pinned to the applause anchors
+from Task 3. The output is 53 positional starts, some `null`. Report:
 
 - the candidate count fed in,
 - whether a valid selection was found,
@@ -705,9 +780,19 @@ Select 52 internal boundaries from the candidate superset such that `validateSpa
 
 - [ ] **Step 5: HALT AND REPORT — this is the gate, not a checkpoint**
 
-**If a valid 53-span selection was found:** write it to `$SCRATCH/messiah.starts.json` and continue to Task 5. This artifact is what plan 2 consumes.
+**If the alignment holds** — every sounding number plausible for its own form,
+and the omissions accounting for the ~20 minutes the arithmetic says are missing
+— write it to `$SCRATCH/messiah.starts.json` (53 entries, some `null`) and
+continue to Task 5. This artifact is what plan 2 consumes. Report the omitted
+numbers by name: that list is a fact about this performance and the first thing
+a reviewer should sanity-check, because a plausible-looking alignment that has
+quietly cut the wrong numbers is the failure mode with no other symptom.
 
-**If it was not:** stop. Do not hand-tune boundaries into place, and do not widen `FORM_DURATIONS` until it passes — either would produce a rail that lies about position, which the design rejects explicitly. Report the failures and continue to Task 5 with **three** starts (the Part boundaries) instead of 53. That still ships a working surround; it just ships the coarse one.
+**If it does not hold:** stop. Do not hand-tune boundaries into place, and do not
+widen `FORM_DURATIONS` until it passes — either would produce a rail that lies
+about position, which the design rejects explicitly. Report the failures verbatim
+and continue to Task 5 with **three** starts (the Part boundaries) instead of 53.
+That still ships a working surround; it just ships the coarse one.
 
 - [ ] **Step 6: Commit**
 
@@ -743,7 +828,8 @@ match:
   title: "Handel's Messiah—Live from the Sydney Opera House"
 performance: "<conductor · choir · orchestra · venue · date, from Program.pdf>"
 # Three starts, pairing positionally with the work's three Parts. The 53 movement
-# boundaries derived in this pass are parked for the corpus restructure.
+# boundaries derived in this pass — including the nulls for the numbers this
+# performance omits — are parked for the corpus restructure in plan 2.
 starts: [0, <part two start>, <part three start>]
 musicEndsAt: <end of the final Amen, before the closing applause>
 ```
