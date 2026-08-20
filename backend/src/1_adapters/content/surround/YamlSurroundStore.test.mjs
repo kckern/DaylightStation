@@ -959,6 +959,33 @@ describe('YamlSurroundStore library resolution', () => {
     expect(store).toBeDefined();
   });
 
+  it('notices an edit to a work file nested below the composer level', () => {
+    // The freshness check carried its own copy of the two-level walk. After the
+    // corpus grew an era level it stopped reaching work files at all, so an
+    // author could rewrite a piece's facts and the running backend would keep
+    // serving the old ones until someone restarted it — silently, because a
+    // directory's mtime does not move when a file inside it is rewritten.
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Fr\u00e9d\u00e9ric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\nfacts:\n  - "before"\n');
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:edit }\n');
+
+    vi.useFakeTimers();
+    try {
+      const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+      expect(store.lookup('plex:edit', '')?.facts).toEqual(['before']);
+
+      const when = new Date(Date.now() + 5000);
+      writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\nfacts:\n  - "after"\n');
+      utimesSync(path.join(library, 'classical/5_romantic/chopin/nocturnes.yml'), when, when);
+      vi.advanceTimersByTime(3000);   // past the 2s guard
+
+      expect(store.lookup('plex:edit', '')?.facts).toEqual(['after']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('warns when two composer folders share a basename and collide on one work key', () => {
     // Identity is composer + slug, so a depth-free walk makes a collision
     // reachable between folders that never sat at the same level before.
