@@ -238,6 +238,12 @@ export function createTokenRecord({
 export function isAccessCodeLive(record, { now } = {}) {
   if (!record || typeof record !== 'object' || Array.isArray(record)) return false;
   if (record.revokedAt) return false;
+  // The mint-time whitelist again, on the way back out. A registry record can be
+  // hand-edited past the constructor, and whoever resolves a code next expects a
+  // `subject_next` SHAPE — a subject carrying both a learner and a subject. An
+  // `identify` card wearing a code would resolve to a record with no
+  // `subject.subject` at all, which is a lesson nobody can open.
+  if (record.tokenClass !== 'subject_next') return false;
   if (!isAccessCodeShaped(record.accessCode)) return false;
   if (!isIsoTimestamp(record.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
   // At the rollover it is already dead: the boundary belongs to the next day.
