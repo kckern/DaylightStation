@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlSurroundStore } from './YamlSurroundStore.mjs';
@@ -934,6 +934,44 @@ describe('YamlSurroundStore library resolution', () => {
       work: 'beethoven/does-not-exist',
       expected: 'classical/**/beethoven/does-not-exist.yml',
       file: 'classical/beethoven/ghost.yml'
+    });
+  });
+
+  it('indexes a directory reachable twice through a symlink exactly once', () => {
+    // `listDirs` deliberately includes symlinked directories, so a depth-free
+    // walk can reach the same real folder by more than one route. Left alone it
+    // does not hang — the joined path outgrows PATH_MAX after a few hundred
+    // levels and the walk peters out — it re-reads the same corpus over and
+    // over and re-keys every work it already had. The observable symptom is the
+    // duplicate warning below firing against a file that exists only once.
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\n');
+    symlinkSync(path.join(library, 'classical'), path.join(library, 'classical/5_romantic/loop'), 'dir');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.work.duplicate', expect.anything());
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:loop }\n');
+    expect(new YamlSurroundStore({ rootDir: root, libraryDir: library, logger })
+      .lookup('plex:loop', '')?.piece?.title).toBe('Nocturnes');
+    expect(store).toBeDefined();
+  });
+
+  it('warns when two composer folders share a basename and collide on one work key', () => {
+    // Identity is composer + slug, so a depth-free walk makes a collision
+    // reachable between folders that never sat at the same level before.
+    // Last-write-wins is the old behaviour; going quiet about it is not.
+    writeLib('classical/4_classical/adams/prelude.yml', 'title: The Classical One\n');
+    writeLib('classical/6_modern/adams/prelude.yml', 'title: The Modern One\n');
+
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.duplicate', {
+      work: 'adams/prelude',
+      file: expect.stringContaining('adams/prelude.yml')
     });
   });
 
