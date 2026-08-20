@@ -35,6 +35,17 @@ export function toSpans({ starts, musicEndsAt, spans, count }) {
  * the rail at all, so a segment's width is the music it contains and nothing
  * else; a chapter with no timing occupies no width and does not shift its
  * neighbours.
+ *
+ * ZERO-WIDTH CHAPTERS ARE NORMAL, and they make offsets non-unique: an untimed
+ * chapter shares its offset with whatever follows it. Nine of the nineteen
+ * authored pieces have one today, almost always a trailing chapter for want of
+ * `musicEndsAt`, and in a composed container that lands exactly on a part
+ * boundary. So anything mapping a rail position back to a chapter must state a
+ * tie-break rather than take the first match, and the tie-break is: at a shared
+ * offset the LATER chapter wins. A zero-width chapter has already finished by
+ * the time the rail reaches it — treating it as current would strand the
+ * transport in the previous part's media item at every boundary. The store
+ * warns `surround.chapters.untimed` so the condition is visible while it lasts.
  */
 export function withOffsets(chapters) {
   let offset = 0;

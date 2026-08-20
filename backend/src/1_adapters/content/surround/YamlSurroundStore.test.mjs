@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, symlinkSync 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlSurroundStore } from './YamlSurroundStore.mjs';
+import { listYamlFiles } from '#system/utils/FileIO.mjs';
 
 let root;      // performance-sidecar tree (old rootDir)
 let library;   // knowledge-corpus tree (new libraryDir)
@@ -1504,6 +1505,13 @@ describe('YamlSurroundStore — parts composed by contentId', () => {
     write('classical/chopin/z-part.yml',
       'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:z }\nstarts: [0]\nmusicEndsAt: 60\n');
 
+    // Assert the premise the test rests on. `listYamlFiles` does not sort — it
+    // hands back `readdirSync` order, which is filesystem-dependent — so on a
+    // filesystem that returned these the other way round this test would go
+    // VACUOUS rather than red, quietly proving nothing at all.
+    expect(listYamlFiles(path.join(root, 'classical/chopin'), { stripExtension: false }))
+      .toEqual(['a-season.yml', 'z-part.yml']);
+
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
     const r = store.lookup('plex:late', '');
     expect(r.chapters.map((c) => [c.name, c.contentId, c.duration])).toEqual([['Solo', 'plex:z', 60]]);
@@ -1680,6 +1688,38 @@ describe('YamlSurroundStore — parts timed inline', () => {
     expect(r.chapters.map((c) => c.performance)).toEqual(['Lortie', undefined]);
   });
 
+  it('judges each entry on its own merits in a mixed list', () => {
+    // One entry authored as an inline mapping used to demote the WHOLE list to
+    // the inline path, where a bare contentId beside it matched no work
+    // (grouped under null) and inherited the container's own id. A third of the
+    // rail vanished and a phantom part pointed at the unplayable season.
+    writeLib('classical/0_flagship/chopin/p1.yml', 'title: P1\nmovements:\n  - { n: 1, name: One }\n');
+    writeLib('classical/0_flagship/chopin/p2.yml', 'title: P2\nmovements:\n  - { n: 1, name: Two }\n');
+    writeLib('classical/0_flagship/chopin/set.yml',
+      'title: Set\nchapters:\n  - work: chopin/p1\n  - work: chopin/p2\n');
+    write('classical/chopin/ep1.yml',
+      'work: chopin/p1\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\nstarts: [0]\nmusicEndsAt: 30\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:ep1\n  - { work: chopin/p2, contentId: plex:ep2, spans: [[0, 90]] }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    // The reference entry keeps its own sidecar's timing; the inline entry keeps
+    // its authored span. Neither is stamped with the season's id.
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.offset, c.duration])).toEqual([
+      ['One', 'plex:ep1', 0, 30], ['Two', 'plex:ep2', 30, 90]
+    ]);
+    expect(r.timeline.parts).toEqual([
+      { contentId: 'plex:ep1', index: 0, sounding: 30 },
+      { contentId: 'plex:ep2', index: 1, sounding: 90 }
+    ]);
+    // Nothing on the rail claims the container itself — Task 4 expands these
+    // into a queue, and the season is not a playable media item.
+    expect(r.timeline.parts.map((p) => p.contentId)).not.toContain('plex:season');
+  });
+
   it('reports a parts: block that is not a list rather than coercing it', () => {
     write('classical/beethoven/symphony-3-eroica.yml',
       'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n'
@@ -1691,5 +1731,195 @@ describe('YamlSurroundStore — parts timed inline', () => {
       expect.objectContaining({ reasons: expect.arrayContaining(['parts-not-a-list']) }));
     // Warn-then-continue: it still resolves down the single-item path.
     expect(store.lookup('plex:663134', '').chapters).toHaveLength(1);
+  });
+});
+
+/**
+ * NESTING IS REFUSED — a part may not itself be a container.
+ *
+ * Composition runs in walk order over the resolved set, so an inner container
+ * may still hold its provisional empty rail when an outer one reads it: the
+ * same data composed or silently emptied depending on how the two files sorted.
+ * The refusal is deliberate rather than an ordering fix — see the reasoning on
+ * #referencedChapters. What matters here is that the outcome no longer depends
+ * on the filename.
+ */
+describe('YamlSurroundStore — nested containers', () => {
+  // Same fixture twice, differing only in which file sorts first.
+  const nest = (outerFile, innerFile) => {
+    writeLib('classical/0_flagship/chopin/one.yml', 'title: One\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/disc.yml', 'title: Disc\nchapters:\n  - work: chopin/one\n');
+    writeLib('classical/0_flagship/chopin/season.yml', 'title: Season\nchapters:\n  - work: chopin/disc\n');
+    write('classical/chopin/leaf.yml',
+      'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:leaf }\nstarts: [0]\nmusicEndsAt: 60\n');
+    write(`classical/chopin/${innerFile}`,
+      'work: chopin/disc\nsurround: concert-hall\nmatch: { contentId: plex:inner }\nparts:\n  - plex:leaf\n');
+    write(`classical/chopin/${outerFile}`,
+      'work: chopin/season\nsurround: concert-hall\nmatch: { contentId: plex:outer }\nparts:\n  - plex:inner\n');
+  };
+
+  it.each([
+    ['outer first', 'a-outer.yml', 'z-inner.yml'],
+    ['inner first', 'z-outer.yml', 'a-inner.yml']
+  ])('refuses a container as a part, and says so — %s', (_label, outerFile, innerFile) => {
+    nest(outerFile, innerFile);
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:outer', '');
+
+    // MUTATION PROOF — delete the `if (part.parts)` guard in
+    // #referencedChapters and this splits by filename: 'inner first' composes
+    // one chapter with totalSounding 60, 'outer first' yields an empty rail
+    // with a phantom part slot and NO warning at all. That silent, sort-order
+    // dependent split is exactly what the refusal exists to remove.
+    expect(r.chapters).toEqual([]);
+    expect(r.timeline).toEqual({ totalSounding: 0, parts: [] });
+    expect(logger.warn).toHaveBeenCalledWith('surround.part.nested',
+      expect.objectContaining({ contentId: 'plex:inner', index: 0, partFile: `classical/chopin/${innerFile}` }));
+  });
+
+  it('leaves the inner container itself composing normally', () => {
+    // Refusing the nesting must not damage the inner rail: it is a perfectly
+    // good one-part container and still plays on its own.
+    nest('a-outer.yml', 'z-inner.yml');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:inner', '');
+    expect(r.chapters.map((c) => [c.name, c.contentId, c.duration])).toEqual([['Solo', 'plex:leaf', 60]]);
+  });
+
+  it('keeps the parts either side of a refused one', () => {
+    nest('a-outer.yml', 'z-inner.yml');
+    write('classical/chopin/a-outer.yml',
+      'work: chopin/season\nsurround: concert-hall\nmatch: { contentId: plex:outer }\n'
+      + 'parts:\n  - plex:leaf\n  - plex:inner\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:outer', '');
+    expect(r.chapters.map((c) => c.contentId)).toEqual(['plex:leaf']);
+    expect(r.timeline.parts).toEqual([{ contentId: 'plex:leaf', index: 0, sounding: 60 }]);
+  });
+});
+
+describe('YamlSurroundStore — composition isolation and claims', () => {
+  const twoContainers = () => {
+    writeLib('classical/0_flagship/chopin/one.yml', 'title: One\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/set.yml', 'title: Set\nchapters:\n  - work: chopin/one\n');
+    write('classical/chopin/leaf.yml',
+      'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:leaf }\nstarts: [0]\nmusicEndsAt: 60\n');
+    write('classical/chopin/a-broken.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:broken }\nparts:\n  - plex:gone\n');
+    write('classical/chopin/z-good.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:good }\nparts:\n  - plex:leaf\n');
+  };
+
+  it('lets one container throw without emptying every container after it', () => {
+    // A logger that throws on the missing-part warn stands in for any fault
+    // inside one container's composition. The guard used to wrap the whole
+    // pass, so the FIRST container to throw silently emptied the rail of every
+    // container after it — the silent-partial-index shape this subsystem has
+    // already been bitten by once.
+    twoContainers();
+    const logger = makeLogger();
+    logger.warn.mockImplementation((event) => {
+      if (event === 'surround.part.missing') throw new Error('logger exploded');
+    });
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(store.lookup('plex:broken', '').chapters).toEqual([]);
+    expect(store.lookup('plex:good', '').chapters.map((c) => c.contentId)).toEqual(['plex:leaf']);
+    expect(store.lookup('plex:good', '').timeline.totalSounding).toBe(60);
+  });
+
+  it('names both files when two containers claim the same part', () => {
+    twoContainers();
+    write('classical/chopin/a-broken.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:rival }\nparts:\n  - plex:leaf\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.part.claimed', {
+      contentId: 'plex:leaf',
+      keptFile: 'classical/chopin/z-good.yml',
+      droppedFile: 'classical/chopin/a-broken.yml'
+    });
+    // Still deterministic — last walk order wins, and it is now on the record.
+    expect(store.lookupByPart('plex:leaf').payload.piece.title).toBe('Set');
+  });
+
+  it('does not cry claimed when a part belongs to exactly one container', () => {
+    twoContainers();
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.part.claimed', expect.anything());
+  });
+
+  it('carries a performance credit authored on a reference-form part', () => {
+    // `{ contentId, performance }` names no work and no spans, so it is a
+    // reference — and the credit has to survive composition, because the
+    // inline form honours the identical key.
+    twoContainers();
+    write('classical/chopin/z-good.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:good }\n'
+      + 'parts:\n  - { contentId: plex:leaf, performance: Lortie }\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:good', '');
+    expect(r.chapters.map((c) => [c.contentId, c.performance])).toEqual([['plex:leaf', 'Lortie']]);
+  });
+});
+
+/**
+ * UNTIMED CHAPTERS — the successor to the container's spans.mismatch signal.
+ *
+ * A chapter with no usable end occupies no width. That is correct (dead time is
+ * not on the rail) and, for a single item's LAST chapter, it is the normal
+ * authored shorthand for "runs to the end of the file". In a container it is a
+ * gap Task 10 has yet to fill, and it lands at a part boundary.
+ */
+describe('YamlSurroundStore — untimed chapters', () => {
+  it('warns for a container, naming the count and the parts', () => {
+    writeLib('classical/0_flagship/chopin/one.yml', 'title: One\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/two.yml', 'title: Two\nmovements:\n  - { n: 1, name: Duo }\n');
+    writeLib('classical/0_flagship/chopin/set.yml',
+      'title: Set\nchapters:\n  - work: chopin/one\n  - work: chopin/two\n');
+    // Neither part authors musicEndsAt, so each contributes one untimed chapter
+    // — exactly the live étude shape.
+    write('classical/chopin/ep1.yml',
+      'work: chopin/one\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\nstarts: [0]\n');
+    write('classical/chopin/ep2.yml',
+      'work: chopin/two\nsurround: concert-hall\nmatch: { contentId: plex:ep2 }\nstarts: [0]\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:ep1\n  - plex:ep2\n');
+
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.chapters.untimed',
+      expect.objectContaining({
+        file: 'classical/chopin/season.yml',
+        untimed: 2,
+        chapters: 2,
+        parts: ['plex:ep1', 'plex:ep2']
+      }));
+  });
+
+  it('stays quiet for a single item whose only gap is its final bound', () => {
+    // Eight of the nineteen authored pieces are in this state. Warning about
+    // all of them would bury the cases that matter.
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.chapters.untimed', expect.anything());
+  });
+
+  it('warns for a piece whose timings were never authored at all', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3\nmovements:\n  - { n: 1, name: One }\n  - { n: 2, name: Two }\n  - { n: 3, name: Three }\n');
+    write('classical/beethoven/symphony-3-eroica.yml',
+      'work: beethoven/symphony-3-eroica\nsurround: concert-hall\nmatch: { contentId: plex:663134 }\n');
+
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    expect(logger.warn).toHaveBeenCalledWith('surround.chapters.untimed',
+      expect.objectContaining({ file: 'classical/beethoven/symphony-3-eroica.yml', untimed: 3, chapters: 3 }));
   });
 });
