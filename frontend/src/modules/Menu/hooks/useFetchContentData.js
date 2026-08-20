@@ -34,7 +34,16 @@ export function useFetchContentData(legacyId, refetchKey = 0, contentId = null) 
 
     async function fetchData() {
       try {
-        const response = await DaylightAPI(`/api/v1/list/${resolvedId}`);
+        // `expand` opts OUT of the list router's "season-as-show wrapping".
+        // Asked for a SEASON without it, the router answers with a single
+        // container item representing the season ITSELF — a tile shape that
+        // exists for FitnessMenu, where a season sits beside shows and
+        // playlists. These two views are the browse drill the router's own
+        // comment reserves `expand` for: without it SeasonView renders a
+        // one-card grid holding the season it is already inside, so there is no
+        // episode left to pick. Harmless for ShowView — a show is not wrapped,
+        // so the modifier changes nothing there.
+        const response = await DaylightAPI(`/api/v1/list/${resolvedId}/expand`);
         if (!canceled) {
           setData(response);
           setLoading(false);

@@ -80,6 +80,7 @@ music, independent of any recording. Abridged from the real Eroica file:
 title: Symphony No. 3 in E-flat major, "Eroica"
 translation: "Heroic Symphony"        # only when the title is not in English
 genre: Symphony                       # Symphony | Opera | Mass setting | Motet | ...
+short_title: "Beethoven's Third Symphony"   # the work's own alternate name
 opus: Op. 55                          # or BWV / K. / RV / HWV — whatever the catalog uses
 composed: 1803-1804
 year: 1804
@@ -137,14 +138,23 @@ Notes that save a debugging pass:
   anything true of the composer beside *any* work belongs in `_composer.yml`,
   which `ComposerCard` cycles on its own rotation. A line repeated between
   `_composer.yml` and a work's `facts:` shows twice on screen at once.
-- **`listen:`, `translation:`, `genre:`, `summary:`, `scoring:`, `themes:`, `set:`,
-  `set_index:` and `tier:` do not
-  reach the surround payload.** They are corpus fields, authored now for the School
-  projection and for future modules. Only the fields in the store's `PIECE_FIELDS`
-  allowlist (`title`, `opus`, `composed`, `year`, `period`, `period_note`, `city`,
-  `premiered`) plus `movements`, `facts` and an optional `composer:` override block
-  are read by the player. **Adding a field to a work file and not to that allowlist
-  is silent** — the region simply renders without it.
+- **`short_title:` is the work's own alternate name**, not an abbreviation of the
+  title. It is the standing label over the listening band's left register —
+  "Beethoven's Third Symphony" — and the band prints no label at all rather than
+  cutting a long `title` down to pretend to be one. Author it or leave it out.
+- **A movement reaches the payload whole**, so `translation:` and `listen:` are
+  read by the player: `MovementMap` sets the translation as a gloss under the
+  movement's name, and `CueTicker` cycles that movement's `listen` bullets in the
+  "now" zone while it is playing, falling back to the work's `facts` for a
+  movement nobody has written notes for yet.
+- **Work-level fields are allowlisted, and `themes:`, `set:`, `set_index:` and
+  `tier:` are not on the list.** They are corpus fields, authored now for the
+  School projection. `piece` is exactly the store's `PIECE_FIELDS` (`title`,
+  `short_title`, `opus`, `composed`, `year`, `period`, `period_note`, `city`,
+  `premiered`), plus
+  `movements`, `facts` and an optional `composer:` override block. **Adding a
+  work-level field and not adding it to that allowlist is silent** — the region
+  simply renders without it. Movement-level fields need no allowlist.
 - A `movements:` or `facts:` key that is present but not a list logs
   `surround.work.invalid` and is coerced to empty; the rest of the work still
   indexes.
@@ -182,8 +192,13 @@ Two fields worth calling out:
   coprime with the footer ticker's 20 s, so the two panels coincide once every nine
   minutes instead of swapping in lockstep, which reads as a glitch. The rotation is
   time-driven, not playhead-driven: seeking does not reset it.
-- **`map`** drives the `country-map` module. Give it the country name **exactly as the
-  geodata spells it** (`United Kingdom`, `Czechia`) plus the city and its coordinates.
+- **`map`** supplies the place-carousel's map slide (and the standalone
+  `country-map` module, for definitions that use it directly — see "Modules").
+  Give it the country name **exactly as the geodata spells it** (`United Kingdom`,
+  `Czechia`) plus the city and its coordinates. An optional **`map.caption`**
+  authors the sentence under the carousel's city photograph — "Venice — his
+  lifelong home" — set as prose, not the tracked small-caps label a bare place
+  name gets. Omit it and the caption falls back to `map.city` alone, as a label.
 
 ### The performance sidecar
 
@@ -222,10 +237,69 @@ A `starts` entry that is not a non-negative finite number (a quoted timestamp, a
 placeholder `null`, a negative from arithmetic against the wrong reference) is
 dropped to `undefined` and logs the soft reason `starts-entry-invalid`. Positions
 are preserved rather than compacted, so one bad entry costs one movement's timing
-instead of shifting every later movement by one.
+instead of shifting every later movement by one — the movement keeps its name,
+its translation and its listening notes, which are true whatever this transfer's
+timing says. The band then **declines to draw** that movement on the rule
+(`surround.movements.unplaceable`) rather than anchoring it to second zero, so
+one bad entry costs a segment and never an out-of-order rail.
+
+A first movement that starts late — a transfer that opens on the conductor's
+walk-on, applause and a settling hall, `starts: [45, …]` — is a supported and
+expected recording; so is the applause after the last chord, which `musicEndsAt`
+puts outside every movement. **Nothing sounding is a designed state, not a gap.**
+In it the rail draws every movement as still to come (before the first) or as
+played (after the last), no segment carries the sounding state, the bond is out
+on both halves at once, and the NOW register is blank — no movement name, no
+borrowed fact. It borrows nothing because that register is about what is playing,
+and nothing is. The band does not change height for it: every box in it is
+reserved, so the state is quiet rather than visible as a reflow.
 
 `render: docked` draws into the ticker region. `render: overlay` is reserved for
 phase two (pop-up-video style, over the video) and needs no schema change.
+
+### The presentation definition
+
+`_surrounds/<id>.yml` — where the chrome goes, for every recording that names it.
+It says nothing about any particular piece; it is the layout the corpus is poured
+into. The shipped one:
+
+```yaml
+id: concert-hall
+regions:
+  top:
+    module: work-placard
+  right:                                # width/side ride the FIRST entry
+    - module: composer-card
+      width: "33%"
+      side: left
+    - module: place-carousel            # no height: both rail regions split evenly
+  bottom:
+    - { module: movement-map, height: 64 }
+    - { module: cue-ticker, height: fill, collapse: first }
+collapse:
+  footerFloor: 90
+band:
+  nowSide: right                        # right | left | dynamic
+  nowHeading: auto                      # auto | always | never
+  railDensity: names                    # names | bars
+```
+
+A slot takes either one module or a list of them. `height` is pixels, or `fill`
+for the region that claims the band's slack. `collapse: first` marks the region
+dropped when the whole band falls under `collapse.footerFloor`. A module in a
+slot it was not registered for still renders and logs
+`surround.module.misplaced`.
+
+`band:` is the third thing a definition says about a frame, beside `regions` and
+`collapse` — how the listening band and the movement rail are laid out relative
+to each other. Every key defaults, and an unauthored, misspelled or wrong-typed
+value degrades to its default rather than reaching a module.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `band.nowSide` | `right` | Which half of the band carries the NOW register. `dynamic` follows the playhead — the register sits on the same side of the band as the sounding segment, so the bond joining them stays short — and swaps once, at half way, with hysteresis so a scrub cannot flap it. |
+| `band.nowHeading` | `auto` | Whether the NOW register prints the sounding movement's name. `auto` prints it exactly when the rail does not, because the rail's own names are that heading; `always` and `never` override. |
+| `band.railDensity` | `names` | What the rail prints. `names` is the shipped rail; `bars` is the rule, its barlines and the playhead with no type under them — for a band too short to carry names, and what makes `nowHeading: auto` resolve the other way. |
 
 ### How the two resolve
 
@@ -391,7 +465,7 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | Event | Meaning |
 |---|---|
 | `surround.sidecar.invalid` | Malformed YAML or a missing required key in a performance sidecar. Carries `file`, one `reason`, and the full `reasons` list so a whole file is fixable in one pass. Blocking reasons: `yaml-unparseable`, `not-a-mapping`, `missing-surround`, `missing-work`, `missing-match`, `match-not-a-mapping`, `missing-match-contentId`. Soft ones (the sidecar still loads): `missing-match-title`, `starts-not-a-list`, `starts-entry-invalid`, `cues-not-a-list`, `composer-not-a-mapping`, `piece-not-a-mapping`. |
-| `surround.work.missing` | The sidecar's `work:` ref names no file in the corpus. Names the ref and the file; the sidecar is excluded. Usually a typo in the slug or a work file that never got written. |
+| `surround.work.missing` | The sidecar's `work:` ref names no file in the corpus. The sidecar is excluded. Carries the ref, the sidecar `file`, and `expected` — the corpus path that was looked for — so the fix is either to create that file or to correct the slug, without re-deriving the path. Usually a typo, or a work file that never got written. |
 | `surround.work.invalid` | A **corpus** work file has a present-but-non-array `movements` or `facts` — a mapping written where a list belongs. Warn and continue: the key is coerced to empty and the work still indexes. |
 | `surround.starts.mismatch` | `starts` length ≠ movement count. The sidecar still resolves; the unpaired movements get no timing. Does not fire when there are no `starts` at all — a work whose timings have not been derived yet is a normal state, not an error. |
 | `surround.definition.missing` | The `surround:` id has no file in `_surrounds/`. The piece is excluded rather than shipping half a payload. |
@@ -400,8 +474,84 @@ curl -s https://logs.kckern.net/select/logsql/query \
 | `surround.match.rebound` | A rescan invalidated a contentId and the title rebound it. Fix the id in the named file. |
 | `surround.match.ambiguous` | The title lane matched more than one sidecar at lookup time, so the store refused. Names the live title and every candidate file. |
 | `surround.lookup.miss` | An item played and nothing matched — the first thing to check when a surround doesn't appear. |
+| `surround.movements.unplaceable` | The rail declined to draw one or more movements: this recording gave them no usable start, or a start that runs backwards. Names how many were authored, how many were placed, and which numerals were dropped. Always paired with a `starts-entry-invalid` or `starts.mismatch` from the store — this one says what the screen did about it. |
+| `surround.module.missing` | A definition names a module the registry does not have. The region renders empty and the rest of the frame is unaffected — usually a typo in `_surrounds/`. |
+| `surround.module.misplaced` | A module is authored into a slot it was not registered for (a rail module in the band). It still renders; the warn names the slot and the slots the module declared. |
 
 ---
+
+## Modules
+
+The `concert-hall` definition's regions resolve to named modules from
+`SURROUND_BUILTIN_MODULES` (`frontend/src/modules/Surround/builtins.js`):
+
+| Module | Region | Draws |
+|---|---|---|
+| `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
+| `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
+| `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
+| `country-map` | right, bottom | The regional map component itself (see below). |
+| `movement-map` | bottom | The engraved-score progress band, with each movement's translation glossed under its name. |
+| `cue-ticker` | bottom | The docked ticker: the playing movement's `listen` notes on one side, cues and facts on the other. |
+
+### The band's notes are never cut
+
+There is no ellipsis in the listening band, at any screen size, ever. A television
+has no "read more", no scroll and no pointer, so a note that stops mid-sentence is
+a claim the viewer cannot complete.
+
+The note's box is whatever vertical run its register has left over — a constant,
+because it does not depend on which note is showing — and the TYPE is fitted to
+the text by measurement. The ladder, in order: tighten the leading toward its
+floor, then step the size down toward its floor. Both floors are derived against
+the vendored face's own metrics and neither is crossed. The fit is solved once per
+piece, against every string either register can ever show (all the work's facts,
+every placed movement's `listen` notes, every docked cue), so it cannot change at
+a movement boundary and the two registers are always set in one size.
+
+| Bound | Value | Why |
+|---|---|---|
+| Prose size floor | `0.88rem` | The frame's ten-foot floor for LABELS is `0.72rem`; a label is a short tracked small-cap string read as a shape, and continuous prose is read glyph by glyph. EB Garamond's x-height is 0.42em, so this buys 5.91px of x-height against the label floor's 4.84px on a fleet running at device pixel ratio 1. |
+| Prose size ceiling | `1.5rem` | Where a programme note starts competing with the work's own title on the plate. |
+| Leading floor | `1.25` | EB Garamond's ink extent is exactly 1.00em ascender-to-descender, so this leaves a quarter of the type size of clear air between lines — 80% of what the face's own `line-height: normal` (1.31) reserves. Below it the failure is line tracking at distance, not collision. |
+| Leading, loose | `1.35` | What the band is set at wherever it can afford it. |
+
+**A note that cannot be set whole at both floors is an authoring failure, not a
+render problem.** It is dropped from the rotation and logged as
+`surround.note.unfittable` with the register, the character count, the character
+budget and the measured overflow — everything needed to shorten it. The band shows
+only the notes it can show whole; it never truncates one and never sets one below
+the floors. Author facts to the budget of the smallest band they must appear on.
+
+### The bond, and the band's two design rules
+
+The sounding movement's panel on the rail, a thin waist along the band's seam, and
+the NOW register's panel are ONE shape in one colour — that is what lets the
+register stop reprinting the movement name the rail set six inches above it. The
+waist spans the HULL of the segment and the panel, so the panel's whole top edge
+and the segment's whole bottom edge are both welded along a real interval; the
+parts never meet at a corner. When the segment already sits over the panel the
+waist collapses onto it and the two simply merge.
+
+- **Borders: nothing in the band is edged.** The two registers are divided by the
+  bond's own silhouette — a lit ground against an unlit one — not by a rule drawn
+  on it. The score's barlines and the frame's region seams are not borders.
+- **Corners: one radius token.** Every corner on the outside of the bond's
+  silhouette carries it; every corner where two of its parts weld is square, so
+  the joins are invisible. Nothing else in the band is rounded.
+
+The whole shape moves on ONE clock: the segment widths, the playhead, the bond and
+its waist are all published from a single interpolated vector in a single render,
+so a movement boundary is one move rather than a resize followed by a slide. Under
+`prefers-reduced-motion` the vector commits in one frame.
+
+The `concert-hall` definition authors `place-carousel`, not `country-map`, in the
+rail: the map is one of the carousel's four slides, so a piece's regional map and
+its city photograph share one slot and one dwell cycle instead of each getting a
+cramped half-column. The `country-map` registration stays live — it is a
+legitimate module for any definition that wants a bare, non-cycling map in a
+region of its own, and `place-carousel` shares its payload-to-props step
+(`mapPinFrom`) rather than re-deriving the pin.
 
 ## The country map
 

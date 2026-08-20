@@ -12,10 +12,17 @@
 // A composer with no `map` block renders nothing at all: no element, and no
 // geodata request either, so an unmapped composer costs nothing.
 //
-// PLACEMENT CONSTRAINT: the SVG is fluid, but `CountryMap` sizes its city label
-// in the view units implied by RENDER_W x RENDER_H (~420 x 260). Painted much
-// narrower than the rail it was drawn for, that label falls through the design's
-// 0.72rem ten-foot floor. Give this module roughly rail width or more.
+// STANDING AS A MODULE. `place-carousel` is where the concert-hall definition
+// puts the map from wave 3 on — the map is one of the carousel's slides. This
+// module stays registered under `country-map` regardless: a definition that
+// wants a bare, non-cycling map in a region of its own is a legitimate thing to
+// author, and the registration costs one line. The two share the payload mapping
+// below rather than each doing their own — `mapPinFrom` is the seam.
+//
+// PLACEMENT CONSTRAINT: the SVG is fluid, but `CountryMap` sizes its labels in
+// the view units implied by RENDER_W x RENDER_H (~420 x 260). Painted much
+// narrower than the rail it was drawn for, the neighbour labels fall through the
+// design's 0.72rem ten-foot floor. Give this module roughly rail width or more.
 
 import React, { useMemo } from 'react';
 import PropTypes from 'prop-types';
@@ -25,6 +32,24 @@ import CountryMap from '../map/CountryMap.jsx';
 function coord(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The surround payload -> `CountryMap` props, or null when there is no map to
+ * draw. Exported because `PlaceCarousel` needs exactly this decision — "is there
+ * a map here, and what is it of" — and two copies of it would be two places for
+ * a payload change to have to land.
+ */
+export function mapPinFrom(data) {
+  const map = data?.composer?.map ?? null;
+  const country = typeof map?.country === 'string' && map.country.trim() ? map.country.trim() : null;
+  if (!country) return null;
+  return {
+    country,
+    city: typeof map?.city === 'string' && map.city.trim() ? map.city.trim() : null,
+    lat: coord(map?.lat),
+    lon: coord(map?.lon),
+  };
 }
 
 export default function CountryMapModule({
@@ -41,24 +66,22 @@ export default function CountryMapModule({
   region = null,
   logger = null,
 }) {
-  const map = data?.composer?.map ?? null;
-  const country = typeof map?.country === 'string' && map.country.trim() ? map.country : null;
-
-  const pin = useMemo(() => ({
-    city: typeof map?.city === 'string' && map.city.trim() ? map.city : null,
-    lat: coord(map?.lat),
-    lon: coord(map?.lon),
-  }), [map]);
+  const pin = useMemo(() => mapPinFrom(data), [data]);
 
   // Nothing authored: an empty slot, per the surround quality floor.
-  if (!country) return null;
+  if (!pin) return null;
 
   return (
     <CountryMap
-      country={country}
+      country={pin.country}
       city={pin.city}
       lat={pin.lat}
       lon={pin.lon}
+      /* A bare map in a region of its own is the ONLY map that item gets, so it
+         carries the star: "where the composer worked" has to point somewhere.
+         The place carousel draws two maps and splits the question in half, so
+         its regional slide takes the preset's answer (no marker) instead. */
+      showCity
       logger={logger}
     />
   );

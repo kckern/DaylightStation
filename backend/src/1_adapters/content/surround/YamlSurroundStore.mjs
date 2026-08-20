@@ -1,5 +1,6 @@
 // backend/src/1_adapters/content/surround/YamlSurroundStore.mjs
 import path from 'path';
+import { realpathSync } from 'node:fs';
 import {
   dirExists,
   getStats,
@@ -20,13 +21,6 @@ const COMPOSER_FILE = '_composer';
 // lookups are a handful an hour, not a second, so the walk is free; the window
 // exists only so a burst of lookups around one play does not repeat it.
 const FRESHNESS_WINDOW_MS = 2000;
-// How many grouping folders may sit between a domain and a composer. The corpus
-// files composers under one period folder (`5_romantic/brahms/`); the allowance
-// is larger so a future split (by period, then by nationality) does not need a
-// code change, but bounded so a symlink loop or a stray deep tree cannot walk
-// forever at index time.
-const MAX_GROUPING_DEPTH = 4;
-
 const isReserved = (name) => name.startsWith('_');
 // Titles are compared on letters and digits only. Everything else — guillemets
 // (»«), interpuncts (∙), colons, hyphens, whitespace runs — is separator noise
@@ -47,7 +41,10 @@ const isPresent = (v) => v !== undefined && v !== null;
 // An allowlist, so it must be kept in sync with the corpus schema: a field
 // added to a library work YAML and not added here never reaches the payload,
 // and the only symptom is the region rendering without it.
-const PIECE_FIELDS = ['title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
+// `short_title` is the work's own alternate name — "Beethoven's Third Symphony"
+// beside a `title` of `Symphony No. 3 in E-flat major, "Eroica"`. It is optional:
+// the band renders no standing label when it is absent.
+const PIECE_FIELDS = ['title', 'short_title', 'opus', 'composed', 'year', 'period', 'period_note', 'city', 'premiered'];
 
 /**
  * Seconds between a movement's notes when its end is unknown — the last movement
@@ -253,19 +250,28 @@ export class YamlSurroundStore extends ISurroundStore {
       consider(path.join(definitionsDir, file));
     }
 
-    consider(this.libraryDir);
-    for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
-      const domainDir = path.join(this.libraryDir, domain);
-      consider(domainDir);
-      // Same recursive discovery the index uses, so adding or removing a grouping
-      // folder registers as a change rather than leaving a stale index behind.
-      for (const { dir: composerDir } of this.#composerDirs(domainDir)) {
-        consider(composerDir);
-        for (const file of listYamlFiles(composerDir, { stripExtension: false })) {
-          consider(path.join(composerDir, file));
-        }
+    // Must descend exactly as far as #loadLibraryDir does. When this walk was
+    // hard-coded to domain/composer and the corpus grew an era level, editing a
+    // work file went unnoticed: the loader read the new corpus but was never
+    // asked to, so authoring silently required a restart. A directory's own
+    // mtime does not move when a file inside it is rewritten, so stopping short
+    // of the files is the same as not watching at all.
+    const seen = new Set();
+    const descend = (dir) => {
+      let real;
+      try { real = realpathSync(dir); } catch { real = dir; }
+      if (seen.has(real)) return;
+      seen.add(real);
+
+      consider(dir);
+      for (const file of listYamlFiles(dir, { stripExtension: false })) {
+        consider(path.join(dir, file));
       }
-    }
+      for (const child of listDirs(dir).filter((d) => !isReserved(d))) {
+        descend(path.join(dir, child));
+      }
+    };
+    descend(this.libraryDir);
 
     for (const domain of listDirs(this.rootDir).filter((d) => !isReserved(d))) {
       const domainDir = path.join(this.rootDir, domain);
@@ -433,97 +439,94 @@ export class YamlSurroundStore extends ISurroundStore {
    * @returns {{ composers: Map<string, Object>, works: Map<string, Object> }}
    * @private
    */
-  /**
-   * Every composer directory under a domain, at any depth.
-   *
-   * A composer directory is one that holds YAML; a grouping folder holds only
-   * more directories. Testing for `_composer.yml` would be the obvious rule and is
-   * wrong — composer identity is optional, and a folder of works with no
-   * `_composer.yml` is legitimate (the payload simply carries no composer block).
-   *
-   * Anything above a composer folder carries no meaning for resolution: `work:`
-   * refs are keyed `<composer>/<work>`, so filing Brahms under `5_romantic/` or
-   * promoting him to `0_flagship/` breaks no sidecar. Keying on the basename
-   * rather than the path is what makes the shelving cosmetic — reorganize freely;
-   * the only name that must stay stable is the composer folder's own.
-   *
-   * @param {string} domainDir
-   * @returns {Array<{slug: string, dir: string, rel: string}>} rel is relative to domainDir
-   * @private
-   */
-  #composerDirs(domainDir) {
-    const found = [];
-    const walk = (dir, rel, depth) => {
-      for (const name of listDirs(dir).filter((d) => !isReserved(d))) {
-        const child = path.join(dir, name);
-        const childRel = rel ? `${rel}/${name}` : name;
-        if (listYamlFiles(child, { stripExtension: false }).length > 0) {
-          found.push({ slug: name, dir: child, rel: childRel });
-        } else if (depth < MAX_GROUPING_DEPTH) {
-          walk(child, childRel, depth + 1);
-        }
-      }
-    };
-    walk(domainDir, '', 0);
-    return found;
-  }
-
   #loadLibrary() {
     const composers = new Map();
     const works = new Map();
     if (!dirExists(this.libraryDir)) return { composers, works };
-    const claimedBySlug = new Map();
-
+    // Seen real paths, not joined ones: `listDirs` resolves symlinks, so a loop
+    // (`classical/self -> classical/`, one mistyped `ln -s` during a reorg) would
+    // otherwise recurse until the stack gives out and take the backend with it.
+    const seen = new Set();
     for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
-      const domainDir = path.join(this.libraryDir, domain);
-
-      for (const { slug: composer, dir: composerDir, rel } of this.#composerDirs(domainDir)) {
-        // Two folders claiming one slug would silently merge into whichever the
-        // walk reaches last, so the loser's works vanish with no symptom but a
-        // short index. Name both.
-        const prior = claimedBySlug.get(composer);
-        if (prior) {
-          this.logger?.warn?.('surround.composer.duplicate', {
-            composer, kept: prior, ignored: path.join(domain, rel)
-          });
-        } else {
-          claimedBySlug.set(composer, path.join(domain, rel));
-        }
-
-        const composerBase = loadYamlFromPath(path.join(composerDir, `${COMPOSER_FILE}.yml`));
-        if (isPlainObject(composerBase)) composers.set(composer, composerBase);
-
-        const files = listYamlFiles(composerDir, { stripExtension: false }).filter((f) => !isReserved(f));
-        for (const file of files) {
-          const work = loadYamlFromPath(path.join(composerDir, file));
-          if (!isPlainObject(work)) continue;
-
-          // The corpus gets the same visibility a sidecar gets. `asArray` below
-          // flattens a mapping written where a list belongs, and without this the
-          // author's only symptom is a movement map that renders empty. Warn and
-          // keep going: a work with one bad list is still worth indexing.
-          const reasons = [];
-          for (const key of ['movements', 'facts']) {
-            if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
-          }
-          if (reasons.length) {
-            // Relative to libraryDir, because that is how the author knows the
-            // file — so the grouping folders are in the path even though they
-            // play no part in the key.
-            this.logger?.warn?.('surround.work.invalid', {
-              file: path.join(domain, rel, file),
-              reason: reasons[0],
-              reasons
-            });
-          }
-
-          const slug = file.replace(/\.(yml|yaml)$/, '');
-          works.set(`${composer}/${slug}`, work);
-        }
-      }
+      this.#loadLibraryDir(path.join(this.libraryDir, domain), domain, composers, works, seen);
     }
 
     return { composers, works };
+  }
+
+  /**
+   * Index one directory of the corpus, then descend into its subdirectories.
+   *
+   * A work's identity is `<composer>/<work-slug>` and nothing else. How the
+   * corpus files the composer above that — flat under the domain, or grouped by
+   * era as `classical/5_romantic/chopin/` — is a filing convenience the author
+   * may change at will, so the walk must not encode a depth. The directory that
+   * directly contains a work file names its composer; every directory above it
+   * is grouping. A regrouping that once emptied the whole index (every sidecar
+   * rejected `surround.work.missing`) is then a no-op.
+   *
+   * @param {string} dir - Directory to index.
+   * @param {string} rel - Path of `dir` relative to libraryDir, for warnings.
+   * @param {Map<string, Object>} composers - Accumulator, keyed by composer.
+   * @param {Map<string, Object>} works - Accumulator, keyed `<composer>/<slug>`.
+   * @param {Set<string>} seen - Real paths already indexed, to break symlink cycles.
+   * @private
+   */
+  #loadLibraryDir(dir, rel, composers, works, seen) {
+    // An unreadable or vanished directory is not a cycle — fall back to the
+    // joined path so the walk still terminates on it rather than throwing.
+    let real;
+    try { real = realpathSync(dir); } catch { real = dir; }
+    if (seen.has(real)) return;
+    seen.add(real);
+
+    const composer = path.basename(dir);
+    const composerBase = loadYamlFromPath(path.join(dir, `${COMPOSER_FILE}.yml`));
+    if (isPlainObject(composerBase)) {
+      if (composers.has(composer)) {
+        this.logger?.warn?.('surround.composer.duplicate', { composer, file: path.join(rel, `${COMPOSER_FILE}.yml`) });
+      }
+      composers.set(composer, composerBase);
+    }
+
+    const files = listYamlFiles(dir, { stripExtension: false }).filter((f) => !isReserved(f));
+    for (const file of files) {
+      const work = loadYamlFromPath(path.join(dir, file));
+      if (!isPlainObject(work)) continue;
+
+      // The corpus gets the same visibility a sidecar gets. `asArray` below
+      // flattens a mapping written where a list belongs, and without this the
+      // author's only symptom is a movement map that renders empty. Warn and
+      // keep going: a work with one bad list is still worth indexing.
+      const reasons = [];
+      for (const key of ['movements', 'facts']) {
+        if (isPresent(work[key]) && !Array.isArray(work[key])) reasons.push(`${key}-not-a-list`);
+      }
+      if (reasons.length) {
+        // Relative to libraryDir, because that is how the author knows the file.
+        this.logger?.warn?.('surround.work.invalid', {
+          file: path.join(rel, file),
+          reason: reasons[0],
+          reasons
+        });
+      }
+
+      // Identity is composer + slug, so two composer folders sharing a basename
+      // anywhere in the tree address the same work. Last-write-wins is how this
+      // has always behaved, but a depth-free walk makes the collision reachable
+      // from folders that never used to sit at the same level — so name it
+      // rather than let a work silently become a different composer's.
+      const slug = file.replace(/\.(yml|yaml)$/, '');
+      const key = `${composer}/${slug}`;
+      if (works.has(key)) {
+        this.logger?.warn?.('surround.work.duplicate', { work: key, file: path.join(rel, file) });
+      }
+      works.set(key, work);
+    }
+
+    for (const child of listDirs(dir).filter((d) => !isReserved(d))) {
+      this.#loadLibraryDir(path.join(dir, child), path.join(rel, child), composers, works, seen);
+    }
   }
 
   /**
@@ -615,7 +618,18 @@ export class YamlSurroundStore extends ISurroundStore {
 
     const work = library.works.get(doc.work);
     if (!work) {
-      this.logger?.warn?.('surround.work.missing', { work: doc.work, file });
+      // Both halves of the miss, because the two trees are edited separately and
+      // the reference alone does not say where the corpus was searched. `expected`
+      // is a glob, not a path: #loadLibraryDir keys a work by its composer folder
+      // at whatever depth it sits, so the corpus may file it under any number of
+      // grouping directories. Naming a single path here would send an author to
+      // create a duplicate one level up from the file they already have.
+      const [composer, slug] = doc.work.split('/');
+      this.logger?.warn?.('surround.work.missing', {
+        work: doc.work,
+        expected: path.join(domain, '**', composer ?? '', `${slug ?? ''}.yml`),
+        file
+      });
       return null;
     }
     // The composer slug is the path segment before the work slug — the same
@@ -679,7 +693,16 @@ export class YamlSurroundStore extends ISurroundStore {
       normalized: normalizeTitle(doc.match.title),
       payload: {
         id: doc.surround,
-        definition: { regions: definition.regions, collapse: definition.collapse },
+        // `band` joins `regions`/`collapse` as the third thing a definition
+        // says about a frame: which side the NOW register sits on, whether it
+        // prints a movement heading, and what density the rail is in (see
+        // frontend `modules/Surround/band.js`, which resolves and defaults
+        // every one of them, so an unauthored `band` is the normal case).
+        definition: {
+          regions: definition.regions,
+          collapse: definition.collapse,
+          band: definition.band
+        },
         piece,
         movements: resolvedMovements,
         cues,

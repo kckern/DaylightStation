@@ -27,12 +27,27 @@ function InterceptorRegistrar({ handled }) {
 
 // Mock MenuStack and Player to avoid importing their heavy dependency trees
 vi.mock('../../modules/Menu/MenuStack.jsx', () => ({
-  default: (props) => <div data-testid="menu-stack" data-menu={props.rootMenu}>MenuStack</div>,
+  // `rootMenu` is a legacy menu KEY (string) or a content id (object with
+  // `contentId`) — Menu.jsx picks a different endpoint per shape, so the mock
+  // exposes both rather than stringifying an object into "[object Object]".
+  default: (props) => (
+    <div
+      data-testid="menu-stack"
+      data-menu={typeof props.rootMenu === 'string' ? props.rootMenu : undefined}
+      data-menu-contentid={props.rootMenu?.contentId}
+    >
+      MenuStack
+    </div>
+  ),
 }));
 
 vi.mock('../../modules/Player/Player.jsx', () => ({
   default: React.forwardRef((props, ref) => (
-    <div data-testid="player" data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}>Player</div>
+    <div
+      data-testid="player"
+      data-play={typeof props.play === 'object' ? JSON.stringify(props.play) : props.play}
+      data-queue={typeof props.queue === 'object' ? JSON.stringify(props.queue) : props.queue}
+    >Player</div>
   )),
 }));
 
@@ -71,6 +86,70 @@ describe('ScreenActionHandler', () => {
 
     expect(getByTestId('menu-stack')).toBeTruthy();
     expect(getByTestId('menu-stack').dataset.menu).toBe('music');
+  });
+
+  // A MenuStack overlay RENDERS the shared MenuNavigation stack, and so does
+  // the screen's own menu widget. Unless the overlay claims the stack, both
+  // render it — and a menu selection then mounts the Player TWICE (two unmuted
+  // videos in sync, two transcode sessions). The claim is what MenuWidget reads
+  // to yield, so it has to be made at every site that opens a MenuStack.
+  it('claims the nav stack for the MenuStack it opens', () => {
+    function OwnershipProbe() {
+      const { overlayOwnsNavStack } = useScreenOverlay();
+      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <OwnershipProbe />
+      </ScreenOverlayProvider>
+    );
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'music' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('true');
+  });
+
+  // A cast Player is fullscreen but renders nothing from the nav stack, so it
+  // must NOT make the menu widget drop whatever it is showing underneath.
+  it('does not claim the nav stack for a Player overlay', () => {
+    function OwnershipProbe() {
+      const { overlayOwnsNavStack } = useScreenOverlay();
+      return <span data-testid="owns-nav-stack">{String(overlayOwnsNavStack)}</span>;
+    }
+
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+        <OwnershipProbe />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('media:play', { contentId: 'plex:12345' }));
+
+    expect(getByTestId('owns-nav-stack').textContent).toBe('false');
+  });
+
+  // A source-prefixed menuId is a CONTENT ID, not a watchlist key. Handed to
+  // Menu.jsx as a bare string it resolves `api/v1/list/watchlist/plex:663144`,
+  // which answers 200 with `items: []` — the menu opens empty and the trigger
+  // looks like it did nothing. `?list=`, NFC triggers and WS dispatch all mint
+  // this shape (see `toContentId` in parseAutoplayParams).
+  it('opens a source-prefixed menuId as a content id, not a watchlist key', () => {
+    const { getByTestId } = render(
+      <ScreenOverlayProvider>
+        <ScreenActionHandler />
+      </ScreenOverlayProvider>
+    );
+
+    act(() => getActionBus().emit('menu:open', { menuId: 'plex:663144' }));
+
+    const stack = getByTestId('menu-stack');
+    expect(stack.dataset.menuContentid).toBe('plex:663144');
+    expect(stack.dataset.menu).toBeUndefined();
   });
 
   it('opens Player overlay on media:play action', () => {
@@ -534,6 +613,71 @@ describe('ScreenActionHandler', () => {
       expect(keydownCalls).toHaveLength(0);
 
       dispatchSpy.mockRestore();
+    });
+
+    it('threads shader (and other config) through the secondary media:queue fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:queue',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const queue = JSON.parse(player.dataset.queue);
+      expect(queue.shader).toBe('minimal');
+      expect(queue.contentId).toBe('morning-program');
+    });
+
+    it('threads shader (and other config) through the secondary media:play fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: {
+            action: 'media:play',
+            payload: { contentId: 'morning-program', shader: 'minimal', shuffle: true },
+          },
+        });
+      });
+
+      const player = getByTestId('player');
+      const play = JSON.parse(player.dataset.play);
+      expect(play.shader).toBe('minimal');
+      expect(play.contentId).toBe('morning-program');
+    });
+
+    it('opens a source-prefixed menuId as a content id via the secondary menu:open fallback', () => {
+      const { getByTestId } = render(
+        <ScreenOverlayProvider>
+          <ScreenActionHandler actions={{ playback: { when_idle: 'secondary' } }} />
+        </ScreenOverlayProvider>
+      );
+
+      act(() => {
+        getActionBus().emit('media:playback', {
+          command: 'play',
+          secondary: { action: 'menu:open', payload: { menuId: 'plex:663144' } },
+        });
+      });
+
+      const stack = getByTestId('menu-stack');
+      expect(stack.dataset.menuContentid).toBe('plex:663144');
+      expect(stack.dataset.menu).toBeUndefined();
     });
 
     it('dispatches keydown normally when when_idle is "dispatch"', () => {

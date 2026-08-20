@@ -1,14 +1,49 @@
 /**
- * ComposerCard — the identity panel in the full-height rail.
+ * ComposerCard — the identity panel in the rail.
  *
- * One plate frame with a brass hairline around the portrait, the composer above
- * a brass rule and the piece below it. Labels are letterspaced small caps of the
- * display face. No drop shadow per element, no second plate, no third typeface.
+ * WAVE 3 ANATOMY. Two zones and no more:
+ *
+ *   HEADER ROW   portrait (in its parchment mat) LEFT at 45% of the card's
+ *                content width; the brass nameplate carrying the name AND the
+ *                dates, engraved together — museum convention — with the
+ *                birthplace stacked under it in parchment, in the column RIGHT.
+ *   FACT ZONE    the dissolving bio fact, CENTRED in the height the header
+ *                leaves (`margin: auto 0`), not parked at the foot.
+ *
+ * Why side by side. Stacked, the portrait and the name were two panels that
+ * happened to be adjacent; beside each other they read as one object — a mounted
+ * print with its plate next to it, which is what a programme's composer entry
+ * actually looks like. It also buys the fact the whole middle of the card.
+ *
+ * The city photo is GONE from this card. Place imagery — the city and the map —
+ * belongs to `place-carousel` in the rail region below; a card holding both the
+ * person and the place could give neither of them a size.
+ *
+ * The rail's ground is dark oxblood (SurroundFrame re-maps the ink tokens for
+ * `--right`), so this card reads as brass and lit paper on a dark wall. It does
+ * NOT re-map anything itself: it keeps reading `var(--ink)` / `var(--ink-soft)`
+ * and gets parchment for free. `--programme` is deliberately left alone by that
+ * re-map, which is what lets the portrait mat stay real PAPER — the printed
+ * programme survives exactly there.
+ *
+ * Hard content budget: this card once measured its bio facts off-screen (bottom
+ * at 742px on a 720px viewport). Every text run that can grow unboundedly — a
+ * long name, a long birthplace — is capped at its own element; the card's
+ * `overflow: hidden` is the last resort, not the budget.
  */
+
+/* The frame's shared literals - see `_tokens.scss`. */
+@use "../tokens" as *;
 
 .surround-composer-card {
   height: 100%;
-  padding: 1.15rem 1.1rem 1.3rem;
+  /* A SIZE CONTAINER (design wave 5), so the fact below can size itself against
+     the card it was actually given. Safe: the card's height is `100%` of a rail
+     region whose own height is definite, so nothing about this box was ever
+     decided by its contents — size containment takes away a contribution it
+     never made. */
+  container-type: size;
+  padding: 1rem 1rem 1.1rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -17,122 +52,352 @@
   color: var(--ink, #2a1d07);
 }
 
-/* The single plate: a thin brass hairline around the portrait, seated on paper. */
+/* ---------------------------------------------------------------------------
+   HEADER ROW — picture and plate, side by side.
+   `align-items: center`, measured rather than assumed: at rail width the
+   portrait runs ~360px tall and the name block ~80px, so top-aligning them
+   leaves a 280px hole under the plate and the row reads as a picture with a
+   label stuck to its top corner. Centred, the plate sits at the painting's
+   eye line, which is where a wall label goes.
+   --------------------------------------------------------------------------- */
+.surround-composer-card__header {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+/* The COLUMN owns the 45% share of the header row — a real wrapper element,
+   not a property shared onto the mat. Fix round 1: the mat used to carry
+   `flex: 0 0 45%; max-width: 45%` itself, which — because a flex item's
+   flex-basis wins over its own `width` — made the MAT exactly 45% wide no
+   matter what picture was inside it. A 2:3 portrait then letterboxed inside
+   that 45%-wide slab: the "pool of paper" wave 2 removed, back by a different
+   route. This column is the only box that knows about 45%; the mat below it
+   knows nothing about the rail's width at all. */
+.surround-composer-card__portrait-col {
+  flex: 0 0 45%;
+  max-width: 45%;
+  min-width: 0;
+}
+
+/* The mat HUGS the picture (`width: fit-content`) inside the 45% column above.
+   Two separate jobs, deliberately on two separate elements: the COLUMN owns the
+   45% share of the rail, the MAT owns "no pool of paper around a contained
+   picture". A tall (2:3) portrait therefore gets a snug mat sized to its own
+   width, not a mat stretched to the column's full 45%. */
+/* THE MAT IS DARK (design wave 4). It used to be cream paper under a brass
+   hairline, and on the maroon rail that read as a white border — the brightest
+   mark on the screen, framing the picture by shouting over it. It is now the
+   frame's `--mat`: near-black warm brown, with `--mat-edge` as the 1px
+   definition line so the portrait cannot bleed into the panel. Same job, no
+   glare. (`--programme` still grounds the programme PANELS; it just no longer
+   grounds any picture.) */
 .surround-composer-card__plate {
   position: relative;
-  margin-bottom: 0.85rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
   padding: 3px;
-  background: var(--programme, #efe6d2);
+  box-sizing: border-box;
+  background: var(--mat, #1d0f11);
   box-shadow:
-    inset 0 0 0 1px var(--brass, #c79a3e),
-    0 1px 2px rgba(20, 16, 12, 0.28);
+    inset 0 0 0 1px var(--mat-edge, rgba(8, 5, 5, 0.9)),
+    0 1px 3px rgba(0, 0, 0, 0.45);
   line-height: 0;
 }
 
+/* NEVER CROPPED. `object-fit: cover` was cutting the top off a painting to fit
+   a box — a portrait is a picture of a person, and a rail is not a reason to
+   guillotine one. The image keeps its whole aspect ratio: it fills the column's
+   width, and where the height cap bites it shrinks INSIDE the mat (contain,
+   centred) and the paper shows around it. Shrink, never crop.
+   The cap went 21vh -> 34vh in wave 3: the city photo left the card, and the
+   shipped portraits are 4:5, so at 45% of a 33% rail the WIDTH is what sizes
+   them and this cap only guards against an unusually tall one. */
 .surround-composer-card__portrait {
   display: block;
   width: 100%;
   height: auto;
+  max-width: 100%;
   max-height: 34vh;
-  object-fit: cover;
-  object-position: top center;
+  margin: 0 auto;
+  object-fit: contain;             /* belt and braces: never distort, never crop */
+  object-position: center;
   filter: saturate(0.92);
 }
 
-.surround-composer-card__name {
-  margin: 0;
-  font-size: 1.7rem;
-  font-weight: 600;
-  line-height: 1.1;
+/* The right column of the header row. `min-width: 0` is what lets the name wrap
+   instead of forcing the row wider than the rail. */
+.surround-composer-card__identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.surround-composer-card__dates {
-  margin: 0.1rem 0 0;
-  font-size: 0.92rem;
+/* Engraved brass nameplate — ArtMode's plaque recipe (ArtMode.css:157-239) at a
+   whisper: same brass photo + gradient + edge sheen, screws omitted (a rail
+   card, not a framed gallery plate). Museum convention (settled 2026-08-19):
+   a plate reads name, THEN dates, both engraved on the metal — the birthplace
+   is the one line that reads better as rail voice below it, in parchment.
+   `width: fit-content` (like the portrait mat above) so the plate hugs its
+   widest line — always the name — rather than stretching to the identity
+   column's full width; the dates ("1678 – 1741") are short and numeric and
+   must never be what sizes the plate. `align-self: center` re-centres it in
+   the column now that it no longer stretches. */
+.surround-composer-card__nameplate {
+  align-self: center;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem 0.45rem;
+  text-align: center;
+  border: 1px solid #5d4514;
+  border-radius: 2px;
+  background-color: #c79a3e;
+  background-image:
+    url('/api/v1/static/img/ui/plaque/brass.jpg'),
+    linear-gradient(180deg, #7a5c1d 0%, #e7c266 16%, #f6e3a0 36%, #d8ad4d 62%, #9a772b 100%);
+  background-size: cover, cover;
+  background-position: center;
+  box-shadow:
+    0 1px 2px rgba(20, 16, 12, 0.4),
+    inset 0 1px 0 rgba(255, 248, 214, 0.85),
+    inset 0 -1px 0 rgba(78, 56, 18, 0.75);
+}
+
+/* Engraved: multiply lets the metal grain show through the letters. Both lines
+   on the plate get it — the name AND the dates now beneath it — so the dates
+   read as more engraving, not a sticker on top of the brass. */
+.surround-composer-card__nameplate .surround-composer-card__name,
+.surround-composer-card__nameplate .surround-composer-card__dates {
+  color: #2a1d07;
+  mix-blend-mode: multiply;
+  text-shadow: 0 1px 0 rgba(255, 248, 220, 0.5);
+}
+
+/* THE NAME USES THE VERTICAL (design wave 4). The plate has a column, not a
+   line: "Antonio" over "Vivaldi" is what an engraved museum plate does, and it
+   is what lets the type be BIG rather than what a single line can afford. So
+   the measure is capped at `12ch` and the name breaks at word boundaries
+   inside it; the plate (`width: fit-content`) then hugs whatever that
+   wrapping produces — narrow and tall instead of wide and thin.
+   Breaking beats shrinking: 1.35rem -> 1.75rem.
+
+   Fix round 1: the cap was originally `5.6em`, tuned against Cormorant
+   Garamond ("Antonio Vivaldi" measures 178px at 1.75rem/600, so 5.6em =
+   156.8px is what stacks it). `em` is fixed by font-SIZE alone, so it does
+   not know the font's own glyph widths — and this family loads via Google
+   Fonts with `display=swap`, so the FALLBACK (Georgia) is what actually
+   paints first. A wider fallback face fits fewer characters in that same
+   physical measure, so a name that wrapped to 3 lines in Cormorant could wrap
+   to 4 in the fallback window and be silently hard-clipped below, no
+   ellipsis, mid-glyph. `ch` is the advance width of the CURRENT font's "0"
+   glyph, so the measure re-derives itself on the font swap instead of staying
+   frozen at Cormorant's width. Headless Chrome measures Cormorant Garamond's
+   "0" at 13px (28px/600), so `12ch` = 156px — within 1px of the `5.6em` it
+   replaces, same stacking, all four names from the harness unchanged. In a
+   wider face, `12ch` is wider too, by the same proportion that face's own
+   characters are wider, which is the graceful-degradation property `em`
+   lacked: measured against DejaVu Serif as a metrics stand-in for Georgia
+   ("0" = 19.5px here, ~50% wider than Cormorant's), "Ludwig van Beethoven"
+   under the OLD `5.6em` already grazes the 3-line ceiling (96.59px of a
+   96.6px cap); under `12ch` (233px measure there) it holds at 2 lines —
+   headroom instead of a coin flip against the clip.
+
+   THREE lines, not two — "Pyotr Ilyich Tchaikovsky" and "Ludwig van Beethoven"
+   want the extra one at this measure, and the ceiling is a real `max-height`
+   rather than `-webkit-line-clamp`. The clamp idiom computes to `flow-root` in
+   current Chromium (wave 2, flag 4) and cannot be relied on for a BOX; the
+   height can. `text-wrap: balance` evens the lines where it is supported and
+   changes nothing where it is not — and it only works at all because this is a
+   normal block now, not a `-webkit-box`. */
+.surround-composer-card__name {
+  margin: 0 auto;
+  display: block;
+  max-width: 12ch;
+  max-height: 3.45em;              /* 3 lines at line-height 1.15 */
+  overflow: hidden;
+  overflow-wrap: break-word;       /* a single unbreakable word still cannot escape */
+  text-wrap: balance;              /* progressive; wraps as before without it */
+  font-size: 1.75rem;
   font-weight: 600;
-  color: var(--ink-soft, #6b6152);
+  line-height: 1.15;
+}
+
+/* Small, engraved, beneath the name — ON the brass now (museum convention),
+   not rail voice. The colour set here is academic: the more specific
+   `.surround-composer-card__nameplate .surround-composer-card__dates` rule
+   above always wins and applies the actual engraved (multiply-blend) colour;
+   this base rule only carries the sizing and spacing. */
+.surround-composer-card__dates {
+  margin: 0.3rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   font-variant-numeric: lining-nums;
 }
 
+/* Birthplace stays OUTSIDE the plate, on the rail ground below it — parchment
+   voice, not engraving. Single line, ellipsized — part of the hard content
+   budget. */
 .surround-composer-card__birthplace {
-  margin: 0.12rem 0 0;
-  font-size: 0.86rem;
+  margin: 0.4rem 0 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--ink-soft, #6b6152);
 }
 
-/* The brass hairline that separates the composer from the piece. */
-.surround-composer-card__rule {
-  width: 100%;
-  height: 1px;
-  margin: 0.85rem 0;
-  border: 0;
-  background: var(--brass, #c79a3e);
-  opacity: 0.85;
-}
+/* THE PERIOD (design wave 6) — the era the work belongs to, in the programme's
+   section-header voice: letterspaced small caps of the display face, the same
+   register the place carousel's labels and the map's country names are set in.
+   One voice, one more volume down.
 
-.surround-composer-card__piece-title {
-  margin: 0 0 0.7rem;
-  font-size: 1.45rem;
+   NOT ON THE BRASS. The plate reads name, then dates, and that is settled
+   (museum convention, wave 4): a museum casts a person's name and their years
+   in metal because those are the record, and it prints everything editorial on
+   the card beside it. An era is a classification — contestable, revisable, and
+   in this frame it is even piece-dependent — so it belongs to the rail's voice,
+   with the birthplace, in parchment.
+
+   IT WRAPS, IT DOES NOT SHRINK. `Classical to Romantic` is 21 tracked
+   characters and the identity column is ~146px at the 960x540 screen-root; at
+   the 0.72rem floor it needs two lines there and one at 1280x720 and above.
+   Wrapping is free (this line is static per item — no reserve law applies, and
+   the fact zone below it is centred by `margin: auto 0`, so a second line
+   simply moves the fact rather than displacing anything), whereas the two
+   alternatives both lose: shrinking breaks the ten-foot floor, and the
+   birthplace's single-line ellipsis would print `CLASSICAL TO ROM…` and hide
+   exactly the half of the answer this wave exists to give. The cap is two
+   lines, which no authored era in the corpus exceeds. */
+.surround-composer-card__period {
+  margin: 0.32rem 0 0;
+  text-align: center;
+  font-size: var(--label-floor, #{$label-floor});   /* the ten-foot floor itself, scaled to this root */
   font-weight: 600;
-  line-height: 1.16;
-}
-
-.surround-composer-card__data {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.surround-composer-card__datum {
-  display: block;
-}
-
-/* Concert-programme section headers: letterspaced small caps of the DISPLAY
-   face. 0.72rem is the 10-foot floor — nothing here goes below it. */
-.surround-composer-card__label {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  line-height: 1.25;
+  max-height: 2.5em;               /* 2 lines at this line-height */
+  overflow: hidden;
+  overflow-wrap: break-word;
+  text-wrap: balance;              /* progressive; wraps as before without it */
   color: var(--ink-soft, #6b6152);
 }
 
-.surround-composer-card__value {
-  margin: 0.05rem 0 0;
-  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.25;
-  color: var(--ink, #2a1d07);
+/* THE LINE — the clamp (fix round 1, review finding M3). Size, position and
+   the two-line CEILING stay on `__period` above; this inner span's only job is
+   truncation, the house pattern also used by the ticker and the era plate's
+   note. Before this, a period longer than two lines was cut by `overflow:
+   hidden` alone wherever the box edge fell — glyph included, no ellipsis —
+   because the outer box had no ellipsis idiom of its own. No authored era in
+   the corpus is known to need a third line, but the box no longer depends on
+   that staying true; it wraps to two and ellipsizes the second only when a
+   longer one arrives. */
+.surround-composer-card__period-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-/* Composer facts — the quietest register in the rail. Body face, ink-soft, at
-   the foot of the card so the composer name and piece title stay dominant.
-   `margin-top: auto` parks it at the bottom of the flex column, which is also
-   why the card looks identical when a composer has no facts at all. */
+/* ---------------------------------------------------------------------------
+   FACT ZONE — centred in whatever height the header leaves.
+   `margin: auto 0` on a flex-column child splits the free space above and below
+   it equally, which is the whole difference between wave 2's "parked at the
+   foot" and wave 3's "middle of the card". It also means a composer with no
+   facts leaves the card looking deliberate rather than half-empty: the zone is
+   not rendered at all, and the header simply sits at the top.
+   --------------------------------------------------------------------------- */
+.surround-composer-card__fact-zone {
+  flex: 0 0 auto;
+  margin: auto 0;
+  width: 100%;
+}
+
 .surround-composer-card__fact-rule {
   width: 100%;
   height: 1px;
-  margin: auto 0 0.6rem;
+  margin: 0 0 0.6rem;
   border: 0;
   background: var(--programme-edge, #ddd0b4);
 }
 
+/* At most three lines, ellipsized — never clipped mid-glyph by the card edge,
+   never pushed off the screen. Part of the hard content budget.
+   RESERVED at those three lines, too: the pool rotates between one-, two- and
+   three-line facts, and sizing the slot to whichever is showing walks the whole
+   middle of the rail up and down every 27 seconds. The reserve is the contract —
+   it is also what lets the fact dissolve through empty ground without the card
+   collapsing into the hole. (Precedent: the piano platform's `pg-slot`.) */
 .surround-composer-card__fact {
   margin: 0;
-  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 0.95rem;
-  font-weight: 500;
+  flex: 0 0 auto;
+  /* TYPE THAT FILLS ITS ROOM (design wave 5). `cqh` is 1% of the CARD's height,
+     which is what the rail actually hands this panel; the fact was set at a flat
+     0.95rem and read as fine print in the tall card a 1080p rail gives it. The
+     clamp's ends are the design's: 0.85rem is the ten-foot floor, 1.35rem is
+     where a bio fact would start out-shouting the composer's own name on the
+     brass above it. Derived in the harness at 960x540 / 1280x720 / 1920x1080. */
+  font-size: clamp(0.85rem, 5.4cqh, 1.35rem);
   line-height: 1.35;
+  /* Exactly three lines: a floor AND a ceiling, so the slot can neither collapse
+     under the flex algorithm nor grow when a longer fact comes round. In `em`,
+     so the reserve tracks the clamp above rather than being re-derived. */
+  min-height: 4.05em;              /* 3 lines at line-height 1.35 */
+  max-height: 4.05em;
+  /* CENTRED IN THE RESERVE. A one- or two-line fact used to hang from the top of
+     a three-line box, leaving the spare line as dead space below it and, once
+     the zone's own `margin: auto` had centred the box, an off-centre text block
+     in a card that looked top-heavy. `grid` + `align-content: center` centres
+     the lines themselves; the `-webkit-box` clamp idiom cannot (it computes to
+     `flow-root` in current Chromium — wave 2, flag 4 — and its `box-pack`
+     alignment goes with it).
+     Fix round 1: wave 5 deleted the clamp here rather than merely disabling it,
+     on the theory that the trade was "cut by overflow instead of ellipsized".
+     Measured against the real corpus that trade was worse than stated: several
+     composer facts overflow this three-line reserve and were cutting mid-word,
+     not at a clean line boundary — `overflow: hidden` alone truncates wherever
+     the box edge happens to fall, glyph included. `display: grid` and
+     `display: -webkit-box` cannot both apply to ONE element (CSS keeps only the
+     last `display`), so the fix is not reviving the clamp here — it is moving
+     it to `.surround-composer-card__fact-line` below, the sole grid item this
+     rule centres. */
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  text-align: center;
+  text-wrap: balance;              /* progressive; wraps as before without it */
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-weight: 500;
   color: var(--ink-soft, #6b6152);
   opacity: 1;
 }
 
 .surround-composer-card__fact--hidden {
   opacity: 0;
+}
+
+/* THE LINE — the clamp, restored (fix round 1). Size and position stay on
+   `__fact` above; this inner span's only job is truncation: wrap to three
+   lines and ellipsize the third only when the fact genuinely needs a fourth.
+   As the sole grid item in `__fact`, `align-content: center` on the parent
+   centres exactly the height this clamp produces. Text styling (alignment,
+   balance, colour, weight, family) is inherited from `__fact`, not repeated
+   here. */
+.surround-composer-card__fact-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {

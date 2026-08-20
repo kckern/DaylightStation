@@ -1,0 +1,81 @@
+/**
+ * The band's shared literals — the values that exist in more than one stylesheet
+ * and MUST be one value.
+ *
+ * The frame publishes both of these as custom properties on the band's region
+ * (`SurroundFrame.scss`), and that is how the modules read them at runtime. What
+ * this file is for is the FALLBACK in each module's `var(…, …)`: those fallbacks
+ * keep a module honest when it is rendered outside the frame, and three hand-
+ * copied hex literals is exactly the drift the token was published to prevent —
+ * the bond stops being one colour the moment one of them is retuned alone.
+ *
+ * So there is one literal per token, here, and everything else interpolates it.
+ */
+
+/**
+ * THE BOND'S GROUND — the sounding segment's panel, the waist that joins them,
+ * and the NOW register's panel, all in one colour. That single colour is the
+ * whole mechanism by which the three read as one shape.
+ *
+ * MAROON, NOT BROWN (design wave 9). It was #241c15, a warm brown a few points
+ * lighter than the band; the user's note was that it read as brown rather than
+ * as house material — "a little less yellow and more tinted towards blue, so it
+ * gives us more of a maroon feel, maybe to match the curtain cues at the top".
+ * Measured in CIELAB against the frame's own palette:
+ *
+ *                       L*      C*     hue     dE00 vs the band's unlit ground
+ *   band (unlit)       6.41    3.40   50.7deg   —
+ *   #241c15 (was)     10.99    6.79   67.8deg   4.20
+ *   #341019 (is)      10.34   19.37    8.4deg   15.10
+ *   rail region       10.88   17.26    9.3deg   —
+ *   velvet (drape)    14.91   29.72   20.8deg   —
+ *
+ * It is the velvet drape's own family (the rail's ground is 9.3deg, the drape's
+ * burgundy 18.8-20.8deg; this sits at 8.4deg between them), it is DARKER than the
+ * rail's ground in L* as asked, and it is three and a half times as distinct from
+ * the band's unlit ground as the brown was — because the separation is now
+ * carried by chroma rather than by half a point of lightness. The lightness step
+ * itself is almost unchanged (contrast ratio 1.081 against the band, from 1.096),
+ * so nothing the mechanism depended on has been traded away, and the parchment
+ * ink on top gains contrast rather than losing it (12.85:1, from 12.66:1) because
+ * the ground is darker.
+ */
+$bond-ground: #341019;
+
+/**
+ * THE BAND'S ONE RADIUS.
+ *
+ * The rule, stated once: every corner on the OUTSIDE of the bond's silhouette
+ * carries this radius; every corner where two of its parts weld is square, so
+ * the joins are invisible; and nothing else in the band is rounded at all. The
+ * bond is the only surface the band has — the registers are divided by its edge,
+ * not by a rule drawn on them (design wave 9, which removed the panel's inset
+ * hairline and the cue accent for exactly that reason).
+ */
+$bond-radius: 5px;
+
+/**
+ * THE TEN-FOOT LABEL FLOOR — the smallest a short, tracked, small-cap string may
+ * be set in anywhere in the frame: the map's place names, the band's standing
+ * labels, the rail's numeral gutter, the period line's era names.
+ *
+ * IT IS A MEASUREMENT NOW, NOT A CONSTANT, and this literal is only the fallback.
+ * `SurroundFrame` measures the screen root it fills and publishes
+ * `--label-floor` from `labelFloorPx` (`fit.js`); every rule below reads that.
+ * The reason is the same one that moved the prose floor in design wave 9b: a
+ * ten-foot floor is an ANGULAR claim, and a rem is not an angle. Every screen in
+ * this fleet is a large television read from across a room, and the living room
+ * lays 960 CSS pixels across a panel slightly LARGER than the office's 1280, so
+ * a flat 0.72rem is bigger in angle there than here. Scaled by the root it is
+ * 0.72rem at the 1280 anchor, 0.54rem at 960 and 1.08rem at 1920 — one apparent
+ * size on every screen.
+ *
+ * 11.52px IS 0.72rem AT THE ANCHOR, which is what a module rendered outside the
+ * frame (a spec, a storybook, a rail on its own) should get: the number the
+ * office screen would give it, never the smallest in the fleet.
+ *
+ * The prose floor is derived from THIS number — plus 22% of x-height — and the
+ * two must scale by one rule or the derivation inverts. They do: `fit.js`
+ * `scaleFloor`.
+ */
+$label-floor: 11.52px;

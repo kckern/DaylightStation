@@ -148,6 +148,144 @@ The full `concierge ask` (streaming agent invocation from the shell) is intentio
 
 ## Existing CLI tools
 
+### Scripture
+
+Scripture work has two distinct sources. Choose deliberately:
+
+1. **DaylightStation readalong corpus** — authoritative text for content
+   authoring in this repository. For the NIrV, read the chapter YAML directly
+   from:
+
+   ```text
+   {dataDir}/content/readalong/scripture/{ot,nt}/nirv/
+   ```
+
+   Filenames are `<first-verse-id>-<book-slug>-<chapter>.yml`; for example,
+   `17656-isaiah-1.yml`. Each row contains the canonical `verse_id`, printed
+   verse number, formatting metadata, and exact translation text. Do not write
+   a prompt or correct answer from memory: open this file and copy the
+   answer-bearing phrase from its `text` field.
+
+2. **Scripture database client** — the reusable lookup/search design in the
+   sibling BoMOnlineWorkspace checkout:
+
+   ```text
+   ../BoMOnlineWorkspace/cli/scripture-client.mjs
+   ```
+
+   This is a MySQL-backed module, not a DaylightStation runtime dependency. It
+   is the reference implementation for a general scripture client: reference
+   parsing through `scripture-guide`, verse-id lookup, translation selection,
+   text search, reference detection, and output sanitization.
+
+#### Reading exact NIrV text
+
+Set the data root once, then resolve the chapter by filename rather than
+assuming its leading verse id:
+
+```bash
+SCRIPTURE_ROOT="$DAYLIGHT_BASE_PATH/data/content/readalong/scripture"
+rg --files "$SCRIPTURE_ROOT/ot/nirv" | rg '/[0-9]+-isaiah-1\.yml$'
+sed -n '1,120p' "$SCRIPTURE_ROOT/ot/nirv/17656-isaiah-1.yml"
+```
+
+The corpus preserves editorial layout markers such as `§`, `¶`, `▼`, and
+`/_`. They are useful to renderers but are not part of an answer. Strip them
+only for comparison or display; never silently paraphrase the underlying
+words.
+
+For course worksheets, the correct answer must be a contiguous phrase in the
+cited verse or verse range. Distractors are authored, but must:
+
+- be plausible members of the answer's category;
+- not occur anywhere in that lesson's assigned reading;
+- not repeat another answer or distractor in the lesson; and
+- never encode a fixed answer position, because worksheet issuance shuffles
+  choices.
+
+#### Using the database client reference
+
+The reference client exports functions rather than a command-line dispatcher:
+
+| Export | Purpose |
+|---|---|
+| `lookup({ ref, version })` | Resolve an English reference and return verses |
+| `lookupIds({ verseIds, version })` | Fetch canonical verse ids directly |
+| `search({ query, version, book, volume })` | Search translation text |
+| `detect(text)` | Find scripture references embedded in prose |
+| `listVersions({ lang, volume })` | Inspect available translations |
+| `closeConnection()` | Close the cached MySQL connection |
+
+It reads `MYSQL_HOST`, `MYSQL_PORT2`/`MYSQL_PORT`,
+`MYSQL_USER2`/`MYSQL_USER`, `MYSQL_PASSWORD2`/`MYSQL_PASSWORD`, and optionally
+`SCRIPTURE_DB` (default `scripture.guide`). Example:
+
+```js
+import {
+  lookup,
+  search,
+  closeConnection,
+} from '../../BoMOnlineWorkspace/cli/scripture-client.mjs';
+
+const passage = await lookup({ ref: 'Isaiah 1:16-18', version: 'NIRV' });
+const matches = await search({ query: 'new heart', version: 'NIRV', book: 'Ezekiel' });
+await closeConnection();
+```
+
+Use the database client for discovery and cross-version searches. Use the
+checked-in/YAML readalong corpus as the final authority when authoring
+DaylightStation content, so validation is reproducible without a database.
+
+#### Printed-page tools
+
+The NIrV text does not contain physical page numbers. Those belong to the
+specific *NIrV Adventure Bible for Early Readers* printing and live in:
+
+```text
+{dataDir}/content/school/scripture/nirv-adventure-early-readers/page-index.yml
+```
+
+Available commands:
+
+```bash
+# Resolve references found in prose to printed pages
+node cli/bible-lesson-pages.mjs "Isaiah 1:16-18 and Isaiah 2:2-4"
+
+# Verify the complete physical page index against the NIrV corpus
+NIRV_CORPUS="$DAYLIGHT_BASE_PATH/data/content/readalong/scripture" \
+  node cli/bible-page-index-verify.mjs --verbose
+
+# Typeset a printable chapter-to-page index
+node cli/bible-page-index-pdf.mjs /tmp/nirv-page-index.pdf
+```
+
+Override the default edition index with `PAGE_INDEX=/path/to/page-index.yml`.
+
+#### Worksheet authoring check
+
+Course lessons use the worksheet pipeline:
+
+```bash
+DATA_DIR="$DAYLIGHT_BASE_PATH/data"
+
+node cli/school.mjs worksheet validate \
+  scripture/come-follow-me-ot-2026/<lesson-slug> \
+  --data-dir "$DATA_DIR"
+
+node cli/school.mjs worksheet issue \
+  scripture/come-follow-me-ot-2026/<lesson-slug> \
+  --data-dir "$DATA_DIR" --profile lower --seed review
+
+node cli/school.mjs worksheet render \
+  scripture/come-follow-me-ot-2026/<lesson-slug> \
+  --data-dir "$DATA_DIR" --profile upper --seed review \
+  --learner preview --learner-name Preview --out /tmp/scripture-review.pdf
+```
+
+`validate` proves the schema can issue both learner profiles. It does **not**
+prove that questions are faithful, answers are extractive, or distractors are
+pedagogically sound; those require a source-text audit and human review.
+
 ### `cli/gaming-assets.cli.mjs`
 
 Private game-art audit and preview tool for `media/games/_common`. It inventories PNG source facts and hashes, validates curated YAML manifests, renders categorized contact-sheet PNGs, creates frame-animation GIFs, and renders small YAML composition previews without starting the frontend.

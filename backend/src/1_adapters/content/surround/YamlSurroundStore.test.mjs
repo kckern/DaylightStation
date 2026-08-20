@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { YamlSurroundStore } from './YamlSurroundStore.mjs';
@@ -927,8 +927,101 @@ describe('YamlSurroundStore library resolution', () => {
     const logger = makeLogger();
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
     expect(store.lookup('plex:ghost', '')).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith('surround.work.missing',
-      { work: 'beethoven/does-not-exist', file: 'classical/beethoven/ghost.yml' });
+    // `expected` is a glob, not a path: the corpus may file the composer under
+    // any number of grouping directories, so naming one path would send the
+    // author to create a duplicate a level above the file they already have.
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.missing', {
+      work: 'beethoven/does-not-exist',
+      expected: 'classical/**/beethoven/does-not-exist.yml',
+      file: 'classical/beethoven/ghost.yml'
+    });
+  });
+
+  it('indexes a directory reachable twice through a symlink exactly once', () => {
+    // `listDirs` deliberately includes symlinked directories, so a depth-free
+    // walk can reach the same real folder by more than one route. Left alone it
+    // does not hang — the joined path outgrows PATH_MAX after a few hundred
+    // levels and the walk peters out — it re-reads the same corpus over and
+    // over and re-keys every work it already had. The observable symptom is the
+    // duplicate warning below firing against a file that exists only once.
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\n');
+    symlinkSync(path.join(library, 'classical'), path.join(library, 'classical/5_romantic/loop'), 'dir');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.work.duplicate', expect.anything());
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:loop }\n');
+    expect(new YamlSurroundStore({ rootDir: root, libraryDir: library, logger })
+      .lookup('plex:loop', '')?.piece?.title).toBe('Nocturnes');
+    expect(store).toBeDefined();
+  });
+
+  it('notices an edit to a work file nested below the composer level', () => {
+    // The freshness check carried its own copy of the two-level walk. After the
+    // corpus grew an era level it stopped reaching work files at all, so an
+    // author could rewrite a piece's facts and the running backend would keep
+    // serving the old ones until someone restarted it — silently, because a
+    // directory's mtime does not move when a file inside it is rewritten.
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Fr\u00e9d\u00e9ric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\nfacts:\n  - "before"\n');
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:edit }\n');
+
+    vi.useFakeTimers();
+    try {
+      const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+      expect(store.lookup('plex:edit', '')?.facts).toEqual(['before']);
+
+      const when = new Date(Date.now() + 5000);
+      writeLib('classical/5_romantic/chopin/nocturnes.yml', 'title: Nocturnes\nfacts:\n  - "after"\n');
+      utimesSync(path.join(library, 'classical/5_romantic/chopin/nocturnes.yml'), when, when);
+      vi.advanceTimersByTime(3000);   // past the 2s guard
+
+      expect(store.lookup('plex:edit', '')?.facts).toEqual(['after']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('warns when two composer folders share a basename and collide on one work key', () => {
+    // Identity is composer + slug, so a depth-free walk makes a collision
+    // reachable between folders that never sat at the same level before.
+    // Last-write-wins is the old behaviour; going quiet about it is not.
+    writeLib('classical/4_classical/adams/prelude.yml', 'title: The Classical One\n');
+    writeLib('classical/6_modern/adams/prelude.yml', 'title: The Modern One\n');
+
+    const logger = makeLogger();
+    new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+
+    expect(logger.warn).toHaveBeenCalledWith('surround.work.duplicate', {
+      work: 'adams/prelude',
+      file: expect.stringContaining('adams/prelude.yml')
+    });
+  });
+
+  it('resolves a work whose composer is filed under grouping directories', () => {
+    // The corpus was reorganized from `classical/<composer>/` to
+    // `classical/<era>/<composer>/` and every sidecar stopped resolving —
+    // `surround.index.built` reported `pieces: 0, skipped: 5` in production.
+    // A work's identity is `<composer>/<slug>`; the folders above the composer
+    // are filing, and the walk must not encode a depth.
+    write('classical/deep/ref.yml',
+      'work: chopin/nocturnes\nsurround: concert-hall\nmatch: { contentId: plex:deep }\n');
+    writeLib('classical/5_romantic/chopin/_composer.yml', 'name: Frédéric Chopin\n');
+    writeLib('classical/5_romantic/chopin/nocturnes.yml',
+      'title: Nocturnes\nmovements:\n  - n: 1\n    name: "Op. 9 No. 1"\n');
+
+    const logger = makeLogger();
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger });
+    const r = store.lookup('plex:deep', '');
+
+    expect(r).not.toBeNull();
+    expect(r.piece.title).toBe('Nocturnes');
+    expect(r.composer.name).toBe('Frédéric Chopin');
+    expect(logger.warn).not.toHaveBeenCalledWith('surround.work.missing', expect.anything());
   });
 
   it('rejects a sidecar with no work: ref as invalid, blocking', () => {
@@ -1110,18 +1203,16 @@ describe('YamlSurroundStore library grouping folders', () => {
     expect(store.lookup('plex:901', '').piece.title).toBe('Resurrection');
   });
 
-  it('stops descending past the grouping-depth bound', () => {
-    // A composer buried deeper than MAX_GROUPING_DEPTH is not indexed. Without
-    // the bound a symlink loop would walk forever at index time; the cost of the
-    // bound is that a pathologically deep tree goes missing, so prove it is the
-    // documented depth that decides and not chance.
+  it('indexes composers deeper than the former grouping-depth bound', () => {
+    // Traversal is depth-free and guards against cycles by real path, so corpus
+    // shelving can grow without silently making a deeply filed work unreachable.
     const deep = 'classical/g1/g2/g3/g4/g5/buried';
     writeLib(`${deep}/_composer.yml`, 'name: Buried\nborn: 1900\ndied: 1950\n');
     writeLib(`${deep}/work.yml`, 'title: Unreachable\n');
     write('classical/buried/work.yml',
       'work: buried/work\nsurround: concert-hall\nmatch: { contentId: plex:902 }\n');
     const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
-    expect(store.lookup('plex:902', '')).toBeNull();
+    expect(store.lookup('plex:902', '').piece.title).toBe('Unreachable');
   });
 
   it('warns when two grouping folders claim the same composer slug', () => {
@@ -1220,5 +1311,50 @@ describe('YamlSurroundStore multi-note movements', () => {
     lib('  - { n: 1, name: One, note: ["A", "B"] }\n  - { n: 2, name: Two }\n');
     side('starts: [0, 200]\ncues:\n  - { at: 50, render: docked, text: "Mid." }\n');
     expect(cues().map((c) => c.text)).toEqual(['A', 'Mid.', 'B']);
+  });
+});
+
+/**
+ * DESIGN WAVE 7 — the two fields the band's new layout consumes.
+ *
+ * `piece.short_title` is a whitelisted piece field (the frame's band prints it
+ * as a standing label); `definition.band` is the third thing a definition says
+ * about a frame, beside `regions` and `collapse`.
+ */
+describe('YamlSurroundStore — the band’s fields (design wave 7)', () => {
+  it('carries piece.short_title through the whitelist', () => {
+    writeLib('classical/beethoven/symphony-3-eroica.yml',
+      'title: Symphony No. 3 in E-flat major, "Eroica"\nshort_title: Beethoven\'s Third Symphony\n'
+      + 'opus: Op. 55\nmovements:\n  - { n: 1, name: Allegro con brio }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:663134', '');
+    expect(r.piece.short_title).toBe("Beethoven's Third Symphony");
+    // The frame curls it at the render seam; the store hands it over verbatim.
+    expect(r.piece.title).toBe('Symphony No. 3 in E-flat major, "Eroica"');
+  });
+
+  it('leaves short_title undefined when the corpus has not authored one', () => {
+    // The band renders NO header in that case — an absent short title is a
+    // supported state, not a gap to fill with a truncated long one.
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').piece.short_title).toBeUndefined();
+  });
+
+  it('carries definition.band alongside regions and collapse', () => {
+    write('_surrounds/concert-hall.yml',
+      'id: concert-hall\nregions:\n  right: { width: 20%, module: composer-card }\n'
+      + '  bottom:\n    - { module: movement-map, height: 60 }\n'
+      + 'collapse: { footerFloor: 90 }\n'
+      + 'band: { nowSide: dynamic, nowHeading: always, railDensity: bars }\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const { definition } = store.lookup('plex:663134', '');
+    expect(definition.band).toEqual({ nowSide: 'dynamic', nowHeading: 'always', railDensity: 'bars' });
+    expect(definition.regions).toBeDefined();
+    expect(definition.collapse).toBeDefined();
+  });
+
+  it('leaves definition.band undefined when unauthored — the frame owns the defaults', () => {
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    expect(store.lookup('plex:663134', '').definition.band).toBeUndefined();
   });
 });

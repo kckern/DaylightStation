@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
-import SurroundHost from './SurroundHost.jsx';
+import SurroundHost, { definitionModules } from './SurroundHost.jsx';
 import { SurroundSettingContext } from './SurroundSettingContext.js';
 import { registerSurroundModule, getSurroundRegistry } from './registry.js';
 
@@ -195,6 +195,11 @@ describe('SurroundHost', () => {
     const mounts = eventsNamed(logger, 'surround.mount');
     expect(mounts).toHaveLength(1);
     expect(mounts[0][1]).toMatchObject({ contentId: 'plex:663134', surroundId: 'concert-hall', mode: 'auto' });
+    // THE EVENT ITSELF, not just the helper behind it. The one line that broke
+    // for six waves is the one that couples `surround.mount` to the definition,
+    // and a pure test of `definitionModules` leaves it unasserted: reverting the
+    // payload to `regions.right?.module` would keep every other spec green.
+    expect(mounts[0][1].modules).toEqual(['test-card', 'test-map']);
   });
 
   it('renders bare children when the mode is off, even for an enriched item', () => {
@@ -312,10 +317,11 @@ describe('SurroundHost', () => {
     const player = makePlayer({ item: { id: 'plex:663134', surround: SURROUND }, media });
     renderHost({ getPlayerHandle: player.get, logger });
 
-    // Let the clock's supervisor find the media element first (<=250ms): that
-    // attach is a legitimate one-off commit, and counting it here would say
-    // nothing about the poll.
-    await act(async () => { vi.advanceTimersByTime(300); });
+    // Let the clock's supervisor find the media element (<=250ms) AND the
+    // entrance choreography finish (`ENTER_UNCLIP_MS`, the timer that puts the
+    // stage's clip back once nothing is moving). Both are legitimate one-off
+    // commits; counting either here would say nothing about the poll.
+    await act(async () => { vi.advanceTimersByTime(1500); });
 
     const before = recorded.length;
     // Three idle polls. A host that setStates on every tick (instead of only on a
@@ -443,5 +449,138 @@ describe('SurroundHost', () => {
       });
       expect(container.querySelector('[data-testid="the-player"]')).toBeTruthy();
     });
+  });
+
+  // --- shader enforcement ----------------------------------------------------
+  //
+  // THE RULE: when the surround frame is active for the current item, the Player
+  // it wraps ALWAYS renders the focused/minimal shader — no dispatch parameter
+  // required, and no exception for whatever the launch path asked for. The host
+  // enforces this by `cloneElement`-ing `forceShader: 'focused'` onto `children`,
+  // which is a prop update on the existing element (same type/key => no remount).
+
+  describe('shader enforcement', () => {
+    /** Renders forceShader/shader as data attributes so tests can read the props
+     * React actually delivered, and counts mounts so identity can be checked. */
+    let shaderProbeMounts = 0;
+    const ShaderProbe = ({ forceShader, shader }) => {
+      useEffect(() => { shaderProbeMounts += 1; }, []);
+      return (
+        <video
+          data-testid="the-player"
+          data-force-shader={forceShader ?? ''}
+          data-shader={shader ?? ''}
+        />
+      );
+    };
+
+    beforeEach(() => { shaderProbeMounts = 0; });
+
+    it('injects forceShader="focused" onto the child when the surround is active', () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND },
+        media: new FakeMedia(),
+      });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeTruthy();
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('focused');
+    });
+
+    it('leaves the child untouched when the surround is inactive', () => {
+      const player = makePlayer({ item: { id: 'plex:1', title: 'Plain' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+
+      expect(container.querySelector('[data-testid="surround-frame"]')).toBeNull();
+      // No forceShader prop was injected at all — not merely empty/undefined by
+      // coincidence, but genuinely never set, so the data attribute is absent.
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('');
+    });
+
+    it('preserves the child element identity across the activation flip (no remount)', async () => {
+      const player = makePlayer({ item: { id: 'plex:900001' }, media: new FakeMedia() });
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe />,
+      });
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(shaderProbeMounts).toBe(1);
+      expect(node.dataset.forceShader).toBe('');
+
+      player.advanceTo({ id: 'plex:663134', surround: SURROUND });
+      await act(async () => { vi.advanceTimersByTime(1000); });
+
+      // Same DOM node, same mount — cloneElement only updated the prop.
+      expect(container.querySelector('[data-testid="the-player"]')).toBe(node);
+      expect(shaderProbeMounts).toBe(1);
+      expect(container.querySelector('[data-testid="the-player"]').dataset.forceShader).toBe('focused');
+    });
+
+    it('overrides an incoming explicit shader on the child while active', () => {
+      const player = makePlayer({
+        item: { id: 'plex:663134', surround: SURROUND },
+        media: new FakeMedia(),
+      });
+      // The launch path dispatched shader="dark" onto the player directly —
+      // surround's focused must win over it while the frame is active.
+      const { container } = renderHost({
+        getPlayerHandle: player.get, logger, children: <ShaderProbe shader="dark" />,
+      });
+
+      const node = container.querySelector('[data-testid="the-player"]');
+      expect(node.dataset.shader).toBe('dark');
+      expect(node.dataset.forceShader).toBe('focused');
+    });
+  });
+});
+
+/**
+ * THE MOUNT LOG TOLD THE TRUTH ABOUT HALF THE FRAME (wave 8, critique finding 6).
+ *
+ * `surround.mount`'s `modules` field read `regions.right?.module` — a single
+ * object — while `right` has been a LIST since the rail gained its carousel, and
+ * `top` was never read at all. So the one event that says what a frame is made
+ * of reported the band and nothing else, for six waves, on every enriched item.
+ *
+ * TO GO RED: read `regions.right?.module` instead of walking the slot, or drop
+ * `'top'` from `REGION_SLOTS`.
+ */
+describe('SurroundHost — the mount log names the whole frame', () => {
+  const SHIPPED = {
+    regions: {
+      top: { module: 'work-placard' },
+      right: [
+        { module: 'composer-card', width: '33%', side: 'left' },
+        { module: 'place-carousel' },
+      ],
+      bottom: [
+        { module: 'movement-map', height: 64 },
+        { module: 'cue-ticker', height: 'fill', collapse: 'first' },
+      ],
+    },
+    collapse: { footerFloor: 90 },
+  };
+
+  it('reports every module of the shipped definition, in layout order', () => {
+    expect(definitionModules(SHIPPED)).toEqual([
+      'work-placard', 'composer-card', 'place-carousel', 'movement-map', 'cue-ticker',
+    ]);
+  });
+
+  it('reads a slot authored as a single object exactly as it reads a list', () => {
+    expect(definitionModules({ regions: { bottom: { module: 'movement-map' } } }))
+      .toEqual(['movement-map']);
+    expect(definitionModules({ regions: { bottom: [{ module: 'movement-map' }] } }))
+      .toEqual(['movement-map']);
+  });
+
+  it('never throws on a definition that is missing, empty or malformed', () => {
+    expect(definitionModules(null)).toEqual([]);
+    expect(definitionModules({})).toEqual([]);
+    expect(definitionModules({ regions: { right: [null, { width: '33%' }, { module: 42 }] } }))
+      .toEqual([]);
   });
 });

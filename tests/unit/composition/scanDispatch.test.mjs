@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createScanDispatch, SCAN_ROUTE_FALLBACK, errText } from '#composition/modules/scanDispatch.mjs';
+import { swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 const makeLogger = () => ({
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -45,6 +46,8 @@ function makeDeps(over = {}) {
 
   const triggerDispatchService = { handleEvent: vi.fn(async () => ({ ok: true })) };
   const refreshPrompt = vi.fn(async () => {});
+  const armCommitFor = vi.fn();
+  const commitNowFor = vi.fn(async () => true);
   const execute = vi.fn(async () => ({ ok: true }));
 
   const deps = {
@@ -58,7 +61,7 @@ function makeDeps(over = {}) {
     },
     relayConfig: {},
     applyScanToComposition: { execute: vi.fn(() => ({ handled: false })) },
-    getScaleNutribotBridge: () => ({ refreshPrompt }),
+    getScaleNutribotBridge: () => ({ refreshPrompt, armCommitFor, commitNowFor }),
     getLogFoodFromUPC: () => ({ execute }),
     configService: {
       getSystemConfig: () => ({ nutribot: { telegram: { bot_id: '777' } } }),
@@ -71,16 +74,20 @@ function makeDeps(over = {}) {
     ...over,
   };
 
-  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute };
+  return { deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, commitNowFor, execute };
 }
 
 function harness(over = {}) {
-  const { deps, barcodeLogger, dispatcherLogger, refreshPrompt, execute } = makeDeps(over);
+  const {
+    deps, barcodeLogger, dispatcherLogger, refreshPrompt, armCommitFor, commitNowFor, execute,
+  } = makeDeps(over);
   return {
     ...deps,
     barcodeLogger,
     dispatcherLogger,
     refreshPrompt,
+    armCommitFor,
+    commitNowFor,
     execute,
     scanDispatch: createScanDispatch(deps),
   };
@@ -504,6 +511,101 @@ describe('nutrition — the nutriscan path', () => {
     });
   });
 
+  // The bridge finalises an entry after a LULL in input. A scan arrives on this
+  // path and not on the event bus, so unless the clock is restarted from here the
+  // entry closes 25s after the last WEIGHT — with a density or tare scanned in
+  // the meantime landing on an already-closed log (the 12:31 incident).
+  it('restarts the bridge quiet-commit clock for an applied scan', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+    }));
+    expect(h.armCommitFor).toHaveBeenCalledWith('kitchen-food-scale');
+  });
+
+  // A refusal restarts it too: the person is mid-gesture and about to rescan.
+  // Restarting too eagerly only delays a commit the next lull makes anyway;
+  // not restarting closes the entry under the hand still filling it in.
+  it('restarts the quiet-commit clock for a refused scan as well', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({
+        handled: true, ok: false, kind: 'container', error: 'UNKNOWN_CONTAINER', id: 'teapot',
+      })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'ct:teapot',
+    }));
+    expect(h.armCommitFor).toHaveBeenCalledWith('kitchen-food-scale');
+  });
+
+  // `rs:done` is the "process it now" card, and arming a 25 s clock for it was the
+  // opposite of what it says: `ApplyScanToComposition` has already consumed the
+  // slots by the time this branch runs, so the timer fired against an empty
+  // composition and skipped as incomplete. The explicit finish gesture guaranteed
+  // a stranded entry.
+  it('commits immediately on rs:done instead of arming the clock', async () => {
+    const snapshot = { grams: 473, unit: 'g', density: 4, container: 'tupperware', complete: true, active: true };
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'done', hadState: true, snapshot })),
+    };
+    const h = harness({ applyScanToComposition });
+    const out = await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
+    }));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The PRE-CONSUMPTION snapshot rides along, because the store has nothing
+    // left to read by now.
+    expect(h.commitNowFor).toHaveBeenCalledWith('kitchen-food-scale', snapshot);
+    expect(h.armCommitFor).not.toHaveBeenCalled();
+    // And NO ack refresh: `refreshPrompt` renders from a fresh store read, which
+    // on this path is the composition `done` just consumed — it would repaint the
+    // prompt with no tare and no density, and persist that un-tared weight for the
+    // commit to multiply. The commit re-renders the message itself.
+    expect(h.refreshPrompt).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+  });
+
+  it('survives a bridge with no commitNowFor, and never rejects the scan for one', async () => {
+    const snapshot = { grams: 473, unit: 'g', density: 4, container: null, complete: true, active: true };
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'done', hadState: true, snapshot })),
+    };
+    const bridges = [
+      () => null,
+      () => ({ refreshPrompt: async () => {} }),
+      () => ({ refreshPrompt: async () => {}, commitNowFor: () => Promise.reject(new Error('nope')) }),
+    ];
+    for (const getScaleNutribotBridge of bridges) {
+      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: 'rs:done',
+      }));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+    }
+  });
+
+  // The bridge is LATE-BOUND and only exists when the head of household and bot
+  // id resolve, so an absent one (or an older one without the hook) must leave
+  // the scan itself unharmed rather than throwing out of the handler.
+  it('survives a bridge that is absent or has no armCommitFor', async () => {
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    for (const getScaleNutribotBridge of [() => null, () => ({ refreshPrompt: async () => {} })]) {
+      const h = harness({ applyScanToComposition, getScaleNutribotBridge });
+      const out = await h.scanDispatch.handleScan(relayScan({
+        device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+      }));
+      expect(out).toMatchObject({ domain: 'nutrition', ok: true });
+    }
+  });
+
   it('strips the `nut:` prefix before handing the body to the fridge grammar', async () => {
     const applyScanToComposition = {
       execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
@@ -562,7 +664,12 @@ describe('nutrition — the nutriscan path', () => {
     expect(out).toMatchObject({ domain: 'nutrition', ok: false });
   });
 
-  it('warns ONCE per swallow reason and demotes every repeat to debug', async () => {
+  it('never downgrades a repeated swallow to debug', async () => {
+    // `makeLogger` gives this fake no `sampled` method, so `emitSampled` falls
+    // back to `warn` — the same defensive shape `emit` already uses for a
+    // logger missing a level. Every repeat lands there too, not on `debug`:
+    // `debug` is never shipped to the log store, so demoting repeats to it
+    // was deletion, not suppression. See `emitSampled`'s docstring.
     const h = harness();
     const scan = relayScan({ device: 'nutribot-noscale', route: 'nutribot', code: 'dl:4' });
     const first = await h.scanDispatch.handleScan(scan);
@@ -576,13 +683,72 @@ describe('nutrition — the nutriscan path', () => {
       .filter((c) => c[0] === 'barcode_relay.nutriscan.no_scale_id');
     const debugs = h.barcodeLogger.debug.mock.calls
       .filter((c) => c[0] === 'barcode_relay.nutriscan.no_scale_id');
-    expect(warns).toHaveLength(1);
-    expect(warns[0][1]).toMatchObject({ hint: 'further occurrences log at debug' });
-    expect(debugs).toHaveLength(2);
+    expect(warns).toHaveLength(3);
+    expect(debugs).toHaveLength(0);
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('keeps the warn-once memory per dispatch instance, keyed by reason', async () => {
+  it('ACKs a swallowed fridge code on the live prompt, not just in the logs', async () => {
+    // THE test the design names as the one that would have caught the silent
+    // failure: a correct `swallowNotice` builder that nobody calls fixes
+    // nothing. This drives the swallow branch and asserts `refreshPrompt` was
+    // actually invoked, pinned to the SAME builder rather than a duplicated
+    // literal, so the wiring and the notice text can't drift apart unnoticed.
+    const h = harness({ applyScanToComposition: null });
+    const out = await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:140',
+    }));
+
+    expect(h.refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(h.refreshPrompt).toHaveBeenCalledWith(
+      'kitchen-food-scale', swallowNotice('nutriscan-disabled'),
+    );
+    const [, notice] = h.refreshPrompt.mock.calls[0];
+    expect(notice).toEqual(expect.any(String));
+    expect(notice.length).toBeGreaterThan(0);
+    expect(out).toMatchObject({ domain: 'nutrition', ok: false });
+  });
+
+  it('does not let a rejected prompt edit turn a silent refusal into a thrown one', async () => {
+    // Pins the fire-and-forget `.catch` on the swallow branch's ACK — the same
+    // shape the nutriscan branch already relies on. A `refreshPrompt` that
+    // rejects (Telegram down, bad chat id, whatever) must not surface as a
+    // rejected `handleScan`, and the swallow outcome must still come back
+    // exactly as if the ACK had never been attempted.
+    const refreshPrompt = vi.fn(() => Promise.reject(new Error('telegram down')));
+    const h = harness({
+      applyScanToComposition: null,
+      getScaleNutribotBridge: () => ({ refreshPrompt }),
+    });
+    const scan = relayScan({ device: 'nutribot-upc', route: 'nutribot', code: 'dl:140' });
+
+    let out;
+    await expect((async () => { out = await h.scanDispatch.handleScan(scan); })()).resolves.toBeUndefined();
+    await Promise.resolve();
+
+    expect(refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ domain: 'nutrition', status: 'swallowed', ok: false });
+  });
+
+  it('ACKs a successful nutriscan exactly once, never twice through the swallow path', async () => {
+    // The nutriscan and swallow branches are mutually exclusive `if`s that both
+    // `return`, so a single scan can only ever ACK once — this pins that
+    // invariant explicitly rather than leaving it implicit in the branch shape.
+    const applyScanToComposition = {
+      execute: vi.fn(() => ({ handled: true, ok: true, kind: 'density', level: 4 })),
+    };
+    const h = harness({ applyScanToComposition });
+    await h.scanDispatch.handleScan(relayScan({
+      device: 'nutribot-upc', route: 'nutribot', code: 'dl:4',
+    }));
+    expect(h.refreshPrompt).toHaveBeenCalledTimes(1);
+    expect(h.refreshPrompt).toHaveBeenCalledWith('kitchen-food-scale', null);
+  });
+
+  // Named for what it asserts. There is no warn-once memory any more —
+  // `emitSampled` is stateless, and this drives the FALLBACK path (the fake logger
+  // has no `sampled`), where every swallow reason lands on `warn` in its own right.
+  it('warns on the fallback path for each swallow reason', async () => {
     const h = harness();
     await h.scanDispatch.handleScan(relayScan({
       device: 'nutribot-noscale', route: 'nutribot', code: 'dl:4',

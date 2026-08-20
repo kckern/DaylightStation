@@ -16,7 +16,17 @@
   box-sizing: border-box;
 }
 
-.instrument-board-stage__rail { min-width: 0; }
+/* Clipped to its own track. `.pg-rail` is a content-height flex column inside
+   this block, so with nothing stopping it a full rail simply drew past the
+   bottom of the row and over the status line beneath it — Checkers' rail foot
+   was landing 55px into the status band. gameChrome already states the intended
+   failure for an over-full rail ("the rail clipping its own foot"); this is what
+   makes that true rather than aspirational. */
+.instrument-board-stage__rail {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .instrument-board-stage__boards {
   display: grid;
   /* An `auto` row for the top-rail, then everything else the primary/secondary
@@ -36,6 +46,10 @@
      the rail addresses the WHOLE row of boards below it, not just the first. */
   grid-column: 1 / -1;
   width: 100%;
+  /* Named explicitly so the board slot below can claim row 2 unconditionally —
+     see the note there. With no top rail this row has no items and collapses to
+     nothing, so a board without one still loses no space. */
+  grid-row: 1;
 }
 .instrument-board-stage__primary,
 .instrument-board-stage__secondary {
@@ -45,6 +59,21 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+
+  /* ALWAYS the `minmax(0, 1fr)` row, never the `auto` one. Placement used to be
+     implicit, so a board WITHOUT a top rail (Checkers) flowed into row 1 — the
+     `auto` track — and took its height from its own content. That is exactly the
+     track a size container cannot live in, and it is also why such a board had no
+     height budget to fit into in the first place. */
+  grid-row: 2;
+
+  /* A size container, so what sits in here can measure the slot it has to fit
+     rather than guessing from width alone. This is the whole fix for a board
+     with an `aspect-ratio`: such a board derives its HEIGHT from its width, so
+     a slot that got shorter did not make it any smaller — it just drew past the
+     bottom, over the status line. Connect Four's board was 65px past its slot
+     and printed straight over the status text. */
+  container-type: size;
 }
 .instrument-board-stage__status { grid-column: 1 / -1; text-align: center; }
 .instrument-board-stage--dual-equal .instrument-board-stage__boards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }

@@ -412,8 +412,8 @@ export function ScreenRenderer({ screenId: propScreenId }) {
           >
             <MasterVolumeToast />
             <PortalKeysBridge config={config.portalKeys} />
-            {/* Screen-level surround setting: 'auto' (default), 'off', or a
-                definition id. Read by SurroundHost at the two player seams. */}
+            {/* Screen-level surround setting: 'auto' (default) or 'off', and
+                nothing else. Read by SurroundHost at the two player seams. */}
             <SurroundSettingContext.Provider value={config.surround ?? 'auto'}>
             <ScreenAmbientProvider value={config.ambient}>
             <MenuNavigationProvider>

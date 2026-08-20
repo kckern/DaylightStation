@@ -5,15 +5,20 @@
  * are declared here, on the frame root, so every module can read them with
  * `var(--hall-ink)` and still carry a literal fallback when rendered standalone.
  *
- * Layout: [ main (stage + footer) | rail ] with an inert overlay above both.
+ * Layout: [ main (stage + footer) | rail ].
  * The stage letterboxes the 16:9 media box on ink; the footer is JS-sized to the
  * media box's measured width so it reads as that video's timeline.
  */
 
-/* Cormorant Garamond (display) + EB Garamond (body). ArtMode loads the same two
-   families; the kiosk has no Garamond installed, so without this the programme
-   silently falls back to a default serif. */
-@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&family=EB+Garamond:ital,wght@0,500;0,600;1,500&display=swap");
+/* Cormorant Garamond (display) + EB Garamond (body), SERVED BY THIS FLEET. The
+   kiosk has no Garamond installed, so without these the programme falls back to
+   a default serif — and to different metrics, which move every clamp and tier
+   threshold in the band. See `_fonts.scss` for the licence and the subsetting. */
+@use "./fonts";
+/* The band's shared literals - the bond's ground and the band's one radius.
+   Published as custom properties on the band's region below, so the two modules
+   that draw the bond read one value and neither can drift from the other. */
+@use "./tokens" as *;
 
 .surround-frame {
   --hall-ink: #14100c;
@@ -25,8 +30,72 @@
   --ink: #2a1d07;
   --ink-soft: #6b6152;
 
+  /* THE MAT. Every picture in the frame is mounted on this, and it is dark on
+     purpose (design wave 4): cream mats around a portrait and a city view read
+     as white borders on a dark wall — the brightest, most distracting marks on
+     a screen whose subject is the video. Near-black warm brown sits quietly on
+     the maroon rail and still separates a lit picture from the ground, which is
+     the only job a mat has here. `--mat-edge` is the 1px definition line, dark
+     as well, so an image never bleeds into the panel behind it.
+     `--programme` survives untouched — it is the programme STOCK (the panels
+     themselves), not the mats. */
+  --mat: #1d0f11;
+  --mat-edge: rgba(8, 5, 5, 0.9);
+
   --surround-display: "Cormorant Garamond", "Hoefler Text", "EB Garamond", Georgia, serif;
   --surround-body: "EB Garamond", "Cormorant Garamond", Garamond, Georgia, serif;
+  /* THE ANNOTATION VOICE (design wave 6). A deliberate BREAK from the two
+     Garamonds: a translation under a movement heading, or under the listening
+     band's now-header, is the editor speaking, not the programme. In an all-
+     serif frame the only way to say "this line is a gloss, not more programme"
+     is to change the face — a smaller, greyer Garamond just reads as quieter
+     Garamond. Condensed first because a gloss lives in a narrow column (a
+     movement's segment is a few hundred pixels at most); the system sans is the
+     fallback everywhere it is not installed, and the kiosk has one. */
+  --surround-annotation: "Roboto Condensed", "Helvetica Neue Condensed", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* How far the video's top edge sits below the top of the main column — i.e.
+     the strip of hall the plate hangs on.
+     Wave 5 raised it 3.4rem -> 4.2rem, and the reason is `--placard-straddle`
+     below: the plate no longer sits half on the picture, it sits a THIRD on it,
+     so two thirds of its ~82px height (55px) now have to fit above the video's
+     top edge instead of 41px. 4.2rem (67px) leaves ~12px of dark hall above the
+     plate, the same breathing room wave 2 tuned for — without it the plate would
+     read as cropped by the frame's own edge. The video is nudged down; it is not
+     made smaller (it is width-limited at every kiosk size in the fleet). */
+  --placard-inset: 4.2rem;
+  /* How much of the plate's own height hangs BELOW the video's top edge.
+     `translateY(-66.67%)` puts two thirds of the plate on the hall and one third
+     on the picture. Half and half (wave 2-4's -50%) cut too deep into the video:
+     a museum plate is pinned to the wall the painting hangs on, and it overlaps
+     the frame rather than the canvas. One number, read by the base transform AND
+     by the entrance's settle, so the two can never disagree. */
+  --placard-straddle: -66.67%;
+  /* How far the dark band rides up over the video's last pixels. Visual only —
+     a negative margin on the footer, never a change to the media box. */
+  --band-overlap: 10px;
+  /* HOW FAR THE CURTAIN BLEEDS DOWN INTO THE PICTURE (design wave 7).
+     The band already dissolves upward into the video's bottom edge
+     (`__footer::before`, 22px); the velvet at the top met it on a hard line,
+     so the picture read as a rectangle cut out of a drape rather than as
+     something the drape hangs in front of.
+     THE DEPTH IS DERIVED, not chosen. The settled figure at the top of the
+     frame is the placard's straddle: the plate overlaps the video by one third
+     of its own height (`--placard-straddle`, wave 5 §2, not to be changed).
+     The placard measures 80.3px at every screen in the fleet (it is rem-typed;
+     measured in the harness at 960x540 / 1280x720 / 1920x1080 — 80.3 at all
+     three), so that overlap is 26.77px, and the brief's "half to 60% of that
+     overlap" is 13.4..16.1px. 15px sits in that window with room either side —
+     the shallow end reads as a smudge at ten feet rather than as a dissolve.
+     It is a VEIL over the media, never a change to the media box: the video
+     keeps its width, its height, its 16:9 lock and every pixel of its picture
+     below this depth. */
+  --curtain-bleed: 15px;
+  /* One easing for the whole entrance. The DURATIONS and the stagger are
+     published from `entrance.js` (the rAF safety net and the stage's un-clip
+     window need the same numbers); the literals here are the fallback for a
+     frame rendered without that JS. */
+  --enter-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* Low-contrast paper fibre for the programme panels — no asset, same trick as
      ArtMode's mat. Kept faint: this is stock, not texture for its own sake. */
@@ -44,8 +113,10 @@
 }
 
 /* Main column: stage on top, footer beneath, footer never squeezing the stage
-   out of its aspect box. */
+   out of its aspect box. `position: relative` is the placard's anchor — the
+   plate floats out of this column's flow. */
 .surround-frame__main {
+  position: relative;
   order: 0;
   flex: 1 1 auto;
   min-width: 0;
@@ -54,15 +125,106 @@
   height: 100%;
 }
 
-/* The darkened house: centres the media box and letterboxes it on ink. */
+/* The darkened house. The video is TOP-anchored: the stage is sized to the media
+   box itself, so there is no slack inside it at all — every spare pixel falls
+   through to the footer, which is where the design wants it (a band with room to
+   breathe, not a letterbox hole).
+   `padding-top` is the strip of dark hall the floating placard straddles.
+
+   FLEX-SHRINK IS 0, AND THAT IS THE 16:9 LOCK'S LAST LINE OF DEFENCE.
+   The media box is `width: 100%` + `aspect-ratio: 16/9` + `max-height: 100%`.
+   Those three agree only while the stage is tall enough to hold the ratio: the
+   moment the column overflows, `max-height` clamps the box's HEIGHT and nothing
+   pulls its WIDTH down with it, so the picture stretches. With a shrink factor
+   of 1 the footer could cause exactly that overflow, and did — a 960x540
+   living-room screen-root gave a 643x349 media box (ratio 1.845) because the
+   band's natural height was 13px more than the column had left.
+   `flex: 0 0 auto` is what makes this comment's own claim true — "footer never
+   squeezing the stage out of its aspect box". A band that cannot fit shrinks
+   itself instead, and if it shrinks past `collapse.footerFloor` the frame drops
+   its first region, which is the designed degradation path. */
 .surround-frame__stage {
-  flex: 1 1 auto;
+  /* The veil below is positioned against this box, and it is the video's own
+     top edge it has to sit on — which is exactly this box's padding edge. */
+  position: relative;
+  flex: 0 0 auto;
   min-height: 0;
+  padding-top: var(--placard-inset);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   overflow: hidden;
-  background: var(--hall-ink);
+
+  /* THE HALL WEARS VELVET (design wave 5). Every pixel of this box that the
+     video does not cover — the strip above it that the placard hangs on, and
+     the letterbox slack beside it on a screen too narrow for a full-width 16:9
+     — is a drape, not a hole. Flat near-black read as absence; a house has a
+     surface behind its stage.
+     It is ArtMode's curtain recipe (`ArtMode.css`), taken down two registers:
+     the same vertical fold stripes over the same burgundy ramp, but the ramp's
+     lit end is `--velvet` rather than ArtMode's brighter #5c151d, the fold
+     highlight is 3.5% rather than 5%, and a vertical gradient darkens the whole
+     thing towards the video's edges. It is STATIC — ArtMode's drape opens, this
+     one is scenery — and it is deliberately quieter than the rail's maroon, so
+     the picture and the plate stay the brightest things in the room.
+     Only the STAGE wears it. The media box paints its own black, the rail its
+     own oxblood, the band its own stone, the plate its own stone; nothing here
+     changes any of them. And the whole rule is dead on the inactive shell,
+     which has no class and generates no box. */
+  background-color: #240609;
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.38) 0%, rgba(0, 0, 0, 0.06) 50%, rgba(0, 0, 0, 0.5) 100%),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
+      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+  box-shadow: inset 0 -0.5vh 1.4vh rgba(0, 0, 0, 0.5);
+}
+
+/* THE CURTAIN BLEEDS INTO THE PICTURE (design wave 7).
+   The drape above the video used to stop at the video's top edge, dead level,
+   and that line was the one hard join left in the frame — the band already
+   dissolves upward into the picture's foot.
+   IT IS THE SAME CLOTH, FADED OUT. The two horizontal layers below are the
+   stage's own fold stripes and its own burgundy ramp, verbatim, at the same
+   `vw` phase and across the same width — so at the veil's top edge it paints
+   the identical colour the drape a pixel above it does, and the join has
+   nothing to be seen at. Only the vertical darkening differs: the stage's is a
+   gradient across its whole height (38% black at the top, 6% at the middle),
+   and this reproduces its value AT THE VIDEO'S TOP EDGE as a flat 30% —
+   computed, not guessed: the edge sits at 12.2% of the stage on the office
+   screen (67.2px of inset over a 549.6px stage), which is 0.38 - 0.32 x 0.244
+   = 0.302. The same point is 0.280 at 960x540 and 0.326 at 1920x1080, so one
+   flat value is within +/-0.03 alpha — about one level on a colour this dark —
+   at every screen in the fleet.
+   THE MASK is what makes it a bleed rather than a bar. It holds fully opaque
+   for the first 12% so the topmost rows paint the drape's own colour exactly
+   (a straight 0%-to-100% ramp is already ~9% transparent on its first pixel
+   row, which showed as a faint step at the join), then falls to nothing by
+   `--curtain-bleed` into the picture.
+   IT IS A VEIL, NOT A CHANGE TO THE BOX. The media box is untouched: same
+   width, same height, same 16:9, and every pixel below `--curtain-bleed` is the
+   picture exactly as decoded. `pointer-events: none` because the video's top
+   edge is real estate a viewer taps.
+   IT ONLY EXISTS WHEN THE FRAME IS ON: the inactive shell has no class and
+   generates no box, so this rule matches nothing there. */
+.surround-frame__stage::after {
+  content: "";
+  position: absolute;
+  top: var(--placard-inset);
+  left: 0;
+  right: 0;
+  height: var(--curtain-bleed);
+  background-image:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)),
+    repeating-linear-gradient(90deg,
+      rgba(0, 0, 0, 0.34) 0, rgba(0, 0, 0, 0.34) 0.45vw,
+      rgba(255, 255, 255, 0.035) 1.05vw, rgba(0, 0, 0, 0.34) 1.7vw),
+    linear-gradient(90deg, #1d0508, var(--velvet, #4a1018) 42%, #3c0d14 68%, #1a0407);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 12%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* 16:9 is inviolable. aspect-ratio / max-width / max-height are ALSO set inline
@@ -70,6 +232,18 @@
    for a browser that drops the inline style. Children fill the box exactly. */
 .surround-frame__media {
   position: relative;
+  /* Fix round 1 (review finding, user-reported): SEALS the player's own
+     z-universe inside this box. At rest nothing between the Player's internal
+     `.loading-overlay` (z-40) and the page root creates a stacking context —
+     `.surround-frame__media` carries `position: relative` but no `z-index`,
+     which is not enough on its own — so the overlay escaped this box entirely
+     and painted over `.surround-frame__header` (z-30), covering the placard's
+     lower third whenever the video paused or buffered. `isolation: isolate`
+     makes THIS element the stacking-context root for everything inside it: the
+     Player's z-40 overlay, its z-55 filter overlay, its z-60 debug strip — all
+     of them now resolve against each other inside the media box and can never
+     out-rank a sibling of this element, whatever z-index the Player picks. */
+  isolation: isolate;
   aspect-ratio: 16 / 9;
   max-width: 100%;
   max-height: 100%;
@@ -92,14 +266,67 @@
 }
 
 /* The footer belongs to the video: JS pins its width to the measured media box
-   and it stays centred beneath it. */
+   and it stays centred beneath it.
+   It also ABSORBS the column's slack (`flex: 1 1 auto`) — the placard no longer
+   spends any of it — and rides up over the video's last few pixels so the join
+   reads as one deliberate edge rather than as two boxes that happen to meet. */
 .surround-frame__footer {
-  flex: 0 0 auto;
+  position: relative;
+  z-index: 20;
+  flex: 1 1 auto;
+  min-height: 0;
   align-self: center;
   max-width: 100%;
+  margin-top: calc(var(--band-overlap) * -1);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* was hidden — the join gradient below has to paint ABOVE this box. Each
+     region clips its own content, so nothing else escapes. */
+  overflow: visible;
+}
+
+/* The soft join: the dark band fading upwards onto the video's last pixels.
+   Sits above the band's top edge, over the video, and is pure decoration. */
+.surround-frame__footer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 22px;
+  background: linear-gradient(to top, rgba(20, 16, 12, 0.92), rgba(20, 16, 12, 0));
+  pointer-events: none;
+}
+
+/* The work placard: a museum plate, not a band. Out of the column's flow,
+   content-width, hung on the video's TOP EDGE — two thirds on the dark hall,
+   one third over the picture (`--placard-straddle`). The translate is what makes
+   that ratio exact whatever the plate's own height turns out to be, which is why
+   the straddle is expressed as a fraction of the plate rather than as a pixel
+   offset from the edge.
+   The cap is 86% of the MEASURED video width (published by the frame as
+   `--surround-media-w`): a plate pinned over a painting is narrower than the
+   painting, and the runtime gate asserts exactly that. */
+.surround-frame__header {
+  position: absolute;
+  top: var(--placard-inset);
+  left: 50%;
+  transform: translate(-50%, var(--placard-straddle));
+  z-index: 30;
+  width: max-content;
+  max-width: calc(var(--surround-media-w, 100%) * 0.86);
+  display: flex;
+  flex-direction: column;
+  /* The plate straddles the video's top edge, so its box covers real video —
+     taps in the top-centre of the picture must reach the player underneath,
+     not die on an inert nameplate: this layer is see-through to input, not
+     just to light. */
+  pointer-events: none;
+  /* It sits ON the video, so it casts: a tight contact shadow plus a wide soft
+     one. This is the one element in the frame allowed a drop shadow. */
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.55),
+    0 14px 30px -10px rgba(0, 0, 0, 0.85);
 }
 
 /* Right rail — full height, because it carries identity, not progress. */
@@ -111,6 +338,27 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Fix round 1: stacked above the arriving (scaled-up) video. The entering
+     media box is transformed, which paints it as if it carried the implicit
+     stacking level every unpositioned, in-flow box gets — the same one this
+     rail was sitting at — and DOM order puts the media box after the rail, so
+     for the ~200ms the video is still oversized mid-entrance it paints OVER
+     the rail rather than beside it. `position: relative` gives the rail an
+     index to have at all; the value below is comfortably above that implicit
+     level and below the footer (20) and plate (30), so every piece of chrome
+     stays on top of the arriving picture — harmless at rest, since the rail
+     and the settled media box never overlap once the entrance ends. */
+  position: relative;
+  z-index: 10;
+}
+
+/* Rail side is definition-driven (`regions.right.side` / `regions.right[0].side`,
+   default 'right'). The root carries the modifier — same shape as
+   `--collapsed` — rather than a per-rail inline order, because the flip is a
+   frame-level layout decision, not a rail-local one: `__main` keeps `order: 0`
+   either way, only the rail's position in the row swaps. */
+.surround-frame--rail-left .surround-frame__rail {
+  order: -1;
 }
 
 /* Programme stock. One paper ground and a 1px edge rule — no drop shadow per
@@ -127,13 +375,93 @@
   box-shadow: inset 0 0 0 1px var(--programme-edge);
 }
 
-.surround-frame__region--bottom {
+/* The plate brings its own stone (WorkPlacard.scss); the programme ground would
+   only show as a paper hairline around it. */
+.surround-frame__region--top {
   flex: 0 0 auto;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.16);
 }
 
+.surround-frame__region--bottom {
+  flex: 0 0 auto;
+
+  /* The band's regions are sized by their CONTENT now (a declared height is a
+     floor, and one region claims the slack), so a module that asks for
+     `height: 100%` inside an auto-height region would be asking a circular
+     question — Chrome answers it by clipping the module against the region's
+     `overflow: hidden`. Making the region a column and stretching its single
+     module resolves it in the honest direction: the region takes the module's
+     natural height, and the module fills the region when the region is taller. */
+  display: flex;
+  flex-direction: column;
+
+  > * {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The work-in-time band is part of the darkened house, not the programme:
+     near-black stone with the text in parchment. Re-mapping the frame tokens
+     HERE restyles MovementMap and CueTicker without touching either module —
+     they keep reading var(--ink)/var(--ink-soft)/var(--programme-edge). */
+  --ink: #e9dfc8;
+  --ink-soft: #a89a80;
+  --programme-edge: rgba(233, 223, 200, 0.28);
+  /* THE BOND'S GROUND (design wave 7; re-hued in wave 9). The sounding
+     movement's panel on the rail, the waist that joins them and the NOW
+     register's panel in the listening band are the SAME colour — that is the
+     whole mechanism by which they read as one shape, and so the colour is
+     published once, here, on the region both modules live in, rather than twice
+     in two stylesheets that would drift. The literal itself lives in
+     `_tokens.scss`, which is what makes the modules' own fallbacks the same
+     value rather than three hand-copied hexes.
+     MAROON, NOT BROWN. It was #241c15, a warm brown, and it read as brown. It
+     is now house material: the velvet drape's own hue family, darker than the
+     rail's ground, and three and a half times as distinct from the band's unlit
+     ground as the brown was — see `_tokens.scss` for the CIELAB table. */
+  --bond-ground: #{$bond-ground};
+  /* THE BAND'S ONE RADIUS, and the rule it states: every corner on the outside
+     of the bond's silhouette carries it, every corner where its parts weld is
+     square, and nothing else in the band is rounded. */
+  --bond-radius: #{$bond-radius};
+  background-color: #191310;
+  background-image: linear-gradient(180deg, #1e1712 0%, #14100c 100%);
+  box-shadow: inset 0 1px 0 rgba(233, 223, 200, 0.08);
+}
+
+/* The rail is part of the darkened house too. A wall of video makes white paper
+   read as a light leak, so the rail's ground goes to deep oxblood — the same
+   move `--bottom` already makes, one register warmer, so band and rail read as
+   one house material (near-black stone under the video, maroon beside it).
+   The paper FIBRE stays, multiplied over the maroon, so the stock keeps its
+   tooth: this is a darker paper, not a flat panel.
+     `--programme` is deliberately NOT re-mapped. The portrait mat and the
+   carousel's mats read it, and paper survives in the frame exactly there — lit
+   mats and a brass nameplate on a dark wall.
+     `--map-halo` is the rail's own ground, published as a token because the
+   country map cannot derive it: its labels are haloed against whatever they are
+   drawn over, and that is the one colour the `--ink` family does not carry.
+   (This replaces wave 2's `--velvet` re-map, which existed only to keep the
+   pre-redesign map's SOLID highlight visible on maroon. The map is drawn in ink
+   hairlines now and reads `--ink`/`--ink-soft` like every other module, so the
+   stopgap is gone rather than retuned.) */
 .surround-frame__region--right {
   flex: 1 1 auto;
   height: 100%;
+
+  --ink: #e9dfc8;
+  --ink-soft: #a89a80;
+  --programme-edge: rgba(233, 223, 200, 0.26);
+  --map-halo: #33131a;
+  background-color: #33131a;
+  background-image:
+    var(--programme-fibre),
+    linear-gradient(180deg, #3a1418 0%, #2a0f12 100%);
+  background-size: 180px 180px, cover;
+  background-blend-mode: multiply, normal;
+  box-shadow: inset 0 0 0 1px rgba(233, 223, 200, 0.1);
 }
 
 /* An unresolved module leaves paper, not a hole — the frame stays composed. */
@@ -143,13 +471,114 @@
   opacity: 0.55;
 }
 
-.surround-frame__overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
+/* ---------------------------------------------------------------------------
+   THE ENRICHMENT MOMENT (design wave 5)
+   The surround's data arrives about a second after the video does (the host's
+   1 Hz enrichment poll). Until then the player is a bare, full-bleed picture,
+   so the arrival changes FOUR things at once — and without choreography all
+   four of them pop, the video's own resize loudest of all.
 
-  > * {
-    pointer-events: auto;
+   So it is one gesture: the VIDEO SHRINKS out of the whole frame and into its
+   box, the rail slides in from its own side (same beat — the rail is what makes
+   the box exist), the band rises from below, and the plate settles down onto the
+   settled picture. ~620ms end to end.
+
+   THE VIDEO MOVES BUT NEVER REMOUNTS, AND NEVER LEAVES 16:9. The transform sits
+   on the media box, which is rendered at the same depth whether the frame is on
+   or off, so React only ever updates its style — no re-parenting, no reload. And
+   it is a UNIFORM `scale()`: an animation that multiplies both axes by the same
+   number cannot be off the ratio at any frame of itself, which a width/height
+   animation only promises at its two ends. It composites, too, so a playing
+   video is not re-laid-out sixty times a second while it arrives.
+   `--enter-media-scale/dx/dy` are measured and published by the component; the
+   fallbacks make the rule a no-op if they are ever absent.
+
+   `--entering` lives on the frame root, which does not exist in the inactive
+   state (no class at all), so no animation state can leak into the boxless
+   shell — the same guarantee `--rail-left` carries. `--arriving` is its longer
+   sibling: it holds while anything is still moving, and its only job is the
+   stage's `overflow` (below).
+   --------------------------------------------------------------------------- */
+.surround-frame__rail,
+.surround-frame__footer,
+.surround-frame__header {
+  transition:
+    opacity var(--enter-ms, 420ms) var(--enter-ease),
+    transform var(--enter-ms, 420ms) var(--enter-ease);
+}
+
+.surround-frame__media {
+  transition: transform var(--enter-media-ms, 520ms) var(--enter-ease);
+  transform-origin: center center;
+}
+
+/* Stagger: video and rail together, band a beat later, plate last onto the
+   picture. The delays come from `entrance.js` with these as fallbacks. */
+.surround-frame__media { transition-delay: var(--enter-delay-media, 0ms); }
+.surround-frame__rail { transition-delay: var(--enter-delay-rail, 0ms); }
+.surround-frame__footer { transition-delay: var(--enter-delay-footer, 110ms); }
+.surround-frame__header { transition-delay: var(--enter-delay-header, 200ms); }
+
+/* The stage clips (it has to: the media box is `max-height: 100%` inside it and
+   an overflowing picture would otherwise paint over the band). While the video
+   is BIGGER than its box, that clip would cut the shrink into a letterbox slot.
+   `--arriving` outlives every transition by a frame, so the clip comes back only
+   once nothing is moving — an `overflow` flip cannot be transitioned, and one
+   landing mid-move would read as the picture being guillotined. */
+.surround-frame--arriving .surround-frame__stage {
+  overflow: visible;
+}
+
+.surround-frame--entering .surround-frame__media {
+  transform:
+    translate(var(--enter-media-dx, 0px), var(--enter-media-dy, 0px))
+    scale(var(--enter-media-scale, 1));
+}
+.surround-frame--entering .surround-frame__rail {
+  opacity: 0;
+  transform: translateX(14%);              /* right rail: in from the right */
+}
+.surround-frame--entering.surround-frame--rail-left .surround-frame__rail {
+  opacity: 0;
+  transform: translateX(-14%);             /* left rail: in from the left */
+}
+.surround-frame--entering .surround-frame__footer {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.surround-frame--entering .surround-frame__header {
+  opacity: 0;
+  /* The base transform IS the straddle; the entrance only adds the settle. */
+  transform: translate(-50%, calc(var(--placard-straddle) - 12px));
+}
+
+/* Reduced motion: the stagger is gone, not just the sliding, and the video does
+   not move at all — it is simply in its box from the first painted frame. The
+   `transition` shorthand below resets `transition-delay` to its initial value
+   (0s) on all three chrome elements, so rail, band and plate fade in on the SAME
+   220ms opacity ramp, together — an unstaggered fade, not a slower
+   choreography. That is the right trade for this media query: motion is what
+   reduced-motion asks to lose, and losing the stagger with it is a side effect,
+   not a second design decision made here. */
+@media (prefers-reduced-motion: reduce) {
+  .surround-frame__rail,
+  .surround-frame__footer,
+  .surround-frame__header {
+    transition: opacity 220ms linear;
+  }
+
+  .surround-frame__media {
+    transition: none;
+  }
+
+  .surround-frame--entering .surround-frame__rail,
+  .surround-frame--entering.surround-frame--rail-left .surround-frame__rail,
+  .surround-frame--entering .surround-frame__footer,
+  .surround-frame--entering .surround-frame__media {
+    transform: none;
+  }
+
+  .surround-frame--entering .surround-frame__header {
+    transform: translate(-50%, var(--placard-straddle));
   }
 }

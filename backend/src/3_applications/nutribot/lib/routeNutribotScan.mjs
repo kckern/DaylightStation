@@ -64,4 +64,24 @@ export function nutriscanRefusalNotice(outcome = {}) {
   return `scan not applied (${outcome.error || 'refused'})`;
 }
 
+const SWALLOW_NOTICES = {
+  'nutriscan-disabled': 'scanning is off — the fridge sheet is not configured',
+  'no-scale-id': 'no scale for this scanner',
+};
+
+/**
+ * One-line reason a code the grammar CLAIMED never reached the buffer.
+ *
+ * `nutriscanRefusalNotice` covers a scan the use case ran and rejected; this
+ * covers one it never got to run at all. Both end up on the same transient `⚠️`
+ * line, because from the fridge they are the same event: a beep that changed
+ * nothing.
+ *
+ * @param {string} [reason]
+ * @returns {string}
+ */
+export function swallowNotice(reason) {
+  return SWALLOW_NOTICES[reason] || `scan not applied (${reason || 'unavailable'})`;
+}
+
 export default routeNutribotScan;

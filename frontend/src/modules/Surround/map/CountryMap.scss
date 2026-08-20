@@ -1,12 +1,17 @@
 /**
- * CountryMap — the composer's geography, auto-framed.
+ * CountryMap — the composer's geography, auto-framed at regional zoom.
  *
  * Almost everything visual is set as SVG attributes in the component, because
  * the fills have to be readable by the tests that guard the design tokens. What
- * lives here is what CSS is actually better at: the label's small-caps setting,
- * the paper-lit hairline, and the fluid box.
+ * lives here is what CSS is actually better at: the type setting for the two
+ * label registers, the halo that keeps them legible over the drawing, and the
+ * fluid box.
  *
- * Ground stays transparent — this sits directly on the programme panel.
+ * Ground stays transparent — this sits directly on whatever panel holds it, and
+ * takes its ink colours from that panel's `--ink` / `--ink-soft`. The one thing
+ * it cannot derive is the colour of the ground its labels are haloed against,
+ * so the holding region declares `--map-halo`; `--hall-ink` is the fallback for
+ * a map rendered outside the surround entirely.
  */
 
 .surround-country-map {
@@ -16,22 +21,56 @@
   background: transparent;
   /* Guards against a parent grid stretching the box away from the viewBox's
      aspect; the letterboxing already lives in the viewBox itself. */
-  aspect-ratio: 420 / 260;
-  overflow: visible;
+  aspect-ratio: 420 / 252;   /* 5:3 — the city photographs' ratio, so the
+                               carousel swaps between them without resizing */
+  /* CLIPS. At regional zoom the frame is wide enough that half of Europe is in
+     the geometry, and `overflow: visible` painted every country that fell
+     outside the viewBox over whatever the map was placed in — measured: the
+     drawing spilled out of the carousel's plate and down the rail. Every label
+     is positioned from a frame-CLIPPED box, so nothing that should be read is
+     lost to this. */
+  overflow: hidden;
 }
 
 /* Concert-programme section-header setting: letterspaced small caps of the
-   display face. Not a third typeface. */
-.surround-country-map__label {
+   display face. Not a third typeface. Shared by the city label and both country
+   registers — one voice, three volumes. */
+.surround-country-map__label,
+.surround-country-map__place {
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  font-weight: 600;
-  letter-spacing: 0.14em;
   text-transform: uppercase;
   paint-order: stroke fill;
-  stroke: var(--hall-ink, #14100c);
-  stroke-width: 2.5px;
+  stroke: var(--map-halo, var(--hall-ink, #14100c));
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
+}
+
+/* The city: the loudest mark on the map, in brass (set on the element). */
+.surround-country-map__label {
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  stroke-width: 2.5px;
+}
+
+/* The subject country. Named because a shape with a star in it tells a viewer
+   who cannot already place the country precisely nothing. Wider tracking than
+   the city and a heavier halo: this is the caption of the whole drawing. */
+.surround-country-map__place--subject {
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  stroke-width: 3px;
+}
+
+/* The neighbours. Same voice, dropped to a murmur — tracked a little tighter so
+   a long name (LUXEMBOURG, SWITZERLAND) still fits its own country, and lighter
+   in weight so the eye sorts subject from context before it reads a word. Size
+   stays at the 0.72rem ten-foot floor; quieter here means weight and colour,
+   never smaller type. */
+.surround-country-map__place--neighbour {
+  font-weight: 500;
+  letter-spacing: 0.11em;
+  stroke-width: 2.5px;
+  opacity: 0.86;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -104,7 +104,7 @@ import { ScanDispatcher, emit } from '#apps/scan/ScanDispatcher.mjs';
 import { PREFIX_REGISTRY, LEGACY_NUTRITION_TAGS } from '#domains/scan/ScanCode.mjs';
 import { KNOWN_COMMANDS } from '#domains/barcode/BarcodeCommandMap.mjs';
 import { TriggerEvent } from '#domains/trigger/TriggerEvent.mjs';
-import { routeNutribotScan, nutriscanRefusalNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
+import { routeNutribotScan, nutriscanRefusalNotice, swallowNotice } from '#apps/nutribot/lib/routeNutribotScan.mjs';
 
 /**
  * Reader route -> namespace, for the dispatcher's step 5.
@@ -156,7 +156,36 @@ export function errText(err) {
   }
 }
 
-/** Startup-decided swallow reasons, reported once each. Lifted from `app.mjs`. */
+/**
+ * Rate-limit WITHIN a level, never by dropping to one that is not shipped.
+ *
+ * `debug` never reaches the log store (see `docs/reference/core/*` on the
+ * logging framework), so the module used to warn ONCE per swallow reason and
+ * demote every repeat to `debug` — which was not suppression, it was deletion.
+ * The second refusal of an incident simply did not exist anywhere. The 12:31
+ * incident this module is named after is exactly that: a `dl:140` refusal was
+ * visible and the `ct:60` refusal four seconds later left no record at all.
+ *
+ * `logger.sampled` (see `backend/src/0_system/logging/logger.mjs`) keeps a
+ * countable, still-shipped record instead: within budget it logs every call,
+ * over budget it aggregates a count rather than discarding it silently. Falls
+ * back to `warn` via `emit` — unconditionally, not once — when the logger has
+ * no `sampled` method, the same defensive shape `emit` already uses for a
+ * logger missing a level.
+ */
+function emitSampled(logger, event, data, options) {
+  try {
+    if (typeof logger?.sampled === 'function') {
+      logger.sampled(event, data, options);
+      return;
+    }
+  } catch {
+    // Fall through to the `warn` fallback below — see `emit`'s own rationale.
+  }
+  emit(logger, 'warn', event, data);
+}
+
+/** Startup-decided swallow reasons. Lifted from `app.mjs`. */
 const NUTRISCAN_SWALLOW_EVENT = {
   'nutriscan-disabled': 'barcode_relay.nutriscan.config_disabled',
   'no-scale-id': 'barcode_relay.nutriscan.no_scale_id',
@@ -445,12 +474,6 @@ export function createScanDispatch(deps = {}) {
     routeFallback = SCAN_ROUTE_FALLBACK,
   } = deps;
 
-  // Per-PROCESS, keyed by reason — exactly as the `let` in `app.mjs` was. Both
-  // swallow reasons are decided at STARTUP (a broken scales.yml, or a reader
-  // deliberately configured without a scale), so warning per scan buried the log
-  // without adding information.
-  const nutriscanWarned = new Set();
-
   const relayCfgFor = (device) => relayInstances[device] || {};
 
   // ---- content + command ---------------------------------------------------
@@ -516,6 +539,32 @@ export function createScanDispatch(deps = {}) {
       emit(barcodeLogger, 'info', 'barcode_relay.nutriscan', {
         device, scaleId, kind: outcome.kind, ok: !refused, error: outcome.error || null,
       });
+      const bridge = getScaleNutribotBridge();
+
+      // `rs:done` COMMITS; it does not arm, and it does not ACK.
+      //
+      // The card reads "the sequence is complete, process it now", and arming a
+      // 25 s clock for it was the opposite of that: `ApplyScanToComposition` has
+      // already consumed the slots by the time this branch runs, so the timer
+      // fired against an empty composition and skipped as incomplete — the
+      // explicit finish gesture was the one path that GUARANTEED a stranded entry
+      // with no density. The pre-consumption snapshot rides on the outcome,
+      // because by now the store has nothing left to read.
+      //
+      // No ACK refresh on this path, deliberately. `refreshPrompt` renders from a
+      // FRESH store read, which for `done` is the composition that was just
+      // consumed — so it would repaint the prompt with no tare and no density, and
+      // `LogFoodFromScale` would PERSIST that un-tared weight for the commit to
+      // then multiply. The commit re-renders the message itself once the density
+      // applies, which is the ack the user is waiting for anyway.
+      //
+      // Fire-and-forget like the ACK it replaces: `commitNowFor` never rejects,
+      // and the `.catch` covers a bridge older than it.
+      if (outcome.kind === 'done') {
+        bridge?.commitNowFor?.(scaleId, outcome.snapshot)?.catch?.(() => {});
+        return { status: 'applied', ok: true, effect: outcome };
+      }
+
       // ACK on the message the user is already looking at — INCLUDING a refusal,
       // which writes nothing to the buffer and so would otherwise render as no
       // change whatsoever. That silent failure is precisely what the ACK exists
@@ -523,7 +572,21 @@ export function createScanDispatch(deps = {}) {
       // Fire-and-forget: a failed edit must not swallow a scan that already
       // landed in the buffer.
       const notice = refused ? nutriscanRefusalNotice(outcome) : null;
-      getScaleNutribotBridge()?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+      bridge?.refreshPrompt?.(scaleId, notice)?.catch?.(() => {});
+      // A fridge-sheet scan restarts the bridge's quiet-commit clock. Without
+      // this the entry finalises 25s after the last WEIGHT, and a density or
+      // tare scanned in the meantime lands on a log that is already closed —
+      // the 12:31 incident, where a container arrived 4.4s behind its density.
+      //
+      // A REFUSED scan restarts it too, alongside the ACK above and for the same
+      // reason: the person is mid-gesture and about to rescan, and the failure
+      // directions are not symmetric. Restarting too eagerly only delays a
+      // commit the next lull will make anyway; not restarting closes the entry
+      // under the hand that was still filling it in.
+      //
+      // Fire-and-forget like the ACK: synchronous, optional, and never allowed
+      // to swallow a scan that already reached the buffer.
+      bridge?.armCommitFor?.(scaleId);
       return { status: refused ? 'refused' : 'applied', ok: !refused, effect: outcome };
     }
 
@@ -531,14 +594,14 @@ export function createScanDispatch(deps = {}) {
       const event = NUTRISCAN_SWALLOW_EVENT[decision.reason] || 'barcode_relay.nutriscan.unavailable';
       // `raw`, not `body`: an operator reading this line wants the string that
       // was physically scanned. They are equal for every legacy code.
-      if (nutriscanWarned.has(decision.reason)) {
-        emit(barcodeLogger, 'debug', event, { device, code: raw });
-      } else {
-        nutriscanWarned.add(decision.reason);
-        emit(barcodeLogger, 'warn', event, {
-          device, code: raw, hint: 'further occurrences log at debug',
-        });
-      }
+      // See `emitSampled`'s own docstring for why this is unconditional now.
+      emitSampled(barcodeLogger, event, { device, code: raw }, { maxPerMinute: 6, aggregate: true });
+      // ACK a refusal too. Without this the ONE path where nothing happened is
+      // the one path that says nothing: the user gets a scanner beep, no change
+      // on the prompt, and no way to tell a dead feature from a bad code.
+      // Fire-and-forget, exactly like the nutriscan branch — a failed edit must
+      // not turn a silent refusal into a thrown one.
+      getScaleNutribotBridge()?.refreshPrompt?.(scaleId, swallowNotice(decision.reason))?.catch?.(() => {});
       return { status: 'swallowed', ok: false, message: decision.reason };
     }
 

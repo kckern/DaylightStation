@@ -7,10 +7,14 @@
  *
  *   'auto'  (default) — frame an item whenever the backend attached a payload.
  *   'off'             — never frame, on this screen, no matter what is authored.
- *   '<definition-id>' — forced definition. In the PoC this still only applies to
- *                       items that already carry a `surround` payload; forcing a
- *                       definition onto un-enriched items is deliberately out of
- *                       scope (see the plan's "Out of scope").
+ *
+ * THOSE ARE THE ONLY TWO VALUES. A forced-definition mode was documented here
+ * for a wave, normalized, threaded from screen YAML and read by the mount log —
+ * and behaved in every respect exactly like 'auto', because the frame's
+ * definition comes from the item's payload and nothing ever consulted the
+ * setting for one. A configuration value that silently does nothing is worse
+ * than a missing feature: it is a screen author's afternoon. Anything that is
+ * not 'off' is 'auto', and this comment is the whole contract.
  *
  * The DEFAULT IS 'auto', which matters: every Player mount outside the screen
  * framework (Fitness, Piano, School, Feed, Media, Admin) reads this default
@@ -32,15 +36,16 @@ export const SURROUND_OFF = 'off';
 export const SurroundSettingContext = createContext(SURROUND_AUTO);
 
 /**
- * Read the setting, normalized. A missing/empty/non-string value reads as 'auto'
- * so a typo in screen YAML degrades to the default instead of disabling logging
- * or crashing a screen.
+ * Read the setting, normalized. Anything that is not 'off' reads as 'auto' — a
+ * typo in screen YAML degrades to the default instead of disabling logging or
+ * crashing a screen, and an unsupported value cannot pretend to be a mode.
  *
- * @returns {string} 'auto' | 'off' | a definition id
+ * @returns {'auto'|'off'}
  */
 export function useSurroundSetting() {
   const value = useContext(SurroundSettingContext);
-  return (typeof value === 'string' && value.trim()) ? value.trim() : SURROUND_AUTO;
+  const normalized = (typeof value === 'string' && value.trim()) ? value.trim() : SURROUND_AUTO;
+  return normalized === SURROUND_OFF ? SURROUND_OFF : SURROUND_AUTO;
 }
 
 export default SurroundSettingContext;
