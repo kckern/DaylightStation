@@ -739,7 +739,7 @@ export class YamlSurroundStore extends ISurroundStore {
       // `authored` is the position in the YAML — the line an author has to go
       // and fix — while `index` is the dense position on the composed rail.
       const mine = ref
-        ? this.#referencedChapters(container, ref, authored, byContentId, index)
+        ? this.#referencedChapters(container, ref, authored, byContentId)
         : this.#inlineChapters(container, entry, byWork);
       if (!mine) return;
 
@@ -751,7 +751,7 @@ export class YamlSurroundStore extends ISurroundStore {
       slots.push({ contentId, index, sounding: 0 });
     });
 
-    const placed = withOffsets(chapters);
+    const placed = withOffsets(this.#renumberGroups(chapters));
     for (const chapter of placed) {
       const slot = slots[chapter.part];
       if (slot) slot.sounding += chapter.duration;
@@ -764,24 +764,70 @@ export class YamlSurroundStore extends ISurroundStore {
   }
 
   /**
+   * Number the groups on a composed rail by their position ON THAT RAIL.
+   *
+   * `group.index` has to mean "which heading is this, counting along this rail"
+   * — and until this ran, it meant "position in whatever produced me". Both
+   * sources of a group number from zero independently: `#resolveChapters` uses
+   * a counter that is fresh per call, and a part's stamped group used its part
+   * index. So an outer container whose two ordinary parts each resolve a work
+   * that uses chapter references received two groups both claiming index 0, and
+   * the band prints one heading over two different sets. No nesting required —
+   * two plain sidecars are enough.
+   *
+   * A run is detected by object identity, not by work: every chapter of one
+   * group shares the group object it was stamped with, so two consecutive parts
+   * that happen to play the SAME work still get two headings — a set played
+   * twice is two appearances, the same rule `#resolveChapters` follows when one
+   * container names one work twice. An ungrouped chapter between two runs
+   * closes the run, so a group reappearing after an interlude is numbered again.
+   *
+   * @param {Array<Object>} chapters - The composed rail, in order
+   * @returns {Array<Object>} The same chapters with groups renumbered
+   * @private
+   */
+  #renumberGroups(chapters) {
+    let source = null;
+    let renumbered = null;
+    let index = -1;
+    return chapters.map((chapter) => {
+      if (!chapter.group) {
+        source = null;
+        return chapter;
+      }
+      if (chapter.group !== source) {
+        source = chapter.group;
+        index += 1;
+        // One replacement object shared across the run, so the identity that
+        // detected the run survives into the payload for anyone grouping by it.
+        renumbered = { ...chapter.group, index };
+      }
+      return { ...chapter, group: renumbered };
+    });
+  }
+
+  /**
    * Chapters of the sidecar a reference-form part names, or null to skip it.
    *
-   * NESTING IS REFUSED, not supported. Composition runs in walk order, so an
-   * inner container may still be holding its provisional empty rail when an
-   * outer one reads it — the same data would compose or silently empty
-   * depending on how the two files happen to sort. Ordering that by dependency
-   * is easy; making it CORRECT is not, and that is the actual reason for the
-   * refusal. An inner container's chapters already carry groups numbered from
-   * zero within that container, so two nested parts would arrive on the outer
-   * rail both claiming `group.index: 0` and the band would print one heading
-   * over two different sets. Renumbering them is a decision about what a group
-   * means when rails nest, which belongs with the rail (Task 6) and not here.
-   * A loud refusal keeps that decision open; dependency ordering alone would
-   * have traded a silent empty rail for a silent wrong one.
+   * NESTING IS REFUSED, not supported, for two reasons that outlive the
+   * ordering problem. First: composition takes a part's chapters and stamps
+   * every one of them with THAT PART's contentId. An inner container's chapters
+   * already name their own leaf media items, so composing it would overwrite
+   * real, playable ids with the inner container's own — which is a Plex season,
+   * not a media item, and cannot be played or sought. Second: composition runs
+   * in walk order, so an inner container may still hold its provisional empty
+   * rail when an outer one reads it, and the same data would compose or
+   * silently empty depending on how the two files happen to sort.
+   *
+   * (Group numbering used to be the third reason and no longer is —
+   * `#renumberGroups` now owns `group.index` for the whole rail. Supporting
+   * nesting would therefore need the contentId question answered and a
+   * dependency-ordered pass; the spec scopes nesting out at one level and
+   * nothing authors it, so it stays refused rather than half-working.)
    *
    * @private
    */
-  #referencedChapters(container, contentId, authored, byContentId, index) {
+  #referencedChapters(container, contentId, authored, byContentId) {
     const part = byContentId.get(contentId);
     // A container listing itself is a cycle wearing a different hat.
     if (!part || part === container) {
@@ -797,8 +843,9 @@ export class YamlSurroundStore extends ISurroundStore {
     // The heading above these chapters names the work the part PLAYS — the
     // part's own `work:`, not the container's. Where a part's own corpus work
     // used chapter references it arrived already grouped, and those inner
-    // labels are more specific than anything nameable from out here.
-    const group = { work: part.work, title: part.payload.piece?.title ?? part.work, index };
+    // labels are more specific than anything nameable from out here. Neither
+    // kind carries its own index: `#renumberGroups` assigns every one of them.
+    const group = { work: part.work, title: part.payload.piece?.title ?? part.work };
     return part.payload.chapters.map((c) => (c.group ? c : { ...c, group }));
   }
 

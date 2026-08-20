@@ -1495,6 +1495,62 @@ describe('YamlSurroundStore — parts composed by contentId', () => {
     expect(r.piece.title).toBe('Études');
   });
 
+  it('numbers groups by their position on the composed rail, not on whatever produced them', () => {
+    // NO NESTING HERE — two perfectly ordinary part sidecars. Each one's own
+    // corpus work uses a chapter reference, and `#resolveChapters` counts parts
+    // with a counter that is fresh per call, so both parts arrive carrying
+    // `group.index: 0`. The band groups the rail by that index, so two
+    // different works would print under one heading.
+    writeLib('classical/0_flagship/chopin/leaf-a.yml', 'title: Leaf A\nmovements:\n  - { n: 1, name: Alpha }\n');
+    writeLib('classical/0_flagship/chopin/leaf-b.yml', 'title: Leaf B\nmovements:\n  - { n: 1, name: Beta }\n');
+    writeLib('classical/0_flagship/chopin/disc-one.yml', 'title: Disc One\nchapters:\n  - work: chopin/leaf-a\n');
+    writeLib('classical/0_flagship/chopin/disc-two.yml', 'title: Disc Two\nchapters:\n  - work: chopin/leaf-b\n');
+    writeLib('classical/0_flagship/chopin/season.yml',
+      'title: Season\nchapters:\n  - work: chopin/disc-one\n  - work: chopin/disc-two\n');
+    write('classical/chopin/ep1.yml',
+      'work: chopin/disc-one\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\nstarts: [0]\nmusicEndsAt: 60\n');
+    write('classical/chopin/ep2.yml',
+      'work: chopin/disc-two\nsurround: concert-hall\nmatch: { contentId: plex:ep2 }\nstarts: [0]\nmusicEndsAt: 90\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/season\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:ep1\n  - plex:ep2\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+
+    // Both parts kept the inner label their own work gave them — that is right,
+    // it is more specific than the disc — but the NUMBER is the rail's to give.
+    // MUTATION PROOF — drop the #renumberGroups call in #composeOne and these
+    // read [0, 0]: two headings collapse into one over two different works.
+    expect(r.chapters.map((c) => [c.name, c.group.work, c.group.index])).toEqual([
+      ['Alpha', 'chopin/leaf-a', 0],
+      ['Beta', 'chopin/leaf-b', 1]
+    ]);
+  });
+
+  it('gives a work played by two consecutive parts two headings, not one', () => {
+    // Runs are detected by group identity, not by work slug. A set played twice
+    // is two appearances — the same rule #resolveChapters follows when one
+    // container names one work twice — so collapsing on the work would erase
+    // the second disc's heading.
+    writeLib('classical/0_flagship/chopin/leaf.yml', 'title: Leaf\nmovements:\n  - { n: 1, name: Solo }\n');
+    writeLib('classical/0_flagship/chopin/set.yml', 'title: Set\nchapters:\n  - work: chopin/leaf\n');
+    write('classical/chopin/ep1.yml',
+      'work: chopin/leaf\nsurround: concert-hall\nmatch: { contentId: plex:ep1 }\nstarts: [0]\nmusicEndsAt: 60\n');
+    write('classical/chopin/ep2.yml',
+      'work: chopin/leaf\nsurround: concert-hall\nmatch: { contentId: plex:ep2 }\nstarts: [0]\nmusicEndsAt: 90\n');
+    write('classical/chopin/season.yml',
+      'work: chopin/set\nsurround: concert-hall\nmatch: { contentId: plex:season }\n'
+      + 'parts:\n  - plex:ep1\n  - plex:ep2\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const r = store.lookup('plex:season', '');
+    expect(r.chapters.map((c) => [c.contentId, c.group.work, c.group.index])).toEqual([
+      ['plex:ep1', 'chopin/leaf', 0],
+      ['plex:ep2', 'chopin/leaf', 1]
+    ]);
+  });
+
   it('composes a part whose sidecar the walk has not reached yet', () => {
     // The container sorts before its parts here (`a-season` < `z-part`), so a
     // store that composed while resolving a single file would find nothing.
