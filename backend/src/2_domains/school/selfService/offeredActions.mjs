@@ -190,11 +190,20 @@ function waitingSentence(resolution) {
       // On the panel the child comes back to the keypad instead.
       return 'Finish watching, then type your code again.';
     case 'created':
-    case 'media_completed':
-      // A composition the ladder has no move for. `nextMove` calls this
-      // `nothing` and the scan path answers it with "Nothing to do there yet.
-      // Tell a grown-up." The card says the same.
+      // A unit with nothing on it — no launch, no media, no document, no bank.
+      // `nextMove` calls this `nothing` and the scan path answers it with
+      // "Nothing to do there yet. Tell a grown-up." The card says the same,
+      // because this really is a fault: someone has to go fix the unit.
       return TELL_A_GROWN_UP;
+
+    case 'media_completed':
+      // NOT the same thing, which is why these two cases are kept apart. The
+      // child watched a video that has no worksheet behind it, so there is
+      // nothing left to print or answer — they FINISHED. An earlier draft
+      // shared the `created` branch here and sent every media-only lesson off
+      // to fetch a parent as though something had broken. The common ending
+      // for a video lesson must read like an ending.
+      return 'All done — nice work.';
     default:
       // Every other state is a wait for the card's purposes: `submitted`,
       // `graded`, `launch_dispatched`, a passed `outcome_recorded`, and the

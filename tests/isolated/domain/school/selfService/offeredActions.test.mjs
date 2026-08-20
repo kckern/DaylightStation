@@ -251,6 +251,26 @@ describe('later session states reuse the same builder', () => {
   });
 
   it.each([
+    ['a media-only unit', { media: { plex: '1' } }],
+    ['a unit whose only follow-up was the video', { media: { plex: '1' }, unitId: 'u1' }],
+  ])('tells %s at media_completed that it finished, not that something broke', (_label, unit) => {
+    const resolution = move(unit, 'media_completed');
+    expect(kinds(offeredActions(resolution, opts()))).toEqual(['exit']);
+    expect(cardSentence(resolution, opts())).toBe('All done — nice work.');
+  });
+
+  it('still sends an empty unit at created to a grown-up — that one IS a fault', () => {
+    expect(cardSentence(move({ unitId: 'u1' }, 'created'), opts())).toBe('Tell a grown-up.');
+  });
+
+  it('never gives a finished video the fault wording', () => {
+    // Re-merging the `created` and `media_completed` branches would turn
+    // success back into "go fetch a parent"; this is the tripwire.
+    expect(cardSentence(move({ media: { plex: '1' } }, 'media_completed'), opts()))
+      .not.toBe(cardSentence(move({ unitId: 'u1' }, 'created'), opts()));
+  });
+
+  it.each([
     ['a launch unit at media_completed', { launch: { surface: 'garage-fitness' } }, 'media_completed'],
     ['a bare unit at media_completed', { unitId: 'u1' }, 'media_completed'],
     ['a bare unit at created', { unitId: 'u1' }, 'created'],
