@@ -92,9 +92,11 @@ import { smartQuotes, smartQuotesAll, trimmed } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, showsNowHeading, useNowSide, elapsedFraction, activeMovementIndex,
-  placedMovements, roman, ACCORDION_MS,
+  placedMovements, roman, useEasedVector, ACCORDION_MS, NOW_PANEL_SHARE,
 } from '../band.js';
-import { bandPools, fitBand, fitStyle } from '../fit.js';
+import {
+  bandPools, fitBand, fitStyle, withhold, withheldSets,
+} from '../fit.js';
 import './CueTicker.scss';
 
 /** Each half of the dissolve: the old line out, then the new line in.
@@ -342,18 +344,53 @@ export default function CueTicker({
   useEffect(() => {
     const root = rootRef.current;
     if (!root || typeof ResizeObserver === 'undefined') return undefined;
-    const observer = new ResizeObserver(() => setLayoutTick((n) => n + 1));
+    // COALESCED ONTO ONE FRAME (review finding M-10). A fit is ~250 write-then-
+    // read round trips of forced synchronous layout and a ResizeObserver fires
+    // per resize step, so a continuous drag would run the whole search on every
+    // one of them, inside a layout effect. Kiosks do not resize, which makes
+    // this a latent cost rather than a live one — and two lines to remove.
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) return;
+      if (typeof requestAnimationFrame !== 'function') { setLayoutTick((n) => n + 1); return; }
+      frame = requestAnimationFrame(() => { frame = 0; setLayoutTick((n) => n + 1); });
+    });
     observer.observe(root);
-    return () => observer.disconnect();
+    return () => {
+      if (frame && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
 
   // The vendored faces land after the first layout, and a note measured in the
   // fallback serif is measured against the wrong metrics — the same reason the
   // rail waits for them before solving the accordion.
+  //
+  // `ready` ALONE IS NOT THE CLAIM WE NEED (review finding M-11). It resolves
+  // when the document's font loading settles, which is not "the body face is
+  // usable", and the degradation if the two ever come apart is the single
+  // outcome this wave forbids: a fit solved against the fallback serif's
+  // metrics, too big for the box, clipped in silence with no ellipsis and no
+  // warn. So the face is CHECKED, and the check is retried across the window in
+  // which `ready` has resolved and this face has not (a cold cache under
+  // `font-display: swap`). The measure spec asserts the same thing for the same
+  // reason. After two seconds we fit against whatever is actually there — a
+  // slightly conservative fit beats no fit at all.
   useEffect(() => {
+    if (typeof document === 'undefined' || !document.fonts) return undefined;
     let live = true;
-    document?.fonts?.ready?.then?.(() => { if (live) setLayoutTick((n) => n + 1); });
-    return () => { live = false; };
+    let tries = 0;
+    let timer = null;
+    const check = () => {
+      if (!live) return;
+      const ready = typeof document.fonts.check === 'function'
+        ? document.fonts.check('500 16px "EB Garamond"') : true;
+      if (ready || tries >= 20) { setLayoutTick((n) => n + 1); return; }
+      tries += 1;
+      timer = setTimeout(check, 100);
+    };
+    document.fonts.ready?.then?.(check);
+    return () => { live = false; if (timer) clearTimeout(timer); };
   }, []);
 
   // LAYOUT EFFECT, so the fit is committed before the browser paints: the first
@@ -406,12 +443,7 @@ export default function CueTicker({
    * register simply carries no note — its standing label stays, the box stays
    * exactly as tall, and nothing on the band moves.
    */
-  const fittable = useMemo(() => {
-    if (!rejected?.length) return null;
-    const by = { piece: new Set(), now: new Set() };
-    rejected.forEach((r) => by[r.zone]?.add(r.text));
-    return by;
-  }, [rejected]);
+  const withheld = useMemo(() => withheldSets(fit), [fit]);
   /**
    * THE FIT'S IDENTITY, carried on every rotating payload the dissolve sees.
    *
@@ -424,20 +456,34 @@ export default function CueTicker({
    */
   const fitGen = fit ? `${fit.fontPx}:${fit.leading}:${fit.rejected.length}` : 'unfitted';
 
-  const pieceFacts = useMemo(
-    () => (fittable ? facts.filter((f) => !fittable.piece.has(f)) : facts),
-    [facts, fittable],
-  );
-  const nowNotes = useMemo(
-    () => (fittable ? nowPool.filter((n) => !fittable.now.has(n)) : nowPool),
-    [nowPool, fittable],
+  const pieceFacts = useMemo(() => withhold(facts, withheld?.piece), [facts, withheld]);
+  const nowNotes = useMemo(() => withhold(nowPool, withheld?.now), [nowPool, withheld]);
+  /**
+   * AND THE CUES (review finding C-1). This was the hole in the law: `bandPools`
+   * measures every cue, so an over-long one IS rejected and the surviving type
+   * size is solved EXCLUDING it — and then the unfiltered cue preempted the
+   * panel at that size and was clipped by `overflow: hidden`, with no ellipsis
+   * to admit it. The one string the fit had certified as unsettable was the one
+   * string that could still reach the screen, and it reached it by preempting
+   * everything else.
+   *
+   * A withheld cue simply does not fire: the register keeps rotating and the
+   * warn names the cue, its budget and its overflow. WHICH register decides is
+   * the same rule `bandPools` measures by — a split band's cues belong to the
+   * NOW register, an unsplit band's to the only register it has — and the string
+   * compared is the CURLED one, because that is the string that would be
+   * painted.
+   */
+  const fittableCues = useMemo(
+    () => withhold(cues, withheld?.[split ? 'now' : 'piece'], (c) => smartQuotes(String(c.text))),
+    [cues, withheld, split],
   );
 
   // Latest cue whose dwell window contains the playhead. Derived from `position`,
   // so a seek — forwards or backwards — re-evaluates with no extra machinery.
   const activeCue = useMemo(() => {
     let found = null;
-    cues.forEach((c) => {
+    fittableCues.forEach((c) => {
       const at = Number(c.at);
       const dwell = Number.isFinite(Number(c.dwell)) && Number(c.dwell) > 0 ? Number(c.dwell) : CUE_DWELL_S;
       if (position >= at && position < at + dwell) {
@@ -445,7 +491,7 @@ export default function CueTicker({
       }
     });
     return found;
-  }, [cues, position]);
+  }, [fittableCues, position]);
 
   // ---- the PIECE register (left) -------------------------------------------
   const [factIndex, setFactIndex] = useState(0);
@@ -517,7 +563,12 @@ export default function CueTicker({
     // Unsplit: this single zone carries the cues too.
     if (!split && activeCue) {
       const at = Number(activeCue.at);
-      return { key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)) };
+      // `pool` rides on a CUE line too (review finding C-1): a re-fit can
+      // WITHDRAW a cue, and a withdrawn cue has to leave at once rather than
+      // cross-fading out over 320ms while it is clipped.
+      return {
+        key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)), pool: fitGen,
+      };
     }
     if (pieceFacts.length) {
       const i = ((factIndex % pieceFacts.length) + pieceFacts.length) % pieceFacts.length;
@@ -583,7 +634,13 @@ export default function CueTicker({
       // movement boundary, and a cue landing exactly on one is not exempt —
       // the header above it changes either way.
       return {
-        key: `cue:${at}`, kind: 'cue', at, text: smartQuotes(String(activeCue.text)), mv: movementIndex,
+        key: `cue:${at}`,
+        kind: 'cue',
+        at,
+        text: smartQuotes(String(activeCue.text)),
+        mv: movementIndex,
+        // See `pieceNext`: a cue the fit withdraws must leave at once.
+        pool: fitGen,
       };
     }
     if (nowNotes.length) {
@@ -690,6 +747,30 @@ export default function CueTicker({
     : side;
 
   /**
+   * THE PANEL TRAVELS ON THE RAIL'S CLOCK (review finding I-6).
+   *
+   * It used to slide on a CSS `transition: left var(--accordion-ms)` while the
+   * rail's waist — which has to stay welded to this panel's whole top edge —
+   * jumped to the new hull in the frame the side flipped, because
+   * `bondConnector` took the side discretely. For the length of the swap the two
+   * halves of "one shape" were in different places: exactly the artifact §7
+   * abolished for the movement boundary, surviving in the one event §1 named as
+   * a degenerate case to hold.
+   *
+   * So the panel's left edge is interpolated by the SAME hook, over the same
+   * duration, on the same easing, and `MovementMap` feeds the identical number
+   * into `bondConnector`. Both modules resolve `side` from `useNowSide` on the
+   * same fraction in the same React commit, so their animations begin on the
+   * same frame and the two halves cannot separate. Reduced motion snaps both,
+   * which is what `useEasedVector` does with no CSS rule left to cancel.
+   */
+  const panelTarget = useMemo(
+    () => [side === 'left' ? 0 : 1 - NOW_PANEL_SHARE], [side],
+  );
+  const { shares: panelVector } = useEasedVector(panelTarget, ACCORDION_MS);
+  const panelLeft = panelVector[0] ?? 0;
+
+  /**
    * THE PIECE REGISTER'S STANDING LABEL (design wave 7).
    * `short_title` only — never a truncated `title`. A long title cut down to
    * fit would be a different, wronger claim about the work than saying nothing,
@@ -751,7 +832,7 @@ export default function CueTicker({
             // nothing for it to be, so this panel fades exactly as the rail's
             // does and the register above it is blank.
             data-bonded={movement ? 'true' : 'false'}
-            style={{ '--now-left': side === 'left' ? '0%' : '50%' }}
+            style={{ '--now-left': `${panelLeft * 100}%` }}
             aria-hidden="true"
           />
         )}

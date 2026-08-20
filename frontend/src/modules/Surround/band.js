@@ -546,16 +546,29 @@ const EDGE_EPS = 3e-4;
  * shape the user asked for), and the first and last movements (nothing special:
  * their spans are just the extreme ones).
  *
+ * THE PANEL'S POSITION IS A NUMBER, NOT A SIDE (review finding I-6). `side` is
+ * discrete, and taking it discretely is what left the waist jumping to the new
+ * hull in the frame the side flipped while the panel below it travelled there
+ * over 420ms on the CSS clock — §7's defect one state over, and the one
+ * degenerate case §1 named (`nowSide: dynamic` at the moment of the swap) left
+ * unheld. Callers that animate the swap pass the INTERPOLATED `panelStart` and
+ * the waist travels with the panel; `side` remains as the convenience for
+ * everything that does not move.
+ *
  * @param {object} args
  * @param {number} args.segStart the active segment's left edge, 0..1 of the rule.
  * @param {number} args.segEnd its right edge, 0..1.
- * @param {'left'|'right'} args.side which side the NOW panel is on.
+ * @param {'left'|'right'} [args.side] which side the NOW panel is on.
+ * @param {number} [args.panelStart] the panel's left edge, 0..1 — overrides
+ *   `side`, and may be anywhere between the two while a swap is in flight.
  * @returns {{start:number, width:number, corners:{tl:boolean,tr:boolean,bl:boolean,br:boolean}}}
  *   in shares of the rule; `corners` are the waist corners that are exterior.
  */
-export function bondConnector({ segStart, segEnd, side }) {
-  const panelStart = side === 'left' ? 0 : 1 - NOW_PANEL_SHARE;
-  const panelEnd = side === 'left' ? NOW_PANEL_SHARE : 1;
+export function bondConnector({ segStart, segEnd, side, panelStart: panelAt }) {
+  const bounded = Number.isFinite(panelAt)
+    ? Math.min(Math.max(panelAt, 0), 1 - NOW_PANEL_SHARE) : null;
+  const panelStart = bounded !== null ? bounded : (side === 'left' ? 0 : 1 - NOW_PANEL_SHARE);
+  const panelEnd = panelStart + NOW_PANEL_SHARE;
   const a = Number.isFinite(segStart) ? segStart : 0;
   const b = Number.isFinite(segEnd) ? segEnd : 0;
   const lo = Math.min(a, panelStart);

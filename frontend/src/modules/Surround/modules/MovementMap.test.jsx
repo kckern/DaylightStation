@@ -868,10 +868,45 @@ describe('MovementMap — the bond', () => {
     }
   });
 
-  it('goes out over the applause — there is nothing sounding to bond to', () => {
-    const { container } = renderMap({ position: 2960 });
-    expect(bond(container).getAttribute('data-bonded')).toBe('false');
-    expect(pct(bond(container), '--bond-width')).toBe(0);
+  /**
+   * THE WHOLE SHAPE LEAVES TOGETHER (review finding I-2).
+   *
+   * It used to publish `--bond-width: 0%` — untransitioned — in the same commit
+   * that flipped `data-bonded` to false, so at the final chord the rail's panel
+   * and the waist collapsed to nothing in ONE FRAME while the band's panel below
+   * them faded out over 420ms. Half of "one shape" on one clock and half on
+   * another: §7's defect in the state §8 added. The old spec pinned the snap
+   * (`--bond-width` is 0) and was green on it.
+   *
+   * The geometry is HELD instead — the fade is the only thing that changes — so
+   * both halves of the bond fade out from where the music left them.
+   *
+   * TO GO RED: publish `{'--bond-width': '0%'}` when nothing is sounding.
+   */
+  it('holds the bond’s geometry over the applause and fades, rather than collapsing it', () => {
+    const clock = withFrames();
+    try {
+      const { container, rerender } = renderMap({ position: 2500 });   // movement IV
+      const heldLeft = pct(bond(container), '--bond-left');
+      const heldWidth = pct(bond(container), '--bond-width');
+      expect(heldWidth, 'nothing to hold — the fixture is not sounding to begin with')
+        .toBeGreaterThan(0);
+
+      act(() => { rerender(atPosition(2960)); });     // past musicEndsAt: applause
+      clock.step(ACCORDION_MS + 1);
+      expect(bond(container).getAttribute('data-bonded')).toBe('false');
+      expect(connector(container).getAttribute('data-bonded')).toBe('false');
+      expect(
+        pct(bond(container), '--bond-width'),
+        'the rail’s panel collapsed to zero width in one frame while the band’s panel below it '
+        + 'faded over 420ms — the bond leaves on two clocks',
+      ).toBeCloseTo(heldWidth, 4);
+      expect(pct(bond(container), '--bond-left')).toBeCloseTo(heldLeft, 4);
+      // ...and the waist is still the hull it was, so it fades as one shape too.
+      expect(pct(connector(container), '--connector-width')).toBeGreaterThan(0);
+    } finally {
+      clock.restore();
+    }
   });
 
   /**
@@ -918,6 +953,59 @@ describe('MovementMap — the bond', () => {
    * square, so the joins are invisible. The geometry is decided in `../band.js`
    * and asserted there; this pins that the component actually publishes it.
    */
+  /**
+   * THE WAIST TRAVELS WITH THE PANEL ON A `nowSide` SWAP (review finding I-6).
+   *
+   * `bondConnector` used to take the side DISCRETELY, so the waist jumped to the
+   * new hull in the frame `side` flipped while the NOW panel below it travelled
+   * there over 420ms on the CSS clock. For those 420ms the two halves of one
+   * shape were in different places — the degenerate case §1 named ("`nowSide:
+   * dynamic` at the moment of the swap") left unheld, and none of the 14 bond
+   * cases lands inside a swap because they all set the side statically.
+   *
+   * The panel's own left edge now rides in this module's interpolated vector and
+   * `CueTicker` interpolates the identical number with the identical hook, so
+   * mid-swap the waist is somewhere strictly between the two hulls.
+   *
+   * TO GO RED: pass `side` instead of `panelStart` to `bondConnector`.
+   */
+  it('travels the waist with the panel across a dynamic side swap', () => {
+    const clock = withFrames();
+    const dyn = { ...EROICA, definition: { band: { nowSide: 'dynamic' } } };
+    try {
+      // Under half way: the register is on the LEFT, so the waist reaches from
+      // the sounding segment back to a panel at 0..50%.
+      const { container, rerender } = render(atPosition(300, dyn));
+      const before = pct(connector(container), '--connector-width');
+      expect(container.querySelector('[data-testid="surround-movement-map"]')
+        .getAttribute('data-now-side')).toBe('left');
+
+      act(() => { rerender(atPosition(2000, dyn)); });   // 68% — past the mark
+      expect(container.querySelector('[data-testid="surround-movement-map"]')
+        .getAttribute('data-now-side')).toBe('right');
+      clock.step(ACCORDION_MS / 2);
+      const mid = pct(connector(container), '--connector-left');
+      // Movement III is 65%..77% of the rule. With the panel on the LEFT the
+      // hull starts at 0; with it on the RIGHT it starts at 50. Mid-swap the
+      // waist must be strictly inside that interval — a discrete `side` puts it
+      // at 50 on the first frame, which is what this catches.
+      expect(
+        mid,
+        `half way through the swap the waist starts at ${mid}% — it should be strictly between 0% `
+        + 'and 50%, not already parked on the new hull while the panel is still crossing the band',
+      ).toBeGreaterThan(0.5);
+      expect(mid).toBeLessThan(49.5);
+      clock.step(ACCORDION_MS);
+      // Settled: the waist reaches the RIGHT-hand panel's far edge.
+      const after = pct(connector(container), '--connector-left')
+        + pct(connector(container), '--connector-width');
+      expect(after).toBeCloseTo(100, 3);
+      expect(before).toBeGreaterThan(0);
+    } finally {
+      clock.restore();
+    }
+  });
+
   it('publishes a radius only for the waist corners that are exterior', () => {
     const { container } = renderMap({ position: 300 });
     const c = connector(container);
@@ -960,7 +1048,7 @@ describe('MovementMap — the bond', () => {
     // THE CORNER RULE: every corner on the OUTSIDE of the silhouette takes
     // `--bond-radius`; every corner where two parts weld is square. The foot is
     // not an edge — it is where this panel becomes the waist.
-    expect(panel).toMatch(/border-radius: var\(--bond-radius\) var\(--bond-radius\) 0 0/);
+    expect(panel).toMatch(/border-radius: var\(--bond-radius, [^)]*\) var\(--bond-radius, [^)]*\) 0 0/);
     // ...and it reaches THROUGH the band's bottom padding to the seam.
     expect(panel).toMatch(/bottom: calc\(var\(--band-pad-bottom\) \* -1\)/);
     // NOTHING IN THE BAND IS EDGED.

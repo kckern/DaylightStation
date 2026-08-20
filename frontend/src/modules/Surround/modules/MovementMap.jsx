@@ -68,7 +68,7 @@ import { surroundLogger } from '../moduleKit.js';
 import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeMovementIndex, placedMovements, roman,
-  desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX,
+  desiredWidth, ACCORDION_MS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
 import './MovementMap.scss';
 
@@ -284,6 +284,13 @@ export default function MovementMap({
     floorPx: SEGMENT_FLOOR_PX,
   }), [segments, activeIndex, railPx, desiredPx]);
 
+  // ---- the bond -------------------------------------------------------------
+  // ONE definition of "how far through the piece" (review finding I3) — see
+  // `elapsedFraction`. The band computes its own side from the same function
+  // with the same inputs, so the two halves of the bond cannot point at
+  // opposite sides of the screen.
+  const side = useNowSide(config, elapsedFraction({ position, first, end }), log);
+
   // ---- the bond's target, on the SAME vector as the widths ------------------
   // Design wave 9. The bond used to be derived from the interpolated shares and
   // then animated AGAIN by a CSS transition on its own `left`/`width`, because
@@ -308,9 +315,21 @@ export default function MovementMap({
     if (activeIndex >= 0) lastBond.current = bondTarget;
   }, [bondTarget, activeIndex]);
 
+  // THE NOW PANEL'S OWN POSITION rides in the vector too (review finding I-6).
+  // `bondConnector` used to take the side DISCRETELY, so on a `nowSide: dynamic`
+  // swap the waist jumped to the new hull in one frame while the panel below it
+  // travelled there over 420ms on the CSS clock — the two halves of one shape
+  // unwelded for the length of the move, which is the degenerate case the brief
+  // named and the defect §7 was written to abolish, one event over. The panel's
+  // left edge is a number in shares of the rule (0 or 0.5), so it interpolates
+  // like everything else here, and `CueTicker` interpolates the same number with
+  // the same hook, the same duration and the same easing, started in the same
+  // React commit — so the two halves arrive together frame by frame.
+  const panelLeft = side === 'left' ? 0 : 1 - NOW_PANEL_SHARE;
+
   const geometry = useMemo(
-    () => [...targetShares, bondTarget[0], bondTarget[1]],
-    [targetShares, bondTarget],
+    () => [...targetShares, bondTarget[0], bondTarget[1], panelLeft],
+    [targetShares, bondTarget, panelLeft],
   );
 
   // ONE CLOCK (review finding I2; extended to the bond in design wave 9). The
@@ -347,22 +366,31 @@ export default function MovementMap({
     });
   }, [starved, activeIndex, desiredPx, targetShares, railPx, segments.length, contentId, log]);
 
-  // ---- the bond -------------------------------------------------------------
-  // ONE definition of "how far through the piece" (review finding I3) — see
-  // `elapsedFraction`. The band computes its own side from the same function
-  // with the same inputs, so the two halves of the bond cannot point at
-  // opposite sides of the screen.
-  const side = useNowSide(config, elapsedFraction({ position, first, end }), log);
-
   // READ OUT OF THE INTERPOLATED VECTOR, not recomputed from the shares. The two
   // agree at rest and only the vector is right mid-flight, which is the whole
   // point of putting the bond in it.
+  //
+  // IT IS PUBLISHED WHETHER OR NOT ANYTHING IS SOUNDING (review finding I-2).
+  // This used to return `null` when `activeIndex < 0` and the elements then
+  // published `--bond-width: 0%` — untransitioned — in the same commit that
+  // flipped `data-bonded` to false. So at the final chord the rail's panel and
+  // the waist collapsed to nothing in ONE FRAME while the band's panel below
+  // them faded over 420ms: half of "one shape" leaving on one clock and half on
+  // another, which is §7's defect in the state §8 added. The geometry is held
+  // (see `lastBond` above, which is what the vector carries in this state), the
+  // fade is the only thing that changes, and both halves now fade together.
+  const bonded = activeIndex >= 0;
   const bond = useMemo(() => {
-    if (activeIndex < 0 || vector.length < targetShares.length + 2) return null;
+    if (vector.length < targetShares.length + 3) return null;
     const start = vector[targetShares.length] ?? 0;
     const width = vector[targetShares.length + 1] ?? 0;
-    return { start, width, connector: bondConnector({ segStart: start, segEnd: start + width, side }) };
-  }, [activeIndex, vector, targetShares.length, side]);
+    const panelAt = vector[targetShares.length + 2];
+    return {
+      start,
+      width,
+      connector: bondConnector({ segStart: start, segEnd: start + width, panelStart: panelAt }),
+    };
+  }, [vector, targetShares.length]);
 
   const lastLogged = useRef(null);
   useEffect(() => {
@@ -424,7 +452,7 @@ export default function MovementMap({
         <span
           className="surround-movement-map__bond"
           data-testid="surround-bond"
-          data-bonded={bond ? 'true' : 'false'}
+          data-bonded={bonded ? 'true' : 'false'}
           style={bond
             ? { '--bond-left': `${bond.start * 100}%`, '--bond-width': `${bond.width * 100}%` }
             : { '--bond-left': '0%', '--bond-width': '0%' }}
@@ -443,7 +471,7 @@ export default function MovementMap({
         <span
           className="surround-movement-map__bond-connector"
           data-testid="surround-bond-connector"
-          data-bonded={bond ? 'true' : 'false'}
+          data-bonded={bonded ? 'true' : 'false'}
           data-corners={bond
             ? Object.entries(bond.connector.corners)
               .filter(([, on]) => on).map(([k]) => k).join(' ') || 'none'

@@ -161,7 +161,7 @@
      The bottom edge is not an edge: it is where this panel becomes the waist and
      then the register's panel, and a radius there would draw a seam across the
      middle of one shape. */
-  border-radius: var(--bond-radius) var(--bond-radius) 0 0;
+  border-radius: var(--bond-radius, #{$bond-radius}) var(--bond-radius, #{$bond-radius}) 0 0;
   pointer-events: none;
   /* THERE IS NO `transition` ON `left` OR `width` HERE, and its absence is the
      fix (design wave 9). Wave 7 kept one, reasoning that the bond TRAVELS

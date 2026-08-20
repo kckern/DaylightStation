@@ -66,13 +66,54 @@
  * vendored binary) — small for a text face, where 0.48-0.52 is ordinary — so a
  * given size buys less apparent size in this face than the number suggests. At
  * 0.72rem its x-height is 4.84px; at 0.88rem it is 5.91px, 22% more, which is
- * the margin the label-to-prose step is worth. The kiosks in this fleet run at
- * device pixel ratio 1, so an x-height is exactly that many device rows: there
- * is no retina headroom to spend.
+ * the margin the label-to-prose step is worth.
+ *
+ * THE ARGUMENT IS A RATIO, AND THAT IS WHY IT IS ROOT- AND DPR-INDEPENDENT. Both
+ * floors are CSS pixels on the same screen root as each other, so the 22% holds
+ * whatever that root is scaled to and whatever the panel's device pixel ratio
+ * is. An earlier draft of this comment added "the kiosks in this fleet run at
+ * device pixel ratio 1, so an x-height is exactly that many device rows"; that
+ * is TRUE OF THE OFFICE SCREEN AND FALSE OF THE LIVING ROOM, and it is worth
+ * being exact about because the two roots are different sizes:
+ *
+ *   * OFFICE — `screens/office.yml`, a 1280x720 root at DPR 1, letterboxed on
+ *     the display. One CSS pixel is one device row, so at this floor the
+ *     thinnest strokes of an old-style face land on about one device row and
+ *     are anti-aliased into grey. That is a real constraint and it is this
+ *     screen's.
+ *   * LIVING ROOM — `screens/living-room.yml`, a 960x540 root at DPR 2 filling
+ *     the Shield's 1920x1080 panel. One CSS pixel is TWO device rows, so the
+ *     same glyph is rendered with twice the detail — more headroom, not less.
+ *     It is also the SMALLER root on (in this house) the larger panel, so a
+ *     glyph of N CSS pixels is physically about 1280/960 = 1.33x bigger there
+ *     than the same N on the office screen.
+ *
+ * So the living room is the more forgiving root for LEGIBILITY and the tighter
+ * one for ROOM, which is exactly the trade its 39px piece register shows.
+ * Neither correction moves the floor: device pixel ratio does not change angular
+ * size at ten feet, and the binding root for legibility is the office one, where
+ * the original DPR-1 reasoning holds unchanged.
+ *
+ * MAKING IT PER-ROOT WAS MEASURED, AND IT IS A REAL DECISION — which is why it
+ * is not taken here. The living-room root is 960 CSS px across the whole Shield
+ * panel and the office root is a letterboxed 1280 CSS px box, so IF the two
+ * panels were the same physical width and were viewed from the same distance, a
+ * glyph of N CSS pixels would subtend 1280/960 = 1.33x more on the living room
+ * and its equal-angular floor would be 0.88 / 1.33 = 0.66rem. Measured against
+ * the real sheet, that floor changes what the living-room piece register holds
+ * from ~92 characters to ~123 — not by fitting a third line (39px of room is two
+ * lines at either size) but by fitting half again as many characters onto each
+ * of the two. Three of the eight shipped facts cross that line.
+ *
+ * It is not taken because the premise is not measured: the office panel's
+ * physical size and both screens' true viewing distances are unknown here, so
+ * 1.33x is an upper bound on the living room's advantage rather than a
+ * measurement, and 0.66rem is below the one floor every other argument in this
+ * frame is anchored to. Lowering a readability floor on an assumed panel size is
+ * exactly the guess this file exists to replace. One number on every root until
+ * somebody measures the two panels.
  *
  * 0.88rem is also the body floor wave 5 derived and every wave since has kept.
- * Lowering it would be a NEW claim about legibility at ten feet, and nothing
- * measured here supports one.
  */
 export const PROSE_FLOOR_PX = 14.08;
 
@@ -261,7 +302,17 @@ function everythingFits(work, fontPx, leading) {
   return true;
 }
 
-/** The largest value in [lo, hi] that passes, to `step`. `pass` must be monotone. */
+/**
+ * The largest value in [lo, hi] that passes, to `step`. `pass` must be monotone.
+ *
+ * THE SNAP IS CLAMPED TO `lo`, and that is not defensive tidying. `lo` is a
+ * FLOOR — the prose size floor is 14.08px and the step is 0.25px — and a floor
+ * is not on the grid: `Math.floor(14.08 / 0.25) * 0.25` is 14.0, eight
+ * hundredths of a pixel BELOW the floor the whole no-ellipsis argument rests on.
+ * It bites exactly when only the bottom rung passes, which is the case a tighter
+ * band or a longer corpus produces, and it would have reported itself as a floor
+ * violation in the measure spec rather than as the rounding bug it is.
+ */
 function largestPassing(lo, hi, step, pass) {
   if (pass(hi)) return hi;
   let a = lo;
@@ -270,7 +321,7 @@ function largestPassing(lo, hi, step, pass) {
     const mid = (a + b) / 2;
     if (pass(mid)) a = mid; else b = mid;
   }
-  return Math.floor((a + 1e-9) / step) * step;
+  return Math.max(lo, Math.floor((a + 1e-9) / step) * step);
 }
 
 /**
@@ -343,6 +394,42 @@ export function fitBand(root, pools) {
       texts: texts.length,
     })),
   };
+}
+
+/**
+ * The strings the band must NOT show, per register.
+ *
+ * ONE PLACE DECIDES, because there are three consumers and the one that was
+ * forgotten was the one that mattered. Review finding C-1: the rotating pools
+ * were filtered and the TIMED CUES were not, so the single string the fit had
+ * certified as unsettable was the one string that could preempt the panel — set
+ * at a size solved on the assumption it was not there, in a box with
+ * `overflow: hidden` and no ellipsis. Anything a register can show now goes
+ * through `withhold`.
+ *
+ * @param {object|null} fit from `fitBand`.
+ * @returns {{piece:Set<string>, now:Set<string>}|null} null when nothing is withheld.
+ */
+export function withheldSets(fit) {
+  if (!fit?.rejected?.length) return null;
+  const by = { piece: new Set(), now: new Set() };
+  fit.rejected.forEach((r) => by[r.zone]?.add(r.text));
+  return by;
+}
+
+/**
+ * Drop from `items` everything whose text this register cannot set whole.
+ *
+ * @param {Array} items facts, listening notes, or cue objects.
+ * @param {Set<string>|undefined} set from `withheldSets`.
+ * @param {(item:*) => string} [textOf] how to read an item's text — the identity
+ *   for a note, `smartQuotes(cue.text)` for a cue, because what is compared has
+ *   to be the string that would be PAINTED.
+ */
+export function withhold(items, set, textOf = (x) => x) {
+  const list = Array.isArray(items) ? items : [];
+  if (!set || !set.size) return list;
+  return list.filter((item) => !set.has(textOf(item)));
 }
 
 /**

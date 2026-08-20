@@ -58,10 +58,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import SurroundFrame from './SurroundFrame.jsx';
 import ComposerCard from './modules/ComposerCard.jsx';
-import { accordionShares, desiredWidth, SEGMENT_FLOOR_PX } from './band.js';
+import {
+  accordionShares, desiredWidth, placedMovements, SEGMENT_FLOOR_PX,
+} from './band.js';
 import {
   bandPools, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX,
 } from './fit.js';
+import { smartQuotes } from './typography.js';
 import { smartQuotesAll } from './typography.js';
 import './builtins.js';
 
@@ -264,11 +267,18 @@ const SHIPPED = Object.freeze([
   { piece: "Vivaldi's Spring", data: SPRING, sounding: 300 },
 ]);
 
-/** Every string the band can show, exactly as `CueTicker` derives them. */
+/**
+ * Every string the band can show, exactly as `CueTicker` derives them — from the
+ * PLACED movements (review finding M-7). A movement this recording cannot put on
+ * the clock never becomes the sounding movement, so its notes never show and the
+ * component never fits against them; passing the authored list instead would
+ * make this spec measure strings the band will not paint. Equivalent on both
+ * shipped pieces, and wrong the moment a recording has a bad `starts` entry.
+ */
 const poolsFor = (data) => {
   const raw = bandPools({
     facts: data.facts,
-    movements: data.movements,
+    movements: placedMovements(data.movements).map((p) => p.movement),
     cues: data.cues,
   });
   return { piece: smartQuotesAll(raw.piece), now: smartQuotesAll(raw.now) };
@@ -324,7 +334,7 @@ async function injectFit(page) {
     .replace(/^export default .*$/m, '')
     .replace(/^export /gm, '');
   await page.addScriptTag({
-    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
+    content: `${src}\nwindow.__fit = { fitBand, fitStyle, bandPools, withhold, withheldSets, PROSE_FLOOR_PX, PROSE_CEILING_PX, LEADING_FLOOR, LEADING_MAX };`,
   });
   const ok = await page.evaluate(() => typeof window.__fit?.fitBand === 'function');
   expect(ok, 'fit.js did not load into the page — the injection stripped something it needed').toBe(true);
@@ -414,25 +424,30 @@ async function layout(page, css, { width, height, data = EROICA, position = POSI
     const style = window.__fit.fitStyle(solved);
     Object.entries(style).forEach(([k, v]) => root.style.setProperty(k, v));
 
-    // EFFECT 4 — THE ROTATION SHOWS ONLY WHAT FITS. `CueTicker` filters each
-    // register's pool by the fit's rejections before rotating (a note that
-    // cannot be set whole at the floors is an authoring failure, warned about
-    // and not shown). `renderToStaticMarkup` ran no effects, so the markup on
-    // this page still carries the FIRST authored fact whether or not it fits;
-    // without this the spec would sweep a string the component would never
-    // paint, and would be red for the corpus rather than for the code.
+    // EFFECT 4 — THE REGISTER SHOWS ONLY WHAT FITS. `CueTicker` puts every
+    // rotating note AND every timed cue through `withhold` before it can reach a
+    // register (a string that cannot be set whole at the floors is an authoring
+    // failure: warned about, not shown). `renderToStaticMarkup` ran no effects,
+    // so the markup on this page still carries whatever the server render chose
+    // whether or not it fits.
+    //
+    // IT CALLS `withhold`, IT DOES NOT MODEL IT. The first draft hand-wrote the
+    // filter here, and a hand-written model is how review finding C-1 hid: the
+    // spec modelled a filter that covered cues and the component's did not, so
+    // the one string the fit had refused was painted on a real screen with the
+    // spec green. The predicate is the shipped one now; the falsifiable test of
+    // the component's WIRING lives in `modules/CueTicker.test.jsx`, where the
+    // component actually runs.
+    const withheld = window.__fit.withheldSets(solved);
     [['piece', 'surround-ticker-text'], ['now', 'surround-ticker-listen']].forEach(([key, id]) => {
       const line = document.querySelector(`[data-testid="${id}"] .surround-cue-ticker__line`);
       if (!line) return;
       const painted = line.textContent;
-      // ONLY where the painted note is one the component would have dropped.
+      // ONLY where the painted string is one the component would have withheld.
       // A blank register (nothing sounding) stays blank, and a note that fits
       // stays exactly where the server render put it.
-      if (!solved.rejected.some((r) => r.zone === key && r.text === painted)) return;
-      const shown = (p[key] ?? []).filter(
-        (t) => !solved.rejected.some((r) => r.zone === key && r.text === t),
-      );
-      line.textContent = shown[0] ?? '';
+      if (window.__fit.withhold([painted], withheld?.[key]).length) return;
+      line.textContent = window.__fit.withhold(p[key] ?? [], withheld?.[key])[0] ?? '';
     });
     return solved;
   }, pools);
@@ -727,6 +742,56 @@ describe('the band, measured against the shipped stylesheet', () => {
   }, 60000);
 
   /**
+   * A CUE IS A NOTE, AND THE LAW IS THE SAME ONE (review finding C-1).
+   *
+   * A timed cue preempts a register at full size for its dwell, so it is exactly
+   * as capable of being cut as a rotating note is — and it is the one string the
+   * fit solves the size WITHOUT, because it has already refused it. This puts an
+   * over-long cue on the office screen at its own `at` and measures what the
+   * register paints.
+   *
+   * TO GO RED here: delete the cue's text from `bandPools`, so it is never
+   * measured and never refused. TO GO RED in the component (which is where the
+   * defect lived, and where `renderToStaticMarkup` cannot reach): choose
+   * `activeCue` from `cues` rather than from `fittableCues` — proven in
+   * `modules/CueTicker.test.jsx`.
+   */
+  it('960x540 — an over-long cue is refused and never painted', async () => {
+    // Sized against the LIVING-ROOM root, which is where a cue of ordinary
+    // length actually overflows: that register holds ~126 characters at the
+    // fitted size and ~126 at the floor. (The office root's NOW register holds
+    // ~243 at its fitted size and ~329 at the floor, so a cue has to be absurd
+    // to fail there — which is why this case is set on the screen where the law
+    // actually bites.)
+    const OVERLONG = 'The funeral march, and the reason it is the centre of the symphony rather than an '
+      + 'interlude: Beethoven puts a death where a minuet had always gone, and the whole shape of '
+      + 'the piece changes around it.';
+    const data = {
+      ...EROICA_FULL,
+      cues: [{ at: 976, render: 'docked', text: OVERLONG }],
+    };
+    const { fit, pools } = await layout(page, css, { ...FLEET[0], data, position: 980 });
+    const curled = smartQuotes(OVERLONG);
+    expect(pools.now, 'the cue is not in the measured pool, so it was never judged')
+      .toContain(curled);
+    const refused = fit.rejected.find((r) => r.text === curled);
+    expect(
+      refused,
+      `the ${OVERLONG.length}-character cue was accepted at ${fit.fontPx}px in a `
+      + `${fit.zones.find((z) => z.zone === 'now')?.availPx}px box — measure it again`,
+    ).toBeTruthy();
+    expect(refused.zone).toBe('now');
+    expect(refused.budget).toBeLessThan(OVERLONG.length);
+
+    const m = await noteCut(page, { zone: 'now' });
+    expect(
+      m.text,
+      'the NOW register is painting a cue the fit refused — at a size solved without it',
+    ).not.toContain('Beethoven puts a death');
+    expect(m.cutPx, `the register's line is cut by ${m.cutPx}px`).toBe(0);
+  }, 90000);
+
+  /**
    * THE SCREEN THAT HAS TO BE RIGHT. 1280x720 is the office kiosk's real
    * screen-root; 960x540 and 1920x1080 are the fleet's other two. At the office
    * screen EVERY authored fact and EVERY listening note of BOTH shipped pieces
@@ -771,7 +836,7 @@ describe('the band, measured against the shipped stylesheet', () => {
    * TO GO RED: return `{ start: b, width: panelStart - b }` from `bondConnector`
    * — wave 7's version, which stops at the panel's near edge.
    */
-  const bondCase = async ({ width, height, data, sounding, movementIndex, side, name }) => {
+  const bondCase = async ({ width, height, data, movementIndex, side, name }) => {
     const withSide = { ...data, definition: { ...DEFINITION, band: { nowSide: side } } };
     const at = data.movements[movementIndex].start
       + Math.max(1, ((data.movements[movementIndex + 1]?.start ?? data.piece.musicEndsAt)
@@ -819,11 +884,9 @@ describe('the band, measured against the shipped stylesheet', () => {
 
   describe.each(SHIPPED)('$piece — the bond is one shape', ({ piece, data }) => {
     const cases = [];
-    data.movements.forEach((m, movementIndex) => {
+    data.movements.forEach((_movement, movementIndex) => {
       for (const side of ['right', 'left']) {
-        cases.push({
-          ...FLEET[1], piece, data, movementIndex, side, sounding: m.start,
-        });
+        cases.push({ ...FLEET[1], piece, data, movementIndex, side });
       }
     });
     it.each(cases)('movement $movementIndex, nowSide $side', bondCase, 60000);
@@ -835,7 +898,7 @@ describe('the band, measured against the shipped stylesheet', () => {
     // panel — the longest waist the shipped corpus produces, and the case the
     // user was looking at when they found the corner.
     await bondCase({
-      width, height, name, data: EROICA_FULL, sounding: 0, movementIndex: 0, side: 'right',
+      width, height, name, data: EROICA_FULL, movementIndex: 0, side: 'right',
     });
   }, 60000);
 
