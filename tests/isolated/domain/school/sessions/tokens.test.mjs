@@ -504,6 +504,18 @@ describe('access code on a token record', () => {
     expect(isAccessCodeLive({ ...withCode(), ...over }, { now: '2026-08-20T18:00:00Z' })).toBe(false);
   });
 
+  it.each([
+    'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
+    'learning_action', 'answer_sheet_lost',
+  ])('is false for a hand-edited %s record carrying a code', (tokenClass) => {
+    // The mint-time whitelist says a panel code belongs to a subject_next line
+    // and nowhere else. A registry record can be hand-edited past that gate, and
+    // whoever resolves the code next expects a subject_next SHAPE — a subject
+    // with a `subject` on it. The read path mirrors the mint rule rather than
+    // trusting that nothing ever wrote around it.
+    expect(isAccessCodeLive({ ...withCode(), tokenClass }, { now: '2026-08-20T18:00:00Z' })).toBe(false);
+  });
+
   it('is false for an unparseable now', () => {
     expect(isAccessCodeLive(withCode(), { now: 'whenever' })).toBe(false);
   });
