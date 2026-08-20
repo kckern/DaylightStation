@@ -706,13 +706,22 @@ export class YamlSurroundStore extends ISurroundStore {
    * @param {{work: string, title: string, index: number}|null} group
    * @param {{parts: number}} counter - Parts expanded so far, shared across the whole tree
    */
-  #resolveSegments(work, library, seen, group = null, counter = { parts: 0 }) {
+  #resolveSegments(work, library, seen, group = null, counter = { parts: 0 }, path = []) {
     const { list: own } = authoredSegments(work);
     const out = [];
     for (const entry of own) {
       if (!isPlainObject(entry)) continue;
       const ref = typeof entry.work === 'string' ? entry.work.trim() : '';
-      if (!ref) { out.push(group ? { ...entry, group } : entry); continue; }
+      if (!ref) {
+        // `group` IS THE INNERMOST, and stays exactly what it always was, so
+        // every existing consumer reads what it read before. `groupPath` is the
+        // whole ancestry, outermost first — Part then Scene for Messiah — which
+        // this used to lose: the recursion already descended to any depth, but
+        // one `group` object was overwritten at each level, so a segment three
+        // levels down kept only its Scene and its Part vanished silently.
+        out.push(group ? { ...entry, group, groupPath: path } : entry);
+        continue;
+      }
 
       if (seen.has(ref)) {
         this.logger?.warn?.('surround.segment.cycle', { work: ref });
@@ -730,7 +739,7 @@ export class YamlSurroundStore extends ISurroundStore {
       seen.add(ref);
       const childGroup = { work: ref, title: target.title ?? ref, index: counter.parts };
       counter.parts += 1;
-      out.push(...this.#resolveSegments(target, library, seen, childGroup, counter));
+      out.push(...this.#resolveSegments(target, library, seen, childGroup, counter, [...path, childGroup]));
       seen.delete(ref);
     }
     return out;

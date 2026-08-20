@@ -780,6 +780,46 @@ describe('railFloorPx', () => {
   });
 });
 
+/**
+ * TWO LEVELS OF GROUPING, and the rail can only print one row of headings.
+ *
+ * Messiah is Part > Scene > Number: 53 numbers under 16 scenes under 3 Parts.
+ * At the office's ~822px the rail chips at ~15px a segment, and sixteen scene
+ * titles across that is a row of ellipses — three Part names is a heading row a
+ * viewer can actually read. So where an ancestry exists, the row takes the
+ * OUTERMOST level and leaves the innermost to the surfaces with room for it.
+ */
+describe('railGroups at depth', () => {
+  const seg = (path, duration = 10) => ({
+    segment: { duration, group: path[path.length - 1], groupPath: path },
+  });
+  const P1 = { work: 'p1', title: 'Part One', index: 0 };
+  const P2 = { work: 'p2', title: 'Part Two', index: 3 };
+  const S1 = { work: 's1', title: 'Scene 1', index: 1 };
+  const S2 = { work: 's2', title: 'Scene 2', index: 2 };
+  const S3 = { work: 's3', title: 'Scene 3', index: 4 };
+  const rail = [seg([P1, S1]), seg([P1, S1]), seg([P1, S2]), seg([P2, S3])];
+
+  it('groups by the innermost level by default — today’s behaviour', () => {
+    expect(railGroups(rail).map((g) => g.title)).toEqual(['Scene 1', 'Scene 2', 'Scene 3']);
+  });
+
+  it('groups by the outermost level when asked for depth 0', () => {
+    const runs = railGroups(rail, { depth: 0 });
+    expect(runs.map((g) => g.title)).toEqual(['Part One', 'Part Two']);
+    expect(runs.map((g) => g.count)).toEqual([3, 1]);
+  });
+
+  it('falls back to the segment’s own group where there is no ancestry', () => {
+    const flat = [{ segment: { duration: 5, group: S1 } }];
+    expect(railGroups(flat, { depth: 0 }).map((g) => g.title)).toEqual(['Scene 1']);
+  });
+
+  it('sizes an outer run by the sounding seconds of everything beneath it', () => {
+    expect(railGroups(rail, { depth: 0 }).map((g) => g.span)).toEqual([30, 10]);
+  });
+});
+
 describe('railIsFlat', () => {
   const run = (index, title, count) => Array.from({ length: count }, () => ({
     segment: { duration: 10, group: { work: `w${index}`, title, index } },
