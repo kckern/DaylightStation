@@ -1,5 +1,6 @@
 // backend/src/1_adapters/content/surround/YamlSurroundStore.mjs
 import path from 'path';
+import { realpathSync } from 'node:fs';
 import {
   dirExists,
   getStats,
@@ -393,8 +394,12 @@ export class YamlSurroundStore extends ISurroundStore {
     const works = new Map();
     if (!dirExists(this.libraryDir)) return { composers, works };
 
+    // Seen real paths, not joined ones: `listDirs` resolves symlinks, so a loop
+    // (`classical/self -> classical/`, one mistyped `ln -s` during a reorg) would
+    // otherwise recurse until the stack gives out and take the backend with it.
+    const seen = new Set();
     for (const domain of listDirs(this.libraryDir).filter((d) => !isReserved(d))) {
-      this.#loadLibraryDir(path.join(this.libraryDir, domain), domain, composers, works);
+      this.#loadLibraryDir(path.join(this.libraryDir, domain), domain, composers, works, seen);
     }
 
     return { composers, works };
@@ -415,9 +420,17 @@ export class YamlSurroundStore extends ISurroundStore {
    * @param {string} rel - Path of `dir` relative to libraryDir, for warnings.
    * @param {Map<string, Object>} composers - Accumulator, keyed by composer.
    * @param {Map<string, Object>} works - Accumulator, keyed `<composer>/<slug>`.
+   * @param {Set<string>} seen - Real paths already indexed, to break symlink cycles.
    * @private
    */
-  #loadLibraryDir(dir, rel, composers, works) {
+  #loadLibraryDir(dir, rel, composers, works, seen) {
+    // An unreadable or vanished directory is not a cycle — fall back to the
+    // joined path so the walk still terminates on it rather than throwing.
+    let real;
+    try { real = realpathSync(dir); } catch { real = dir; }
+    if (seen.has(real)) return;
+    seen.add(real);
+
     const composer = path.basename(dir);
     const composerBase = loadYamlFromPath(path.join(dir, `${COMPOSER_FILE}.yml`));
     if (isPlainObject(composerBase)) composers.set(composer, composerBase);
@@ -444,12 +457,21 @@ export class YamlSurroundStore extends ISurroundStore {
         });
       }
 
+      // Identity is composer + slug, so two composer folders sharing a basename
+      // anywhere in the tree address the same work. Last-write-wins is how this
+      // has always behaved, but a depth-free walk makes the collision reachable
+      // from folders that never used to sit at the same level — so name it
+      // rather than let a work silently become a different composer's.
       const slug = file.replace(/\.(yml|yaml)$/, '');
-      works.set(`${composer}/${slug}`, work);
+      const key = `${composer}/${slug}`;
+      if (works.has(key)) {
+        this.logger?.warn?.('surround.work.duplicate', { work: key, file: path.join(rel, file) });
+      }
+      works.set(key, work);
     }
 
     for (const child of listDirs(dir).filter((d) => !isReserved(d))) {
-      this.#loadLibraryDir(path.join(dir, child), path.join(rel, child), composers, works);
+      this.#loadLibraryDir(path.join(dir, child), path.join(rel, child), composers, works, seen);
     }
   }
 
