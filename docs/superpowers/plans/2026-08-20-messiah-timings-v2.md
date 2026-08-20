@@ -404,3 +404,53 @@ Before any of that, the cheapest check remains unrun and would settle more than
 another inference pass: **listen at four or five predicted boundaries.** If they
 land, the model is confirmed and texture detection is worth building. If they
 drift, nothing downstream of ρ is worth building at all.
+
+### Texture detection was built, and it does not work
+
+Four bands (0–300, 300–1200, 1200–4000, 4000+ Hz) at one-second resolution,
+normalised to shares of total power so loudness cannot register as texture, with
+novelty measured as total-variation distance between the mean profile either
+side of a second. 11 unit tests; `cli/texture.cli.mjs`.
+
+**Calibrated against held-out ground truth** — the 20 boundaries silence already
+found and ρ corroborated — and it fails the only test that matters:
+
+| | |
+|---|---|
+| ground-truth points | 20 |
+| detector returned a peak | 9 |
+| landed within 5 s of the true boundary | **2 of 9 (22%)** |
+| random chance in a 61 s window | **18%** |
+| error median / p75 / max | 10 s / 32 s / 40 s |
+
+Indistinguishable from guessing. A first calibration reported "1.81× the median
+random second" and looked encouraging, but that threshold was invented and the
+distribution underneath contradicted it: median novelty at a boundary (0.146)
+sits *below* the random 90th percentile (0.196), so any threshold catching the
+median boundary also catches a tenth of all seconds — about six false peaks per
+window.
+
+**Why it is too crude.** Four bands at one-second frames is a very coarse timbre
+descriptor. Movement boundaries in this repertoire often join textures that share
+a spectral envelope — a solo air into a chorus keeps the same orchestra — so the
+distinguishing information is in finer spectral structure and in onset patterns,
+neither of which four one-second bands can represent. A real attempt would need
+MFCC or chroma features at ~10 Hz framing, which is a signal-processing project
+rather than an ffmpeg pass.
+
+### Four methods, four measured failures — the state to hand on
+
+1. **Per-form duration priors.** Gate held for four end times twelve minutes apart. Rejects; does not select.
+2. **Per-number priors from two reference recordings.** Flat cost curve, 26% spread, kept 26–28 of 53 at every end time.
+3. **ρ-prediction with a snap window.** Prediction good (median 9 s error, spread across all three Parts) but only 20 of 53 boundaries have a candidate to snap to.
+4. **Texture detection.** Does not localise: 22% vs 18% chance.
+
+The through-line is consistent and now well evidenced: **the boundaries are not
+recoverable from this recording's audio by any of these means, because a third of
+them leave no acoustic trace at one-second resolution.** The tempo model is
+sound; the detection is not.
+
+**Do not attempt a fifth inference method without new information.** The cheapest
+new information remains a human listening at four or five ρ-predicted times —
+that would confirm or kill the tempo model directly, and it is the one input none
+of these four attempts had.
