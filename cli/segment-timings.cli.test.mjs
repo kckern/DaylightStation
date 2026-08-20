@@ -258,4 +258,36 @@ describe('alignLibretto', () => {
     expect(spanCost({ form: 'Recitative' }, 60)).toBe(0);        // inside the prior
     expect(spanCost({ form: 'Recitative' }, 400)).toBeGreaterThan(0); // outside it
   });
+
+  /* -------------------------------------------------------------------------
+     THE SEARCH MUST OPTIMISE WHAT THE GATE MEASURES.
+
+     `spanCost` grew linearly with the violation, so a span four seconds under
+     its floor cost 4 while a skip cost 40 — and the search bought the bad
+     candidate every time. But the gate is BINARY: any span outside its prior
+     fails, so an alignment containing one is worthless however cheap it looked.
+     On the real recording that mismatch produced one omission where the
+     duration arithmetic requires eight to twelve.
+
+     So an implausible span is priced far above any number of skips, and the
+     magnitude survives only as a tie-break between unavoidable violations.
+     ------------------------------------------------------------------------- */
+  it('prices ANY implausible span above every skip the work could need', () => {
+    const worst = spanCost({ form: 'Recitative' }, 10_000);
+    const oneOutside = spanCost({ form: 'Recitative' }, 181);   // 1s over the ceiling
+    expect(oneOutside).toBeGreaterThan(53 * SKIP_PENALTY);
+    // ...and among violations, less wrong is still preferred.
+    expect(worst).toBeGreaterThan(oneOutside);
+  });
+
+  it('omits a number rather than accepting a span one second outside its prior', () => {
+    // Two candidates, and using the second makes the recitative 1s too long.
+    // Skipping it costs SKIP_PENALTY; taking it must cost more.
+    const two = [
+      { n: 1, form: 'Chorus', incipit: 'A' },
+      { n: 2, form: 'Recitative', incipit: 'B' },
+    ];
+    const { starts } = alignLibretto({ items: two, candidates: [0, 100], endS: 281 });
+    expect(starts[1]).toBeNull();
+  });
 });
