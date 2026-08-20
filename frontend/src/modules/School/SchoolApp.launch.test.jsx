@@ -118,7 +118,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
       ok: true, status: 200,
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     // Wait for the courses fetch to actually resolve (the shelf tile enabling
     // is the same signal the existing "language courses" tests use) before
     // firing the launch — otherwise the handler can see a stale empty list.
@@ -136,7 +136,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
   });
 
   it('program:language with no course loaded yet does nothing (no crash, no navigation)', async () => {
-    render(<SchoolApp clear={() => {}} />); // coursesMock default: []
+    render(<SchoolApp clear={() => {}} mode="open" />); // coursesMock default: []
     await screen.findByText('Civilization');
 
     deliverLaunch('kid1', { kind: 'program', program: 'language' });
@@ -148,7 +148,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
   });
 
   it('bank launch for a known bank opens the quiz runner directly, bypassing the picker', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibraryAndWaitForBanks();
 
     deliverLaunch('kid1', { kind: 'bank', bankId: 'caps', unitId: 'u1', sessionId: 'ses_1' });
@@ -159,7 +159,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
   });
 
   it('bank launch for an unknown bankId does nothing visible and logs a warn', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibraryAndWaitForBanks(); // banks state resolved deterministically
 
     deliverLaunch('kid1', { kind: 'bank', bankId: 'nonexistent', unitId: 'u1', sessionId: 'ses_1' });

@@ -139,7 +139,7 @@ describe('authored learning Catalog', () => {
       address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
       moduleVerdicts: [{ moduleId: 'check', verdict: 'render', reasons: [], warnings: [] }],
     }] });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
     for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
       fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
@@ -175,7 +175,7 @@ describe('authored learning Catalog', () => {
         bank: { id: 'rate-check', title: 'Rate check', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'A unit rate?', choices: ['Yes', 'No'], answer: 'Yes', feedback: { explanation: 'One denominator unit.' } }] },
       }] },
     } });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
     for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
       fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
@@ -222,7 +222,7 @@ describe('authored learning Catalog', () => {
       address: 'core/quant/rates/intro/unit-rate', surfaceId: 'screen-test', verdict: 'full', reasons: [], warnings: [],
       moduleVerdicts: [{ moduleId: 'gate', verdict: 'render', reasons: [], warnings: [] }],
     }] });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     fireEvent.click(await screen.findByRole('button', { name: /^catalog/i }));
     for (const label of ['Core', 'Quantitative', 'Rates', 'Introduction', 'Unit rates']) {
       fireEvent.click(await screen.findByRole('button', { name: new RegExp(label, 'i') }));
@@ -277,7 +277,7 @@ async function tapMaterial(title) {
 
 describe('SchoolApp home — the subject wall', () => {
   it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'Civilization', 'Scripture & Gospel', 'Art & Music']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
@@ -296,7 +296,7 @@ describe('SchoolApp home — the subject wall', () => {
 
   it('a subject with shelved content is enabled and opens its page', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     const science = (await screen.findByText('Science & Nature')).closest('button');
     await waitFor(() => expect(science).not.toBeDisabled());
     fireEvent.click(science);
@@ -306,7 +306,7 @@ describe('SchoolApp home — the subject wall', () => {
 
   it('the Library holds untagged material and untagged practice banks', async () => {
     materialsMock.mockResolvedValue(SAMPLE_CATALOG);
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     expect((await screen.findAllByText('Story Time')).length).toBeGreaterThan(0);
     expect(await screen.findByText('Caps')).toBeInTheDocument();
@@ -314,7 +314,7 @@ describe('SchoolApp home — the subject wall', () => {
   });
 
   it('the apple home crumb returns from the Library to the subject wall', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     // In a section the home anchor is labelled "Home"; tapping it goes home.
@@ -324,7 +324,7 @@ describe('SchoolApp home — the subject wall', () => {
   });
 
   it('the Library breadcrumb reads "apple › Library" while inside it', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     // The section crumb is the current (deepest) crumb; no back row exists.
@@ -333,7 +333,7 @@ describe('SchoolApp home — the subject wall', () => {
   });
 
   it('unclaimed, tapping a face in the student panel claims directly', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     expect(await screen.findByText(/who's learning\?/i)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: /Alpha/ }));
     // Claimed: the "who's learning?" prompt is gone and the header identity
@@ -344,7 +344,7 @@ describe('SchoolApp home — the subject wall', () => {
 
   it('the apple home anchor exits (calls clear) at home only when a clear prop exists', async () => {
     const clear = vi.fn();
-    const { unmount } = render(<SchoolApp clear={clear} />);
+    const { unmount } = render(<SchoolApp clear={clear} mode="open" />);
     await screen.findByText('Civilization');
     // At home the anchor is labelled "School" and triggers the app exit.
     fireEvent.click(screen.getByRole('button', { name: /^school$/i }));
@@ -354,7 +354,7 @@ describe('SchoolApp home — the subject wall', () => {
     // kiosk's only refresh affordance — there is no address bar behind it.
     const reload = vi.fn();
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, pathname: '/', reload });
-    render(<SchoolApp />);
+    render(<SchoolApp mode="open" />);
     expect(await screen.findByText('Civilization')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
     expect(reload).toHaveBeenCalled();
@@ -363,7 +363,7 @@ describe('SchoolApp home — the subject wall', () => {
 
 describe('language courses', () => {
   it('no ingested corpus leaves the Language shelf greyed — a tile never points at an absent endpoint', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).toBeDisabled());
     expect(screen.queryByText('Glossika Korean')).toBeNull();
@@ -374,7 +374,7 @@ describe('language courses', () => {
       ok: true, status: 200,
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     const language = (await screen.findByText('Language & Culture')).closest('button');
     await waitFor(() => expect(language).not.toBeDisabled());
     fireEvent.click(language);
@@ -384,21 +384,21 @@ describe('language courses', () => {
 
   it('still builds the wall when the course listing fails', async () => {
     coursesMock.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     expect(await screen.findByText('Civilization')).toBeInTheDocument();
   });
 });
 
 describe('SchoolApp bank flows (via the Library)', () => {
   it('unclaimed browser sees both an assigned and a generic bank (gate loosened)', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     expect(await screen.findByText('Caps')).toBeInTheDocument();
     expect(screen.getByText('Animals')).toBeInTheDocument();
   });
 
   it('unclaimed: launching an assigned bank opens the picker; picking a profile proceeds into the runner', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
@@ -409,7 +409,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
 
   it('a claimed kid launching a generic bank never sees the picker', async () => {
     localStorage.setItem('school:user', 'kid1'); // pre-claimed, as if picked on a prior visit
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
@@ -419,7 +419,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
 
   it('a claimed kid launching an assigned bank never sees the picker', async () => {
     localStorage.setItem('school:user', 'kid1');
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
@@ -428,7 +428,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
   });
 
   it('unclaimed: launching an assigned bank then dismissing the picker CANCELS — no guest demotion, no notice, no runner', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
@@ -445,7 +445,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
   });
 
   it('unclaimed: the picker guest button on an assigned bank refuses it with the sign-in notice, and narrows the list to generic', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Caps');
     fireEvent.click(within(cardFor('Caps')).getByRole('button', { name: /quiz/i }));
@@ -461,7 +461,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
   });
 
   it('unclaimed: launching a generic bank then dismissing the picker CANCELS — stays put, no guest, no runner', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
@@ -474,7 +474,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
   });
 
   it('unclaimed: the picker guest button on a generic bank proceeds as guest into the runner', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
@@ -485,7 +485,7 @@ describe('SchoolApp bank flows (via the Library)', () => {
   });
 
   it('the apple mid-quiz arms a leave confirm — one stray tap never discards a run (M7)', async () => {
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await screen.findByText('Animals');
     fireEvent.click(within(cardFor('Animals')).getByRole('button', { name: /quiz/i }));
@@ -511,7 +511,7 @@ describe('SchoolApp materials flows', () => {
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
@@ -526,7 +526,7 @@ describe('SchoolApp materials flows', () => {
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openSubject(/science/i);
     await tapMaterial('Bill Nye');
     fireEvent.click(await screen.findByText('Air'));
@@ -545,7 +545,7 @@ describe('SchoolApp materials flows', () => {
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[0], units: [{ id: 'plex:10', index: 1, title: 'Air', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     // The header has no sign-in chip anymore: guesthood arises from the
     // picker's own explicit guest row (Task 18), not from waving it off.
     await openSubject(/science/i);
@@ -573,7 +573,7 @@ describe('SchoolApp materials flows', () => {
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[1], units: [{ id: 'plex:20', index: 1, title: 'Chapter 1', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await tapMaterial('Story Time');
     fireEvent.click(await screen.findByText('Chapter 1'));
@@ -587,7 +587,7 @@ describe('SchoolApp materials flows', () => {
       ok: true, status: 200,
       data: { material: SAMPLE_CATALOG.data.materials[1], units: [{ id: 'plex:20', index: 1, title: 'Chapter 1', durationMs: null, group: null, percent: 0, playhead: 0, completed: false, locked: false, current: true, lockReason: null, quiz: null }] },
     });
-    render(<SchoolApp clear={() => {}} />);
+    render(<SchoolApp clear={() => {}} mode="open" />);
     await openLibrary();
     await tapMaterial('Story Time');
     await waitFor(() => expect(materialUnitsMock).toHaveBeenCalledTimes(1));

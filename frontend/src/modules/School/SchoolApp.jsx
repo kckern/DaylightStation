@@ -63,17 +63,48 @@ import './School.scss';
  * `resolved` gates the first render so a locked panel never flashes the
  * browsable home before the config lands.
  */
+/**
+ * THE STANDALONE MOUNT IS LOCKED TOO (2026-08-20).
+ *
+ * It was not, and the reasoning was that a parent's `/school` in a browser is
+ * the bypass, so no master code has to exist. That is a coherent design and it
+ * is not the one asked for: a locked school room where one URL walks straight
+ * past the keypad is not locked. `/app/school` and `/school` now open on the
+ * keypad like the panel does.
+ *
+ * THE ESCAPE IS EXPLICIT AND WRITTEN DOWN rather than removed: `?school=open`
+ * on either URL restores the browsable app for whoever needs to look something
+ * up. It is a query param and not a code because it is not a secret — it is a
+ * different door, and a child who finds it has found the browsable catalogue,
+ * which is the state this shipped in for months.
+ */
+function browserModeFromUrl() {
+  try {
+    const v = new URLSearchParams(window.location.search).get('school');
+    return v === 'open' || v === 'unlocked' ? 'open' : v === 'locked' ? 'locked' : null;
+  } catch { return null; }
+}
+
 function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds }) {
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
+  // A standalone mount resolves synchronously — there is no screen config to
+  // fetch — and it defaults to LOCKED so the keypad is what opens.
+  const browserLocked = () => (browserModeFromUrl() ?? 'locked') === 'locked';
   const [state, setState] = useState(() => (
-    explicit || screenId === 'browser'
+    explicit
       ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null }
-      : { resolved: false, locked: false, idleTimeoutSeconds: null }
+      : screenId === 'browser'
+        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null }
+        : { resolved: false, locked: false, idleTimeoutSeconds: null }
   ));
 
   useEffect(() => {
-    if (explicit || screenId === 'browser') {
+    if (explicit) {
       setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null });
+      return undefined;
+    }
+    if (screenId === 'browser') {
+      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null });
       return undefined;
     }
     let alive = true;
