@@ -1217,9 +1217,10 @@ export default function SegmentMap({
                 })
               : [];
             const ordinal = partScenes.findIndex((s) => s.index === group.index) + 1;
+            const mark = ROMAN[ordinal] ?? String(ordinal);
             const label = isCollapsed ? ''
-              : isActive ? (group.title ?? '')
-                : ROMAN[ordinal] ?? String(ordinal);
+              : group.title ? `${mark} ${group.title}`
+                : mark;
             return (
               <span
                 key={`${group.index ?? 'none'}:${group.from}`}
