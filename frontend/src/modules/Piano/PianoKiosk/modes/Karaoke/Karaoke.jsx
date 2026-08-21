@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
+import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import { usePianoCoursePlayable } from '../Videos/usePianoCoursePlayable.js';
 import { lectureContentId } from '../Videos/lectureMeta.js';
@@ -31,27 +32,28 @@ export function Karaoke({ showId: showIdProp, startFresh = true }) {
   // (true for karaoke & play-along) makes every pick start at 0 — no resume.
   const showId = idOf(showIdProp ?? config.karaoke?.plexShow);
   const playable = usePianoCoursePlayable(showId);
+  const { speakerConnected } = usePianoMidi();
 
   return (
     <Routes>
-      <Route index element={<KaraokeBrowseRoute playable={playable} />} />
+      <Route index element={<KaraokeBrowseRoute playable={playable} speakerDisabled={!speakerConnected} />} />
       <Route path=":songId" element={<KaraokePlayerRoute playable={playable} startFresh={startFresh} />} />
     </Routes>
   );
 }
 
-function KaraokeBrowseRoute({ playable }) {
+function KaraokeBrowseRoute({ playable, speakerDisabled }) {
   const navigate = useNavigate();
   const logger = useMemo(() => getLogger().child({ component: 'piano-karaoke' }), []);
   const onSelect = useCallback((song) => {
     logger.info('piano.karaoke-play', { id: song.id });
     navigate(`${song.id}`);
   }, [navigate, logger]);
-  return <KaraokeBrowser playable={playable} onSelect={onSelect} />;
+  return <KaraokeBrowser playable={playable} onSelect={onSelect} speakerDisabled={speakerDisabled} />;
 }
 
 /** The browse UI: color-coded category chips + a recognition-art grid. */
-function KaraokeBrowser({ playable, onSelect }) {
+function KaraokeBrowser({ playable, onSelect, speakerDisabled }) {
   // Single breadcrumb crumb — the chrome already shows the mode name, so a
   // second "Karaoke" here would render the "Karaoke › Karaoke" doubling the
   // audit flagged. Empty label = no crumb from this screen.
@@ -79,7 +81,7 @@ function KaraokeBrowser({ playable, onSelect }) {
   }
 
   return (
-    <section className="piano-mode piano-karaoke">
+    <section className={`piano-mode piano-karaoke${speakerDisabled ? ' piano-karaoke--speaker-disabled' : ''}`}>
       <div className="piano-karaoke__toolbar">
         <div className="piano-karaoke__sort" role="group" aria-label="Sort by">
           <button
@@ -144,7 +146,11 @@ function KaraokeBrowser({ playable, onSelect }) {
             const art = songArt(s);
             return (
               <li key={s.id}>
-                <button type="button" className="piano-karaoke__card" onClick={() => onSelect(s)}>
+                <button
+                  type="button"
+                  className="piano-karaoke__card"
+                  onClick={speakerDisabled ? undefined : () => onSelect(s)}
+                >
                   <span className="piano-karaoke__art" style={{ background: art.background }} aria-hidden="true">
                     <MaterialGlyph seed={art.seed} size={44} className="piano-karaoke__glyph" />
                     <span className="piano-karaoke__play"><Icon name="play" /></span>
@@ -186,6 +192,17 @@ function KaraokePlayerRoute({ playable, startFresh }) {
   // the chrome's mode crumb (also "Karaoke") → the "Karaoke › Karaoke › song" doubling.
   // The mode crumb already links back to the browser, so the song title alone is enough.
   const goBack = useCallback(() => navigate('..', { relative: 'path' }), [navigate]);
+
+  // Hard speaker gate: playback on the kiosk is worthless (and confusing)
+  // without audio, so a lost BT speaker link exits the player immediately —
+  // not a pause, not a mute. Same pattern as Videos' LecturePlayerRoute.
+  const { speakerConnected } = usePianoMidi();
+  useEffect(() => {
+    if (!speakerConnected) {
+      getLogger().child({ component: 'piano-karaoke' }).info('piano.karaoke.speaker-gate-exit', { songId });
+      goBack();
+    }
+  }, [speakerConnected, goBack, songId]);
 
   const lecture = useMemo(
     () => (items || []).find((i) => String(lectureContentId(i)) === String(songId)) || null,
