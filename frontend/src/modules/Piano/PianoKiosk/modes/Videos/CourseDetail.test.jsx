@@ -113,6 +113,30 @@ describe('CourseDetail', () => {
     expect(screen.getByLabelText('Completed')).toBeTruthy();
   });
 
+  it('disables play and shows a warning when speakerDisabled is true', () => {
+    const onPlay = vi.fn();
+    hookReturn = { ...baseHook, items: [
+      { plex: '1', label: 'A', itemIndex: 1 },
+    ] };
+    render(<CourseDetail course={{ id: 'plex:99', title: 'Course' }} onPlay={onPlay} speakerDisabled />);
+    expect(screen.getByText('Speaker not connected')).toBeTruthy();
+    const btn = screen.getByText('A').closest('button');
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  it('plays normally and shows no warning when speakerDisabled is false', () => {
+    const onPlay = vi.fn();
+    hookReturn = { ...baseHook, items: [
+      { plex: '1', label: 'A', itemIndex: 1 },
+    ] };
+    render(<CourseDetail course={{ id: 'plex:99', title: 'Course' }} onPlay={onPlay} />);
+    expect(screen.queryByText('Speaker not connected')).toBeNull();
+    fireEvent.click(screen.getByText('A').closest('button'));
+    expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+
   it('shows shimmer skeleton tiles (standard grid) while loading — not a text loader', () => {
     hookReturn = { ...baseHook, items: null, loading: true };
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={vi.fn()} />);
