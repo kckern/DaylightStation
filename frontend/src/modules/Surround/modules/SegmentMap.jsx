@@ -797,6 +797,7 @@ export default function SegmentMap({
       labelProbe.textContent = '';
     }
 
+    if (foldMinPx > 0) log.info('surround.rail.foldMin', { foldMinPx: Math.round(foldMinPx), labels: Object.fromEntries(Object.entries(labels).map(([k,v]) => [k, Math.round(v)])), pillPx: Math.round(pillPx) });
     setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, sceneTiers });
   }, [named, segments, drawnPartGroups, drawnSceneGroups]);
 
