@@ -16,6 +16,11 @@ const DEFAULT_URL = 'ws://localhost:8770';
 // once, then falls back — imperceptible behind the "connecting" gate.
 const UNAVAILABLE_GRACE_MS = 8000;
 
+// Consecutive speakerOk:false heartbeats (each ~1s, per the bridge APK) required
+// before flipping speakerConnected to false. A single true instantly recovers —
+// only the disconnected direction needs debouncing against a transient blip.
+const SPEAKER_HYSTERESIS = 3;
+
 /**
  * usePianoBridgeNotes — consumes note.on/note.off frames broadcast by the
  * native piano-bridge APK (the BLE-MIDI reader) over a local WebSocket. The
@@ -46,6 +51,11 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   // so an early burst of connect failures (APK WS server still starting after a
   // tablet reboot) can't prematurely flip the client into Web-MIDI fallback.
   const [graceExpired, setGraceExpired] = useState(false);
+  // speakerConnected: whether the Bluetooth speaker the bridge APK talks to is
+  // up, per the last few status heartbeats. Defaults true (non-kiosk clients
+  // with no bridge never receive status frames, so they never flip it).
+  const [speakerConnected, setSpeakerConnected] = useState(true);
+  const speakerFalseRunRef = useRef(0);
   const wsRef = useRef(null);
   const retryRef = useRef(0);
   const everConnectedRef = useRef(false);
@@ -79,8 +89,16 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
             onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0);
           } else if (msg.type === 'note.off') {
             onNoteRef.current?.('note_off', msg.note, 0);
+          } else if (msg.type === 'status' && 'speakerOk' in msg) {
+            if (msg.speakerOk) {
+              speakerFalseRunRef.current = 0;
+              setSpeakerConnected(true);
+            } else {
+              speakerFalseRunRef.current += 1;
+              if (speakerFalseRunRef.current >= SPEAKER_HYSTERESIS) setSpeakerConnected(false);
+            }
           }
-          // other frame types (ready/status) are ignored here.
+          // other frame types (ready) are ignored here.
         } catch {
           // malformed frame — ignore, never let the socket die on bad JSON.
         }
@@ -124,7 +142,7 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   }, [enabled]);
 
   const unavailable = !everConnected && failCount >= 2 && graceExpired;
-  return useMemo(() => ({ link, unavailable }), [link, unavailable]);
+  return useMemo(() => ({ link, unavailable, speakerConnected }), [link, unavailable, speakerConnected]);
 }
 
 export default usePianoBridgeNotes;

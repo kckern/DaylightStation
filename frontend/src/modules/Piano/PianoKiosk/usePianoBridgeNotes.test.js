@@ -141,4 +141,79 @@ describe('usePianoBridgeNotes', () => {
       vi.useRealTimers();
     }
   });
+
+  it('defaults speakerConnected to true', async () => {
+    const { result } = renderHook(() => usePianoBridgeNotes());
+    expect(result.current.speakerConnected).toBe(true);
+  });
+
+  it('stays true after fewer than 3 consecutive speakerOk:false heartbeats', async () => {
+    const { result } = renderHook(() => usePianoBridgeNotes());
+    const ws = instances[0];
+    await act(async () => { ws.onopen?.(); });
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+    });
+    expect(result.current.speakerConnected).toBe(true);
+  });
+
+  it('flips to false after 3 consecutive speakerOk:false heartbeats', async () => {
+    const { result } = renderHook(() => usePianoBridgeNotes());
+    const ws = instances[0];
+    await act(async () => { ws.onopen?.(); });
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+    });
+    expect(result.current.speakerConnected).toBe(false);
+  });
+
+  it('recovers to true instantly on a single speakerOk:true after being false', async () => {
+    const { result } = renderHook(() => usePianoBridgeNotes());
+    const ws = instances[0];
+    await act(async () => { ws.onopen?.(); });
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+    });
+    expect(result.current.speakerConnected).toBe(false);
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: true }) });
+    });
+    expect(result.current.speakerConnected).toBe(true);
+  });
+
+  it('resets the consecutive counter when a speakerOk:true interrupts', async () => {
+    const { result } = renderHook(() => usePianoBridgeNotes());
+    const ws = instances[0];
+    await act(async () => { ws.onopen?.(); });
+    await act(async () => {
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      // Interrupted — counter resets
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: true }) });
+      // Start over
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+      ws.onmessage?.({ data: JSON.stringify({ type: 'status', speakerOk: false }) });
+    });
+    expect(result.current.speakerConnected).toBe(true); // only 2 consecutive, not 3
+  });
+
+  it('stays true when the bridge is unavailable (non-kiosk client)', async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => usePianoBridgeNotes());
+      await act(async () => { instances[0].onclose?.({ code: 1006 }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      await act(async () => { instances[1].onclose?.({ code: 1006 }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+      expect(result.current.unavailable).toBe(true);
+      expect(result.current.speakerConnected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
