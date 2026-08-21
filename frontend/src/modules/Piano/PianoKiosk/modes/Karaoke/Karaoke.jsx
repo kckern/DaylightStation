@@ -53,7 +53,7 @@ function KaraokeBrowseRoute({ playable, speakerDisabled }) {
 }
 
 /** The browse UI: color-coded category chips + a recognition-art grid. */
-function KaraokeBrowser({ playable, onSelect, speakerDisabled }) {
+export function KaraokeBrowser({ playable, onSelect, speakerDisabled }) {
   // Single breadcrumb crumb — the chrome already shows the mode name, so a
   // second "Karaoke" here would render the "Karaoke › Karaoke" doubling the
   // audit flagged. Empty label = no crumb from this screen.
@@ -184,7 +184,7 @@ function KaraokeBrowser({ playable, onSelect, speakerDisabled }) {
  * hands it straight to SingalongPlayer — karaoke has no play-along keyboard/
  * staff chrome, so there's nothing else to wire up.
  */
-function KaraokePlayerRoute({ playable, startFresh }) {
+export function KaraokePlayerRoute({ playable, startFresh }) {
   const { songId } = useParams();
   const navigate = useNavigate();
   const { items } = playable;
