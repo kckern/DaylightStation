@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const api = vi.fn();
 vi.mock('../../../../../lib/api.mjs', () => ({ DaylightAPI: (...a) => api(...a) }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ speakerConnected: true }) }));
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { PianoUserProvider } from '../../PianoUserContext.jsx';

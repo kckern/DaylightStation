@@ -62,7 +62,7 @@ function CoProgressLockIcon() {
  * "reference" units (exercise/practice/walkthrough banks) are never locked, give no
  * credit, and render in an always-open "Practice & Reference" section at the bottom.
  */
-export default function CourseDetail({ course, onPlay, playable }) {
+export default function CourseDetail({ course, onPlay, playable, speakerDisabled = false }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-video-detail' }), []);
   const { currentUser, currentProfile, users } = usePianoUser();
   const courseId = idOf(course?.id);
@@ -220,6 +220,7 @@ export default function CourseDetail({ course, onPlay, playable }) {
     const duration = fmtDuration(item.duration);
 
     const handleClick = () => {
+      if (speakerDisabled) return;
       if (isSequentiallyLocked) return;
       if (isCoProgressLocked) {
         const name = (users || []).find((u) => u.id === coProgressLock.waitingForId)?.name
@@ -241,10 +242,11 @@ export default function CourseDetail({ course, onPlay, playable }) {
             'piano-episode',
             isLocked && 'piano-episode--locked',
             isCurrent && 'piano-episode--current',
+            speakerDisabled && 'piano-episode--speaker-disabled',
           ].filter(Boolean).join(' ')}
           onClick={handleClick}
-          disabled={isSequentiallyLocked}
-          aria-disabled={isLocked}
+          disabled={isSequentiallyLocked || speakerDisabled}
+          aria-disabled={isLocked || speakerDisabled}
           aria-current={isCurrent ? 'true' : undefined}
         >
           <div className="piano-episode__thumb">
@@ -286,6 +288,9 @@ export default function CourseDetail({ course, onPlay, playable }) {
         <aside className="piano-course__info">
           {poster && <img className="piano-course__poster" src={poster} alt="" />}
           <h2 className="piano-course__title">{title}</h2>
+          {speakerDisabled && (
+            <div className="piano-course__speaker-warning" role="status">Speaker not connected</div>
+          )}
           {items?.length > 0 && <div className="piano-course__count">{items.length} lectures</div>}
           {isSequential && (
             <div className="piano-course__learner">
