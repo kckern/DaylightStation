@@ -94,6 +94,15 @@ export class SurfaceProgramLauncher {
   get locationHint() { return this.#locationHint; }
 
   /**
+   * The DoNow surface this program dispatches to — the STRUCTURAL answer to
+   * "does this open where the child is standing, or somewhere else", as
+   * opposed to `locationHint`'s display wording. The self-service panel
+   * branches on it: only a `'portal'` program may be mounted on the panel,
+   * because the panel is the Portal; `garage-fitness` has to be dispatched.
+   */
+  get surface() { return this.#surface; }
+
+  /**
    * @param {{userId: string}} args
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */

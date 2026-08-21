@@ -176,6 +176,79 @@ describe('agendaDocument', () => {
     const args = { learnerId: 'kid1', generatedAt: '2026-07-27T09:00:00.000Z', sections, tokensBySubject };
     expect(JSON.stringify(agendaDocument(args))).toBe(JSON.stringify(agendaDocument(args)));
   });
+
+  /**
+   * The panel access code (self-service). An agenda can carry TWO six-digit
+   * codes on one page — the SchoolCalc study code, typed into a calculator,
+   * and this one, typed into the school-room panel — so the only thing keeping
+   * a child from typing one into the other device is how they are printed.
+   */
+  describe('the panel access code', () => {
+    const args = { learnerId: 'kid1', generatedAt: '2026-07-27T09:00:00.000Z', sections, tokensBySubject };
+    const calcSection = {
+      subject: 'spelling',
+      servedToday: false,
+      next: { title: 'Set 4', schoolcalcHandoff: { eligible: true, displayCode: '001 234' } },
+    };
+
+    it('labels a panel code so it cannot be read as a calculator code', () => {
+      const doc = agendaDocument({ ...args, accessCodesBySubject: { math: '481920' } });
+      const flat = JSON.stringify(doc.blocks);
+      expect(flat).toContain('PANEL CODE 481920');
+      expect(flat).not.toContain('Enter on calculator');
+    });
+
+    it('names a different device from the calculator code printed on the same page', () => {
+      const text = textOf(agendaDocument({
+        ...args, sections: [...sections, calcSection], accessCodesBySubject: { math: '481920' },
+      }));
+      // Both codes print, each under its own instruction, and the two
+      // instructions name two different machines.
+      expect(text).toContain('PANEL CODE 481920');
+      expect(text).toContain('Type it on the school screen.');
+      expect(text).toContain('001 234');
+      expect(text).toContain('Enter on calculator.');
+      // The calculator's code never wears the panel's label.
+      expect(text).not.toContain('PANEL CODE 001');
+    });
+
+    it('is still a valid receipt-target document', () => {
+      valid(agendaDocument({ ...args, accessCodesBySubject: { math: '481920' } }));
+    });
+
+    // The safety property of the whole feature: self-service off is today,
+    // byte for byte.
+    it('changes nothing at all when no codes are supplied', () => {
+      const today = JSON.stringify(agendaDocument(args));
+      expect(JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: {} }))).toBe(today);
+      expect(JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: undefined }))).toBe(today);
+      expect(today).not.toContain('PANEL CODE');
+    });
+
+    it('prints no panel code beside a calculator handoff — that subject is typed elsewhere', () => {
+      const text = textOf(agendaDocument({
+        ...args, sections: [calcSection], tokensBySubject: {}, accessCodesBySubject: { spelling: '481920' },
+      }));
+      expect(text).not.toContain('481920');
+      expect(text).toContain('Enter on calculator.');
+    });
+
+    it('ignores a code for an untokened section — a code aliases a token or nothing', () => {
+      const doc = agendaDocument({
+        learnerId: 'kid1',
+        sections: [{ subject: 'science', servedToday: false, next: { title: 'Turn it in' } }],
+        tokensBySubject: {},
+        accessCodesBySubject: { science: '481920' },
+      });
+      expect(JSON.stringify(doc.blocks)).not.toContain('481920');
+    });
+
+    it('drops a malformed code rather than printing digits a child cannot type', () => {
+      const flat = JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: { math: '4819' } }).blocks);
+      expect(flat).not.toContain('PANEL CODE');
+      expect(flat).not.toContain('4819');
+    });
+  });
 });
 
 describe('resultDocument', () => {

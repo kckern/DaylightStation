@@ -20,7 +20,7 @@ import { IReviewQueue } from '#apps/school/ports/IReviewQueue.mjs';
 import { IDocumentRenderer, IReceiptRenderer } from '#apps/school/ports/IDocumentRenderer.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
-import { TOKEN_PREFIX } from '#domains/school/sessions/tokens.mjs';
+import { TOKEN_PREFIX, isAccessCodeLive } from '#domains/school/sessions/tokens.mjs';
 
 export const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
@@ -157,6 +157,17 @@ export class FakeSessionRepository extends IWorkSessionRepository {
 
 export class FakeTokenRegistry extends ITokenRegistry {
   #records = new Map();
+  #now;
+
+  /**
+   * @param {{ now?: () => string }} [opts] ISO clock, for the panel-code path —
+   *   a code has its own study-day expiry, so a test at a day boundary must be
+   *   able to move time without moving records.
+   */
+  constructor({ now } = {}) {
+    super();
+    this.#now = typeof now === 'function' ? now : () => new Date().toISOString();
+  }
 
   #key(token) {
     const t = String(token ?? '').trim();
@@ -166,6 +177,35 @@ export class FakeTokenRegistry extends ITokenRegistry {
   async put(record) { this.#records.set(this.#key(record.token), record); return record; }
 
   async get(token) { return this.#records.get(this.#key(token)) ?? null; }
+
+  async claim(record) {
+    const current = await this.get(record.token);
+    if (current) {
+      const sameMeaning = current.token === record.token
+        && current.tokenClass === record.tokenClass
+        && JSON.stringify(current.subject) === JSON.stringify(record.subject);
+      return { status: sameMeaning ? 'duplicate' : 'conflict', record: current };
+    }
+    await this.put(record);
+    return { status: 'accepted', record };
+  }
+
+  /** Mirrors YamlTokenRegistry: liveness is the domain's call, newest paper wins. */
+  async getByAccessCode(code) {
+    if (typeof code !== 'string') return null;
+    const now = this.#now();
+    const live = this.all()
+      .filter((record) => record.accessCode === code && isAccessCodeLive(record, { now }))
+      .sort((a, b) => Date.parse(a.issuedAt ?? '') - Date.parse(b.issuedAt ?? ''));
+    return live.at(-1) ?? null;
+  }
+
+  async liveAccessCodes() {
+    const now = this.#now();
+    return new Set(this.all()
+      .filter((record) => isAccessCodeLive(record, { now }))
+      .map((record) => record.accessCode));
+  }
 
   async revoke(token, { at } = {}) {
     const record = await this.get(token);

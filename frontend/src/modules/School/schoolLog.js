@@ -34,6 +34,13 @@ export const schoolLog = {
   print:   (detail, data) => emit('print', detail, data),             // requested | printed | approval | approve | deny
   typing:  (detail, data) => emit('typing', detail, data, 'debug'),   // line-done
   player:  (detail, data) => emit('player', detail, data),            // media-resolved | media-unresolved | chrome-visibility
+  // Locked self-service panel (design §5). Detail names match the backend's:
+  // code.rejected | code.resolved | action.run | print.confirmed |
+  // print.debounced | print.retried | idle.timeout. A code that never works is
+  // a minting or expiry bug and these are the only way to see it — so NEVER
+  // log the code itself, only that one was typed.
+  selfService: (detail, data) => emit('selfservice', detail, data),
+  selfServiceError: (detail, data) => emit('selfservice', detail, data, 'error'), // resolve.failed | act.failed
 };
 
 export default schoolLog;

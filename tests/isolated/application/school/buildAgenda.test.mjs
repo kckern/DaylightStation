@@ -3,6 +3,7 @@ import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { validateDocument } from '#domains/school/documents/documentValidation.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
+import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeTokenRegistry, FakeAssignmentStore, FakeReviewQueue,
   fakeClock, seededRng, sequentialIds, silentLogger,
@@ -19,9 +20,24 @@ const PROGRAM_ID = 'lang-app';
 
 let clock, catalog, curriculum, sessions, tokens, assignments, reviewQueue, useCase;
 
+/**
+ * The shared fake registry plus the one method the self-service path needs:
+ * the codes that are still live, as a Set the mint can test synchronously.
+ * Local to this suite rather than pushed into `lifecycleFakes` (that widening
+ * belongs to the registry's own task), and deliberately not the YAML adapter —
+ * nothing here should depend on how a code is stored.
+ */
+class CodeAwareTokenRegistry extends FakeTokenRegistry {
+  async liveAccessCodes() {
+    return new Set(this.all().filter((r) => r.accessCode && !r.revokedAt).map((r) => r.accessCode));
+  }
+}
+
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] }, units, launchers = new Map(),
   timezone = null, schoolCalcStudies = null, schoolCalcMode = 'off',
+  selfService = null, subjectTokenTtlHours, rng = seededRng(7), tokenRegistry = null,
+  logger = silentLogger,
 } = {}) => {
   clock = fakeClock();
   catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -29,14 +45,15 @@ const build = ({
     catalog, bankIds: () => BANK_IDS, programIds: () => [PROGRAM_ID], clock: clock.epoch, logger: silentLogger,
   });
   sessions = new FakeSessionRepository();
-  tokens = new FakeTokenRegistry();
+  tokens = tokenRegistry ?? new CodeAwareTokenRegistry();
   assignments = new FakeAssignmentStore(assignment ? [assignment] : []);
   reviewQueue = new FakeReviewQueue();
   useCase = new BuildAgenda({
     curriculum, assignments, sessions, tokens, launchers, reviewQueue, timezone,
-    schoolCalcStudies, schoolCalcMode,
-    clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(),
-    logger: silentLogger,
+    schoolCalcStudies, schoolCalcMode, selfService,
+    ...(subjectTokenTtlHours === undefined ? {} : { subjectTokenTtlHours }),
+    clock: clock.now, rng, newSessionId: sequentialIds(),
+    logger,
   });
 };
 
@@ -501,5 +518,169 @@ describe('notes for you (spec R7)', () => {
     const result = await useCase.execute({ learnerId: 'kid1' });
     expect(validateDocument(result.document).errors).toEqual([]);
     expect(transcript(result.document)).not.toContain('NOTES FOR YOU');
+  });
+});
+
+/**
+ * Self-service panel codes: a six-digit alias for the subject ticket, minted
+ * here and printed on the same paper as the QR, so a child can start their own
+ * work without a grown-up and a scanner.
+ */
+describe('self-service panel codes', () => {
+  const subjectRecords = () => tokens.ofClass('subject_next');
+  // fakeClock stands at 09:00 UTC on 2026-07-27, and the study day rolls at
+  // 4am — so the code dies at 04:00 the next morning while the token keeps its
+  // week. Read off `studyDayWindow`, never restated, for the same reason
+  // BuildAgenda calls it: one copy of the boundary math.
+  const rollover = () => new Date(
+    studyDayWindow(clock.epoch(), { timezone: null, boundaryHour: 4 }).endAtMs,
+  ).toISOString();
+
+  it('MINTS NOTHING when self-service is off — the receipt is exactly today\'s', async () => {
+    build();
+    const off = await useCase.execute({ learnerId: 'kid1' });
+    const offRecords = subjectRecords();
+    expect(offRecords).toHaveLength(1);
+    offRecords.forEach((record) => {
+      // Not "undefined" — ABSENT. A record with the key at all is a changed record.
+      expect(Object.prototype.hasOwnProperty.call(record, 'accessCode')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(record, 'accessCodeExpiresAt')).toBe(false);
+    });
+    expect(JSON.stringify(off.document)).not.toContain('PANEL CODE');
+
+    // ...and an explicit `enabled: false` is the same document, byte for byte.
+    build({ selfService: { enabled: false } });
+    const disabled = await useCase.execute({ learnerId: 'kid1' });
+    expect(JSON.stringify(disabled.document)).toBe(JSON.stringify(off.document));
+  });
+
+  it('gives each subject ticket a code that dies at the next study-day rollover', async () => {
+    build({ selfService: { enabled: true } });
+    await useCase.execute({ learnerId: 'kid1' });
+    const [record] = subjectRecords();
+    expect(record.accessCode).toMatch(/^\d{6}$/);
+    expect(record.accessCodeExpiresAt).toBe(rollover());
+    // The QR keeps its week — two clocks on one record is the whole point.
+    expect(Date.parse(record.expiresAt)).toBeGreaterThan(Date.parse(record.accessCodeExpiresAt));
+    expect(record.expiresAt).toBe('2026-08-03T09:00:00.000Z');
+  });
+
+  it('prints the code beside the lesson it opens', async () => {
+    build({ selfService: { enabled: true } });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [record] = subjectRecords();
+    expect(transcript(result.document)).toContain(`PANEL CODE ${record.accessCode}`);
+    expect(validateDocument(result.document).errors).toEqual([]);
+  });
+
+  it('never gives two lessons on one agenda the same code', async () => {
+    // The draw order per subject is ONE code draw then the token body's 16.
+    // Scripting positions 0 and 17 to the same value makes the second subject
+    // draw a code the first already took; the local set must reject it.
+    const base = seededRng(7);
+    const scripted = Object.assign([], { 0: 0.481920, 17: 0.481920, 18: 0.222222 });
+    let i = 0;
+    const rng = () => { const v = scripted[i] ?? base(); i += 1; return v; };
+    build({
+      ...withLanguageProgram(),
+      launchers: new Map([[PROGRAM_ID, {
+        status: async () => ({ doneToday: false, progressLabel: null, score: null }),
+        locationHint: 'in the garage',
+      }]]),
+      selfService: { enabled: true },
+      rng,
+    });
+    await useCase.execute({ learnerId: 'kid1' });
+    const codes = subjectRecords().map((r) => r.accessCode);
+    expect(codes).toHaveLength(2);
+    expect(codes).toContain('481920');
+    expect(codes).toContain('222222');
+    expect(new Set(codes).size).toBe(2);
+  });
+
+  it('never reissues a code that is still live from a previous agenda', async () => {
+    // What this seed draws first with nothing in the way — the code that is
+    // already sitting on a previous day's paper.
+    build({ selfService: { enabled: true } });
+    await useCase.execute({ learnerId: 'kid1' });
+    const [{ accessCode: alreadyOnPaper }] = subjectRecords();
+    expect(alreadyOnPaper).toMatch(/^\d{6}$/);
+
+    // Same seed, same learner, same first draw — but the registry now reports
+    // that code as live, so the mint must skip past it. One build, one record,
+    // asserted on directly: a `forEach` over a collection that can be empty
+    // would pass this test by running no assertions at all.
+    const carriedOver = new CodeAwareTokenRegistry();
+    carriedOver.liveAccessCodes = async () => new Set([alreadyOnPaper]);
+    build({ selfService: { enabled: true }, tokenRegistry: carriedOver });
+    await useCase.execute({ learnerId: 'kid1' });
+
+    const records = subjectRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0].accessCode).toMatch(/^\d{6}$/);
+    // The whole cross-day half of the guard: without it the index keeps only
+    // the last writer and the earlier record's printed code stops resolving —
+    // a child types the code on their paper and opens someone else's lesson.
+    expect(records[0].accessCode).not.toBe(alreadyOnPaper);
+  });
+
+  // A household that shortens `lifecycle.subjectTokenTtlHours` below a day
+  // would push the rollover PAST the token's own expiry, and `createTokenRecord`
+  // refuses a code that outlives its token. The agenda must still print.
+  it('clamps a code that would outlive a short-lived token rather than failing the print', async () => {
+    const warnings = [];
+    build({
+      selfService: { enabled: true },
+      subjectTokenTtlHours: 1,
+      logger: { ...silentLogger, warn: (event, data) => warnings.push({ event, data }) },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const [record] = subjectRecords();
+    expect(record.expiresAt).toBe('2026-07-27T10:00:00.000Z');
+    expect(record.accessCodeExpiresAt).toBe(record.expiresAt);
+    expect(validateDocument(result.document).errors).toEqual([]);
+    // ...and says which config key did it, so the household can see why.
+    const clamp = warnings.find((w) => w.event === 'school.agenda.access-code-clamped');
+    expect(clamp).toBeTruthy();
+    expect(JSON.stringify(clamp.data)).toContain('subjectTokenTtlHours');
+  });
+
+  it('refuses to be constructed against a registry that cannot report its live codes', () => {
+    // Without it the within-agenda set is the only guard, and it has never
+    // heard of yesterday's codes — so this fails loudly at wiring time rather
+    // than quietly reissuing a live code some morning.
+    expect(() => new BuildAgenda({
+      curriculum, assignments, sessions,
+      tokens: { put: async () => {}, get: async () => null },
+      selfService: { enabled: true },
+      clock: clock.now, rng: seededRng(7), newSessionId: sequentialIds(), logger: silentLogger,
+    })).toThrow(/liveAccessCodes/);
+  });
+
+  it('refuses to mint against a registry that answers with nothing', async () => {
+    // `new Set(undefined)` is an empty set, indistinguishable from "no codes
+    // are live" — which would leave the cross-day guard quietly not running.
+    const mute = new CodeAwareTokenRegistry();
+    mute.liveAccessCodes = async () => undefined;
+    build({ selfService: { enabled: true }, tokenRegistry: mute });
+    await expect(useCase.execute({ learnerId: 'kid1' })).rejects.toThrow(/liveAccessCodes/);
+  });
+
+  it('leaves a calculator subject codeless — there is no token to alias', async () => {
+    build({
+      units: rawUnits({
+        [MEDIA_UNIT]: {
+          schoolcalc: { mode: 'adaptive_flashcards', study: { cardCount: 12, maxExposuresPerCard: 4 }, quiz: { itemCount: 10 } },
+          document: undefined, media: undefined, bank: MEDIA_BANK_ID,
+        },
+      }),
+      schoolCalcMode: 'issue',
+      schoolCalcStudies: { ensure: async () => ({ studySessionId: 'study_1', code: '001234' }) },
+      selfService: { enabled: true },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    expect(subjectRecords()).toEqual([]);
+    expect(transcript(result.document)).not.toContain('PANEL CODE');
+    expect(transcript(result.document)).toContain('Enter on calculator.');
   });
 });

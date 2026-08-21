@@ -3665,6 +3665,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   if (schoolLifecycle.devicesRouter) {
     v1Routers.school.use('/devices', schoolLifecycle.devicesRouter);
   }
+  // The school-room wall panel's keypad. Built inside the same
+  // `lifecycle.enabled` gate as everything else above, so a locked panel
+  // configured against a disabled lifecycle 404s here rather than answering
+  // half a card.
+  if (schoolLifecycle.selfServiceRouter) {
+    v1Routers.school.use('/self-service', schoolLifecycle.selfServiceRouter);
+  }
 
   // Shared dispatch-level idempotency cache for multi-step HTTP dispatches
   // (e.g. POST /api/v1/device/:id/load?mode=adopt).

@@ -1098,6 +1098,94 @@ production deployment must never expose a "make the printer fail" endpoint.
 
 ---
 
+### Self-service panel codes (six digits, typed at the school-room Portal)
+
+Scanning a `sch:` token needs the barcode scanner, and the scanner is
+parent-controlled — so a child who finished one thing had to find a grown-up to
+start the next. Panel codes close that loop without handing children a scanner.
+
+`BuildAgenda` mints one six-digit code per subject alongside the `subject_next`
+token it already mints, and `agendaDocument` prints it on the lesson card as
+**`PANEL CODE 481920`**. A child types it into the school-room Portal, which
+answers with a **launch card**: one button for that lesson, plus a way out.
+
+**Three six-digit codes now exist, two of them on the same sheet of paper.**
+
+| Code | Typed into | Nature |
+|---|---|---|
+| `continuationCode.mjs` | a calculator | reversible affine encoding of `learnerSlot × moduleCode`; permanent, enumerable, "not authentication" by its own header |
+| SchoolCalc **study code** | a calculator | random, printed beside the lesson with "Enter on calculator." |
+| **panel access code** | the **Portal keypad** | random, study-day scoped, printed as `PANEL CODE …` |
+
+The printed treatment is what keeps them apart, and it is asserted by tests: the
+panel code is labelled and unspaced, the calculator code is bare and grouped in
+threes, and each names a different device. Schoolcalc entries mint `token: null`
+and are therefore **not** keypad-reachable — intended, not an oversight.
+
+**Two clocks on one record.** `subject_next` tokens carry a 7-day TTL so the
+printed QR outlives the day. A code riding that clock would still be typable a
+week later and would open whatever the subject offers *that* day, contradicting
+the paper in the child's hand. So the record carries its own
+`accessCodeExpiresAt`, set to the next 4am study-day boundary, and
+`createTokenRecord` refuses a code that would outlive its token. Codes are legal
+on `subject_next` only.
+
+**`/resolve` does not write.** `ResolveSubjectNext.execute` calls `ensureSession`,
+which appends a `created` event when an entry has no session — so resolving a
+code that way would let a child typing a *sibling's* code write sessions into
+that sibling's history. `ResolveAccessCode` computes `nextMove` against a
+synthetic `created` state instead and hands `/act` a `SYNTHETIC_SESSION_ID` that
+must never reach a use case. `/act` is where a real session is opened, because by
+then the child has pressed a button.
+
+**One action per card, never a composite.** A one-tap print-and-play is forbidden
+by the session event schema in both directions (`issued` has no media edge;
+`media_dispatched` is not in `IssueDocument`'s `ISSUABLE`). A video with a
+worksheet offers `play`; after it completes, the recomputed card offers `print`.
+`offeredActions` owns every button's wording — the panel renders `action.label`
+verbatim and sends `action.kind` back, so there is exactly one authority on what
+a card says.
+
+**Never a dead end.** An unknown code, an expired one, a backend that is down —
+every path returns HTTP 200 with a sentence a child can act on. `ok:false`
+distinguishes a refusal from a real card that simply has no buttons (`served`,
+`locked`), and a `reason` discriminator separates a bad code from an outage so
+rewording the copy cannot remove the retry button.
+
+#### Configuration — two independent switches
+
+```yaml
+# data/household/school/config.yml   (colocated path; NOT household/config/school.yml)
+selfService:
+  enabled: true                  # mint and print codes
+  mediaSurface:
+    id: livingroom-tv            # must be a real dispatch target
+    label: living room           # bare room name -> "Play in the living room"
+
+# data/household/screens/portal.yml
+school:
+  mode: locked                   # THIS panel shows the keypad
+  idleTimeoutSeconds: 120
+```
+
+Minting and locking are independent so the rollout can be staged: print codes
+first, confirm one resolves, lock the panel last. **Both off is exactly the
+behaviour before this feature existed**, pinned by a characterisation test.
+
+A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
+only screen in the house that mounts School, so ignoring them would break the
+scanner's "answer on the screen" path with nothing to catch it. Keypad-launched
+quizzes register their sitting through `SchoolService`, or DoNow's clobber
+protection would be blind to them. Lock mode fails *open*: an unreachable screen
+config leaves the panel browsable, because "config absent" and "fetch failed" are
+indistinguishable from the client.
+
+**Printer locality.** Worksheets print on the kitchen laser (see *Printing*
+above). The kitchen adjoins the school room through an open doorway, so a child
+at the panel can see and hear the printer and the confirm step can simply ask
+"Did it print?". If the laser ever moves out of sight of the panel, that step
+needs revisiting — the confirm assumes the child can check.
+
 ### NFC personal cards — tap to agenda
 
 > **Verified end to end on hardware 2026-07-29.** A tap produced
