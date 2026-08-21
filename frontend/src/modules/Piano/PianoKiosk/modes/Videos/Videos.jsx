@@ -4,6 +4,7 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import { usePianoCoursePlayable } from './usePianoCoursePlayable.js';
 import { usePianoUser } from '../../PianoUserContext.jsx';
+import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import CourseGrid from './CourseGrid.jsx';
 import CourseDetail from './CourseDetail.jsx';
 import PianoVideoPlayer from './PianoVideoPlayer.jsx';
@@ -108,6 +109,7 @@ export function CourseDetailRoute() {
   const { courseId } = useParams();
   const { currentUser } = usePianoUser();
   const navigate = useNavigate();
+  const { speakerConnected } = usePianoMidi();
   const playable = usePianoCoursePlayable(idOf(courseId), currentUser);
   const course = useMemo(() => ({ id: courseId }), [courseId]);
   const onPlay = useCallback((item) => {
@@ -119,7 +121,7 @@ export function CourseDetailRoute() {
   if (isSubcourseShow(playable.info)) {
     return <SubcourseNavigator course={course} playable={playable} onPlay={onPlay} />;
   }
-  return <CourseDetail course={course} playable={playable} onPlay={onPlay} />;
+  return <CourseDetail course={course} playable={playable} onPlay={onPlay} speakerDisabled={!speakerConnected} />;
 }
 
 /**
@@ -172,6 +174,19 @@ export function LecturePlayerRoute({ PlayerComponent = PianoVideoPlayer }) {
     if (advancingRef.current) return;
     navigate('..', { relative: 'path' });
   }, [navigate]);
+
+  // Hard speaker gate: playback on the kiosk is worthless (and confusing)
+  // without audio, so a lost BT speaker link exits the player immediately —
+  // not a pause, not a mute. `speakerConnected` flips false only after 3
+  // consecutive bad heartbeats (see usePianoBridgeNotes), so this isn't
+  // trigger-happy on a single blip.
+  const { speakerConnected } = usePianoMidi();
+  useEffect(() => {
+    if (!speakerConnected) {
+      getLogger().child({ component: 'piano-videos' }).info('piano.video.speaker-gate-exit', { courseId, lectureId });
+      goBack();
+    }
+  }, [speakerConnected, goBack, courseId, lectureId]);
 
   const handleAutoAdvance = useCallback(async () => {
     if (checkpointPending && checkpoint?.exercise_id) {

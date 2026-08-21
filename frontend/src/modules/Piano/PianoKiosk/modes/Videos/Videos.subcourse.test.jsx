@@ -7,6 +7,7 @@ vi.mock('./usePianoCoursePlayable.js', () => ({ usePianoCoursePlayable: () => ho
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'kckern', currentProfile: {}, users: [] }) }));
 vi.mock('./CourseDetail.jsx', () => ({ default: () => <div data-testid="flat">FLAT</div> }));
 vi.mock('./SubcourseNavigator.jsx', () => ({ default: () => <div data-testid="nav">NAV</div> }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ speakerConnected: true }) }));
 
 import { CourseDetailRoute } from './Videos.jsx';
 

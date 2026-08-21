@@ -10,6 +10,7 @@ import { LecturePlayerRoute } from './Videos.jsx';
 
 const state = {
   user: 'kckern',
+  speakerConnected: true,
   config: {
     videos: {
       engagement_timeout_seconds: 90,
@@ -31,6 +32,7 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 vi.mock('./usePianoCoursePlayable.js', () => ({ usePianoCoursePlayable: () => state.playable }));
 vi.mock('../../PianoPlaybackContext.jsx', () => ({ usePianoPlayback: () => ({ playing: false }) }));
 vi.mock('../../usePianoScreensaver.jsx', () => ({ useKeepScreenAwake: () => {} }));
+vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ speakerConnected: state.speakerConnected }) }));
 
 // Module-level mount counter — every per-lecture piece of state this route
 // feeds into the REAL PianoVideoPlayer (usePianoWatchLog's effect chain,
@@ -68,6 +70,7 @@ const renderAt = (path) => render(
 
 beforeEach(() => {
   state.user = 'kckern';
+  state.speakerConnected = true;
   mountCount = 0;
 });
 
@@ -108,6 +111,13 @@ describe('LecturePlayerRoute — per-user policy wiring', () => {
     renderAt('/videos/c1/plex:100');
     fireEvent.click(screen.getByText('back'));
     expect(screen.getByTestId('course-detail')).toBeTruthy();
+  });
+
+  it('navigates back immediately when speakerConnected is false', () => {
+    state.speakerConnected = false;
+    renderAt('/videos/c1/plex:100');
+    expect(screen.getByTestId('course-detail')).toBeTruthy();
+    expect(screen.queryByTestId('lecture')).toBeNull();
   });
 
   it('auto-advance remounts the player (remount-per-lecture invariant — watch-log/furthestWatched/engagedRef must never straddle lectures)', () => {
