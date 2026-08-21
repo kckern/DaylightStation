@@ -1278,7 +1278,7 @@ export default function SegmentMap({
                 label = `${mark} ${group.title}`;
               } else if (group.mini && tier?.miniW && tier.miniW + pad <= availPx) {
                 label = `${mark} ${group.mini}`;
-              } else {
+              } else if (tier?.markW && tier.markW + pad <= availPx) {
                 label = mark;
               }
             }
