@@ -103,7 +103,7 @@ function resolveSurround(item) {
  * keyed on `contentId` by effect dependency rather than by a React `key`, because
  * a `key` here would remount the player on every queue advance.
  */
-function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, children }) {
+function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, getPlayerHandle, children }) {
   const { position, duration, playing, seeking } = useMediaClockState({
     getMediaEl: active ? getMediaEl : NO_MEDIA,
     contentId,
@@ -135,13 +135,22 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
   useEffect(() => {
     if (!active) return undefined;
     const handler = (e) => {
-      const el = getMediaEl?.();
       const t = e?.detail?.seconds;
-      if (el && Number.isFinite(t)) el.currentTime = t;
+      if (!Number.isFinite(t)) return;
+      const targetId = e?.detail?.contentId;
+      if (targetId && contentId && String(targetId) !== String(contentId)) {
+        const handle = getPlayerHandle?.();
+        if (handle?.seekToItem) {
+          handle.seekToItem(targetId, t);
+          return;
+        }
+      }
+      const el = getMediaEl?.();
+      if (el) el.currentTime = t;
     };
     document.addEventListener('surround-seek', handler);
     return () => document.removeEventListener('surround-seek', handler);
-  }, [active, getMediaEl]);
+  }, [active, getMediaEl, getPlayerHandle, contentId]);
 
   const onModuleError = (error) => {
     logger.error('surround.render.error', {
@@ -186,6 +195,7 @@ SurroundStage.propTypes = {
   mode: PropTypes.string,
   logger: PropTypes.object.isRequired,
   getMediaEl: PropTypes.func.isRequired,
+  getPlayerHandle: PropTypes.func,
   children: PropTypes.node,
 };
 
@@ -297,6 +307,7 @@ export default function SurroundHost({
       mode={mode}
       logger={hostLogger}
       getMediaEl={() => readHandle()?.getMediaElement?.() ?? null}
+      getPlayerHandle={readHandle}
     >
       {children}
     </SurroundStage>
