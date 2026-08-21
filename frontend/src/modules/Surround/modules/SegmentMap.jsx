@@ -179,7 +179,8 @@ const RAIL_UNMEASURED = 0;
  * be written to is a bug waiting for one of them.
  */
 const UNMEASURED_RAIL = Object.freeze({
-  chromePx: 0, needs: [], shortNeeds: [], labels: Object.freeze({}), pillPx: 0,
+  chromePx: 0, needs: [], shortNeeds: [], labels: Object.freeze({}),
+  pillPx: 0, foldMinPx: 0, sceneTiers: Object.freeze({}),
 });
 
 export default function SegmentMap({
@@ -195,6 +196,10 @@ export default function SegmentMap({
   logger = null,
 }) {
   const log = useMemo(() => surroundLogger(logger, 'segment-map'), [logger]);
+  const seekTo = useCallback((seconds) => {
+    const el = document.querySelector('video');
+    if (el && Number.isFinite(seconds)) el.currentTime = seconds;
+  }, []);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
   // THE COMPACT RAIL (`band.railDensity: 'bars'`). The rule, its barlines and
@@ -392,6 +397,7 @@ export default function SegmentMap({
         count: Number(m.count) || 0,
         start: m.offset,
         stop: m.offset + m.duration,
+        mediaStart: Number(m.start) || 0,
         natural: shares[i] ?? (m.duration / totalSounding),
       }));
     }
@@ -406,9 +412,7 @@ export default function SegmentMap({
         ...engrave(m),
         start,
         stop,
-        // The DURATION-derived share of the rule — what the segment is worth in
-        // time. The accordion may render it wider or narrower; this stays the
-        // proportion every redistribution is measured against.
+        mediaStart: start,
         natural: (stop - start) / span,
       };
     });
@@ -537,6 +541,7 @@ export default function SegmentMap({
       const index = group && Number.isFinite(raw) ? raw : null;
       const title = index === null ? null
         : (typeof group.title === 'string' && group.title.trim() ? group.title.trim() : null);
+      const mini = typeof group?.mini === 'string' && group.mini.trim() ? group.mini.trim() : null;
       const segCount = Number(segment?.count) || 1;
       const duration = Number(segment?.duration) || 0;
       const last = runs[runs.length - 1];
@@ -547,7 +552,7 @@ export default function SegmentMap({
         return;
       }
       runs.push({
-        title, index, from: i, count: segCount, slots: 1, span: duration,
+        title, mini, index, from: i, count: segCount, slots: 1, span: duration,
       });
     });
     return runs;
@@ -746,24 +751,55 @@ export default function SegmentMap({
     const pillProbe = probe.querySelector('.surround-segment-map__fold-count');
     const labels = {};
     let pillPx = 0;
+    let foldMinPx = 0;
     if (labelProbe && pillProbe) {
       drawnPartGroups.forEach((run) => {
         const short = partDesignation(run.title);
-        if (!short || labels[short] !== undefined) return;
-        labelProbe.textContent = short;
-        labels[short] = labelProbe.getBoundingClientRect().width;
+        if (short && labels[short] === undefined) {
+          labelProbe.textContent = short;
+          labels[short] = labelProbe.getBoundingClientRect().width;
+        }
+        if (run.title && labels[run.title] === undefined) {
+          labelProbe.textContent = run.title;
+          labels[run.title] = labelProbe.getBoundingClientRect().width;
+        }
       });
       labelProbe.textContent = '';
-      // The LONGEST count on the rail, so every fold's badge is measured against
-      // the widest case and two folds never differ by a digit's width.
       const widest = drawnPartGroups.reduce((max, run) => Math.max(max, run.count), 0);
       pillProbe.textContent = String(widest || 0);
       pillPx = pillProbe.getBoundingClientRect().width;
       pillProbe.textContent = '';
+      // The fold needs enough width for whichever is wider: its Part label
+      // or its badge pill. This is the measured minimum — no fold may be
+      // narrower than this, and no fold needs to be wider.
+      const designationWidths = drawnPartGroups
+        .map((run) => labels[run.mini ?? partDesignation(run.title)] ?? 0);
+      const widestDesignation = Math.max(0, ...designationWidths);
+      const groupPad = labelProbe ? parseFloat(getComputedStyle(labelProbe).paddingLeft) + parseFloat(getComputedStyle(labelProbe).paddingRight) : 16;
+      foldMinPx = foldWidthPx({ labelPx: widestDesignation + groupPad, pillPx });
     }
 
-    setMetrics({ chromePx, needs, shortNeeds, labels, pillPx });
-  }, [named, segments, drawnPartGroups]);
+    // SCENE LABEL WIDTHS — measured so the render can decide full-title vs
+    // numeral-only without ever showing an ellipsis.
+    const sceneTiers = {};
+    if (labelProbe) {
+      drawnSceneGroups.forEach((run) => {
+        if (sceneTiers[run.index] !== undefined) return;
+        const measure = (text) => {
+          labelProbe.textContent = text;
+          return labelProbe.getBoundingClientRect().width;
+        };
+        const markText = ROMAN[run.index + 1] ?? String(run.index + 1);
+        const markW = measure(markText);
+        const miniW = run.mini ? measure(`${markText} ${run.mini}`) : 0;
+        const fullW = run.title ? measure(`${markText} ${run.title}`) : 0;
+        sceneTiers[run.index] = { markW, miniW, fullW };
+      });
+      labelProbe.textContent = '';
+    }
+
+    setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, sceneTiers });
+  }, [named, segments, drawnPartGroups, drawnSceneGroups]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
 
@@ -924,6 +960,7 @@ export default function SegmentMap({
       chromePx: metrics.chromePx,
       railPx,
       activeIndex,
+      foldMinPx: metrics.foldMinPx,
     })
     : segments.map((s) => s.natural)), [chips, segments, metrics, railPx, activeIndex]);
 
@@ -944,8 +981,10 @@ export default function SegmentMap({
     // The folds, settled before anything opens — see `accordionShares`. Null on
     // a rail with nothing folded, which is every rail this module drew before
     // design wave 10 and every solve it produces is unchanged there.
-    pinnedPx: folded.pins,
-  }), [widthBasis, activeIndex, railPx, desiredPx, chips, floorPx, folded]);
+    pinnedPx: folded.pins ?? (segments.some((s) => s.collapsed) && metrics.foldMinPx > 0
+      ? segments.map((s) => (s.collapsed ? metrics.foldMinPx : null))
+      : null),
+  }), [widthBasis, activeIndex, railPx, desiredPx, chips, floorPx, folded, segments, metrics.foldMinPx]);
 
   // ---- the bond -------------------------------------------------------------
   // ONE definition of "how far through the piece" (review finding I3) — see
@@ -1177,19 +1216,31 @@ export default function SegmentMap({
           data-level={0}
           aria-hidden="true"
         >
-          {drawnPartGroups.map((group) => (
+          {drawnPartGroups.map((group) => {
+            let partLabel = group.title ?? '';
+            if (groupLevels.length > 1) {
+              const availPx = groupBasis(group) * railPx;
+              const fullText = group.title ?? '';
+              const miniText = group.mini ?? partDesignation(group.title);
+              const fullLabelPx = metrics.labels?.[fullText] ?? Infinity;
+              const miniLabelPx = metrics.labels?.[miniText] ?? 0;
+              const pad = 8;
+              partLabel = fullLabelPx + pad <= availPx ? fullText
+                : miniLabelPx + pad <= availPx ? miniText : '';
+            }
+            return (
             <span
               key={`${group.index ?? 'none'}:${group.from}`}
-              className={`surround-segment-map__group${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
+              className={`surround-segment-map__group surround-segment-map__group--clickable${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
               data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
+              onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
-              {groupLevels.length > 1
-                ? partDesignation(group.title)
-                : group.title ?? ''}
+              {partLabel}
             </span>
-          ))}
+            );
+          })}
         </div>
       )}
       {/* LEVEL 1+: Scene headings on the DRAWN rail. The active scene shows
@@ -1218,16 +1269,27 @@ export default function SegmentMap({
               : [];
             const ordinal = partScenes.findIndex((s) => s.index === group.index) + 1;
             const mark = ROMAN[ordinal] ?? String(ordinal);
-            const label = isCollapsed ? ''
-              : group.title ? `${mark} ${group.title}`
-                : mark;
+            let label = '';
+            if (!isCollapsed) {
+              const availPx = groupBasis(group) * railPx;
+              const tier = metrics.sceneTiers?.[group.index];
+              const pad = 8;
+              if (group.title && tier?.fullW && tier.fullW + pad <= availPx) {
+                label = `${mark} ${group.title}`;
+              } else if (group.mini && tier?.miniW && tier.miniW + pad <= availPx) {
+                label = `${mark} ${group.mini}`;
+              } else if (tier?.markW && tier.markW + pad <= availPx) {
+                label = mark;
+              }
+            }
             return (
               <span
                 key={`${group.index ?? 'none'}:${group.from}`}
-                className={`surround-segment-map__group${isActive ? ' surround-segment-map__group--active' : ''}${isCollapsed ? ' surround-segment-map__group--collapsed' : ''}`}
+                className={`surround-segment-map__group surround-segment-map__group--clickable${isActive ? ' surround-segment-map__group--active' : ''}${isCollapsed ? ' surround-segment-map__group--collapsed' : ''}`}
                 data-testid="surround-group-label"
                 data-span={group.count}
                 style={{ flexBasis: `${groupBasis(group) * 100}%` }}
+                onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
               >
                 {label}
               </span>
@@ -1410,13 +1472,14 @@ export default function SegmentMap({
           return (
             <div
               key={`${seg.n ?? i}:${seg.start}`}
-              className={`surround-segment-map__segment surround-segment-map__segment--${state}${seg.collapsed ? ' surround-segment-map__segment--fold' : ''}`}
+              className={`surround-segment-map__segment surround-segment-map__segment--${state}${seg.collapsed ? ' surround-segment-map__segment--fold' : ''} surround-segment-map__segment--clickable`}
               data-fold={seg.collapsed ? seg.count : undefined}
               data-testid="surround-segment"
               data-state={state}
               data-index={i}
               data-natural={seg.natural.toFixed(6)}
               style={{ width: `${(shares[i] ?? widthBasis[i] ?? seg.natural) * 100}%` }}
+              onClick={() => seekTo(seg.mediaStart ?? seg.start)}
             >
               {/* ONE quiet separator between segments. The double barline was
                   correct notation and too much ink at this size — it read as

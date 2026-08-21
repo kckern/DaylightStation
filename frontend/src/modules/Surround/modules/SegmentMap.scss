@@ -192,15 +192,17 @@
   opacity: 0.92;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* The top level of the hierarchy is the loudest label on the rail — it is the
-   only thing on the rule that says where in a two-and-a-half-hour work we are. */
 .surround-segment-map__group--part {
   color: var(--ink, #332b20);
   font-weight: 600;
   opacity: 1;
+}
+
+.surround-segment-map__group--clickable,
+.surround-segment-map__segment--clickable {
+  cursor: pointer;
 }
 
 /* The staff rule itself. Segments hang from it; the playhead rides over it. */
