@@ -138,7 +138,12 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       const t = e?.detail?.seconds;
       if (!Number.isFinite(t)) return;
       const targetId = e?.detail?.contentId;
-      if (targetId && contentId && String(targetId) !== String(contentId)) {
+      const crossItem = targetId && contentId && String(targetId) !== String(contentId);
+      logger.info('surround.seek', {
+        seconds: t, targetContentId: targetId ?? null,
+        currentContentId: contentId, crossItem,
+      });
+      if (crossItem) {
         const handle = getPlayerHandle?.();
         if (handle?.seekToItem) {
           handle.seekToItem(targetId, t);
@@ -150,7 +155,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     };
     document.addEventListener('surround-seek', handler);
     return () => document.removeEventListener('surround-seek', handler);
-  }, [active, getMediaEl, getPlayerHandle, contentId]);
+  }, [active, getMediaEl, getPlayerHandle, contentId, logger]);
 
   const onModuleError = (error) => {
     logger.error('surround.render.error', {
