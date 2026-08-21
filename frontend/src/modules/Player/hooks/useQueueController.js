@@ -406,7 +406,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     });
   }, [clear, isContinuous, originalQueue, onDeck]);
 
-  const jumpTo = useCallback((targetContentId) => {
+  const jumpTo = useCallback((targetContentId, seekSeconds) => {
     const id = String(targetContentId ?? '');
     if (!id) return false;
     const origIdx = originalQueue.findIndex((item) => {
@@ -418,9 +418,14 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
       action: 'jump-to-item',
       targetContentId: id,
       targetIndex: origIdx,
+      seekSeconds: Number.isFinite(seekSeconds) ? seekSeconds : null,
       originalQueueLength: originalQueue.length,
     });
-    setQueue(originalQueue.slice(origIdx));
+    const sliced = originalQueue.slice(origIdx);
+    if (Number.isFinite(seekSeconds) && seekSeconds > 0 && sliced[0]) {
+      sliced[0] = { ...sliced[0], seconds: seekSeconds };
+    }
+    setQueue(sliced);
     return true;
   }, [originalQueue]);
 
