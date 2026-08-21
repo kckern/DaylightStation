@@ -144,7 +144,12 @@ export function validateQuestionBank(raw) {
       if (item.type === 'multi_select' && Object.hasOwn(item, 'answer')) errors.push(`${at}: multi_select must not contain answer`);
       if (!Array.isArray(item.decoys) || !item.decoys.every(isNonEmptyString)) errors.push(`${at}: v2 decoys must be an array of non-empty strings`);
       const all = [...(Array.isArray(correct) ? correct : []), ...(Array.isArray(item.decoys) ? item.decoys : [])];
-      if (all.length < 8 || all.length > 10) errors.push(`${at}: v2 answer pool must contain 8..10 total answers and decoys`);
+      // A five-option pool is the approved minimum for book-course banks:
+      // it supplies every option the upper profile can show while the lower
+      // profile still draws a shuffled 3–4-option subset.  Larger pools are
+      // welcome when every additional decoy is equally fair, but are never a
+      // reason to dilute a source-grounded item with a weak distractor.
+      if (all.length < 5 || all.length > 10) errors.push(`${at}: v2 answer pool must contain 5..10 total answers and decoys`);
       if (new Set(all).size !== all.length) errors.push(`${at}: v2 answers and decoys must be unique`);
     } else if (item.type === 'multiple_choice') {
       if (!Array.isArray(item.choices) || item.choices.length < 2) {

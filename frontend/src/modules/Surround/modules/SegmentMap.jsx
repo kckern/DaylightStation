@@ -70,11 +70,13 @@ import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
   numeral, numeralText, numeralStyle,
-  placedRailSegments, railGroups,
+  placedRailSegments, railGroups, railFolds, foldWidthPx,
   soundingWidth, idealWidth, nameFloorPx, railWearsChips,
   ACCORDION_MS, SEGMENT_CHIP_FLOOR_PX, NOW_PANEL_SHARE,
 } from '../band.js';
 import './SegmentMap.scss';
+
+const EMPTY_GROUPS = Object.freeze([]);
 
 /**
  * A tempo marking is WORDS. Figures in a heading mean it is a title — a
@@ -115,20 +117,43 @@ function splitHeading(name) {
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
 /**
- * The printable half of a rail entry, curled once at its render seam
- * (`../typography.js`). Both rails — the composed one and the piece's own —
- * carry the same authored strings, so they are read the same way in one place
- * rather than transcribed into two branches that can drift apart.
+ * THE FOUR FIELDS A SEGMENT AUTHORS, and what each one is FOR.
  *
- * A segment name is set in Garamond on stock; a straight apostrophe in it is
- * the only unset mark on the screen. The gloss is OPTIONAL: an unauthored
- * translation renders no element at all, never an empty line holding space.
+ * `name:` and `heading:` were the corpus's first two words for this and they
+ * were both wrong in the same way — either one could plausibly have meant "what
+ * this movement is called", so an author had to read the renderer to find out
+ * which. The vocabulary is now named by WHERE IT GOES and WHAT IT SAYS:
+ *
+ *   label:      what the rail prints. The short name of the number — for
+ *               Messiah, the incipit ("He trusted in God that He would deliver
+ *               Him"). Redundant with the first line of `text:` and deliberately
+ *               so: the rail is a contents page and a contents page names things.
+ *   heading:    where the words come from. "Psalm 22:8".
+ *   subheading: how it is performed. "Chorus", "Air (Tenor)".
+ *   text:       the words themselves. NEVER rendered on the rail.
+ *
+ * `name` IS STILL READ, as a fallback and only as a fallback. 194 work files in
+ * the corpus author `name:`, they migrate as a batch rather than atomically with
+ * this build, and a rail that renders blank titles for the un-migrated half is a
+ * worse outcome than one line of compatibility.
+ *
+ * A label is set in Garamond on stock; a straight apostrophe in it is the only
+ * unset mark on the screen. The annotation line is OPTIONAL: a segment that
+ * authors none of its three parts renders no element at all, never an empty line
+ * holding space.
  */
 const engrave = (m) => ({
   n: m?.n,
-  name: smartQuotes(m?.name ?? ''),
-  translation: typeof m?.translation === 'string' && m.translation.trim()
-    ? smartQuotes(m.translation.trim()) : null,
+  label: smartQuotes(m?.label ?? m?.name ?? ''),
+  // Performance first, source second — "Chorus · Psalm 22:8" reads as a
+  // billing, which is what a programme book prints under a number's title. The
+  // translation joins the same line because it is the same register (an
+  // editor's note about the number, not the number's own words) and the rail
+  // has exactly one line for that register.
+  annotation: ['subheading', 'heading', 'translation']
+    .map((key) => (typeof m?.[key] === 'string' && m[key].trim() ? smartQuotes(m[key].trim()) : null))
+    .filter(Boolean)
+    .join(' · ') || null,
 });
 
 /**
@@ -139,6 +164,18 @@ const engrave = (m) => ({
  * three places, not a magic zero.
  */
 const RAIL_UNMEASURED = 0;
+
+/**
+ * The probe has not run — and every consumer of it reads that as "solve the
+ * rail the way it was solved before any of this existed". `needs` empty holds
+ * the accordion inert; `labels` empty holds every fold unmeasured, and an
+ * unmeasured fold is not folded (`foldWidthPx` answers 0, which is the signal).
+ * Frozen because it is shared by three call sites and a shared literal that can
+ * be written to is a bug waiting for one of them.
+ */
+const UNMEASURED_RAIL = Object.freeze({
+  chromePx: 0, needs: [], labels: Object.freeze({}), pillPx: 0,
+});
 
 export default function SegmentMap({
   position = 0,
@@ -315,11 +352,40 @@ export default function SegmentMap({
   /** Nothing has sounded YET — as against nothing sounding any more. */
   const unsounded = activeIndex < 0 && segments.length > 0 && railPosition < segments[0].start;
 
-  // The labels above the rule: one per consecutive run sharing a group. A
-  // single work's rail is one ungrouped run, and renders no row at all — the
-  // band keeps exactly the height and the geometry it has today.
-  const groups = useMemo(() => (composed ? railGroups(placedRail) : []), [composed, placedRail]);
-  const grouped = groups.some((g) => g.title);
+  // A corpus group path is generic and recursive. Each existing depth becomes
+  // one labelled row, outermost first; a work with no groups has no extra row.
+  // The legacy composed-work `group` remains the one-level fallback.
+  const groupLevels = useMemo(() => {
+    if (!composed) return [];
+    const depth = Math.max(0, ...placedRail.map(({ segment }) => (
+      Array.isArray(segment?.ancestors) ? segment.ancestors.length : 0
+    )));
+    if (depth) return Array.from({ length: depth }, (_, level) => railGroups(
+      placedRail, (segment) => segment?.ancestors?.[level] ?? null,
+    )).filter((runs) => runs.some((run) => run.title));
+    // Existing payloads can still carry the fixed two-level transport shape.
+    // Read it until all cached clients have crossed the generic-groups seam.
+    const legacyParts = railGroups(placedRail, (segment) => segment?.hierarchy?.part);
+    const legacyScenes = railGroups(placedRail);
+    if (legacyParts.some((run) => run.title)) return [legacyParts, legacyScenes];
+    return legacyScenes.some((run) => run.title) ? [legacyScenes] : [];
+  }, [composed, placedRail]);
+  const grouped = groupLevels.length > 0;
+
+  // ---- THE FOLD (design wave 10) --------------------------------------------
+  // Every part except the sounding one collapses to one elided block. The rail
+  // stopped being readable at Messiah's scale for a reason arithmetic can state:
+  // 53 numbered movements across a 1714px rule is 32px each, so the rail spent
+  // three quarters of its width numbering music nobody is listening to, and the
+  // part that IS sounding got the same 32px a segment as the two that are not.
+  //
+  // It is the outermost visible authored level that folds. A recursive group
+  // tree therefore folds by Act/Part/Book (or whatever its first level is).
+  const foldGroups = groupLevels[0] ?? EMPTY_GROUPS;
+  const folds = useMemo(
+    () => railFolds({ groups: foldGroups, activeIndex }),
+    [foldGroups, activeIndex],
+  );
 
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
@@ -340,7 +406,7 @@ export default function SegmentMap({
    * a box the last solve had already resized, and the chip decision taken from
    * it would flip on its own output.
    */
-  const [metrics, setMetrics] = useState({ chromePx: 0, needs: [] });
+  const [metrics, setMetrics] = useState(UNMEASURED_RAIL);
   const [fontsTick, setFontsTick] = useState(0);
 
   useEffect(() => {
@@ -379,19 +445,19 @@ export default function SegmentMap({
   const measureRail = useCallback(() => {
     const probe = probeRef.current;
     // A bars-only rail has no type to right-size for.
-    if (!probe || !named || !segments.length) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    if (!probe || !named || !segments.length) { setMetrics(UNMEASURED_RAIL); return; }
     const row = probe.querySelector('.surround-segment-map__text-row');
     const cell = probe.querySelector('.surround-segment-map__text');
     const heading = probe.querySelector('.surround-segment-map__heading');
     const gloss = probe.querySelector('.surround-segment-map__translation');
-    if (!row || !cell || !heading || !gloss) { setMetrics({ chromePx: 0, needs: [] }); return; }
+    if (!row || !cell || !heading || !gloss) { setMetrics(UNMEASURED_RAIL); return; }
     // The probe row is `width: max-content`, so its numeral track is this rail's
     // own gutter at its own size and its text track is exactly the text — which
     // makes the difference the segment furniture, measured rather than derived
     // from the `em`/`ch` arithmetic in the stylesheet.
     const chromePx = row.getBoundingClientRect().width - cell.getBoundingClientRect().width;
     const needs = segments.map((seg) => {
-      const { title, tempo } = splitHeading(seg.name);
+      const { title, tempo } = splitHeading(seg.label);
       // The heading is two spans with a margin between them, exactly as the
       // segment sets it — a probe holding one concatenated string would measure
       // a narrower line than the rail paints.
@@ -408,16 +474,43 @@ export default function SegmentMap({
         t.textContent = tempo;
         heading.appendChild(t);
       }
-      gloss.textContent = seg.translation ?? '';
+      gloss.textContent = seg.annotation ?? '';
       return Math.max(
         heading.getBoundingClientRect().width,
-        seg.translation ? gloss.getBoundingClientRect().width : 0,
+        seg.annotation ? gloss.getBoundingClientRect().width : 0,
       );
     });
     heading.innerHTML = '';
     gloss.textContent = '';
-    setMetrics({ chromePx, needs });
-  }, [named, segments]);
+
+    // ---- WHAT A FOLD IS SIZED BY (design wave 10) --------------------------
+    // Both are constants of the PIECE, measured on the same pass and never on
+    // `activeIndex`: the widest part label this rail has, and the badge holding
+    // its longest count. Measuring the folds that are folded RIGHT NOW would
+    // make the width a function of where the playhead is, and the width feeds
+    // the solve that decides where everything is drawn — a measurement reading
+    // its own output, which is the one thing this probe exists to prevent.
+    const labelProbe = probe.querySelector('.surround-segment-map__group');
+    const pillProbe = probe.querySelector('.surround-segment-map__fold-count');
+    const labels = {};
+    let pillPx = 0;
+    if (labelProbe && pillProbe) {
+      foldGroups.forEach((run) => {
+        if (!run.title || labels[run.title] !== undefined) return;
+        labelProbe.textContent = run.title;
+        labels[run.title] = labelProbe.getBoundingClientRect().width;
+      });
+      labelProbe.textContent = '';
+      // The LONGEST count on the rail, so every fold's badge is measured against
+      // the widest case and two folds never differ by a digit's width.
+      const widest = foldGroups.reduce((max, run) => Math.max(max, run.count), 0);
+      pillProbe.textContent = String(widest || 0);
+      pillPx = pillProbe.getBoundingClientRect().width;
+      pillProbe.textContent = '';
+    }
+
+    setMetrics({ chromePx, needs, labels, pillPx });
+  }, [named, segments, foldGroups]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
 
@@ -432,6 +525,68 @@ export default function SegmentMap({
   const chips = named && railWearsChips({
     railPx, count: segments.length, widestPx, floorPx,
   });
+
+  // ---- THE FOLD, SOLVED (design wave 10) -----------------------------------
+  // One pass turns the runs `railFolds` chose into the two things the rest of
+  // the module needs: the pin vector the accordion solves against, and the map
+  // the renderer draws from. They are built together so they cannot disagree
+  // about which runs are actually folded — a fold drawn without a pin is a block
+  // sitting at a duration's width, and a pin without a block is a hole.
+  const folded = useMemo(() => {
+    const none = { pins: null, blocks: new Map(), hidden: new Set() };
+    if (!folds.length || !(railPx > 0) || !segments.length) return none;
+    const pins = new Array(segments.length).fill(null);
+    const blocks = new Map();
+    const hidden = new Set();
+    folds.forEach((fold) => {
+      const width = foldWidthPx({
+        labelPx: metrics.labels?.[fold.title] ?? 0,
+        pillPx: metrics.pillPx ?? 0,
+      });
+      // NOT MEASURED IS NOT FOLDED. Before the faces land there is no honest
+      // width for the label, and a fold guessed at is a block that resizes
+      // under the viewer when Cormorant arrives.
+      if (!(width > 0)) return;
+      // A FOLD ONLY EVER SHRINKS — the run's whole natural width against the
+      // one width that replaces it, which is the only place that comparison can
+      // be made (`accordionShares` sees the run as one pin and n-1 zeroes).
+      // A part so short that its label is wider than its music stays open: an
+      // elision drawn bigger than the thing elided is a worse rail, not a
+      // denser one.
+      let naturalPx = 0;
+      for (let i = fold.from; i < fold.from + fold.count; i += 1) {
+        naturalPx += (segments[i]?.natural ?? 0) * railPx;
+      }
+      if (width >= naturalPx) return;
+      pins[fold.from] = width;
+      for (let i = fold.from + 1; i < fold.from + fold.count; i += 1) {
+        pins[i] = 0;
+        hidden.add(i);
+      }
+      blocks.set(fold.from, fold);
+    });
+    return blocks.size ? { pins, blocks, hidden } : none;
+  }, [folds, segments, railPx, metrics]);
+
+  useEffect(() => {
+    if (!folds.length) return;
+    log.debug('surround.rail.fold', {
+      contentId,
+      runs: folds.length,
+      folded: folded.blocks.size,
+      hiddenSegments: folded.hidden.size,
+      of: segments.length,
+      // What the folds were sized by. A fold that came out at the pill's floor
+      // rather than at its label's width is a rail whose part names are shorter
+      // than their badges, which is worth seeing in the store.
+      pillPx: Math.round(metrics.pillPx ?? 0),
+      widths: [...folded.blocks.values()].map((f) => ({
+        title: f.title,
+        count: f.count,
+        labelPx: Math.round(metrics.labels?.[f.title] ?? 0),
+      })),
+    });
+  }, [folds, folded, segments.length, metrics, contentId, log]);
 
   useEffect(() => {
     if (!segments.length || !(railPx > 0) || !metrics.needs.length) return;
@@ -488,7 +643,11 @@ export default function SegmentMap({
     // could donate nothing and the sounding segment could never have its name
     // whole — the guarantee this mode exists to keep.
     floorPx: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
-  }), [segments, activeIndex, railPx, desiredPx, chips, floorPx]);
+    // The folds, settled before anything opens — see `accordionShares`. Null on
+    // a rail with nothing folded, which is every rail this module drew before
+    // design wave 10 and every solve it produces is unchanged there.
+    pinnedPx: folded.pins,
+  }), [segments, activeIndex, railPx, desiredPx, chips, floorPx, folded]);
 
   // ---- the bond -------------------------------------------------------------
   // ONE definition of "how far through the piece" (review finding I3) — see
@@ -569,7 +728,8 @@ export default function SegmentMap({
     log.warn('surround.accordion.degraded', {
       contentId,
       index: activeIndex,
-      name: segments[activeIndex]?.name ?? null,
+      label: segments[activeIndex]?.label ?? null,
+      name: segments[activeIndex]?.label ?? null,
       desired: desiredPx,
       granted: Math.round((targetShares[activeIndex] ?? 0) * railPx),
       floor: chips ? SEGMENT_CHIP_FLOOR_PX : floorPx,
@@ -616,7 +776,8 @@ export default function SegmentMap({
       contentId,
       index: activeIndex,
       n: active?.n ?? null,
-      name: active?.name ?? null,
+      label: active?.label ?? null,
+      name: active?.label ?? null,
       position: Math.round(position),
       railPosition: Math.round(railPosition),
     });
@@ -649,6 +810,7 @@ export default function SegmentMap({
       data-grouped={grouped ? 'true' : 'false'}
       style={{
         '--numeral-chars': String(numeralChars),
+        ...(grouped ? { '--group-rows': `calc(var(--group-row) * ${groupLevels.length})` } : {}),
         '--accordion-ms': `${ACCORDION_MS}ms`,
         // The cursor's own smoothing. 120ms of linear ramp is one transport
         // tick and is what turns the 10 Hz position steps into a glide — but
@@ -673,17 +835,19 @@ export default function SegmentMap({
           The labels are `aria-hidden` for the same reason the rest of the rail's
           chrome is: this is a decorative restatement of the placard above, and a
           screen reader walking it would read every set title twice. */}
-      {grouped && (
+      {groupLevels.map((groups, level) => (
         <div
+          key={`group-level:${level}`}
           className="surround-segment-map__groups"
-          data-testid="surround-segment-groups"
+          data-testid={level === 0 && groupLevels.length > 1 ? 'surround-part-groups' : 'surround-segment-groups'}
+          data-level={level}
           aria-hidden="true"
         >
           {groups.map((group) => (
             <span
               key={`${group.index ?? 'none'}:${group.from}`}
               className="surround-segment-map__group"
-              data-testid="surround-group-label"
+              data-testid={level === 0 && groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
               // Sized by the run's SOUNDING SECONDS, so a heading sits over
               // exactly the stretch of rule its works occupy. `flex-basis`
@@ -696,7 +860,7 @@ export default function SegmentMap({
             </span>
           ))}
         </div>
-      )}
+      ))}
       <div className="surround-segment-map__rule" ref={ruleRef}>
         {/* THE RULER (the same idiom `CueTicker` measures its prose with). One
             element per rail, out of flow and invisible, carrying the segment
@@ -724,6 +888,15 @@ export default function SegmentMap({
                 <span className="surround-segment-map__translation" />
               </span>
             </span>
+            {/* THE FOLD'S TWO RULERS (design wave 10). A part label as the
+                groups row actually sets it — its own face, size and inline
+                padding — and the count badge as the fold actually sets it. A
+                fold is exactly as wide as the wider of them, so both have to be
+                measured in the shipped rules rather than computed from the
+                stylesheet's `em`s. They are emptied at the end of every pass,
+                like the heading above. */}
+            <span className="surround-segment-map__group" />
+            <span className="surround-segment-map__fold-count" />
           </span>
         )}
         <span className="surround-segment-map__barline surround-segment-map__barline--terminal surround-segment-map__barline--start" aria-hidden="true" />
@@ -777,6 +950,12 @@ export default function SegmentMap({
         />
 
         {segments.map((seg, i) => {
+          // INSIDE A FOLD, AND NOT ITS HEAD: the segment is not drawn at all.
+          // Its pin is zero, so it owns no width; rendering it anyway would put
+          // a zero-width box carrying a separator barline inside the block,
+          // which is a hairline of ink saying a boundary is here when the whole
+          // point of the block is that the boundaries in it are elided.
+          if (folded.hidden.has(i)) return null;
           // NOTHING SOUNDING HAS TWO OPPOSITE MEANINGS, and the rail must not
           // confuse them. After the last chord every segment HAS sounded and
           // the rule reads full; before the first one — a recording that opens
@@ -786,7 +965,60 @@ export default function SegmentMap({
           const state = activeIndex === i ? 'active'
             : unsounded ? 'future'
               : (activeIndex === -1 || i < activeIndex) ? 'elapsed' : 'future';
-          const { title, tempo } = splitHeading(seg.name);
+
+          // ---- THE FOLD'S BLOCK (design wave 10) ---------------------------
+          // One elided run, drawn as one box: the rule and its fill above (a
+          // folded part is wholly elapsed or wholly future, never split — it is
+          // by definition not the part the playhead is in), a hatched lane on
+          // the numerals' own line, and the count as a BADGE.
+          //
+          // THE BADGE IS NOT A NUMERAL, and the two signals that say so are
+          // independent: it is enclosed, and it is set in the annotation sans
+          // rather than the numeral's Garamond small caps. Design wave 10's
+          // predecessor set the count as a bare figure in the numeral lane, so
+          // Messiah's rail read "21 22 23 24 25 26 27" across a fold boundary
+          // and "44 9" across the next — a count and a sequence position in one
+          // face saying two different things.
+          const fold = folded.blocks.get(i);
+          if (fold) {
+            return (
+              <div
+                key={`fold:${fold.index ?? 'none'}:${i}`}
+                className={`surround-segment-map__segment surround-segment-map__segment--${state} surround-segment-map__segment--fold`}
+                data-testid="surround-segment-fold"
+                data-state={state}
+                data-index={i}
+                data-count={fold.count}
+                data-title={fold.title}
+                style={{ width: `${(shares[i] ?? seg.natural) * 100}%` }}
+              >
+                {i > 0 && (
+                  <span
+                    className="surround-segment-map__barline surround-segment-map__barline--separator"
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="surround-segment-map__bar" aria-hidden="true">
+                  <span
+                    className="surround-segment-map__bar-fill"
+                    data-testid="surround-segment-fill"
+                    data-fill={state === 'elapsed' ? '1.0000' : '0.0000'}
+                    style={{ '--fill': state === 'elapsed' ? '1' : '0' }}
+                  />
+                </span>
+                <span className="surround-segment-map__fold-lane" aria-hidden="true">
+                  <span
+                    className="surround-segment-map__fold-count"
+                    data-testid="surround-fold-count"
+                  >
+                    {fold.count}
+                  </span>
+                </span>
+              </div>
+            );
+          }
+
+          const { title, tempo } = splitHeading(seg.label);
           // How much of THIS segment has sounded. Elapsed segments read full,
           // future ones empty, and the sounding one sweeps — that sweep is where
           // the viewer reads progress now. It is a fraction of the SEGMENT, so
@@ -870,12 +1102,12 @@ export default function SegmentMap({
                       programme. One line, ellipsized, exactly like the heading
                       above it: design wave 7 made the whole rail single-line and
                       widens the SOUNDING segment instead of wrapping anything. */}
-                  {seg.translation && (
+                  {seg.annotation && (
                     <span
                       className="surround-segment-map__translation"
                       data-testid="surround-segment-translation"
                     >
-                      {seg.translation}
+                      {seg.annotation}
                     </span>
                   )}
                 </span>
