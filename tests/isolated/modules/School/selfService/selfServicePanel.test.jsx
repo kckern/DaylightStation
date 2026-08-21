@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import SchoolApp from '#frontend/modules/School/SchoolApp.jsx';
+import { REJECT_WORD } from '#frontend/modules/School/selfService/Keypad.jsx';
 
 // Capture the WS subscriber so a `school.launch` broadcast can be pushed
 // through the REAL useSchoolLaunch hook (pattern: SchoolApp.launch.test.jsx).
@@ -177,7 +178,7 @@ describe('locked panel — which surface renders', () => {
 });
 
 describe('locked panel — typing a code', () => {
-  it('a wrong code says "Try again" and leaves the keypad usable', async () => {
+  it('a wrong code is refused IN the slots and leaves the keypad usable', async () => {
     resolveMock.mockResolvedValueOnce({
       ok: true, status: 200,
       data: { ok: false, reason: 'unknown_code', sentence: 'Try again.', actions: [] },
@@ -186,12 +187,71 @@ describe('locked panel — typing a code', () => {
     await screen.findByTestId('selfservice-keypad');
 
     await typeCode('111111');
-    expect(await screen.findByText(/try again/i)).toBeInTheDocument();
+    // The refusal happens in the entry row the digits were typed into — no line
+    // of text appears below it, because anything that appears there shoves the
+    // pad down the screen under the finger of a child already re-typing.
+    await waitFor(() => expect(screen.getByTestId('selfservice-entry'))
+      .toHaveAttribute('data-state', 'rejected'));
+    expect(screen.queryByText('Try again.')).toBeNull();
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('code.rejected', expect.anything()));
 
     // Still a live keypad — no lockout, no dead buttons: the next code works.
     await typeCode('481920');
     expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+  });
+
+  it('the refusal turns the slots over into a word and then clears itself', async () => {
+    // The drama is the point: a child who cannot yet read a sentence under the
+    // keypad can still see six red letters land one at a time. It must also
+    // END — a panel still shouting NO is a panel the next child walks up to.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      resolveMock.mockResolvedValueOnce({
+        ok: true, status: 200,
+        data: { ok: false, reason: 'unknown_code', sentence: 'Try again.', actions: [] },
+      });
+      renderLocked();
+      await screen.findByTestId('selfservice-keypad');
+      await typeCode('111111');
+
+      const entry = await screen.findByTestId('selfservice-entry');
+      await waitFor(() => expect(entry).toHaveAttribute('data-state', 'rejected'));
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
+      expect(entry.textContent).toBe(REJECT_WORD);
+
+      // ...and back to an empty, usable keypad on its own.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+      expect(entry).toHaveAttribute('data-state', 'entry');
+      expect(entry.textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Clear on an already-empty entry refreshes the panel', async () => {
+    // The kiosk's only refresh affordance: lock mode draws no header and FKB
+    // has no address bar, so without this a stale bundle needs a grown-up with
+    // an ADB shell to pick up a deploy.
+    const reload = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
+    try {
+      renderLocked();
+      await screen.findByTestId('selfservice-keypad');
+      const clear = screen.getByRole('button', { name: /^clear$/i });
+
+      // A Clear with something to clear wipes the entry and reloads NOTHING.
+      fireEvent.click(await screen.findByRole('button', { name: '4' }));
+      fireEvent.click(clear);
+      expect(reload).not.toHaveBeenCalled();
+      expect(screen.getByTestId('selfservice-entry').textContent).toBe('');
+
+      // The second tap — nothing left to clear — is the refresh.
+      fireEvent.click(clear);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(selfServiceLog).toHaveBeenCalledWith('keypad.reload', expect.anything());
+    } finally {
+      reload.mockRestore();
+    }
   });
 
   it('a valid code renders the launch card with its offered actions', async () => {
@@ -451,9 +511,12 @@ describe('locked panel — the domain owns the wording', () => {
     await typeCode('111111');
 
     // A minting/expiry bug must not read as an outage, or the two are
-    // indistinguishable to whoever is standing at the panel.
-    expect(await screen.findByText('Try again.')).toBeInTheDocument();
+    // indistinguishable to whoever is standing at the panel. A bad code is the
+    // red slots and nothing else; a fault is words plus a retry button.
+    await waitFor(() => expect(screen.getByTestId('selfservice-entry'))
+      .toHaveAttribute('data-state', 'rejected'));
     expect(screen.queryByText(/school computer isn.t answering/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /try again|retry/i })).toBeNull();
   });
 
   it('prefers the `reason` discriminator over the sentence for a fault', async () => {
@@ -943,8 +1006,11 @@ describe('locked panel — an unrecognised refusal reason still offers a retry',
     await screen.findByTestId('selfservice-keypad');
     await typeCode('111111');
 
-    expect(await screen.findByText('Try again.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('selfservice-entry'))
+      .toHaveAttribute('data-state', 'rejected'));
     expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();
+    // Not even the sentence: a bad code is the red slots, full stop.
+    expect(screen.queryByText('Try again.')).toBeNull();
   });
 });
 

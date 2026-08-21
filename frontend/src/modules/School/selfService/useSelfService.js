@@ -188,10 +188,17 @@ export function useSelfService({
   }, []);
 
   /**
-   * @returns {Promise<{resolved: boolean, sentence: string|null, skipped?: boolean}>}
-   * — the keypad ignores this, but `confirmPrint` needs to tell three cases
-   * apart: a card opened, the resolve failed, and `skipped` (a second tap that
-   * never made a request at all, which must change nothing on screen).
+   * @returns {Promise<{resolved: boolean, sentence: string|null, skipped?: boolean, degraded?: boolean}>}
+   * — `confirmPrint` needs to tell three cases apart: a card opened, the
+   * resolve failed, and `skipped` (a second tap that never made a request at
+   * all, which must change nothing on screen).
+   *
+   * The KEYPAD reads `degraded` off this too, and it has to come back on the
+   * verdict rather than be read off the hook's state: the keypad's own await
+   * resumes in the microtask right after this one, with no guarantee React has
+   * flushed `setDegraded` yet, so a stale read would play the wrong-code
+   * animation over a backend outage — telling a child their good code was
+   * wrong, which is the one thing rule 1 exists to prevent.
    */
   const submit = useCallback(async (code) => {
     if (!code) return { resolved: false, sentence: null };
@@ -207,7 +214,7 @@ export function useSelfService({
       setDegraded(true);
       setMessage(DEGRADED_SENTENCE);
       schoolLog.selfServiceError('resolve.failed', { status: res.status });
-      return { resolved: false, sentence: DEGRADED_SENTENCE };
+      return { resolved: false, sentence: DEGRADED_SENTENCE, degraded: true };
     }
     // `ok` is the ONLY thing separating a REFUSAL (bad code — stay on the
     // keypad) from a REAL CARD that simply has no buttons (`served`,
@@ -225,7 +232,7 @@ export function useSelfService({
       } else {
         schoolLog.selfService('code.rejected', { status: res.status });
       }
-      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE };
+      return { resolved: false, sentence: res.data.sentence || TRY_AGAIN_SENTENCE, degraded: faulted };
     }
 
     codeRef.current = code;
@@ -242,7 +249,7 @@ export function useSelfService({
       ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
       ?? null;
     if (learnerId && claim) claim(learnerId);
-    return { resolved: true, sentence: null };
+    return { resolved: true, sentence: null, degraded: false };
   }, [beginWork, claim, endWork]);
 
   /** The degraded retry — the same code, not a fresh typing exercise. */
@@ -394,9 +401,26 @@ export function useSelfService({
     return () => window.removeEventListener('keydown', onKey);
   }, [view, toLock]);
 
+  /**
+   * THE TOUCH EQUIVALENT OF THAT ESCAPE KEY.
+   *
+   * The note above is about a keyboard the wall panel does not have: FKB shows
+   * no address bar, lock mode draws no header (so not even SchoolApp's apple,
+   * which is the reload affordance everywhere else), and the keypad is the
+   * resting state — so a panel left on a stale bundle had nothing to tap. The
+   * Keypad wires this to a Clear pressed on an ALREADY-EMPTY entry: the second
+   * tap of a double Clear, or a deliberate one on an idle screen. Neither costs
+   * a child anything (there is nothing typed to lose, and a reload lands back
+   * on this same keypad), and it needs no code, no gesture and no grown-up.
+   */
+  const reload = useCallback(() => {
+    schoolLog.selfService('keypad.reload', {});
+    window.location.reload();
+  }, []);
+
   return {
     view, card, message, degraded, sentence, busy,
-    submit, retry, runAction, confirmPrint, exit: toLock,
+    submit, retry, runAction, confirmPrint, exit: toLock, reload,
   };
 }
 

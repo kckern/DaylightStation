@@ -2,15 +2,23 @@
  * ScriptRail — the performance text, in a rail of its own on the right.
  *
  * It is the SAME PRINTED PROGRAMME as the left rail: ink on parchment stock,
- * the house display face for the heading and the body face for the verse. That
+ * the house display face for the billing and the body face for the verse. That
  * is deliberate and not merely consistent — the two rails are never on screen
  * together, so anything that made this one a different material would read as
  * the frame having changed rooms rather than turned a page.
  *
- * THE ORDER IS A PRINTED PROGRAMME'S: contents, then the number's title, then
- * the words, then the plate. Everything above the words is `flex: 0 0 auto` and
- * set small; the verse takes what is left, which is most of the column.
+ * THE ORDER IS A PRINTED PROGRAMME'S: contents, then the number's billing, then
+ * the words, then the plate.
  *
+ * THE RAIL HAD ONLY TWO VOICES, a shout and a whisper. The verse was at the top
+ * of its ladder AND at full ink; everything else was under the frame's own
+ * readability floors AND at half ink. So the eye went verse, plate, texture, and
+ * nothing in between could be read at all. This stylesheet builds the middle:
+ * the contents come UP to the published floor, the billing comes up past the
+ * verse, and the verse comes DOWN — because a viewer who has just looked over
+ * needs to know what they are hearing before they can read along with it.
+ *
+ * THE MIDDLE REGISTER IS MADE OF THREE THINGS, not one: size, ink, and space.
  * Every colour and face is a custom property the frame already publishes, with
  * the same literal fallback its siblings carry.
  */
@@ -32,136 +40,203 @@
   color: var(--ink, #e9dfc8);
 }
 
+/* -------------------------------------------------------------------------- */
+/* THE CONTENTS                                                                */
+/* -------------------------------------------------------------------------- */
+
 /**
- * THE CONTENTS, at the top of the rail — a nested table rather than two flat
- * lists side by side. The sounding branch is ink and OPEN, with the level
- * beneath it printed INSIDE it and indented; its siblings stay closed in the
- * quieter annotation colour. That indent is the whole argument for the shape:
- * a scene is inside a part, and the rail should show that rather than caption
- * two blocks PART and SCENE and leave the viewer to infer it.
+ * A nested table rather than two flat lists side by side. The sounding branch
+ * is ink and OPEN, with the level beneath it printed INSIDE it and indented;
+ * its siblings stay closed in the quieter annotation colour. That indent is the
+ * whole argument for the shape: a scene is inside a part, and the rail should
+ * show that rather than caption two blocks PART and SCENE and leave the viewer
+ * to infer it.
+ *
+ * THE RULE BELONGS TO WHAT IT CLOSES. It sits nearer the contents above it than
+ * the billing beneath, so it reads as the end of a block rather than as the top
+ * edge of a box drawn around the billing.
  */
 .surround-script-rail__programme {
   flex: 0 0 auto;
-  margin: 0 0 0.5rem;
-  padding-bottom: 0.5rem;
+  margin: 0 0 1.1rem;
+  padding-bottom: 0.75rem;
   border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
 }
 
 /* A nested level is set in from the title it belongs to, and given a hairline
    spine so the containment survives being read from across a room. */
-.surround-script-rail__programme-level[data-depth="0"] > .surround-script-rail__programme-list { margin-left: 0; }
-
 .surround-script-rail__programme-item > .surround-script-rail__programme-level {
-  margin: 0.16rem 0 0.24rem 0.34rem;
-  padding-left: 0.5rem;
+  margin: 0.2rem 0 0.3rem 0.16rem;
+  padding-left: 0.62rem;
   border-left: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.2));
 }
 
+/**
+ * THE CAPTIONS READ THE PUBLISHED FLOOR, they do not guess at it.
+ *
+ * `--label-floor` is `labelFloorPx(root)` — the frame measures the screen root
+ * it fills and publishes the angular ten-foot minimum for a tracked label, and
+ * `CueTicker`, `SegmentMap`, `ComposerCard` and `EraTimeline` all read it. This
+ * file used to hardcode 0.56rem, which is 8.96px on every screen: fine at the
+ * 960 living-room root and FIFTY-TWO PER CENT of the floor at 1920. A rem is a
+ * claim about a relationship between two things on one root; a floor is a claim
+ * about a viewer ten feet away, and only one of the two can be spent here.
+ */
 .surround-script-rail__programme-kind {
   display: block;
-  margin-bottom: 0.14rem;
+  margin-bottom: 0.2rem;
   font-family: var(--surround-sans, system-ui, sans-serif);
-  font-size: 0.56rem;
+  font-size: var(--label-floor, #{$label-floor});
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.2;
   text-transform: uppercase;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.5));
+  color: var(--muted-ink, rgba(233, 223, 200, 0.66));
 }
 
 .surround-script-rail__programme-list {
   display: grid;
-  gap: 0.1rem;
+  gap: 0.14rem;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/**
+ * AN ITEM TITLE IS PROSE, NOT A LABEL. "Christ's reception in heaven" is read
+ * glyph by glyph, so it takes a multiple of the tracked floor rather than the
+ * floor itself, and it is the body face.
+ *
+ * THE INK CAME UP TO 66%, which is the value the band's own notes are published
+ * at rather than a new guess. At 52% an inactive item composited to 4.4:1 on
+ * the rail's ground — under AA, in type already below the floor — which is the
+ * arithmetic behind "the contents are a texture, not a list".
+ */
 .surround-script-rail__programme-item {
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 0.76rem;
-  line-height: 1.16;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.52));
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.1);
+  line-height: 1.2;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.66));
 }
 
-/* The bullet hangs off the TITLE and not the list item, because the item now
-   also carries the level nested inside it — a marker on the item would sit
-   beside the whole open branch instead of beside its name. */
+.surround-script-rail__programme-item .surround-script-rail__programme-item {
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.02);
+}
+
+/* NO MARKER ON AN INACTIVE ITEM — see `ProgrammeLevel`. The title keeps a small
+   left inset so the active bar has a margin to hang in and the flush-left edge
+   of the whole rail is one line from the caption down. */
 .surround-script-rail__programme-title {
   display: block;
-  padding-left: 0.72rem;
+  padding-left: 0.45rem;
   overflow-wrap: break-word;
-}
-
-.surround-script-rail__programme-title::before {
-  content: '○';
-  display: inline-block;
-  width: 0.72rem;
-  margin-left: -0.72rem;
 }
 
 .surround-script-rail__programme-item--active {
-  color: var(--ink, #e9dfc8);
-}
-
-.surround-script-rail__programme-item--active > .surround-script-rail__programme-title {
-  font-weight: 700;
-}
-
-.surround-script-rail__programme-item--active > .surround-script-rail__programme-title::before { content: '●'; }
-
-/* A nested level's own items are never bolder than the branch that holds them,
-   so depth reads as indentation and weight reads as "this is the one sounding". */
-.surround-script-rail__programme-item .surround-script-rail__programme-item { font-size: 0.74rem; }
-
-.surround-script-rail__heading {
-  flex: 0 0 auto;
-  margin: 0 0 0.5rem;
-  padding-bottom: 0.4rem;
-  border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
-  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  font-size: 1.08rem;
   font-weight: 600;
-  line-height: 1.18;
-  text-align: center;
   color: var(--ink, #e9dfc8);
-  /* The heading is set ONCE per segment and does not page with the text
-     beneath it, so a viewer glancing up mid-air still knows what is sounding.
-     It wraps to as many lines as it needs: the frame's law is that nothing is
-     ever cut, and that law does not stop at the heading. */
+}
+
+/**
+ * THE ONE MARKER. Only the deepest active item — the item with no active child
+ * inside it — carries the bar; an ancestor's openness is its own marker. It is
+ * a rule in the margin rather than a bullet because a 2px bar survives ten feet
+ * and a 4px glyph does not — and it is INK, not velvet. Velvet ($velvet, #4c0f19)
+ * is darker than the rail's own ground, so a bar in it is a bar nobody can see;
+ * the marker has to be lighter than what it sits on.
+ */
+.surround-script-rail__programme-item--here > .surround-script-rail__programme-title {
+  box-shadow: inset 2px 0 0 0 var(--ink-soft, #a89a80);
+}
+
+/* -------------------------------------------------------------------------- */
+/* THE BILLING — what you are hearing, before the words of it                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * FLUSH LEFT, ON THE CONTENTS' OWN EDGE. Two short strings of unequal width set
+ * on a centre axis make a bowtie: two ragged edges, no shared alignment, and no
+ * relationship to the list above them. The rail has exactly one strong vertical
+ * edge and the billing had been abandoning it, which is why the top third of
+ * the column had no spine.
+ *
+ * AND UNDER ONE RULE, NOT BETWEEN TWO. Identical hairlines above and below a
+ * block make a table row, not a header. The rule above closes the contents;
+ * beneath the billing there is SPACE, which is what a header stands on.
+ */
+.surround-script-rail__billing {
+  flex: 0 0 auto;
+  margin: 0 0 1.6rem;
+}
+
+/**
+ * THE HEADER — `heading:`, where the words come from. "Lamentations 1:12".
+ *
+ * The loudest type on the rail: the display face at full ink, a clear step above
+ * the verse's own ceiling (1.75rem against 1.5rem) so the order holds even for a
+ * two-line verse set at the very top of its ladder. It was 1.08rem — BELOW `PROSE_CEILING_PX`, i.e. the second
+ * loudest thing on the rail was set smaller than the frame's minimum for a
+ * footnote, and lighter than the programme item above it.
+ */
+.surround-script-rail__heading {
+  margin: 0;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.14;
+  color: var(--ink, #e9dfc8);
+  /* The frame's law is that nothing is ever cut, and it does not stop here. */
   overflow-wrap: break-word;
 }
 
-/* THE BILLING, under the number's name — `Air (Tenor) \00b7 Isaiah 40:1-3`.
-   Set in the quieter annotation face at the weight the rail's own annotation
-   line uses, so the two places a viewer meets this pair of fields agree. It is
-   a block inside the heading rather than a sibling of it because it belongs to
-   the number: a heading that wraps to two lines must take its billing with it,
-   and a rule drawn between them would say they were two things. */
-.surround-script-rail__billing {
-  display: block;
-  margin-top: 0.2rem;
-  font-family: var(--surround-sans, system-ui, sans-serif);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  line-height: 1.25;
-  text-transform: uppercase;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.58));
+/**
+ * THE SUBHEADER — `subheading:`, how it is performed. "Air (Tenor)".
+ *
+ * Italic, because a genre marking is italic in every printed score, and that is
+ * a distinction the eye reads before it reads the words. Set at the programme
+ * note's own ceiling: quieter than the header, louder than the verse settles at.
+ * Tight to the header — 0.15rem — because the two are ONE object, and the space
+ * that separates them from the verse is ten times that.
+ */
+.surround-script-rail__subheading {
+  margin: 0.15rem 0 0;
+  font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
+  font-size: 1.2rem;
+  font-style: italic;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.82));
+  overflow-wrap: break-word;
 }
 
-/* The verse takes every pixel the contents, the heading and the plate leave —
-   and it is now FITTED UP INTO that space rather than merely fitted into it:
-   the ladder in ScriptRail.jsx starts at the sung text's own ceiling (1.8rem,
-   `lyricCeilingPx`), so a short verse is set large and fills the column.
-   `min-height: 0` is load-bearing in a flex column — without it this box
-   refuses to shrink below its content and pushes the plate off the rail. */
+/* -------------------------------------------------------------------------- */
+/* THE VERSE                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * CENTERED, and that is not up for negotiation: every hymnal, libretto and
+ * poetry anthology sets verse of unequal line length on a centre axis, and it
+ * is what makes this block read as sung rather than as a paragraph. What was
+ * broken was never the centering — it was centering being asked to absorb
+ * WRAPPED lines, which produces a symmetric orphan indistinguishable from an
+ * authored one. The ladder is bound by width now (`ScriptRail.jsx`), so the
+ * centre axis only ever has real lines on it.
+ *
+ * IT SITS ABOVE THE GEOMETRIC CENTRE. Dense ink stands above it and a bright
+ * plate below, so a block at the true middle reads as sunk; a little padding at
+ * the foot puts it at the optical one. This matters most for a two-line verse,
+ * which would otherwise be a small island floating dead centre.
+ *
+ * `min-height: 0` is load-bearing in a flex column — without it this box refuses
+ * to shrink below its content and pushes the plate off the rail.
+ */
 .surround-script-rail__text {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  padding-bottom: 2.5%;
   /* Hidden, NOT scrollable. Overflow is resolved by fitting then paging (see
      ScriptRail.jsx); a scrollbar is useless on a television read from across
      a room with no pointer, and a clipped last line would break the law the
@@ -172,11 +247,27 @@
   /* The ladder sets the size inline; this is the pre-measurement size, and it
      is the CEILING rather than a small default so the first painted frame is
      never a jump upward. */
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   opacity: 1;
 }
 
 .surround-script-rail__text--hidden { opacity: 0; }
+
+/**
+ * THE MEASURE LOST. A verse that still wraps at the type floor flips the whole
+ * block to flush left with a hanging indent — the printed-poetry convention for
+ * a column too narrow for the poet, where every continuation is unmistakably a
+ * continuation. ALL OR NOTHING: a block with some lines centered and one hanging
+ * reads as a bug, so the class is toggled on the box and never on a line.
+ */
+.surround-script-rail__text--hanging {
+  text-align: left;
+}
+
+.surround-script-rail__text--hanging .surround-script-rail__line {
+  padding-left: 1.5em;
+  text-indent: -1.5em;
+}
 
 .surround-script-rail__line {
   margin: 0;
@@ -190,24 +281,30 @@
    gap wider than the stanza break the librettist wrote. */
 .surround-script-rail__gap { height: 0.7em; }
 
+/* -------------------------------------------------------------------------- */
+/* THE CORNER                                                                  */
+/* -------------------------------------------------------------------------- */
+
 /**
- * THE CORNER. This plate is the square KITTY-CORNER to the video's
- * bottom-right corner, so its height is the BAND's height — published by the
- * frame as `--surround-band-h` from the same measurement that drives the
- * band's collapse. It was `flex: 0 0 auto` before, which content-sized it and
- * squashed the portrait into a letterbox.
+ * This plate is the square KITTY-CORNER to the video's bottom-right corner, so
+ * its height is the BAND's height — published by the frame as `--surround-band-h`
+ * from the same measurement that drives the band's collapse. It was
+ * `flex: 0 0 auto` before, which content-sized it and squashed the portrait into
+ * a letterbox.
  *
  * The fallback is the band's own floor (`collapse.footerFloor`, 90px), not
  * zero: for the one beat before the footer lays out, a plate at its minimum is
  * right and a plate at nothing is a hole in the corner.
+ *
+ * NO RULE ABOVE IT. The portrait carries its own dark mat, which separates it
+ * from the verse better than a hairline does — and a third identical hairline
+ * was what cut the rail into four evenly-spaced bands that refused to group.
  */
 .surround-script-rail__plate {
   flex: 0 0 var(--surround-band-h, 90px);
   height: var(--surround-band-h, 90px);
   min-height: 0;
-  margin-top: 0.5rem;
-  padding-top: 0.45rem;
-  border-top: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+  margin-top: 1.2rem;
   /* The card inside fills the square rather than sitting at its natural size —
      one mounted print with its plate beside it, scaled to the corner it is in. */
   display: flex;

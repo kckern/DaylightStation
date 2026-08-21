@@ -86,34 +86,45 @@ export function paginate(lineHeights, boxHeight) {
   return pages;
 }
 
-/** `2. Ev'ry valley` where the corpus numbers its segments, else the bare name. */
-function headingFor(segment) {
-  const name = isText(segment?.label) ? segment.label.trim()
-    : isText(segment?.name) ? segment.name.trim() : '';
-  const n = segment?.n;
-  if (!name) return '';
-  return Number.isFinite(Number(n)) ? `${Number(n)}. ${name}` : name;
-}
 
 /**
- * THE NUMBER'S BILLING — how it is performed and where its words come from.
+ * THE NUMBER'S BILLING — the two lines standing over the words.
  *
- * `subheading:` and `heading:` are two of a segment's four authored text fields
- * (see the classical reference): `Air (Tenor)` and `Isaiah 40:1-3`. THE CORPUS
- * FIELD `heading:` IS NOT THIS MODULE'S `heading`, which is the numbered label
- * — a collision worth naming, because reading one for the other is how a rail
- * ends up printing a scripture reference where a movement title belongs. The
- * returned key is `billing` for that reason.
+ * A segment authors four text fields, and only two of them belong here:
  *
- * Joined with the interpunct the NOW register uses, from the same two fields in
- * the same order, so the two halves of the frame cannot bill one number two
- * ways. Absent on a work that authors neither, which is most symphonies.
+ *   `heading:`    where the words come from.  "Lamentations 1:12"   -> HEADER
+ *   `subheading:` how it is performed.        "Air (Tenor)"         -> SUBHEADER
+ *   `label:`      the number's short name — the rail's, not this panel's
+ *   `text:`       the words themselves
+ *
+ * THE LABEL AND THE NUMERAL ARE DELIBERATELY ABSENT. `label:` is the INCIPIT:
+ * in the corpus, segment 30 of Messiah has `label: Behold, and see if there be
+ * any sorrow` and a `text:` whose first line is that same sentence. Setting it
+ * over the verse printed one line twice, an inch apart, on the panel where
+ * space is scarcest. The classical README already refuses it for the band's NOW
+ * register on exactly this ground ("otherwise the same words twice within six
+ * inches of screen"); here the two are adjacent, so the case is stronger. The
+ * numeral goes with it — it is on the time rail beneath the video, where a
+ * locator belongs.
+ *
+ * PROMOTION, NOT AN ORPHAN. A number that authors only one of the pair puts it
+ * in the HEADER. A subheader alone under nothing is a caption for an absence.
+ *
+ * AND AN INSTRUMENTAL NUMBER IS STILL NAMED. The Pifa keeps the rail up with no
+ * `heading:` and no `text:`; with the pair unauthored, `label:` is the only name
+ * it has, and a rail that names nothing is worse than a rail that repeats the
+ * word "Sinfonia" the viewer cannot see anywhere else.
+ *
+ * @returns {{heading: string, subheading: string}}
  */
 function billingFor(segment) {
-  return [segment?.subheading, segment?.heading]
-    .map((v) => (isText(v) ? v.trim() : ''))
-    .filter(Boolean)
-    .join(' \u00b7 ');
+  const source = isText(segment?.heading) ? segment.heading.trim() : '';
+  const manner = isText(segment?.subheading) ? segment.subheading.trim() : '';
+  if (source) return { heading: source, subheading: manner };
+  if (manner) return { heading: manner, subheading: '' };
+  const named = isText(segment?.label) ? segment.label.trim()
+    : isText(segment?.name) ? segment.name.trim() : '';
+  return { heading: named, subheading: '' };
 }
 
 /**
@@ -123,14 +134,15 @@ function billingFor(segment) {
  * @param {Array}    args.segments  The rail, flattened, as the store publishes it.
  * @param {string}   args.contentId The media item currently sounding.
  * @param {number}   args.position  Seconds into THAT item.
- * @returns {{active: boolean, text: string, heading: string, billing: string, index: number}}
+ * @returns {{active: boolean, text: string, heading: string, subheading: string, index: number}}
  *   `active` is whether the frame wears the lyric layout; `text` is the sounding
  *   segment's words, EMPTY on an instrumental number while `active` stays true;
- *   `heading` is the numbered label and `billing` the line under it.
+ *   `heading` and `subheading` are the corpus fields of those names — see
+ *   `billingFor`, and note that `heading` is NOT the number's label.
  */
 export function lyricStateAt({ segments, contentId, position }) {
   const list = Array.isArray(segments) ? segments : [];
-  const dormant = { active: false, text: '', heading: '', billing: '', index: -1 };
+  const dormant = { active: false, text: '', heading: '', subheading: '', index: -1 };
   if (!railHasText(list)) return dormant;
 
   const id = String(contentId ?? '');
@@ -165,14 +177,13 @@ export function lyricStateAt({ segments, contentId, position }) {
     return {
       active: true,
       text: isText(sounding.text) ? sounding.text.trim() : '',
-      heading: headingFor(sounding),
-      billing: billingFor(sounding),
+      ...billingFor(sounding),
       index,
     };
   }
 
   // Nothing is sounding. This is a real gap — between numbers, a Part break, or
   // the tail — and only its LENGTH decides.
-  if (pos - lastEnd <= LYRIC_GRACE_S) return { active: true, text: '', heading: '', billing: '', index: -1 };
+  if (pos - lastEnd <= LYRIC_GRACE_S) return { active: true, text: '', heading: '', subheading: '', index: -1 };
   return dormant;
 }

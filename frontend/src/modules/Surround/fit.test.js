@@ -425,10 +425,14 @@ describe('the ladder’s search', () => {
    * TO GO RED: point `lyricCeilingPx` back at `PROSE_CEILING_PX`, or raise it
    * past the placard's own headline size.
    */
-  it('sets the sung text above a programme note and under the work’s title', () => {
-    expect(LYRIC_CEILING_PX).toBe(1.8 * 16);
-    expect(LYRIC_CEILING_PX / PROSE_CEILING_PX).toBeCloseTo(1.5, 6);
+  it('sets the sung text above a programme note and under every name on screen', () => {
+    expect(LYRIC_CEILING_PX).toBe(1.5 * 16);
+    expect(LYRIC_CEILING_PX / PROSE_CEILING_PX).toBeCloseTo(1.25, 6);
     expect(LYRIC_CEILING_PX).toBeLessThan(PLATE_CEILING_PX);
+    // AND UNDER THE COMPOSER'S NAME on the corner plate (1.75rem, set by
+    // `ComposerCard.scss`) — a libretto louder than the name of the man who
+    // wrote it is the frame's hierarchy upside down. This is what 1.8rem broke.
+    expect(LYRIC_CEILING_PX).toBeLessThan(1.75 * 16);
     // And unlike the note's, this ceiling clears the angular floor on EVERY
     // fleet root, so the lyric ladder has real rungs where the note's has one.
     [960, 1280, 1920].forEach((root) => {

@@ -20,20 +20,19 @@
 //             a containment the tree can simply show. Closed branches print
 //             nothing but their own title, which is what keeps a five-act work
 //             from setting its whole contents page on the rail.
-//   HEADING   The sounding number, with its numeral, and under it the number's
-//             BILLING — how it is performed and where its words come from
-//             (`subheading:` / `heading:`, joined as the NOW register joins
-//             them: `Recitative (Accompanied - Tenor) . Isaiah 40:1-3`). Those
-//             two fields reach the LEFT rail's annotation line and the band's
-//             NOW register, and on a texted piece the left rail is parked off
-//             screen and the band is on the far side of the video — so without
-//             this the one place a viewer is reading never said whether they
-//             were hearing an air or a chorus. Set once per segment and it does
-//             NOT page with the text beneath it, so a viewer glancing up in the
-//             middle of a long air still knows what is sounding.
-//   TEXT      The sung words. Fitted, then paged. Never cut. THE LARGEST TYPE
-//             ON THE RAIL — see `lyricCeilingPx` in `../fit.js` for why it has
-//             a ceiling of its own rather than the programme note's.
+//   BILLING   The number's HEADER and SUBHEADER, and neither is its label.
+//             `heading:` is where the words come from ("Lamentations 1:12") and
+//             `subheading:` is how they are performed ("Air (Tenor)"); the two
+//             are set flush left and LOUDER THAN THE VERSE, because a viewer who
+//             has just arrived needs to know what they are hearing before they
+//             can read along with it. The label and the numeral are absent by
+//             rule — argued in `billingFor` (`../lyrics.js`). Set once per
+//             segment and it does NOT page with the text beneath it, so a viewer
+//             glancing up mid-air still knows what is sounding.
+//   TEXT      The sung words. Fitted, then paged. Never cut, and never
+//             REFLOWED either: the ladder is bound by the longest authored
+//             line's WIDTH, not just by the block's height — see the fit
+//             effect below for the orphan that taught us the difference.
 //   PLATE     The composer's portrait and brass nameplate, in the corner. This
 //             is the load-bearing part: when the left rail slides out it takes
 //             the composer's face and name with it, and a frame that stops
@@ -139,7 +138,20 @@ function programmeTree(segments, activeIndex) {
   return level(0);
 }
 
-/** One grouping level and, inside its active item, the level beneath it. */
+/**
+ * One grouping level and, inside its active item, the level beneath it.
+ *
+ * ONE MARKER, ON THE DEEPEST ACTIVE ITEM. The rail used to set a filled bullet
+ * on the Part AND on the Scene inside it — two identical glyphs, only one of
+ * which was the viewer's actual position. A parent's OPENNESS is already its
+ * marker: its children are printed inside it and nothing else's are. So the
+ * ancestors take ink and the item with no active child beneath it takes the
+ * rule in the margin.
+ *
+ * AND NOTHING MARKS AN INACTIVE ITEM. A ring on every sibling is a dozen
+ * hairline glyphs that resolve to dust at ten feet; the indent already says
+ * these are a list, and a marker that is on everything marks nothing.
+ */
 function ProgrammeLevel({ level, depth }) {
   if (!level) return null;
   return (
@@ -149,7 +161,11 @@ function ProgrammeLevel({ level, depth }) {
         {level.items.map((item) => (
           <li
             key={`${item.index}:${item.title}`}
-            className={`surround-script-rail__programme-item${item.active ? ' surround-script-rail__programme-item--active' : ''}`}
+            className={[
+              'surround-script-rail__programme-item',
+              item.active ? 'surround-script-rail__programme-item--active' : '',
+              item.active && !item.child ? 'surround-script-rail__programme-item--here' : '',
+            ].filter(Boolean).join(' ')}
             aria-current={item.active ? 'step' : undefined}
           >
             <span className="surround-script-rail__programme-title">{smartQuotes(item.title)}</span>
@@ -187,13 +203,20 @@ export default function ScriptRail({ position, data, region, logger }) {
   /**
    * FIT, THEN PAGE — in that order, and both from one measured pass.
    *
-   * The ladder starts at the SUNG TEXT'S OWN CEILING (`lyricCeilingPx`), not the
-   * programme note's, and steps down toward the prose floor only while the text
-   * overruns — so a short verse is set at the ceiling and fills the column
-   * instead of sitting small in the middle of it. Only what still will not fit
-   * at the floor is paged. Doing it the other way round — paging first — would
-   * break a short verse across two pages that a single step down would have
-   * seated whole.
+   * THE LADDER IS BOUND BY WIDTH, NOT ONLY BY HEIGHT, and that is the whole
+   * lesson of this effect. It used to ask one question — `scrollHeight >
+   * clientHeight` — which a browser answers "fits" for type so large that every
+   * long line has silently wrapped. On Messiah's 29th number that set `He looked
+   * for some to have pity on Him,` as two centered lines, the second of which
+   * was the single word `Him,` — indistinguishable, at ten feet, from a line the
+   * librettist wrote. Destroying an author's lineation is a worse failure than
+   * setting the verse a rung smaller, because the viewer cannot even see that it
+   * happened. So a line that renders taller than one line-height HAS WRAPPED, and
+   * a wrap is an overrun.
+   *
+   * Only what still will not fit at the floor is paged. Doing it the other way
+   * round — paging first — would break a short verse across two pages that a
+   * single step down would have seated whole.
    *
    * `useLayoutEffect` because a measured resize that lands after paint is a
    * visible reflow on every segment boundary.
@@ -205,7 +228,23 @@ export default function ScriptRail({ position, data, region, logger }) {
     const rootPx = rootWidthOf(box);
     const ceiling = lyricCeilingPx(rootPx);
     const floor = proseFloorPx(rootPx);
-    const overruns = () => box.scrollHeight > box.clientHeight;
+    const linesOfBox = () => Array.from(box.querySelectorAll('[data-lyric-line]'));
+
+    /**
+     * Does this size overrun, on EITHER axis? Height is the block against its
+     * box; width is any authored line rendering as more than one. The wrap test
+     * measures against the line's own computed leading rather than a constant,
+     * so it stays honest if the stylesheet's `line-height` ever moves.
+     */
+    const overruns = () => {
+      if (box.scrollHeight > box.clientHeight) return true;
+      return linesOfBox().some((el) => {
+        if (!el.textContent) return false;             // a stanza gap has no lineation to lose
+        const leading = parseFloat(getComputedStyle(el).lineHeight);
+        if (!Number.isFinite(leading) || leading <= 0) return false;
+        return el.getBoundingClientRect().height > leading * 1.5;
+      });
+    };
 
     // Coarse descent, then walk back up through the last pixel at the fine
     // step. The two together return the same size the fine ladder alone would,
@@ -227,15 +266,22 @@ export default function ScriptRail({ position, data, region, logger }) {
     }
     setFontPx(size);
 
-    const kids = Array.from(box.querySelectorAll('[data-lyric-line]'));
-    const heights = kids.map((el) => el.getBoundingClientRect().height);
+    // A VERSE THAT WRAPS EVEN AT THE FLOOR FLIPS TO FLUSH LEFT WITH A HANGING
+    // INDENT. That is the printed-poetry convention for a measure too narrow for
+    // the poet: every continuation is then unmistakably a continuation. One
+    // legible mode switch for the whole block, never a per-line patch — a block
+    // with some lines centered and one hanging would read as a bug.
+    const wrapped = overruns();
+    box.classList.toggle('surround-script-rail__text--hanging', wrapped);
+
+    const heights = linesOfBox().map((el) => el.getBoundingClientRect().height);
     const split = paginate(heights, box.clientHeight);
     setPages(split);
     setPageIndex(0);
 
-    if (split.length > 1) {
+    if (split.length > 1 || wrapped) {
       log.debug('surround.lyric.paged', {
-        contentId, segment: state.index, pages: split.length, lines: lines.length, fontPx: size,
+        contentId, segment: state.index, pages: split.length, lines: lines.length, fontPx: size, wrapped,
       });
     }
   }, [lines, contentId, state.index, log]);
@@ -276,14 +322,16 @@ export default function ScriptRail({ position, data, region, logger }) {
       )}
 
       {state.heading && (
-        <h2 className="surround-script-rail__heading" data-testid="surround-script-rail-heading">
-          {smartQuotes(state.heading)}
-          {state.billing && (
-            <span className="surround-script-rail__billing" data-testid="surround-script-rail-billing">
-              {smartQuotes(state.billing)}
-            </span>
+        <header className="surround-script-rail__billing">
+          <h2 className="surround-script-rail__heading" data-testid="surround-script-rail-heading">
+            {smartQuotes(state.heading)}
+          </h2>
+          {state.subheading && (
+            <p className="surround-script-rail__subheading" data-testid="surround-script-rail-subheading">
+              {smartQuotes(state.subheading)}
+            </p>
           )}
-        </h2>
+        </header>
       )}
 
       {/* An instrumental number renders NO box rather than an empty one — a mat
