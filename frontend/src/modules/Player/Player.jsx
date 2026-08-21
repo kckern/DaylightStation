@@ -331,6 +331,7 @@ const Player = forwardRef(function Player(props, ref) {
   // sessionPlaybackRateRef): read via the imperative handle's getNowPlaying,
   // never from a closure, so it stays fresh without dep churn.
   const nowPlayingRef = useRef(null);
+  const pendingItemSeekRef = useRef(null);
   nowPlayingRef.current = {
     item: effectiveMeta,
     isQueue,
@@ -449,6 +450,14 @@ const Player = forwardRef(function Player(props, ref) {
     setTargetTimeSeconds,
     consumeTargetTimeSeconds
   } = usePlaybackSession({ sessionKey: itemSessionKey, defaults: { targetTimeSeconds: explicitStartSeconds } });
+
+  useEffect(() => {
+    const pending = pendingItemSeekRef.current;
+    if (pending != null) {
+      pendingItemSeekRef.current = null;
+      setTargetTimeSeconds(pending);
+    }
+  }, [itemSessionKey, setTargetTimeSeconds]);
 
   const handleResolvedMeta = useCallback((meta) => {
     if (!meta) {
@@ -1217,14 +1226,14 @@ const Player = forwardRef(function Player(props, ref) {
     },
     seekToItem: (targetContentId, seconds) => {
       if (!isQueue || !targetContentId) return;
-      const jumped = rawJumpTo(targetContentId);
-      if (!jumped) return;
-      setQueueHasAdvanced(true);
       if (Number.isFinite(seconds) && seconds > 0) {
-        setTargetTimeSeconds(seconds);
+        pendingItemSeekRef.current = seconds;
       }
+      const jumped = rawJumpTo(targetContentId);
+      if (!jumped) { pendingItemSeekRef.current = null; return; }
+      setQueueHasAdvanced(true);
     },
-  }), [isQueue, advance, singleAdvance, rawJumpTo, setTargetTimeSeconds, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
+  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
