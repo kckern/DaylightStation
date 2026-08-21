@@ -1201,12 +1201,23 @@ export default function SegmentMap({
           data-level={1}
           aria-hidden="true"
         >
-          {drawnSceneGroups.map((group, gi) => {
+          {drawnSceneGroups.map((group) => {
             const isActive = group.index === activeSceneIndex;
             const isCollapsed = segments[group.from]?.collapsed;
+            // The ordinal is the scene's position within its Part, not its
+            // position in the drawn run array (which shifts when Parts fold).
+            // Find the scene's Part, then count which scene within that Part.
+            const partIdx = drawnRail[group.from]?.segment?.ancestors?.[0]?.index;
+            const partScenes = groupLevels.length > 1
+              ? groupLevels[1].filter((s) => {
+                  const si = placedRail[s.from]?.segment?.ancestors?.[0]?.index;
+                  return si === partIdx;
+                })
+              : [];
+            const ordinal = partScenes.findIndex((s) => s.index === group.index) + 1;
             const label = isCollapsed ? ''
               : isActive ? (group.title ?? '')
-                : ROMAN[gi + 1] ?? String(gi + 1);
+                : ROMAN[ordinal] ?? String(ordinal);
             return (
               <span
                 key={`${group.index ?? 'none'}:${group.from}`}
