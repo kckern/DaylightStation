@@ -775,7 +775,8 @@ export default function SegmentMap({
       const designationWidths = drawnPartGroups
         .map((run) => labels[run.mini ?? partDesignation(run.title)] ?? 0);
       const widestDesignation = Math.max(0, ...designationWidths);
-      foldMinPx = foldWidthPx({ labelPx: widestDesignation, pillPx });
+      const groupPad = labelProbe ? parseFloat(getComputedStyle(labelProbe).paddingLeft) + parseFloat(getComputedStyle(labelProbe).paddingRight) : 16;
+      foldMinPx = foldWidthPx({ labelPx: widestDesignation + groupPad, pillPx });
     }
 
     // SCENE LABEL WIDTHS — measured so the render can decide full-title vs
