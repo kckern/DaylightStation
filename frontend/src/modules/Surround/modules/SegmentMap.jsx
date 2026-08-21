@@ -117,6 +117,8 @@ function splitHeading(name) {
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+const partDesignation = (title) => (title ?? '').split(/\s*[—–]\s*/)[0];
+
 /**
  * THE FOUR FIELDS A SEGMENT AUTHORS, and what each one is FOR.
  *
@@ -294,7 +296,8 @@ export default function SegmentMap({
   // scene titles is a row of ellipses and three Part names is a heading a viewer
   // can read. So an ancestry two deep or more prints its OUTERMOST level, and
   // everything shallower is unchanged — one level, its own group, as before.
-  const nested = composed && placedRail.some(({ segment }) => (segment?.groupPath?.length ?? 0) > 1);
+  const nested = composed && placedRail.some(({ segment }) =>
+    (segment?.groupPath?.length ?? segment?.ancestors?.length ?? 0) > 1);
 
   /**
    * WHERE THE TRANSPORT IS ON THE RAIL — hoisted above the accordion, because
@@ -319,7 +322,7 @@ export default function SegmentMap({
   const activeGroupIndex = useMemo(() => {
     if (!nested) return null;
     const indexOf = (p) => {
-      const path = p?.segment?.groupPath;
+      const path = p?.segment?.groupPath ?? p?.segment?.ancestors;
       const raw = Number(path?.[0]?.index);
       return Number.isFinite(raw) ? raw : null;
     };
@@ -640,9 +643,10 @@ export default function SegmentMap({
     let pillPx = 0;
     if (labelProbe && pillProbe) {
       foldGroups.forEach((run) => {
-        if (!run.title || labels[run.title] !== undefined) return;
-        labelProbe.textContent = run.title;
-        labels[run.title] = labelProbe.getBoundingClientRect().width;
+        const short = partDesignation(run.title);
+        if (!short || labels[short] !== undefined) return;
+        labelProbe.textContent = short;
+        labels[short] = labelProbe.getBoundingClientRect().width;
       });
       labelProbe.textContent = '';
       // The LONGEST count on the rail, so every fold's badge is measured against
@@ -693,7 +697,7 @@ export default function SegmentMap({
     const hidden = new Set();
     folds.forEach((fold) => {
       const width = foldWidthPx({
-        labelPx: metrics.labels?.[fold.title] ?? 0,
+        labelPx: metrics.labels?.[partDesignation(fold.title)] ?? 0,
         pillPx: metrics.pillPx ?? 0,
       });
       // NOT MEASURED IS NOT FOLDED. Before the faces land there is no honest
@@ -736,7 +740,7 @@ export default function SegmentMap({
       widths: [...folded.blocks.values()].map((f) => ({
         title: f.title,
         count: f.count,
-        labelPx: Math.round(metrics.labels?.[f.title] ?? 0),
+        labelPx: Math.round(metrics.labels?.[partDesignation(f.title)] ?? 0),
       })),
     });
   }, [folds, folded, segments.length, metrics, contentId, log]);
@@ -1065,7 +1069,9 @@ export default function SegmentMap({
               // of unpainted rule at the right edge.
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
-              {group.title ?? ''}
+              {level === 0 && groupLevels.length > 1
+                ? partDesignation(group.title)
+                : group.title ?? ''}
             </span>
           ))}
         </div>
