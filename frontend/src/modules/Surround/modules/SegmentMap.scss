@@ -495,7 +495,7 @@
      above. `$label-floor` is the anchor-root fallback for a chip rendered
      outside the frame (a spec, a storybook); `--label-floor` is what
      `SurroundFrame` actually publishes, root-scaled. */
-  font-size: var(--label-floor, #{$label-floor});
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.35);
   font-weight: 600;
   line-height: 1;
   font-variant-numeric: lining-nums;
@@ -798,7 +798,9 @@
 .surround-segment-map__segment--fold {
   position: relative;
   /* Diagonal hatching: the visual idiom for "elided", and it survives being
-     29px wide where any glyph would not. */
+     29px wide where any glyph would not. Constrained vertically so the
+     hatching stops above the bond shoulder and does not bleed into the
+     listening band below. */
   background-image: repeating-linear-gradient(
     -45deg,
     rgba(233, 223, 200, 0.16) 0,
@@ -806,29 +808,19 @@
     transparent 1px,
     transparent 5px
   );
+  background-size: 100% calc(100% - 0.55rem);
+  background-repeat: no-repeat;
   opacity: 0.82;
 }
 
-/* THE FOLD'S LABEL. It has its Part title's width now, so it sets the title
-   and the count of what it stands in for. No ellipsis: the width was measured
-   FROM this string, so it fits by construction — and if the rail overran and
-   the chips were squeezed, it is still the titles that were held whole. */
+/* THE FOLD'S PILL. The heading row already names the Part; the hatched marker
+   needs only to say HOW MANY numbers it stands in for. A count pill, centred
+   in the segment, at the chip's own size. */
 .surround-segment-map__chip--fold {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.28em;
-  white-space: nowrap;
+  display: grid;
+  place-items: center;
   min-width: 0;
-}
-
-.surround-segment-map__fold-title {
-  font-style: italic;
-  letter-spacing: 0.01em;
-}
-
-.surround-segment-map__fold-count {
-  font-size: 0.82em;
-  opacity: 0.72;
   font-variant-numeric: tabular-nums;
+  font-style: normal;
+  opacity: 0.72;
 }
