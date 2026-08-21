@@ -97,13 +97,13 @@ set_index: 3
 tier: flagship                        # flagship | key | catalog
 segments:
   - n: 1
-    name: "Allegro con brio"
+    label: "Allegro con brio"
     translation: "Fast, with spirit"
     listen:                           # per-segment appreciation bullets
       - "Two hammered E-flat chords, then the cellos sing the heroic theme — built from a plain broken chord."
       - "Huge off-beat chords batter against the bar line — the music fighting its own meter."
   - n: 2
-    name: "Marcia funebre. Adagio assai"
+    label: "Marcia funebre. Adagio assai"
     translation: "Funeral march — very slow"
     listen:
       - "Basses mutter like muffled drums beneath the violins' grief — a state funeral in sound."
@@ -151,15 +151,30 @@ Notes that save a debugging pass:
   "Beethoven's Third Symphony" — and the band prints no label at all rather than
   cutting a long `title` down to pretend to be one. Author it or leave it out.
 - **A segment reaches the payload whole**, so `translation:` and `listen:` are
-  read by the player: `SegmentMap` sets the translation as a gloss under the
-  segment's name, and `CueTicker` cycles that segment's `listen` bullets in the
+  read by the player: `SegmentMap` sets the translation on the segment's
+  annotation line, and `CueTicker` cycles that segment's `listen` bullets in the
   "now" zone while it is playing, falling back to the work's `facts` for a
   segment nobody has written notes for yet.
-- **Keep short segment context in `heading:`, not in the lyric body.** The
-  player renders it as the measured secondary line under the segment name (and
-  joins it with `translation:` when both are authored). For an oratorio, use it
-  for the form, voice and source — for example `Recitative (Accompanied —
-  Tenor) · Isaiah 53:8` — while `text:` remains the words sung.
+- **A segment's four text fields are named for where they go.** `name:` and
+  `heading:` were the first pair of words for this and both could plausibly have
+  meant "what this movement is called", so an author had to read the renderer to
+  find out which. They are now:
+
+  | field | what it is | where it goes |
+  |---|---|---|
+  | `label:` | the short name of the number — for an oratorio, the incipit | the rail |
+  | `subheading:` | how it is performed — `Chorus`, `Air (Tenor)` | the rail's annotation line, and the NOW register |
+  | `heading:` | where the words come from — `Psalm 22:8` | the rail's annotation line, and the NOW register |
+  | `text:` | the words themselves | never the rail |
+
+  `label:` is deliberately redundant with the first line of `text:`: the rail is
+  a contents page, and a contents page names things. The **NOW register does not
+  reprint it** — it sets `subheading · heading`, because the label and the lyric
+  it introduces were otherwise the same words twice within six inches of screen.
+
+  **`name:` still reads, as a fallback only.** The library migrated to `label:`
+  in one pass (866 segments across 192 files); the fallback is there for
+  sidecars and drafts outside it. Author `label:`.
 - **A long work may author an optional recursive `groups:` tree.** A group has
   a `title`, optional `kind`, optional `facts`, optional direct `segments`, and
   optional nested `groups`. The store flattens leaves into the timed playback
@@ -175,11 +190,12 @@ Notes that save a debugging pass:
           title: Isaiah’s prophecy of salvation
           segments:
             - n: 1
-              name: Sinfonia
-              heading: Sinfonia
+              label: Sinfonia
+              subheading: Sinfonia
             - n: 2
-              name: Comfort ye, comfort ye my people
-              heading: Recitative (Accompanied — Tenor) · Isaiah 40:1–3
+              label: Comfort ye, comfort ye my people
+              subheading: Recitative (Accompanied — Tenor)
+              heading: Isaiah 40:1–3
               text: |
                 Comfort ye, comfort ye my people …
   ```
@@ -187,6 +203,22 @@ Notes that save a debugging pass:
   `groups` is corpus-only, not a performance-sidecar `parts:` list. It may be
   one level deep, many levels deep, or absent altogether. The rail renders one
   row per authored level and folds at the outermost level.
+
+  **What folding does.** Every outermost run except the one holding the playhead
+  collapses to a single hatched block carrying a count badge. Messiah is why:
+  53 numbered movements across a 1714px rule is ~32px each, so before this the
+  rail spent three quarters of its width setting bare integers for the two parts
+  nobody was listening to. A fold is an ELISION, so it takes no share of the time
+  axis — it is measured to the wider of its own group label and its badge, and
+  every pixel that frees goes to the part that is sounding. Three things a fold
+  never does: collapse a run of one (a badge saying "1" is more ink for less),
+  collapse an unlabelled run (nothing to size it by, nothing to name what was
+  hidden), or draw itself wider than the music it stands for. Nothing folds when
+  nothing is sounding — before the first note and after the last chord there is
+  no sounding run to fold the others around, and the honest rail is the whole
+  rail. Elapsed and future stay legible inside a fold: the rule and its fill
+  above the block carry the state, and the hatch is denser for a run already
+  heard than for one still to come.
 - **Facts follow the hierarchy on screen.** `facts:` may live on the work, any
   group, or an individual segment. While a segment is sounding, the player
   cycles the accumulated pool in this order: segment, nearest group outward, then
