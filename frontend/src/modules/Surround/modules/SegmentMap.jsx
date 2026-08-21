@@ -1066,10 +1066,7 @@ export default function SegmentMap({
                   data-testid="surround-segment-fold"
                   aria-hidden="true"
                 >
-                  <span className="surround-segment-map__fold-title">{seg.name ?? ''}</span>
-                  {seg.count > 0 && (
-                    <span className="surround-segment-map__fold-count">{`×${seg.count}`}</span>
-                  )}
+                  {seg.count > 0 ? seg.count : ''}
                 </span>
               )}
               {named && chips && state !== 'active' && !seg.collapsed && (

@@ -1588,12 +1588,12 @@
   margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.01em;
 }
 .school-selfservice__entry {
-  display: flex; gap: 0.55rem;
+  display: flex; gap: 0.55rem; width: 100%;
 }
 .school-selfservice__slot {
-  width: 2.6rem; height: 3.2rem; display: grid; place-items: center;
+  flex: 1 1 0; aspect-ratio: 3 / 4; display: grid; place-items: center;
   border: 2px solid var(--school-border); border-radius: 10px;
-  background: var(--school-surface); font-size: 2rem; line-height: 1;
+  background: var(--school-surface); font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1;
   &.is-filled { border-color: var(--school-accent); }
 }
 .school-selfservice__message {
