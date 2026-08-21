@@ -22,7 +22,8 @@ describe('question-bank/v2', () => {
     expect(validateQuestionBank(bank).ok).toBe(true);
     expect(validateQuestionBank({ ...bank, items: [{ ...item('bad'), choices: ['nope'] }] }).errors).toContainEqual(expect.stringMatching(/choices is forbidden/));
     expect(validateQuestionBank({ ...bank, items: [{ ...item('bad'), answer: undefined }] }).errors).toContainEqual(expect.stringMatching(/requires a non-empty answer/));
-    expect(validateQuestionBank({ ...bank, items: [{ ...item('bad'), decoys: ['one'] }] }).errors).toContainEqual(expect.stringMatching(/8\.\.10/));
+    expect(validateQuestionBank({ ...bank, items: [{ ...item('five'), decoys: ['two', 'three', 'four', 'five'] }] }).ok).toBe(true);
+    expect(validateQuestionBank({ ...bank, items: [{ ...item('bad'), decoys: ['one', 'two', 'three'] }] }).errors).toContainEqual(expect.stringMatching(/5\.\.10/));
   });
 
   it('combines answers and decoys into revision-scoped identities', () => {

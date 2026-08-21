@@ -1674,6 +1674,63 @@ describe('YamlSurroundStore — segment references', () => {
   });
 });
 
+describe('YamlSurroundStore — nested long-form works', () => {
+  it('flattens arbitrary recursive groups while retaining the full ancestor path', () => {
+    writeLib('classical/0_flagship/handel/grouped.yml',
+      'title: Grouped\ngroups:\n'
+      + '  - { kind: act, title: Act I, facts: ["Act fact."], groups: [{ kind: scene, title: The garden, facts: ["Scene fact."], groups: [{ kind: dance, title: Pas de deux, facts: ["Dance fact."], segments: [{ n: 1, name: Opening }] }] }] }\n');
+    write('classical/handel/grouped.yml', 'work: handel/grouped\nsurround: concert-hall\nmatch: { contentId: plex:grouped }\nstarts: [0]\n');
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const result = store.lookup('plex:grouped', '');
+    expect(result.segments[0]).toMatchObject({
+      n: 1,
+      ancestors: [
+        { kind: 'act', title: 'Act I', facts: ['Act fact.'] },
+        { kind: 'scene', title: 'The garden', facts: ['Scene fact.'] },
+        { kind: 'dance', title: 'Pas de deux', facts: ['Dance fact.'] },
+      ],
+    });
+  });
+
+  it('derives Part and Scene rail metadata from nested corpus structure', () => {
+    writeLib('classical/0_flagship/handel/messiah.yml',
+      'title: Messiah\nparts:\n'
+      + '  - title: Part One\n'
+      + '    facts: ["Part fact."]\n'
+      + '    scenes:\n'
+      + '      - title: Prophecy\n'
+      + '        facts: ["Scene fact."]\n'
+      + '        segments:\n'
+      + '          - { n: 1, name: Sinfonia, heading: Instrumental, facts: ["Number fact."] }\n'
+      + '          - { n: 2, name: Comfort ye }\n'
+      + '      - title: Nativity\n'
+      + '        segments:\n'
+      + '          - { n: 3, name: Rejoice }\n'
+      + '  - title: Part Two\n'
+      + '    scenes:\n'
+      + '      - title: Passion\n'
+      + '        segments:\n'
+      + '          - { n: 4, name: Behold the Lamb }\n');
+    write('classical/handel/messiah.yml',
+      'work: handel/messiah\nsurround: concert-hall\nmatch: { contentId: plex:messiah }\n'
+      + 'starts: [0, 10, 30, 45]\nmusicEndsAt: 60\n');
+
+    const store = new YamlSurroundStore({ rootDir: root, libraryDir: library, logger: makeLogger() });
+    const result = store.lookup('plex:messiah', '');
+
+    expect(result.segments.map(({ n, group, hierarchy }) => ({ n, group, hierarchy }))).toEqual([
+      { n: 1, group: { index: 0, title: 'Prophecy' }, hierarchy: { part: { index: 0, title: 'Part One' } } },
+      { n: 2, group: { index: 0, title: 'Prophecy' }, hierarchy: { part: { index: 0, title: 'Part One' } } },
+      { n: 3, group: { index: 1, title: 'Nativity' }, hierarchy: { part: { index: 0, title: 'Part One' } } },
+      { n: 4, group: { index: 2, title: 'Passion' }, hierarchy: { part: { index: 1, title: 'Part Two' } } },
+    ]);
+    expect(result.segments[0]).toMatchObject({
+      heading: 'Instrumental', start: 0, end: 10,
+      facts: ['Number fact.'], sceneFacts: ['Scene fact.'], partFacts: ['Part fact.'],
+    });
+  });
+});
+
 /**
  * THE THREE NAMES THE AUTHORED LIST HAS WORN.
  *

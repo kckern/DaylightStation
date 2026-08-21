@@ -155,6 +155,43 @@ Notes that save a debugging pass:
   segment's name, and `CueTicker` cycles that segment's `listen` bullets in the
   "now" zone while it is playing, falling back to the work's `facts` for a
   segment nobody has written notes for yet.
+- **Keep short segment context in `heading:`, not in the lyric body.** The
+  player renders it as the measured secondary line under the segment name (and
+  joins it with `translation:` when both are authored). For an oratorio, use it
+  for the form, voice and source — for example `Recitative (Accompanied —
+  Tenor) · Isaiah 53:8` — while `text:` remains the words sung.
+- **A long work may author an optional recursive `groups:` tree.** A group has
+  a `title`, optional `kind`, optional `facts`, optional direct `segments`, and
+  optional nested `groups`. The store flattens leaves into the timed playback
+  list while retaining every leaf's ancestor path for the rail and fact pool.
+  Do not repeat derived group tags on every segment.
+
+  ```yaml
+  groups:
+    - kind: part
+      title: Part One — Prophecy and Nativity
+      groups:
+        - kind: scene
+          title: Isaiah’s prophecy of salvation
+          segments:
+            - n: 1
+              name: Sinfonia
+              heading: Sinfonia
+            - n: 2
+              name: Comfort ye, comfort ye my people
+              heading: Recitative (Accompanied — Tenor) · Isaiah 40:1–3
+              text: |
+                Comfort ye, comfort ye my people …
+  ```
+
+  `groups` is corpus-only, not a performance-sidecar `parts:` list. It may be
+  one level deep, many levels deep, or absent altogether. The rail renders one
+  row per authored level and folds at the outermost level.
+- **Facts follow the hierarchy on screen.** `facts:` may live on the work, any
+  group, or an individual segment. While a segment is sounding, the player
+  cycles the accumulated pool in this order: segment, nearest group outward, then
+  work. Put a claim only at its narrowest truthful scope; broader context stays
+  available rather than being hidden by the number-level observations.
 - **Work-level fields are allowlisted, and `themes:`, `set:`, `set_index:` and
   `tier:` are not on the list.** They are corpus fields, authored now for the
   School projection. `piece` is exactly the store's `PIECE_FIELDS` (`title`,
