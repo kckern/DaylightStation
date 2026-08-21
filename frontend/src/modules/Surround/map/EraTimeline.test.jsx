@@ -5,8 +5,10 @@ import { render } from '@testing-library/react';
 import * as sass from 'sass-embedded';
 import EraTimeline, {
   ERAS, TIMELINE_SPAN, NOMINAL_WIDTH_PX,
-  ERA_LABEL_PX, ERA_LABEL_OVERHANG,
-  eraLabelWidthPx, fractionFor, layoutEraLabels, subjectErasFor,
+  ERA_LABEL_EM, ERA_LABEL_PX, ERA_LABEL_OVERHANG, ERA_LABEL_GAP_EM, ERA_LABEL_CLASH_EM,
+  YEAR_ANCHOR_EDGE,
+  datelineFor, eraLabelWidthPx, fractionFor, layoutEraLabels, subjectErasFor,
+  yearAnchorFor,
 } from './EraTimeline.jsx';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -333,10 +335,65 @@ describe('EraTimeline — the shipped design', () => {
     expect(parseFloat(subject.match(/height: ([\d.]+)px/)[1]))
       .toBeGreaterThan(parseFloat(band.match(/height: ([\d.]+)px/)[1]));
 
+    // ONE BRASS VALUE, ON ONE OBJECT (wave 10). The year, the thread it hangs
+    // from and the bob it lands in are the same `--brass-lit`; the ladder
+    // inside the object is opacity, which is the house's weight-and-value
+    // grammar. `--brass` and `--brass-lit` on two marks an inch apart, with
+    // nothing joining them, was two accents and therefore none.
     const marker = css.match(/\.surround-era-timeline__marker \{[^}]*\}/)[0];
     expect(marker).toMatch(/background: var\(--brass-lit,/);
     const year = css.match(/\.surround-era-timeline__year \{[^}]*\}/)[0];
-    expect(year).toMatch(/color: var\(--brass,/);
+    expect(year).toMatch(/color: var\(--brass-lit,/);
+    const plumb = css.match(/\.surround-era-timeline__plumb \{[^}]*\}/)[0];
+    expect(plumb).toMatch(/background: var\(--brass-lit,/);
+    // Nothing else on the plate is brass at all.
+    expect(css).not.toMatch(/var\(--brass,/);
+  });
+
+  /**
+   * THE TYPE SCALE IS NOT FLAT — the finding that opened wave 10. Every mark on
+   * the first version sat between 0.72rem and 0.95rem, so the one fact the
+   * programme asserts was the smallest thing on the plate and the whole slide
+   * read as an even grey from across the room.
+   */
+  it('gives the year the top of the type scale, alone', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const row = css.match(/\.surround-era-timeline__year-row \{[^}]*\}/)[0];
+    const [, min, , max] = row
+      .match(/font-size: clamp\(([\d.]+)rem, ([\d.]+)cqw, ([\d.]+)rem\)/).map(Number);
+    // Even at its floor the year is more than twice the label floor's 0.72rem,
+    // and nothing else on the plate is set anywhere near it.
+    expect(min).toBeGreaterThan(0.72 * 2);
+    expect(max).toBeGreaterThan(min);
+    // The row carries the size so its own height tracks the clamp; the numeral
+    // inherits it rather than restating a literal that could drift.
+    const year = css.match(/\.surround-era-timeline__year \{[^}]*\}/)[0];
+    expect(year).toContain('font-size: inherit');
+  });
+
+  /**
+   * THE MARKER IS NOT A BARLINE. 1742 stands eight years from the 1750 join —
+   * a few pixels at any width the rail produces — so the two marks cannot be
+   * told apart by hue alone at ten feet. They are told apart by SILHOUETTE: the
+   * join straddles the rule symmetrically, the marker starts at its top edge
+   * and descends past its bottom.
+   */
+  it('draws the marker as a bob rather than as another barline', () => {
+    const css = withStyles().replace(/\s+/g, ' ');
+    const rule = css.match(/\.surround-era-timeline__rule \{[^}]*\}/)[0];
+    const ruleH = Number(rule.match(/height: ([\d.]+)px/)[1]);
+    const join = css.match(/\.surround-era-timeline__join \{[^}]*\}/)[0];
+    const marker = css.match(/\.surround-era-timeline__marker \{[^}]*\}/)[0];
+
+    // The join straddles: it starts ABOVE the rule and overhangs both edges.
+    expect(Number(join.match(/top: (-?[\d.]+)px/)[1])).toBeLessThan(0);
+    // The marker hangs: it starts AT the top edge, where the thread ends...
+    expect(Number(marker.match(/top: (-?[\d.]+)(?:px)?;/)[1])).toBe(0);
+    // ...and descends past the bottom, which is the asymmetry.
+    expect(Number(marker.match(/height: ([\d.]+)px/)[1])).toBeGreaterThan(ruleH);
+    // ...and it is the heavier of the two, so it wins the overlap.
+    expect(Number(marker.match(/width: ([\d.]+)px/)[1]))
+      .toBeGreaterThan(Number(join.match(/width: ([\d.]+)px/)[1]));
   });
 
   it('sets every era name as letterspaced small caps at the ten-foot floor', () => {
@@ -356,6 +413,12 @@ describe('EraTimeline — the shipped design', () => {
     const subject = css.match(/\.surround-era-timeline__label--subject \{[^}]*\}/)[0];
     expect(subject).toMatch(/color: var\(--ink,/);
     expect(subject).not.toMatch(/font-size/);
+    // ...and after wave 10 it is a step in VALUE ONLY. It used to take a weight
+    // step too, on the map's law that the subject is what the slide is about —
+    // but the map's subject is one country and a period can name TWO adjacent
+    // eras, and two names in full ink a hair apart read as the single phrase
+    // "CLASSICAL ROMANTIC". The dateline carries that emphasis now, in words.
+    expect(subject).not.toMatch(/font-weight/);
   });
 
   it('never shrinks a label below that floor anywhere in the sheet', () => {
@@ -430,5 +493,255 @@ describe('EraTimeline — smart quotes at the render seam (design wave 7)', () =
     );
     expect(getByTestId('surround-era-note').textContent).toContain('Beethoven’s');
     expect(getByTestId('surround-era-note').textContent).not.toContain("'");
+  });
+});
+
+/**
+ * WAVE 10 — THE DATELINE.
+ *
+ * The finding it answers: the drawing carried less information than the
+ * sentence beneath it. The note said "Baroque" in words, better; the rule said
+ * "Baroque" as a picture and printed no date anywhere, so a marker on it could
+ * not be located by a viewer who did not already know the boundaries.
+ */
+describe('EraTimeline — the dateline', () => {
+  it('prints the author’s own phrase, and what it is worth in years', () => {
+    expect(datelineFor('Baroque', ['Baroque']))
+      .toEqual({ era: 'Baroque', span: '1600–1750' });
+  });
+
+  it('keeps a qualified phrase intact rather than reducing it to the era it matched', () => {
+    // "Late Baroque" says something the four era names cannot, which is the
+    // whole reason the dateline prints the AUTHORED string.
+    expect(datelineFor('Late Baroque', ['Baroque']))
+      .toEqual({ era: 'Late Baroque', span: '1600–1750' });
+  });
+
+  it('spans BOTH bands a hinge period names, rather than only the first', () => {
+    // Taking the first band's dates alone would print 1750-1820 under a drawing
+    // that lights the line all the way to 1910 — a heading its own picture
+    // contradicts.
+    expect(datelineFor('Classical to Romantic', ['Classical', 'Romantic']))
+      .toEqual({ era: 'Classical to Romantic', span: '1750–1910' });
+  });
+
+  it('still writes a heading for a period the era table has never heard of', () => {
+    // The words are the author's and they are printed. The dates are ours and
+    // we do not have them, so none are invented.
+    expect(datelineFor('Ars Nova', [])).toEqual({ era: 'Ars Nova', span: null });
+  });
+
+  it('writes nothing at all where nothing was authored', () => {
+    expect(datelineFor(null, [])).toBeNull();
+    expect(datelineFor('   ', [])).toBeNull();
+  });
+
+  it('renders the heading above the rule, era in ink and dates beside it', () => {
+    const view = renderTimeline({ period: 'Baroque', year: 1742 });
+    const dateline = view.container.querySelector('[data-testid="surround-era-dateline"]');
+    expect(dateline).not.toBeNull();
+    expect(dateline.textContent).toContain('Baroque');
+    expect(dateline.textContent).toContain('1600–1750');
+  });
+});
+
+/**
+ * WAVE 10 — WHICH SIDE OF ITS THREAD THE YEAR HANGS ON.
+ *
+ * A display-sized numeral centred on its own position runs off the plate near
+ * either end, where the mat's `overflow: hidden` cuts it. The numeral gives
+ * way; the thread never does.
+ */
+describe('EraTimeline — hanging the year', () => {
+  it('centres the year on its thread through the middle of the span', () => {
+    expect(yearAnchorFor(0.5)).toBe('middle');
+    expect(yearAnchorFor(fractionFor(1742))).toBe('middle');
+  });
+
+  it('hangs it off the right of the thread near the start of the span', () => {
+    expect(yearAnchorFor(0)).toBe('start');
+    expect(yearAnchorFor(YEAR_ANCHOR_EDGE - 0.01)).toBe('start');
+    expect(yearAnchorFor(fractionFor(1600))).toBe('start');
+  });
+
+  it('hangs it off the left of the thread near the end of the span', () => {
+    expect(yearAnchorFor(1)).toBe('end');
+    expect(yearAnchorFor(1 - YEAR_ANCHOR_EDGE + 0.01)).toBe('end');
+    expect(yearAnchorFor(fractionFor(1899))).toBe('end');
+  });
+
+  it('anchors nothing where there is no marker', () => {
+    expect(yearAnchorFor(null)).toBeNull();
+    expect(yearAnchorFor(Number.NaN)).toBeNull();
+  });
+
+  it('writes the anchor onto the element, so the sheet draws what the function decided', () => {
+    const view = renderTimeline({ period: 'Baroque', year: 1742 });
+    expect(view.container.querySelector('[data-testid="surround-era-year"]')
+      .getAttribute('data-anchor')).toBe('middle');
+    const early = renderTimeline({ period: 'Renaissance', year: 1570 });
+    expect(early.container.querySelector('[data-testid="surround-era-year"]')
+      .getAttribute('data-anchor')).toBe('start');
+  });
+
+  /**
+   * THE THREE PARTS ARE ONE OBJECT. The year, the thread and the bob are placed
+   * from a single number, and if they ever disagreed the drawing would be
+   * asserting two different years at once.
+   */
+  it('puts the year, the thread and the marker at exactly one position', () => {
+    const view = renderTimeline({ period: 'Baroque', year: 1742 });
+    const left = (id) => view.container.querySelector(`[data-testid="${id}"]`).style.left;
+    expect(left('surround-era-year')).toBe(left('surround-era-plumb'));
+    expect(left('surround-era-plumb')).toBe(left('surround-era-marker'));
+  });
+
+  it('drops the whole plumb — year, thread and bob — where the piece names no year', () => {
+    const view = renderTimeline({ period: 'Baroque', year: null });
+    expect(view.container.querySelector('[data-testid="surround-era-year"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="surround-era-plumb"]')).toBeNull();
+    expect(view.container.querySelector('[data-testid="surround-era-marker"]')).toBeNull();
+  });
+});
+
+/**
+ * WAVE 10 — THE EXTENT.
+ *
+ * Three numerals on the plate — the span's two ends and the piece's own year —
+ * are what make the drawing a scale instead of a bar of unknown length.
+ */
+describe('EraTimeline — the extent', () => {
+  it('writes both ends of the span, from the table rather than from the sheet', () => {
+    const view = renderTimeline();
+    const ends = [...view.container.querySelectorAll('.surround-era-timeline__extent-year')]
+      .map((el) => el.textContent);
+    expect(ends).toEqual([String(TIMELINE_SPAN.from), String(TIMELINE_SPAN.to)]);
+  });
+
+  it('writes them even for a piece with no year of its own', () => {
+    // The axis is context and does not depend on there being a marker on it.
+    const view = renderTimeline({ year: null });
+    expect(view.container.querySelectorAll('.surround-era-timeline__extent-year')).toHaveLength(2);
+  });
+});
+
+/**
+ * WAVE 10 — TWO LABELS, NOT ONE PHRASE.
+ *
+ * A period naming two eras lights two adjacent bands, and the old flat 6px
+ * minimum is about one and a half word-spaces at this tracking: "CLASSICAL" and
+ * "ROMANTIC" rendered as the single phrase "CLASSICAL ROMANTIC".
+ */
+describe('EraTimeline — the gap between two names', () => {
+  it('separates two crowded subjects by several word-spaces, not one', () => {
+    const placed = layoutEraLabels({
+      widthPx: PLATE.small, subjects: ['Classical', 'Romantic'], labelPx: 8.64,
+    });
+    const centre = (name) => (placed.find((l) => l.name === name).leftPct / 100) * PLATE.small;
+    expect(placed.filter((l) => l.role === 'subject')).toHaveLength(2);
+    const [a, b] = [centre('Classical'), centre('Romantic')];
+    const edgeToEdge = (b - eraLabelWidthPx('Romantic', 8.64) / 2)
+      - (a + eraLabelWidthPx('Classical', 8.64) / 2);
+    expect(edgeToEdge).toBeGreaterThanOrEqual(8.64 * ERA_LABEL_GAP_EM - 0.01);
+    // A tracked word-space at this size is a shade over 4px. The old 6px could
+    // not clear two of them; this clears four.
+    expect(edgeToEdge / 4.3).toBeGreaterThan(2.5);
+  });
+
+  it('holds that minimum on every screen root, not just the anchor', () => {
+    // A gap that separates on the 1920 root and closes on the 960 one is the
+    // same bug in a different place — a ten-foot claim written as a flat pixel.
+    // The gap is a MINIMUM, and it does not grow with the plate: wider labels
+    // on a bigger root are pushed toward the plate's ends, so the measured
+    // clearance shrinks toward the floor rather than away from it. What must
+    // hold at every root is the floor itself.
+    const clearance = (labelPx) => {
+      const [a, b] = layoutEraLabels({
+        widthPx: PLATE.hd, subjects: ['Classical', 'Romantic'], labelPx,
+      }).map((l) => (l.leftPct / 100) * PLATE.hd);
+      return (b - eraLabelWidthPx('Romantic', labelPx) / 2)
+        - (a + eraLabelWidthPx('Classical', labelPx) / 2);
+    };
+    [8.64, 11.52, 17.28].forEach((labelPx) => {
+      expect(clearance(labelPx), `${labelPx}px root`)
+        .toBeGreaterThanOrEqual(labelPx * ERA_LABEL_GAP_EM - 0.01);
+    });
+  });
+
+  /**
+   * ...AND IT DROPS THE LATER NAME RATHER THAN PRINTING THE TWO INTO EACH OTHER.
+   *
+   * On the 960 root CLASSICAL and ROMANTIC stand about 6px apart at their real
+   * measured widths — a shade over one word-space, which is the "CLASSICAL
+   * ROMANTIC" failure again in the non-subject path, and rendering the plate
+   * there showed them set solid as one word. Neither is a subject here, so
+   * neither is protected, and the tie goes to the wider band: ROMANTIC's ninety
+   * years beat CLASSICAL's seventy.
+   */
+  it('writes CLASSICAL on the office screen, where the pair has room', () => {
+    // The other end of the same rule. A clash gap wide enough to separate is
+    // only correct if it does not delete a name the shipped version wrote, and
+    // the 1280 root is where that is decided: CLASSICAL and ROMANTIC clear each
+    // other by about two word-spaces there.
+    const names = layoutEraLabels({
+      widthPx: PLATE.kiosk, subjects: ['Baroque'], labelPx: 11.52,
+    }).map((l) => l.name);
+    expect(names).toEqual(expect.arrayContaining(['Baroque', 'Classical', 'Romantic']));
+  });
+
+  it('drops the later name rather than setting two names solid, on the smallest plate', () => {
+    const names = layoutEraLabels({
+      widthPx: PLATE.small, subjects: ['Baroque'], labelPx: 8.64,
+    }).map((l) => l.name);
+    expect(names).toContain('Baroque');       // the subject, never dropped
+    expect(names).toContain('Romantic');      // the wider of the two that clash
+    expect(names).not.toContain('Classical');
+  });
+
+  /**
+   * NOTHING THE FITTING PLACES MAY OVERLAP, at any root, for any period. This
+   * is the assertion the old estimate could not have passed: it under-read
+   * Cormorant's tracked caps by 11%, so the collision test cleared pairs that
+   * rendered on top of each other.
+   */
+  it('never places two names into each other, at any root or period', () => {
+    const PERIODS = [[], ['Baroque'], ['Classical'], ['Classical', 'Romantic'], ['Renaissance']];
+    [[PLATE.small, 8.64], [PLATE.kiosk, 11.52], [PLATE.hd, 17.28]].forEach(([widthPx, labelPx]) => {
+      PERIODS.forEach((subjects) => {
+        const boxes = layoutEraLabels({ widthPx, subjects, labelPx }).map((l) => {
+          const w = eraLabelWidthPx(l.name, labelPx);
+          const centre = (l.leftPct / 100) * widthPx;
+          return { name: l.name, x0: centre - w / 2, x1: centre + w / 2 };
+        });
+        boxes.slice(1).forEach((b, i) => {
+          expect(b.x0, `${boxes[i].name}/${b.name} overlap at ${widthPx}px`)
+            .toBeGreaterThanOrEqual(boxes[i].x1 - 0.01);
+        });
+      });
+    });
+  });
+
+  /**
+   * THE ESTIMATE COVERS THE WIDEST NAME, NOT THE AVERAGE ONE. Measured in
+   * Chromium against the shipped face at the three roots the fleet lays out at.
+   */
+  it('estimates a label at least as wide as the face actually sets it', () => {
+    const MEASURED_EM_PER_CHAR = {
+      Renaissance: 0.7599, Baroque: 0.8236, Classical: 0.7139, Romantic: 0.8027,
+    };
+    Object.entries(MEASURED_EM_PER_CHAR).forEach(([name, em]) => {
+      [8.64, 11.52, 17.28].forEach((labelPx) => {
+        expect(eraLabelWidthPx(name, labelPx), `${name} is estimated narrower than it sets`)
+          .toBeGreaterThanOrEqual(name.length * em * labelPx);
+      });
+      // ...and not so much wider that it starts deleting names that would fit.
+      expect(ERA_LABEL_EM[name] / em).toBeLessThan(1.05);
+    });
+    // Every name in the frozen era table has a measured width of its own.
+    expect(Object.keys(ERA_LABEL_EM).sort()).toEqual(ERAS.map((e) => e.name).sort());
+  });
+
+  it('keeps the drop test tighter than the nudge, which is why', () => {
+    expect(ERA_LABEL_CLASH_EM).toBeLessThan(ERA_LABEL_GAP_EM);
   });
 });

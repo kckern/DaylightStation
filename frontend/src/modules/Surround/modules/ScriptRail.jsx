@@ -9,12 +9,23 @@
 // `SurroundFrame`, which owns that decision and reads it from the same pure
 // function this module does (`../lyrics.js`).
 //
-// ANATOMY. Three pieces, top to bottom:
+// ANATOMY. Four pieces, top to bottom, IN THE ORDER A PRINTED PROGRAMME PUTS
+// THEM — where you are, what is sounding, the words, whose music it is:
 //
+//   PROGRAMME The place in the work, as a nested table of contents. Every Part
+//             is listed; the sounding Part is OPEN and its Scenes are printed
+//             inside it, indented, rather than in a second flat list of their
+//             own. A scene belongs to a part, and the earlier layout — two
+//             sibling blocks captioned PART and SCENE — made the viewer infer
+//             a containment the tree can simply show. Closed branches print
+//             nothing but their own title, which is what keeps a five-act work
+//             from setting its whole contents page on the rail.
 //   HEADING   The sounding number, with its numeral. Set once per segment and
 //             it does NOT page with the text beneath it, so a viewer glancing
 //             up in the middle of a long air still knows what is sounding.
-//   TEXT      The sung words. Fitted, then paged. Never cut.
+//   TEXT      The sung words. Fitted, then paged. Never cut. THE LARGEST TYPE
+//             ON THE RAIL — see `lyricCeilingPx` in `../fit.js` for why it has
+//             a ceiling of its own rather than the programme note's.
 //   PLATE     The composer's portrait and brass nameplate, in the corner. This
 //             is the load-bearing part: when the left rail slides out it takes
 //             the composer's face and name with it, and a frame that stops
@@ -36,7 +47,7 @@ import { smartQuotes } from '../typography.js';
 import { surroundLogger } from '../moduleKit.js';
 import { DISSOLVE_FADE_MS, useDissolve } from '../dissolve.js';
 import { lyricStateAt, paginate } from '../lyrics.js';
-import { proseCeilingPx, proseFloorPx, rootWidthOf, FONT_STEP_PX } from '../fit.js';
+import { lyricCeilingPx, proseFloorPx, rootWidthOf, FONT_STEP_PX } from '../fit.js';
 import ComposerCard from './ComposerCard.jsx';
 import './ScriptRail.scss';
 
@@ -50,6 +61,18 @@ import './ScriptRail.scss';
  */
 export const LYRIC_PAGE_INTERVAL_MS = 11000;
 
+/**
+ * The coarse rung of the fit ladder, in px.
+ *
+ * THE LADDER GOT LONGER WHEN THE CEILING WENT UP, and a ladder walked one
+ * quarter-pixel at a time from 1.8rem to the living room's 10.56px floor is
+ * seventy-odd forced reflows on every segment boundary — on a television, a
+ * visible hitch exactly when the words change. So the descent is coarse (1px)
+ * and only the last pixel is walked at `FONT_STEP_PX`, which lands on the same
+ * size in about a fifth of the measurements.
+ */
+const COARSE_STEP_PX = 1;
+
 /** Split sung text into the lines the corpus authored. Blank lines are stanza gaps. */
 function linesOf(text) {
   if (typeof text !== 'string') return [];
@@ -62,15 +85,23 @@ function linesOf(text) {
 }
 
 /**
- * The programme path around the sounding segment. At each depth, show every
- * sibling group beneath the active parent: all Parts, then the active Part's
- * Scenes, then that Scene's next grouping level, and so on. This is derived
- * from the flattened rail so the YAML stays a tree and the player stays timed.
+ * The programme around the sounding segment, AS A TREE.
+ *
+ * At each depth, every sibling group beneath the active parent is listed — all
+ * Parts, then within the active Part all of its Scenes, and so on — but a level
+ * is now nested INSIDE the item it belongs to rather than printed beside it.
+ * Only the active branch opens; a closed sibling contributes its own title and
+ * nothing beneath it.
+ *
+ * Derived from the flattened rail so the YAML stays a tree and the player stays
+ * timed. Returns the root level, or null when the work has no grouping at all.
  */
-function programmePath(segments, activeIndex) {
+function programmeTree(segments, activeIndex) {
   const active = segments[activeIndex];
   const ancestors = Array.isArray(active?.ancestors) ? active.ancestors : [];
-  return ancestors.map((current, depth) => {
+
+  const level = (depth) => {
+    if (depth >= ancestors.length) return null;
     const parentPath = ancestors.slice(0, depth).map((a) => a.index).join('/');
     const seen = new Set();
     const items = [];
@@ -83,9 +114,49 @@ function programmePath(segments, activeIndex) {
       seen.add(key);
       items.push(candidate);
     });
-    return { kind: current.kind ?? 'group', items, activeIndex: current.index };
-  });
+    if (items.length === 0) return null;
+
+    const activeAt = ancestors[depth].index;
+    return {
+      kind: ancestors[depth].kind ?? 'group',
+      items: items.map((item) => ({
+        index: item.index,
+        title: item.title,
+        active: item.index === activeAt,
+        child: item.index === activeAt ? level(depth + 1) : null,
+      })),
+    };
+  };
+
+  return level(0);
 }
+
+/** One grouping level and, inside its active item, the level beneath it. */
+function ProgrammeLevel({ level, depth }) {
+  if (!level) return null;
+  return (
+    <div className="surround-script-rail__programme-level" data-depth={depth}>
+      <span className="surround-script-rail__programme-kind">{level.kind}</span>
+      <ol className="surround-script-rail__programme-list">
+        {level.items.map((item) => (
+          <li
+            key={`${item.index}:${item.title}`}
+            className={`surround-script-rail__programme-item${item.active ? ' surround-script-rail__programme-item--active' : ''}`}
+            aria-current={item.active ? 'step' : undefined}
+          >
+            <span className="surround-script-rail__programme-title">{smartQuotes(item.title)}</span>
+            <ProgrammeLevel level={item.child} depth={depth + 1} />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+ProgrammeLevel.propTypes = {
+  level: PropTypes.object,
+  depth: PropTypes.number,
+};
 
 export default function ScriptRail({ position, data, region, logger }) {
   const log = useMemo(() => surroundLogger(logger, 'script-rail'), [logger]);
@@ -98,7 +169,7 @@ export default function ScriptRail({ position, data, region, logger }) {
   );
 
   const lines = useMemo(() => linesOf(state.text), [state.text]);
-  const programme = useMemo(() => programmePath(segments, state.index), [segments, state.index]);
+  const programme = useMemo(() => programmeTree(segments, state.index), [segments, state.index]);
 
   const boxRef = useRef(null);
   const [fontPx, setFontPx] = useState(null);
@@ -108,11 +179,13 @@ export default function ScriptRail({ position, data, region, logger }) {
   /**
    * FIT, THEN PAGE — in that order, and both from one measured pass.
    *
-   * The ladder is the frame's own (`../fit.js`): step the size down toward the
-   * prose floor while the text overruns, and page only what still will not fit
-   * at the floor. Doing it the other way round — paging first — would break a
-   * short verse across two pages that a single step down would have seated
-   * whole.
+   * The ladder starts at the SUNG TEXT'S OWN CEILING (`lyricCeilingPx`), not the
+   * programme note's, and steps down toward the prose floor only while the text
+   * overruns — so a short verse is set at the ceiling and fills the column
+   * instead of sitting small in the middle of it. Only what still will not fit
+   * at the floor is paged. Doing it the other way round — paging first — would
+   * break a short verse across two pages that a single step down would have
+   * seated whole.
    *
    * `useLayoutEffect` because a measured resize that lands after paint is a
    * visible reflow on every segment boundary.
@@ -122,13 +195,26 @@ export default function ScriptRail({ position, data, region, logger }) {
     if (!box || lines.length === 0) { setPages([]); setFontPx(null); return; }
 
     const rootPx = rootWidthOf(box);
-    const ceiling = proseCeilingPx(rootPx);
+    const ceiling = lyricCeilingPx(rootPx);
     const floor = proseFloorPx(rootPx);
+    const overruns = () => box.scrollHeight > box.clientHeight;
 
+    // Coarse descent, then walk back up through the last pixel at the fine
+    // step. The two together return the same size the fine ladder alone would,
+    // for a fraction of the layout work — see COARSE_STEP_PX.
     let size = ceiling;
     box.style.fontSize = `${size}px`;
-    while (size > floor && box.scrollHeight > box.clientHeight) {
-      size = Math.max(floor, size - FONT_STEP_PX);
+    while (size > floor && overruns()) {
+      size = Math.max(floor, size - COARSE_STEP_PX);
+      box.style.fontSize = `${size}px`;
+    }
+    if (!overruns()) {
+      const reach = Math.min(ceiling, size + COARSE_STEP_PX);
+      for (let up = size + FONT_STEP_PX; up < reach; up += FONT_STEP_PX) {
+        box.style.fontSize = `${up}px`;
+        if (overruns()) break;
+        size = up;
+      }
       box.style.fontSize = `${size}px`;
     }
     setFontPx(size);
@@ -174,32 +260,17 @@ export default function ScriptRail({ position, data, region, logger }) {
   const page = pages[pageIndex] ?? lines.map((_, i) => i);
 
   return (
-    <div className="surround-libretto" data-testid="surround-libretto">
-      {state.heading && (
-        <h2 className="surround-libretto__heading" data-testid="surround-libretto-heading">
-          {smartQuotes(state.heading)}
-        </h2>
+    <div className="surround-script-rail" data-testid="surround-script-rail">
+      {programme && (
+        <nav className="surround-script-rail__programme" aria-label="Current place in the work">
+          <ProgrammeLevel level={programme} depth={0} />
+        </nav>
       )}
 
-      {programme.length > 0 && (
-        <nav className="surround-libretto__programme" aria-label="Current place in the work">
-          {programme.map((level, depth) => (
-            <div className="surround-libretto__programme-level" key={`${depth}:${level.kind}`}>
-              <span className="surround-libretto__programme-kind">{level.kind}</span>
-              <ol className="surround-libretto__programme-list">
-                {level.items.map((item) => (
-                  <li
-                    key={`${item.index}:${item.title}`}
-                    className={`surround-libretto__programme-item${item.index === level.activeIndex ? ' surround-libretto__programme-item--active' : ''}`}
-                    aria-current={item.index === level.activeIndex ? 'step' : undefined}
-                  >
-                    {smartQuotes(item.title)}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ))}
-        </nav>
+      {state.heading && (
+        <h2 className="surround-script-rail__heading" data-testid="surround-script-rail-heading">
+          {smartQuotes(state.heading)}
+        </h2>
       )}
 
       {/* An instrumental number renders NO box rather than an empty one — a mat
@@ -207,8 +278,8 @@ export default function ScriptRail({ position, data, region, logger }) {
           the viewer has to look at. The rail stays up regardless. */}
       {lines.length > 0 && (
         <div
-          className={`surround-libretto__text${hidden ? ' surround-libretto__text--hidden' : ''}`}
-          data-testid="surround-libretto-text"
+          className={`surround-script-rail__text${hidden ? ' surround-script-rail__text--hidden' : ''}`}
+          data-testid="surround-script-rail-text"
           data-page={pageIndex}
           data-pages={pages.length || 1}
           data-shown={shownKey}
@@ -220,14 +291,14 @@ export default function ScriptRail({ position, data, region, logger }) {
         >
           {page.map((i) => (
             lines[i] === ''
-              ? <div className="surround-libretto__gap" data-lyric-line key={i} />
-              : <p className="surround-libretto__line" data-lyric-line key={i}>{smartQuotes(lines[i])}</p>
+              ? <div className="surround-script-rail__gap" data-lyric-line key={i} />
+              : <p className="surround-script-rail__line" data-lyric-line key={i}>{smartQuotes(lines[i])}</p>
           ))}
         </div>
       )}
 
       {/* The composer, relocated rather than copied. Same component, second home. */}
-      <div className="surround-libretto__plate" data-testid="surround-libretto-plate">
+      <div className="surround-script-rail__plate" data-testid="surround-script-rail-plate">
         <ComposerCard data={data} region={{ ...region, variant: 'plate' }} logger={logger} />
       </div>
     </div>

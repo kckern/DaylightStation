@@ -59,12 +59,12 @@ describe('the lyric rail', () => {
 
   it('shows the sung text of the sounding segment', () => {
     draw(withLyric, RAIL, 20);
-    expect(screen.getByTestId('surround-libretto-text')).toHaveTextContent('Comfort ye my people');
+    expect(screen.getByTestId('surround-script-rail-text')).toHaveTextContent('Comfort ye my people');
   });
 
   it('heads the text with the segment numeral and name', () => {
     draw(withLyric, RAIL, 20);
-    expect(screen.getByTestId('surround-libretto-heading')).toHaveTextContent('1. Comfort ye');
+    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('1. Comfort ye');
   });
 
   it('shows the active programme branch above the current lyric', () => {
@@ -82,6 +82,36 @@ describe('the lyric rail', () => {
     expect(programme).toHaveTextContent('Prophecy');
     expect(programme).toHaveTextContent('Shepherds');
     expect([...programme.querySelectorAll('[aria-current="step"]')].at(-1)).toHaveTextContent('Prophecy');
+  });
+
+  /**
+   * A SCENE IS PRINTED INSIDE THE PART IT COMES FROM, not beside it. The rail
+   * used to set two sibling blocks captioned PART and SCENE and leave the
+   * viewer to infer the containment; the tree shows it.
+   *
+   * TO GO RED: render the levels as siblings again — every assertion above
+   * still passes, because flat lists carry the same text.
+   */
+  it('prints a scene inside the part it comes from', () => {
+    const grouped = RAIL.map((segment, index) => ({
+      ...segment,
+      ancestors: [
+        { index: index === 2 ? 1 : 0, kind: 'part', title: index === 2 ? 'Part Two' : 'Part One' },
+        { index, kind: 'scene', title: ['Prophecy', 'Shepherds', 'Resurrection'][index] },
+      ],
+    }));
+    draw(withLyric, grouped, 20);
+    const part = [...screen.getByLabelText('Current place in the work')
+      .querySelectorAll('.surround-script-rail__programme-item')]
+      .find((li) => li.querySelector('.surround-script-rail__programme-title').textContent === 'Part One');
+    expect(part, 'the sounding part is not on the rail').toBeTruthy();
+    expect(part).toContainElement(screen.getByText('Prophecy'));
+    // ...and a CLOSED sibling opens nothing beneath it, which is what keeps a
+    // five-act work from setting its whole contents page on the rail.
+    const closed = [...screen.getByLabelText('Current place in the work')
+      .querySelectorAll('.surround-script-rail__programme-item')]
+      .find((li) => li.querySelector('.surround-script-rail__programme-title').textContent === 'Part Two');
+    expect(closed.querySelector('.surround-script-rail__programme-level')).toBeNull();
   });
 
   // THE CONTRACT CHANGED WITH THE SLIDE, deliberately. A frame that can show
@@ -106,7 +136,7 @@ describe('the lyric rail', () => {
     draw(withLyric, RAIL, 20);
     // Both rails are mounted now, so both carry a composer card. The one that
     // matters is the plate inside the LYRIC rail.
-    const card = screen.getByTestId('surround-libretto-plate')
+    const card = screen.getByTestId('surround-script-rail-plate')
       .querySelector('[data-testid="surround-composer-card"]');
     expect(card).toHaveAttribute('data-variant', 'plate');
     expect(card).toHaveTextContent('Handel');
@@ -123,8 +153,8 @@ describe('the lyric rail', () => {
   it('stays up through an instrumental number, and prints no text box', () => {
     draw(withLyric, RAIL, 125);
     expect(screen.getByTestId('surround-lyric-rail')).toBeInTheDocument();
-    expect(screen.queryByTestId('surround-libretto-text')).not.toBeInTheDocument();
-    expect(screen.getByTestId('surround-libretto-heading')).toHaveTextContent('2. Pifa');
+    expect(screen.queryByTestId('surround-script-rail-text')).not.toBeInTheDocument();
+    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('2. Pifa');
   });
 
   it('hands the screen back to the programme rail on a long gap', () => {
