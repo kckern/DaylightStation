@@ -326,6 +326,11 @@ export default function SegmentMap({
    * for the ninety seconds between Parts and folded again on the downbeat would
    * be doing its most violent redraw at the exact moment nobody asked for one.
    */
+  // HOISTED, because the fold now needs it. `railPx` is the RULE's measured
+  // width — the rule is `width: 100%`, so it is a fact about the screen and not
+  // about what the fold decided, which is what makes it safe to read here.
+  const [railPx, setRailPx] = useState(RAIL_UNMEASURED);
+
   const activeGroupIndex = useMemo(() => {
     if (!nested) return null;
     const indexOf = (p) => {
@@ -346,10 +351,52 @@ export default function SegmentMap({
   }, [nested, mapped, placedRail]);
 
   /**
+   * DOES THIS RAIL NEED THE ROOM? A FOLD IS A CONCESSION, NOT A HOUSE STYLE.
+   *
+   * Folding used to be unconditional: any work with more than one outermost
+   * group folded every group but the sounding one, on every screen, at every
+   * width. Chopin's twenty-four Etudes is what showed that up — two opus runs
+   * on a 1714px rule is ~71px a segment, three times a chip's width, and the
+   * band still hatched Op. 10 away and printed "12" where twelve etudes had
+   * room to be twelve marks. The owner's word for it was "we have plenty of
+   * room", and the rail had no way to know that because nobody had asked it.
+   *
+   * THE TEST IS THE UNFOLDED RAIL'S OWN SHARE, against twice the chip floor.
+   * `SEGMENT_CHIP_FLOOR_PX` is what one mark needs; a rail where every segment
+   * is exactly one chip wide is a solid run of marks with no air between them —
+   * the ragged bar chart `densityShares` already argues against — so the room a
+   * segment actually needs is the mark AND its air. Measured against the rule
+   * widths `band.measure` already records (608px at 960, 822px at 1280, 1251px
+   * at 1920): Chopin's 24 etudes get 52px at 1920 and stay open, get 34px at
+   * 1280 and fold, and a 53-movement Messiah gets 23.6px and folds on every
+   * screen in the fleet — which is the case the fold was built for.
+   *
+   * IT IS MEASURED ON `placedRail`, THE AUTHORED COUNT, and on the rule's own
+   * width — neither of which is downstream of the fold. A test that read the
+   * DRAWN rail would decide to fold, and then measure the folded rail as roomy,
+   * and unfold: a rail that flickered at its own threshold.
+   *
+   * UNMEASURED MEANS OPEN. Before the first measurement `railPx` is the
+   * sentinel, and the honest first paint of a rail nobody has measured is the
+   * whole rail — a fold that had to be undone a frame later is the flap this
+   * whole module is built to avoid.
+   */
+  const foldsForRoom = useMemo(() => {
+    if (!(railPx > 0) || placedRail.length === 0) return false;
+    return railPx / placedRail.length < SEGMENT_CHIP_FLOOR_PX * 2;
+  }, [railPx, placedRail.length]);
+
+  /**
    * THE DRAWN RAIL. On everything shipped today this IS `placedRail` — the same
    * array, not a copy — so no instrumental work changes by a pixel. A Part >
    * Scene > Number work folds its silent Parts to one segment each; see
    * `collapseInactiveGroups` for why that keeps the axis intact.
+   *
+   * THE ROOM TEST IS NOT APPLIED HERE, deliberately — see `foldsForRoom`, which
+   * gates the OTHER fold. A two-level work is Messiah-shaped by construction
+   * (parts holding scenes holding numbers), and on every root in the fleet its
+   * rail is past the threshold anyway; putting the gate on both paths would
+   * change a behaviour nobody has reported against for no measured gain.
    */
   const drawnRail = useMemo(
     () => (nested ? collapseInactiveGroups(placedRail, { activeGroupIndex, depth: 0 }) : placedRail),
@@ -573,9 +620,10 @@ export default function SegmentMap({
       return drawnPartGroups.filter((run) => run.title && run.count > 1
         && drawnRail[run.from]?.segment?.collapsed);
     }
+    if (!foldsForRoom) return EMPTY_GROUPS;
     return railFolds({ groups: drawnPartGroups, activeIndex })
       .map((f) => ({ ...f, slots: f.count }));
-  }, [nested, drawnPartGroups, drawnRail, activeIndex]);
+  }, [nested, drawnPartGroups, drawnRail, activeIndex, foldsForRoom]);
 
   // ---- WHICH SCENE IS SOUNDING (for the inner heading row) ------------------
   // The scene level is groupLevels[1] when there are two+ levels. The active
@@ -641,7 +689,6 @@ export default function SegmentMap({
   // string in this face at this size) that no amount of arithmetic can supply.
   const ruleRef = useRef(null);
   const probeRef = useRef(null);
-  const [railPx, setRailPx] = useState(RAIL_UNMEASURED);
   /**
    * What the RAIL is, typographically — read once per rail off the probe below,
    * never off the segments the accordion has already sized.

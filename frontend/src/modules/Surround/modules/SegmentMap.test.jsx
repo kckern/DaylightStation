@@ -2177,14 +2177,26 @@ describe('SegmentMap — the fold', () => {
     }
   };
 
-  /** A measured rail whose part labels are 90px and whose count badge is 20px. */
+  /**
+   * A measured rail whose part labels are 45px and whose count badge is 10px —
+   * EVERY BOX HALVED from the 1000px rail this block used to describe, and the
+   * halving is the point.
+   *
+   * A fold is a concession to a crowded rule now (`foldsForRoom` in
+   * SegmentMap.jsx): a rail that can give every authored segment twice a chip's
+   * width draws them all. Eleven movements on a 1000px rail is 91px each and
+   * correctly folds NOTHING, so the old geometry could no longer describe a
+   * folding rail at all. At 500px it is 45px each — under the threshold — and
+   * because every other box came down by the same factor, every ratio the width
+   * and density assertions below read is exactly the one they read before.
+   */
   const MEASURED = {
-    RAIL: 1000,
-    'surround-segment-map__text-row': 120,
-    'surround-segment-map__text': 90,
-    'surround-segment-map__heading': 90,
-    'surround-segment-map__group': 90,
-    'surround-segment-map__fold-count': 20,
+    RAIL: 500,
+    'surround-segment-map__text-row': 60,
+    'surround-segment-map__text': 45,
+    'surround-segment-map__heading': 45,
+    'surround-segment-map__group': 45,
+    'surround-segment-map__fold-count': 10,
   };
 
   const folds = (container) => [...container.querySelectorAll('[data-testid="surround-segment-fold"]')];
@@ -2226,12 +2238,20 @@ describe('SegmentMap — the fold', () => {
         const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
         const [one, three] = folds(container);
         // Four of eleven movements is 36% of the rail by duration. The fold
-        // takes the 90px label on a 1000px rule instead — 9%, a quarter of what
+        // takes the 45px label on a 500px rule instead — 9%, a quarter of what
         // its duration would have claimed — and Part Two gets the difference.
         expect(Number(one.style.width.replace('%', ''))).toBeCloseTo(9, 3);
         expect(Number(three.style.width.replace('%', ''))).toBeCloseTo(9, 3);
         const open = drawn(container).map((s) => Number(s.style.width.replace('%', '')));
-        expect(open.every((w) => w > 25)).toBe(true);
+        // WHERE THE DIFFERENCE GOES, rather than a flat floor every open segment
+        // must clear. This rail is crowded enough to wear chips — it has to be,
+        // because a roomy rail no longer folds at all — and under chips the
+        // sounding segment takes the lion's share of what the folds gave back
+        // while its neighbours take a chip each. Both are still wider than the
+        // elision that paid for them, which is the claim.
+        expect(open.every((w) => w > 9)).toBe(true);
+        expect(Math.max(...open), 'the sounding segment is the one that grew')
+          .toBeCloseTo(open[0], 6);
         expect(open.reduce((a, b) => a + b, 18)).toBeCloseTo(100, 3);
       });
     } finally {
@@ -2253,6 +2273,27 @@ describe('SegmentMap — the fold', () => {
       const { container } = renderMap({ data: MESSIAH, position: 5, duration: 110 });
       expect(folds(container).map((f) => f.dataset.title)).toEqual(['Part Two', 'Part Three']);
       expect(drawn(container).length).toBe(4);
+    });
+  });
+
+  /**
+   * THE ROOM TEST. A fold is a concession to a crowded rule, not a house style.
+   *
+   * Chopin's Etudes is the case that found this: two opus runs on the office
+   * screen's rule is ~52px a segment — more than twice a chip — and the band
+   * still hatched Op. 10 away and printed "12" where twelve etudes had room to
+   * be twelve marks. `MEASURED` above is deliberately crowded so every other
+   * test in this block still describes a folding rail; this one gives the SAME
+   * rail room and asserts it draws everything.
+   *
+   * TO GO RED: fold unconditionally again, as every version before this did.
+   */
+  it('folds NOTHING on a rule with room to draw every segment', () => {
+    // 1100px over eleven movements is 100px each, four times a chip's width.
+    withRailGeometry({ ...MEASURED, RAIL: 1100 }, () => {
+      const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+      expect(folds(container)).toEqual([]);
+      expect(drawn(container).length).toBe(11);
     });
   });
 
