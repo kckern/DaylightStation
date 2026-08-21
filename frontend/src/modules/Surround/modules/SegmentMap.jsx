@@ -397,6 +397,7 @@ export default function SegmentMap({
         count: Number(m.count) || 0,
         start: m.offset,
         stop: m.offset + m.duration,
+        mediaStart: Number(m.start) || 0,
         natural: shares[i] ?? (m.duration / totalSounding),
       }));
     }
@@ -411,9 +412,7 @@ export default function SegmentMap({
         ...engrave(m),
         start,
         stop,
-        // The DURATION-derived share of the rule — what the segment is worth in
-        // time. The accordion may render it wider or narrower; this stays the
-        // proportion every redistribution is measured against.
+        mediaStart: start,
         natural: (stop - start) / span,
       };
     });
@@ -773,8 +772,10 @@ export default function SegmentMap({
       // The fold needs enough width for whichever is wider: its Part label
       // or its badge pill. This is the measured minimum — no fold may be
       // narrower than this, and no fold needs to be wider.
-      const widestLabel = Object.values(labels).reduce((a, b) => Math.max(a, b), 0);
-      foldMinPx = foldWidthPx({ labelPx: widestLabel, pillPx });
+      const designationWidths = drawnPartGroups
+        .map((run) => labels[run.mini ?? partDesignation(run.title)] ?? 0);
+      const widestDesignation = Math.max(0, ...designationWidths);
+      foldMinPx = foldWidthPx({ labelPx: widestDesignation, pillPx });
     }
 
     // SCENE LABEL WIDTHS — measured so the render can decide full-title vs
@@ -1230,7 +1231,7 @@ export default function SegmentMap({
               className={`surround-segment-map__group surround-segment-map__group--clickable${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
               data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
-              onClick={() => seekTo(segments[group.from]?.start ?? 0)}
+              onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
               {partLabel}
@@ -1285,7 +1286,7 @@ export default function SegmentMap({
                 data-testid="surround-group-label"
                 data-span={group.count}
                 style={{ flexBasis: `${groupBasis(group) * 100}%` }}
-                onClick={() => seekTo(segments[group.from]?.start ?? 0)}
+                onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
               >
                 {label}
               </span>
@@ -1475,7 +1476,7 @@ export default function SegmentMap({
               data-index={i}
               data-natural={seg.natural.toFixed(6)}
               style={{ width: `${(shares[i] ?? widthBasis[i] ?? seg.natural) * 100}%` }}
-              onClick={() => seekTo(seg.start)}
+              onClick={() => seekTo(seg.mediaStart ?? seg.start)}
             >
               {/* ONE quiet separator between segments. The double barline was
                   correct notation and too much ink at this size — it read as
