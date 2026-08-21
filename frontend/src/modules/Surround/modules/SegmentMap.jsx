@@ -146,6 +146,8 @@ const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 const engrave = (m) => ({
   n: m?.n,
   label: smartQuotes(m?.label ?? m?.name ?? ''),
+  short: typeof m?.short === 'string' && m.short.trim()
+    ? smartQuotes(m.short.trim()) : null,
   // Performance first, source second — "Chorus · Psalm 22:8" reads as a
   // billing, which is what a programme book prints under a number's title. The
   // translation joins the same line because it is the same register (an
