@@ -82,7 +82,7 @@ Four item types: `multiple_choice`, `short_answer`, `cloze`, `matching`.
 `school.question-bank/v2` is the authored-pool format for printable mastery
 worksheets. A multiple-choice item stores one correct `answer`; a multi-select
 item stores two or more correct `answers`. Both store incorrect options under
-`decoys`, with 8–10 total answers and decoys per pool. A v2 item never authors
+`decoys`, with 5–10 total answers and decoys per pool. A v2 item never authors
 `choices`. At issuance the domain combines the fields, assigns bank-revision-scoped
 option IDs, retains every correct option, and stores the exact visible subset,
 order, A–E mapping, prompt, and source locator in an immutable issued snapshot.

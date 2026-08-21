@@ -119,6 +119,7 @@
      declared once — the min-height below and the rule's own height both read
      it, so the three cannot drift. */
   --group-row: 1.2rem;
+  --group-rows: var(--group-row);
   /* The row and the rule stack; the root is a row-flex everywhere else and one
      child is all it has ever had. */
   flex-direction: column;
@@ -126,7 +127,14 @@
   /* The named rail's floor plus the row. Not `auto`: the floor is what the band
      IS (see the block at the top of this file), and a rail with groups has one
      more line in it. */
-  min-height: calc(3.9rem + var(--group-row));
+  min-height: calc(3.9rem + var(--group-rows));
+}
+
+/* A long-form work may have two authored hierarchy levels: Parts span scenes,
+   then scenes span individual numbers. They are distinct rows so neither title
+   is silently discarded when the corpus is kept in one work file. */
+.surround-segment-map--part-grouped.surround-segment-map--scene-grouped {
+  --group-rows: calc(var(--group-row) * 2);
 }
 
 .surround-segment-map--grouped .surround-segment-map__groups {
@@ -144,7 +152,7 @@
    down by the row above. */
 .surround-segment-map--grouped .surround-segment-map__rule {
   flex: 1 1 auto;
-  height: calc(100% - var(--group-row));
+  height: calc(100% - var(--group-rows));
 }
 
 /* One heading per run. Set in the DISPLAY face, quieter and smaller than the
@@ -174,10 +182,25 @@
   font-size: 0.82rem;
   line-height: 1.2;
   letter-spacing: 0.01em;
-  color: var(--ink-soft, #6b6152);
+  /* THE FLIP (design wave 10). This label used to be set in `--ink-soft`, which
+     measured 3.4:1 against the label row's ground while the bare movement
+     numerals below it measured 9.4:1 on theirs — the three words that give the
+     piece its shape were the DIMMEST text on the rail and twenty-two integers
+     were the brightest. The ladder is now the other way up: the part and set
+     names are the loudest thing here, and the ordinals are the annotation. */
+  color: var(--ink, #2a1d07);
+  opacity: 0.92;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* The top level of the hierarchy is the loudest label on the rail — it is the
+   only thing on the rule that says where in a two-and-a-half-hour work we are. */
+.surround-segment-map__group--part {
+  color: var(--ink, #332b20);
+  font-weight: 600;
+  opacity: 1;
 }
 
 /* The staff rule itself. Segments hang from it; the playhead rides over it. */
@@ -429,6 +452,21 @@
   .surround-segment-map__text-row {
     width: max-content;
   }
+
+  /* THE FOLD'S TWO RULERS (design wave 10) — the part label and the count
+     badge, each at its own content width. Both are laid out as flex items where
+     they really live, so they are blockified there; `inline-block` is what gives
+     them the same box here without a flex parent, and `max-width: none` keeps a
+     label from being clipped by a constraint the row imposes and the ruler must
+     not. What is measured is what the rail paints, including the padding — that
+     is the whole width a fold is sized by. */
+  .surround-segment-map__group,
+  .surround-segment-map__fold-count {
+    display: inline-block;
+    width: max-content;
+    max-width: none;
+    flex: none;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -504,13 +542,138 @@
   color: var(--ink, #2a1d07);
   white-space: nowrap;
   /* The same three states the names carry, in the same order of loudness: the
-     future is the brighter quiet state, the elapsed the dimmer one. */
-  opacity: 0.78;
+     future is the brighter quiet state, the elapsed the dimmer one.
+     DIMMER SINCE DESIGN WAVE 10 (0.78 -> 0.55, ~9.4:1 -> ~4.9:1). A bare
+     ordinal is the least informative mark on this rail — "35" names nothing on
+     its own — and at 0.78 it was outshouting the part label that names the
+     stretch of music it belongs to. See `__group` for the other half. */
+  opacity: 0.55;
 }
 
 .surround-segment-map__segment--elapsed .surround-segment-map__chip {
   color: var(--ink-soft, #6b6152);
-  opacity: 0.5;
+  opacity: 0.9;
+}
+
+/* THE CHIP'S DISTANCE FROM THE BOND'S EDGE — AND WHY THERE IS NO RULE FOR IT.
+   The office screen showed `29` sitting 5px from the maroon panel's hard edge,
+   because a chip is centred in a segment at the chip floor (24px) and the digits
+   are ~14px of it. The first fix here was `padding-inline: 3px` on the chipped
+   segment, and it was WRONG in a way only the rendered rail shows: the segment's
+   padding insets the RULE LANE too, so the staff rule — which this stylesheet
+   goes out of its way to run unbroken ("No horizontal padding here", see
+   `__segment`) — came back as a dashed line, one dash per segment.
+   THE FOLD IS THE FIX. The reason the chips were at the floor at all is that 53
+   movements were competing for the rule; with the two parts that are not
+   sounding folded, Messiah's sounding part gets ~61px a segment instead of 32,
+   which puts ~23px between the digits and the edge without a rule for it. If a
+   rail ever crowds this way again the answer is the floor, not padding. */
+
+/* ---------------------------------------------------------------------------
+   THE FOLD (design wave 10) — a whole part, elided into one block.
+
+   WHY IT EXISTS. Messiah is 53 numbered movements. Chip mode already gave up on
+   names for it, and what was left was a rail spending three quarters of its
+   width setting bare integers for the two parts nobody is listening to, at 32px
+   each, unreadable at ten feet and meaningless up close ("35" names nothing).
+   Every part but the sounding one now collapses to one block, and the width that
+   frees goes to the part that is actually playing.
+
+   IT IS SIZED BY ITS LABEL, NOT BY ITS DURATION (`foldWidthPx`, `../band.js`).
+   A fold is an elision: the music it stands for is off the axis, so it has no
+   share of the axis to claim. It is exactly as wide as the wider of the part
+   label sitting above it and the count badge sitting inside it — which is also
+   what makes the label and the block read as one object rather than as a
+   heading floating over 231px of texture.
+
+   THE HATCH IS A LANE, NOT A CURTAIN. Its predecessor painted the full height of
+   the segment — a ~120px wall of diagonals from the rule to the band's floor,
+   the loudest texture on a rail whose actual content is type. It is now exactly
+   the height of the numerals it replaces, sitting on their own line, so a folded
+   run reads as a BREAK IN THAT LINE rather than as a shape behind it.
+
+   ELAPSED AND FUTURE ARE STILL VISIBLE INSIDE IT, which is the thing the first
+   fold lost. Two folds drawn in one texture put 28% of the rail beyond the
+   elapsed/future ladder that is the rail's whole job. The rule and its fill
+   above the block carry the state as they do everywhere else, and the hatch
+   itself is denser for a part already heard than for one still to come.
+   --------------------------------------------------------------------------- */
+.surround-segment-map__segment--fold {
+  /* NO `opacity` ON THE BLOCK. The first fold dimmed the whole segment to .82,
+     which pulled the ELAPSED rule above it from the cream every other elapsed
+     segment paints down to a colour ~18% darker — two elapsed regions at two
+     brightnesses, side by side, with no difference in meaning behind it. What
+     is recessive here is the hatch's own alpha, and nothing else. */
+  --fold-hatch: rgba(233, 223, 200, 0.2);
+}
+
+.surround-segment-map__segment--future.surround-segment-map__segment--fold {
+  --fold-hatch: rgba(233, 223, 200, 0.11);
+}
+
+/* The hatched lane. `1em` of the label floor IS the chip's own height (the chip
+   sets `font-size: var(--label-floor)` at `line-height: 1`), and the same
+   0.55em top margin the chip and the text row use puts it on their line — so a
+   rail that mixes chips and folds hangs both off one baseline. */
+.surround-segment-map__fold-lane {
+  align-self: stretch;
+  font-size: var(--label-floor, #{$label-floor});
+  margin-top: 0.55em;
+  height: 1em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--fold-hatch) 0, var(--fold-hatch) 1px,
+    transparent 1px, transparent 5px
+  );
+  /* The diagonals run to the block's own edges, which is what makes the block a
+     region rather than a rule with texture under it. */
+  overflow: hidden;
+}
+
+/* THE COUNT IS A BADGE, AND IT IS NOT A NUMERAL (design wave 10).
+   Its predecessor set the count in the chip's own face and size, in the chip's
+   own lane, so Messiah's rail read `21 22 23 24 25 26 27` across the first fold
+   boundary and `44 9` across the second: a COUNT and a SEQUENCE POSITION drawn
+   identically, inviting the eye to read one continuous run of numbers. Two
+   independent signals separate them now — the badge is ENCLOSED, and it is set
+   in the annotation sans rather than the Garamond small caps every ordinal on
+   this rail wears. Either one alone would do it; both together survive a screen
+   where the enclosure is a hairline and a viewer who never sees the two side by
+   side. */
+.surround-segment-map__fold-count {
+  font-family: var(--surround-annotation, "Roboto Condensed", system-ui, sans-serif);
+  font-size: 0.74em;
+  line-height: 1.15;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums lining-nums;
+  /* NOT small-caps and NOT tracked: those are the ordinal's own signals, and a
+     badge that borrows them is back to looking like one. */
+  letter-spacing: 0;
+  padding: 0 0.5em;
+  /* NOT `--fold-hatch`. The hatch is deliberately at the threshold of visible,
+     and an enclosure at that alpha is an enclosure nobody sees — which loses one
+     of the badge's two signals and leaves it a bare figure again. The border is
+     the ink the badge is set in, at the weight that reads as a drawn edge from
+     across the room. */
+  border: 1px solid rgba(233, 223, 200, 0.42);
+  border-radius: 999px;
+  /* The badge KNOCKS A HOLE IN THE HATCH rather than floating on it: diagonals
+     running behind a two-digit figure at this size is the mark and its ground
+     competing at the same weight. Not a token — the rail's ground is the band's
+     near-black and this is that black at the alpha that stops the hatch without
+     drawing a second edge inside the border. */
+  background: rgba(0, 0, 0, 0.62);
+  color: var(--ink, #2a1d07);
+  opacity: 0.82;
+  white-space: nowrap;
+}
+
+.surround-segment-map__segment--elapsed .surround-segment-map__fold-count {
+  color: var(--ink-soft, #6b6152);
+  opacity: 0.95;
 }
 
 /* Segment names sit BELOW the rule (design wave 4), clear of the rule lane

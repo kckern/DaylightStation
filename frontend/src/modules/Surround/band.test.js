@@ -4,6 +4,7 @@ import {
   bondConnector, elapsedFraction, easeAccordion, BAND_DEFAULTS,
   placedSegments, activeSegmentIndex, numeral, numeralText, numeralStyle, ROMAN_CEILING,
   placedRailSegments, railGroups, railIsFlat, railFloorPx, nameFloorPx, idealWidth,
+  railFolds, foldWidthPx, FOLD_PILL_AIR_PX,
   NOW_SIDE_THRESHOLD, NOW_SIDE_HYSTERESIS, SEGMENT_FLOOR_PX, NOW_PANEL_SHARE,
 } from './band.js';
 
@@ -734,6 +735,157 @@ describe('railGroups', () => {
 
   it('answers with no runs for anything that is not a rail', () => {
     expect(railGroups(undefined)).toEqual([]);
+  });
+
+  it('can group a second authored hierarchy level without changing scene groups', () => {
+    const placed = [
+      { segment: { duration: 10, group: { index: 0, title: 'Scene 1' }, hierarchy: { part: { index: 0, title: 'Part One' } } } },
+      { segment: { duration: 10, group: { index: 1, title: 'Scene 2' }, hierarchy: { part: { index: 0, title: 'Part One' } } } },
+      { segment: { duration: 20, group: { index: 2, title: 'Scene 3' }, hierarchy: { part: { index: 1, title: 'Part Two' } } } },
+    ];
+    expect(railGroups(placed).map((g) => g.title)).toEqual(['Scene 1', 'Scene 2', 'Scene 3']);
+    expect(railGroups(placed, (segment) => segment?.hierarchy?.part)).toEqual([
+      { title: 'Part One', index: 0, from: 0, count: 2, span: 20 },
+      { title: 'Part Two', index: 1, from: 2, count: 1, span: 20 },
+    ]);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   THE FOLD (design wave 10)
+   --------------------------------------------------------------------------- */
+
+/** Messiah's three parts as `railGroups` reports them: 21 / 23 / 9 movements. */
+const MESSIAH_PARTS = [
+  { title: 'Part One', index: 0, from: 0, count: 21, span: 3600 },
+  { title: 'Part Two', index: 1, from: 21, count: 23, span: 3300 },
+  { title: 'Part Three', index: 2, from: 44, count: 9, span: 1500 },
+];
+
+describe('railFolds', () => {
+  it('folds every part except the one the playhead is in', () => {
+    // Movement 28 is index 27 — inside Part Two.
+    expect(railFolds({ groups: MESSIAH_PARTS, activeIndex: 27 }).map((f) => f.title))
+      .toEqual(['Part One', 'Part Three']);
+  });
+
+  it('follows the playhead into a different part', () => {
+    expect(railFolds({ groups: MESSIAH_PARTS, activeIndex: 3 }).map((f) => f.title))
+      .toEqual(['Part Two', 'Part Three']);
+    expect(railFolds({ groups: MESSIAH_PARTS, activeIndex: 50 }).map((f) => f.title))
+      .toEqual(['Part One', 'Part Two']);
+  });
+
+  it('folds nothing when nothing is sounding', () => {
+    // The applause after the final chord, and the tuning before the first note:
+    // no sounding part means no part to fold everything else around.
+    expect(railFolds({ groups: MESSIAH_PARTS, activeIndex: -1 })).toEqual([]);
+  });
+
+  it('folds nothing when no run holds the playhead', () => {
+    expect(railFolds({ groups: MESSIAH_PARTS, activeIndex: 99 })).toEqual([]);
+  });
+
+  it('leaves a run of one open — a badge saying "1" is more ink for less', () => {
+    const runs = [
+      { title: 'Prelude', index: 0, from: 0, count: 1, span: 60 },
+      { title: 'Fugue', index: 1, from: 1, count: 4, span: 300 },
+    ];
+    expect(railFolds({ groups: runs, activeIndex: 2 })).toEqual([]);
+  });
+
+  it('leaves an UNLABELLED run open — there is nothing to size it by', () => {
+    const runs = [
+      { title: null, index: null, from: 0, count: 5, span: 300 },
+      { title: 'Fugue', index: 1, from: 5, count: 4, span: 300 },
+    ];
+    expect(railFolds({ groups: runs, activeIndex: 6 })).toEqual([]);
+  });
+
+  it('answers with no folds for anything that is not a rail', () => {
+    expect(railFolds({ groups: undefined, activeIndex: 0 })).toEqual([]);
+    expect(railFolds({})).toEqual([]);
+  });
+});
+
+describe('foldWidthPx', () => {
+  it('takes the part label when the label is the wider of the two', () => {
+    expect(foldWidthPx({ labelPx: 96, pillPx: 30 })).toBe(96);
+  });
+
+  it('takes the badge plus its air when the label is short', () => {
+    expect(foldWidthPx({ labelPx: 40, pillPx: 30 })).toBe(30 + FOLD_PILL_AIR_PX * 2);
+  });
+
+  it('answers 0 for anything unmeasured — and 0 means DO NOT FOLD', () => {
+    expect(foldWidthPx({ labelPx: 0, pillPx: 0 })).toBe(0);
+    expect(foldWidthPx({})).toBe(0);
+    expect(foldWidthPx({ labelPx: NaN, pillPx: undefined })).toBe(0);
+  });
+});
+
+describe('accordionShares — the fold\'s pins', () => {
+  /** Four equal segments on a 1000px rail: 250px each. */
+  const EQUAL = [0.25, 0.25, 0.25, 0.25];
+
+  it('pins a fold and hands what it frees to the unpinned, in proportion', () => {
+    // Segments 0+1 fold into 100px at index 0; 2 and 3 split the 400px freed
+    // (500 - 100) in proportion to their own 250px, i.e. 200px each.
+    const out = accordionShares({
+      natural: EQUAL, activeIndex: -1, railPx: 1000, desiredPx: NaN,
+      pinnedPx: [100, 0, null, null],
+    });
+    expect(out.map((s) => Math.round(s * 1000))).toEqual([100, 0, 450, 450]);
+  });
+
+  it('never lets a fold donate to the sounding segment', () => {
+    // Index 3 wants 600px. After the fold is pinned the rail is [100, 0, 450,
+    // 450]; the only donor is index 2 (index 0 is pinned and index 1 is pinned
+    // to nothing), and 150px of its 350px of slack covers the ask.
+    const out = accordionShares({
+      natural: EQUAL, activeIndex: 3, railPx: 1000, desiredPx: 600, floorPx: 100,
+      pinnedPx: [100, 0, null, null],
+    });
+    const px = out.map((s) => Math.round(s * 1000));
+    expect(px[0]).toBe(100);          // the fold kept its measured width
+    expect(px[1]).toBe(0);
+    expect(px[2]).toBe(300);          // the only donor gave the whole 150px
+    expect(px[3]).toBe(600);          // opened to exactly what it asked for
+    expect(px.reduce((a, b) => a + b, 0)).toBe(1000);
+  });
+
+  it('is exactly today\'s solve when nothing is pinned', () => {
+    const pinned = accordionShares({
+      natural: EROICA_NATURAL, activeIndex: 2, railPx: 1280, desiredPx: 400, pinnedPx: null,
+    });
+    const plain = accordionShares({
+      natural: EROICA_NATURAL, activeIndex: 2, railPx: 1280, desiredPx: 400,
+    });
+    expect(pinned).toEqual(plain);
+    expect(accordionShares({
+      natural: EROICA_NATURAL, activeIndex: 2, railPx: 1280, desiredPx: 400, pinnedPx: [],
+    })).toEqual(plain);
+  });
+
+  it('refuses pins that would fill the rule outright', () => {
+    // Nothing would be left to solve, and every unpinned segment would go to
+    // zero or negative. The rail is drawn unfolded instead.
+    expect(accordionShares({
+      natural: EQUAL, activeIndex: -1, railPx: 1000, desiredPx: NaN,
+      pinnedPx: [600, 600, null, null],
+    })).toEqual(EQUAL);
+  });
+
+  it('holds the shares summing to the rule with folds on both ends', () => {
+    const out = accordionShares({
+      natural: [0.2, 0.2, 0.2, 0.2, 0.2], activeIndex: 2, railPx: 1000, desiredPx: 500,
+      floorPx: 50, pinnedPx: [80, null, null, null, 80],
+    });
+    const total = out.reduce((a, b) => a + b, 0);
+    expect(Math.abs(total - 1)).toBeLessThan(1e-9);
+    expect(Math.round(out[0] * 1000)).toBe(80);
+    expect(Math.round(out[4] * 1000)).toBe(80);
+    expect(Math.round(out[2] * 1000)).toBe(500);
   });
 });
 

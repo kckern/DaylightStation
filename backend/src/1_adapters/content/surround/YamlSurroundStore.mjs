@@ -31,6 +31,7 @@ const normalizeTitle = (v) =>
   (typeof v === 'string' ? v : '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 const asArray = (v) => (Array.isArray(v) ? v : []);
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+const textList = (v) => asArray(v).filter((text) => typeof text === 'string' && text.trim()).map((text) => text.trim());
 // One relation, used by both the lookup-time rebind and the index-time
 // pre-warning, so the warning can never disagree with the behavior it predicts.
 const titlesOverlap = (a, b) => a.includes(b) || b.includes(a);
@@ -63,6 +64,57 @@ const SEGMENT_KEYS = ['segments', 'chapters', 'movements'];
 // against "whatever list this work authored" — see the fallback in
 // #resolvePerformance for why the difference matters.
 const LEGACY_SEGMENT_KEY = SEGMENT_KEYS[SEGMENT_KEYS.length - 1];
+// An extended work can keep its natural editorial hierarchy in one file. Groups
+// are optional and recursive: an oratorio may be Part → Scene, a ballet Act →
+// Scene → Dance, and a symphony may go straight from the work to segments. The
+// store owns flattening, so playback remains a serial timed list while the
+// corpus retains its honest tree.
+const nestedGroupSegments = (work) => {
+  const out = [];
+  const indexAtDepth = [];
+  const walk = (groups, ancestors = []) => {
+    asArray(groups).forEach((group, siblingIndex) => {
+      if (!isPlainObject(group)) return;
+      const title = typeof group.title === 'string' && group.title.trim()
+        ? group.title.trim() : `Group ${siblingIndex + 1}`;
+      const depth = ancestors.length;
+      const ancestor = {
+        index: indexAtDepth[depth] ?? 0, title,
+        ...(typeof group.kind === 'string' && group.kind.trim() ? { kind: group.kind.trim() } : {}),
+        ...(textList(group.facts).length ? { facts: textList(group.facts) } : {}),
+      };
+      indexAtDepth[depth] = (indexAtDepth[depth] ?? 0) + 1;
+      const path = [...ancestors, ancestor];
+      asArray(group.segments).forEach((segment) => {
+        if (!isPlainObject(segment)) return;
+        out.push({ ...segment, ancestors: path });
+      });
+      walk(group.groups, path);
+    });
+  };
+  walk(work?.groups);
+  return out;
+};
+// Temporary read compatibility for work files authored during the fixed
+// Part → Scene experiment. New content must use `groups:` above.
+const nestedPartSegments = (work) => {
+  const groups = asArray(work?.parts).map((part) => ({
+    ...part,
+    kind: 'part',
+    groups: asArray(part?.scenes).map((scene) => ({ ...scene, kind: 'scene' })),
+  }));
+  return nestedGroupSegments({ groups }).map(({ ancestors, ...segment }) => {
+    const part = ancestors?.[0];
+    const scene = ancestors?.at(-1);
+    return {
+      ...segment,
+      ...(scene ? { group: { index: scene.index, title: scene.title } } : {}),
+      ...(part ? { hierarchy: { part: { index: part.index, title: part.title } } } : {}),
+      ...(part?.facts?.length ? { partFacts: part.facts } : {}),
+      ...(scene?.facts?.length ? { sceneFacts: scene.facts } : {}),
+    };
+  });
+};
 // Returns the key alongside the list. The key is not decoration: it is the one
 // fact that separates "this work authors nothing" from "this work authors a
 // name this build does not read", and those two have the same symptom on screen
@@ -72,6 +124,10 @@ const authoredSegments = (work) => {
     const list = asArray(work?.[key]);
     if (list.length) return { list, key };
   }
+  const grouped = nestedGroupSegments(work);
+  if (grouped.length) return { list: grouped, key: 'groups' };
+  const nested = nestedPartSegments(work);
+  if (nested.length) return { list: nested, key: 'parts' };
   return { list: [], key: null };
 };
 // Work-level fields that surface as payload.piece, disjoint from

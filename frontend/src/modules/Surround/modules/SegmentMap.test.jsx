@@ -290,7 +290,7 @@ describe('SegmentMap', () => {
     expect(changes()).toHaveLength(1);
     at(1000);  // now segment 2
     expect(changes()).toHaveLength(2);
-    expect(changes()[1][1]).toMatchObject({ n: 2, name: 'Marcia funebre. Adagio assai' });
+    expect(changes()[1][1]).toMatchObject({ n: 2, label: 'Marcia funebre. Adagio assai' });
   });
 });
 
@@ -1600,7 +1600,7 @@ describe('SegmentMap — logging the new decisions', () => {
       expect(warned.length, 'the rail trimmed the sounding name and said nothing').toBe(1);
       expect(warned[0][1]).toMatchObject({ index: 2, density: 'chips', railPx: 120 });
       expect(warned[0][1].granted).toBeLessThan(warned[0][1].desired);
-      expect(warned[0][1].name, 'the warn does not say WHICH name could not be set')
+      expect(warned[0][1].label, 'the warn does not say WHICH label could not be set')
         .toBe('Scherzo. Allegro vivace');
     });
   });
@@ -1737,6 +1737,35 @@ describe('SegmentMap — the composed rail', () => {
     const { container } = renderMap({ data: TWO_OPUS, position: 5, duration: 40 });
     expect(container.querySelectorAll('[data-testid="surround-segment"]')).toHaveLength(3);
     expect(labels(container)).toEqual(['Op. 10', 'Op. 25']);
+  });
+
+  it('renders an authored segment heading as its measured secondary line', () => {
+    const headed = {
+      ...TWO_OPUS,
+      segments: TWO_OPUS.segments.map((segment) => ({
+        ...segment,
+        heading: 'Recitative (Accompanied — Tenor) · Isaiah 53:8',
+      })),
+    };
+    const { container } = renderMap({ data: headed, position: 5, duration: 40 });
+    expect([...container.querySelectorAll('[data-testid="surround-segment-translation"]')]
+      .map((element) => element.textContent))
+      .toEqual(Array(3).fill('Recitative (Accompanied — Tenor) · Isaiah 53:8'));
+  });
+
+  it('renders Parts above Scenes when a single work authors both hierarchy levels', () => {
+    const hierarchy = {
+      ...TWO_OPUS,
+      segments: TWO_OPUS.segments.map((segment, index) => ({
+        ...segment,
+        group: { index: index < 2 ? 0 : 1, title: index < 2 ? 'Scene 1' : 'Scene 2' },
+        hierarchy: { part: { index: index < 2 ? 0 : 1, title: index < 2 ? 'Part One' : 'Part Two' } },
+      })),
+    };
+    const { container } = renderMap({ data: hierarchy, position: 5, duration: 40 });
+    expect([...container.querySelectorAll('[data-testid="surround-part-group-label"]')].map((e) => e.textContent))
+      .toEqual(['Part One', 'Part Two']);
+    expect(labels(container)).toEqual(['Scene 1', 'Scene 2']);
   });
 
   /**
@@ -2077,5 +2106,256 @@ describe('SegmentMap — the composed rail', () => {
     const label = rule.match(/\.surround-segment-map__group\s*\{[^}]*\}/)?.[0] ?? '';
     expect(label, 'a heading that wraps is a band that changes height').toMatch(/white-space:\s*nowrap/);
     expect(label, 'a heading with no ellipsis is a heading cut mid-word').toMatch(/text-overflow:\s*ellipsis/);
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   THE FOLD (design wave 10)
+
+   Messiah's rail is the case this exists for: 53 numbered movements across
+   three parts, chipped, on a rule that gives each of them ~32px. Two of those
+   parts are not sounding, and before this wave they took 28% of the rail to say
+   so — in bare integers nobody can read at ten feet and nobody can use up close.
+   --------------------------------------------------------------------------- */
+describe('SegmentMap — the fold', () => {
+  /** Three parts, 4 + 3 + 4 movements, one second of sounding time each. */
+  const MESSIAH = (() => {
+    const parts = [['Part One', 4], ['Part Two', 3], ['Part Three', 4]];
+    const segments = [];
+    let offset = 0;
+    let n = 0;
+    parts.forEach(([title, count], index) => {
+      for (let i = 0; i < count; i += 1) {
+        n += 1;
+        segments.push({
+          n,
+          name: `Movement ${n}`,
+          contentId: 'plex:messiah',
+          start: offset,
+          end: offset + 10,
+          offset,
+          duration: 10,
+          part: 0,
+          group: { work: String(index), title, index },
+          hierarchy: { part: { index, title } },
+        });
+        offset += 10;
+      }
+    });
+    return {
+      contentId: 'plex:messiah',
+      segments,
+      timeline: {
+        totalSounding: offset,
+        parts: [{ contentId: 'plex:messiah', index: 0, sounding: offset }],
+      },
+    };
+  })();
+
+  /**
+   * The rail measured, exactly as `SegmentMap — logging the new decisions`
+   * measures it — jsdom gives every box a zero rect, and a fold with no measured
+   * label is a fold that is NOT TAKEN (which is itself one of the cases below).
+   */
+  const withRailGeometry = (rects, run) => {
+    const rect = Element.prototype.getBoundingClientRect;
+    const RO = globalThis.ResizeObserver;
+    Element.prototype.getBoundingClientRect = function stub() {
+      const hit = Object.keys(rects).find((cls) => this.classList?.contains(cls));
+      const width = hit ? rects[hit] : 0;
+      return { width, height: width ? 40 : 0, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 40 };
+    };
+    globalThis.ResizeObserver = class {
+      constructor(cb) { this.cb = cb; }
+      observe(el) { this.cb([{ target: el, contentRect: { width: rects.RAIL ?? 0 } }]); }
+      disconnect() {}
+      unobserve() {}
+    };
+    try { return run(); } finally {
+      Element.prototype.getBoundingClientRect = rect;
+      globalThis.ResizeObserver = RO;
+    }
+  };
+
+  /** A measured rail whose part labels are 90px and whose count badge is 20px. */
+  const MEASURED = {
+    RAIL: 1000,
+    'surround-segment-map__text-row': 120,
+    'surround-segment-map__text': 90,
+    'surround-segment-map__heading': 90,
+    'surround-segment-map__group': 90,
+    'surround-segment-map__fold-count': 20,
+  };
+
+  const folds = (container) => [...container.querySelectorAll('[data-testid="surround-segment-fold"]')];
+  const drawn = (container) => [...container.querySelectorAll('[data-testid="surround-segment"]')];
+
+  it('folds every part except the one that is sounding', () => {
+    withRailGeometry(MEASURED, () => {
+      // 45s is inside Part Two (movements 5-7, 40s-70s).
+      const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+      expect(folds(container).map((f) => f.dataset.title)).toEqual(['Part One', 'Part Three']);
+      // Part Two's three movements are the only ones drawn as segments.
+      expect(drawn(container).length).toBe(3);
+    });
+  });
+
+  it('carries the count as a BADGE, not as another numeral', () => {
+    withRailGeometry(MEASURED, () => {
+      const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+      const badges = [...container.querySelectorAll('[data-testid="surround-fold-count"]')];
+      expect(badges.map((b) => b.textContent)).toEqual(['4', '4']);
+      // The badge is NOT the chip: a rail where the two carried one class is a
+      // rail where "21" and "22" are the same kind of mark.
+      badges.forEach((badge) => {
+        expect(badge.classList.contains('surround-segment-map__chip')).toBe(false);
+        expect(badge.classList.contains('surround-segment-map__numeral')).toBe(false);
+      });
+    });
+  });
+
+  it('does not hand a fold a share of the rail — it is sized by its label', () => {
+    // WITHOUT `requestAnimationFrame` the widths SNAP to the solve rather than
+    // easing to it over 420ms (`useEasedVector` — it is the reduced-motion
+    // path). What is under test here is the solve, not the journey to it, and
+    // reading a width mid-ease would be reading the interpolation.
+    const raf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = undefined;
+    try {
+      withRailGeometry(MEASURED, () => {
+        const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+        const [one, three] = folds(container);
+        // Four of eleven movements is 36% of the rail by duration. The fold
+        // takes the 90px label on a 1000px rule instead — 9%, a quarter of what
+        // its duration would have claimed — and Part Two gets the difference.
+        expect(Number(one.style.width.replace('%', ''))).toBeCloseTo(9, 3);
+        expect(Number(three.style.width.replace('%', ''))).toBeCloseTo(9, 3);
+        const open = drawn(container).map((s) => Number(s.style.width.replace('%', '')));
+        expect(open.every((w) => w > 25)).toBe(true);
+        expect(open.reduce((a, b) => a + b, 18)).toBeCloseTo(100, 3);
+      });
+    } finally {
+      globalThis.requestAnimationFrame = raf;
+    }
+  });
+
+  it('keeps elapsed and future legible INSIDE the fold', () => {
+    withRailGeometry(MEASURED, () => {
+      const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+      const [one, three] = folds(container);
+      expect(one.dataset.state).toBe('elapsed');
+      expect(three.dataset.state).toBe('future');
+    });
+  });
+
+  it('follows the playhead — the sounding part is the one that opens', () => {
+    withRailGeometry(MEASURED, () => {
+      const { container } = renderMap({ data: MESSIAH, position: 5, duration: 110 });
+      expect(folds(container).map((f) => f.dataset.title)).toEqual(['Part Two', 'Part Three']);
+      expect(drawn(container).length).toBe(4);
+    });
+  });
+
+  it('folds NOTHING when nothing is sounding', () => {
+    withRailGeometry(MEASURED, () => {
+      // Past the last chord: every movement has sounded, and there is no
+      // sounding part to fold the others around.
+      const { container } = renderMap({ data: MESSIAH, position: 200, duration: 220 });
+      expect(folds(container)).toEqual([]);
+      expect(drawn(container).length).toBe(11);
+    });
+  });
+
+  it('folds NOTHING on a rail it has not measured', () => {
+    // No stub at all: every box is 0x0, so no label has a width, so no fold has
+    // an honest one. The rail draws exactly what it drew before this wave.
+    const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+    expect(folds(container)).toEqual([]);
+    expect(drawn(container).length).toBe(11);
+  });
+
+  it('leaves a part open when its label is wider than the music it elides', () => {
+    // A 600px label on a 1000px rail against four movements worth 36% of it:
+    // the elision would be drawn bigger than the thing elided.
+    withRailGeometry({ ...MEASURED, 'surround-segment-map__group': 600 }, () => {
+      const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
+      expect(folds(container)).toEqual([]);
+    });
+  });
+
+  it('reports what it folded and what it sized the folds by', () => {
+    withRailGeometry(MEASURED, () => {
+      const logger = makeLogger();
+      renderMap({ data: MESSIAH, position: 45, duration: 110, logger });
+      const [entry] = logger.debug.mock.calls
+        .filter(([name]) => name === 'surround.rail.fold').slice(-1);
+      expect(entry[1]).toMatchObject({ runs: 2, folded: 2, hiddenSegments: 6, of: 11 });
+    });
+  });
+});
+
+/* ---------------------------------------------------------------------------
+   THE SEGMENT'S FIELD VOCABULARY
+
+   `name:` and `heading:` were both plausible words for "what this movement is
+   called", so an author had to read the renderer to find out which was which.
+   The four fields are now named by where they go and what they say.
+   --------------------------------------------------------------------------- */
+describe('SegmentMap — label / heading / subheading', () => {
+  const ONE = (segment) => ({
+    contentId: 'plex:one',
+    segments: [{
+      n: 1, contentId: 'plex:one', start: 0, end: 10, offset: 0, duration: 10, part: 0, ...segment,
+    }],
+    timeline: { totalSounding: 10, parts: [{ contentId: 'plex:one', index: 0, sounding: 10 }] },
+  });
+  // NOT the first `__heading` in the document — that one belongs to the ruler,
+  // which is always empty between passes (see `__probe`).
+  const headingOf = (c) => c.querySelector(
+    '[data-testid="surround-segment"] .surround-segment-map__heading',
+  )?.textContent;
+  const glossOf = (c) => c.querySelector('[data-testid="surround-segment-translation"]')?.textContent;
+
+  it('prints `label` on the rail', () => {
+    const { container } = renderMap({ data: ONE({ label: 'He trusted in God' }), position: 5, duration: 10 });
+    expect(headingOf(container)).toBe('He trusted in God');
+  });
+
+  it('still prints `name` for a work the corpus has not migrated yet', () => {
+    // 194 files author `name:`; they migrate as a batch, not atomically with a
+    // build, and a blank rail in the meantime is the worse outcome.
+    const { container } = renderMap({ data: ONE({ name: 'Allegro con brio' }), position: 5, duration: 10 });
+    expect(headingOf(container)).toBe('Allegro con brio');
+  });
+
+  it('prefers `label` when a segment carries both', () => {
+    const { container } = renderMap({
+      data: ONE({ label: 'The new one', name: 'The old one' }), position: 5, duration: 10,
+    });
+    expect(headingOf(container)).toBe('The new one');
+  });
+
+  it('sets the billing — performance, then source — as the annotation line', () => {
+    const { container } = renderMap({
+      data: ONE({ label: 'He trusted in God', subheading: 'Chorus', heading: 'Psalm 22:8' }),
+      position: 5,
+      duration: 10,
+    });
+    expect(glossOf(container)).toBe('Chorus · Psalm 22:8');
+  });
+
+  it('renders NO annotation element when a segment authors none of it', () => {
+    // Never an empty line holding space — the band's height is its content.
+    const { container } = renderMap({ data: ONE({ label: 'Sinfonia' }), position: 5, duration: 10 });
+    expect(glossOf(container)).toBeUndefined();
+  });
+
+  it('never puts the lyric `text` on the rail', () => {
+    const { container } = renderMap({
+      data: ONE({ label: 'He trusted in God', text: 'He trusted in God that He would deliver Him:\nlet Him deliver Him.' }),
+      position: 5,
+      duration: 10,
+    });
+    expect(container.textContent).not.toContain('let Him deliver Him');
   });
 });

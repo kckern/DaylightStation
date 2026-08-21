@@ -529,23 +529,18 @@ export function collapseInactiveGroups(placed, { activeGroupIndex = null, depth 
  * row at all.
  *
  * @param {Array<{segment:object}>} placed from `placedRailSegments`.
+ * @param {(segment:object) => object|null} [selectGroup] selects the hierarchy
+ *   level to run. The default is the established scene/work grouping.
  * @returns {Array<{title:string|null, index:number|null, from:number, count:number, span:number}>}
  *   one entry per run, in rail order. `from` is the run's first position in
  *   `placed`; `span` is the run's sounding seconds, which is what its label is
  *   sized by.
  */
-export function railGroups(placed, { depth = null } = {}) {
+export function railGroups(placed, selectGroup = (segment) => segment?.group ?? null) {
   const list = Array.isArray(placed) ? placed : [];
   const runs = [];
   list.forEach(({ segment }) => {
-    // TWO LEVELS OF GROUPING, ONE ROW OF HEADINGS. Messiah is Part > Scene >
-    // Number — 53 numbers under 16 scenes under 3 Parts — and at the office's
-    // ~822px the rail chips at ~15px a segment, where sixteen scene titles is a
-    // row of ellipses and three Part names is a heading somebody can read. So a
-    // caller may ask for a level of the ancestry; `depth: 0` is the outermost.
-    // Absent an ancestry this is the segment's own group, exactly as before.
-    const path = Array.isArray(segment?.groupPath) ? segment.groupPath : null;
-    const group = (depth !== null && path?.length ? path[Math.min(depth, path.length - 1)] : segment?.group) ?? null;
+    const group = selectGroup(segment) ?? null;
     // A group with no number is malformed — the store stamps every one of them
     // — and is degraded to "ungrouped" rather than guessed at: an unlabelled
     // stretch of rail is the honest rendering of a heading we cannot place.
@@ -597,6 +592,85 @@ export function railGroups(placed, { depth = null } = {}) {
 export function railIsFlat(groups) {
   const list = Array.isArray(groups) ? groups : [];
   return list.every((run) => (Number(run?.count) || 0) <= 1);
+}
+
+/**
+ * THE AIR EITHER SIDE OF A FOLD'S COUNT (design wave 10).
+ *
+ * A fold that is exactly as wide as its badge is a badge with a hatched border,
+ * not an elision — the hatch has to be visible as ground for the mark to read as
+ * sitting IN something. Twelve pixels a side is the least that reads as ground
+ * at the office screen's root; below it the diagonals become a fringe on the
+ * pill.
+ */
+export const FOLD_PILL_AIR_PX = 12;
+
+/**
+ * How wide a fold is drawn — MEASURED, and it is not a share of anything.
+ *
+ * THIS IS THE WHOLE POINT OF FOLDING. Before design wave 10 a folded part still
+ * carried its duration's share of the rule: Messiah's Part One took 231px and
+ * Part Three 246px of a 1714px rail — 28% of the rail spent on two blocks that
+ * say "twenty-one numbers are hidden here" and "nine are". A fold has no
+ * duration to represent, because it is an ELISION: the thing it stands for is
+ * not on the axis any more. So it is sized to the only two things it actually
+ * has to hold — the part's own label, which sits above it, and the count badge
+ * inside it — and every pixel that frees goes back to the part that is sounding.
+ *
+ * @param {object} args
+ * @param {number} args.labelPx the rendered width of the part label, INCLUDING
+ *   its own inline padding (measured off the probe, not derived from the `em`s).
+ * @param {number} args.pillPx the rendered width of the count badge.
+ * @returns {number} px, or 0 when neither has been measured — and 0 is the
+ *   signal not to fold at all, never a fold drawn at nothing.
+ */
+export function foldWidthPx({ labelPx, pillPx }) {
+  const label = Number(labelPx);
+  const pill = Number(pillPx);
+  const wide = Math.max(
+    Number.isFinite(label) && label > 0 ? label : 0,
+    Number.isFinite(pill) && pill > 0 ? pill + FOLD_PILL_AIR_PX * 2 : 0,
+  );
+  return wide > 0 ? wide : 0;
+}
+
+/**
+ * Which runs of the rail are FOLDED into one elided block.
+ *
+ * THE RULE IS THE SOUNDING PART, and nothing else. Every run of the top
+ * hierarchy level except the one holding the sounding segment collapses; the
+ * sounding part stays open, with every one of its segments drawn. That is what
+ * makes the rail answer the question it is on screen to answer — where are we,
+ * inside the stretch of music that is playing — instead of spending three
+ * quarters of its width numbering movements nobody is listening to.
+ *
+ * WHAT IS NOT FOLDED, AND WHY:
+ *   - A run of ONE. Folding it hides a single number behind a badge that says
+ *     "1", which is more ink for less information.
+ *   - An UNLABELLED run. The fold's width is its label's width and its meaning
+ *     is "the rest of <part>"; with no title there is nothing to size it by and
+ *     nothing for the viewer to name what was hidden.
+ *   - EVERYTHING, when nothing is sounding. Before the first note and after the
+ *     last chord there is no sounding part, so there is no part to fold
+ *     everything else AROUND, and the honest rail is the whole rail.
+ *
+ * @param {object} args
+ * @param {Array<{title:string|null, index:number|null, from:number, count:number}>}
+ *   args.groups the runs from `railGroups`, in rail order.
+ * @param {number} args.activeIndex the sounding segment, or -1 for none.
+ * @returns {Array<{title:string, index:number|null, from:number, count:number}>}
+ *   the runs to collapse, in rail order.
+ */
+export function railFolds({ groups, activeIndex }) {
+  const runs = Array.isArray(groups) ? groups : [];
+  const active = Number(activeIndex);
+  if (!runs.length || !Number.isFinite(active) || active < 0) return [];
+  const holds = (run) => active >= run.from && active < run.from + run.count;
+  // No run holds the playhead — a rail whose groups do not cover it. Folding
+  // every run would leave a rail of nothing but badges with the sounding
+  // segment inside one of them.
+  if (!runs.some(holds)) return [];
+  return runs.filter((run) => run.title && run.count > 1 && !holds(run));
 }
 
 /**
@@ -1044,36 +1118,116 @@ export function soundingWidth({ naturalPx, chromePx, needPx }) {
  * @param {number} args.desiredPx the active segment's ideal rendered width — the
  *   width at which neither its heading nor its translation is cut.
  * @param {number} [args.floorPx] the compressed-neighbour floor.
+ * @param {Array<number|null>} [args.pinnedPx] per-segment FIXED widths — the
+ *   fold. A finite entry pins that segment to exactly that many pixels, takes
+ *   it out of the donor pool, and hands the width it gave up to everything
+ *   unpinned in proportion to the time each of them is worth. `null` (or any
+ *   non-finite entry) is "solve me normally", which is every segment on a rail
+ *   with nothing folded.
  * @returns {number[]} rendered shares, 0..1, summing to 1. Identical to
- *   `natural` whenever no widening applies.
+ *   `natural` whenever no widening and no pinning applies.
  */
 export function accordionShares({
-  natural, activeIndex, railPx, desiredPx, floorPx = SEGMENT_FLOOR_PX,
+  natural, activeIndex, railPx, desiredPx, floorPx = SEGMENT_FLOOR_PX, pinnedPx = null,
 }) {
   const shares = Array.isArray(natural) ? natural.map((n) => (Number.isFinite(n) ? n : 0)) : [];
   const n = shares.length;
   if (n === 0) return shares;
-  // Nothing sounding (the applause), a single segment with no neighbour to
-  // compress, or a rail we have not measured yet: the rail is its own timeline.
-  if (n < 2 || activeIndex < 0 || activeIndex >= n) return shares;
-  if (!(railPx > 0) || !Number.isFinite(desiredPx)) return shares;
+  // A rail we have not measured yet is its own timeline — and it is measured in
+  // pixels, so nothing below this line can be asked without a width.
+  if (!(railPx > 0)) return shares;
 
   const px = shares.map((s) => s * railPx);
+
+  // ---- THE PINS ARE APPLIED FIRST (design wave 10) -------------------------
+  // A fold is settled before the accordion opens anything, because the width it
+  // releases is width the accordion is then free to spend. Doing it the other
+  // way round would have the sounding segment bargaining with neighbours whose
+  // widths are about to be thrown away.
+  //
+  // WHO OWNS "A FOLD ONLY EVER SHRINKS": the CALLER, not this function. A fold
+  // is pinned as one width on its first member with its other members pinned to
+  // zero, so the only place the elision's total can be weighed against the time
+  // it stands for is where the run is still a run. Here a pin is a width, and
+  // the one thing refused is a set of pins that would fill the rule outright —
+  // there would be nothing left to solve and every unpinned segment would go to
+  // zero or negative.
+  const pins = new Array(n).fill(null);
+  let pinned = false;
+  let pinnedTotal = 0;
+  if (Array.isArray(pinnedPx)) {
+    for (let i = 0; i < n; i += 1) {
+      // `Number(null)` IS 0, and 0 is a legal pin (the members of a fold behind
+      // its head are pinned to nothing). Coercing first would therefore read
+      // every UNPINNED slot as a pin at zero width — which is not a subtle
+      // wrong answer: every segment on the rail ends up pinned, there is nobody
+      // left to hand the freed width to, and the whole solve bails out to the
+      // unfolded shares. The absent cases are rejected before the coercion.
+      const raw = pinnedPx[i];
+      if (raw === null || raw === undefined || raw === '') continue;
+      const want = Number(raw);
+      if (!Number.isFinite(want) || want < 0) continue;
+      pins[i] = want;
+      pinnedTotal += want;
+      pinned = true;
+    }
+  }
+  if (pinned && pinnedTotal >= railPx - EPS) {
+    pins.fill(null);
+    pinned = false;
+  }
+  if (pinned) {
+    // The basis is SNAPSHOT before anything moves: spreading the freed width in
+    // proportion to widths that are themselves being rewritten in the same loop
+    // gives the first unpinned segment more than its time is worth.
+    const basis = px.slice();
+    let freed = 0;
+    let open = 0;
+    for (let i = 0; i < n; i += 1) {
+      if (pins[i] === null) { open += basis[i]; continue; }
+      freed += basis[i] - pins[i];
+      px[i] = pins[i];
+    }
+    if (open > EPS) {
+      for (let i = 0; i < n; i += 1) {
+        if (pins[i] !== null) continue;
+        px[i] = basis[i] + freed * (basis[i] / open);
+      }
+    } else {
+      // Everything pinned: there is nobody to hand the freed width to, and a
+      // shares vector that does not sum to the rule is a rail with a hole in
+      // it. Nothing is folded rather than something drawn wrong.
+      for (let i = 0; i < n; i += 1) px[i] = basis[i];
+      pins.fill(null);
+      pinned = false;
+    }
+  }
+  /** The pinned solve, for every path below that returns before widening. */
+  const pinnedShares = () => px.map((w) => w / railPx);
+
+  // Nothing sounding (the applause), a single segment with no neighbour to
+  // compress, or nothing measured to widen for.
+  if (n < 2 || activeIndex < 0 || activeIndex >= n) return pinned ? pinnedShares() : shares;
+  if (!Number.isFinite(desiredPx)) return pinned ? pinnedShares() : shares;
+
   const extra = desiredPx - px[activeIndex];
   // The active segment is never made NARROWER than its duration earns it. A
   // short name in a long segment keeps the long segment's width; the
   // accordion only ever opens.
-  if (!(extra > EPS)) return shares;
+  if (!(extra > EPS)) return pinned ? pinnedShares() : shares;
 
   const floor = Math.max(0, floorPx);
   const donors = [];
   let available = 0;
   for (let i = 0; i < n; i += 1) {
     if (i === activeIndex) continue;
+    // A FOLD IS NEVER A DONOR. Its width is its label's width; compressing it
+    // below that would ellipsize the one word that says what was hidden.
+    if (pins[i] !== null) continue;
     const slack = px[i] - floor;
     if (slack > EPS) { donors.push(i); available += slack; }
   }
-  if (!(available > EPS)) return shares;
+  if (!(available > EPS)) return pinned ? pinnedShares() : shares;
 
   const take = Math.min(extra, available);
   const out = px.slice();
