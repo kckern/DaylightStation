@@ -450,6 +450,9 @@ public class ControlServer extends NanoWSD {
             o.put("preset", currentPresetId == null ? JSONObject.NULL : currentPresetId);
             o.put("cpu", engine != null ? engine.cpuLoad() : -1);
             o.put("xruns", engine != null ? engine.xruns() : -1);
+            AudioRouteGuard guard = service.getAudioGuard();
+            o.put("speakerOk", guard != null && guard.routeOk());
+            o.put("speakerReason", guard != null ? guard.reason() : "no_guard");
             broadcast(o.toString());
         } catch (JSONException e) {
             Log.w(TAG, "status build failed", e);
