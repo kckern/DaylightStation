@@ -42,6 +42,25 @@ export class IProgramLauncher {
   }
 
   /**
+   * OPTIONAL. The DoNow surface id this program dispatches to — `'portal'`
+   * for a Portal-hosted program, `'garage-fitness'` for one that sends a
+   * child out of the room, `null` when the launcher does not say.
+   *
+   * STRUCTURAL, NOT WORDING. `locationHint` above is display copy and must
+   * never be routed on; this is the field a caller may branch on. The
+   * self-service panel (`RunSelfServiceAction`) is the caller that needs it:
+   * the school-room panel IS the Portal, so a `'portal'` program genuinely
+   * opens in place and can be mounted client-side, while any other surface
+   * must go through `launch()` — telling a child "opening it here on the
+   * screen" for a garage program is a dead end wearing the words of a
+   * success. `null` degrades to `launch()`, which is always truthful.
+   * @returns {string|null|undefined}
+   */
+  get surface() {
+    return null;
+  }
+
+  /**
    * Today's status for one learner. Must not throw: agenda compilation calls
    * every launcher, and one failing program must not blank the agenda for the
    * rest.
