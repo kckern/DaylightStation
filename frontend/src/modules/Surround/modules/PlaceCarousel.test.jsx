@@ -714,7 +714,9 @@ describe('PlaceCarousel — the era slide', () => {
       data: { contentId: 'x', piece: WITH_PERIOD.piece, composer: null },
     });
     await settle();
-    expect(view.caption()).toHaveTextContent('1803-1804');
+    // In the house dash — a range of years, not a compound word, the same call
+    // `datelineFor` makes six inches up the plate.
+    expect(view.caption()).toHaveTextContent('1803–1804');
     expect(view.caption().textContent).not.toContain('Classical');
     // Same register as the country and the city labels — one voice.
     expect(view.caption().className).toContain('surround-place-carousel__caption--label');
@@ -765,5 +767,105 @@ describe('PlaceCarousel — smart quotes at the render seam (design wave 7)', ()
     });
     expect(view.caption().textContent).toBe('Venice — the Republic’s own city');
     expect(view.caption().textContent).not.toContain("'");
+  });
+});
+
+/**
+ * DESIGN WAVE 11 — A CAPTION THAT SAYS SOMETHING THE PLATE CANNOT.
+ *
+ * Rendered on the office screen, all three of the carousel's non-photo plates
+ * were captioned with their own picture: FRANCE under a map with FRANCE
+ * lettered across the lit shape, PARIS under a star already labelled PARIS,
+ * "1829-1839" under a dial with a brass 1839 hung on it. The caption is the
+ * first line of the slide a viewer reads, and it was spent restating.
+ *
+ * The corpus was already carrying the answers — `nationality`, `birthplace` and
+ * `born` on all 354 composer files, and an authored `map.caption` on 349 of
+ * them that only a city PHOTOGRAPH could show, and photographs exist for seven.
+ * See `../placeCaption.js` for the derivations; these are the wiring.
+ */
+describe('PlaceCarousel — what the captions say (design wave 11)', () => {
+  // The real Vivaldi row, biography and all: born in the city he worked in, and
+  // an authored sentence about it.
+  const VIVALDI = {
+    ...DATA.composer,
+    city_image: undefined,        // the common case — 7 of 354 have one
+    born: 1678,
+    died: 1741,
+    birthplace: 'Venice',
+    nationality: 'Italian',
+    map: {
+      ...DATA.composer.map,
+      caption: 'Venice — born here, and wrote for its orphanage orchestra for most of his life',
+    },
+  };
+  const withPiece = (composer, piece) => ({ ...DATA, composer, piece });
+
+  const stepTo = async (kind, data) => {
+    vi.useFakeTimers();
+    const flush = async () => {
+      for (let i = 0; i < 6; i += 1) await act(async () => { await Promise.resolve(); });
+    };
+    const view = renderCarousel({ data });
+    await flush();
+    for (let i = 0; i < 5 && view.kind() !== kind; i += 1) {
+      act(() => { vi.advanceTimersByTime(PLACE_SLIDE_MS); });
+      act(() => { vi.advanceTimersByTime(DISSOLVE_COMMIT_MS); });
+      await flush();
+    }
+    vi.useRealTimers();
+    expect(view.kind()).toBe(kind);
+    return view;
+  };
+
+  it('ties the card’s bare birthplace into the country the plate has lit', async () => {
+    const view = await stepTo('map', withComposer(VIVALDI));
+    // NOT "Italy" again. The card prints "Venice" with nothing to locate it by;
+    // this is the line that puts it inside the shape.
+    expect(view.caption().textContent).toBe('Born in Venice, Italy.');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--sentence');
+  });
+
+  it('names the move for a composer who left, which nothing else in the frame does', async () => {
+    // Handel, exactly as the corpus authors him: German-British, Halle, London.
+    const handel = {
+      ...VIVALDI,
+      name: 'George Frideric Handel',
+      born: 1685,
+      birthplace: 'Halle',
+      nationality: 'German-British',
+      map: { country: 'United Kingdom', city: 'London', lat: 51.51, lon: -0.13 },
+    };
+    const view = await stepTo('map', withComposer(handel));
+    expect(view.caption().textContent)
+      .toBe('Born in Halle, Germany; worked in the United Kingdom.');
+  });
+
+  it('gives the city plate the authored sentence instead of the star’s own name', async () => {
+    const view = await stepTo('city-map', withComposer(VIVALDI));
+    expect(view.caption().textContent)
+      .toBe('Venice — born here, and wrote for its orphanage orchestra for most of his life');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--sentence');
+  });
+
+  it('leaves the sentence to the photograph where there is one, so it is never shown twice', async () => {
+    // The seven-composer path: the photo keeps the line and the city map goes
+    // back to the bare name rather than printing it again twelve seconds later.
+    const view = await stepTo('city-map', withComposer({ ...VIVALDI, city_image: 'vivaldi/venice.jpg' }));
+    expect(view.caption().textContent).toBe('Venice');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--label');
+  });
+
+  it('locates the work in the composer’s life, which a dial of centuries cannot', async () => {
+    const piece = { composed: '1723-1725', year: 1725, period: 'Baroque', city: 'Venice' };
+    const view = await stepTo('era', withPiece(VIVALDI, piece));
+    expect(view.caption().textContent).toBe('Composed 1723–1725, aged 45 to 47.');
+    expect(view.caption().className).toContain('surround-place-carousel__caption--sentence');
+  });
+
+  it('leads with where a work was written when the maps have just shown elsewhere', async () => {
+    const piece = { composed: '1725', year: 1725, period: 'Baroque', city: 'Mantua' };
+    const view = await stepTo('era', withPiece(VIVALDI, piece));
+    expect(view.caption().textContent).toBe('Written at Mantua — 1725, aged 47.');
   });
 });
