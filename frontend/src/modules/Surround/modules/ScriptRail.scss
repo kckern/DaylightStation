@@ -52,15 +52,17 @@
  * show that rather than caption two blocks PART and SCENE and leave the viewer
  * to infer it.
  *
- * THE RULE BELONGS TO WHAT IT CLOSES. It sits nearer the contents above it than
- * the billing beneath, so it reads as the end of a block rather than as the top
- * edge of a box drawn around the billing.
+ * IT IS A FOOTER NOW. The words come first on this rail — see `ScriptRail.jsx` —
+ * so the contents sit under them, over one rule, which is where a contents page
+ * belongs when the page it indexes is already in front of you. The rule sits
+ * nearer the contents than the verse, so it reads as opening this block rather
+ * than as closing the words.
  */
 .surround-script-rail__programme {
   flex: 0 0 auto;
-  margin: 0 0 1.1rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+  margin: 1.1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
 }
 
 /* A nested level is set in from the title it belongs to, and given a hairline
@@ -173,13 +175,14 @@
  * edge and the billing had been abandoning it, which is why the top third of
  * the column had no spine.
  *
- * AND UNDER ONE RULE, NOT BETWEEN TWO. Identical hairlines above and below a
- * block make a table row, not a header. The rule above closes the contents;
- * beneath the billing there is SPACE, which is what a header stands on.
+ * AND NO RULE AT ALL. Identical hairlines above and below a block make a table
+ * row, not a header; at the head of the rail the billing needs neither, because
+ * the top edge is above it and SPACE is beneath it, and space is what a header
+ * stands on.
  */
 .surround-script-rail__billing {
   flex: 0 0 auto;
-  margin: 0 0 1.6rem;
+  margin: 0 0 1.5rem;
 }
 
 /**
@@ -227,36 +230,40 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * CENTERED, and that is not up for negotiation: every hymnal, libretto and
- * poetry anthology sets verse of unequal line length on a centre axis, and it
- * is what makes this block read as sung rather than as a paragraph. What was
- * broken was never the centering — it was centering being asked to absorb
- * WRAPPED lines, which produces a symmetric orphan indistinguishable from an
- * authored one. The ladder is bound by width now (`ScriptRail.jsx`), so the
- * centre axis only ever has real lines on it.
+ * FLUSH LEFT, AND AT THE TOP OF ITS SLOT.
  *
- * IT SITS ABOVE THE GEOMETRIC CENTRE. Dense ink stands above it and a bright
- * plate below, so a block at the true middle reads as sunk; padding at the foot
- * puts it at the optical one. This matters most for a TWO-LINE verse, which is
- * otherwise a small island adrift in the middle of a tall column.
+ * The verse was centred, and the argument for it was the printed hymnal: verse
+ * of unequal line length set on a centre axis reads as sung rather than as a
+ * paragraph. THE OWNER OVERRULED IT AND WAS RIGHT ON THIS RAIL, because a
+ * centre axis only pays for itself when the block is the page. Here it is one
+ * column among four things — a billing above it flush left, a contents list
+ * below it flush left — and a centred block in that company has no edge in
+ * common with anything, which is what made the rail look like four unrelated
+ * objects rather than one page.
+ *
+ * WHAT CENTRING WAS DOING FOR THE SHAPE, THE INDENT NOW DOES — see
+ * `__line--opens`. A stanza opens flush and runs indented, which is the printed-
+ * verse setting and gives the block a profile without giving up the edge.
  *
  * `min-height: 0` is load-bearing in a flex column — without it this box refuses
- * to shrink below its content and pushes the plate off the rail.
+ * to shrink below its content and pushes everything under it off the rail.
  */
 .surround-script-rail__text {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding-bottom: 6%;
+  /* The words hang directly under their own billing rather than floating in the
+     middle of the column. What is left over falls between the verse and the
+     contents, which is where a page puts its slack. */
+  justify-content: flex-start;
   /* Hidden, NOT scrollable. Overflow is resolved by fitting then paging (see
      ScriptRail.jsx); a scrollbar is useless on a television read from across
      a room with no pointer, and a clipped last line would break the law the
      paging exists to keep. */
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  text-align: center;
+  text-align: left;
   /* The ladder sets the size inline; this is the pre-measurement size, and it
      is the CEILING rather than a small default so the first painted frame is
      never a jump upward. */
@@ -267,31 +274,31 @@
 .surround-script-rail__text--hidden { opacity: 0; }
 
 /**
- * THE MEASURE LOST. A verse that still wraps at the type floor flips the whole
- * block to flush left with a hanging indent — the printed-poetry convention for
- * a column too narrow for the poet, where every continuation is unmistakably a
- * continuation. ALL OR NOTHING: a block with some lines centered and one hanging
- * reads as a bug, so the class is toggled on the box and never on a line.
+ * A LINE, AND WHAT HAPPENS TO IT WHEN IT RUNS LONG.
+ *
+ * The turn-over is UNCONDITIONAL now. It used to be a mode the fit effect
+ * switched on when it had given up; but a hanging indent is simply how verse is
+ * set, and applying it always means a continuation is unmistakably a
+ * continuation without the stylesheet having to be told one happened.
  */
-.surround-script-rail__text--hanging {
-  text-align: left;
-}
-
-.surround-script-rail__text--hanging .surround-script-rail__line {
-  padding-left: 1.5em;
-  text-indent: -1.5em;
-}
-
 .surround-script-rail__line {
-  margin: 0;
+  /* THE STANZA'S BODY. Every line but the one that opens a stanza steps in —
+     the shape a centred block used to get for free. */
+  margin: 0 0 0 1.15em;
+  /* THE TURN-OVER, a further step in from wherever the line itself starts. */
+  padding-left: 1.4em;
+  text-indent: -1.4em;
   line-height: 1.34;
   color: var(--ink, #e9dfc8);
   overflow-wrap: break-word;
 }
 
-/* A blank line in the corpus is a stanza break. It is rendered as SPACE rather
-   than as an empty paragraph so it cannot inherit a line's leading and open a
-   gap wider than the stanza break the librettist wrote. */
+/* The first line of a stanza — and of a page, which is a stanza the paging
+   happened to start — sits on the rail's own left edge. */
+.surround-script-rail__line--opens {
+  margin-left: 0;
+}
+
 .surround-script-rail__gap { height: 0.7em; }
 
 /* -------------------------------------------------------------------------- */

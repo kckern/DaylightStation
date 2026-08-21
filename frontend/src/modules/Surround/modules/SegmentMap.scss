@@ -462,9 +462,17 @@
      label from being clipped by a constraint the row imposes and the ruler must
      not. What is measured is what the rail paints, including the padding — that
      is the whole width a fold is sized by. */
-  .surround-segment-map__group,
-  .surround-segment-map__fold-count {
+  .surround-segment-map__group {
     display: inline-block;
+    width: max-content;
+    max-width: none;
+    flex: none;
+  }
+
+  /* THE BADGE KEEPS ITS OWN DISPLAY. It is a flex CONTAINER now, not a flex
+     item — the two numbers and the rule between them are laid out by it — so
+     blockifying it here would measure a box the rail never paints. */
+  .surround-segment-map__fold-count {
     width: max-content;
     max-width: none;
     flex: none;
@@ -646,6 +654,13 @@
    where the enclosure is a hairline and a viewer who never sees the two side by
    side. */
 .surround-segment-map__fold-count {
+  /* ONE LINE, ALWAYS. The pair inside is two elements with a rule between them;
+     nothing here may ever be allowed to break it across two. */
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.34em;
+  white-space: nowrap;
   font-family: var(--surround-annotation, "Roboto Condensed", system-ui, sans-serif);
   font-size: 0.74em;
   line-height: 1.15;
@@ -678,7 +693,21 @@
   opacity: 0.95;
 }
 
+/**
+ * THE SCENE COUNT, behind a DRAWN DIVIDER.
+ *
+ * A slash was a character in the type stream: it took layout, it could be
+ * broken at, and inside the grid chip it was the thing that ended up alone on
+ * the second line. A rule cannot break and cannot wrap. It is `currentColor`
+ * so it dims with the mark through every state the fold wears (future, elapsed,
+ * chipped) rather than needing a copy of each.
+ *
+ * The `padding-left` matches the flex `gap` on the pill, so the divider sits at
+ * the optical centre of the pair rather than tight against the second number.
+ */
 .surround-segment-map__fold-scenes {
+  padding-left: 0.34em;
+  border-left: 1px solid currentColor;
   font-weight: 400;
   opacity: 0.62;
 }
@@ -994,11 +1023,40 @@
 /* THE FOLD'S PILL. The heading row already names the Part; the hatched marker
    needs only to say HOW MANY numbers it stands in for. A count pill, centred
    in the segment, at the chip's own size. */
+/**
+ * THE FOLD'S BADGE — a PILL holding two numbers, not a stack holding two rows.
+ *
+ * It was `display: grid; place-items: center` with a bare count, a slash and a
+ * scene-count span inside it. A grid auto-places each child in its OWN ROW, so
+ * the band painted "23" over "/17": two lines of numerals in a mark that is
+ * supposed to be one glyph-sized token. `inline-flex` puts them on one line
+ * where they belong, and the enclosure is what makes the pair read as a single
+ * mark rather than as two marks that happen to be adjacent.
+ *
+ * THE ENCLOSURE IS THE `__fold-count` BOX'S, deliberately. That badge (design
+ * wave 10) already argued the case — a bare figure on hatch is a figure nobody
+ * reads as a badge, the border is the ink it is set in at a weight that carries
+ * across the room, and the ground KNOCKS A HOLE IN THE HATCH rather than
+ * floating on it. The chip-mode fold is the same statement at a smaller size,
+ * so it wears the same thing rather than a second design for one.
+ */
 .surround-segment-map__chip--fold {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.34em;
   min-width: 0;
-  font-variant-numeric: tabular-nums;
+  padding: 0.08em 0.5em 0.14em;
+  border: 1px solid rgba(233, 223, 200, 0.42);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  font-variant-numeric: tabular-nums lining-nums;
   font-style: normal;
   opacity: 0.72;
+}
+
+/* The count of movements the fold stands for — the number that was always
+   there, now an element so the divider has something to sit against. */
+.surround-segment-map__fold-segments {
+  font-variant-numeric: inherit;
 }

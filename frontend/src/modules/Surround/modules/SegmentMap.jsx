@@ -749,6 +749,17 @@ export default function SegmentMap({
     // its own output, which is the one thing this probe exists to prevent.
     const labelProbe = probe.querySelector('.surround-segment-map__group');
     const pillProbe = probe.querySelector('.surround-segment-map__fold-count');
+    // The most scenes any one Part of this work holds — the second number the
+    // badge can ever set. Same pre-collapse source `foldSceneCounts` reads.
+    const widestSceneCount = (nested && groupLevels.length > 1)
+      ? groupLevels[0].reduce((max, part) => {
+        let n = 0;
+        for (const scene of groupLevels[1]) {
+          if (scene.from >= part.from && scene.from < part.from + part.count) n += 1;
+        }
+        return Math.max(max, n);
+      }, 0)
+      : 0;
     const labels = {};
     let pillPx = 0;
     let foldMinPx = 0;
@@ -766,9 +777,27 @@ export default function SegmentMap({
       });
       labelProbe.textContent = '';
       const widest = drawnPartGroups.reduce((max, run) => Math.max(max, run.count), 0);
-      pillProbe.textContent = String(widest || 0);
+      // THE BADGE IS MEASURED AS THE RAIL PAINTS IT — BOTH numbers and the rule
+      // between them. The probe used to set only the segment count, so every
+      // fold on a nested work was sized for a badge narrower than its own, and
+      // the pair had to go somewhere: inside the grid chip it went to a second
+      // line. The scene count is read off `groupLevels`, which is pre-collapse
+      // and therefore a constant of the PIECE — measuring the folds that are
+      // folded right now would make the width a function of the playhead, which
+      // is the feedback loop this whole probe exists to prevent.
+      pillProbe.innerHTML = '';
+      const segs = document.createElement('span');
+      segs.className = 'surround-segment-map__fold-segments';
+      segs.textContent = String(widest || 0);
+      pillProbe.appendChild(segs);
+      if (widestSceneCount > 0) {
+        const scenes = document.createElement('span');
+        scenes.className = 'surround-segment-map__fold-scenes';
+        scenes.textContent = String(widestSceneCount);
+        pillProbe.appendChild(scenes);
+      }
       pillPx = pillProbe.getBoundingClientRect().width;
-      pillProbe.textContent = '';
+      pillProbe.innerHTML = '';
       // The fold needs enough width for whichever is wider: its Part label
       // or its badge pill. This is the measured minimum — no fold may be
       // narrower than this, and no fold needs to be wider.
@@ -799,7 +828,7 @@ export default function SegmentMap({
     }
 
     setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, sceneTiers });
-  }, [named, segments, drawnPartGroups, drawnSceneGroups]);
+  }, [named, segments, drawnPartGroups, drawnSceneGroups, nested, groupLevels]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
 
@@ -1447,10 +1476,10 @@ export default function SegmentMap({
                     className="surround-segment-map__fold-count"
                     data-testid="surround-fold-count"
                   >
-                    {fold.count}
+                    <span className="surround-segment-map__fold-segments">{fold.count}</span>
                     {foldSceneCounts.get(fold.index) > 0 && (
                       <span className="surround-segment-map__fold-scenes">
-                        /{foldSceneCounts.get(fold.index)}
+                        {foldSceneCounts.get(fold.index)}
                       </span>
                     )}
                   </span>
@@ -1526,7 +1555,15 @@ export default function SegmentMap({
                   fold is wider than its neighbours. A numeral here was the old
                   bug in a new place: a chip reading "1" over twenty-one
                   numbers. The count rides alongside as a multiplier, which is
-                  the one thing the title alone cannot say. */}
+                  the one thing the title alone cannot say.
+
+                  TWO NUMBERS, ONE PILL, A DRAWN DIVIDER. The pair used to be a
+                  count, a slash glyph and a scene count inside a `display: grid`
+                  chip — and a grid puts each of its children in its OWN ROW, so
+                  what the band actually painted was "23" stacked over "/17" in a
+                  fold two lines tall. Each number is its own element now, in an
+                  inline row, separated by a rule the stylesheet draws rather
+                  than by a character that has to be laid out. */}
               {named && chips && state !== 'active' && seg.collapsed && (() => {
                 const sc = foldSceneCounts.get(drawnRail[i]?.segment?.ancestors?.[0]?.index);
                 return (
@@ -1535,8 +1572,8 @@ export default function SegmentMap({
                     data-testid="surround-segment-fold"
                     aria-hidden="true"
                   >
-                    {seg.count > 0 ? seg.count : ''}
-                    {sc > 0 && <span className="surround-segment-map__fold-scenes">/{sc}</span>}
+                    <span className="surround-segment-map__fold-segments">{seg.count > 0 ? seg.count : ''}</span>
+                    {sc > 0 && <span className="surround-segment-map__fold-scenes">{sc}</span>}
                   </span>
                 );
               })()}

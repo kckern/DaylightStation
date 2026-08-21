@@ -2399,7 +2399,16 @@ describe('SegmentMap — the fold', () => {
       // instead of "1/…" or a blank scene count is what this file's
       // coordinate-space fix has to deliver for a real ancestors rail, not
       // just for the legacy `hierarchy.part` shape `MESSIAH` exercises.
-      expect(chips.map((c) => c.textContent)).toEqual(['4/2', '4/2']);
+      // TWO ELEMENTS AND A DRAWN RULE, not one string with a slash in it. The
+      // slash was a character in the type stream, and inside the old
+      // `display: grid` chip it was the thing that ended up alone on a second
+      // line — the band painted "4" over "/2". Asserting the numbers
+      // separately is also what keeps this test honest about the divider being
+      // CSS: a concatenated `textContent` would read '42' and say nothing.
+      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-segments').textContent))
+        .toEqual(['4', '4']);
+      expect(chips.map((c) => c.querySelector('.surround-segment-map__fold-scenes').textContent))
+        .toEqual(['2', '2']);
     });
   });
 
