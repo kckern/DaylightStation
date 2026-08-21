@@ -80,6 +80,7 @@ const nestedGroupSegments = (work) => {
       const depth = ancestors.length;
       const ancestor = {
         index: indexAtDepth[depth] ?? 0, title,
+        ...(typeof group.mini === 'string' && group.mini.trim() ? { mini: group.mini.trim() } : {}),
         ...(typeof group.kind === 'string' && group.kind.trim() ? { kind: group.kind.trim() } : {}),
         ...(textList(group.facts).length ? { facts: textList(group.facts) } : {}),
       };

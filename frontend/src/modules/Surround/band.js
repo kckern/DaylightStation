@@ -309,7 +309,8 @@ export function placedRailSegments(segments) {
  * @returns {number[]} shares summing to 1.
  */
 export function densityShares({
-  segments, needs, chromePx, railPx, activeIndex, chipPx = SEGMENT_CHIP_FLOOR_PX,
+  segments, needs, chromePx, railPx, activeIndex,
+  chipPx = SEGMENT_CHIP_FLOOR_PX, foldMinPx = 0,
 }) {
   const list = Array.isArray(segments) ? segments : [];
   const n = list.length;
@@ -321,17 +322,16 @@ export function densityShares({
   };
   const rail = Number(railPx);
 
-  // Unmeasured: nothing to be text-driven ABOUT yet, so an even rail — which is
-  // also the honest first paint, since every segment is about to be measured.
   if (!Number.isFinite(rail) || !(rail > 0)) return list.map(() => 1 / n);
 
   const isTitled = (i) => i === activeIndex;
   const isFolded = (i) => !!list[i]?.collapsed;
-  const FOLD_BADGE_PX = 48;
+  const foldPx = Number(foldMinPx) || 0;
+  const chip = Math.max(1, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX);
   const claims = list.map((_, i) => (isTitled(i)
     ? idealWidth({ chromePx, needPx: need(i) })
-    : isFolded(i) ? Math.max(FOLD_BADGE_PX, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)
-      : Math.max(1, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)));
+    : isFolded(i) ? Math.max(foldPx, chip)
+      : chip));
 
   const total = claims.reduce((a, b) => a + b, 0);
   if (!(total > 0)) return list.map(() => 1 / n);
@@ -563,6 +563,7 @@ export function railGroups(placed, selectGroup = (segment) => segment?.group ?? 
     runs.push({
       title: index === null ? null
         : (typeof group.title === 'string' && group.title.trim() ? group.title.trim() : null),
+      mini: typeof group?.mini === 'string' && group.mini.trim() ? group.mini.trim() : null,
       index,
       from: last ? last.from + last.count : 0,
       count: 1,
