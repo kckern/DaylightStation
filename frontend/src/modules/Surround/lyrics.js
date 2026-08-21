@@ -110,10 +110,13 @@ export function paginate(lineHeights, boxHeight) {
  * PROMOTION, NOT AN ORPHAN. A number that authors only one of the pair puts it
  * in the HEADER. A subheader alone under nothing is a caption for an absence.
  *
- * AND AN INSTRUMENTAL NUMBER IS STILL NAMED. The Pifa keeps the rail up with no
- * `heading:` and no `text:`; with the pair unauthored, `label:` is the only name
- * it has, and a rail that names nothing is worse than a rail that repeats the
- * word "Sinfonia" the viewer cannot see anywhere else.
+ * AND A NUMBER THAT AUTHORS NEITHER IS STILL NAMED. Most of Messiah's texted
+ * numbers carry no `heading:` and no `subheading:` at all; with the pair
+ * unauthored, `label:` (then `name:`) is the only name the number has, and a
+ * rail that heads a verse with nothing is worse than one that repeats a name.
+ * This branch used to be justified by the Pifa, which no longer reaches it:
+ * an instrumental is dormant now, so `billingFor` never sees a wordless
+ * segment.
  *
  * @returns {{heading: string, subheading: string}}
  */
@@ -136,7 +139,8 @@ function billingFor(segment) {
  * @param {number}   args.position  Seconds into THAT item.
  * @returns {{active: boolean, text: string, heading: string, subheading: string, index: number}}
  *   `active` is whether the frame wears the lyric layout; `text` is the sounding
- *   segment's words, EMPTY on an instrumental number while `active` stays true;
+ *   segment's words, EMPTY only while the rail HOLDS across a short gap with
+ *   nothing sounding — an instrumental number goes dormant instead;
  *   `heading` and `subheading` are the corpus fields of those names — see
  *   `billingFor`, and note that `heading` is NOT the number's label.
  */
@@ -183,7 +187,17 @@ export function lyricStateAt({ segments, contentId, position }) {
     };
   }
 
-  // Nothing is sounding — a gap between numbers, a Part break, or the tail.
-  // The lyric rail is dormant: no text to show means the programme rail.
+  // Nothing is sounding. This is a real gap — between numbers, a Part break, or
+  // the tail — and only its LENGTH decides.
+  //
+  // THE TWO RULES ARE ABOUT DIFFERENT LENGTHS OF SILENCE, not in tension. An
+  // instrumental has ALREADY returned dormant above, so nothing reaching here
+  // is a ninety-second Pifa the programme rail should be narrating; it is the
+  // few seconds between two numbers. The rails TRAVEL, and sliding them out and
+  // back across four seconds is precisely the flapping the grace window exists
+  // to prevent — the merge that deleted this branch put that flap back.
+  if (pos - lastEnd <= LYRIC_GRACE_S) {
+    return { active: true, text: '', heading: '', subheading: '', index: -1 };
+  }
   return dormant;
 }

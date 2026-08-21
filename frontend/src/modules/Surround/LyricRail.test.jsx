@@ -188,11 +188,19 @@ describe('the lyric rail', () => {
     expect(root.className).not.toContain('surround-frame--rail-left');
   });
 
-  it('stays up through an instrumental number, and prints no text box', () => {
-    draw(withLyric, RAIL, 125);
-    expect(screen.getByTestId('surround-lyric-rail')).toBeInTheDocument();
-    expect(screen.queryByTestId('surround-script-rail-text')).not.toBeInTheDocument();
-    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('Pifa');
+  /**
+   * AN INSTRUMENTAL NUMBER HANDS THE COLUMN BACK. A lyric rail holding no lyric
+   * is a mat with nothing in it, and the Pifa runs ninety seconds — long enough
+   * that the programme rail saying what is sounding is the better screen.
+   *
+   * TO GO RED: keep the frame in its lyric layout for a sounding segment that
+   * authored no text, as every version before 574abfd69 did.
+   */
+  it('hands the column back to the programme on an instrumental number', () => {
+    const { container } = draw(withLyric, RAIL, 125);
+    expect(container.querySelector('.surround-frame').className)
+      .not.toContain('surround-frame--lyric');
+    expect(screen.getByTestId('surround-rail')).not.toHaveAttribute('aria-hidden');
   });
 
   it('hands the screen back to the programme rail on a long gap', () => {
@@ -202,8 +210,20 @@ describe('the lyric rail', () => {
     expect(screen.getByTestId('surround-lyric-rail')).toHaveAttribute('aria-hidden', 'true');
   });
 
+  /**
+   * ...AND A SHORT SILENCE DOES NOT, which is the other half of the same rule.
+   * The rails TRAVEL: sliding them out and back across the seconds between two
+   * numbers is exactly the flap the grace window exists to prevent, and only
+   * the LENGTH of the silence tells the two cases apart.
+   *
+   * 170 s is ten seconds past the last number's end — nothing sounding, inside
+   * the window. 45 s used to stand here and never tested this at all: it is
+   * inside the Pifa, so it passed on the instrumental rule above instead.
+   *
+   * TO GO RED: delete the grace branch from `lyricStateAt`, as the merge did.
+   */
   it('holds through a gap shorter than the grace window', () => {
-    const { container } = draw(withLyric, RAIL, 45);
+    const { container } = draw(withLyric, RAIL, 170);
     expect(container.querySelector('.surround-frame').className).toContain('surround-frame--lyric');
   });
 
