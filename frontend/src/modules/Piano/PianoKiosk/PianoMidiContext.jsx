@@ -74,10 +74,11 @@ export function PianoMidiProvider({ children, preferredInputName }) {
     ...midi,
     bridgeLink: bridge.link,
     bridgeUnavailable: bridge.unavailable,
+    speakerConnected: bridge.speakerConnected,
     connected,
     status,
     midiHealth,
-  }), [midi, bridge.link, bridge.unavailable, connected, status, midiHealth]);
+  }), [midi, bridge.link, bridge.unavailable, bridge.speakerConnected, connected, status, midiHealth]);
   return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
 }
 
