@@ -26,7 +26,7 @@ import ComposerCard from './modules/ComposerCard.jsx';
 import CountryMapModule from './modules/CountryMapModule.jsx';
 import PlaceCarousel from './modules/PlaceCarousel.jsx';
 import WorkPlacard from './modules/WorkPlacard.jsx';
-import LibrettoRail from './modules/LibrettoRail.jsx';
+import ScriptRail from './modules/ScriptRail.jsx';
 
 /**
  * Every built-in, as `[name, Component, meta]`. The single source the
@@ -45,7 +45,7 @@ const BUILTIN_MODULES = [
   // exactly one of the two, and declaring it as a right-hand module would
   // make every definition that already authors a right rail look like it
   // wanted both.
-  ['libretto', LibrettoRail, { regions: ['lyric'] }],
+  ['script-rail', ScriptRail, { regions: ['lyric'] }],
 ];
 
 /**

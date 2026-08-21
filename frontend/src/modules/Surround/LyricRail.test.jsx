@@ -21,7 +21,7 @@ const seg = (over) => ({
 const withLyric = {
   regions: {
     right: { module: 'composer-card', side: 'left', width: '20%' },
-    lyric: { module: 'libretto' },
+    lyric: { module: 'script-rail' },
   },
 };
 /** Today's definition: no lyric slot at all. */
@@ -65,6 +65,23 @@ describe('the lyric rail', () => {
   it('heads the text with the segment numeral and name', () => {
     draw(withLyric, RAIL, 20);
     expect(screen.getByTestId('surround-libretto-heading')).toHaveTextContent('1. Comfort ye');
+  });
+
+  it('shows the active programme branch above the current lyric', () => {
+    const grouped = RAIL.map((segment, index) => ({
+      ...segment,
+      ancestors: [
+        { index: index === 2 ? 1 : 0, kind: 'part', title: index === 2 ? 'Part Two' : 'Part One' },
+        { index, kind: 'scene', title: ['Prophecy', 'Shepherds', 'Resurrection'][index] },
+      ],
+    }));
+    draw(withLyric, grouped, 20);
+    const programme = screen.getByLabelText('Current place in the work');
+    expect(programme).toHaveTextContent('Part One');
+    expect(programme).toHaveTextContent('Part Two');
+    expect(programme).toHaveTextContent('Prophecy');
+    expect(programme).toHaveTextContent('Shepherds');
+    expect([...programme.querySelectorAll('[aria-current="step"]')].at(-1)).toHaveTextContent('Prophecy');
   });
 
   // THE CONTRACT CHANGED WITH THE SLIDE, deliberately. A frame that can show
