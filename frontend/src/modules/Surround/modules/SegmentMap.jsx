@@ -516,15 +516,59 @@ export default function SegmentMap({
   //
   // It is the outermost visible authored level that folds. A recursive group
   // tree therefore folds by Act/Part/Book (or whatever its first level is).
+  //
+  // TWO DIFFERENT NUMBERS SHARE THE NAME "COUNT" HERE, AND THEY DIVERGE ON A
+  // NESTED RAIL. `collapseInactiveGroups` has already merged every inactive
+  // Part's segments into exactly ONE `drawnRail` entry (band.js:484) — so
+  // `count`, what the BADGE shows and what decides whether folding is even
+  // worth it, is the TRUE pre-collapse segment count carried on that merged
+  // entry; `slots`, what `groupBasis` and the accordion's own width math index
+  // `drawnRail`/`segments`/`shares` with, is how many ARRAY POSITIONS the run
+  // actually occupies — always 1 for an already-collapsed Part, never more.
+  // Feeding the true count where an array bound is expected walks off the
+  // fold's own position into whichever segments happen to sit after it.
   const drawnPartGroups = useMemo(() => {
     if (!composed || groupLevels.length === 0) return EMPTY_GROUPS;
-    if (nested) return railGroups(drawnRail, (segment) => segment?.ancestors?.[0] ?? null);
-    return groupLevels[0];
+    if (!nested) return groupLevels[0];
+    const runs = [];
+    drawnRail.forEach(({ segment }, i) => {
+      const group = segment?.ancestors?.[0] ?? null;
+      const raw = Number(group?.index);
+      const index = group && Number.isFinite(raw) ? raw : null;
+      const title = index === null ? null
+        : (typeof group.title === 'string' && group.title.trim() ? group.title.trim() : null);
+      const segCount = Number(segment?.count) || 1;
+      const duration = Number(segment?.duration) || 0;
+      const last = runs[runs.length - 1];
+      if (last && last.index === index) {
+        last.count += segCount;
+        last.slots += 1;
+        last.span += duration;
+        return;
+      }
+      runs.push({
+        title, index, from: i, count: segCount, slots: 1, span: duration,
+      });
+    });
+    return runs;
   }, [composed, nested, drawnRail, groupLevels]);
-  const folds = useMemo(
-    () => railFolds({ groups: drawnPartGroups, activeIndex }),
-    [drawnPartGroups, activeIndex],
-  );
+  // WHICH RUNS ARE ACTUALLY FOLDED. On a nested rail the question is already
+  // answered — a run whose one array position is a `collapsed` marker WAS the
+  // fold, and asking `railFolds` to rediscover that from `slots` (always 1)
+  // would immediately fail its own `count > 1` eligibility check, and worse,
+  // feeding it the TRUE count in place of `slots` would make its `activeIndex`
+  // boundary check claim positions that belong to whatever run comes after —
+  // exactly the coordinate confusion this file was already broken by once. Off
+  // a nested rail this is the ordinary accordion (`railFolds` on `slots`,
+  // stamped back onto `count` for `folded`, below).
+  const folds = useMemo(() => {
+    if (nested) {
+      return drawnPartGroups.filter((run) => run.title && run.count > 1
+        && drawnRail[run.from]?.segment?.collapsed);
+    }
+    return railFolds({ groups: drawnPartGroups, activeIndex })
+      .map((f) => ({ ...f, slots: f.count }));
+  }, [nested, drawnPartGroups, drawnRail, activeIndex]);
 
   // ---- WHICH SCENE IS SOUNDING (for the inner heading row) ------------------
   // The scene level is groupLevels[1] when there are two+ levels. The active
@@ -543,21 +587,43 @@ export default function SegmentMap({
     return null;
   }, [drawnSceneGroups, activeIndex]);
 
-  // HOW MANY SCENES EACH FOLD COVERS — derived from the full (pre-collapse)
-  // groupLevels, not from the drawn rail. The fold badge shows "segments/scenes".
+  // HOW MANY SCENES EACH FOLD COVERS. On a flat (non-nested) rail this walks
+  // the drawn rail across the fold's own slots, because every scene is still
+  // individually present there. On a NESTED rail it cannot: a fold is now one
+  // `drawnRail` position, carrying only the FIRST folded segment's ancestry —
+  // `collapseInactiveGroups` kept just that one and dropped the rest, so the
+  // scene detail for everything after it is gone from `drawnRail` by the time
+  // it gets here. It is recovered instead from the full pre-collapse
+  // `groupLevels`, which are both anchored to `placedRail`'s OWN coordinate
+  // space and so never mismatch each other — matched to this fold by its
+  // stable semantic `index`, not by any position.
   const foldSceneCounts = useMemo(() => {
     if (!folds.length || groupLevels.length < 2) return new Map();
     const counts = new Map();
+    if (nested) {
+      const fullParts = groupLevels[0];
+      const fullScenes = groupLevels[1];
+      folds.forEach((fold) => {
+        const part = fullParts.find((p) => p.index === fold.index);
+        if (!part) { counts.set(fold.index, 0); return; }
+        let n = 0;
+        for (const scene of fullScenes) {
+          if (scene.from >= part.from && scene.from < part.from + part.count) n += 1;
+        }
+        counts.set(fold.index, n);
+      });
+      return counts;
+    }
     folds.forEach((fold) => {
       const scenes = new Set();
-      for (let i = fold.from; i < fold.from + fold.count; i += 1) {
+      for (let i = fold.from; i < fold.from + fold.slots; i += 1) {
         const sceneIdx = drawnRail[i]?.segment?.ancestors?.[1]?.index;
         if (sceneIdx != null) scenes.add(sceneIdx);
       }
       counts.set(fold.index, scenes.size);
     });
     return counts;
-  }, [folds, groupLevels.length, drawnRail]);
+  }, [folds, groupLevels, nested, drawnRail]);
 
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
@@ -747,13 +813,24 @@ export default function SegmentMap({
       // A part so short that its label is wider than its music stays open: an
       // elision drawn bigger than the thing elided is a worse rail, not a
       // denser one.
+      //
+      // ON A NESTED RAIL THIS NEVER TAKES — and that is correct, not a gap.
+      // `foldedShares` has already given the run's one collapsed marker a
+      // fixed, tiny placeholder width (`FOLD_SHARE`, band.js) as its natural
+      // share; that is ALWAYS narrower than a Part label, so this box (with
+      // its hatched lane and its own badge face) never wins the comparison —
+      // the marker draws through the ordinary per-segment branch instead,
+      // where `seg.collapsed`/`seg.count` carry the same count. This pass
+      // still runs for a nested fold (harmlessly a no-op) rather than being
+      // skipped, so the one accounting — pins, blocks, hidden — never has to
+      // agree with a second, parallel decision about which rails qualify.
       let naturalPx = 0;
-      for (let i = fold.from; i < fold.from + fold.count; i += 1) {
+      for (let i = fold.from; i < fold.from + fold.slots; i += 1) {
         naturalPx += (segments[i]?.natural ?? 0) * railPx;
       }
       if (width >= naturalPx) return;
       pins[fold.from] = width;
-      for (let i = fold.from + 1; i < fold.from + fold.count; i += 1) {
+      for (let i = fold.from + 1; i < fold.from + fold.slots; i += 1) {
         pins[i] = 0;
         hidden.add(i);
       }
@@ -942,11 +1019,16 @@ export default function SegmentMap({
    */
   const groupBasis = useCallback((group) => {
     const from = Number(group?.from) || 0;
-    const count = Number(group?.count) || 0;
-    if (!(count > 0)) return 0;
+    // `slots` — the run's span in DRAWN-RAIL positions — not `count`, which on
+    // a nested rail's folded Part is the true pre-collapse segment count and
+    // would walk `shares` straight past this one-position run into whatever
+    // sits after it. A group with no `slots` (every non-nested run) has no
+    // divergence to guard against, so `count` is exactly the same number.
+    const slots = Number(group?.slots ?? group?.count) || 0;
+    if (!(slots > 0)) return 0;
     let sum = 0;
     let sawShare = false;
-    for (let i = from; i < from + count; i += 1) {
+    for (let i = from; i < from + slots; i += 1) {
       const v = Number(shares?.[i]);
       if (Number.isFinite(v)) { sum += v; sawShare = true; }
     }
