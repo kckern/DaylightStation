@@ -179,7 +179,7 @@ const RAIL_UNMEASURED = 0;
  * be written to is a bug waiting for one of them.
  */
 const UNMEASURED_RAIL = Object.freeze({
-  chromePx: 0, needs: [], labels: Object.freeze({}), pillPx: 0,
+  chromePx: 0, needs: [], shortNeeds: [], labels: Object.freeze({}), pillPx: 0,
 });
 
 export default function SegmentMap({
@@ -760,7 +760,7 @@ export default function SegmentMap({
       pillProbe.textContent = '';
     }
 
-    setMetrics({ chromePx, needs, labels, pillPx });
+    setMetrics({ chromePx, needs, shortNeeds, labels, pillPx });
   }, [named, segments, drawnPartGroups]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
