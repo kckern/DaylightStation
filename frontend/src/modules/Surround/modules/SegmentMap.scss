@@ -141,7 +141,14 @@
   flex: 0 0 var(--group-row);
   height: var(--group-row);
   display: flex;
-  align-items: flex-end;
+  /* STRETCH, NOT `flex-end`. The labels are seek targets, and an item sized to
+     its own line box gives the row a 16px-tall hit strip inside a much taller
+     band — measured at 702x16 on the office screen, which is a target you have
+     to aim at rather than one you can hit. Each label now fills the row's full
+     height across its own share of the rule, so the whole area above a run's
+     segments seeks into that run. The type still sits on the row's baseline —
+     see `__group`, which does the `flex-end` itself. */
+  align-items: stretch;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -174,6 +181,12 @@
   flex: 0 1 auto;
   min-width: 0;
   box-sizing: border-box;
+  /* The box is the whole row's height (the hit target — see `__groups`); the
+     TYPE inside it sits on the bottom edge, which is where `align-items:
+     flex-end` on the parent used to put it. The probe overrides this back to
+     `inline-block` so a ruler still measures a plain content-width box. */
+  display: flex;
+  align-items: flex-end;
   /* The same text inset the segment's own text column carries, so a heading
      starts on the left edge of the first work it names rather than a hair
      inside it. */
