@@ -138,12 +138,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
       const t = e?.detail?.seconds;
       if (!Number.isFinite(t)) return;
       const targetId = e?.detail?.contentId;
-      const crossItem = targetId && contentId && String(targetId) !== String(contentId);
-      logger.info('surround.seek', {
-        seconds: t, targetContentId: targetId ?? null,
-        currentContentId: contentId, crossItem,
-      });
-      if (crossItem) {
+      if (targetId && contentId && String(targetId) !== String(contentId)) {
         const handle = getPlayerHandle?.();
         if (handle?.seekToItem) {
           handle.seekToItem(targetId, t);

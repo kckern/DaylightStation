@@ -1504,13 +1504,14 @@ export default function SegmentMap({
             return (
               <div
                 key={`fold:${fold.index ?? 'none'}:${i}`}
-                className={`surround-segment-map__segment surround-segment-map__segment--${state} surround-segment-map__segment--fold`}
+                className={`surround-segment-map__segment surround-segment-map__segment--${state} surround-segment-map__segment--fold surround-segment-map__segment--clickable`}
                 data-testid="surround-segment-fold"
                 data-state={state}
                 data-index={i}
                 data-count={fold.count}
                 data-title={fold.title}
                 style={{ width: `${(shares[i] ?? seg.natural) * 100}%` }}
+                onClick={() => seekTo(seg.mediaStart ?? seg.start, seg.contentId)}
               >
                 {i > 0 && (
                   <span
