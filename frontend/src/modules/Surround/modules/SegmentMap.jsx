@@ -197,10 +197,13 @@ export default function SegmentMap({
 }) {
   const log = useMemo(() => surroundLogger(logger, 'segment-map'), [logger]);
   const ruleClickRef = useRef(null);
-  const seekTo = useCallback((seconds) => {
+  const seekTo = useCallback((seconds, targetContentId) => {
     if (!Number.isFinite(seconds)) return;
     const root = ruleClickRef.current ?? document.querySelector('[data-testid="surround-segment-map"]');
-    if (root) root.dispatchEvent(new CustomEvent('surround-seek', { bubbles: true, detail: { seconds } }));
+    if (!root) return;
+    const detail = { seconds };
+    if (targetContentId) detail.contentId = String(targetContentId);
+    root.dispatchEvent(new CustomEvent('surround-seek', { bubbles: true, detail }));
   }, []);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
@@ -383,7 +386,7 @@ export default function SegmentMap({
    */
   const foldsForRoom = useMemo(() => {
     if (!(railPx > 0) || placedRail.length === 0) return false;
-    return railPx / placedRail.length < SEGMENT_CHIP_FLOOR_PX * 2;
+    return railPx / placedRail.length < SEGMENT_CHIP_FLOOR_PX;
   }, [railPx, placedRail.length]);
 
   /**
@@ -444,6 +447,7 @@ export default function SegmentMap({
         n: m.collapsed ? null : (flat ? i + 1 : m.n),
         collapsed: !!m.collapsed,
         count: Number(m.count) || 0,
+        contentId: m.contentId ?? null,
         start: m.offset,
         stop: m.offset + m.duration,
         mediaStart: Number(m.start) || 0,
@@ -459,6 +463,7 @@ export default function SegmentMap({
       const stop = Math.max(start, Math.min(next, end));
       return {
         ...engrave(m),
+        contentId: m.contentId ?? null,
         start,
         stop,
         mediaStart: start,
@@ -1313,7 +1318,7 @@ export default function SegmentMap({
               className={`surround-segment-map__group surround-segment-map__group--clickable${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
               data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
-              onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
+              onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0, segments[group.from]?.contentId)}
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
               {partLabel}
@@ -1368,7 +1373,7 @@ export default function SegmentMap({
                 data-testid="surround-group-label"
                 data-span={group.count}
                 style={{ flexBasis: `${groupBasis(group) * 100}%` }}
-                onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0)}
+                onClick={() => seekTo(segments[group.from]?.mediaStart ?? segments[group.from]?.start ?? 0, segments[group.from]?.contentId)}
               >
                 {label}
               </span>
@@ -1558,7 +1563,7 @@ export default function SegmentMap({
               data-index={i}
               data-natural={seg.natural.toFixed(6)}
               style={{ width: `${(shares[i] ?? widthBasis[i] ?? seg.natural) * 100}%` }}
-              onClick={() => seekTo(seg.mediaStart ?? seg.start)}
+              onClick={() => seekTo(seg.mediaStart ?? seg.start, seg.contentId)}
             >
               {/* ONE quiet separator between segments. The double barline was
                   correct notation and too much ink at this size — it read as
