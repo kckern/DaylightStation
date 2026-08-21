@@ -797,7 +797,6 @@ export default function SegmentMap({
       labelProbe.textContent = '';
     }
 
-    if (foldMinPx > 0) log.info('surround.rail.foldMin', { foldMinPx: Math.round(foldMinPx), labels: Object.fromEntries(Object.entries(labels).map(([k,v]) => [k, Math.round(v)])), pillPx: Math.round(pillPx) });
     setMetrics({ chromePx, needs, shortNeeds, labels, pillPx, foldMinPx, sceneTiers });
   }, [named, segments, drawnPartGroups, drawnSceneGroups]);
 
@@ -981,8 +980,10 @@ export default function SegmentMap({
     // The folds, settled before anything opens — see `accordionShares`. Null on
     // a rail with nothing folded, which is every rail this module drew before
     // design wave 10 and every solve it produces is unchanged there.
-    pinnedPx: folded.pins,
-  }), [widthBasis, activeIndex, railPx, desiredPx, chips, floorPx, folded]);
+    pinnedPx: folded.pins ?? (segments.some((s) => s.collapsed) && metrics.foldMinPx > 0
+      ? segments.map((s) => (s.collapsed ? metrics.foldMinPx : null))
+      : null),
+  }), [widthBasis, activeIndex, railPx, desiredPx, chips, floorPx, folded, segments, metrics.foldMinPx]);
 
   // ---- the bond -------------------------------------------------------------
   // ONE definition of "how far through the piece" (review finding I3) — see
