@@ -456,6 +456,10 @@ const Player = forwardRef(function Player(props, ref) {
     if (pending != null) {
       pendingItemSeekRef.current = null;
       setTargetTimeSeconds(pending);
+      playbackLog('seek-to-item-applied', {
+        seekSeconds: pending,
+        sessionKey: itemSessionKey,
+      }, { level: 'info' });
     }
   }, [itemSessionKey, setTargetTimeSeconds]);
 
@@ -1232,6 +1236,11 @@ const Player = forwardRef(function Player(props, ref) {
       const jumped = rawJumpTo(targetContentId);
       if (!jumped) { pendingItemSeekRef.current = null; return; }
       setQueueHasAdvanced(true);
+      playbackLog('seek-to-item', {
+        targetContentId,
+        seekSeconds: Number.isFinite(seconds) ? seconds : null,
+        fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
+      }, { level: 'info' });
     },
   }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
 
