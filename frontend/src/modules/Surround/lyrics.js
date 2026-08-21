@@ -3,7 +3,7 @@
  *
  * One pure function, deliberately, because the answer is needed in two places
  * that must never disagree: `SurroundFrame` uses it to decide which rail the
- * layout wears, and `LibrettoRail` uses it to decide what to print. A module
+ * layout wears, and `ScriptRail` uses it to decide what to print. A module
  * that reported its own emptiness upward would make the frame's layout depend
  * on a child's render, which is the shape that produces a one-frame flash of
  * the wrong column on every segment boundary.

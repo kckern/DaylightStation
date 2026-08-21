@@ -194,7 +194,7 @@ export default function ComposerCard({
    * When the lyric rail takes the right-hand column, the programme rail slides
    * out and takes the composer's face and name with it, and a frame that stops
    * saying whose music this is has lost something it should never lose. So the
-   * `libretto` module mounts THIS component again in its corner, asking for the
+   * `script-rail` module mounts THIS component again in its corner, asking for the
    * header only: portrait, brass nameplate, birthplace. No fact zone — the
    * corner is the height of the band, and a dissolving line of prose in it
    * would compete with the verse above it for the same glance.

@@ -7,13 +7,17 @@
  * together, so anything that made this one a different material would read as
  * the frame having changed rooms rather than turned a page.
  *
+ * THE ORDER IS A PRINTED PROGRAMME'S: contents, then the number's title, then
+ * the words, then the plate. Everything above the words is `flex: 0 0 auto` and
+ * set small; the verse takes what is left, which is most of the column.
+ *
  * Every colour and face is a custom property the frame already publishes, with
  * the same literal fallback its siblings carry.
  */
 
 @use "../tokens" as *;
 
-.surround-libretto {
+.surround-script-rail {
   display: flex;
   flex-direction: column;
   /* Claim the column the region gives us. `height: 100%` is kept as the
@@ -28,7 +32,89 @@
   color: var(--ink, #e9dfc8);
 }
 
-.surround-libretto__heading {
+/**
+ * THE CONTENTS, at the top of the rail — a nested table rather than two flat
+ * lists side by side. The sounding branch is ink and OPEN, with the level
+ * beneath it printed INSIDE it and indented; its siblings stay closed in the
+ * quieter annotation colour. That indent is the whole argument for the shape:
+ * a scene is inside a part, and the rail should show that rather than caption
+ * two blocks PART and SCENE and leave the viewer to infer it.
+ */
+.surround-script-rail__programme {
+  flex: 0 0 auto;
+  margin: 0 0 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+}
+
+/* A nested level is set in from the title it belongs to, and given a hairline
+   spine so the containment survives being read from across a room. */
+.surround-script-rail__programme-level[data-depth="0"] > .surround-script-rail__programme-list { margin-left: 0; }
+
+.surround-script-rail__programme-item > .surround-script-rail__programme-level {
+  margin: 0.16rem 0 0.24rem 0.34rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.2));
+}
+
+.surround-script-rail__programme-kind {
+  display: block;
+  margin-bottom: 0.14rem;
+  font-family: var(--surround-sans, system-ui, sans-serif);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.5));
+}
+
+.surround-script-rail__programme-list {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surround-script-rail__programme-item {
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.76rem;
+  line-height: 1.16;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.52));
+}
+
+/* The bullet hangs off the TITLE and not the list item, because the item now
+   also carries the level nested inside it — a marker on the item would sit
+   beside the whole open branch instead of beside its name. */
+.surround-script-rail__programme-title {
+  display: block;
+  padding-left: 0.72rem;
+  overflow-wrap: break-word;
+}
+
+.surround-script-rail__programme-title::before {
+  content: '○';
+  display: inline-block;
+  width: 0.72rem;
+  margin-left: -0.72rem;
+}
+
+.surround-script-rail__programme-item--active {
+  color: var(--ink, #e9dfc8);
+}
+
+.surround-script-rail__programme-item--active > .surround-script-rail__programme-title {
+  font-weight: 700;
+}
+
+.surround-script-rail__programme-item--active > .surround-script-rail__programme-title::before { content: '●'; }
+
+/* A nested level's own items are never bolder than the branch that holds them,
+   so depth reads as indentation and weight reads as "this is the one sounding". */
+.surround-script-rail__programme-item .surround-script-rail__programme-item { font-size: 0.74rem; }
+
+.surround-script-rail__heading {
   flex: 0 0 auto;
   margin: 0 0 0.5rem;
   padding-bottom: 0.4rem;
@@ -46,60 +132,13 @@
   overflow-wrap: break-word;
 }
 
-/* A compact programme walk-through above the words. The active branch is ink;
-   siblings remain visible in the quieter annotation face, so the viewer knows
-   both where this number belongs and what surrounds it. */
-.surround-libretto__programme {
-  flex: 0 0 auto;
-  margin: 0 0 0.55rem;
-  padding: 0.45rem 0.55rem;
-  border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
-  background: rgba(0, 0, 0, 0.12);
-}
-
-.surround-libretto__programme-level + .surround-libretto__programme-level { margin-top: 0.4rem; }
-
-.surround-libretto__programme-kind {
-  display: block;
-  margin-bottom: 0.12rem;
-  font-family: var(--surround-sans, system-ui, sans-serif);
-  font-size: 0.58rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.6));
-}
-
-.surround-libretto__programme-list {
-  display: grid;
-  gap: 0.08rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.surround-libretto__programme-item {
-  padding-left: 0.72rem;
-  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: 0.78rem;
-  line-height: 1.15;
-  color: var(--muted-ink, rgba(233, 223, 200, 0.52));
-}
-
-.surround-libretto__programme-item::before { content: '○'; display: inline-block; width: 0.72rem; margin-left: -0.72rem; }
-
-.surround-libretto__programme-item--active {
-  font-weight: 700;
-  color: var(--ink, #e9dfc8);
-}
-
-.surround-libretto__programme-item--active::before { content: '●'; }
-
-/* The verse takes every pixel the heading and the plate leave.
+/* The verse takes every pixel the contents, the heading and the plate leave —
+   and it is now FITTED UP INTO that space rather than merely fitted into it:
+   the ladder in ScriptRail.jsx starts at the sung text's own ceiling (1.8rem,
+   `lyricCeilingPx`), so a short verse is set large and fills the column.
    `min-height: 0` is load-bearing in a flex column — without it this box
    refuses to shrink below its content and pushes the plate off the rail. */
-.surround-libretto__text {
+.surround-script-rail__text {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
@@ -112,21 +151,26 @@
   overflow: hidden;
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
   text-align: center;
+  /* The ladder sets the size inline; this is the pre-measurement size, and it
+     is the CEILING rather than a small default so the first painted frame is
+     never a jump upward. */
+  font-size: 1.8rem;
   opacity: 1;
 }
 
-.surround-libretto__text--hidden { opacity: 0; }
+.surround-script-rail__text--hidden { opacity: 0; }
 
-.surround-libretto__line {
+.surround-script-rail__line {
   margin: 0;
   line-height: 1.34;
   color: var(--ink, #e9dfc8);
+  overflow-wrap: break-word;
 }
 
 /* A blank line in the corpus is a stanza break. It is rendered as SPACE rather
    than as an empty paragraph so it cannot inherit a line's leading and open a
    gap wider than the stanza break the librettist wrote. */
-.surround-libretto__gap { height: 0.7em; }
+.surround-script-rail__gap { height: 0.7em; }
 
 /**
  * THE CORNER. This plate is the square KITTY-CORNER to the video's
@@ -139,7 +183,7 @@
  * zero: for the one beat before the footer lays out, a plate at its minimum is
  * right and a plate at nothing is a hole in the corner.
  */
-.surround-libretto__plate {
+.surround-script-rail__plate {
   flex: 0 0 var(--surround-band-h, 90px);
   height: var(--surround-band-h, 90px);
   min-height: 0;
@@ -152,11 +196,11 @@
   overflow: hidden;
 }
 
-.surround-libretto__plate > * {
+.surround-script-rail__plate > * {
   flex: 1 1 auto;
   min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .surround-libretto__text { transition: none !important; }
+  .surround-script-rail__text { transition: none !important; }
 }

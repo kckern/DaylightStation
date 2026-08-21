@@ -12,6 +12,7 @@ import {
   PROSE_FLOOR_ANCHOR_PX, PROSE_FLOOR_MIN_PX, PROSE_FLOOR_MAX_PX,
   LABEL_FLOOR_ANCHOR_PX, LABEL_FLOOR_MIN_PX, LABEL_FLOOR_MAX_PX,
   FLOOR_ANCHOR_ROOT_PX, PROSE_CEILING_PX, proseCeilingPx, LEADING_FLOOR, LEADING_MAX,
+  LYRIC_CEILING_PX, lyricCeilingPx,
   fitPlate, plateStyle, withheldPlate, PLATE_FLOOR_PX, PLATE_CEILING_PX,
 } from './fit.js';
 
@@ -414,6 +415,25 @@ describe('the ladder’s search', () => {
     expect(fit.leading).toBeGreaterThanOrEqual(LEADING_FLOOR);
     expect(fit.rejected, 'a note that fits at the floor was rejected').toEqual([]);
     root.remove();
+  });
+
+  /**
+   * THE SUNG TEXT HAS A CEILING OF ITS OWN, above the programme note's and
+   * below the work's title. A libretto set at the note's ceiling sat in a
+   * column with room to spare and read as a footnote about the singing.
+   *
+   * TO GO RED: point `lyricCeilingPx` back at `PROSE_CEILING_PX`, or raise it
+   * past the placard's own headline size.
+   */
+  it('sets the sung text above a programme note and under the work’s title', () => {
+    expect(LYRIC_CEILING_PX).toBe(1.8 * 16);
+    expect(LYRIC_CEILING_PX / PROSE_CEILING_PX).toBeCloseTo(1.5, 6);
+    expect(LYRIC_CEILING_PX).toBeLessThan(PLATE_CEILING_PX);
+    // And unlike the note's, this ceiling clears the angular floor on EVERY
+    // fleet root, so the lyric ladder has real rungs where the note's has one.
+    [960, 1280, 1920].forEach((root) => {
+      expect(lyricCeilingPx(root), `at a ${root}px root`).toBe(LYRIC_CEILING_PX);
+    });
   });
 
   it('takes the ceiling whole when there is room for it', () => {

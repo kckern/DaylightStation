@@ -426,7 +426,7 @@ export default function SurroundFrame({
    * WHICH RAIL THIS FRAME IS WEARING.
    *
    * The decision lives HERE, in the frame, and is read from the same pure
-   * function the libretto module reads (`./lyrics.js`). Having the module
+   * function the script rail reads (`./lyrics.js`). Having the module
    * report its own emptiness upward would make the layout depend on a child's
    * render, which is the shape that flashes the wrong column for one frame on
    * every segment boundary.
