@@ -327,13 +327,11 @@ export function densityShares({
 
   const isTitled = (i) => i === activeIndex;
   const isFolded = (i) => !!list[i]?.collapsed;
-  // A titled segment claims chrome + its text; a chip claims the uniform chip;
-  // a FOLDED segment claims a chip — it is a marker, not a label to read, and
-  // giving it its Part title's measured width made collapsed Parts take 30%+ of
-  // the rail instead of the thin hatched stub they should be.
+  const FOLD_BADGE_PX = 48;
   const claims = list.map((_, i) => (isTitled(i)
     ? idealWidth({ chromePx, needPx: need(i) })
-    : Math.max(1, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)));
+    : isFolded(i) ? Math.max(FOLD_BADGE_PX, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)
+      : Math.max(1, Number(chipPx) || SEGMENT_CHIP_FLOOR_PX)));
 
   const total = claims.reduce((a, b) => a + b, 0);
   if (!(total > 0)) return list.map(() => 1 / n);
