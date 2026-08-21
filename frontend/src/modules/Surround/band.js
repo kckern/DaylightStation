@@ -452,7 +452,8 @@ export function collapseInactiveGroups(placed, { activeGroupIndex = null, depth 
   if (list.length === 0 || activeGroupIndex === null || activeGroupIndex === undefined) return list;
 
   const groupOf = (segment) => {
-    const path = Array.isArray(segment?.groupPath) ? segment.groupPath : null;
+    const path = Array.isArray(segment?.groupPath) ? segment.groupPath
+      : Array.isArray(segment?.ancestors) ? segment.ancestors : null;
     if (!path?.length) return null;
     return path[Math.min(depth, path.length - 1)] ?? null;
   };
@@ -497,6 +498,7 @@ export function collapseInactiveGroups(placed, { activeGroupIndex = null, depth 
         name: title,
         group,
         groupPath: entry.segment?.groupPath ?? null,
+        ancestors: entry.segment?.ancestors ?? null,
         offset: Number(entry.segment?.offset) || 0,
         duration,
         // No numeral. A fold is not the nth number of anything, and a gutter

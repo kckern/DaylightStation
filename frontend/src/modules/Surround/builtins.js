@@ -64,7 +64,7 @@ const BUILTIN_MODULES = [
  * quietly — a silently-dropped alias is the same blank region the aliases exist
  * to prevent.
  */
-export const LEGACY_MODULE_ALIASES = Object.freeze({ 'movement-map': 'segment-map' });
+export const LEGACY_MODULE_ALIASES = Object.freeze({ 'movement-map': 'segment-map', 'libretto': 'script-rail' });
 
 /**
  * The module names `SurroundFrame` resolves, aliases included. DERIVED, not

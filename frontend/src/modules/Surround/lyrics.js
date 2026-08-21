@@ -88,7 +88,8 @@ export function paginate(lineHeights, boxHeight) {
 
 /** `2. Ev'ry valley` where the corpus numbers its segments, else the bare name. */
 function headingFor(segment) {
-  const name = isText(segment?.name) ? segment.name.trim() : '';
+  const name = isText(segment?.label) ? segment.label.trim()
+    : isText(segment?.name) ? segment.name.trim() : '';
   const n = segment?.n;
   if (!name) return '';
   return Number.isFinite(Number(n)) ? `${Number(n)}. ${name}` : name;

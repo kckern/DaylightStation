@@ -676,6 +676,20 @@
   opacity: 0.95;
 }
 
+.surround-segment-map__fold-scenes {
+  font-weight: 400;
+  opacity: 0.62;
+}
+
+.surround-segment-map__group--active {
+  font-weight: 600;
+}
+
+.surround-segment-map__group--collapsed {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Segment names sit BELOW the rule (design wave 4), clear of the rule lane
    above.
    ONE LINE, ELLIPSIS — and the segment widens rather than the name wrapping

@@ -69,7 +69,7 @@ import { segmentAt } from '../segments.js';
 import {
   resolveBandConfig, useNowSide, useEasedVector, accordionShares, playheadFraction,
   bondConnector, elapsedFraction, activeSegmentIndex, placedSegments,
-  numeral, numeralText, numeralStyle,
+  numeral, numeralText, numeralStyle, ROMAN,
   placedRailSegments, railGroups, railFolds, foldWidthPx,
   railIsFlat, collapseInactiveGroups, foldedShares, densityShares,
   soundingWidth, idealWidth, nameFloorPx, railFloorPx, railWearsChips,
@@ -117,6 +117,8 @@ function splitHeading(name) {
 
 const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
+const partDesignation = (title) => (title ?? '').split(/\s*[—–]\s*/)[0];
+
 /**
  * THE FOUR FIELDS A SEGMENT AUTHORS, and what each one is FOR.
  *
@@ -146,6 +148,8 @@ const clamp01 = (n) => (n < 0 ? 0 : n > 1 ? 1 : n);
 const engrave = (m) => ({
   n: m?.n,
   label: smartQuotes(m?.label ?? m?.name ?? ''),
+  short: typeof m?.short === 'string' && m.short.trim()
+    ? smartQuotes(m.short.trim()) : null,
   // Performance first, source second — "Chorus · Psalm 22:8" reads as a
   // billing, which is what a programme book prints under a number's title. The
   // translation joins the same line because it is the same register (an
@@ -292,7 +296,8 @@ export default function SegmentMap({
   // scene titles is a row of ellipses and three Part names is a heading a viewer
   // can read. So an ancestry two deep or more prints its OUTERMOST level, and
   // everything shallower is unchanged — one level, its own group, as before.
-  const nested = composed && placedRail.some(({ segment }) => (segment?.groupPath?.length ?? 0) > 1);
+  const nested = composed && placedRail.some(({ segment }) =>
+    (segment?.groupPath?.length ?? segment?.ancestors?.length ?? 0) > 1);
 
   /**
    * WHERE THE TRANSPORT IS ON THE RAIL — hoisted above the accordion, because
@@ -317,7 +322,7 @@ export default function SegmentMap({
   const activeGroupIndex = useMemo(() => {
     if (!nested) return null;
     const indexOf = (p) => {
-      const path = p?.segment?.groupPath;
+      const path = p?.segment?.groupPath ?? p?.segment?.ancestors;
       const raw = Number(path?.[0]?.index);
       return Number.isFinite(raw) ? raw : null;
     };
@@ -517,6 +522,39 @@ export default function SegmentMap({
     [foldGroups, activeIndex],
   );
 
+  // ---- WHICH SCENE IS SOUNDING (for the inner heading row) ------------------
+  // The scene level is groupLevels[1] when there are two+ levels. The active
+  // scene is the run whose segment range contains the active segment index —
+  // within the DRAWN rail, not the full rail, because collapsed parts have been
+  // replaced by one-segment folds.
+  const drawnSceneGroups = useMemo(() => {
+    if (groupLevels.length < 2 || !nested) return EMPTY_GROUPS;
+    return railGroups(drawnRail, (segment) => segment?.ancestors?.[1] ?? null);
+  }, [groupLevels.length, nested, drawnRail]);
+  const activeSceneIndex = useMemo(() => {
+    if (!drawnSceneGroups.length || activeIndex < 0) return null;
+    for (const run of drawnSceneGroups) {
+      if (activeIndex >= run.from && activeIndex < run.from + run.count) return run.index;
+    }
+    return null;
+  }, [drawnSceneGroups, activeIndex]);
+
+  // HOW MANY SCENES EACH FOLD COVERS — derived from the full (pre-collapse)
+  // groupLevels, not from the drawn rail. The fold badge shows "segments/scenes".
+  const foldSceneCounts = useMemo(() => {
+    if (!folds.length || groupLevels.length < 2) return new Map();
+    const fullScenes = groupLevels[1];
+    const counts = new Map();
+    folds.forEach((fold) => {
+      let n = 0;
+      for (const scene of fullScenes) {
+        if (scene.from >= fold.from && scene.from < fold.from + fold.count) n += 1;
+      }
+      counts.set(fold.index, n);
+    });
+    return counts;
+  }, [folds, groupLevels]);
+
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
   // neither its heading nor its gloss to be cut. Both are read off the DOM
@@ -638,9 +676,10 @@ export default function SegmentMap({
     let pillPx = 0;
     if (labelProbe && pillProbe) {
       foldGroups.forEach((run) => {
-        if (!run.title || labels[run.title] !== undefined) return;
-        labelProbe.textContent = run.title;
-        labels[run.title] = labelProbe.getBoundingClientRect().width;
+        const short = partDesignation(run.title);
+        if (!short || labels[short] !== undefined) return;
+        labelProbe.textContent = short;
+        labels[short] = labelProbe.getBoundingClientRect().width;
       });
       labelProbe.textContent = '';
       // The LONGEST count on the rail, so every fold's badge is measured against
@@ -691,7 +730,7 @@ export default function SegmentMap({
     const hidden = new Set();
     folds.forEach((fold) => {
       const width = foldWidthPx({
-        labelPx: metrics.labels?.[fold.title] ?? 0,
+        labelPx: metrics.labels?.[partDesignation(fold.title)] ?? 0,
         pillPx: metrics.pillPx ?? 0,
       });
       // NOT MEASURED IS NOT FOLDED. Before the faces land there is no honest
@@ -734,7 +773,7 @@ export default function SegmentMap({
       widths: [...folded.blocks.values()].map((f) => ({
         title: f.title,
         count: f.count,
-        labelPx: Math.round(metrics.labels?.[f.title] ?? 0),
+        labelPx: Math.round(metrics.labels?.[partDesignation(f.title)] ?? 0),
       })),
     });
   }, [folds, folded, segments.length, metrics, contentId, log]);
@@ -1042,32 +1081,60 @@ export default function SegmentMap({
           The labels are `aria-hidden` for the same reason the rest of the rail's
           chrome is: this is a decorative restatement of the placard above, and a
           screen reader walking it would read every set title twice. */}
-      {groupLevels.map((groups, level) => (
+      {/* LEVEL 0: Part headings — designation only ("Part One"). */}
+      {groupLevels.length > 0 && (
         <div
-          key={`group-level:${level}`}
           className="surround-segment-map__groups"
-          data-testid={level === 0 && groupLevels.length > 1 ? 'surround-part-groups' : 'surround-segment-groups'}
-          data-level={level}
+          data-testid={groupLevels.length > 1 ? 'surround-part-groups' : 'surround-segment-groups'}
+          data-level={0}
           aria-hidden="true"
         >
-          {groups.map((group) => (
+          {groupLevels[0].map((group) => (
             <span
               key={`${group.index ?? 'none'}:${group.from}`}
               className="surround-segment-map__group"
-              data-testid={level === 0 && groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
+              data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
-              // Sized by the run's SOUNDING SECONDS, so a heading sits over
-              // exactly the stretch of rule its works occupy. `flex-basis`
-              // rather than `width`: the row is a flex line, and a basis lets
-              // the last label absorb the rounding rather than leaving a hairline
-              // of unpainted rule at the right edge.
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
             >
-              {group.title ?? ''}
+              {groupLevels.length > 1
+                ? partDesignation(group.title)
+                : group.title ?? ''}
             </span>
           ))}
         </div>
-      ))}
+      )}
+      {/* LEVEL 1+: Scene headings on the DRAWN rail. The active scene shows
+          its full title; other scenes in the active part show a Roman numeral;
+          scenes inside collapsed parts are empty (the fold badge carries the
+          scene count instead). */}
+      {drawnSceneGroups.length > 0 && (
+        <div
+          className="surround-segment-map__groups"
+          data-testid="surround-segment-groups"
+          data-level={1}
+          aria-hidden="true"
+        >
+          {drawnSceneGroups.map((group, gi) => {
+            const isActive = group.index === activeSceneIndex;
+            const isCollapsed = segments[group.from]?.collapsed;
+            const label = isCollapsed ? ''
+              : isActive ? (group.title ?? '')
+                : ROMAN[gi + 1] ?? String(gi + 1);
+            return (
+              <span
+                key={`${group.index ?? 'none'}:${group.from}`}
+                className={`surround-segment-map__group${isActive ? ' surround-segment-map__group--active' : ''}${isCollapsed ? ' surround-segment-map__group--collapsed' : ''}`}
+                data-testid="surround-group-label"
+                data-span={group.count}
+                style={{ flexBasis: `${groupBasis(group) * 100}%` }}
+              >
+                {label}
+              </span>
+            );
+          })}
+        </div>
+      )}
       <div className="surround-segment-map__rule" ref={ruleRef}>
         {/* THE RULER (the same idiom `CueTicker` measures its prose with). One
             element per rail, out of flow and invisible, carrying the segment
@@ -1219,6 +1286,11 @@ export default function SegmentMap({
                     data-testid="surround-fold-count"
                   >
                     {fold.count}
+                    {foldSceneCounts.get(fold.index) > 0 && (
+                      <span className="surround-segment-map__fold-scenes">
+                        /{foldSceneCounts.get(fold.index)}
+                      </span>
+                    )}
                   </span>
                 </span>
               </div>
@@ -1292,15 +1364,19 @@ export default function SegmentMap({
                   bug in a new place: a chip reading "1" over twenty-one
                   numbers. The count rides alongside as a multiplier, which is
                   the one thing the title alone cannot say. */}
-              {named && chips && state !== 'active' && seg.collapsed && (
-                <span
-                  className="surround-segment-map__chip surround-segment-map__chip--fold"
-                  data-testid="surround-segment-fold"
-                  aria-hidden="true"
-                >
-                  {seg.count > 0 ? seg.count : ''}
-                </span>
-              )}
+              {named && chips && state !== 'active' && seg.collapsed && (() => {
+                const sc = foldSceneCounts.get(drawnRail[i]?.segment?.ancestors?.[0]?.index);
+                return (
+                  <span
+                    className="surround-segment-map__chip surround-segment-map__chip--fold"
+                    data-testid="surround-segment-fold"
+                    aria-hidden="true"
+                  >
+                    {seg.count > 0 ? seg.count : ''}
+                    {sc > 0 && <span className="surround-segment-map__fold-scenes">/{sc}</span>}
+                  </span>
+                );
+              })()}
               {named && chips && state !== 'active' && !seg.collapsed && (
                 <span
                   className="surround-segment-map__chip"
