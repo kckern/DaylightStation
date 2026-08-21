@@ -516,10 +516,14 @@ export default function SegmentMap({
   //
   // It is the outermost visible authored level that folds. A recursive group
   // tree therefore folds by Act/Part/Book (or whatever its first level is).
-  const foldGroups = groupLevels[0] ?? EMPTY_GROUPS;
+  const drawnPartGroups = useMemo(() => {
+    if (!composed || groupLevels.length === 0) return EMPTY_GROUPS;
+    if (nested) return railGroups(drawnRail, (segment) => segment?.ancestors?.[0] ?? null);
+    return groupLevels[0];
+  }, [composed, nested, drawnRail, groupLevels]);
   const folds = useMemo(
-    () => railFolds({ groups: foldGroups, activeIndex }),
-    [foldGroups, activeIndex],
+    () => railFolds({ groups: drawnPartGroups, activeIndex }),
+    [drawnPartGroups, activeIndex],
   );
 
   // ---- WHICH SCENE IS SOUNDING (for the inner heading row) ------------------
@@ -543,17 +547,17 @@ export default function SegmentMap({
   // groupLevels, not from the drawn rail. The fold badge shows "segments/scenes".
   const foldSceneCounts = useMemo(() => {
     if (!folds.length || groupLevels.length < 2) return new Map();
-    const fullScenes = groupLevels[1];
     const counts = new Map();
     folds.forEach((fold) => {
-      let n = 0;
-      for (const scene of fullScenes) {
-        if (scene.from >= fold.from && scene.from < fold.from + fold.count) n += 1;
+      const scenes = new Set();
+      for (let i = fold.from; i < fold.from + fold.count; i += 1) {
+        const sceneIdx = drawnRail[i]?.segment?.ancestors?.[1]?.index;
+        if (sceneIdx != null) scenes.add(sceneIdx);
       }
-      counts.set(fold.index, n);
+      counts.set(fold.index, scenes.size);
     });
     return counts;
-  }, [folds, groupLevels]);
+  }, [folds, groupLevels.length, drawnRail]);
 
   // ---- the accordion's two measurements -------------------------------------
   // The rule's own width, and how wide the SOUNDING segment would have to be for
@@ -675,7 +679,7 @@ export default function SegmentMap({
     const labels = {};
     let pillPx = 0;
     if (labelProbe && pillProbe) {
-      foldGroups.forEach((run) => {
+      drawnPartGroups.forEach((run) => {
         const short = partDesignation(run.title);
         if (!short || labels[short] !== undefined) return;
         labelProbe.textContent = short;
@@ -684,14 +688,14 @@ export default function SegmentMap({
       labelProbe.textContent = '';
       // The LONGEST count on the rail, so every fold's badge is measured against
       // the widest case and two folds never differ by a digit's width.
-      const widest = foldGroups.reduce((max, run) => Math.max(max, run.count), 0);
+      const widest = drawnPartGroups.reduce((max, run) => Math.max(max, run.count), 0);
       pillProbe.textContent = String(widest || 0);
       pillPx = pillProbe.getBoundingClientRect().width;
       pillProbe.textContent = '';
     }
 
     setMetrics({ chromePx, needs, labels, pillPx });
-  }, [named, segments, foldGroups]);
+  }, [named, segments, drawnPartGroups]);
 
   useLayoutEffect(() => { measureRail(); }, [measureRail, fontsTick]);
 
@@ -1082,17 +1086,17 @@ export default function SegmentMap({
           chrome is: this is a decorative restatement of the placard above, and a
           screen reader walking it would read every set title twice. */}
       {/* LEVEL 0: Part headings — designation only ("Part One"). */}
-      {groupLevels.length > 0 && (
+      {drawnPartGroups.length > 0 && (
         <div
           className="surround-segment-map__groups"
           data-testid={groupLevels.length > 1 ? 'surround-part-groups' : 'surround-segment-groups'}
           data-level={0}
           aria-hidden="true"
         >
-          {groupLevels[0].map((group) => (
+          {drawnPartGroups.map((group) => (
             <span
               key={`${group.index ?? 'none'}:${group.from}`}
-              className="surround-segment-map__group"
+              className={`surround-segment-map__group${groupLevels.length > 1 ? ' surround-segment-map__group--part' : ''}`}
               data-testid={groupLevels.length > 1 ? 'surround-part-group-label' : 'surround-group-label'}
               data-span={group.count}
               style={{ flexBasis: `${groupBasis(group) * 100}%` }}
