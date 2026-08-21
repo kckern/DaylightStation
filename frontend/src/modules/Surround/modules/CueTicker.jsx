@@ -818,7 +818,31 @@ export default function CueTicker({
     .filter(Boolean)
     .join(' · ')
     || smartQuotes(trimmed(segment?.label ?? segment?.name));
-  const segmentAnnotation = smartQuotes(trimmed(segment?.translation));
+  // THE TRANSLATION IS NOT DRAWN WHERE IT SAYS WHAT THE LINE ABOVE IT SAYS.
+  //
+  // The Sinfonia is the case: the corpus authors `subheading: Sinfonia` and a
+  // `translation:` that is also "Sinfonia", and the register set the word twice,
+  // once in the display face and once in the annotation face directly under it.
+  // A gloss that repeats its own subject is not a gloss — it is the frame
+  // talking when it has nothing to say, which is the same fault the blank-line
+  // comment below already names for an absent subject.
+  //
+  // IT BLANKS, IT DOES NOT DISAPPEAR. The line stays RESERVED for the reason
+  // argued at the render: an element that vanished would hand its height to the
+  // note's box and re-solve the whole band's type on a segment boundary.
+  //
+  // The comparison is loose on purpose — case, accents and punctuation are
+  // exactly the differences that make two spellings of one word look distinct
+  // to `===` and identical to a viewer.
+  const sameAsName = (a, b) => {
+    const fold = (v) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+    const key = fold(a);
+    return key.length > 0 && key === fold(b);
+  };
+  const segmentAnnotation = sameAsName(segment?.translation, segmentName)
+    ? ''
+    : smartQuotes(trimmed(segment?.translation));
 
   // ---- the bond's two shared decisions --------------------------------------
   // Both come from `../band.js` so this module and the rail cannot disagree

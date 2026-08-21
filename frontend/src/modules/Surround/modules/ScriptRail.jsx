@@ -9,17 +9,12 @@
 // `SurroundFrame`, which owns that decision and reads it from the same pure
 // function this module does (`../lyrics.js`).
 //
-// ANATOMY. Four pieces, top to bottom, IN THE ORDER A PRINTED PROGRAMME PUTS
-// THEM — where you are, what is sounding, the words, whose music it is:
+// ANATOMY. Four pieces, top to bottom. THE WORDS COME FIRST — the rail used to
+// open with its contents and put the libretto in the middle, which set the one
+// thing a viewer reads in time with the music BELOW the one thing they consult
+// once a movement. The contents are a footer now, which is where a contents
+// page belongs when the page it indexes is already in front of you:
 //
-//   PROGRAMME The place in the work, as a nested table of contents. Every Part
-//             is listed; the sounding Part is OPEN and its Scenes are printed
-//             inside it, indented, rather than in a second flat list of their
-//             own. A scene belongs to a part, and the earlier layout — two
-//             sibling blocks captioned PART and SCENE — made the viewer infer
-//             a containment the tree can simply show. Closed branches print
-//             nothing but their own title, which is what keeps a five-act work
-//             from setting its whole contents page on the rail.
 //   BILLING   The number's HEADER and SUBHEADER, and neither is its label.
 //             `heading:` is where the words come from ("Lamentations 1:12") and
 //             `subheading:` is how they are performed ("Air (Tenor)"); the two
@@ -33,6 +28,14 @@
 //             REFLOWED either: the ladder is bound by the longest authored
 //             line's WIDTH, not just by the block's height — see the fit
 //             effect below for the orphan that taught us the difference.
+//   PROGRAMME The place in the work, as a nested table of contents, AT THE FOOT
+//             of the rail. Every Part is listed; the sounding Part is OPEN and
+//             its Scenes are printed inside it, indented, rather than in a
+//             second flat list of their own. A scene belongs to a part, and the
+//             earlier layout — two sibling blocks captioned PART and SCENE —
+//             made the viewer infer a containment the tree can simply show.
+//             Closed branches print nothing but their own title, which is what
+//             keeps a five-act work from setting its whole contents here.
 //   PLATE     The composer's portrait and brass nameplate, in the corner. This
 //             is the load-bearing part: when the left rail slides out it takes
 //             the composer's face and name with it, and a frame that stops
@@ -266,13 +269,12 @@ export default function ScriptRail({ position, data, region, logger }) {
     }
     setFontPx(size);
 
-    // A VERSE THAT WRAPS EVEN AT THE FLOOR FLIPS TO FLUSH LEFT WITH A HANGING
-    // INDENT. That is the printed-poetry convention for a measure too narrow for
-    // the poet: every continuation is then unmistakably a continuation. One
-    // legible mode switch for the whole block, never a per-line patch — a block
-    // with some lines centered and one hanging would read as a bug.
+    // A VERSE THAT STILL WRAPS AT THE FLOOR is worth knowing about, but it no
+    // longer switches the block into a second mode: the verse is flush left
+    // with a hanging turn-over ALWAYS now, which is the printed-poetry setting
+    // and makes a continuation unmistakable without the stylesheet having to be
+    // told that one happened.
     const wrapped = overruns();
-    box.classList.toggle('surround-script-rail__text--hanging', wrapped);
 
     const heights = linesOfBox().map((el) => el.getBoundingClientRect().height);
     const split = paginate(heights, box.clientHeight);
@@ -315,12 +317,6 @@ export default function ScriptRail({ position, data, region, logger }) {
 
   return (
     <div className="surround-script-rail" data-testid="surround-script-rail">
-      {programme && (
-        <nav className="surround-script-rail__programme" aria-label="Current place in the work">
-          <ProgrammeLevel level={programme} depth={0} />
-        </nav>
-      )}
-
       {state.heading && (
         <header className="surround-script-rail__billing">
           <h2 className="surround-script-rail__heading" data-testid="surround-script-rail-heading">
@@ -350,12 +346,33 @@ export default function ScriptRail({ position, data, region, logger }) {
             transition: `opacity ${DISSOLVE_FADE_MS}ms ease`,
           }}
         >
-          {page.map((i) => (
+          {/* A STANZA OPENS FLUSH AND RUNS INDENTED. The first line of each
+              stanza — and of each page, which is a stanza the paging happened
+              to start — sits on the rail's own left edge; every line after it
+              steps in. That is the printed-verse setting, and it is what gives
+              a left-aligned block the shape a centred one got for free.
+              Computed from the PAGE rather than from `lines`, so a stanza split
+              across two pages opens on both. */}
+          {page.map((i, at) => (
             lines[i] === ''
               ? <div className="surround-script-rail__gap" data-lyric-line key={i} />
-              : <p className="surround-script-rail__line" data-lyric-line key={i}>{smartQuotes(lines[i])}</p>
+              : (
+                <p
+                  className={`surround-script-rail__line${at === 0 || lines[page[at - 1]] === '' ? ' surround-script-rail__line--opens' : ''}`}
+                  data-lyric-line
+                  key={i}
+                >
+                  {smartQuotes(lines[i])}
+                </p>
+              )
           ))}
         </div>
+      )}
+
+      {programme && (
+        <nav className="surround-script-rail__programme" aria-label="Current place in the work">
+          <ProgrammeLevel level={programme} depth={0} />
+        </nav>
       )}
 
       {/* The composer, relocated rather than copied. Same component, second home. */}
