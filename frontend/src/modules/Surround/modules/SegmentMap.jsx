@@ -580,11 +580,13 @@ export default function SegmentMap({
     return railGroups(drawnRail, (segment) => segment?.ancestors?.[1] ?? null);
   }, [groupLevels.length, nested, drawnRail]);
   const activeSceneIndex = useMemo(() => {
-    if (!drawnSceneGroups.length || activeIndex < 0) return null;
+    if (!drawnSceneGroups.length || activeIndex < 0) return -1;
     for (const run of drawnSceneGroups) {
-      if (activeIndex >= run.from && activeIndex < run.from + run.count) return run.index;
+      if (activeIndex >= run.from && activeIndex < run.from + run.count) {
+        return run.index ?? -1;
+      }
     }
-    return null;
+    return -1;
   }, [drawnSceneGroups, activeIndex]);
 
   // HOW MANY SCENES EACH FOLD COVERS. On a flat (non-nested) rail this walks
