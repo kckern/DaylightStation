@@ -86,7 +86,7 @@
   display: block;
   margin-bottom: 0.2rem;
   font-family: var(--surround-sans, system-ui, sans-serif);
-  font-size: var(--label-floor, #{$label-floor});
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.02);
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1.2;
@@ -103,9 +103,22 @@
 }
 
 /**
- * AN ITEM TITLE IS PROSE, NOT A LABEL. "Christ's reception in heaven" is read
- * glyph by glyph, so it takes a multiple of the tracked floor rather than the
- * floor itself, and it is the body face.
+ * AN ITEM TITLE IS PROSE, NOT A LABEL, and the frame has a SEPARATE, HIGHER
+ * floor for prose — "Christ's reception in heaven" is read glyph by glyph, not
+ * recognised as a shape the way a tracked caption is.
+ *
+ * THE MULTIPLIER IS THE RATIO BETWEEN THE TWO FLOORS, not a taste. `fit.js`
+ * anchors them at `PROSE_FLOOR_ANCHOR_PX` 14.08 and `LABEL_FLOOR_ANCHOR_PX`
+ * 11.52 and scales both by the same `root/1280`, so the prose floor is ALWAYS
+ * the published label floor times 14.08/11.52 = 1.222, on every screen in the
+ * fleet, without the frame having to publish a second variable. The first pass
+ * used 1.1 — under 1.222 — which is how a list of English sentences ended up
+ * below the frame's own minimum for English on all three roots: 12.7px against
+ * a 14.08px floor at 1280, 19px against 21.12px at 1920.
+ *
+ * THE OUTER LEVEL TAKES A STEP ABOVE IT (1.33) and the nested level sits ON it
+ * (1.222). Depth then reads as a step down in size as well as an indent, and
+ * the quietest thing in the contents is still legible prose.
  *
  * THE INK CAME UP TO 66%, which is the value the band's own notes are published
  * at rather than a new guess. At 52% an inactive item composited to 4.4:1 on
@@ -114,13 +127,13 @@
  */
 .surround-script-rail__programme-item {
   font-family: var(--surround-body, "EB Garamond", Georgia, serif);
-  font-size: calc(var(--label-floor, #{$label-floor}) * 1.1);
-  line-height: 1.2;
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.33);
+  line-height: 1.24;
   color: var(--muted-ink, rgba(233, 223, 200, 0.66));
 }
 
 .surround-script-rail__programme-item .surround-script-rail__programme-item {
-  font-size: calc(var(--label-floor, #{$label-floor}) * 1.02);
+  font-size: calc(var(--label-floor, #{$label-floor}) * 1.222);
 }
 
 /* NO MARKER ON AN INACTIVE ITEM — see `ProgrammeLevel`. The title keeps a small
@@ -181,7 +194,7 @@
 .surround-script-rail__heading {
   margin: 0;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  font-size: 1.75rem;
+  font-size: max(1.35rem, calc(var(--label-floor, #{$label-floor}) * 1.62));
   font-weight: 600;
   line-height: 1.14;
   color: var(--ink, #e9dfc8);
@@ -201,7 +214,7 @@
 .surround-script-rail__subheading {
   margin: 0.15rem 0 0;
   font-family: var(--surround-display, "Cormorant Garamond", Georgia, serif);
-  font-size: 1.2rem;
+  font-size: max(1rem, calc(var(--label-floor, #{$label-floor}) * 1.11));
   font-style: italic;
   font-weight: 500;
   line-height: 1.2;
@@ -223,9 +236,9 @@
  * centre axis only ever has real lines on it.
  *
  * IT SITS ABOVE THE GEOMETRIC CENTRE. Dense ink stands above it and a bright
- * plate below, so a block at the true middle reads as sunk; a little padding at
- * the foot puts it at the optical one. This matters most for a two-line verse,
- * which would otherwise be a small island floating dead centre.
+ * plate below, so a block at the true middle reads as sunk; padding at the foot
+ * puts it at the optical one. This matters most for a TWO-LINE verse, which is
+ * otherwise a small island adrift in the middle of a tall column.
  *
  * `min-height: 0` is load-bearing in a flex column — without it this box refuses
  * to shrink below its content and pushes the plate off the rail.
@@ -236,7 +249,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding-bottom: 2.5%;
+  padding-bottom: 6%;
   /* Hidden, NOT scrollable. Overflow is resolved by fitting then paging (see
      ScriptRail.jsx); a scrollbar is useless on a television read from across
      a room with no pointer, and a clipped last line would break the law the
