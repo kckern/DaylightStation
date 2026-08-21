@@ -1575,6 +1575,12 @@
   }
   &__poster { width: 100%; border-radius: var(--r-md); margin-bottom: 0.75rem; }
   &__title { font-size: var(--t-h); font-weight: 700; margin: 0 0 0.25rem; }
+  // Hard speaker gate indicator — shown when the BT speaker link is down and
+  // playback is disabled for the whole course.
+  &__speaker-warning {
+    display: inline-block; font-size: 0.8rem; font-weight: 700; color: var(--piano-accent-ink, #fff);
+    background: #b3261e; border-radius: 0.3rem; padding: 0.25em 0.55em; margin-bottom: 0.5rem;
+  }
   &__count { color: var(--piano-muted); font-size: 0.9rem; margin-bottom: 0.5rem; }
   &__summary { color: var(--piano-muted); font-size: 0.95rem; line-height: 1.45; margin: 0; }
 
@@ -1645,6 +1651,14 @@
   &--current {
     border-color: goldenrod;
     box-shadow: 0 0 0 2px goldenrod, 0 0 12px rgba(218, 165, 32, 0.55);
+  }
+
+  /* Speaker disconnected: whole course is unplayable, not just this episode —
+     same desaturated treatment as the sequential lock. */
+  &--speaker-disabled {
+    cursor: not-allowed; opacity: 0.5;
+    .piano-episode__thumb img { filter: grayscale(1) brightness(0.8); }
+    &:active { background: var(--piano-surface); }
   }
 
   /* Loading placeholder — shimmer over the thumb + a caption line. Uses the
@@ -2021,6 +2035,17 @@
   &__tab.is-active .piano-karaoke__tab-dot { display: none; }
 
   &__empty { color: var(--piano-muted); font-style: italic; }
+
+  // Speaker gate (Task 5): the browser stays visible for orientation, but
+  // song cards are visually deadened and non-interactive (onClick unset in
+  // JSX) while there's no BT speaker to play audio through.
+  &--speaker-disabled &__grid {
+    opacity: 0.4;
+  }
+
+  &--speaker-disabled &__card {
+    cursor: default;
+  }
 
   &__grid {
     list-style: none;
