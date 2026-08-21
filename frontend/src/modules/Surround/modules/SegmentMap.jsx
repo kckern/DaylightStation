@@ -196,9 +196,11 @@ export default function SegmentMap({
   logger = null,
 }) {
   const log = useMemo(() => surroundLogger(logger, 'segment-map'), [logger]);
+  const ruleClickRef = useRef(null);
   const seekTo = useCallback((seconds) => {
-    const el = document.querySelector('video');
-    if (el && Number.isFinite(seconds)) el.currentTime = seconds;
+    if (!Number.isFinite(seconds)) return;
+    const root = ruleClickRef.current ?? document.querySelector('[data-testid="surround-segment-map"]');
+    if (root) root.dispatchEvent(new CustomEvent('surround-seek', { bubbles: true, detail: { seconds } }));
   }, []);
   const contentId = data?.contentId ?? null;
   const config = useMemo(() => resolveBandConfig(data), [data]);
@@ -1176,6 +1178,7 @@ export default function SegmentMap({
 
   return (
     <div
+      ref={ruleClickRef}
       className={`surround-segment-map${named ? '' : ' surround-segment-map--bars'}${grouped ? ' surround-segment-map--grouped' : ''}${chips ? ' surround-segment-map--chips' : ''}`}
       data-testid="surround-segment-map"
       data-now-side={side}
