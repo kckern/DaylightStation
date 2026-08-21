@@ -406,7 +406,23 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     });
   }, [clear, isContinuous, originalQueue, onDeck]);
 
-  // Removed: Escape key auto-clear handler (audit #13) — queue destruction should be explicit
+  const jumpTo = useCallback((targetContentId) => {
+    const id = String(targetContentId ?? '');
+    if (!id) return false;
+    const origIdx = originalQueue.findIndex((item) => {
+      const cid = item?.contentId ?? item?.assetId ?? item?.id ?? item?.plex ?? item?.key;
+      return String(cid) === id;
+    });
+    if (origIdx < 0) return false;
+    playbackLog('queue-advance', {
+      action: 'jump-to-item',
+      targetContentId: id,
+      targetIndex: origIdx,
+      originalQueueLength: originalQueue.length,
+    });
+    setQueue(originalQueue.slice(origIdx));
+    return true;
+  }, [originalQueue]);
 
   const queuePosition = originalQueue.findIndex(item => item.guid === playQueue[0]?.guid);
 
@@ -474,6 +490,7 @@ export function useQueueController({ play, queue, clear, shuffle, onError, conte
     playbackRate: play?.playbackRate || play?.playbackrate || queue?.playbackRate || queue?.playbackrate || 1,
     setQueue,
     advance,
+    jumpTo,
     queuePosition,
     queueAudio,
     // Stable identity for the whole queue (volume/rate/etc. persist across item swaps).

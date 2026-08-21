@@ -143,6 +143,7 @@ const Player = forwardRef(function Player(props, ref) {
     advance: rawAdvance,
     queueAudio,
     queueSessionId,
+    jumpTo: rawJumpTo,
     onDeck,
     onDeckFlashKey,
     pushOnDeck,
@@ -1213,8 +1214,17 @@ const Player = forwardRef(function Player(props, ref) {
     },
     clearSeekIntent: (reason) => {
       resilienceControllerRef.current?.clearSeekIntent?.(reason);
-    }
-  }), [isQueue, advance, singleAdvance, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
+    },
+    seekToItem: (targetContentId, seconds) => {
+      if (!isQueue || !targetContentId) return;
+      const jumped = rawJumpTo(targetContentId);
+      if (!jumped) return;
+      setQueueHasAdvanced(true);
+      if (Number.isFinite(seconds) && seconds > 0) {
+        setTargetTimeSeconds(seconds);
+      }
+    },
+  }), [isQueue, advance, singleAdvance, rawJumpTo, setTargetTimeSeconds, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
