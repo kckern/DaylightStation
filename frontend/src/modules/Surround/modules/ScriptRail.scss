@@ -1,5 +1,5 @@
 /**
- * LibrettoRail — the sung text, in a rail of its own on the right.
+ * ScriptRail — the performance text, in a rail of its own on the right.
  *
  * It is the SAME PRINTED PROGRAMME as the left rail: ink on parchment stock,
  * the house display face for the heading and the body face for the verse. That
@@ -46,6 +46,56 @@
   overflow-wrap: break-word;
 }
 
+/* A compact programme walk-through above the words. The active branch is ink;
+   siblings remain visible in the quieter annotation face, so the viewer knows
+   both where this number belongs and what surrounds it. */
+.surround-libretto__programme {
+  flex: 0 0 auto;
+  margin: 0 0 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--programme-edge, rgba(233, 223, 200, 0.26));
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.surround-libretto__programme-level + .surround-libretto__programme-level { margin-top: 0.4rem; }
+
+.surround-libretto__programme-kind {
+  display: block;
+  margin-bottom: 0.12rem;
+  font-family: var(--surround-sans, system-ui, sans-serif);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.6));
+}
+
+.surround-libretto__programme-list {
+  display: grid;
+  gap: 0.08rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.surround-libretto__programme-item {
+  padding-left: 0.72rem;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.78rem;
+  line-height: 1.15;
+  color: var(--muted-ink, rgba(233, 223, 200, 0.52));
+}
+
+.surround-libretto__programme-item::before { content: '○'; display: inline-block; width: 0.72rem; margin-left: -0.72rem; }
+
+.surround-libretto__programme-item--active {
+  font-weight: 700;
+  color: var(--ink, #e9dfc8);
+}
+
+.surround-libretto__programme-item--active::before { content: '●'; }
+
 /* The verse takes every pixel the heading and the plate leave.
    `min-height: 0` is load-bearing in a flex column — without it this box
    refuses to shrink below its content and pushes the plate off the rail. */
@@ -56,7 +106,7 @@
   flex-direction: column;
   justify-content: center;
   /* Hidden, NOT scrollable. Overflow is resolved by fitting then paging (see
-     LibrettoRail.jsx); a scrollbar is useless on a television read from across
+     ScriptRail.jsx); a scrollbar is useless on a television read from across
      a room with no pointer, and a clipped last line would break the law the
      paging exists to keep. */
   overflow: hidden;

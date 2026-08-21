@@ -1,6 +1,6 @@
-// frontend/src/modules/Surround/modules/LibrettoRail.jsx
+// frontend/src/modules/Surround/modules/ScriptRail.jsx
 //
-// THE WORDS BEING SUNG, in a rail of their own on the right.
+// THE PERFORMANCE TEXT, in a rail of its own on the right.
 //
 // This module is the second half of a layout the frame already knows how to
 // wear: when a piece's segments carry sung text, the programme rail on the left
@@ -38,7 +38,7 @@ import { DISSOLVE_FADE_MS, useDissolve } from '../dissolve.js';
 import { lyricStateAt, paginate } from '../lyrics.js';
 import { proseCeilingPx, proseFloorPx, rootWidthOf, FONT_STEP_PX } from '../fit.js';
 import ComposerCard from './ComposerCard.jsx';
-import './LibrettoRail.scss';
+import './ScriptRail.scss';
 
 /**
  * How long one page of a long air holds before the next.
@@ -61,8 +61,34 @@ function linesOf(text) {
   return trimmed.split('\n').map((l) => l.trim());
 }
 
-export default function LibrettoRail({ position, data, region, logger }) {
-  const log = useMemo(() => surroundLogger(logger, 'libretto-rail'), [logger]);
+/**
+ * The programme path around the sounding segment. At each depth, show every
+ * sibling group beneath the active parent: all Parts, then the active Part's
+ * Scenes, then that Scene's next grouping level, and so on. This is derived
+ * from the flattened rail so the YAML stays a tree and the player stays timed.
+ */
+function programmePath(segments, activeIndex) {
+  const active = segments[activeIndex];
+  const ancestors = Array.isArray(active?.ancestors) ? active.ancestors : [];
+  return ancestors.map((current, depth) => {
+    const parentPath = ancestors.slice(0, depth).map((a) => a.index).join('/');
+    const seen = new Set();
+    const items = [];
+    segments.forEach((segment) => {
+      const path = Array.isArray(segment?.ancestors) ? segment.ancestors : [];
+      if (path.length <= depth || path.slice(0, depth).map((a) => a.index).join('/') !== parentPath) return;
+      const candidate = path[depth];
+      const key = `${candidate?.index}:${candidate?.title}`;
+      if (!candidate?.title || seen.has(key)) return;
+      seen.add(key);
+      items.push(candidate);
+    });
+    return { kind: current.kind ?? 'group', items, activeIndex: current.index };
+  });
+}
+
+export default function ScriptRail({ position, data, region, logger }) {
+  const log = useMemo(() => surroundLogger(logger, 'script-rail'), [logger]);
   const contentId = data?.contentId;
   const segments = useMemo(() => (Array.isArray(data?.segments) ? data.segments : []), [data]);
 
@@ -72,6 +98,7 @@ export default function LibrettoRail({ position, data, region, logger }) {
   );
 
   const lines = useMemo(() => linesOf(state.text), [state.text]);
+  const programme = useMemo(() => programmePath(segments, state.index), [segments, state.index]);
 
   const boxRef = useRef(null);
   const [fontPx, setFontPx] = useState(null);
@@ -154,6 +181,27 @@ export default function LibrettoRail({ position, data, region, logger }) {
         </h2>
       )}
 
+      {programme.length > 0 && (
+        <nav className="surround-libretto__programme" aria-label="Current place in the work">
+          {programme.map((level, depth) => (
+            <div className="surround-libretto__programme-level" key={`${depth}:${level.kind}`}>
+              <span className="surround-libretto__programme-kind">{level.kind}</span>
+              <ol className="surround-libretto__programme-list">
+                {level.items.map((item) => (
+                  <li
+                    key={`${item.index}:${item.title}`}
+                    className={`surround-libretto__programme-item${item.index === level.activeIndex ? ' surround-libretto__programme-item--active' : ''}`}
+                    aria-current={item.index === level.activeIndex ? 'step' : undefined}
+                  >
+                    {smartQuotes(item.title)}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </nav>
+      )}
+
       {/* An instrumental number renders NO box rather than an empty one — a mat
           with nothing in it is worse than an absence, because it is an absence
           the viewer has to look at. The rail stays up regardless. */}
@@ -186,7 +234,7 @@ export default function LibrettoRail({ position, data, region, logger }) {
   );
 }
 
-LibrettoRail.propTypes = {
+ScriptRail.propTypes = {
   position: PropTypes.number,
   duration: PropTypes.number,
   playing: PropTypes.bool,
