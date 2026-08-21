@@ -2292,6 +2292,139 @@ describe('SegmentMap — the fold', () => {
       expect(entry[1]).toMatchObject({ runs: 2, folded: 2, hiddenSegments: 6, of: 11 });
     });
   });
+
+  /* -------------------------------------------------------------------------
+     THE ANCESTORS-AUTHORED RAIL — the shape `nested` actually gates on.
+
+     Every fold test above runs `MESSIAH`, which authors `hierarchy.part` — the
+     LEGACY two-level transport shape. `nested` (SegmentMap.jsx) only goes true
+     for `ancestors.length > 1`, so `MESSIAH` never takes the
+     `collapseInactiveGroups` branch, and `drawnRail` there is `placedRail`
+     unchanged: no test above ever exercised a rail where a fold's `drawnRail`
+     position and its true segment count actually diverge. That divergence is
+     exactly what a coordinate-space fix has to get right — a folded Part is
+     ONE `drawnRail` entry standing for several, and everything that reads its
+     `count` has to agree on which of the two numbers it means. --------------
+  */
+  const MESSIAH_ANCESTORS = (() => {
+    // Part One and Part Three each carry two Scenes, so `foldSceneCounts` has
+    // something to count; Part Two (the one left sounding) is single-scene,
+    // which keeps its own segments unaffected by any of this.
+    const parts = [
+      ['Part One', [['Scene 1', 2], ['Scene 2', 2]]],
+      ['Part Two', [['Scene 3', 3]]],
+      ['Part Three', [['Scene 4', 1], ['Scene 5', 3]]],
+    ];
+    const segments = [];
+    let offset = 0;
+    let n = 0;
+    let sceneIndex = 0;
+    parts.forEach(([partTitle, scenes], partIndex) => {
+      scenes.forEach(([sceneTitle, count]) => {
+        const thisScene = sceneIndex;
+        sceneIndex += 1;
+        for (let i = 0; i < count; i += 1) {
+          n += 1;
+          segments.push({
+            n,
+            name: `Movement ${n}`,
+            contentId: 'plex:messiah-ancestors',
+            start: offset,
+            end: offset + 10,
+            offset,
+            duration: 10,
+            part: 0,
+            ancestors: [
+              { index: partIndex, title: partTitle },
+              { index: thisScene, title: sceneTitle },
+            ],
+          });
+          offset += 10;
+        }
+      });
+    });
+    return {
+      contentId: 'plex:messiah-ancestors',
+      segments,
+      timeline: {
+        totalSounding: offset,
+        parts: [{ contentId: 'plex:messiah-ancestors', index: 0, sounding: offset }],
+      },
+    };
+  })();
+
+  /**
+   * ON A NESTED (ancestors) RAIL THE WAVE-10 BOX NEVER TAKES. `foldedShares`
+   * (band.js) gives every `collapsed` marker a fixed, tiny placeholder share
+   * (`FOLD_SHARE` = 3.5% of the rule) as its NATURAL width — that is always
+   * narrower than a Part label, so `folded`'s own "does eliding save space"
+   * comparison always says no, and the marker draws through the ordinary
+   * per-segment branch instead. That is a pre-existing fact of `foldedShares`,
+   * unrelated to this file's coordinate-space bug, and unlike `MESSIAH`
+   * (legacy `hierarchy.part`, never `collapsed`, so it DOES take the box) an
+   * ancestors-based rail can never exercise `folds(container)`
+   * (`data-testid="surround-segment-fold"` on the box). What DOES have to be
+   * right here is what the merged marker itself carries.
+   */
+  it('collapses a Part>Scene>Number (ancestors) rail to one drawn segment per inactive Part', () => {
+    withRailGeometry(MEASURED, () => {
+      // 45s is inside Part Two (movements 5-7, 40s-70s) — same layout as MESSIAH.
+      const { container } = renderMap({ data: MESSIAH_ANCESTORS, position: 45, duration: 110 });
+      // Part Two's three movements are the only ones drawn as individual segments —
+      // `collapseInactiveGroups` merged Part One and Part Three to one entry each,
+      // so `drawnRail` has 5 positions (2 folds + 3 open), not the authored 11.
+      expect(drawn(container).length).toBe(5);
+      const collapsed = drawn(container).filter((s) => s.dataset.fold !== undefined);
+      expect(collapsed.map((s) => s.dataset.fold)).toEqual(['4', '4']);
+    });
+  });
+
+  it('badges a collapsed ancestors Part with its true segment count and scene count', () => {
+    // A narrow rail with wide names — the geometry `railWearsChips` needs to
+    // pick chip density, which is the ONLY place a nested fold's scene-count
+    // suffix (`foldSceneCounts`) is drawn today: the named-mode text row has
+    // no badge at all for a collapsed segment, and the wave-10 box (above)
+    // structurally never takes here.
+    withRailGeometry({
+      RAIL: 400,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+    }, () => {
+      const { container } = renderMap({ data: MESSIAH_ANCESTORS, position: 45, duration: 110 });
+      const chips = [...container.querySelectorAll('.surround-segment-map__chip--fold')];
+      // Both folded Parts stand for 4 original movements each (2 Scenes of 2,
+      // and 1 Scene of 1 + 1 Scene of 3) — the number `collapseInactiveGroups`
+      // carried on the merged marker — over 2 Scenes each. Getting "4/2" here
+      // instead of "1/…" or a blank scene count is what this file's
+      // coordinate-space fix has to deliver for a real ancestors rail, not
+      // just for the legacy `hierarchy.part` shape `MESSIAH` exercises.
+      expect(chips.map((c) => c.textContent)).toEqual(['4/2', '4/2']);
+    });
+  });
+
+  it('does not spill a fold’s true segment count into the segments drawn after it', () => {
+    // The regression this guards: if a fold's TRUE count (4) were used as an
+    // array-position span instead of its actual one `drawnRail` slot anywhere
+    // that walks `drawnRail`/`segments`/`shares` by position (`groupBasis`,
+    // the accordion's own width pass), it would walk past the fold into Part
+    // Two's own open segments. All three of Part Two's segments must still be
+    // individually drawn, in order, none suppressed.
+    withRailGeometry(MEASURED, () => {
+      const { container } = renderMap({ data: MESSIAH_ANCESTORS, position: 45, duration: 110 });
+      const open = drawn(container).filter((s) => s.dataset.fold === undefined);
+      expect(open.length).toBe(3);
+      expect(open.map((s) => s.dataset.index)).toEqual(['1', '2', '3']);
+      open.forEach((s) => expect(Number(s.style.width.replace('%', ''))).toBeGreaterThan(0));
+      // The Part heading row's widths must sum to whole (100%), not overrun
+      // it — `groupBasis` walking a fold's inflated true count past its own
+      // one drawn-rail slot would double-count Part Two's shares into Part
+      // One's or Part Three's heading width.
+      const bases = [...container.querySelectorAll('[data-testid="surround-part-group-label"]')]
+        .map((e) => parseFloat(e.style.flexBasis));
+      expect(bases.reduce((a, b) => a + b, 0)).toBeCloseTo(100, 3);
+    });
+  });
 });
 
 /* ---------------------------------------------------------------------------
