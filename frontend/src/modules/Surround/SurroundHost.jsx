@@ -132,8 +132,17 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     // item, so it is deliberately not a dependency.
   }, [active, contentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Logged as `surround-host` (spec table) even though the throw happened inside
-  // a module: this is the host's fail-soft decision, not the module's own event.
+  useEffect(() => {
+    if (!active) return undefined;
+    const handler = (e) => {
+      const el = getMediaEl?.();
+      const t = e?.detail?.seconds;
+      if (el && Number.isFinite(t)) el.currentTime = t;
+    };
+    document.addEventListener('surround-seek', handler);
+    return () => document.removeEventListener('surround-seek', handler);
+  }, [active, getMediaEl]);
+
   const onModuleError = (error) => {
     logger.error('surround.render.error', {
       contentId,
