@@ -48,17 +48,36 @@ describe('lyricStateAt', () => {
     expect(s.heading).toBe('Comfort ye');
   });
 
-  it('stays up through an instrumental number, showing no text', () => {
-    // 85 s into the Pifa — far beyond the grace window, but a segment IS
-    // sounding, so this is not a gap and the rail must not flap.
+  /**
+   * AN INSTRUMENTAL NUMBER HANDS THE SCREEN BACK. The Sinfonia and the Pifa
+   * have no words, and a lyric rail with no lyric is a mat with nothing in it —
+   * worse than an absence, because it is an absence the viewer has to look at.
+   * The programme rail comes back and says what is sounding instead.
+   *
+   * TO GO RED: return `active: true` with empty text for a sounding segment
+   * that authored none, as every version before 574abfd69 did.
+   */
+  it('hands the screen back on an instrumental number', () => {
     const s = at(125);
-    expect(s.active).toBe(true);
+    expect(s.active).toBe(false);
     expect(s.text).toBe('');
-    expect(s.heading).toBe('Pifa');
   });
 
+  /**
+   * ...BUT A SHORT GAP STILL HOLDS, and the two rules are about different
+   * lengths of silence rather than in tension. The rails TRAVEL; sliding them
+   * out and back for the seconds between two numbers is the flap the grace
+   * window exists to prevent. Ninety seconds of Pifa is not that case.
+   *
+   * The position is the one place on this rail where NOTHING is sounding and
+   * the silence is still short: ten seconds past the last number's end. It is
+   * deliberately the same anchor as the revert test below, so the pair reads as
+   * one boundary seen from both sides.
+   *
+   * TO GO RED: delete the grace branch, as the merge did.
+   */
   it('holds through a gap shorter than the grace window', () => {
-    expect(at(40 + (LYRIC_GRACE_S - 10)).active).toBe(true);
+    expect(at(160 + (LYRIC_GRACE_S - 10)).active).toBe(true);
   });
 
   it('reverts once nothing has sounded for longer than the grace window', () => {
@@ -102,19 +121,28 @@ describe('lyricStateAt', () => {
 
   /**
    * A number authoring only one of the pair PROMOTES it, rather than leaving a
-   * subheader captioning an absence. The Sinfonia is the shipped case.
+   * subheader captioning an absence.
+   *
+   * THE NUMBER HAS TO HAVE WORDS FOR THE RULE TO BE REACHED AT ALL. The
+   * Sinfonia used to be the fixture here, and once an instrumental went dormant
+   * it stopped exercising anything: `billingFor` is never called on a segment
+   * whose text is empty. The shipped case is now a texted number that names its
+   * manner and not its source — the Hallelujah chorus authors `subheading:` and
+   * no `heading:`, and the word belongs over the verse, not under it.
    */
   it('promotes a lone subheading into the header', () => {
-    const sinfonia = [seg({ label: 'Sinfonia', subheading: 'Sinfonia', text: '' }),
+    const lone = [seg({ label: 'Hallelujah', subheading: 'Chorus', text: 'Hallelujah!' }),
       seg({ start: 200, end: 260, text: 'and there were shepherds' })];
-    const s = lyricStateAt({ segments: sinfonia, contentId: 'w1', position: 5 });
-    expect(s.heading).toBe('Sinfonia');
+    const s = lyricStateAt({ segments: lone, contentId: 'w1', position: 5 });
+    expect(s.heading).toBe('Chorus');
     expect(s.subheading).toBe('');
   });
 
   it('reports the sounding index so a caller can key a transition on it', () => {
+    // Both positions are inside a TEXTED number, because those are the only
+    // ones that report an index now — the Pifa returns the dormant -1.
     expect(at(20).index).toBe(0);
-    expect(at(125).index).toBe(1);
+    expect(at(140).index).toBe(2);
   });
 });
 
