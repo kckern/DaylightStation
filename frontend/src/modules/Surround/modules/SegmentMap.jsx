@@ -1142,7 +1142,7 @@ export default function SegmentMap({
       data-grouped={grouped ? 'true' : 'false'}
       style={{
         '--numeral-chars': String(numeralChars),
-        ...(grouped ? { '--group-rows': `calc(var(--group-row) * ${groupLevels.length})` } : {}),
+        ...(grouped ? { '--group-rows': `calc(var(--group-row) * ${(drawnPartGroups.length > 0 ? 1 : 0) + (drawnSceneGroups.length > 0 ? 1 : 0)})` } : {}),
         '--accordion-ms': `${ACCORDION_MS}ms`,
         // The cursor's own smoothing. 120ms of linear ramp is one transport
         // tick and is what turns the 10 Hz position steps into a glide — but
