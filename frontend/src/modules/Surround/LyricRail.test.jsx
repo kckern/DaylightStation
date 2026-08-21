@@ -62,9 +62,13 @@ describe('the lyric rail', () => {
     expect(screen.getByTestId('surround-script-rail-text')).toHaveTextContent('Comfort ye my people');
   });
 
-  it('heads the text with the segment numeral and name', () => {
+  it('heads the text with the number’s source, not its label', () => {
     draw(withLyric, RAIL, 20);
-    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('1. Comfort ye');
+    // Nothing in RAIL authors `heading:`, so the header falls back to the only
+    // name the number has — and it carries NO numeral.
+    const heading = screen.getByTestId('surround-script-rail-heading');
+    expect(heading).toHaveTextContent('Comfort ye');
+    expect(heading.textContent).not.toMatch(/^\s*1\./);
   });
 
   /**
@@ -76,23 +80,29 @@ describe('the lyric rail', () => {
    * TO GO RED: drop `billing` from `lyricStateAt`, or print it as a sibling of
    * the heading rather than inside it.
    */
-  it('bills the number under its name — how it is sung, and whence the words', () => {
+  it('bills the number by its source and its manner', () => {
     const billed = [
       seg({
-        n: 2, start: 10, end: 40, name: 'Comfort ye', text: 'Comfort ye my people',
-        subheading: 'Recitative (Accompanied — Tenor)', heading: 'Isaiah 40:1–3',
+        n: 2, start: 10, end: 40, label: 'Behold, and see if there be any sorrow',
+        text: 'Behold, and see if there be any sorrow\nlike unto His sorrow.',
+        subheading: 'Air (Tenor)', heading: 'Lamentations 1:12',
       }),
     ];
     draw(withLyric, billed, 20);
-    const billing = screen.getByTestId('surround-script-rail-billing');
-    expect(billing).toHaveTextContent('Recitative (Accompanied — Tenor) · Isaiah 40:1–3');
-    // It belongs to the number, so a heading that wraps takes its billing with it.
-    expect(screen.getByTestId('surround-script-rail-heading')).toContainElement(billing);
+    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('Lamentations 1:12');
+    expect(screen.getByTestId('surround-script-rail-subheading')).toHaveTextContent('Air (Tenor)');
+    // THE LABEL IS THE INCIPIT — the first line of the text directly beneath it.
+    // The rail must not print it, here or anywhere: that was one line twice.
+    const rail = screen.getByTestId('surround-script-rail');
+    expect(rail.querySelectorAll('*:not(.surround-script-rail__line)').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('surround-script-rail-heading').textContent)
+      .not.toContain('Behold');
+    expect(screen.queryByTestId('surround-script-rail-billing')).not.toBeInTheDocument();
   });
 
-  it('prints no billing line for a number that authors neither field', () => {
+  it('prints no subheader for a number that authors neither field', () => {
     draw(withLyric, RAIL, 20);
-    expect(screen.queryByTestId('surround-script-rail-billing')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('surround-script-rail-subheading')).not.toBeInTheDocument();
   });
 
   it('shows the active programme branch above the current lyric', () => {
@@ -182,7 +192,7 @@ describe('the lyric rail', () => {
     draw(withLyric, RAIL, 125);
     expect(screen.getByTestId('surround-lyric-rail')).toBeInTheDocument();
     expect(screen.queryByTestId('surround-script-rail-text')).not.toBeInTheDocument();
-    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('2. Pifa');
+    expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('Pifa');
   });
 
   it('hands the screen back to the programme rail on a long gap', () => {

@@ -192,12 +192,25 @@ Every card ends with an exit. The paper path's never-dead-end rule applies here 
 
 ## Section 3 — the flow on the panel
 
-**Locked idle → keypad.** Six large digit buttons. No learner name (the code names the learner), no
-home grid, no breadcrumb, no deep links.
+**Locked idle → keypad.** Six large digit buttons on a pure-black ground (the panel holds this one
+layout all day; it is closer to a screensaver than a page). No learner name (the code names the
+learner), no home grid, no breadcrumb, no deep links. Keys fire on **pointerdown**, not click — a
+child's jab that slides a few pixels must still register — and the whole app is `user-select: none`
+so a press-and-hold raises no selection handles on a panel with no keyboard to dismiss them.
 
-**Wrong code → "Try again."** That is the entire failure path — no throttle, no lockout, no dead
-keypad. It still emits `school.selfservice.code.rejected`, because a code that never works is a
-minting or expiry bug and there is no other way to see it.
+**Clear on an already-empty entry reloads the page.** The second tap of a double Clear, or one
+deliberate tap on an idle screen. Lock mode draws no header and FKB has no address bar, so this is
+the panel's only way to pick up a deploy; it costs a child nothing (nothing typed to lose, and the
+reload lands back on this keypad) and emits `school.selfservice.keypad.reload`.
+
+**Wrong code → the slots say NO.** That is the entire failure path — no throttle, no lockout, no
+dead keypad. The refusal is rendered IN the six slots (shake → the digits turn over one at a time
+into `NONONO`, glowing red → wipe back to empty, ≈2.5s, cancelled by any key) and NOT as a line of
+text: a sentence appearing under the entry pushed the pad down the screen under the finger of a
+child already re-typing. The status row below the slots keeps a fixed height for the same reason, so
+the one message that still uses words — a backend outage, plus its retry button — displaces nothing
+either. A refusal still emits `school.selfservice.code.rejected`, because a code that never works is
+a minting or expiry bug and there is no other way to see it.
 
 **Valid code → the card.** Subject, lesson title, one button, exit:
 

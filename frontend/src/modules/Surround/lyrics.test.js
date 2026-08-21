@@ -75,10 +75,41 @@ describe('lyricStateAt', () => {
     expect(s.active).toBe(false);
   });
 
-  it('prefixes the heading with the segment numeral when the corpus gives one', () => {
-    const numbered = [seg({ n: 2, name: 'Ev’ry valley', text: 'Ev’ry valley' })];
-    expect(lyricStateAt({ segments: numbered, contentId: 'w1', position: 5 }).heading)
-      .toBe('2. Ev’ry valley');
+  /**
+   * THE HEADER IS THE SOURCE AND THE SUBHEADER IS THE MANNER — `heading:` and
+   * `subheading:`, the corpus fields of those names. NEITHER IS THE LABEL, and
+   * that is the point: `label:` is the incipit, so segment 30 of Messiah has
+   * `label: Behold, and see if there be any sorrow` over a `text:` whose first
+   * line is that same sentence. Printing it here set one line twice, an inch
+   * apart. The numeral goes with it — it is on the time rail under the video.
+   *
+   * TO GO RED: put the label or the numeral back into either slot.
+   */
+  it('bills a number by its source and its manner, never by its label', () => {
+    const billed = [seg({
+      n: 30,
+      label: 'Behold, and see if there be any sorrow',
+      text: 'Behold, and see if there be any sorrow\nlike unto His sorrow.',
+      heading: 'Lamentations 1:12',
+      subheading: 'Air (Tenor)',
+    })];
+    const s = lyricStateAt({ segments: billed, contentId: 'w1', position: 5 });
+    expect(s.heading).toBe('Lamentations 1:12');
+    expect(s.subheading).toBe('Air (Tenor)');
+    expect(s.heading).not.toContain('30');
+    expect(s.heading).not.toContain('Behold');
+  });
+
+  /**
+   * A number authoring only one of the pair PROMOTES it, rather than leaving a
+   * subheader captioning an absence. The Sinfonia is the shipped case.
+   */
+  it('promotes a lone subheading into the header', () => {
+    const sinfonia = [seg({ label: 'Sinfonia', subheading: 'Sinfonia', text: '' }),
+      seg({ start: 200, end: 260, text: 'and there were shepherds' })];
+    const s = lyricStateAt({ segments: sinfonia, contentId: 'w1', position: 5 });
+    expect(s.heading).toBe('Sinfonia');
+    expect(s.subheading).toBe('');
   });
 
   it('reports the sounding index so a caller can key a transition on it', () => {

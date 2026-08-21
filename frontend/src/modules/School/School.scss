@@ -44,6 +44,15 @@
   // every tap flashed blue. The property inherits, so declaring it here covers
   // the whole app; each control's :active state is the press feedback.
   -webkit-tap-highlight-color: transparent;
+  // Nothing in School is text to select. Every surface here is touched, and a
+  // press-and-hold or a jab that slides a few pixels otherwise raises the
+  // selection handles and the magnifier over a wall panel that has no keyboard
+  // to dismiss them with. Inherits, so this covers the app; a future surface
+  // with genuinely selectable prose can opt back in locally.
+  user-select: none; -webkit-user-select: none;
+  // A touch-only app: never wait to see whether a tap was the first half of a
+  // double-tap zoom.
+  touch-action: manipulation;
 
   &--loading { align-items: center; justify-content: center; color: var(--school-muted); }
 
@@ -1575,6 +1584,20 @@
 // Sized for the Portal at 1280x800, touched by a child standing at a wall: the
 // keys are the biggest thing on the screen and nothing else competes with them.
 // The panel has no header in this mode, so the body owns the whole viewport.
+// PURE BLACK, not the app's near-black. The locked panel is what the school
+// room screen shows all day between codes — closer to a screensaver than to a
+// page — so the ground goes to #000: least light thrown into the room, least
+// burn-in on a panel holding one static layout for hours, and the keypad reads
+// as the only lit thing on the wall. The surfaces come down with it so the
+// slots and keys still sit ON something rather than glowing off a black field.
+// Scoped to the modifier: the browsable app keeps its own softer dark theme.
+.school-app--locked {
+  --school-bg: #000;
+  --school-surface: #0a0a0d;
+  --school-surface-2: #16161c;
+  --school-border: #2a2a33;
+  background: #000;
+}
 .school-app--locked .school-app__body {
   display: flex; align-items: center; justify-content: center;
   padding: 1.5rem; overflow: hidden;
@@ -1589,15 +1612,50 @@
 }
 .school-selfservice__entry {
   display: flex; gap: 0.55rem; width: 100%;
+  // The refusal happens HERE, in the slots the digits were just typed into —
+  // nothing appears below them, so the pad never moves under a child's finger.
+  &.is-shaking { animation: school-selfservice-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 }
 .school-selfservice__slot {
   flex: 1 1 0; aspect-ratio: 3 / 4; display: grid; place-items: center;
   border: 2px solid var(--school-border); border-radius: 10px;
   background: var(--school-surface); font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
   &.is-filled { border-color: var(--school-accent); }
+  // A turned-over slot: red, STAMPED rather than faded in (so six of them in
+  // sequence read as one deliberate answer instead of a slow dissolve), then
+  // left pulsing. The pulse is what carries the hold — six static red letters
+  // sitting there look like a rendering bug; six breathing ones are obviously
+  // the panel talking, and they stay legible from across the room.
+  &.is-reject {
+    border-color: var(--school-danger); color: #ff7063;
+    background: color-mix(in srgb, var(--school-danger) 16%, var(--school-surface));
+    font-weight: 800; letter-spacing: 0.02em;
+    animation:
+      school-selfservice-stamp 180ms ease-out both,
+      school-selfservice-glow 620ms ease-in-out 180ms infinite;
+  }
+}
+// Every slot goes red the instant the answer lands, before the first letter
+// turns — the colour is the news, the letters are the sentence.
+.school-selfservice__entry.is-rejected .school-selfservice__slot { border-color: var(--school-danger); }
+
+// Visually hidden, but announced: the refusal is a picture, and this is the
+// same news for anyone who cannot see it.
+.school-selfservice__sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+// FIXED height, not min-height. This row sits between the slots and the pad, so
+// anything that appears in it (the outage sentence, its retry button) would
+// otherwise shove the keys down the screen mid-tap.
+.school-selfservice__status {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.6rem; width: 100%; height: 5.25rem;
 }
 .school-selfservice__message {
-  margin: 0; min-height: 1.5rem; font-size: 1.25rem; font-weight: 700;
+  margin: 0; font-size: 1.25rem; font-weight: 700;
   color: var(--school-warn); text-align: center;
   &.is-degraded { color: var(--school-danger); }
 }
@@ -1613,7 +1671,10 @@
   min-height: 76px; border: 1px solid var(--school-border); border-radius: 14px;
   background: var(--school-surface); color: var(--school-fg);
   font-size: 2rem; font-weight: 700; cursor: pointer;
-  &:active { background: var(--school-surface-2); }
+  // Fires on pointerdown (see Keypad.jsx); `manipulation` drops the browser's
+  // 300ms double-tap-to-zoom wait so the press feedback lands with the finger.
+  touch-action: manipulation;
+  &:active { background: var(--school-surface-2); transform: scale(0.97); }
   &:disabled { opacity: 0.45; }
   &--clear, &--back { font-size: 1.2rem; color: var(--school-muted); }
 }
@@ -1621,7 +1682,45 @@
   width: 100%; min-height: 72px; border: none; border-radius: 14px;
   background: var(--school-accent); color: var(--school-accent-ink);
   font-size: 1.5rem; font-weight: 800; cursor: pointer;
+  touch-action: manipulation;
+  &:active { transform: scale(0.99); }
   &:disabled { background: var(--school-surface-2); color: var(--school-muted); cursor: default; }
+}
+
+@keyframes school-selfservice-shake {
+  10%, 90% { transform: translateX(-3px); }
+  20%, 80% { transform: translateX(6px); }
+  30%, 50%, 70% { transform: translateX(-11px); }
+  40%, 60% { transform: translateX(11px); }
+  100% { transform: translateX(0); }
+}
+@keyframes school-selfservice-stamp {
+  from { transform: scale(1.35); opacity: 0.2; }
+  to { transform: scale(1); opacity: 1; }
+}
+// The red is literal rgb rather than the token: these are alpha shadows, and a
+// hex custom property cannot be dropped into rgba(). Keep in step with
+// --school-danger (#e05a4f) if that ever moves.
+@keyframes school-selfservice-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(224, 90, 79, 0);
+    text-shadow: 0 0 6px rgba(224, 90, 79, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 26px rgba(224, 90, 79, 0.7), inset 0 0 20px rgba(224, 90, 79, 0.35);
+    text-shadow: 0 0 20px rgba(255, 112, 99, 0.95);
+  }
+}
+// The refusal must still READ without motion: the letters, the red and a
+// steady glow stay; the shake, the stamp and the pulse go.
+@media (prefers-reduced-motion: reduce) {
+  .school-selfservice__entry.is-shaking { animation: none; }
+  .school-selfservice__slot.is-reject {
+    animation: none;
+    box-shadow: 0 0 20px rgba(224, 90, 79, 0.5);
+    text-shadow: 0 0 14px rgba(255, 112, 99, 0.8);
+  }
+  .school-selfservice__key:active, .school-selfservice__go:active { transform: none; }
 }
 
 .school-selfservice-card {

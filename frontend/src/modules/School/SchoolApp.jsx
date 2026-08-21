@@ -673,6 +673,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
               message={selfService.message}
               degraded={selfService.degraded}
               onRetry={selfService.retry}
+              onReload={selfService.reload}
             />
           ) : (
             <LaunchCard

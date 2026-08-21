@@ -325,34 +325,43 @@ export function proseCeilingPx(rootWidthPx) {
 }
 
 /**
- * THE SUNG TEXT'S CEILING — 1.8rem, half again the programme note's.
+ * THE SUNG TEXT'S CEILING — 1.5rem, a major third above the programme note's.
  *
  * A PROGRAMME NOTE AND A LIBRETTO ARE NOT THE SAME KIND OF TYPE, and giving
  * them one ceiling was the mistake this number corrects. A note is an aside
  * printed under the picture; the sung text IS the picture's other half, the one
- * thing on the rail a viewer is actually reading in time with what they hear.
- * Set at the note's 1.2rem it sat in a column with room to spare and looked
- * like a footnote about the singing rather than the singing.
+ * thing on the rail a viewer is reading in time with what they hear.
  *
- * WHY 1.5× AND NOT MORE. The lyric must stay UNDER `PLATE_CEILING_PX` (2.05rem,
- * the work's own title on the placard), because the loudest type in the frame
- * is the name of the piece and nothing else may take that. 1.8rem is the
- * largest step that keeps that order with a whole rung to spare, and it is a
- * clean perfect fifth above the note's ceiling, so the two ceilings read as
- * related rather than as two independent guesses.
+ * IT CAME DOWN FROM 1.8rem, and the reason is a MEASURE, not a taste. The rail
+ * is a narrow column: at 1.8rem it seats about 32 characters, and Messiah is
+ * full of authored lines longer than that ("He looked for some to have pity on
+ * Him," is 39). Every one of them wrapped, and a wrapped line under a centered
+ * axis is indistinguishable from a line the librettist wrote. At 1.5rem the
+ * measure takes about 38 characters, which seats most of the corpus whole — and
+ * the ladder in `ScriptRail` now treats a wrap as an overrun, so the ceiling is
+ * a cap rather than a promise.
+ *
+ * WHY 1.25x AND NOT MORE. Two ceilings sit above it and the verse must clear
+ * both: the work's own title on the placard (`PLATE_CEILING_PX`, 2.05rem) and —
+ * the one nobody checked at 1.8rem — the COMPOSER'S NAME on the corner plate,
+ * set at 1.75rem by `ComposerCard.scss`. A libretto louder than the name of the
+ * man who wrote it is the frame's hierarchy upside down. It is also below the
+ * rail's own billing (1.6rem, `ScriptRail.scss`), which is the order the owner
+ * asked for: what you are hearing, then the words of it.
  *
  * IT DOES NOT SCALE WITH THE ROOT, for `PROSE_CEILING_PX`'s reason exactly: it
- * is a claim about the relationship between two things on the SAME root, both
- * already set in rem.
+ * is a claim about the relationship between things on the SAME root, all of
+ * them already set in rem.
  */
-export const LYRIC_CEILING_PX = round2(PROSE_CEILING_PX * 1.5);
+export const LYRIC_CEILING_PX = round2(PROSE_CEILING_PX * 1.25);
 
 /**
  * The sung text's top ON THIS ROOT. Same crossing rule as `proseCeilingPx` —
  * where the angular readability floor has climbed past the ceiling, THE FLOOR
- * WINS and the ladder is one rung. With a 1.8rem ceiling that no longer
- * happens on any root in the fleet, which is the point: the lyric ladder has
- * real rungs at 1920 where the note's ladder has none.
+ * WINS and the ladder is one rung. At 1.5rem that still does not happen on any
+ * root in the fleet (the 1920 floor is 21.12px against a 24px ceiling), which
+ * is the point: the lyric ladder keeps real rungs at 1920, where the note's
+ * ladder has none.
  *
  * @param {number} rootWidthPx the CSS width of the screen root.
  * @returns {number} the largest size the sung text may be set at here.
