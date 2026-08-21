@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   },
   bridgeLink: 'idle',
   bridgeUnavailable: false,
+  bridgeSpeakerConnected: true,
   useWebMidiBLEArgs: null,
   usePianoBridgeNotesArgs: null,
 }));
@@ -24,7 +25,7 @@ vi.mock('./useWebMidiBLE.js', () => ({
 vi.mock('./usePianoBridgeNotes.js', () => ({
   usePianoBridgeNotes: (args) => {
     h.usePianoBridgeNotesArgs = args;
-    return { link: h.bridgeLink, unavailable: h.bridgeUnavailable };
+    return { link: h.bridgeLink, unavailable: h.bridgeUnavailable, speakerConnected: h.bridgeSpeakerConnected };
   },
 }));
 
@@ -38,6 +39,7 @@ function Probe() {
       <span data-testid="connected">{String(ctx.connected)}</span>
       <span data-testid="bridgeLink">{ctx.bridgeLink}</span>
       <span data-testid="bridgeUnavailable">{String(ctx.bridgeUnavailable)}</span>
+      <span data-testid="speakerConnected">{String(ctx.speakerConnected)}</span>
       <span data-testid="outputConnected">{String(ctx.outputConnected)}</span>
       <span data-testid="health-in">{ctx.midiHealth.in}</span>
       <span data-testid="health-out">{ctx.midiHealth.out}</span>
@@ -51,6 +53,7 @@ beforeEach(() => {
   h.midi.outputConnected = true;
   h.bridgeLink = 'idle';
   h.bridgeUnavailable = false;
+  h.bridgeSpeakerConnected = true;
   h.useWebMidiBLEArgs = null;
   h.usePianoBridgeNotesArgs = null;
   h.midi.connect.mockClear();
@@ -102,6 +105,17 @@ describe('PianoMidiProvider wiring', () => {
     render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
     expect(screen.getByTestId('status').textContent).toBe('no-input');
     expect(screen.getByTestId('connected').textContent).toBe('false');
+  });
+
+  it('exposes speakerConnected from the bridge', () => {
+    h.bridgeSpeakerConnected = false;
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('speakerConnected').textContent).toBe('false');
+  });
+
+  it('defaults speakerConnected to true (non-kiosk / bridge default)', () => {
+    render(<PianoMidiProvider><Probe /></PianoMidiProvider>);
+    expect(screen.getByTestId('speakerConnected').textContent).toBe('true');
   });
 
   it('still exposes Web MIDI output health (outputConnected) from midi', () => {
