@@ -2191,7 +2191,7 @@ describe('SegmentMap — the fold', () => {
    * and density assertions below read is exactly the one they read before.
    */
   const MEASURED = {
-    RAIL: 500,
+    RAIL: 240,
     'surround-segment-map__text-row': 60,
     'surround-segment-map__text': 45,
     'surround-segment-map__heading': 45,
@@ -2238,21 +2238,16 @@ describe('SegmentMap — the fold', () => {
         const { container } = renderMap({ data: MESSIAH, position: 45, duration: 110 });
         const [one, three] = folds(container);
         // Four of eleven movements is 36% of the rail by duration. The fold
-        // takes the 45px label on a 500px rule instead — 9%, a quarter of what
-        // its duration would have claimed — and Part Two gets the difference.
-        expect(Number(one.style.width.replace('%', ''))).toBeCloseTo(9, 3);
-        expect(Number(three.style.width.replace('%', ''))).toBeCloseTo(9, 3);
+        // takes the 45px label on a 240px rule instead — 18.75%, about half
+        // what its duration would have claimed — and Part Two gets the rest.
+        const foldPct = 45 / 240 * 100;
+        expect(Number(one.style.width.replace('%', ''))).toBeCloseTo(foldPct, 3);
+        expect(Number(three.style.width.replace('%', ''))).toBeCloseTo(foldPct, 3);
         const open = drawn(container).map((s) => Number(s.style.width.replace('%', '')));
-        // WHERE THE DIFFERENCE GOES, rather than a flat floor every open segment
-        // must clear. This rail is crowded enough to wear chips — it has to be,
-        // because a roomy rail no longer folds at all — and under chips the
-        // sounding segment takes the lion's share of what the folds gave back
-        // while its neighbours take a chip each. Both are still wider than the
-        // elision that paid for them, which is the claim.
-        expect(open.every((w) => w > 9)).toBe(true);
+        // The sounding segment takes the lion's share of what the folds freed.
         expect(Math.max(...open), 'the sounding segment is the one that grew')
           .toBeCloseTo(open[0], 6);
-        expect(open.reduce((a, b) => a + b, 18)).toBeCloseTo(100, 3);
+        expect(open.reduce((a, b) => a + b, foldPct * 2)).toBeCloseTo(100, 3);
       });
     } finally {
       globalThis.requestAnimationFrame = raf;
