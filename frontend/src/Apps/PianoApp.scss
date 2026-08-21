@@ -2036,6 +2036,17 @@
 
   &__empty { color: var(--piano-muted); font-style: italic; }
 
+  // Speaker gate (Task 5): the browser stays visible for orientation, but
+  // song cards are visually deadened and non-interactive (onClick unset in
+  // JSX) while there's no BT speaker to play audio through.
+  &--speaker-disabled &__grid {
+    opacity: 0.4;
+  }
+
+  &--speaker-disabled &__card {
+    cursor: default;
+  }
+
   &__grid {
     list-style: none;
     margin: 0;
