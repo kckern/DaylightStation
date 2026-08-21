@@ -169,21 +169,21 @@ export function lyricStateAt({ segments, contentId, position }) {
     if (pos >= end && end > lastEnd) lastEnd = end;
   }
 
-  // A segment is sounding: the rail is up, whether or not this number has words.
-  // The Pifa is ninety seconds of pastoral symphony between two texted numbers,
-  // and sliding the layout out and back for it is the exact flapping the grace
-  // window exists to prevent.
+  // The lyric rail is up ONLY when the sounding segment has words. An
+  // instrumental number (the Sinfonia, the Pifa) hands the screen back to the
+  // programme rail — the video slides left and right as text comes and goes,
+  // and that is the intended behaviour.
   if (sounding) {
+    if (!isText(sounding.text)) return dormant;
     return {
       active: true,
-      text: isText(sounding.text) ? sounding.text.trim() : '',
+      text: sounding.text.trim(),
       ...billingFor(sounding),
       index,
     };
   }
 
-  // Nothing is sounding. This is a real gap — between numbers, a Part break, or
-  // the tail — and only its LENGTH decides.
-  if (pos - lastEnd <= LYRIC_GRACE_S) return { active: true, text: '', heading: '', subheading: '', index: -1 };
+  // Nothing is sounding — a gap between numbers, a Part break, or the tail.
+  // The lyric rail is dormant: no text to show means the programme rail.
   return dormant;
 }
