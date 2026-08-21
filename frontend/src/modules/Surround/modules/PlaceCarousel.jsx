@@ -48,6 +48,7 @@ import CountryMap from '../map/CountryMap.jsx';
 import EraTimeline from '../map/EraTimeline.jsx';
 import { mapPinFrom } from './CountryMapModule.jsx';
 import { DISSOLVE_FADE_MS, prefersReducedMotion, useDissolve } from '../dissolve.js';
+import { countryCaptionFor, cityCaptionFor, eraCaptionFor } from '../placeCaption.js';
 import { smartQuotes, trimmed } from '../typography.js';
 import { surroundLogger, assetUrl } from '../moduleKit.js';
 import './PlaceCarousel.scss';
@@ -92,6 +93,14 @@ export default function PlaceCarousel({
     const city = trimmed(map?.city);
 
     const photoSrc = assetUrl(data?.assetBase, composer?.city_image);
+    // Does the PHOTOGRAPH take the authored `map.caption`? It is the better
+    // plate for a sentence about the place, so where a photograph exists it
+    // keeps it and the city map falls back to the bare name — one line under
+    // two plates twelve seconds apart reads as a bug, not as emphasis. Seven of
+    // the library's 354 composers have a `city_image`, so this is the rare path
+    // and the city map is the one that normally carries the sentence.
+    const photoTookCaption = Boolean(photoSrc) && Boolean(trimmed(map?.caption));
+
     if (photoSrc) {
       // Two registers for one slot. An authored caption is a human sentence —
       // "Venice — his lifelong home" — and is set as prose; a bare city name is a
@@ -112,17 +121,26 @@ export default function PlaceCarousel({
 
     const pin = mapPinFrom(data);
     if (pin) {
+      // COUNTRY-SCOPED, because the slide is. At regional zoom the map draws no
+      // star and no city name (`ZOOM_PRESETS.region.showCity`), so a caption
+      // naming the city would be answering the NEXT slide's question over this
+      // one's picture.
+      //
+      // WAVE 11: and it is no longer the country's NAME. The plate letters
+      // FRANCE across the lit shape; a caption reading FRANCE under it is the
+      // one line of the slide a viewer reads first, spent saying nothing. What
+      // the plate cannot draw is why THIS country is the lit one — Chopin is
+      // Polish — so that is what `countryCaptionFor` derives, from the
+      // nationality and birthplace every composer file carries. The bare label
+      // survives inside it as the floor.
+      const countryCaption = countryCaptionFor(composer);
       built.push({
         key: 'map',
         kind: 'map',
         pin,
         zoom: 'region',
-        // COUNTRY-SCOPED, because the slide is. At regional zoom the map draws
-        // no star and no city name (`ZOOM_PRESETS.region.showCity`), so a
-        // caption naming the city would be answering the NEXT slide's question
-        // over this one's picture.
-        caption: pin.country,
-        captionKind: 'label',
+        caption: countryCaption?.text ?? pin.country,
+        captionKind: countryCaption?.kind ?? 'label',
       });
       // The zoomed map: having shown WHERE the country is, show where in it.
       // Same component, same payload, one `zoom` prop — the geography stays in
@@ -130,14 +148,20 @@ export default function PlaceCarousel({
       // when there is a city to zoom TO: a "city map" with no city would be the
       // country slide again at a different scale, which is not a slide.
       if (pin.city) {
+        // The city leads on its own slide — that is what this one is about, and
+        // wave 11 is where it stopped merely being NAMED on it. The star on the
+        // plate is already lettered PARIS; the authored `map.caption` is a human
+        // sentence about the place, present on 349 of 354 composers, and until
+        // now it could only appear under a city photograph that exists for
+        // seven of them. This is the plate that shows it.
+        const cityCaption = cityCaptionFor(composer, { photoTookCaption });
         built.push({
           key: 'city-map',
           kind: 'city-map',
           pin,
           zoom: 'city',
-          // The city leads on its own slide — that is what this one is about.
-          caption: pin.city,
-          captionKind: 'label',
+          caption: cityCaption?.text ?? pin.city,
+          captionKind: cityCaption?.kind ?? 'label',
         });
       }
     }
@@ -150,6 +174,7 @@ export default function PlaceCarousel({
     const period = trimmed(data?.piece?.period) ?? trimmed(composer?.period);
     if (period) {
       const year = Number(data?.piece?.year);
+      const eraCaption = eraCaptionFor(data?.piece, composer);
       built.push({
         key: 'era',
         kind: 'era',
@@ -163,16 +188,24 @@ export default function PlaceCarousel({
         // repeating it was measured on screen and read as a duplication bug.
         // What the plate cannot show is the precise dating the marker points
         // at — "1803-1804" against a marker standing at 1804 — so that is what
-        // the caption carries, falling back to the era only where a piece
+        // the caption carried, falling back to the era only where a piece
         // authors no date at all.
+        //
+        // WAVE 11 GOES ONE FURTHER, because the dating alone was still the dial
+        // restated: the brass numeral IS the year. `eraCaptionFor` locates the
+        // work in the composer's LIFE instead — "Composed 1829–1839, aged 19 to
+        // 29" — which is the one axis a dial of four centuries cannot draw, and
+        // it leads with WHERE the piece was written when that is somewhere the
+        // two map slides did not just show (the Preludes, in Majorca).
+        //
         // The period NOTE is not the caption either: it lives inside the plate,
         // where there is room for its three or four lines. The caption slot is
         // a two-line reserve shared with every other slide, and its fixed size
         // is what makes the swap a dissolve rather than a resize.
-        caption: trimmed(data?.piece?.composed)
+        caption: eraCaption?.text
           ?? (Number.isFinite(year) ? String(year) : null)
           ?? period,
-        captionKind: 'label',
+        captionKind: eraCaption?.kind ?? 'label',
       });
     }
 

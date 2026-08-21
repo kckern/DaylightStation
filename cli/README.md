@@ -286,6 +286,18 @@ node cli/school.mjs worksheet render \
 prove that questions are faithful, answers are extractive, or distractors are
 pedagogically sound; those require a source-text audit and human review.
 
+#### Decoy audit
+
+`node cli/school.mjs decoys audit <subject/course>` is the read-only release
+gate for answer/decoy length cues. It treats one question (not each of its
+decoys) as the paired observation, uses deterministic two-sided sign
+permutations, and reports every correct option that is at least 25% longer than
+its longest decoy. A course passes only when both word and character tests have
+`p >= 0.05`, neither unique-correct-longest rate exceeds 40%, and all banks
+parse. Run with `--trials 200000` before approval; `all` defaults to 20,000 for
+faster discovery. `decoys verify <subject/course>` also checks that the staged
+`decoy-audit.yml` fingerprint matches the live choice pools.
+
 ### `cli/gaming-assets.cli.mjs`
 
 Private game-art audit and preview tool for `media/games/_common`. It inventories PNG source facts and hashes, validates curated YAML manifests, renders categorized contact-sheet PNGs, creates frame-animation GIFs, and renders small YAML composition previews without starting the frontend.

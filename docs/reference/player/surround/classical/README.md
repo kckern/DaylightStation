@@ -314,9 +314,32 @@ Two fields worth calling out:
   `country-map` module, for definitions that use it directly — see "Modules").
   Give it the country name **exactly as the geodata spells it** (`United Kingdom`,
   `Czechia`) plus the city and its coordinates. An optional **`map.caption`**
-  authors the sentence under the carousel's city photograph — "Venice — his
-  lifelong home" — set as prose, not the tracked small-caps label a bare place
-  name gets. Omit it and the caption falls back to `map.city` alone, as a label.
+  authors the sentence under the carousel's **city map** — "Venice — his lifelong
+  home" — set as prose, not the tracked small-caps label a bare place name gets.
+  Where the composer also has a `city_image`, the photograph takes the sentence
+  instead and the city map falls back to the bare name, so it is never printed
+  under two plates twelve seconds apart. Omit it entirely and both fall back to
+  `map.city` alone, as a label.
+
+#### What the other identity fields are FOR
+
+`nationality`, `birthplace` and `born` are not decoration — the carousel derives
+its captions from them (`frontend/src/modules/Surround/placeCaption.js`), because
+a caption that restates its own plate is the one line of a slide a viewer reads
+first, spent saying nothing:
+
+| Plate | Caption, derived from | Example |
+|---|---|---|
+| country map | `nationality` vs `map.country`, plus `birthplace` | "Born in Żelazowa Wola, Poland; worked in France." |
+| city map | `map.caption` | "Paris — he arrived at twenty-one and never went home" |
+| era timeline | `born` against the piece's `composed`/`year`, and `city` when it differs from `map.city` | "Written at Majorca — 1835–1839, aged 25 to 29." |
+
+`nationality` is read **origin-first**: "Polish-French" means born Polish, worked
+in France, which is what lets the country plate name the move. Two forms are
+refused on purpose rather than guessed at — a parenthetical ("French (Italian
+born)", whose first word contradicts its own note) and "Franco-Flemish", which is
+a school and not a birth country (five of its seven composers were born in what
+is now Belgium). Both fall back to a caption that claims no country of birth.
 
 ### The performance sidecar
 
@@ -758,7 +781,7 @@ The `concert-hall` definition's regions resolve to named modules from
 |---|---|---|
 | `work-placard` | top | The floating stone plate: piece title, opus, composed, premiere. On a container it headlines the sounding segment and locates it in the set beneath (see "One programme across several media items"). The composer is never named here — the person lives on brass in the rail, and the plate is stone, which carries only the work. |
 | `composer-card` | right (rail) | The header row — portrait plate and brass nameplate — and, below it, the rotating composer fact. |
-| `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. |
+| `place-carousel` | right (rail) | The foot of the rail, one slide at a time: the composer's city photograph, the country in continental context, the country at city zoom, and the era timeline. Each is captioned with what its plate CANNOT draw — see "What the other identity fields are FOR". |
 | `country-map` | right, bottom | The regional map component itself (see below). |
 | `segment-map` | bottom | The engraved-score progress band, with each segment's translation glossed under its name. Also answers to its pre-rename name, `movement-map`, so an unmigrated definition still draws the rail rather than warning `surround.module.missing` over an empty region. |
 | `cue-ticker` | bottom | The docked ticker: the playing segment's `listen` notes on one side, cues and facts on the other. On a container it reads the composed rail, the same list the band above it draws — which is what makes "the bond always lands" structural: the two halves cannot disagree about what is sounding, because they ask one function of one list. |

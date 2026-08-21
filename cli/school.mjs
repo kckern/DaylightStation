@@ -52,6 +52,10 @@ const NAMESPACES = {
     module: './school/worksheet.mjs',
     blurb: 'issue and render a course lesson worksheet (the coursework path)',
   },
+  decoys: {
+    module: './school/decoys.mjs',
+    blurb: 'audit answer/decoy construction and length cues in question banks',
+  },
   sim: {
     module: './school/sim.mjs',
     blurb: 'end-to-end lifecycle proof for any course — writes nothing real',
