@@ -686,8 +686,7 @@
 }
 
 .surround-segment-map__group--collapsed {
-  opacity: 0;
-  pointer-events: none;
+  visibility: hidden;
 }
 
 /* Segment names sit BELOW the rule (design wave 4), clear of the rule lane
