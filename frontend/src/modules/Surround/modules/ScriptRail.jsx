@@ -20,9 +20,17 @@
 //             a containment the tree can simply show. Closed branches print
 //             nothing but their own title, which is what keeps a five-act work
 //             from setting its whole contents page on the rail.
-//   HEADING   The sounding number, with its numeral. Set once per segment and
-//             it does NOT page with the text beneath it, so a viewer glancing
-//             up in the middle of a long air still knows what is sounding.
+//   HEADING   The sounding number, with its numeral, and under it the number's
+//             BILLING — how it is performed and where its words come from
+//             (`subheading:` / `heading:`, joined as the NOW register joins
+//             them: `Recitative (Accompanied - Tenor) . Isaiah 40:1-3`). Those
+//             two fields reach the LEFT rail's annotation line and the band's
+//             NOW register, and on a texted piece the left rail is parked off
+//             screen and the band is on the far side of the video — so without
+//             this the one place a viewer is reading never said whether they
+//             were hearing an air or a chorus. Set once per segment and it does
+//             NOT page with the text beneath it, so a viewer glancing up in the
+//             middle of a long air still knows what is sounding.
 //   TEXT      The sung words. Fitted, then paged. Never cut. THE LARGEST TYPE
 //             ON THE RAIL — see `lyricCeilingPx` in `../fit.js` for why it has
 //             a ceiling of its own rather than the programme note's.
@@ -270,6 +278,11 @@ export default function ScriptRail({ position, data, region, logger }) {
       {state.heading && (
         <h2 className="surround-script-rail__heading" data-testid="surround-script-rail-heading">
           {smartQuotes(state.heading)}
+          {state.billing && (
+            <span className="surround-script-rail__billing" data-testid="surround-script-rail-billing">
+              {smartQuotes(state.billing)}
+            </span>
+          )}
         </h2>
       )}
 

@@ -96,19 +96,41 @@ function headingFor(segment) {
 }
 
 /**
+ * THE NUMBER'S BILLING — how it is performed and where its words come from.
+ *
+ * `subheading:` and `heading:` are two of a segment's four authored text fields
+ * (see the classical reference): `Air (Tenor)` and `Isaiah 40:1-3`. THE CORPUS
+ * FIELD `heading:` IS NOT THIS MODULE'S `heading`, which is the numbered label
+ * — a collision worth naming, because reading one for the other is how a rail
+ * ends up printing a scripture reference where a movement title belongs. The
+ * returned key is `billing` for that reason.
+ *
+ * Joined with the interpunct the NOW register uses, from the same two fields in
+ * the same order, so the two halves of the frame cannot bill one number two
+ * ways. Absent on a work that authors neither, which is most symphonies.
+ */
+function billingFor(segment) {
+  return [segment?.subheading, segment?.heading]
+    .map((v) => (isText(v) ? v.trim() : ''))
+    .filter(Boolean)
+    .join(' \u00b7 ');
+}
+
+/**
  * The lyric rail's whole state at one position.
  *
  * @param {object}   args
  * @param {Array}    args.segments  The rail, flattened, as the store publishes it.
  * @param {string}   args.contentId The media item currently sounding.
  * @param {number}   args.position  Seconds into THAT item.
- * @returns {{active: boolean, text: string, heading: string, index: number}}
+ * @returns {{active: boolean, text: string, heading: string, billing: string, index: number}}
  *   `active` is whether the frame wears the lyric layout; `text` is the sounding
- *   segment's words, EMPTY on an instrumental number while `active` stays true.
+ *   segment's words, EMPTY on an instrumental number while `active` stays true;
+ *   `heading` is the numbered label and `billing` the line under it.
  */
 export function lyricStateAt({ segments, contentId, position }) {
   const list = Array.isArray(segments) ? segments : [];
-  const dormant = { active: false, text: '', heading: '', index: -1 };
+  const dormant = { active: false, text: '', heading: '', billing: '', index: -1 };
   if (!railHasText(list)) return dormant;
 
   const id = String(contentId ?? '');
@@ -144,12 +166,13 @@ export function lyricStateAt({ segments, contentId, position }) {
       active: true,
       text: isText(sounding.text) ? sounding.text.trim() : '',
       heading: headingFor(sounding),
+      billing: billingFor(sounding),
       index,
     };
   }
 
   // Nothing is sounding. This is a real gap — between numbers, a Part break, or
   // the tail — and only its LENGTH decides.
-  if (pos - lastEnd <= LYRIC_GRACE_S) return { active: true, text: '', heading: '', index: -1 };
+  if (pos - lastEnd <= LYRIC_GRACE_S) return { active: true, text: '', heading: '', billing: '', index: -1 };
   return dormant;
 }

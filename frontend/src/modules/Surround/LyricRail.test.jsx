@@ -67,6 +67,34 @@ describe('the lyric rail', () => {
     expect(screen.getByTestId('surround-script-rail-heading')).toHaveTextContent('1. Comfort ye');
   });
 
+  /**
+   * `subheading:` and `heading:` reach the LEFT rail's annotation line and the
+   * band's NOW register — and on a texted piece the left rail is parked off
+   * screen and the band is on the far side of the video, so the one column a
+   * viewer is reading never said whether this was an air or a chorus.
+   *
+   * TO GO RED: drop `billing` from `lyricStateAt`, or print it as a sibling of
+   * the heading rather than inside it.
+   */
+  it('bills the number under its name — how it is sung, and whence the words', () => {
+    const billed = [
+      seg({
+        n: 2, start: 10, end: 40, name: 'Comfort ye', text: 'Comfort ye my people',
+        subheading: 'Recitative (Accompanied — Tenor)', heading: 'Isaiah 40:1–3',
+      }),
+    ];
+    draw(withLyric, billed, 20);
+    const billing = screen.getByTestId('surround-script-rail-billing');
+    expect(billing).toHaveTextContent('Recitative (Accompanied — Tenor) · Isaiah 40:1–3');
+    // It belongs to the number, so a heading that wraps takes its billing with it.
+    expect(screen.getByTestId('surround-script-rail-heading')).toContainElement(billing);
+  });
+
+  it('prints no billing line for a number that authors neither field', () => {
+    draw(withLyric, RAIL, 20);
+    expect(screen.queryByTestId('surround-script-rail-billing')).not.toBeInTheDocument();
+  });
+
   it('shows the active programme branch above the current lyric', () => {
     const grouped = RAIL.map((segment, index) => ({
       ...segment,
