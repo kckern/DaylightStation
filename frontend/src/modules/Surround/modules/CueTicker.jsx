@@ -246,10 +246,17 @@ export default function CueTicker({
    */
   const container = isComposedContainer(data);
   const rail = useMemo(() => (Array.isArray(data?.segments) ? data.segments : []), [data]);
+  // A nested long-form work is one media item, not a composed Plex container,
+  // but its Part/Scene/number facts still change with the sounding segment.
+  const scopedFacts = useMemo(() => rail.some((segment) => (
+    Array.isArray(segment?.facts) || Array.isArray(segment?.sceneFacts)
+      || Array.isArray(segment?.partFacts) || Array.isArray(segment?.ancestors)
+      || segment?.group?.work
+  )), [rail]);
   /** Where the transport is on the CONTAINER's rail — -1 on a single work. */
   const railIndex = useMemo(
-    () => (container ? segmentAt({ segments: rail, contentId, position }).index : -1),
-    [container, rail, contentId, position],
+    () => (scopedFacts ? segmentAt({ segments: rail, contentId, position }).index : -1),
+    [scopedFacts, rail, contentId, position],
   );
 
   // Every authored string this band prints is curled at its render seam — one
@@ -270,8 +277,8 @@ export default function CueTicker({
    * as `facts`; on a container it is the union over every segment.
    */
   const allFacts = useMemo(
-    () => smartQuotesAll(container ? factPools(data) : factPool(data, -1)),
-    [container, data],
+    () => smartQuotesAll(scopedFacts ? factPools(data) : factPool(data, -1)),
+    [scopedFacts, data],
   );
 
   const pieceSegments = useMemo(
@@ -796,8 +803,22 @@ export default function CueTicker({
   // was asked to settle, reappearing in the other half of the bond.
   const style = numeralStyle(placed.map((p) => p.segment));
   const segmentNumeral = segment ? numeral(Number(segment.n), segmentIndex, style) : null;
-  const segmentName = smartQuotes(trimmed(segment?.name));
-  const segmentTranslation = smartQuotes(trimmed(segment?.translation));
+  // THE REGISTER DOES NOT REPRINT THE RAIL'S LABEL. `label:` is what the rail
+  // sets — for Messiah the incipit, which is also the first line of the lyric
+  // this register is about to scroll, so printing it here said the same words
+  // twice within six inches and once more as the cue itself. What belongs here
+  // is the number's BILLING: how it is performed and where its words come from
+  // (`subheading:` / `heading:`), which the rail has no room for and the bond
+  // already tells the eye to look here for.
+  //
+  // `name` remains as the pre-rename fallback, for exactly as long as the
+  // corpus has works that still author it — see `SegmentMap.jsx`, `engrave`.
+  const segmentName = [segment?.subheading, segment?.heading]
+    .map((value) => smartQuotes(trimmed(value)))
+    .filter(Boolean)
+    .join(' · ')
+    || smartQuotes(trimmed(segment?.label ?? segment?.name));
+  const segmentAnnotation = smartQuotes(trimmed(segment?.translation));
 
   // ---- the bond's two shared decisions --------------------------------------
   // Both come from `../band.js` so this module and the rail cannot disagree
@@ -895,7 +916,7 @@ export default function CueTicker({
    * spent.
    */
   const glossed = useMemo(
-    () => placed.some(({ segment: m }) => Boolean(trimmed(m?.translation))),
+    () => placed.some(({ segment: m }) => Boolean(trimmed(m?.heading) || trimmed(m?.translation))),
     [placed],
   );
 
@@ -1020,7 +1041,7 @@ export default function CueTicker({
               </span>
               {glossed && (
                 <span className="surround-cue-ticker__now-translation">
-                  {segmentTranslation || BLANK_LINE}
+                  {segmentAnnotation || BLANK_LINE}
                 </span>
               )}
             </p>

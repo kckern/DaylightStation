@@ -165,28 +165,50 @@ const SET = {
   facts: ['The polonaise is a Polish processional dance in triple time.']
 };
 
-describe('factPool — the segment, then its work, then the set', () => {
+describe('factPool — scoped facts, richest first', () => {
+  it('combines nested number, Scene, Part, and work facts in scope order', () => {
+    const nested = {
+      ...SET,
+      segments: [{
+        ...SET.segments[0],
+        facts: ['Number fact.'],
+        sceneFacts: ['Scene fact.'],
+        partFacts: ['Part fact.'],
+      }],
+    };
+    expect(factPool(nested, 0)).toEqual([
+      'Number fact.', 'Scene fact.', 'Part fact.', 'A bare octave opens it.',
+      'The polonaise is a Polish processional dance in triple time.',
+    ]);
+  });
   /**
    * TO GO RED: drop the `note` rung — the pool falls through to the group's
    * facts and the assertion reads
    *   expected [ 'The Heroic nickname…', 'Published…' ] to deeply equal [ 'The trio is in E major.' ]
    */
-  it('prefers the segment’s own note to everything else', () => {
+  it('puts the segment’s own note first without discarding broader context', () => {
     const noted = {
       ...SET,
       segments: [SET.segments[0], { ...SET.segments[1], note: 'The trio is in E major.' }]
     };
-    expect(factPool(noted, 1)).toEqual(['The trio is in E major.']);
+    expect(factPool(noted, 1)).toEqual([
+      'The trio is in E major.', 'The Heroic nickname is not Chopin’s.',
+      'Published in December 1843.', 'The polonaise is a Polish processional dance in triple time.',
+    ]);
   });
 
   /**
    * TO GO RED: drop the `groupFacts` rung — the pool falls through to the
    * container's single fact instead of the two the Heroic authored.
    */
-  it('falls to the facts of the work the segment belongs to', () => {
-    expect(factPool(SET, 1))
-      .toEqual(['The Heroic nickname is not Chopin’s.', 'Published in December 1843.']);
-    expect(factPool(SET, 0)).toEqual(['A bare octave opens it.']);
+  it('includes the facts of the work the segment belongs to', () => {
+    expect(factPool(SET, 1)).toEqual([
+      'The Heroic nickname is not Chopin’s.', 'Published in December 1843.',
+      'The polonaise is a Polish processional dance in triple time.',
+    ]);
+    expect(factPool(SET, 0)).toEqual([
+      'A bare octave opens it.', 'The polonaise is a Polish processional dance in triple time.',
+    ]);
   });
 
   /** TO GO RED: return [] rather than the container's facts at the bottom. */
@@ -245,9 +267,10 @@ describe('factPools — every pool the piece register can reach', () => {
     };
     expect(factPools(noted)).toEqual([
       'A bare octave.',
+      'A bare octave opens it.',
+      'The polonaise is a Polish processional dance in triple time.',
       'The Heroic nickname is not Chopin’s.',
       'Published in December 1843.',
-      'The polonaise is a Polish processional dance in triple time.'
     ]);
   });
 
@@ -261,8 +284,8 @@ describe('factPools — every pool the piece register can reach', () => {
     };
     expect(factPools(shared)).toEqual([
       'Written in exile.',
-      'Published in December 1843.',
-      'The polonaise is a Polish processional dance in triple time.'
+      'The polonaise is a Polish processional dance in triple time.',
+      'Published in December 1843.'
     ]);
   });
 });

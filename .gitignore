@@ -162,3 +162,4 @@ __sabotage_*.mjs
 # date), so committing it would churn on every regeneration.
 /*.pdf
 docs/_moveme/
+/.agents

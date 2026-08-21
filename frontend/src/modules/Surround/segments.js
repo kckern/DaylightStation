@@ -182,19 +182,14 @@ export function isComposedContainer(data) {
  * The facts the piece register should be rotating while segment `index` of a
  * container's rail is sounding.
  *
- * THE PRECEDENCE, MOST SPECIFIC FIRST:
- *   1. THE SEGMENT'S OWN `note` — one authored line about exactly this stretch
- *      of music. Nothing more specific exists, so nothing outranks it.
- *   2. ITS GROUP WORK'S FACTS (`groupFacts[group.work]`, published by
- *      `YamlSurroundStore#composeOne`) — the four facts the corpus authored
- *      about the Heroic polonaise, while the Heroic polonaise is playing.
- *   3. THE CONTAINER'S OWN FACTS — the eight about the set. Also the answer
- *      when nothing is sounding (`index < 0`: the applause between two works,
- *      the walk-on before the first), because in that state the set is the only
- *      true subject the band has.
+ * THE POOL ACCUMULATES FROM MOST SPECIFIC TO BROADEST. A rich work must not
+ * hide its Part and Scene research merely because the current number has ten
+ * observations of its own. Duplicates are removed in first-appearance order:
  *
- * A rung is taken only when it has text: a whitespace `note` and an empty facts
- * list are absences, not empty answers, and fall through.
+ *   1. THE SEGMENT'S OWN `note` / `facts`.
+ *   2. ITS nearest-to-outermost ancestor-group `facts` in a nested corpus.
+ *   3. ITS GROUP WORK'S facts for a multi-item container.
+ *   4. THE WORK/CONTAINER's own facts — also the sole scope during dead time.
  *
  * UNGATED, DELIBERATELY. `isComposedContainer` is the caller's decision and is
  * not read here, so this stays a pure statement of the precedence and can be
@@ -209,14 +204,22 @@ export function isComposedContainer(data) {
 export function factPool(data, index) {
   const list = Array.isArray(data?.segments) ? data.segments : [];
   const segment = Number.isInteger(index) && index >= 0 ? list[index] : null;
+  const pool = [];
+  const add = (items) => items.forEach((text) => { if (!pool.includes(text)) pool.push(text); });
 
-  if (isText(segment?.note)) return [segment.note.trim()];
-
+  if (isText(segment?.note)) add([segment.note.trim()]);
+  add(texts(segment?.facts));
+  // Generic recursive corpus hierarchy. The nearest group is most specific,
+  // so walk the authored root → leaf path backwards.
+  [...(Array.isArray(segment?.ancestors) ? segment.ancestors : [])]
+    .reverse().forEach((ancestor) => add(texts(ancestor?.facts)));
+  // Compatibility for the former fixed Part → Scene payload shape.
+  add(texts(segment?.sceneFacts));
+  add(texts(segment?.partFacts));
   const work = segment?.group?.work;
-  const group = work ? texts(data?.groupFacts?.[work]) : [];
-  if (group.length) return group;
-
-  return texts(data?.facts);
+  if (work) add(texts(data?.groupFacts?.[work]));
+  add(texts(data?.facts));
+  return pool;
 }
 
 /**
