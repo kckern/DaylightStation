@@ -34,6 +34,7 @@ describe('TOKEN_CLASSES', () => {
     expect(TOKEN_CLASSES).toEqual([
       'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
       'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion',
+      'agenda_print',
     ]);
   });
 
@@ -230,7 +231,9 @@ describe('resolveTokenState: renewable action classes', () => {
     // `worksheet_companion` is sessionless for the same reason — it is keyed by
     // learner + companion, not by a session, and `tokens.mjs` groups it with
     // `subject_next` everywhere it matters (access codes, renewability).
-    TOKEN_CLASSES.filter((c) => !['identify', 'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion'].includes(c)).forEach((tokenClass) => {
+    // `agenda_print` is sessionless too — it is a bulk-print fan-out keyed by
+    // the agenda's refs, not by any one session.
+    TOKEN_CLASSES.filter((c) => !['identify', 'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion', 'agenda_print'].includes(c)).forEach((tokenClass) => {
       const out = at(tokenClass, 'rewarded', { terminal: true });
       expect(out.status).toBe('already_done');
       expect(out.message.length).toBeGreaterThan(0);
@@ -543,5 +546,118 @@ describe('access code on a token record', () => {
   it('mintToken still refuses a code with no clock', () => {
     expect(() => mintToken({ ...base, rng: seededRng(), accessCode: CODE }))
       .toThrow(expect.objectContaining({ code: 'SCHOOL_ACCESS_CODE_MISSING_EXPIRY' }));
+  });
+});
+
+describe('agenda_print', () => {
+  const REFS = ['sch:AAAA2222BBBB3333', 'sch:CCCC4444DDDD5555'];
+
+  it('mints with learnerId + tokenRefs subject', () => {
+    const record = mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: REFS },
+      at: AT, rng: seededRng(),
+      expiresAt: '2026-07-28T10:00:00.000Z',
+    });
+    expect(record.tokenClass).toBe('agenda_print');
+    expect(record.subject.learnerId).toBe('test-user');
+    expect(record.subject.tokenRefs).toEqual(REFS);
+  });
+
+  it('rejects missing learnerId', () => {
+    expect(() => mintToken({
+      tokenClass: 'agenda_print',
+      subject: { tokenRefs: REFS },
+      at: AT, rng: seededRng(),
+    })).toThrow(/learnerId/);
+  });
+
+  it('rejects empty tokenRefs', () => {
+    expect(() => mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: [] },
+      at: AT, rng: seededRng(),
+    })).toThrow(/tokenRefs/);
+  });
+
+  it('rejects non-sch: prefixed refs', () => {
+    expect(() => mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: ['bad:token'] },
+      at: AT, rng: seededRng(),
+    })).toThrow(/tokenRefs/);
+  });
+
+  it('rejects duplicate tokenRefs', () => {
+    expect(() => mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: [REFS[0], REFS[0]] },
+      at: AT, rng: seededRng(),
+    })).toThrow(/duplicate/i);
+  });
+
+  it('accepts an access code (unlike other non-subject_next classes)', () => {
+    const record = mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: REFS },
+      at: AT, rng: seededRng(),
+      expiresAt: '2026-07-28T10:00:00.000Z',
+      accessCode: '123456',
+      accessCodeExpiresAt: '2026-07-28T04:00:00.000Z',
+    });
+    expect(record.accessCode).toBe('123456');
+  });
+
+  it('does not require sessionId', () => {
+    const record = mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: REFS },
+      at: AT, rng: seededRng(),
+      expiresAt: '2026-07-28T10:00:00.000Z',
+    });
+    expect(record.subject.sessionId).toBeUndefined();
+  });
+});
+
+describe('isAccessCodeLive — agenda_print', () => {
+  const bulkRecord = mintToken({
+    tokenClass: 'agenda_print',
+    subject: { learnerId: 'test-user', tokenRefs: ['sch:AAAA2222BBBB3333'] },
+    at: '2026-07-27T10:00:00.000Z', rng: seededRng(),
+    expiresAt: '2026-07-28T10:00:00.000Z',
+    accessCode: '654321',
+    accessCodeExpiresAt: '2026-07-28T04:00:00.000Z',
+  });
+
+  it('returns true for a live bulk code', () => {
+    expect(isAccessCodeLive(bulkRecord, { now: '2026-07-27T12:00:00.000Z' })).toBe(true);
+  });
+
+  it('returns false after the code expires', () => {
+    expect(isAccessCodeLive(bulkRecord, { now: '2026-07-28T04:00:01.000Z' })).toBe(false);
+  });
+});
+
+describe('resolveTokenState — agenda_print', () => {
+  it('is actionable without sessionState', () => {
+    const record = mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: ['sch:AAAA2222BBBB3333'] },
+      at: '2026-07-27T10:00:00.000Z', rng: seededRng(),
+      expiresAt: '2026-07-28T10:00:00.000Z',
+    });
+    const result = resolveTokenState(record, { now: '2026-07-27T12:00:00.000Z' });
+    expect(result.status).toBe('actionable');
+  });
+
+  it('is expired after expiresAt', () => {
+    const record = mintToken({
+      tokenClass: 'agenda_print',
+      subject: { learnerId: 'test-user', tokenRefs: ['sch:AAAA2222BBBB3333'] },
+      at: '2026-07-27T10:00:00.000Z', rng: seededRng(),
+      expiresAt: '2026-07-28T10:00:00.000Z',
+    });
+    const result = resolveTokenState(record, { now: '2026-07-29T00:00:00.000Z' });
+    expect(result.status).toBe('expired');
   });
 });
