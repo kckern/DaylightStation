@@ -360,9 +360,13 @@ In browser console: `window.DAYLIGHT_LOG_LEVEL = 'debug'` or call `configure({ l
 
 **Query the log store first. `docker logs` is the fallback, not the default.**
 
-Logs ship to a log-ingestion container (7-day retention). It indexes every field
-of our structured events, so it answers "what happened in the piano app at
-16:54" — which grepping a file or scrolling `docker logs` does not.
+Logs ship to the **`victoria-logs`** container on the homeserver
+(`victoriametrics/victoria-logs:latest`, added 2026-08-17), listening on
+**:9428**, `-retentionPeriod=7d` with a 4GB disk cap, storing to
+`/media/kckern/DockerDrive/daylight-victorialogs`. There is **no separate log
+shipper** — the app posts to it directly. It indexes every field of our
+structured events, so it answers "what happened in the piano app at 16:54" —
+which grepping a file or scrolling `docker logs` does not.
 
 **`https://logs.kckern.net`** — web UI for a human, HTTP API for an agent.
 **No API key needed.** It has no auth of its own; reachability is the existing
@@ -389,7 +393,7 @@ curl -s https://logs.kckern.net/select/logsql/query \
 
 # Count events by subsystem
 curl -s https://logs.kckern.net/select/logsql/query \
-  -d 'query=_time:24h | stats count() by (context.app)'
+  -d 'query=_time:24h | stats by ("context.app") count() as n | sort by (n desc)'
 
 # Live tail (like tail -f)
 curl -sN https://logs.kckern.net/select/logsql/tail -d 'query=level:error'
@@ -410,7 +414,14 @@ If the hostname is unreachable (off-network), go in over SSH instead:
 | `data.*` | Event payload fields, individually queryable |
 
 Useful LogsQL: `_time:5m`, `AND`/`OR`/`NOT`, `field:value`, `"exact phrase"`,
-`| stats count() by (context.app)` for aggregation, `| limit N`.
+`| stats by ("context.app") count()` for aggregation, `| limit N`.
+
+**Two syntax traps, both verified 2026-08-22:**
+- Aggregation is `| stats by (field) count()`, NOT `| stats count() by (field)`.
+  The latter is rejected outright: `cannot parse "stats" pipe: unexpected token
+  "(" after [count(*) as "by"]`.
+- Dotted field names must be QUOTED in a `by (...)` clause — `by ("context.app")`,
+  not `by (context.app)`.
 
 **When `docker logs` is still right:** the container failed to start, or the log
 store itself is down — anything that happens before or below the shipper. The
