@@ -14,6 +14,7 @@
 // full-screen surface (Task 13) and the container browse header (Task 15).
 import React, { useCallback, useState } from 'react';
 import { Modal } from '@mantine/core';
+import { IconPlayerPlayFilled } from '@tabler/icons-react';
 import { useCastTarget } from './useCastTarget.js';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { deviceName } from '../fleet/deviceDisplay.js';
@@ -71,7 +72,7 @@ export function DestinationLine({ surface } = {}) {
         className="cast-destination-line"
         onClick={() => setOpen(true)}
       >
-        <span aria-hidden="true">▶</span> Playing to: <strong data-testid="destination-line-name">{name}</strong>
+        <IconPlayerPlayFilled size={14} aria-hidden="true" /> Playing to: <strong data-testid="destination-line-name">{name}</strong>
       </button>
       <Modal
         opened={open}

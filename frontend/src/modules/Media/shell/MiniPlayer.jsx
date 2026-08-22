@@ -1,9 +1,9 @@
 // frontend/src/modules/Media/shell/MiniPlayer.jsx
-// The always-visible handle on the ambient local session: a bottom bar with
+// The handle on the ambient local session while one exists: a bottom bar with
 // a thin live progress strip along its top edge, the current item (tap → Now
-// Playing), queue position, play/pause, next, and stop. Renders a slim "Idle"
-// bar when no session — never disappears entirely, so the session always has
-// a visible anchor.
+// Playing), queue position, play/pause, next, and stop. Renders nothing when
+// there's no session (Task 16 / spec D7) — a permanent "Idle" strip has no
+// affordance of its own and just eats screen space, especially on a phone.
 import React, { useRef } from 'react';
 import {
   IconPlayerPlayFilled,
@@ -33,11 +33,7 @@ export function MiniPlayer() {
   usePlayerHost(dockRef, 1, showVideoDock);
 
   if (!item) {
-    return (
-      <div data-testid="media-mini-player" className="mini-player mini-player--idle">
-        <span className="np-state">Idle</span>
-      </div>
-    );
+    return null;
   }
 
   const isPlaying = PLAYING_STATES.has(snapshot.state);

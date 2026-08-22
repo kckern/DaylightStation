@@ -48,11 +48,23 @@ beforeEach(() => {
 });
 
 describe('MiniPlayer', () => {
-  it('renders the exact "Idle" bar when nothing is queued', () => {
+  // Task 16 (spec D7): the mini player used to render a permanent ~60px
+  // "Idle" strip even with no local session — dead chrome eating screen
+  // space on a 360px phone. It now renders nothing until there's an actual
+  // session to show a handle for.
+  it('renders nothing when no local session exists (idle)', () => {
     state.snapshot = { ...makeSnapshot(), currentItem: null };
-    render(<MiniPlayer />);
-    expect(screen.getByTestId('media-mini-player')).toHaveTextContent('Idle');
-    expect(screen.queryByTestId('mini-toggle')).toBeNull();
+    const { container } = render(<MiniPlayer />);
+    expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders nothing when there is no snapshot at all', () => {
+    state.snapshot = null;
+    const { container } = render(<MiniPlayer />);
+    expect(screen.queryByTestId('media-mini-player')).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
   });
 
   it('shows a top-edge progress bar reflecting position/duration', () => {

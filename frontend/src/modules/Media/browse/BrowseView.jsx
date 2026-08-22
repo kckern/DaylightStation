@@ -9,14 +9,21 @@
 // playing on tap. `containerItem` (forwarded by whichever caller opened this
 // specific container — useContentDispatch's dispatch(), or this component's
 // own nested-drill handler below) carries the tapped item along, so a
-// container-level browse view opens with a ▶ Play · 🔀 Shuffle · + Queue
-// header, all three acting on the WHOLE container against the visible
-// destination (DestinationLine). Root/category browse levels (Home's
-// source/mediaType cards, the plain "Browse" nav item) never pass a
-// containerItem, so the header stays absent there — nothing single to play.
+// container-level browse view opens with a Play / Shuffle / Queue header
+// (icons, not unicode glyphs — see Task 16), all three acting on the WHOLE
+// container against the visible destination (DestinationLine). Root/category
+// browse levels (Home's source/mediaType cards, the plain "Browse" nav item)
+// never pass a containerItem, so the header stays absent there — nothing
+// single to play.
 import React, { useMemo } from 'react';
 import { Skeleton, Alert, Text, Stack, Button } from '@mantine/core';
-import { IconChevronRight, IconAlertCircle } from '@tabler/icons-react';
+import {
+  IconChevronRight,
+  IconAlertCircle,
+  IconPlayerPlay,
+  IconArrowsShuffle,
+  IconPlus,
+} from '@tabler/icons-react';
 import { useListBrowse } from './useListBrowse.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
@@ -81,7 +88,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
               className="browse-dispatch-btn browse-dispatch-btn--primary"
               onClick={() => runHeaderVerb('play', playContainerAsQueue)}
             >
-              <span aria-hidden="true">▶</span> Play
+              <IconPlayerPlay size={16} aria-hidden="true" /> Play
             </button>
             <button
               type="button"
@@ -89,7 +96,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('shuffle', (id, item) => playContainerAsQueue(id, item, { shuffle: true }))}
             >
-              <span aria-hidden="true">🔀</span> Shuffle
+              <IconArrowsShuffle size={16} aria-hidden="true" /> Shuffle
             </button>
             <button
               type="button"
@@ -97,7 +104,7 @@ export function BrowseView({ path, label, modifiers, containerItem = null, take 
               className="browse-dispatch-btn"
               onClick={() => runHeaderVerb('queue', addContainerToQueue)}
             >
-              <span aria-hidden="true">+</span> Queue
+              <IconPlus size={16} aria-hidden="true" /> Queue
             </button>
           </div>
           <DestinationLine surface="browse-header" />

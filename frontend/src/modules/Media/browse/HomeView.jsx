@@ -1,85 +1,20 @@
 // frontend/src/modules/Media/browse/HomeView.jsx
-// Landing surface: resume card (current session), recents, and config-driven
-// category cards from the household media config. Resume/recents bind to the
-// local session in Phase 2/3; their empty states render friendly hints, never
-// nothing.
-import React, { useState, useEffect } from 'react';
-import { SimpleGrid, UnstyledButton, Skeleton, Text, Title, Stack, Alert } from '@mantine/core';
-import { IconChevronRight, IconAlertCircle } from '@tabler/icons-react';
-import { DaylightAPI } from '../../../lib/api.mjs';
-import { useNav } from '../shell/NavProvider.jsx';
+// Landing surface: resume card (current session) and recents. Recent leads —
+// the config-driven "Browse X" category cards this view used to render below
+// them duplicated the Browse tab that sits one thumb-tap below in the bottom
+// nav, and pushed Recent off the fold on a phone screen (Task 16 / spec D7).
+// Resume/recents bind to the local session; their empty states render
+// friendly hints, never nothing.
+import React from 'react';
+import { Stack } from '@mantine/core';
 import { ResumeCard } from './ResumeCard.jsx';
 import { RecentsRow } from './RecentsRow.jsx';
 
-function cardPath(entry) {
-  return [entry.source, entry.mediaType].filter(Boolean).join('/');
-}
-function cardKey(entry) {
-  return `${entry.source}-${entry.mediaType ?? 'all'}`;
-}
-
 export function HomeView() {
-  const [browse, setBrowse] = useState(null);
-  const [error, setError] = useState(null);
-  const { push } = useNav();
-
-  useEffect(() => {
-    let cancelled = false;
-    DaylightAPI('api/v1/media/config')
-      .then((cfg) => {
-        if (cancelled) return;
-        setBrowse(Array.isArray(cfg?.browse) ? cfg.browse : []);
-      })
-      .catch((err) => { if (!cancelled) setError(err); });
-    return () => { cancelled = true; };
-  }, []);
-
   return (
     <Stack data-testid="home-view" className="home-view" gap="lg">
       <ResumeCard />
       <RecentsRow />
-      <section>
-        <Title order={2} mb="sm">Browse</Title>
-        {error && (
-          <Alert
-            data-testid="home-error"
-            color="red"
-            variant="light"
-            icon={<IconAlertCircle size={18} />}
-          >
-            Couldn't load your library. Check the connection and try again.
-            <details className="error-detail">
-              <summary>Technical details</summary>
-              {error.message}
-            </details>
-          </Alert>
-        )}
-        {!error && !browse && (
-          <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} data-testid="home-loading">
-            {[0, 1, 2, 3].map((i) => <Skeleton key={i} height={88} radius="md" />)}
-          </SimpleGrid>
-        )}
-        {!error && browse && browse.length === 0 && (
-          <Text c="dimmed" data-testid="home-empty">
-            Nothing to browse yet.
-          </Text>
-        )}
-        {!error && browse && browse.length > 0 && (
-          <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }}>
-            {browse.map((entry) => (
-              <UnstyledButton
-                key={cardKey(entry)}
-                data-testid={`home-card-${cardKey(entry)}`}
-                className="home-card"
-                onClick={() => push('browse', { path: cardPath(entry), label: entry.label })}
-              >
-                <span className="home-card-label">{entry.label}</span>
-                <IconChevronRight size={18} aria-hidden />
-              </UnstyledButton>
-            ))}
-          </SimpleGrid>
-        )}
-      </section>
     </Stack>
   );
 }
