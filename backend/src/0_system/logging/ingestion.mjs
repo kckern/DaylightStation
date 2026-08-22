@@ -5,6 +5,7 @@
  */
 
 import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
+import { formatLocalTimestamp } from './localTimestamp.mjs';
 import { getSessionFileTransport } from './transports/sessionFile.mjs';
 import { getSessionEventsFileTransport } from './transports/sessionEventsFile.mjs';
 
@@ -15,13 +16,7 @@ import { getSessionEventsFileTransport } from './transports/sessionEventsFile.mj
  */
 export function isInputChannel(event) { return event?.context?.channel === 'input'; }
 
-// Local timestamp (same shape as dispatcher's: ISO without trailing Z = local time).
-// Mirrors dispatcher.getLocalTimestamp to avoid an import cycle.
-function getLocalTimestamp() {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  return new Date(now - offset).toISOString().slice(0, -1);
-}
+
 
 /**
  * Process incoming log events from frontend
@@ -144,7 +139,7 @@ function normalizeEvent(event, clientMeta = {}) {
     : 'frontend.unknown';
 
   return {
-    ts: event.ts || event.timestamp || getLocalTimestamp(),
+    ts: event.ts || event.timestamp || formatLocalTimestamp(),
     level: normalizeLevel(event.level),
     event: eventName,
     message: event.message,
