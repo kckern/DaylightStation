@@ -7,8 +7,8 @@ import { YamlDoNowDatastore } from '#adapters/persistence/yaml/YamlDoNowDatastor
 
 let tmp, ds;
 
-const pendingFile = () => path.join(tmp, 'apps', 'donow', 'pending.yml');
-const logFile = (dayStamp) => path.join(tmp, 'apps', 'donow', 'log', `${dayStamp}.yml`);
+const pendingFile = () => path.join(tmp, 'household', 'donow', 'pending.yml');
+const logFile = (dayStamp) => path.join(tmp, 'household', 'donow', 'log', `${dayStamp}.yml`);
 
 const pending = (over = {}) => ({
   id: 'req_1',
@@ -29,13 +29,15 @@ const pending = (over = {}) => ({
 
 beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'donow-store-'));
-  ds = new YamlDoNowDatastore({ dataDir: tmp });
+  ds = new YamlDoNowDatastore({
+    configService: { getHouseholdPath: (rel) => path.join(tmp, 'household', rel) },
+  });
 });
 
 describe('construction', () => {
-  it('requires a dataDir', () => {
-    expect(() => new YamlDoNowDatastore({})).toThrow(/dataDir/);
-    expect(() => new YamlDoNowDatastore()).toThrow(/dataDir/);
+  it('requires a configService with getHouseholdPath', () => {
+    expect(() => new YamlDoNowDatastore({})).toThrow(/configService/);
+    expect(() => new YamlDoNowDatastore()).toThrow(/configService/);
   });
 });
 
