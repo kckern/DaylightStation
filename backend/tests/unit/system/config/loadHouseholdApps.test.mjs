@@ -68,4 +68,26 @@ describe('loadHouseholdApps', () => {
     await write('config/devices.yml', 'devices: {}\n');
     expect(Object.keys(apps())).toEqual([]);
   });
+
+  // The `apps:` key on the household record is REASSIGNED from the registry
+  // after household.yml is spread (configLoader.mjs:118-123), so an apps:
+  // block written in household.yml can never reach a consumer. These two
+  // tests pin that down: a stale block in the wild read as live config for
+  // months before anyone noticed it was inert.
+  it('IGNORES an apps: block in household.yml — the registry always wins', async () => {
+    await fs.writeFile(
+      path.join(dataDir, 'household', 'household.yml'),
+      'name: Test\napps:\n  scales:\n    unit: stones\n',
+    );
+    await write('hardware/scales.yml', 'unit: g\n');
+    expect(apps().scales).toEqual({ unit: 'g' });
+  });
+
+  it('an apps: entry in household.yml with no registered file produces NO app', async () => {
+    await fs.writeFile(
+      path.join(dataDir, 'household', 'household.yml'),
+      'name: Test\napps:\n  ghost:\n    anything: 1\n',
+    );
+    expect(apps().ghost).toBeUndefined();
+  });
 });
