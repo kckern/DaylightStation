@@ -249,9 +249,11 @@ export default function StudentPanel({ onOpen, bankTitles }) {
                 <span className="school-rail__today-next">
                   {section.servedToday
                     ? 'done today'
+                    : section.suppressed
+                      ? 'focus work scheduled today'
                     : (section.next?.title ?? section.next?.label
                         ?? (section.next?.unitId ? labelize(section.next.unitId) : undefined)
-                        ?? section.lockedRemedy ?? 'nothing offered')}
+                        ?? section.lockedRemedy ?? section.timingNotice ?? 'nothing offered')}
                 </span>
               </li>
             ))}

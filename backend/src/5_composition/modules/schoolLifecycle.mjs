@@ -42,6 +42,7 @@ import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSes
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.mjs';
+import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnchorStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
@@ -740,6 +741,7 @@ export async function createSchoolLifecycle({
 
   // --- syllabi + enrollment (spec: docs/reference/school/enrollment.md) ------
   const syllabusStore = new YamlSyllabusStore({ configService, logger });
+  const timingAnchorStore = new YamlTimingAnchorStore({ configService, logger });
   // The store is dumb; validation and the teacher gate belong to the write,
   // not to persistence — the same split SetAssignments/YamlAssignmentStore use.
   const syllabi = {
@@ -766,7 +768,7 @@ export async function createSchoolLifecycle({
 
   const enrollLearner = new EnrollLearner({
     syllabi: syllabusStore, assignments: stores.assignments, curriculum,
-    sessions: stores.sessions, teacherGate, clock, logger,
+    sessions: stores.sessions, timingAnchors: timingAnchorStore, teacherGate, clock, timezone, logger,
   });
   const unenrollLearner = new UnenrollLearner({
     assignments: stores.assignments, curriculum, sessions: stores.sessions,
