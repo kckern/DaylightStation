@@ -254,3 +254,28 @@ describe('autoStudio config', () => {
     expect(cfg.autoStudio.windowSeconds).toBe(10);
   });
 });
+
+// Curfew is config-driven: the code ships it off, and the household's cut-off
+// comes from data/household/piano/config.yml — shared for every piano, or
+// per-piano when one kiosk keeps different hours.
+describe('curfew config', () => {
+  it('is off by default, so an unconfigured piano never greys out', () => {
+    const cfg = resolvePianoConfig({}, null);
+    expect(cfg.curfew).toEqual({ enabled: false, start: '19:00', end: '06:00' });
+  });
+
+  it('takes the household-wide window from shared config', () => {
+    const raw = { curfew: { enabled: true, start: '19:00', end: '06:00' } };
+    const cfg = resolvePianoConfig(raw, 'default');
+    expect(cfg.curfew).toEqual({ enabled: true, start: '19:00', end: '06:00' });
+  });
+
+  it('lets one piano override the shared window field-wise', () => {
+    const raw = {
+      curfew: { enabled: true, start: '19:00', end: '06:00' },
+      pianos: { p1: { curfew: { start: '20:30' } }, p2: { curfew: { enabled: false } } },
+    };
+    expect(resolvePianoConfig(raw, 'p1').curfew).toEqual({ enabled: true, start: '20:30', end: '06:00' });
+    expect(resolvePianoConfig(raw, 'p2').curfew.enabled).toBe(false);
+  });
+});

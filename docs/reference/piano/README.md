@@ -81,8 +81,8 @@ that the backend serves to the app on load; the app resolves a single piano's se
 layering its per-piano overrides over shared defaults over built-in fallbacks. The result
 describes the keyboard's note range, which MIDI input to prefer, the hardware device
 profile, the Plex collections that feed the content modes, the note combinations that
-launch each game, the inactivity timeout, the optional screensaver, and an optional
-"open Bluetooth settings" affordance for re-pairing.
+launch each game, the inactivity timeout, the optional screensaver, the optional evening
+curfew, and an optional "open Bluetooth settings" affordance for re-pairing.
 
 Two ideas keep this clean. First, **nothing about the host platform is assumed** — the
 Bluetooth-settings launcher, for example, is configured per piano rather than hard-coded,
@@ -224,6 +224,15 @@ recover from the rough edges of an aging WebView.
   tablet's display and a played note wakes it, with quiet-hours and during-playback
   guardrails. It is driven above the connect gate, so a tablet parked on the "connect your
   piano" screen (no MIDI connected) still sleeps after idle rather than staying lit forever.
+- **Curfew.** A configured evening window (`curfew:` in the piano config — off unless the
+  household sets it) greys the home menu out: every mode tile and every card in the
+  recent-activity strip dims and stops responding, so no one starts a course, a video,
+  karaoke or a game after hours. The piano itself is untouched — sitting down and playing
+  still auto-enters Studio, and the menu's live keyboard stays playable — so evening
+  practice works exactly as it does at noon; only screen-driven content closes. `start`
+  and `end` are local `HH:MM` (start inclusive, end exclusive; `start > end` means an
+  overnight window), and the kiosk re-evaluates on a 30s timer, so a wall tablet parked on
+  the menu for days crosses the boundary without a reload.
 - **Reload guard.** During states where an accidental pull-to-refresh would lose work (a
   recording in progress), a guard intercepts the unload.
 - **Render watchdog.** A passive sensor measures frame-presentation rate and logs jank

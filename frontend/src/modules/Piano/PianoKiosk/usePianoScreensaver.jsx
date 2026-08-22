@@ -9,6 +9,7 @@ import {
 } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { isWithinWindow } from './timeWindow.js';
 
 let _logger;
 function logger() {
@@ -17,36 +18,19 @@ function logger() {
 }
 
 /**
- * Parse "HH:MM" → minutes-since-midnight, or null if malformed.
- */
-function parseHHMM(value) {
-  if (typeof value !== 'string') return null;
-  const m = value.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
-}
-
-/**
  * Is `now` within the quiet-hours window? Supports overnight ranges where
  * start > end (e.g. 21:30 → 07:00). Returns false when quietHours is unset or
  * malformed (fail-open: no quiet hours rather than always-quiet).
+ *
+ * Kept exported here (the screensaver is its original home) but implemented by
+ * the shared HH:MM window helper, which curfew uses too.
  *
  * @param {Date} now
  * @param {{start?: string, end?: string}|null} quietHours
  * @returns {boolean}
  */
 export function isWithinQuietHours(now, quietHours) {
-  if (!quietHours) return false;
-  const start = parseHHMM(quietHours.start);
-  const end = parseHHMM(quietHours.end);
-  if (start == null || end == null || start === end) return false;
-  const cur = now.getHours() * 60 + now.getMinutes();
-  return start < end
-    ? cur >= start && cur < end // same-day window
-    : cur >= start || cur < end; // overnight window
+  return isWithinWindow(now, quietHours);
 }
 
 // ── Wake-lock registry ──────────────────────────────────────────────────────
