@@ -1,0 +1,24 @@
+# Default browser-mount surface profile (spec §4.2): any School mount without a
+# screen identity resolves here. Capabilities reflect what the web runners
+# actually present today — QuizRunner: choice/text/cloze/matching items (no
+# image items); LearningContentReader: text blocks incl. tables and scan-action
+# asides (no inline images, no latex rendering) — so image@1/math@1 and the
+# activity mechanics are deliberately absent until runners exist.
+schema: school.surface-profile/v1
+surfaceId: screen-browser
+family: screen
+title: School app in a browser
+liveness: static
+capabilities:
+  - reader@1
+  - examples@1
+  - problems@1
+  - flashcards@1
+  - quiz@1
+  - learning-probe@1
+  - table-layout@1
+  - scan-action@1
+  - response.choice@1
+  - response.text@1
+  - response.matching@1
+  - return.session@1
