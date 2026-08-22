@@ -266,8 +266,8 @@ const VALIDATORS = {
     if (raw.icon !== undefined && !isNonEmptyString(raw.icon)) {
       push('scan_action icon must be a non-empty string when present');
     }
-    if (raw.presentation !== undefined && !['default', 'lesson'].includes(raw.presentation)) {
-      push('scan_action presentation must be default|lesson when present');
+    if (raw.presentation !== undefined && !['default', 'lesson', 'bulk_print'].includes(raw.presentation)) {
+      push('scan_action presentation must be default|lesson|bulk_print when present');
     }
     if (raw.eyebrow !== undefined && !isNonEmptyString(raw.eyebrow)) {
       push('scan_action eyebrow must be a non-empty string when present');
@@ -283,6 +283,12 @@ const VALIDATORS = {
     }
     if (raw.hideCode !== undefined && typeof raw.hideCode !== 'boolean') {
       push('scan_action hideCode must be a boolean when present');
+    }
+    if (raw.subjects !== undefined) {
+      if (!Array.isArray(raw.subjects) || raw.subjects.length === 0
+          || raw.subjects.some((s) => !isNonEmptyString(s))) {
+        push('scan_action subjects must be a non-empty array of non-empty strings when present');
+      }
     }
   },
   result_summary(raw, push) {
