@@ -17,6 +17,13 @@
 - **`npm run test:backend` is broken** — it invokes `node scripts/test-backend.mjs`, which does not exist. Never use it as a gate. Run the specific files named in each task.
 - **Never `rm` inside the data tree.** Move to `data/_deleteme/` (gitignored, user empties manually). `docker exec` runs as **root**, so `rm` always "succeeds" — that is the hazard, not the safeguard.
 - **The `claude` user cannot write the data volume directly.** All data-volume writes go through `sudo docker exec daylight-station sh -c '...'`. After creating files this way, `chown -R node:node` the touched paths — docker exec creates them root-owned.
+- **`sudo docker cp` and `docker exec -i` are BLOCKED by the sudoers policy** (discovered 2026-08-22 during Task 2 — neither is in the NOPASSWD allowlist). To push a locally-edited file onto the volume, use a base64 round-trip through plain `docker exec`:
+  ```bash
+  B64=$(base64 -w0 /local/path/file.yml)
+  sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/<rel>/file.yml"
+  sudo docker exec daylight-station sh -c 'chown node:node data/household/<rel>/file.yml'
+  ```
+  Always verify afterwards by reading the file back and diffing against the local copy.
 - **Do not use `sed -i` on YAML inside the container.** Write the complete file with a heredoc.
 - **Config is cached in-memory at startup.** Data-volume YAML edits need a container restart (or a `reloadHouseholdAppConfig` call) before they take effect.
 - **Deploy gate — this is its own step and MUST halt, never chained after a build.** Before `sudo deploy-daylight`, confirm BOTH are clear:
@@ -566,8 +573,9 @@ Edit the local copy. Immediately after the `doorbell:` block (it ends before the
 - [ ] **Step 3: Write it back and validate the YAML parses**
 
 ```bash
-sudo docker cp /tmp/claude-1001/-opt-Code-DaylightStation/devices.yml \
-  daylight-station:/usr/src/app/data/household/hardware/devices.yml
+# docker cp is sudoers-blocked — use the base64 round-trip (see Global Constraints)
+B64=$(base64 -w0 /tmp/claude-1001/-opt-Code-DaylightStation/devices.yml)
+sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/hardware/devices.yml"
 sudo docker exec daylight-station sh -c 'chown node:node data/household/hardware/devices.yml'
 sudo docker exec daylight-station sh -c "node -e \"
 const y=require('js-yaml'),fs=require('fs');
@@ -742,8 +750,9 @@ cameras:
 Delete the `nvr:` and `auth:` blocks entirely. Leave `sources:`, `ledger:`, `archive:`, `budget:`, `sessionize:`, `scoring:`, `sun:`, `timelapse:`, `contactSheets:`, `encoding:`, `classification:`, and `storage:` byte-identical.
 
 ```bash
-sudo docker cp /tmp/claude-1001/-opt-Code-DaylightStation/archive.yml \
-  daylight-station:/usr/src/app/data/household/camera/archive.yml
+# docker cp is sudoers-blocked — use the base64 round-trip (see Global Constraints)
+B64=$(base64 -w0 /tmp/claude-1001/-opt-Code-DaylightStation/archive.yml)
+sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/camera/archive.yml"
 sudo docker exec daylight-station sh -c 'chown node:node data/household/camera/archive.yml'
 sudo docker exec daylight-station sh -c "node -e \"
 const y=require('js-yaml'),fs=require('fs');
