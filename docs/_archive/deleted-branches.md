@@ -248,3 +248,6 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-19 | piano/challenge-attempt-telemetry | ccbfa72bc | Misnamed stray pointer — carried no piano telemetry work at all, only the two school content-reorganization design/plan docs, both of which are ancestors of school/content-reorg and present in main. Deleted as a duplicate ref with nothing unique. |
 | 2026-08-19 | piano/chess-chrome | 60fc32c53 | Office-screen piano chess chrome: the header/status furniture around the board. Fully merged into main; worktree removed with no uncommitted work. |
 | 2026-08-19 | piano/chess-pickup | 0fe9a745b | Chess piece pick-up interaction: widened the pick-up window to 2.5s and drew its deadline. Fully merged into main; worktree removed with no uncommitted work. |
+| 2026-08-22 | feat/retire-household-config | b588da86b | Household config registry; merged to main 96e6866ad |
+| 2026-08-22 | feat/retire-household-config-fe | 2959bd02e | Frontend/CLI config paths; merged via above |
+| 2026-08-22 | feat/retire-household-config-bugs | cb4dfc0e0 | School surfaces + DoNow secret fixes; merged via above |
