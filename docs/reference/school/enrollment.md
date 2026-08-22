@@ -9,9 +9,10 @@
 > creating or editing a syllabus yet** — `schoolApi.putSyllabus`/
 > `archiveSyllabus` exist and have no caller — so until a syllabus is authored
 > by hand or via a direct API call, the drawer's syllabus picker shows its
-> empty state everywhere. **Waves 2–4 remain designed, not built**: scope
-> subsetting (§5), profile de-hardcoding and the per-learner pass bar (§6–7),
-> and terms/grading windows/pacing (§8).
+> empty state everywhere. **Scope subsetting (§5), profile de-hardcoding, and
+> the per-learner pass bar (§6–7) remain designed, not built.** The runtime
+> core for time-sensitive planning is described in §8 and
+> [`timing-and-priority.md`](./timing-and-priority.md).
 >
 > An earlier revision of this document was written against a branch ~174 commits
 > behind `main` and got its central facts wrong — it proposed building an
@@ -314,12 +315,19 @@ A dated syllabus supplies both, which is what separates two sittings of one
 course years apart — the Elements case — into two grades rather than one merged
 figure.
 
-Pacing beyond that (`self_paced`, `deadline`, `flex` with front/back-loading and
-seasonal windows) is deferred. Note for whoever picks it up: flex ordering is not
-a due-date feature — it reorders the effective lesson list, and on `main` that
-order is **frozen into `lessonOrder` at materialization**. Flex pacing therefore
-either feeds the materializer or requires a second ordering pass the current
-design has nowhere to put.
+The timing model is documented in
+[`timing-and-priority.md`](./timing-and-priority.md). It distinguishes course
+sequence from academic periods, availability windows, targets, and effective
+agenda priority. Timing attaches to an enrollment or standalone-work plan,
+inherits reusable defaults from a syllabus, and materializes local dates onto
+the learner record. This keeps an active plan stable when a source anchor or
+syllabus later changes.
+
+The runtime now honors materialized timing: it adds planner date gates, urgency
+promotion, flexible-only focus-day displacement, and same-day chaining after a
+pass. Anchor and template authoring remains hand-authored/API-driven. The
+existing invariant still holds: timing may prioritize eligible work, but it
+cannot reorder or pre-issue a sequential lesson ahead of its prerequisite.
 
 ---
 

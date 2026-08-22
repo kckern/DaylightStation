@@ -74,7 +74,9 @@ export default function LearnerDay({ learnerId }) {
               <span>
                 {section.servedToday
                   ? 'done today'
-                  : (section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.lockedRemedy ?? 'nothing offered')}
+                  : section.suppressed
+                    ? `deferred for ${section.suppressed.bySubject} focus`
+                  : (section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.lockedRemedy ?? section.timingNotice ?? 'nothing offered')}
               </span>
             </li>
           ))}

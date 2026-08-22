@@ -1,3 +1,5 @@
+import { normalizeTimingTemplate } from '../timing.mjs';
+
 /**
  * Pure validation + normalisation of a syllabus (see
  * docs/reference/school/enrollment.md §4). No I/O.
@@ -99,6 +101,9 @@ export function validateSyllabus(raw, sets = {}) {
     else term = raw.term;
   }
 
+  const { timingTemplate, errors: timingErrors } = normalizeTimingTemplate(raw.timingTemplate);
+  errors.push(...timingErrors);
+
   if (errors.length) return { errors };
   return {
     errors,
@@ -111,6 +116,7 @@ export function validateSyllabus(raw, sets = {}) {
       policy,
       passing,
       term,
+      ...(timingTemplate ? { timingTemplate } : {}),
     },
   };
 }

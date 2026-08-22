@@ -451,7 +451,7 @@ export class CloseSessionOutcome {
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
     const plan = planLearnerWork({
-      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
     });
     const nextId = plan.entries.find((e) => e.unitId === unit.unitId)?.unlocks ?? null;
     if (!nextId) return null;
@@ -487,7 +487,7 @@ export class CloseSessionOutcome {
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
     const plan = planLearnerWork({
-      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
     });
     const course = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
     const enrollment = course?.enrollment;

@@ -186,6 +186,9 @@ function appendNoteLines(blocks, noteLines) {
  *   servedToday?: boolean,
  *   next?: { title?: string, unitId?: string, token?: string, actionLabel?: string },
  *   lockedRemedy?: string,
+ *   timingNotice?: string,
+ *   focus?: {blockBudget?: number},
+ *   suppressed?: {bySubject?: string},
  *   progressLabel?: string,
  *   gradePercent?: number,
  *   programUnavailable?: boolean,
@@ -224,8 +227,13 @@ export function agendaDocument({
   }
 
   offered.forEach((section) => {
+    // A focus day deliberately removes flexible work from the CHILD'S paper;
+    // the parent preview retains the suppression reason.
+    if (section.suppressed) return;
     const served = !!section.servedToday;
-    const suffix = served
+    const suffix = section.focus
+      ? ` — Focus today · up to ${section.focus.blockBudget} lessons`
+      : served
       ? ' — done today'
       : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
     // Already served today: nothing more to offer for this subject.
@@ -243,6 +251,12 @@ export function agendaDocument({
     if (isNonEmptyString(section.lockedRemedy)) {
       blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(section.lockedRemedy));
+      return;
+    }
+
+    if (isNonEmptyString(section.timingNotice)) {
+      blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
+      blocks.push(text(section.timingNotice));
       return;
     }
 

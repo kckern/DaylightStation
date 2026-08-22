@@ -183,7 +183,7 @@ export class BuildAgenda {
     const history = withAttestedPasses(rawHistory, this.#attestations, learnerId);
 
     const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies });
+    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
