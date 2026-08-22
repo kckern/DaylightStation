@@ -11,7 +11,7 @@ import yaml from 'js-yaml';
 import { deepMerge } from '../utils/deepMerge.mjs';
 import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../utils/householdDirs.mjs';
 import { resolveYamlPath } from '../utils/FileIO.mjs';
-import { HOUSEHOLD_APP_CONFIGS } from './householdConfigRegistry.mjs';
+import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 /**
  * Load all config from the data directory.

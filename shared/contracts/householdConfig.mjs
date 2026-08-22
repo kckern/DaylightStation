@@ -15,6 +15,15 @@
  *
  * Paths are relative to the household folder, WITHOUT extension — callers
  * resolve .yml/.yaml via `resolveYamlPath`.
+ *
+ * WHY THIS LIVES IN shared/contracts/ RATHER THAN 0_system/config/:
+ * it is a naming CONTRACT, not config internals. It declares where files live;
+ * it holds no logic and does no I/O. Three layers need it — the config loader
+ * (`0_system`), the admin apps service (`3_applications`), and later the admin
+ * frontend, which already reaches into shared/ by relative path and today keeps
+ * its OWN duplicate copy of these paths. `3_applications/` is forbidden from
+ * importing `#system/config/*` (layer rule `apps-no-config-internals`), which is
+ * what put this file here; `shared/contracts/media/` is the same pattern.
  */
 export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   agents:           'agents/config',

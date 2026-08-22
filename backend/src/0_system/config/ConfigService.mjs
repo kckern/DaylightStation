@@ -13,7 +13,7 @@ import path from 'node:path';
 import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
-import { appConfigRelPath, legacyAppConfigRelPath } from './householdConfigRegistry.mjs';
+import { appConfigRelPath, legacyAppConfigRelPath } from '#shared/contracts/householdConfig.mjs';
 
 export class ConfigService {
   #config;
@@ -222,7 +222,7 @@ export class ConfigService {
   /**
    * Resolve the on-disk base path (no extension) for a household app config.
    *
-   * Registry first: `householdConfigRegistry` is the single source of truth for
+   * Registry first: `shared/contracts/householdConfig` is the single source of truth for
    * where an app's config lives under the household folder — a DOMAIN folder
    * plus a facet filename (`hardware/scales`, `school/school`, `piano/config`).
    * Grouping is why this is a map and not a convention: `hardware/scales.yml`
