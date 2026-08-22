@@ -161,8 +161,19 @@ async function fetchSiblingsData(contentId) {
  * @param {string} [args.logApp] - which app owns these log events. The combobox is
  *   shared, so without this every host's search funnel files itself under 'admin'
  *   and is invisible to an `app:<host>` log query (2026-08-12 session review).
+ * @param {string} [args.scopeKey] - the caller's current search scope, stamped onto
+ *   `search.dispatch`/`search.settled`/`search.fallback_to_all` payloads. One of the
+ *   documented observability gaps from the 2026-08-21 incident: a search settling
+ *   empty carried no record of which scope it ran against. Optional; omitted by
+ *   callers (Admin, PlaybackHub) that have no scope concept — logs then carry
+ *   `scopeKey: null`, no behavior change.
+ * @param {string} [args.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
+ *   included alongside it in `search.fallback_to_all` for log readability. Optional.
  */
-export function useContentCombobox({ value, onChange, searchParams = '', fallbackSearchParams, appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin' }) {
+export function useContentCombobox({
+  value, onChange, searchParams = '', fallbackSearchParams, scopeKey, scopeLabel,
+  appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin',
+}) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
@@ -263,7 +274,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', fallbac
     // "singalong:" across all sources (junk). Route it as an empty query —
     // same as clearing the box. Scoped "source:term" is left untouched.
     const q = isBareSourcePrefix(text) ? '' : text;
-    log.info('search.dispatch', { text: q, mode });
+    log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
     queryRef.current = q;
     if (supportsSSE()) streamSearch(q);
     else doBatchSearch(q);
@@ -649,11 +660,12 @@ export function useContentCombobox({ value, onChange, searchParams = '', fallbac
       resultCount: stateRef.current.results.length,
       rawResultCount,
       sourceErrors: erroredSources,
+      scopeKey: scopeKey ?? null,
     });
     for (const { source, error } of sourceErrors || []) {
       log.warn('search.source_error', { source, error: String(error?.message ?? error) });
     }
-  }, [searchSettled, sourceErrors, rawResultCount, log]);
+  }, [searchSettled, sourceErrors, rawResultCount, scopeKey, log]);
 
   // One-shot recovery: a transient source error can settle a search at zero
   // results for a title that exists (2026-08-21 phone incident). Task 4 keeps
@@ -697,11 +709,15 @@ export function useContentCombobox({ value, onChange, searchParams = '', fallbac
     fallbackForRef.current = text;
     setFellBackToAll(true);
     log.info('search.fallback_to_all', {
-      textLength: text.length, searchParams: searchParams || null, fallbackSearchParams: fallbackSearchParams || null,
+      textLength: text.length,
+      searchParams: searchParams || null,
+      fallbackSearchParams: fallbackSearchParams || null,
+      scopeKey: scopeKey ?? null,
+      scopeLabel: scopeLabel ?? null,
     });
     if (supportsSSE()) streamSearch(text, fallbackSearchParams);
     else doBatchSearch(text, fallbackSearchParams);
-  }, [searchSettled, sourceErrors, searchParams, fallbackSearchParams, streamSearch, doBatchSearch, log]);
+  }, [searchSettled, sourceErrors, searchParams, fallbackSearchParams, scopeKey, scopeLabel, streamSearch, doBatchSearch, log]);
 
   const commit = useCallback((reason) => {
     const s = stateRef.current;

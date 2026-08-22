@@ -494,4 +494,85 @@ describe('ContentCombobox (hook wiring)', () => {
     // (no warn toast, no resolution).
     expect(currentHook.commit).not.toHaveBeenCalled();
   });
+
+  // ── Task 11 fix round: D5 fallback wiring (fallbackSearchParams/scopeKey/
+  // scopeLabel passthrough to the hook + the widening notice) ──
+
+  it('D5: threads fallbackSearchParams/scopeKey/scopeLabel into the hook call', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'x' },
+    });
+    renderCombobox({ fallbackSearchParams: '', scopeKey: 'music-ambient', scopeLabel: 'Ambient' });
+
+    expect(hookArgs.fallbackSearchParams).toBe('');
+    expect(hookArgs.scopeKey).toBe('music-ambient');
+    expect(hookArgs.scopeLabel).toBe('Ambient');
+  });
+
+  it('D5: fellBackToAll with results renders the widened-scope notice ABOVE the list, not inside the empty state', () => {
+    currentHook = makeHook({
+      state: {
+        ...initialState(''), mode: Modes.SEARCH, search: 'bluey',
+        results: [
+          { id: 'plex:1', title: 'Bluey S1E1', source: 'plex' },
+          { id: 'plex:2', title: 'Bluey S1E2', source: 'plex' },
+        ],
+      },
+      fellBackToAll: true,
+      isSearching: false,
+    });
+    renderCombobox({ scopeLabel: 'Ambient' });
+
+    expect(screen.getByTestId('combobox-fallback-notice'))
+      .toHaveTextContent('Nothing in Ambient — showing 2 results from everywhere.');
+    expect(screen.getByTestId('combobox-option-plex:1')).toBeInTheDocument();
+  });
+
+  it('D5: fellBackToAll with zero results (even All is empty) names the scope without repeating it in the empty state', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'zzzznomatch', results: [] },
+      fellBackToAll: true,
+      isSearching: false,
+    });
+    renderCombobox({ scopeLabel: 'Ambient' });
+
+    expect(screen.getByTestId('combobox-fallback-notice'))
+      .toHaveTextContent('Nothing in Ambient — and nothing found anywhere else either.');
+    // The empty-state line itself stays plain — the notice above already
+    // named the scope and said the wider search came up empty too.
+    expect(screen.getByText('No results')).toBeInTheDocument();
+  });
+
+  it('D5: falls back to generic "this scope" wording when no scopeLabel is passed', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'bluey', results: [{ id: 'plex:1', title: 'Bluey', source: 'plex' }] },
+      fellBackToAll: true,
+      isSearching: false,
+    });
+    renderCombobox(); // no scopeLabel
+
+    expect(screen.getByTestId('combobox-fallback-notice'))
+      .toHaveTextContent('Nothing in this scope — showing 1 result from everywhere.');
+  });
+
+  it('D5: the notice is hidden while the widened search is still in flight (no premature "0 results" flash)', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'bluey', results: [] },
+      fellBackToAll: true,
+      isSearching: true,
+    });
+    renderCombobox({ scopeLabel: 'Ambient' });
+
+    expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
+  });
+
+  it('D5: no notice when fellBackToAll is false, even with zero results', () => {
+    currentHook = makeHook({
+      state: { ...initialState(''), mode: Modes.SEARCH, search: 'nomatch', results: [] },
+      fellBackToAll: false,
+    });
+    renderCombobox({ scopeLabel: 'Ambient' });
+
+    expect(screen.queryByTestId('combobox-fallback-notice')).toBeNull();
+  });
 });

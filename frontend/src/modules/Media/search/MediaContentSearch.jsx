@@ -23,7 +23,7 @@ import getLogger from '../../../lib/logging/Logger.js';
 import './Search.scss';
 
 export function MediaContentSearch() {
-  const { currentScope, scopeError } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, scopeError } = useSearchContext();
   const dispatch = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
 
@@ -57,6 +57,14 @@ export function MediaContentSearch() {
             placeholder="Search media…"
             selectContainers
             searchParams={currentScope?.params ?? ''}
+            // D5: scopes[0] is the catalog-wide ("All") scope by convention
+            // (SearchProvider seeds currentScopeKey from it and resetScope()
+            // returns to it) — that's what a scoped search settling empty
+            // silently widens to. scopeKey/scopeLabel are for observability
+            // and for naming the scope in the widened-search notice.
+            fallbackSearchParams={scopes[0]?.params ?? ''}
+            scopeKey={currentScopeKey}
+            scopeLabel={currentScope?.label ?? null}
             logApp="media"
             appResults
             allowFreeform={false}

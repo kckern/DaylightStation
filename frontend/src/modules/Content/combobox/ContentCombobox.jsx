@@ -75,6 +75,14 @@ function optionTopIn(viewport, option) {
  * @param {string} [props.placeholder]
  * @param {boolean} [props.selectContainers] - rows select containers; chevron ActionIcon browses
  * @param {string} [props.searchParams] - passthrough to the hook's search endpoints
+ * @param {string} [props.fallbackSearchParams] - passthrough (D5): catalog-wide params
+ *   the hook widens to once a `searchParams`-scoped search settles empty. Optional; a
+ *   no-op unless the caller opts in (see useContentCombobox's fallbackSearchParams).
+ * @param {string} [props.scopeKey] - passthrough: current scope, stamped onto the
+ *   hook's search logs for observability. Optional.
+ * @param {string} [props.scopeLabel] - human label for `scopeKey` (e.g. "Ambient"),
+ *   used both in the hook's fallback log and in the D5 "Nothing in ‹label›…" notice
+ *   rendered here once the hook reports `fellBackToAll`. Optional.
  * @param {boolean} [props.appResults] - passthrough: merge app-registry matches
  * @param {string} [props.logApp] - app name stamped on this combobox's log events
  * @param {(args: {onStartEdit: () => void, value: string, resolvedTitle: ?string}) => JSX} [props.renderValue]
@@ -87,6 +95,9 @@ export function ContentCombobox({
   placeholder = 'Search content...',
   selectContainers = false,
   searchParams = '',
+  fallbackSearchParams,
+  scopeKey,
+  scopeLabel,
   appResults = false,
   renderValue = null,
   allowFreeform = true,
@@ -98,8 +109,11 @@ export function ContentCombobox({
     handleInput, activeScope, clearScope,
     openWithSiblings, drill, goUp, goToCrumb, paginate,
     handleClose, select, commit,
-    resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt,
-  } = useContentCombobox({ value, onChange, searchParams, appResults, selectContainers, allowFreeform, logApp });
+    resolvedTitle, isSearching, pendingSources, sourceErrors, truncatedAt, fellBackToAll,
+  } = useContentCombobox({
+    value, onChange, searchParams, fallbackSearchParams, scopeKey, scopeLabel,
+    appResults, selectContainers, allowFreeform, logApp,
+  });
 
   const mode = state.mode;
   const isBrowse = mode === Modes.BROWSE;
@@ -667,6 +681,24 @@ export function ContentCombobox({
           <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
         )}
 
+        {/* D5 widening notice (Task 11 fix round): a search scoped to a narrow
+            library (activeScope's parent — e.g. Music›Ambient) that settled
+            empty was silently re-run catalog-wide by the hook. Say so, above
+            the results — NOT inside the items.length===0 empty-state branch,
+            because after the widening fires results usually AREN'T empty
+            anymore, so a message gated on the empty branch would never be
+            seen. Hidden while the widened search is still in flight
+            (isSearching) so it doesn't flash "0 results" before they arrive. */}
+        {!isBrowse && fellBackToAll && !isSearching && (
+          <Box p="xs" data-testid="combobox-fallback-notice" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
+            <Text size="xs" c="dimmed">
+              {items.length > 0
+                ? `Nothing in ${scopeLabel || 'this scope'} — showing ${items.length} result${items.length === 1 ? '' : 's'} from everywhere.`
+                : `Nothing in ${scopeLabel || 'this scope'} — and nothing found anywhere else either.`}
+            </Text>
+          </Box>
+        )}
+
         <Combobox.Options>
           <ScrollArea.Autosize
             mah={300}
@@ -692,9 +724,13 @@ export function ContentCombobox({
                   ? 'No items in this container'
                   : (!search || search.length < 2)
                     ? 'Type to search...'
-                    : (allowFreeform
-                        ? 'No results — select “Use as raw value” or press Enter'
-                        : 'No results')}
+                    // fellBackToAll: the notice above already named the scope and
+                    // said the wider search came up empty too — don't repeat it.
+                    : fellBackToAll
+                      ? 'No results'
+                      : (allowFreeform
+                          ? 'No results — select “Use as raw value” or press Enter'
+                          : 'No results')}
               </Combobox.Empty>
             ) : (
               items.map(renderOption)
