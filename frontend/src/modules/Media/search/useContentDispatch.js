@@ -27,15 +27,31 @@
 //   4. otherwise, leaf → play locally, replacing the queue.
 // Returns which branch it took so callers can log the destination.
 //
-// `playContainerAsQueue(id, item)` — the ▶ verb, container rows only. Same
-// destination precedence as above minus the browse branch (there's no
-// "browse" reading of an explicit send-it-there action): peek wins (fork,
-// so the remote control still never stops its own device), then an aimed
-// cast target, then local. The local branch reuses resultToQueueInput so
-// the container's itemType/type/childCount markers survive into
-// queue.playNow — the session layer expands them into playable children
-// ASYNCHRONOUSLY (containerExpansion.js); no separate container-queueing
-// logic needed here.
+// `playContainerAsQueue(id, item, { shuffle })` — the ▶ verb, container rows
+// only. Same destination precedence as above minus the browse branch
+// (there's no "browse" reading of an explicit send-it-there action): peek
+// wins (fork, so the remote control still never stops its own device), then
+// an aimed cast target, then local. The local branch reuses
+// resultToQueueInput so the container's itemType/type/childCount markers
+// survive into queue.playNow — the session layer expands them into playable
+// children ASYNCHRONOUSLY (containerExpansion.js); no separate
+// container-queueing logic needed here.
+//
+// `{ shuffle: true }` is the 🔀 verb (Task 15, browse header) riding the
+// SAME function: local turns on session shuffle (config.setShuffle) before
+// enqueueing — advancement.js only consults shuffle on the NEXT pick, not
+// the item already loaded by playNow, so the tapped container starts on its
+// natural first item and shuffles from there on, matching the transport
+// bar's own shuffle toggle. Cast/peek thread `shuffle:true` straight through
+// dispatchToTarget -> buildDispatchUrl's `?shuffle=1`, the same deep-link
+// param useUrlCommand.js already applies via config.setShuffle on the
+// RECEIVING device — no separate remote-shuffle protocol invented here.
+//
+// `addContainerToQueue(id, item)` — the + verb (Task 15): same destination
+// precedence again, but appends rather than replacing. Local calls
+// queue.add (not playNow); cast/peek send the container as `queue:` instead
+// of `play:` on the dispatch payload — useUrlCommand.js's `cmd.queue` branch
+// on the receiving device already resolves that to controller.queue.add.
 //
 // The cast branches are exactly the moment the pre-fix incident was about:
 // a tap on a search result went to hidden dock-chip state with no
@@ -87,7 +103,7 @@ export function useContentDispatch() {
   const { view, params, push } = useNav();
   const { dispatchToTarget, dispatches, retryLast } = useDispatch();
   const { targetIds, mode } = useCastTarget();
-  const { queue } = useSessionController('local');
+  const { queue, config } = useSessionController('local');
   const { devices } = useFleetContext();
   // dispatchId -> deviceId, for dispatches THIS hook fired that haven't
   // resolved yet. dispatchToTarget is fire-and-forget (it returns the
@@ -109,19 +125,34 @@ export function useContentDispatch() {
     }
   }, [dispatches, devices, retryLast]);
 
-  // Shared by both dispatch()'s cast branch and playContainerAsQueue()'s
-  // cast branch: fire the confirmation toast, dispatch, and register the
-  // resulting dispatchIds so the failure watcher above can name them.
-  const castTo = useCallback((castTargetIds, castMode, id, title) => {
+  // Shared by both dispatch()'s cast branch and playContainerAsQueue()'s /
+  // addContainerToQueue()'s cast branches: fire the confirmation toast,
+  // dispatch, and register the resulting dispatchIds so the failure watcher
+  // above can name them. `verb: 'queue'` (Task 15's + button) sends the
+  // container as an append rather than a replace, and says so in the toast
+  // ("Adding" not "Casting") so the wording never claims an action it
+  // didn't take.
+  const castTo = useCallback((castTargetIds, castMode, id, title, opts = {}) => {
+    const { shuffle = false, verb = 'play' } = opts;
     const name = namesFor(castTargetIds, devices);
+    const label = verb === 'queue'
+      ? (title ? `Adding ${title} to queue` : 'Adding to queue')
+      : (title ? `Casting ${title}` : 'Casting');
     notifications.show({
       id: 'content-dispatch-confirmation',
       color: 'blue',
       autoClose: 3000,
-      title: title ? `Casting ${title}` : 'Casting',
+      title: label,
       message: name ? `To ${name}` : null,
     });
-    Promise.resolve(dispatchToTarget({ targetIds: castTargetIds, play: id, mode: castMode, title })).then((dispatchIds) => {
+    const targetPayload = verb === 'queue' ? { queue: id } : { play: id };
+    Promise.resolve(dispatchToTarget({
+      targetIds: castTargetIds,
+      ...targetPayload,
+      mode: castMode,
+      title,
+      ...(shuffle ? { shuffle: true } : {}),
+    })).then((dispatchIds) => {
       (dispatchIds ?? []).forEach((dispatchId, i) => {
         pendingRef.current.set(dispatchId, castTargetIds[i]);
       });
@@ -131,9 +162,17 @@ export function useContentDispatch() {
   const dispatch = useCallback((id, item) => {
     const title = item?.title ?? null;
     // Containers ALWAYS browse — see header comment. Checked first so it
-    // wins over both the peek view and an aimed cast target.
+    // wins over both the peek view and an aimed cast target. The opened
+    // browse view carries the tapped item along as `containerItem` (Task
+    // 15) so BrowseView can render its own ▶/🔀/+ header without a second
+    // fetch — the List API item BrowseView already has for nested drills
+    // gets the same treatment below in BrowseView.jsx itself.
     if (item && isContainer(item)) {
-      push('browse', { path: contentIdToBrowsePath(id), label: title ?? id });
+      push('browse', {
+        path: contentIdToBrowsePath(id),
+        label: title ?? id,
+        containerItem: { ...item, id: item.id ?? id },
+      });
       return 'browse';
     }
     if (view === 'peek' && params?.deviceId) {
@@ -155,24 +194,62 @@ export function useContentDispatch() {
   // the current destination, replacing the queue. Same destination
   // precedence as leaves (peek wins, then an aimed cast target, then
   // local) — there's just no browse reading of an explicit "send it"
-  // action, so that branch is absent here.
-  const playContainerAsQueue = useCallback((id, item) => {
+  // action, so that branch is absent here. `opts.shuffle` (Task 15's 🔀
+  // verb, see header comment) rides the same three branches; when it's
+  // false/omitted every payload is byte-identical to the pre-Task-15 shape.
+  const playContainerAsQueue = useCallback((id, item, opts = {}) => {
+    const { shuffle = false } = opts;
     const title = item?.title ?? null;
     if (view === 'peek' && params?.deviceId) {
-      dispatchToTarget({ targetIds: [params.deviceId], play: id, mode: 'fork', title });
+      dispatchToTarget({
+        targetIds: [params.deviceId],
+        play: id,
+        mode: 'fork',
+        title,
+        ...(shuffle ? { shuffle: true } : {}),
+      });
       return 'peek';
     }
     if (targetIds.length > 0) {
-      castTo(targetIds, mode, id, title);
+      castTo(targetIds, mode, id, title, { shuffle });
       return 'cast';
     }
     const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
       ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+    // Set BEFORE enqueueing: advancement.js only reads config.shuffle when
+    // picking the NEXT item, so this can't reorder what's about to load —
+    // it just guarantees no listener ever observes a full queue with
+    // shuffle still off after the 🔀 verb fired.
+    if (shuffle) config?.setShuffle?.(true);
     queue.playNow(input, { clearRest: true });
+    return 'local';
+  }, [view, params, dispatchToTarget, targetIds, mode, queue, config, castTo]);
+
+  // The + verb on a container row (Task 15): append the WHOLE container to
+  // the current destination's queue instead of replacing it. Same
+  // destination precedence as ▶, but local calls queue.add and cast/peek
+  // send the container as `queue:` (append) rather than `play:` (replace) —
+  // see castTo's verb option and the header comment above.
+  const addContainerToQueue = useCallback((id, item) => {
+    const title = item?.title ?? null;
+    if (view === 'peek' && params?.deviceId) {
+      dispatchToTarget({ targetIds: [params.deviceId], queue: id, mode: 'fork', title });
+      return 'peek';
+    }
+    if (targetIds.length > 0) {
+      castTo(targetIds, mode, id, title, { verb: 'queue' });
+      return 'cast';
+    }
+    const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
+      ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+    queue.add(input);
     return 'local';
   }, [view, params, dispatchToTarget, targetIds, mode, queue, castTo]);
 
-  return useMemo(() => ({ dispatch, playContainerAsQueue }), [dispatch, playContainerAsQueue]);
+  return useMemo(
+    () => ({ dispatch, playContainerAsQueue, addContainerToQueue }),
+    [dispatch, playContainerAsQueue, addContainerToQueue]
+  );
 }
 
 export default useContentDispatch;

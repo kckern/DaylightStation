@@ -772,6 +772,57 @@ $amber-ink: #1a1300;
   .browse-crumb-sep { color: var(--mantine-color-dark-3); }
 }
 
+// Container dispatch header (Task 15, spec D6 addendum): a container tap
+// always browses (Task 14) — this pays that cost back so a browsed-into
+// album/show/playlist is one more tap from playing, not a dead end. Sits
+// directly under the breadcrumb, above the row list.
+.browse-dispatch-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  background: var(--mantine-color-dark-6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--mantine-radius-md);
+}
+
+.browse-dispatch-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.browse-dispatch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  background: var(--mantine-color-dark-5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dark-0);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease;
+
+  &:hover { background: var(--mantine-color-dark-4); }
+  @include media-focus-ring;
+
+  &--primary {
+    background: var(--mantine-color-amber-5);
+    color: $amber-ink;
+    border-color: transparent;
+
+    &:hover { background: var(--mantine-color-amber-4); }
+  }
+}
+
 .browse-list {
   list-style: none;
   margin: 0;

@@ -11,7 +11,7 @@ import { PeekPanel } from './PeekPanel.jsx';
 function renderView(view, params) {
   switch (view) {
     case 'home': return <HomeView />;
-    case 'browse': return <BrowseView path={params.path ?? ''} label={params.label} />;
+    case 'browse': return <BrowseView path={params.path ?? ''} label={params.label} containerItem={params.containerItem ?? null} />;
     case 'detail': return <DetailView contentId={params.contentId} />;
     case 'nowPlaying': return <NowPlayingView />;
     case 'fleet': return <FleetView />;
