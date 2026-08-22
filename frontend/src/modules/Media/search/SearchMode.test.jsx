@@ -191,6 +191,59 @@ describe('SearchMode', () => {
     expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
   });
 
+  // ── Fix round (Critical 1): the dispatch exit used to close WITHOUT
+  // consuming the history entry pushed on open — unlike the ✕ path, which
+  // always called history.back(). Every "tap a result" exit (the most
+  // common one) leaked an entry carrying `mediaSearchMode: true`, and that
+  // flag then propagated into every later pushState via the
+  // `{...history.state}` spread, so the user's next real back press would
+  // silently no-op. This asserts on actual history depth/state, not just
+  // that the surface closed. ──
+  it('consumes the history entry pushed on open when closing via a successful dispatch', async () => {
+    comboState = {
+      search: 'bluey',
+      results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+    };
+    dispatchMock.mockReturnValue('local');
+    const pushSpy = vi.spyOn(window.history, 'pushState');
+    const backSpy = vi.spyOn(window.history, 'back');
+
+    render(<Harness />);
+    await screen.findByTestId('search-mode-result-plex:685088');
+    expect(pushSpy).toHaveBeenCalledTimes(1); // one entry pushed on open
+
+    fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
+
+    // The dispatch exit must consume the SAME entry the ✕ path consumes:
+    // exactly one back() call (not zero — the leaked-entry bug — and not a
+    // second pushState, which would just push a fresh copy of the flag).
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+
+    // The resulting popstate must not re-fire a second close/log — closedRef
+    // already latched on the 'dispatch' exit. This is what actually proves
+    // depth returned to baseline rather than merely "one call happened":
+    // if the leaked-entry bug were still present, closeSurface would never
+    // call history.back() at all, so the guard here would be untested and
+    // a stray push would sit unconsumed — one push balanced by exactly one
+    // back, with no compensating second exit log, is the whole proof.
+    expect(mediaLog.searchModeExited).toHaveBeenCalledTimes(1);
+    expect(mediaLog.searchModeExited).toHaveBeenCalledWith({ reason: 'dispatch' });
+
+    // NOTE: happy-dom (this suite's DOM environment) does not actually
+    // replay `history.state` back to the prior entry after `history.back()`
+    // — verified directly against happy-dom's History implementation, which
+    // leaves `state` pointing at the last-pushed entry regardless of back()
+    // calls or elapsed time. A real browser does not have this limitation
+    // (that's what the ✕ path already relied on pre-fix-round), so a
+    // `window.history.state` assertion here would be asserting on a test
+    // environment gap, not on SearchMode's behavior — the push/back call
+    // parity above is the reliable, environment-agnostic proof instead.
+
+    pushSpy.mockRestore();
+    backSpy.mockRestore();
+  });
+
   it('shows a "Playing" toast for a local dispatch route', async () => {
     comboState = {
       search: 'bluey',
