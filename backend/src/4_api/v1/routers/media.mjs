@@ -77,7 +77,18 @@ export function createMediaRouter(config) {
 
   router.get('/config', asyncHandler(async (req, res) => {
     const hid = resolveHid(req);
-    const appConfig = configService.getHouseholdAppConfig(hid, 'media') || {};
+    // The media config retirement SWAPS what the key `media` means: today it is
+    // the SURFACE (browse/searchScopes, at media/config.yml) and `media-app` is
+    // the DOMAIN (plex.host, at config/media-app.yml); after the data move the
+    // surface lives at media/app.yml (= `media-app`) and `media` is the domain.
+    // Both files are valid YAML objects, so reading the wrong one throws
+    // NOTHING — it just yields `undefined` for every key and this endpoint
+    // serves empty arrays. Read whichever entry actually carries the surface so
+    // the endpoint is correct on both sides of the move; Phase E drops the
+    // legacy half with the other fallbacks.
+    const surfaceApp = configService.getHouseholdAppConfig(hid, 'media-app') || {};
+    const legacyApp = configService.getHouseholdAppConfig(hid, 'media') || {};
+    const appConfig = (surfaceApp.browse || surfaceApp.searchScopes) ? surfaceApp : legacyApp;
     res.json({
       browse: appConfig.browse || [],
       searchScopes: appConfig.searchScopes || [],
