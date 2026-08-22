@@ -19,7 +19,7 @@ for IN and Web MIDI for OUT.
 
 There is **one physical path** between the browser and the piano, and it runs through the
 **JamCorder** — a networked DIN↔BLE MIDI relay (`jam-7e6`, BLE MAC `10:65:36:36:62:66`,
-HTTP at `http://10.0.0.244`). The piano connects to the JamCorder over **USB**; the
+HTTP at `http://10.0.0.243`). The piano connects to the JamCorder over **USB**; the
 JamCorder bridges that to **BLE-MIDI** (and to its 5-pin DIN). Verified from the
 JamCorder's own message counters (`GET /api/device-state/get` → `midiMsgCounts`):
 
@@ -210,7 +210,7 @@ the APK can be built + signed, collapsing to single-owner full-duplex is the tar
 ## 8. Debugging playbook
 
 - **Is OUT reaching the piano?** Watch the JamCorder counters across a send:
-  `GET http://10.0.0.244/api/device-state/get` (gzip; parse `midiMsgCounts`). Browser OUT ⇒
+  `GET http://10.0.0.243/api/device-state/get` (gzip; parse `midiMsgCounts`). Browser OUT ⇒
   `ble.in` ↑ **and** forwarded to piano ⇒ `usb.out` ↑ (they move in lockstep). The kiosk's
   output burst fires on every connect, so a tablet reload is a free OUT test.
 - **Is IN flowing?** `usb.in` (piano→JamCorder) and `ble.out` (JamCorder→tablet) climb as you
@@ -239,4 +239,4 @@ the APK can be built + signed, collapsing to single-owner full-duplex is the tar
 | MIDI monitor byte decoder | `frontend/src/modules/Piano/PianoKiosk/midiDecode.js` |
 | Note store / history | `frontend/src/modules/Piano/PianoKiosk/noteStore.js` · `frontend/src/modules/Piano/noteHistory.js` |
 | Native bridge APK (synth + BLE reader) | `_extensions/piano-bridge/` (`DESIGN.md`, `README.md`, `pbctl.mjs`, `app/`) |
-| JamCorder relay | device at `http://10.0.0.244` (`jam-7e6`, `10:65:36:36:62:66`) |
+| JamCorder relay | device at `http://10.0.0.243` (`jam-7e6`, `10:65:36:36:62:66`) |
