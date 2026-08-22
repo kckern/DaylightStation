@@ -377,6 +377,90 @@ describe('ContentCombobox (hook wiring)', () => {
     expect(currentHook.select).not.toHaveBeenCalled();
   });
 
+  // ── Task 14 (spec D6): additive ▶/⋯ row verbs. Every test above renders
+  // WITHOUT onPlayAll/onMore and still passes — proving the 5+ non-media
+  // callers of this shared component (admin content-id pickers) see zero
+  // behavior change. These pin the opt-in behavior when a caller (only
+  // MediaContentSearch, today) DOES pass them. ──
+  describe('Task 14: onPlayAll/onMore row verbs', () => {
+    it('without onPlayAll/onMore, neither the ▶ nor the ⋯ trigger renders', () => {
+      currentHook = makeHook({
+        state: {
+          ...initialState(''),
+          mode: Modes.SEARCH,
+          search: 'jazz',
+          results: [
+            { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+            { id: 'plex:leaf:1', title: 'A Song', source: 'plex' },
+          ],
+        },
+      });
+      renderCombobox({ selectContainers: true }); // no onPlayAll/onMore
+
+      expect(screen.queryByTestId('result-play-all-plex:playlist:99')).toBeNull();
+      expect(screen.queryByTestId('result-more-plex:leaf:1')).toBeNull();
+    });
+
+    it('a container row renders ▶ when onPlayAll is passed; clicking it calls onPlayAll(item), not select/drill', () => {
+      const onPlayAll = vi.fn();
+      currentHook = makeHook({
+        state: {
+          ...initialState(''),
+          mode: Modes.SEARCH,
+          search: 'jazz',
+          results: [
+            { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+          ],
+        },
+      });
+      renderCombobox({ selectContainers: true, onPlayAll });
+
+      fireEvent.click(screen.getByTestId('result-play-all-plex:playlist:99'));
+      expect(onPlayAll).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'plex:playlist:99', title: 'Jazz Playlist' })
+      );
+      expect(currentHook.select).not.toHaveBeenCalled();
+      expect(currentHook.drill).not.toHaveBeenCalled();
+    });
+
+    it('a leaf row renders ⋯ when onMore is passed; picking a verb calls onMore(action, item)', async () => {
+      const onMore = vi.fn();
+      currentHook = makeHook({
+        state: {
+          ...initialState(''),
+          mode: Modes.SEARCH,
+          search: 'song',
+          results: [
+            { id: 'plex:leaf:1', title: 'A Song', source: 'plex' },
+          ],
+        },
+      });
+      renderCombobox({ onMore });
+
+      fireEvent.click(screen.getByTestId('result-more-plex:leaf:1'));
+      fireEvent.click(await screen.findByTestId('result-action-playNext-plex:leaf:1'));
+      expect(onMore).toHaveBeenCalledWith('playNext', expect.objectContaining({ id: 'plex:leaf:1' }));
+    });
+
+    it('a container row never renders ⋯, and a leaf row never renders ▶, even when both callbacks are passed', () => {
+      currentHook = makeHook({
+        state: {
+          ...initialState(''),
+          mode: Modes.SEARCH,
+          search: 'jazz',
+          results: [
+            { id: 'plex:playlist:99', title: 'Jazz Playlist', source: 'plex', type: 'playlist' },
+            { id: 'plex:leaf:1', title: 'A Song', source: 'plex' },
+          ],
+        },
+      });
+      renderCombobox({ selectContainers: true, onPlayAll: vi.fn(), onMore: vi.fn() });
+
+      expect(screen.queryByTestId('result-more-plex:playlist:99')).toBeNull();
+      expect(screen.queryByTestId('result-play-all-plex:leaf:1')).toBeNull();
+    });
+  });
+
   // Re-pointed for R3: the select-vs-drill-on-Enter decision for containers moved
   // out of the component into decideCommit (which reads selectContainers). At the
   // COMPONENT layer we now pin (a) that the prop is threaded INTO the hook, and

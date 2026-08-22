@@ -19,8 +19,26 @@ import { MantineProvider } from '@mantine/core';
 
 // ── useContentDispatch: capture what SearchMode hands off, control the route ──
 const dispatchMock = vi.fn();
+const playContainerAsQueueMock = vi.fn();
 vi.mock('./useContentDispatch.js', () => ({
-  useContentDispatch: () => dispatchMock,
+  useContentDispatch: () => ({ dispatch: dispatchMock, playContainerAsQueue: playContainerAsQueueMock }),
+}));
+
+// ── useSessionController: the ⋯ verb menu's four queue actions ──
+const queuePlayNow = vi.fn();
+const queuePlayNext = vi.fn();
+const queueAddUpNext = vi.fn();
+const queueAdd = vi.fn();
+vi.mock('../controller/useSessionController.js', () => ({
+  useSessionController: () => ({
+    queue: { playNow: queuePlayNow, playNext: queuePlayNext, addUpNext: queueAddUpNext, add: queueAdd },
+  }),
+}));
+
+// ── NavProvider: "Open detail" push ──
+const navPush = vi.fn();
+vi.mock('../shell/NavProvider.jsx', () => ({
+  useNav: () => ({ push: navPush }),
 }));
 
 // ── useContentCombobox: SearchMode uses the HOOK directly (not the popover
@@ -104,6 +122,8 @@ function Harness({ initialOpen = true }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  playContainerAsQueueMock.mockReset();
+  navPush.mockReset();
   localStorage.clear();
   comboState = { search: null, results: [] };
   comboExtra = {};
@@ -278,5 +298,111 @@ describe('SearchMode', () => {
     await screen.findByTestId('search-mode');
     expect(screen.getByTestId('scope-chips')).toBeInTheDocument();
     expect(screen.getByTestId('destination-line')).toBeInTheDocument();
+  });
+
+  // ── Task 14 (spec D6): the ONE tap grammar, wired via ResultRow ──
+  describe('tap grammar (Task 14)', () => {
+    it('a container row taps through dispatch (browse), never playContainerAsQueue', async () => {
+      comboState = {
+        search: 'tuttle',
+        results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
+      };
+      dispatchMock.mockReturnValue('browse');
+      render(<Harness />);
+      await screen.findByTestId('search-mode-result-plex:663508');
+      fireEvent.click(screen.getByTestId('search-mode-result-plex:663508'));
+
+      expect(dispatchMock).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
+      expect(playContainerAsQueueMock).not.toHaveBeenCalled();
+    });
+
+    it('▶ on a container calls playContainerAsQueue and closes the surface', async () => {
+      comboState = {
+        search: 'tuttle',
+        results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
+      };
+      playContainerAsQueueMock.mockReturnValue('cast');
+      render(<Harness />);
+      await screen.findByTestId('result-play-all-plex:663508');
+      fireEvent.click(screen.getByTestId('result-play-all-plex:663508'));
+
+      expect(playContainerAsQueueMock).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
+      expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    });
+
+    it('a container row never shows the ⋯ leaf menu', async () => {
+      comboState = {
+        search: 'tuttle',
+        results: [{ id: 'plex:663508', title: 'Tuttle Twins', type: 'show', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('search-mode-result-plex:663508');
+      expect(screen.queryByTestId('result-more-plex:663508')).toBeNull();
+    });
+
+    it('a leaf row never shows the container ▶', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('search-mode-result-plex:685088');
+      expect(screen.queryByTestId('result-play-all-plex:685088')).toBeNull();
+    });
+
+    it('⋯ on a leaf: Play Next calls queue.playNext and closes the surface', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-playNext-plex:685088'));
+
+      expect(queuePlayNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+      expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    });
+
+    it('⋯ Up Next calls queue.addUpNext', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-upNext-plex:685088'));
+
+      expect(queueAddUpNext).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+    });
+
+    it('⋯ Add to Queue calls queue.add', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-add-plex:685088'));
+
+      expect(queueAdd).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:685088' }));
+    });
+
+    it('⋯ Open detail pushes the detail view and closes the surface, touching no queue applier', async () => {
+      comboState = {
+        search: 'bluey',
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+      };
+      render(<Harness />);
+      await screen.findByTestId('result-more-plex:685088');
+      fireEvent.click(screen.getByTestId('result-more-plex:685088'));
+      fireEvent.click(await screen.findByTestId('result-action-detail-plex:685088'));
+
+      expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088' });
+      expect(queuePlayNow).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
+    });
   });
 });

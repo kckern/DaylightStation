@@ -16,19 +16,24 @@
 //
 // Reuses the useContentCombobox HOOK for search state/transport/dedupe/D5
 // fallback, but NOT the ContentCombobox popover component — a Mantine
-// Combobox portal doesn't fit a full-screen surface. Results render as this
-// component's own list. Tapping a row dispatches via the same
-// useContentDispatch path MediaContentSearch already uses; leaf/container tap
-// grammar is Task 14's job, so every row (container or leaf) selects here,
-// same as the desktop popover's selectContainers branch.
+// Combobox portal doesn't fit a full-screen surface. Results render via the
+// shared ResultRow (Content/combobox/ResultRow.jsx — Task 14, spec D6): a
+// leaf tap plays now, a container tap browses; the trailing ▶/⋯ are the
+// explicit verbs (play-as-queue for containers; Play Now/Play Next/Up Next/
+// Add to Queue/Open detail for leaves). Tapping a row dispatches via the
+// same useContentDispatch path MediaContentSearch already uses.
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { IconX, IconAlertTriangle } from '@tabler/icons-react';
 import { useContentCombobox } from '../../Content/combobox/useContentCombobox.js';
 import { StreamStatusLine } from '../../Content/combobox/StreamStatusLine.jsx';
+import { ResultRow } from '../../Content/combobox/ResultRow.jsx';
 import { useSearchContext } from './SearchProvider.jsx';
 import { ScopeChips } from './ScopeChips.jsx';
 import { DestinationLine } from '../cast/DestinationLine.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
+import { useSessionController } from '../controller/useSessionController.js';
+import { useNav } from '../shell/NavProvider.jsx';
+import { applyResultRowVerb } from './resultRowVerbs.js';
 import { displayTitle, resultSubtitle } from './resultPresentation.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
@@ -37,7 +42,9 @@ import './Search.scss';
 
 export function SearchMode({ onClose }) {
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
-  const dispatch = useContentDispatch();
+  const { dispatch, playContainerAsQueue } = useContentDispatch();
+  const { queue } = useSessionController('local');
+  const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   const inputRef = useRef(null);
   // Guards against a close path AND the popstate it triggers both firing a
@@ -89,6 +96,38 @@ export function SearchMode({ onClose }) {
     }
     closeSurface('dispatch');
   }, [dispatch, log, closeSurface]);
+
+  // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
+  // whole container to the current destination, replacing the queue. Same
+  // toast/close treatment as a leaf tap — this IS a dispatch, just one the
+  // user opted into via the verb instead of the row tap.
+  const handlePlayAll = useCallback((item) => {
+    const id = item?.id;
+    if (!id) return;
+    log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    const route = playContainerAsQueue(id, item);
+    log.info('dispatch', { contentId: id, route, verb: 'playAll' });
+    if (route === 'local') {
+      notifications.show({
+        id: 'search-mode-dispatch-local',
+        color: 'teal',
+        autoClose: 2500,
+        title: item?.title ? `Playing ${item.title}` : 'Playing',
+      });
+    }
+    closeSurface('dispatch');
+  }, [playContainerAsQueue, log, closeSurface]);
+
+  // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
+  // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
+  // via LocalSessionController) — see resultRowVerbs.js.
+  const handleMore = useCallback((action, item) => {
+    const id = item?.id;
+    if (!id) return;
+    log.info('row_action', { contentId: id, action });
+    applyResultRowVerb(action, item, { queue, push });
+    closeSurface('dispatch');
+  }, [queue, push, log, closeSurface]);
 
   const combo = useContentCombobox({
     value: '',
@@ -189,20 +228,16 @@ export function SearchMode({ onClose }) {
         )}
         {results.map((item) => (
           <li key={item.id} className="result-row">
-            <button
-              type="button"
-              className="result-row-main"
-              data-testid={`search-mode-result-${item.id}`}
-              onClick={() => select(item)}
-            >
-              {item.thumbnail && (
-                <img className="media-result-thumb" src={item.thumbnail} alt="" />
-              )}
-              <span className="media-result-text">
-                <span className="media-result-title">{displayTitle(item)}</span>
-                <span className="media-result-subtitle">{resultSubtitle(item)}</span>
-              </span>
-            </button>
+            <ResultRow
+              item={item}
+              title={displayTitle(item)}
+              subtitle={resultSubtitle(item)}
+              thumbnail={item.thumbnail}
+              onTap={() => select(item)}
+              onPlayAll={() => handlePlayAll(item)}
+              onMore={(action) => handleMore(action, item)}
+              testId={`search-mode-result-${item.id}`}
+            />
           </li>
         ))}
       </ul>
