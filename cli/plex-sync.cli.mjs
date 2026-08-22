@@ -113,17 +113,36 @@ class PlexSync {
             process.exit(1);
         }
 
-        // Load Plex host from data/household/config/media-app.yml
-        const mediaAppPath = path.join(DATA_PATH, 'household/config/media-app.yml');
-        if (!existsSync(mediaAppPath)) {
-            console.error(`Error: media-app.yml not found at ${mediaAppPath}`);
-            process.exit(1);
+        // Load the Plex host from the media DOMAIN config: grouped path first
+        // (household/media/config.yml), legacy flat path second.
+        //
+        // NOT household/media/app.yml — that is the MediaApp SURFACE (browse
+        // menu, searchScopes) and carries no plex host.
+        //
+        // Selection is by CONTENT, not mere existence, unlike the plain
+        // existsSync ladder in cli/lib/fitness/backfillPrimaryMedia.mjs. The
+        // media migration SWAPS two files: today's household/media/config.yml
+        // is the pre-migration surface file (it becomes media/app.yml), while
+        // the plex host still lives in the legacy household/config/media-app.yml.
+        // So during the transition both paths exist and only one has plex.host
+        // — existence alone would pick the surface file and abort with
+        // "plex.host not found" on a tree that is perfectly readable.
+        const MEDIA_CONFIG_CANDIDATES = [
+            path.join(DATA_PATH, 'household/media/config.yml'),
+            path.join(DATA_PATH, 'household/config/media-app.yml'),
+        ];
+        this.baseUrl = null;
+        for (const candidate of MEDIA_CONFIG_CANDIDATES) {
+            if (!existsSync(candidate)) continue;
+            const mediaConfig = yaml.load(fs.readFileSync(candidate, 'utf-8')) || {};
+            if (mediaConfig.plex?.host) {
+                this.baseUrl = mediaConfig.plex.host;
+                break;
+            }
         }
-        const mediaApp = yaml.load(fs.readFileSync(mediaAppPath, 'utf-8')) || {};
-        this.baseUrl = mediaApp.plex?.host;
 
         if (!this.baseUrl) {
-            console.error('Error: plex.host not found in media-app.yml');
+            console.error(`Error: plex.host not found in any media config (looked in: ${MEDIA_CONFIG_CANDIDATES.join(', ')})`);
             process.exit(1);
         }
 
