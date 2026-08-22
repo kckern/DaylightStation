@@ -23,6 +23,13 @@
  * Paths are relative to the household folder, WITHOUT extension — callers
  * resolve .yml/.yaml via `resolveYamlPath`.
  *
+ * This map is now the ONLY way a household app config is found. The retiring
+ * flat `<household>/config/<app>.yml` fallback was deleted in Phase E, after
+ * `backend/tests/unit/system/config/registryCompleteness.test.mjs` proved every
+ * registered path resolves on disk and no unregistered colocated config exists.
+ * An app missing from this map no longer degrades to a flat file — it simply
+ * has no config. Add the entry here; that is the only edit an app needs.
+ *
  * WHY THIS LIVES IN shared/contracts/ RATHER THAN 0_system/config/:
  * it is a naming CONTRACT, not config internals. It declares where files live;
  * it holds no logic and does no I/O. Three layers need it — the config loader
@@ -74,14 +81,6 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
 /** Grouped path for an app, or null when the app is not registered. */
 export function appConfigRelPath(appName) {
   return HOUSEHOLD_APP_CONFIGS[appName] ?? null;
-}
-
-/**
- * The retiring flat path. Kept ONLY so a tree that has not synced the data move
- * yet still resolves. Deleted in a later phase.
- */
-export function legacyAppConfigRelPath(appName) {
-  return `config/${appName}`;
 }
 
 /** Every registered app name. */

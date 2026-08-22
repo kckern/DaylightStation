@@ -1,9 +1,6 @@
-import {
-  HOUSEHOLD_APP_CONFIGS,
-  appConfigRelPath,
-  legacyAppConfigRelPath,
-  allAppNames,
-} from './householdConfig.mjs';
+import * as registry from './householdConfig.mjs';
+
+const { HOUSEHOLD_APP_CONFIGS, appConfigRelPath, allAppNames } = registry;
 
 describe('householdConfig registry', () => {
   it('maps an app to its grouped path under the household folder', () => {
@@ -16,9 +13,22 @@ describe('householdConfig registry', () => {
     expect(appConfigRelPath('nope')).toBeNull();
   });
 
-  it('gives the legacy flat path for any app name', () => {
-    expect(legacyAppConfigRelPath('scales')).toBe('config/scales');
-    expect(legacyAppConfigRelPath('nope')).toBe('config/nope');
+  // INVERTED in Phase E. This used to assert legacyAppConfigRelPath('scales')
+  // === 'config/scales'. The flat path is gone, and the export with it — an
+  // unregistered app must now resolve to NOTHING rather than degrading to a
+  // flat file, because degrading is what silently recreated household/config/
+  // on the write side. Asserting the export's absence keeps a well-meaning
+  // "restore the fallback" from sneaking back in unnoticed.
+  it('exposes NO legacy flat-path helper — the registry is the only lookup', () => {
+    expect(registry.legacyAppConfigRelPath).toBeUndefined();
+    expect(appConfigRelPath('nope')).toBeNull();
+  });
+
+  // No registry VALUE may point back into the retired flat directory.
+  it('registers no path under the retired config/ directory', () => {
+    const flat = Object.entries(HOUSEHOLD_APP_CONFIGS)
+      .filter(([, rel]) => rel.startsWith('config/'));
+    expect(flat).toEqual([]);
   });
 
   it('keeps the media domain/surface split honest', () => {

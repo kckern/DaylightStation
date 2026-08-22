@@ -5,23 +5,23 @@ import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedS
 describe('YamlTriggerConfigRepository', () => {
   it('reads four YAML paths via injected loadFile and returns the registry', () => {
     const blobs = {
-      'config/triggers/sources': {
+      'triggers/sources': {
         'livingroom-nfc': { modality: 'nfc', location: 'livingroom', target: 'livingroom-tv', action: 'play-next' },
         'livingroom-state': { modality: 'state', location: 'livingroom', target: 'livingroom-tv', states: { off: { action: 'clear' } } },
       },
-      'config/triggers/bindings/nfc': { '838e6806': { plex: 620707 } },
-      'config/triggers/responses': {},
-      'config/triggers/endpoints': {},
+      'triggers/bindings/nfc': { '838e6806': { plex: 620707 } },
+      'triggers/responses': {},
+      'triggers/endpoints': {},
     };
     const loadFile = vi.fn((p) => blobs[p] ?? null);
 
     const repo = new YamlTriggerConfigRepository();
     const registry = repo.loadRegistry({ loadFile });
 
-    expect(loadFile).toHaveBeenCalledWith('config/triggers/sources');
-    expect(loadFile).toHaveBeenCalledWith('config/triggers/bindings/nfc');
-    expect(loadFile).toHaveBeenCalledWith('config/triggers/responses');
-    expect(loadFile).toHaveBeenCalledWith('config/triggers/endpoints');
+    expect(loadFile).toHaveBeenCalledWith('triggers/sources');
+    expect(loadFile).toHaveBeenCalledWith('triggers/bindings/nfc');
+    expect(loadFile).toHaveBeenCalledWith('triggers/responses');
+    expect(loadFile).toHaveBeenCalledWith('triggers/endpoints');
     expect(registry.nfc.locations.livingroom.target).toBe('livingroom-tv');
     expect(registry.nfc.tags['838e6806'].global).toEqual({ plex: 620707 });
     expect(registry.state.locations.livingroom.states.off).toEqual({ action: 'clear' });
@@ -40,7 +40,7 @@ describe('YamlTriggerConfigRepository', () => {
   });
 
   it('throws ValidationError when a parser rejects the YAML (does not swallow)', () => {
-    const loadFile = (p) => p === 'config/triggers/sources'
+    const loadFile = (p) => p === 'triggers/sources'
       ? { livingroom: 'oops' }   // invalid: source entry must be an object
       : null;
     const repo = new YamlTriggerConfigRepository();
@@ -58,10 +58,10 @@ describe('YamlTriggerConfigRepository', () => {
     function harness(dirFiles, { single = null } = {}) {
       const saved = {};
       const blobs = {
-        'config/triggers/sources': SOURCES,
-        'config/triggers/bindings/nfc': single,
+        'triggers/sources': SOURCES,
+        'triggers/bindings/nfc': single,
         ...Object.fromEntries(
-          Object.entries(dirFiles).map(([f, blob]) => [`config/triggers/bindings/nfc/${f.replace(/\.ya?ml$/, '')}`, blob])
+          Object.entries(dirFiles).map(([f, blob]) => [`triggers/bindings/nfc/${f.replace(/\.ya?ml$/, '')}`, blob])
         ),
       };
       const repo = new YamlTriggerConfigRepository({ saveFile: (p, data) => { saved[p] = data; } });
@@ -70,7 +70,7 @@ describe('YamlTriggerConfigRepository', () => {
         // Path-aware on purpose: the repository probes BOTH roots to decide
         // which one owns the config, so a stub that returns the same listing
         // for any path would make the grouped root look populated.
-        listDir: (p) => (p === 'config/triggers/bindings/nfc' ? Object.keys(dirFiles) : []),
+        listDir: (p) => (p === 'triggers/bindings/nfc' ? Object.keys(dirFiles) : []),
       });
       return { repo, registry, saved };
     }
@@ -107,18 +107,18 @@ describe('YamlTriggerConfigRepository', () => {
       });
       await repo.setNfcNote('04_66_9C_0F_CB_2A_81', 'a personal card', '2026-07-29 20:19:17');
 
-      expect(Object.keys(saved)).toEqual(['config/triggers/bindings/nfc/cards']);
-      expect(saved['config/triggers/bindings/nfc/cards']['04669c0fcb2a81'].note).toBe('a personal card');
+      expect(Object.keys(saved)).toEqual(['triggers/bindings/nfc/cards']);
+      expect(saved['triggers/bindings/nfc/cards']['04669c0fcb2a81'].note).toBe('a personal card');
       // Books must not be dragged into the cards file — collapsing groups back
       // together is exactly what the old whole-registry flush did.
-      expect(saved['config/triggers/bindings/nfc/cards']['838e6806']).toBeUndefined();
-      expect(saved['config/triggers/bindings/nfc/books']).toBeUndefined();
+      expect(saved['triggers/bindings/nfc/cards']['838e6806']).toBeUndefined();
+      expect(saved['triggers/bindings/nfc/books']).toBeUndefined();
     });
 
     it('files a never-before-seen tag into unsorted.yml', async () => {
       const { repo, saved } = harness({ 'books.yml': { '838e6806': { plex: 620707 } } });
       await repo.setNfcNote('0a_0b_0c_0d', 'mystery tag', '2026-07-29 21:00:00');
-      expect(saved['config/triggers/bindings/nfc/unsorted']).toEqual({
+      expect(saved['triggers/bindings/nfc/unsorted']).toEqual({
         '0a0b0c0d': { note: 'mystery tag' },
       });
     });
@@ -127,12 +127,12 @@ describe('YamlTriggerConfigRepository', () => {
       const saved = {};
       const repo = new YamlTriggerConfigRepository({ saveFile: (p, d) => { saved[p] = d; } });
       repo.loadRegistry({
-        loadFile: (p) => (p === 'config/triggers/sources' ? SOURCES
-          : p === 'config/triggers/bindings/nfc' ? { '838e6806': { plex: 620707 } } : null),
+        loadFile: (p) => (p === 'triggers/sources' ? SOURCES
+          : p === 'triggers/bindings/nfc' ? { '838e6806': { plex: 620707 } } : null),
         listDir: () => [],
       });
       await repo.setNfcNote('838e6806', 'renamed', '2026-07-29 21:00:00');
-      expect(saved['config/triggers/bindings/nfc']['838e6806'].note).toBe('renamed');
+      expect(saved['triggers/bindings/nfc']['838e6806'].note).toBe('renamed');
     });
   });
 });
@@ -144,10 +144,10 @@ describe('YamlTriggerConfigRepository write methods', () => {
     observedHistory = {},
   } = {}) {
     const disk = {
-      'config/triggers/sources': sources,
-      'config/triggers/bindings/nfc': initialTags,
-      'config/triggers/responses': null,
-      'config/triggers/endpoints': null,
+      'triggers/sources': sources,
+      'triggers/bindings/nfc': initialTags,
+      'triggers/responses': null,
+      'triggers/endpoints': null,
       'triggers/nfc.observed': observedHistory,
     };
     const loadFile = vi.fn((p) => disk[p] ?? null);
@@ -168,7 +168,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
       last_seen: '2026-04-26 14:32:18',
       count: 1,
     });
-    expect(disk['config/triggers/bindings/nfc']['04a1b2c3']).toBeUndefined();
+    expect(disk['triggers/bindings/nfc']['04a1b2c3']).toBeUndefined();
   });
 
   it('recordObserved on a repeat sighting returns created:false but still updates history', async () => {
@@ -197,10 +197,10 @@ describe('YamlTriggerConfigRepository write methods', () => {
     const result = await repo.setNfcNote('04a1b2c3', 'kids favorite', '2026-04-26 14:32:18');
     expect(result.created).toBe(true);
     expect(registry.nfc.tags['04a1b2c3'].global).toEqual({ note: 'kids favorite' });
-    expect(disk['config/triggers/bindings/nfc']).toEqual({
+    expect(disk['triggers/bindings/nfc']).toEqual({
       '04a1b2c3': { note: 'kids favorite' },
     });
-    expect(disk['config/triggers/bindings/nfc']['04a1b2c3'].scanned_at).toBeUndefined();
+    expect(disk['triggers/bindings/nfc']['04a1b2c3'].scanned_at).toBeUndefined();
     expect(disk['triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
   });
 
@@ -211,7 +211,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     const result = await repo.setNfcNote('04a1b2c3', 'new', '2026-04-26 14:32:18');
     expect(result.created).toBe(false);
     expect(registry.nfc.tags['04a1b2c3'].global).toEqual({ note: 'new' });
-    expect(disk['config/triggers/bindings/nfc']).toEqual({
+    expect(disk['triggers/bindings/nfc']).toEqual({
       '04a1b2c3': { note: 'new' },
     });
     expect(disk['triggers/nfc.observed']['04a1b2c3'].last_seen).toBe('2026-04-26 14:32:18');
@@ -231,7 +231,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
       global: { plex: 620707, note: 'star wars' },
       overrides: { livingroom: { shader: 'blackout' } },
     });
-    expect(disk['config/triggers/bindings/nfc']).toEqual({
+    expect(disk['triggers/bindings/nfc']).toEqual({
       '838e6806': {
         plex: 620707,
         note: 'star wars',
@@ -265,7 +265,7 @@ describe('YamlTriggerConfigRepository write methods', () => {
     const { repo, registry, saveFile } = makeRepo();
     let resolveOrder = [];
     saveFile.mockImplementation((path, data) => {
-      if (path === 'config/triggers/bindings/nfc') resolveOrder.push(Object.keys(data));
+      if (path === 'triggers/bindings/nfc') resolveOrder.push(Object.keys(data));
       return new Promise((r) => setImmediate(r));
     });
 

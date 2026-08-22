@@ -90,17 +90,34 @@ describe('NotificationConfigService', () => {
     expect(again.cooldowns.ceremony).toBe(600);
   });
 
-  it('falls back to the legacy path for an app that has not been colocated yet', () => {
+  // INVERTED in Phase E (was 'falls back to the legacy path for an app that has
+  // not been colocated yet'). This is the highest-value inversion in the file:
+  // NotificationConfigService is the service whose read/write split caused
+  // task-13's Critical 2, so the assertion that matters now is that a stale
+  // flat file neither feeds the read NOR attracts the write. A write that
+  // landed at the flat path would recreate the retired directory AND resurrect
+  // exactly the drift this file exists to catch.
+  it('IGNORES a stale flat config/notifications.yml for reads AND writes', () => {
     const { svc, colocatedFile, legacyFile } = make('legacy');
 
+    // Read side: the seeded flat file must not be read. Assert on fields where
+    // the seed and DEFAULTS actually DIFFER — `quiet_hours.start` is '21:00' in
+    // both, so testing it would pass vacuously either way.
+    const seeded = svc.getConfig();
+    expect(seeded.cooldowns.ceremony).toBeUndefined();   // seed has 1200
+    expect(seeded.quiet_hours.enabled).toBe(false);      // seed has true
+
+    const before = readFileSync(legacyFile, 'utf8');
     const written = svc.updateConfig({
       quiet_hours: { enabled: false, start: '23:00', end: '05:00' },
       cooldowns: { default: 45 },
     });
 
-    expect(existsSync(legacyFile)).toBe(true);
-    expect(readFileSync(legacyFile, 'utf8')).toContain('23:00');
-    expect(existsSync(colocatedFile)).toBe(false);
+    // Write side: the new value lands at the colocated path, and the flat file
+    // is left byte-for-byte untouched.
+    expect(existsSync(colocatedFile)).toBe(true);
+    expect(readFileSync(colocatedFile, 'utf8')).toContain('23:00');
+    expect(readFileSync(legacyFile, 'utf8')).toBe(before);
     expect(written.quiet_hours.start).toBe('23:00');
     expect(svc.getConfig().quiet_hours.start).toBe('23:00');
   });
