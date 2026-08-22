@@ -59,6 +59,8 @@ export const mediaLog = {
   dispatchSucceeded:      info('dispatch.succeeded'),
   dispatchFailed:         warn('dispatch.failed'),
   dispatchDeduplicated:   info('dispatch.deduplicated'),
+  destinationChanged:     info('dispatch.destination_changed'),
+  castSheetOpened:        info('cast.sheet_opened'),
   peekEntered:            info('peek.entered'),
   peekExited:             info('peek.exited'),
   peekCommand:            debug('peek.command'),

@@ -4,7 +4,7 @@
 // affordance, not the default. Mode stays transfer/fork internally but the
 // UI only surfaces the choice when something is actually playing locally.
 // A `snapshot` source dispatches in adopt mode (hand-off).
-import { useCallback, useContext, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { useDispatch } from './DispatchProvider.jsx';
 import { useCastTarget } from './useCastTarget.js';
@@ -47,6 +47,17 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
 
   const devices = fleet.devices ?? [];
 
+  // Every mount of this picker IS an "open" — it's only ever rendered while
+  // a popover/portal/sheet is showing it (CastButton, NowPlayingView's
+  // handoff section, DestinationLine's device sheet). Logged once per open
+  // with whatever the fleet offered at that moment.
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
+  useEffect(() => {
+    mediaLog.castSheetOpened({ offeredDeviceIds: devicesRef.current.map((d) => d.id) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Tap a tile: radio-like in single mode (tap again to deselect),
   // accumulating in multi mode.
   const select = useCallback((id) => {
@@ -87,7 +98,13 @@ export function useDispatchTargetPicker({ source, onComplete } = {}) {
     // Human title for the progress tray (never the raw content id).
     const title = source?.title ?? snapshot?.currentItem?.title ?? null;
     if (title) params.title = title;
-    dispatchToTarget(params);
+    // A destination-only sheet (DestinationLine) mounts this picker with NO
+    // source at all — it's changing the preferred target, not casting
+    // anything. dispatchToTarget requires play/queue/snapshot (buildDispatchUrl
+    // throws without one), so skip the actual dispatch when there's nothing
+    // to send; the preference change still happens via onComplete below.
+    const hasContent = !!(params.snapshot || params.play || params.queue);
+    if (hasContent) dispatchToTarget(params);
     onComplete?.({ targetIds, mode });
   }, [canSubmit, selected, mode, source, dispatchToTarget, onComplete]);
 
