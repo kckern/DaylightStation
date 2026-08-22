@@ -12,4 +12,9 @@
 
   height: 100dvh;
   overflow: hidden;
+  // Chrome Android turns downward overscroll into pull-to-refresh, which
+  // remounts the app and destroys search/session state mid-flow
+  // (2026-08-21 incident). Contain it; inner scrollers keep their behavior.
+  overscroll-behavior-y: none;
+  touch-action: pan-x pan-y;
 }
