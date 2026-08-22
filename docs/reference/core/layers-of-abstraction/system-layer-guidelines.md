@@ -270,6 +270,14 @@ if (intervalMs < 1000) {
     └── index.mjs
 ```
 
+`0_system/config/` loads and validates config; it does not declare where a
+household app's config file lives. That mapping is a naming contract, not
+config internals, so it lives in `shared/contracts/householdConfig.mjs`
+instead — `configLoader.mjs`, the admin application layer, and the admin
+frontend all read the same registry rather than each hand-maintaining their
+own path list. See `docs/reference/core/configuration.md` for the registry
+itself.
+
 ### Naming Conventions
 
 | Type | Pattern | Examples |
