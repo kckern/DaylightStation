@@ -18,7 +18,7 @@ import {
 } from '#testlib/school/lifecycleFakes.mjs';
 import {
   rawUnits, rawDocuments, rawManifests, BANK_IDS,
-  MEDIA_UNIT, WORKSHEET_UNIT, MIXED_UNIT, MEDIA_BANK_ID,
+  MEDIA_UNIT, WORKSHEET_UNIT, OMR_UNIT, MIXED_UNIT, MEDIA_BANK_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
 const TARGETS = [{ id: 'living-room-tv', label: 'the TV', child_selectable: true }];
@@ -145,6 +145,25 @@ const withLaunchUnit = () => ({
     },
   }),
   assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT] },
+});
+
+/** Two standalone, immediately-printable units on DIFFERENT subjects — the
+ * shape an `agenda_print` bulk ticket needs (BuildAgenda only ever mints one
+ * when >=2 subjects are printable). Derived the same way `withLanguageProgram`
+ * turns a course unit into a standalone one, but keeping `document` (rather
+ * than dropping it) so both land on `nextMove: 'print'` at `created`. */
+const withTwoPrintableSubjects = () => ({
+  units: rawUnits({
+    [WORKSHEET_UNIT]: {
+      courseId: undefined, sequence: undefined, passing: undefined,
+      retry: undefined, reward: undefined, review: undefined,
+    },
+    [OMR_UNIT]: {
+      subject: 'science', courseId: undefined, sequence: undefined, passing: undefined,
+      retry: undefined, reward: undefined, review: undefined,
+    },
+  }),
+  assignment: { learnerId: 'kid1', units: [WORKSHEET_UNIT, OMR_UNIT] },
 });
 
 const cardToken = async (learnerId = 'kid1') => {
@@ -752,6 +771,78 @@ describe('the subject ticket', () => {
     expect(result.effect).toMatchObject({ remediationOf: failedSessionId, variant: 1 });
     expect(sessions.derive(failedSessionId)).toMatchObject({ state: 'remediation_opened', terminal: true });
     expect(laser.jobs).toHaveLength(1);
+  });
+});
+
+describe('the bulk-print ticket (agenda_print)', () => {
+  const bulkToken = async (subjectRefs, learnerId = 'kid1') => {
+    const refTokens = [];
+    for (const subject of subjectRefs) {
+      const record = mintToken({ tokenClass: 'subject_next', subject: { learnerId, subject }, at: clock.iso(), rng });
+      // eslint-disable-next-line no-await-in-loop
+      await tokens.put(record);
+      refTokens.push(record.token);
+    }
+    const bulk = mintToken({ tokenClass: 'agenda_print', subject: { learnerId, tokenRefs: refTokens }, at: clock.iso(), rng });
+    await tokens.put(bulk);
+    return bulk.token;
+  };
+
+  it('prints every printable subject in one scan — parent scanning IS the authorization', async () => {
+    build(withTwoPrintableSubjects());
+    const code = await bulkToken(['math', 'science']);
+    const result = await resolve.execute({ code });
+    expect(result).toMatchObject({
+      status: 'issued', tokenClass: 'agenda_print', sessionId: null, physical: 'worksheet', printed: true,
+    });
+    expect(result.message).toContain('2 sheets printed');
+    expect(laser.jobs).toHaveLength(2);
+    expect(result.effect.results).toHaveLength(2);
+    expect(result.effect.results.every((r) => r.printed)).toBe(true);
+  });
+
+  it('a ref for a subject already served today is skipped, not mis-printed — the rest still print', async () => {
+    build(withTwoPrintableSubjects());
+    // Serve 'science' out from under the ticket before it is ever scanned —
+    // exactly what a bulk code minted this morning and scanned this evening
+    // could run into.
+    const scienceUnitId = OMR_UNIT;
+    const sid = 'ses_pre';
+    await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: scienceUnitId });
+    for (const event of [
+      { type: 'issued', artifactId: 'art_pre' },
+      { type: 'submitted', transport: 'paper' },
+      { type: 'graded', attemptIds: ['att_pre'], percent: 90 },
+      { type: 'outcome_recorded', outcomeId: `out:${sid}`, result: 'passed' },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      await sessions.appendEvent(sid, { ...event, sessionId: sid, at: clock.iso() });
+    }
+
+    const code = await bulkToken(['math', 'science']);
+    const result = await resolve.execute({ code });
+    expect(result).toMatchObject({ status: 'issued', tokenClass: 'agenda_print', physical: 'worksheet', printed: true });
+    expect(result.message).toContain('1 sheet printed');
+    expect(laser.jobs).toHaveLength(1);
+    expect(result.effect.results).toEqual([
+      { subject: 'math', sessionId: expect.any(String), status: 'issued', printed: true },
+      { subject: 'science', status: 'skipped', printed: false },
+    ]);
+  });
+
+  it('every ref revoked/expired prints an all-done slip, never a dead end', async () => {
+    build(withTwoPrintableSubjects());
+    const code = await bulkToken(['math', 'science']);
+    // Revoke both refs directly in the registry — simulates a bulk code
+    // scanned long after every per-subject ticket it names has expired.
+    const record = await tokens.get(code);
+    for (const t of record.subject.tokenRefs) {
+      // eslint-disable-next-line no-await-in-loop
+      await tokens.revoke(t, { at: clock.iso() });
+    }
+    const result = await resolve.execute({ code });
+    expect(result).toMatchObject({ status: 'already_done', tokenClass: 'agenda_print', physical: 'receipt', printed: true });
+    expect(thermal.lastTranscript()).toContain("Everything on today's list is done.");
   });
 });
 

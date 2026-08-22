@@ -346,6 +346,7 @@ const SEMANTICS = {
   agenda_print: {
     actionable: () => true,
     alreadyDone: () => false,
+    readyMessage: 'Printing your sheets.',
   },
 };
 
