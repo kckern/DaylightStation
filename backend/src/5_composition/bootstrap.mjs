@@ -3517,6 +3517,12 @@ export function createHarvesterServices(config) {
   // would orphan that state and the job would stop running. (The real registry
   // key is JamCorderHarvester.serviceId; this argument is only the log label,
   // and is kept identical to it on purpose.)
+  //
+  // DECIDED 2026-08-22, not deferred: this name stays `jamcorder` for good.
+  // The 2026-08 rename moved the vendor name out of 2_domains/ and
+  // 3_applications/ (now `midi`), which was the point. JamCorderHarvester
+  // itself lives in 1_adapters/harvester/other/ — a vendor-specific adapter,
+  // where a vendor serviceId is CORRECT, not a leftover.
   if (httpClient) {
     registerHarvester('jamcorder', () => {
       // Recorder address comes from the device registry (hardware/devices.yml),
