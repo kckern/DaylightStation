@@ -89,7 +89,7 @@ Options:
   --document-directories <a,b>       override learning-document mount directories
   --question-bank-directories <a,b>  override question-bank mount directories
   --surfaces-directory <path>        override surface-profile directory
-                                     (default: household/config/school/surfaces)
+                                     (default: household/school/surfaces)
   --assets-directory <path>          override asset directory (default: <content-root>/assets)
   --surface <id>                     restrict to one surface/baseline id (repeatable, query mode)
   --address <addr>                   certify one lesson (a/b/c/d/e) or bank (bank:<id>) address (query mode)
@@ -162,8 +162,13 @@ export function resolveCertifyPaths({ flags = {}, env = process.env } = {}) {
   // Surface profiles declare what a rendering TARGET can do (channels, item
   // caps, capabilities) — device configuration, not coursework — so they live
   // under household config rather than on the authored content mount.
+  // Grouped path first (household/school/surfaces), falling back to the
+  // retiring flat config/ root for an un-migrated data dir.
+  const groupedSurfaces = path.join(base.dataDir, 'household/school/surfaces');
+  const legacySurfaces = path.join(base.dataDir, 'household/config/school/surfaces');
+  const defaultSurfaces = fs.existsSync(groupedSurfaces) ? groupedSurfaces : legacySurfaces;
   const surfacesDirectory = resolveOptionalDirectory(
-    flags['surfaces-directory'], path.join(base.dataDir, 'household/config/school/surfaces'), base.dataDir, 'surfaces-directory',
+    flags['surfaces-directory'], defaultSurfaces, base.dataDir, 'surfaces-directory',
   );
   const assetsDirectory = resolveOptionalDirectory(
     flags['assets-directory'], path.join(base.contentRoot, 'assets'), base.dataDir, 'assets-directory',

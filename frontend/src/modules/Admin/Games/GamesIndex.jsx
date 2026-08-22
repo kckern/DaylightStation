@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Card, Group, Text, Badge, Stack, Loader } from '@mantine/core';
 import getLogger from '../../../lib/logging/Logger.js';
 import GameScheduleEditor from './GameScheduleEditor.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 
 const GamesIndex = () => {
   const logger = useMemo(() => getLogger().child({ component: 'GamesIndex' }), []);
@@ -48,11 +49,12 @@ const GamesIndex = () => {
   };
 
   const handleScheduleSave = async (newSchedule) => {
-    const configRes = await fetch('/api/v1/admin/config/files/household/config/games.yml');
+    const url = `/api/v1/admin/config/files/${configPath('games')}`;
+    const configRes = await fetch(url);
     const configData = await configRes.json();
     const parsed = configData.parsed || {};
     parsed.schedule = newSchedule;
-    await fetch('/api/v1/admin/config/files/household/config/games.yml', {
+    await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parsed })
