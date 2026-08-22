@@ -4,13 +4,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { clearCache, getCacheEntry, setCacheEntry } from '../lib/siblingsCache.js';
 
-vi.mock('../../../lib/logging/singleton.js', () => {
-  const logger = {
-    debug: () => {}, info: () => {}, warn: () => {}, error: () => {},
-    sampled: () => {}, child: () => logger,
+// Hoisted so tests (Task 5: search.settled / search.source_error /
+// search.retry_after_source_error) can assert on calls — vi.hoisted runs
+// before vi.mock factories, so mockLog is initialized when the factory below
+// closes over it.
+const { mockLog } = vi.hoisted(() => {
+  const mockLog = {
+    debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
+    sampled: vi.fn(), child: () => mockLog,
   };
-  return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
+  return { mockLog };
 });
+
+vi.mock('../../../lib/logging/singleton.js', () => (
+  { getChildLogger: () => mockLog, getDaylightLogger: () => mockLog, default: () => mockLog }
+));
 
 vi.mock('./notify.js', () => ({
   notifyWarning: vi.fn(),
@@ -82,6 +90,8 @@ describe('useContentCombobox', () => {
     fetchMock = vi.fn(() => jsonResponse({ items: [] }));
     vi.stubGlobal('fetch', fetchMock);
     notifyWarning.mockClear();
+    mockLog.debug.mockClear(); mockLog.info.mockClear();
+    mockLog.warn.mockClear(); mockLog.error.mockClear();
   });
 
   afterEach(() => {
@@ -863,5 +873,119 @@ describe('useContentCombobox', () => {
     expect(decision.action).toBe('select');
     expect(onChange).toHaveBeenCalledWith('plex:5', expect.objectContaining({ id: 'plex:5' }));
     expect(result.current.state.mode).toBe(Modes.DISPLAY);
+  });
+
+  // ── Task 5: search settle observability + one-shot retry on source errors ──
+  // sourceErrors only ever arrives via the SSE transport (useStreamingSearch);
+  // the batch fallback has no equivalent, so these run on the SSE path.
+
+  describe('search settle logging + retry (Task 5)', () => {
+    it('search.settled logs once per settled query with result counts and empty sourceErrors', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({});
+
+      act(() => { result.current.handleInput('beet'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({
+          event: 'results', source: 'plex', items: [{ id: 'plex:5', title: 'Beethoven' }], pending: [],
+        });
+      });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+      });
+
+      expect(result.current.searchSettled).toBe(true);
+      expect(mockLog.info).toHaveBeenCalledWith('search.settled', {
+        textLength: 'beet'.length,
+        resultCount: 1,
+        rawResultCount: 1,
+        sourceErrors: [],
+      });
+      // Logged exactly once for this settle — no duplicate on subsequent renders.
+      const settledCalls = mockLog.info.mock.calls.filter(([event]) => event === 'search.settled');
+      expect(settledCalls).toHaveLength(1);
+      expect(mockLog.warn).not.toHaveBeenCalledWith('search.source_error', expect.anything());
+    });
+
+    it('search.source_error warns once per errored source when a search settles with a stream error', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({});
+
+      act(() => { result.current.handleInput('ghost'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({
+          event: 'source_error', source: 'plex', error: 'adapter timeout', pending: [],
+        });
+      });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({
+          event: 'results', source: 'abs', items: [{ id: 'abs:1', title: 'Ghost Story' }], pending: [],
+        });
+      });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+      });
+
+      expect(result.current.searchSettled).toBe(true);
+      expect(mockLog.warn).toHaveBeenCalledWith('search.source_error', { source: 'plex', error: 'adapter timeout' });
+      expect(mockLog.info).toHaveBeenCalledWith('search.settled', {
+        textLength: 'ghost'.length,
+        resultCount: 1,
+        rawResultCount: 1,
+        sourceErrors: ['plex'],
+      });
+      // Non-empty results ⇒ the recovery retry must NOT fire.
+      expect(mockLog.info).not.toHaveBeenCalledWith('search.retry_after_source_error', expect.anything());
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it('search.retry_after_source_error re-dispatches exactly once on settled-empty-with-source-errors, and does not loop on the retry\'s own settle', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({});
+
+      act(() => { result.current.handleInput('ghost'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(1);
+
+      // First settle: zero results + one source error → exactly one retry.
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({
+          event: 'source_error', source: 'plex', error: 'adapter timeout', pending: [],
+        });
+      });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'complete' });
+      });
+
+      expect(MockEventSource.instances).toHaveLength(2); // the retry opened a NEW stream
+      expect(MockEventSource.instances[1].url).toContain('text=ghost');
+      expect(mockLog.info).toHaveBeenCalledWith('search.retry_after_source_error', {
+        textLength: 'ghost'.length,
+        sourceErrors: ['plex'],
+      });
+      const retryCallsAfterFirst = mockLog.info.mock.calls.filter(([event]) => event === 'search.retry_after_source_error');
+      expect(retryCallsAfterFirst).toHaveLength(1);
+
+      // Second settle of the SAME text (the retry itself errors again) must NOT retry again.
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({
+          event: 'source_error', source: 'plex', error: 'adapter timeout again', pending: [],
+        });
+      });
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({ event: 'complete' });
+      });
+
+      expect(MockEventSource.instances).toHaveLength(2); // no third stream opened
+      const retryCallsAfterSecond = mockLog.info.mock.calls.filter(([event]) => event === 'search.retry_after_source_error');
+      expect(retryCallsAfterSecond).toHaveLength(1); // still just the one retry, ever
+    });
   });
 });
