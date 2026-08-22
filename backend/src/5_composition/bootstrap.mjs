@@ -1441,8 +1441,10 @@ export function createHomeAutomationAdapters(config) {
  * Reads the hub's `baseUrl` from `services.playback_hub.docker` in
  * `data/system/config/services.yml` and the configurable timeout from
  * `services.playback_hub.request_timeout_sec` (default 2). Persists
- * household-side `playback-hub.yml` at
- * `<dataDir>/household/config/playback-hub.yml`.
+ * household-side `playback-hub.yml` at whichever path the household config
+ * registry resolves for the `playback-hub` app (grouped
+ * `<household>/playback-hub/config.yml`, falling back to the retiring flat
+ * `<household>/config/playback-hub.yml` while the data move is pending).
  *
  * Starts the HubStatusBroadcaster as part of `container.start()`. Returns the
  * container alongside the router so the caller can register
@@ -1479,7 +1481,11 @@ export async function createPlaybackHubServices(config) {
     logger,
   });
 
-  const yamlPath = path.join(configService.getDataDir(), 'household', 'config', 'playback-hub.yml');
+  // Resolve through the registry rather than hardcoding, so the read side
+  // (configLoader) and this write-capable datastore can never disagree about
+  // which file is authoritative. Returns an ABSOLUTE path WITH extension —
+  // the same shape the hardcoded path.join produced.
+  const yamlPath = configService.getHouseholdAppConfigPath(null, 'playback-hub');
   const configRepository = new YamlHubConfigDatastore({
     yamlPath,
     logger,
@@ -2833,7 +2839,8 @@ export async function createConciergeServices(config) {
   //     voice_sources: [plex]
   //     plex_library_ids: "5,10,11,16,18,19,21,22,23"
   //     prefix_aliases: {}
-  // Reads data/household/config/concierge.yml
+  // Reads data/household/agents/concierge.yml (falls back to the retiring
+  // data/household/config/concierge.yml until the data move lands).
   const conciergeConfig = configService.reloadHouseholdAppConfig?.(null, 'concierge') ?? {};
   const mediaConfig = conciergeConfig?.media ?? {};
 

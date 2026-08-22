@@ -276,15 +276,6 @@ export class MediaAdapter {
       }
     }
 
-    // Fall back to direct YAML read
-    if (this.dataPath) {
-      const configPath = path.join(this.dataPath, 'household/config/local-media.yml');
-      if (fileExists(configPath)) {
-        const config = loadYamlSafe(configPath.replace(/\.yml$/, ''));
-        this._rootsCache = config?.roots || [];
-        return this._rootsCache;
-      }
-    }
 
     this._rootsCache = [];
     return this._rootsCache;
