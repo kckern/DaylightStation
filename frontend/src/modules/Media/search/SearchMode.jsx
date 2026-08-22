@@ -63,23 +63,50 @@ export function SearchMode({ onClose }) {
   // spread (here and in NavProvider's syncHistory) — the user's next real
   // back press would silently no-op, compounding with every open→dispatch
   // cycle.
-  const closeSurface = useCallback((reason) => {
+  //
+  // `opts.navigated` marks the exits where the dispatch ITSELF pushed a route
+  // (a container tap, which browses; the ⋯ "Open detail" verb). Those must NOT
+  // call history.back(): the route was written OVER this surface's marker
+  // entry (NavProvider push with `replaceEntry`, threaded from here), so there
+  // is nothing left to traverse. Calling back() anyway was CRITICAL 1 of the
+  // final review — it popped the entry the navigation had just created and
+  // landed on the marker's PRE-search nav stack, so tapping "Tuttle Twins" in
+  // mobile search navigated to the episode list and instantly bounced back to
+  // Home. The signal is the dispatch's own return value, never a timer.
+  const closeSurface = useCallback((reason, opts = {}) => {
     if (closedRef.current) return;
     closedRef.current = true;
     mediaLog.searchModeExited({ reason });
     onClose?.();
-    if (reason !== 'back') {
-      // Consume the entry pushed on open so the user isn't left needing two
-      // backs. This fires a popstate too, but closedRef is already set, so
-      // the listener below no-ops for it.
-      window.history.back();
+    if (reason === 'back') return; // the popstate we're reacting to already consumed it
+    if (opts.navigated) {
+      // The pushed route replaced this entry. Strip the marker flag so it
+      // can't ride along into every later pushState via the
+      // `{...history.state}` spread (NavProvider's syncHistory does the same
+      // spread, and reads whatever we leave here).
+      const state = { ...(window.history.state || {}) };
+      delete state.mediaSearchMode;
+      window.history.replaceState(state, '');
+      return;
     }
+    // Nothing navigated: consume the entry pushed on open so the user isn't
+    // left needing two backs. This fires a popstate too, but closedRef is
+    // already set, so the listener below no-ops for it.
+    window.history.back();
   }, [onClose]);
+
+  // NavProvider's push, bound to replace this surface's marker entry — see
+  // closeSurface. Handed to the ⋯ verb applier so "Open detail" gets the same
+  // treatment a container tap gets through dispatch().
+  const pushOverSurface = useCallback(
+    (view, params) => push(view, params, { replaceEntry: true }),
+    [push]
+  );
 
   const handleChange = useCallback((id, item) => {
     if (!id) return; // clear/empty commits are no-ops for a transient picker
     log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null });
-    const route = dispatch(id, item);
+    const route = dispatch(id, item, { replaceHistoryEntry: true });
     log.info('dispatch', { contentId: id, route });
     // Cast/peek dispatches already surface their own toast
     // (useContentDispatch's confirmation/failure notifications); a local
@@ -94,7 +121,8 @@ export function SearchMode({ onClose }) {
         title: item?.title ? `Playing ${item.title}` : 'Playing',
       });
     }
-    closeSurface('dispatch');
+    // 'browse' is the only route that navigates (containers always browse).
+    closeSurface('dispatch', { navigated: route === 'browse' });
   }, [dispatch, log, closeSurface]);
 
   // Trailing ▶ on a container row (Task 14, spec D6): explicitly send the
@@ -125,9 +153,10 @@ export function SearchMode({ onClose }) {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
-    applyResultRowVerb(action, item, { queue, push });
-    closeSurface('dispatch');
-  }, [queue, push, log, closeSurface]);
+    applyResultRowVerb(action, item, { queue, push: pushOverSurface });
+    // 'detail' is the only verb that navigates; the four queue verbs don't.
+    closeSurface('dispatch', { navigated: action === 'detail' });
+  }, [queue, pushOverSurface, log, closeSurface]);
 
   const combo = useContentCombobox({
     value: '',
@@ -142,7 +171,7 @@ export function SearchMode({ onClose }) {
     allowFreeform: false,
     logApp: 'media',
   });
-  const { state, handleInput, select, isSearching, pendingSources, sourceErrors } = combo;
+  const { state, handleInput, select, isSearching, pendingSources, sourceErrors, fellBackToAll } = combo;
   const results = state.results;
   const searchText = state.search ?? '';
 
@@ -178,7 +207,18 @@ export function SearchMode({ onClose }) {
   }, [handleInput, searchText, log]);
 
   const showHint = results.length === 0 && !isSearching && searchText.trim().length < 2;
-  const showEmpty = results.length === 0 && !isSearching && searchText.trim().length >= 2;
+  // The widening notice below already explains an empty widened search in
+  // scope-aware wording, so the generic empty line would only repeat it.
+  const showEmpty = results.length === 0 && !isSearching && searchText.trim().length >= 2 && !fellBackToAll;
+  // D5 widening notice (Finding 2 of the final review). The hook widens a
+  // scope that settled empty and ContentCombobox says so on desktop — but this
+  // surface, the one the whole remediation exists for, rendered nothing: the
+  // Ambient chip stayed aria-pressed while catalog-wide results appeared under
+  // it with no explanation. Same wording as the desktop notice, naming the
+  // scope that came up empty. Held back while the widened search is still in
+  // flight so it can't flash "nothing anywhere" before the results land.
+  const scopeThatCameUpEmpty = currentScope?.label || 'this scope';
+  const showWideningNotice = fellBackToAll && !isSearching;
 
   return (
     <div className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
@@ -216,6 +256,14 @@ export function SearchMode({ onClose }) {
       </div>
 
       <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
+
+      {showWideningNotice && (
+        <div className="search-mode-widening-notice" data-testid="search-mode-widening-notice" role="status">
+          {results.length > 0
+            ? `Nothing in ${scopeThatCameUpEmpty} — showing ${results.length} result${results.length === 1 ? '' : 's'} from everywhere.`
+            : `Nothing in ${scopeThatCameUpEmpty} — and nothing found anywhere else either.`}
+        </div>
+      )}
 
       <ul className="search-mode-results media-search-results" data-testid="search-mode-results">
         {showHint && (

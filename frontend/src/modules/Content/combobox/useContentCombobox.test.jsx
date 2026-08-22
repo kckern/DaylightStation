@@ -1122,4 +1122,210 @@ describe('useContentCombobox', () => {
       });
     });
   });
+
+  // ── Final review, Important 3: a scope chip must actually re-run the search ──
+  // Nothing watched `searchParams`. useStreamingSearch reads it only inside
+  // search(), so tapping "Music" with results on screen changed the chip's
+  // pressed state and nothing else — the user believed a filter had applied
+  // while the list underneath stayed catalog-wide.
+  describe('scope change re-runs the search (Important 3)', () => {
+    it('re-dispatches the current text under the new scope params', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(MockEventSource.instances[0].url).not.toContain('source=music');
+
+      // Chip tap: the host swaps searchParams while the text stays put.
+      rerender({ value: '', onChange, searchParams: 'source=music' });
+      await act(async () => { vi.advanceTimersByTime(350); });
+
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.instances[1].url).toContain('text=bluey');
+      expect(MockEventSource.instances[1].url).toContain('source=music');
+      expect(mockLog.info).toHaveBeenCalledWith('search.rerun_for_scope', {
+        textLength: 'bluey'.length, scopeKey: null,
+      });
+    });
+
+    it('does not dispatch on mount, nor when the box is empty or too short', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: '' });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(0); // mount alone searches nothing
+
+      act(() => { result.current.handleInput('b'); }); // below the 2-char floor
+      await act(async () => { vi.advanceTimersByTime(350); });
+      const beforeScopeChange = MockEventSource.instances.length;
+
+      rerender({ value: '', onChange, searchParams: 'source=music' });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(beforeScopeChange);
+    });
+
+    it('coalesces with a pending keystroke instead of racing a second request against it', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(100); }); // still debouncing
+      rerender({ value: '', onChange, searchParams: 'source=music' });
+      await act(async () => { vi.advanceTimersByTime(350); });
+
+      // ONE dispatch, under the new scope — not one stale + one scoped.
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(MockEventSource.instances[0].url).toContain('source=music');
+    });
+
+    it('re-arms the once-per-search guards: the same text under a new scope logs its own settle and widens again', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(result.current.fellBackToAll).toBe(true);
+      expect(MockEventSource.instances).toHaveLength(2); // scoped + widened
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+
+      // Same words, different chip. Keyed on text alone, every guard below was
+      // already spent and this scope could never settle-log or widen.
+      rerender({ value: '', onChange, searchParams: 'source=jazz', fallbackSearchParams: '' });
+      expect(result.current.fellBackToAll).toBe(false); // stale flag cleared
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(3);
+      expect(MockEventSource.instances[2].url).toContain('source=jazz');
+
+      act(() => { MockEventSource.instances[2].simulateMessage({ event: 'complete' }); });
+
+      const settles = mockLog.info.mock.calls.filter(([event]) => event === 'search.settled');
+      expect(settles).toHaveLength(2); // one per scope, not one per text
+      expect(MockEventSource.instances).toHaveLength(4); // the jazz scope widened on its own
+      expect(MockEventSource.instances[3].url).not.toContain('source=jazz');
+      expect(result.current.fellBackToAll).toBe(true);
+    });
+
+    it('ignores the stale settle between a chip tap and its re-dispatch', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const onChange = vi.fn();
+      const { result, rerender } = setup({ onChange, searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({
+          event: 'results', source: 'plex', items: [{ id: 'plex:1', title: 'Bluey' }], pending: [],
+        });
+      });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(result.current.searchSettled).toBe(true);
+
+      // The instant the chip flips, the transports are idle and the box text is
+      // unchanged, so `searchSettled` is still true — but those results belong
+      // to the OLD scope. Nothing may act on that settle.
+      const settlesBefore = mockLog.info.mock.calls.filter(([e]) => e === 'search.settled').length;
+      rerender({ value: '', onChange, searchParams: 'source=jazz', fallbackSearchParams: '' });
+      const settlesAfter = mockLog.info.mock.calls.filter(([e]) => e === 'search.settled').length;
+      expect(settlesAfter).toBe(settlesBefore);
+      expect(MockEventSource.instances).toHaveLength(1); // nothing widened off a stale settle
+    });
+  });
+
+  // ── Final review, Important 4: a persistent source error must not veto the
+  // widening. `if (sourceErrors.length > 0) return` in the old widening effect
+  // meant a genuinely-down Plex left a scoped search with no results AND no
+  // explanation — both halves of the 2026-08-21 incident at once. ──
+  describe('recovery ladder: retry then widen (Important 4)', () => {
+    it('widens after the one-shot retry is spent and the source errors again', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+
+      // Settle 1: empty + a source error → rung 1, the same-params retry.
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'down', pending: [] });
+      });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.instances[1].url).toContain('source=ambient'); // same scope
+      expect(result.current.fellBackToAll).toBe(false); // rung 2 has NOT run yet
+
+      // Settle 2: the retry errors again and is still empty. Pre-fix this was
+      // the end of the road. Now rung 2 runs.
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({ event: 'source_error', source: 'plex', error: 'still down', pending: [] });
+      });
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(3);
+      expect(MockEventSource.instances[2].url).toContain('text=bluey');
+      expect(MockEventSource.instances[2].url).not.toContain('source=ambient'); // widened
+      expect(result.current.fellBackToAll).toBe(true); // the surface can now explain itself
+    });
+
+    it('stops after the widening — a still-empty widened search does not loop', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'down', pending: [] });
+      });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({ event: 'source_error', source: 'plex', error: 'down', pending: [] });
+      });
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+      expect(MockEventSource.instances).toHaveLength(3);
+
+      // The widened search also errors and also finds nothing: both rungs are
+      // spent for this (text, scope), so it ends here.
+      act(() => {
+        MockEventSource.instances[2].simulateMessage({ event: 'source_error', source: 'plex', error: 'down', pending: [] });
+      });
+      act(() => { MockEventSource.instances[2].simulateMessage({ event: 'complete' }); });
+      expect(MockEventSource.instances).toHaveLength(3);
+      expect(result.current.fellBackToAll).toBe(true);
+    });
+
+    it('never widens when the retry succeeds — results end the ladder', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'blip', pending: [] });
+      });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(MockEventSource.instances).toHaveLength(2);
+
+      act(() => {
+        MockEventSource.instances[1].simulateMessage({
+          event: 'results', source: 'plex', items: [{ id: 'plex:1', title: 'Bluey' }], pending: [],
+        });
+      });
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(result.current.fellBackToAll).toBe(false);
+    });
+  });
 });

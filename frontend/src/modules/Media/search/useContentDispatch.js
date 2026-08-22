@@ -159,7 +159,14 @@ export function useContentDispatch() {
     });
   }, [dispatchToTarget, devices]);
 
-  const dispatch = useCallback((id, item) => {
+  // `opts.replaceHistoryEntry` is for a caller that is itself occupying the
+  // current history entry and is about to close: the mobile Search Mode. Its
+  // browse push must REPLACE that entry rather than stack on top of it —
+  // otherwise the surface's exit path traverses back over the marker and
+  // un-does the navigation the tap just made (a container tap landed the user
+  // back on Home). Only threaded through when true so every other caller's
+  // push call is byte-identical to before.
+  const dispatch = useCallback((id, item, opts = {}) => {
     const title = item?.title ?? null;
     // Containers ALWAYS browse — see header comment. Checked first so it
     // wins over both the peek view and an aimed cast target. The opened
@@ -168,11 +175,13 @@ export function useContentDispatch() {
     // fetch — the List API item BrowseView already has for nested drills
     // gets the same treatment below in BrowseView.jsx itself.
     if (item && isContainer(item)) {
-      push('browse', {
+      const browseParams = {
         path: contentIdToBrowsePath(id),
         label: title ?? id,
         containerItem: { ...item, id: item.id ?? id },
-      });
+      };
+      if (opts.replaceHistoryEntry) push('browse', browseParams, { replaceEntry: true });
+      else push('browse', browseParams);
       return 'browse';
     }
     if (view === 'peek' && params?.deviceId) {

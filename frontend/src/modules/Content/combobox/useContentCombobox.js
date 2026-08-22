@@ -28,6 +28,13 @@ const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 21;
 const TITLE_CACHE_MAX = 500;
 
+// Identity of a search run: the query text AND the scope params it ran under.
+// Every once-per-search guard in this hook keys on this pair rather than on
+// the text alone, so re-running the same words under a different scope chip
+// counts as a new search (see the settle/recovery effects below). The unit
+// separator can't occur in either half, so the pair can never collide.
+const searchKey = (text, params) => `${text}\u001f${params ?? ''}`;
+
 /** Check if the browser supports Server-Sent Events. */
 function supportsSSE() {
   return typeof EventSource !== 'undefined';
@@ -232,9 +239,19 @@ export function useContentCombobox({
   // fallback which the server already limits to BATCH_TAKE.
   const [rawResultCount, setRawResultCount] = useState(0);
   const queryRef = useRef(''); // last dispatched search text (for app-result merge)
+  // The `searchParams` value the last USER-initiated dispatch ran under (a
+  // keystroke or a scope change — NOT the D5 widening, which deliberately
+  // overrides the params for one request without changing the active scope).
+  // Two things need it: (a) the settle/recovery effects must ignore a settle
+  // that belongs to the PREVIOUS scope, which is otherwise indistinguishable
+  // from a real one because the transports are idle and the box text is
+  // unchanged the instant a chip is tapped; (b) the one-shot guards below key
+  // on it, so a scope change re-arms them.
+  const dispatchedParamsRef = useRef(searchParams);
   // D5: true once the current query text has widened from `searchParams` to
   // `fallbackSearchParams` after a clean empty settle. Reset on every new
-  // INPUT (handleInput) so a stale flag never survives onto a different query.
+  // INPUT (handleInput) and on every scope change so a stale flag never
+  // survives onto a different query or a different scope.
   const [fellBackToAll, setFellBackToAll] = useState(false);
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
@@ -276,6 +293,12 @@ export function useContentCombobox({
     const q = isBareSourcePrefix(text) ? '' : text;
     log.info('search.dispatch', { text: q, mode, scopeKey: scopeKey ?? null });
     queryRef.current = q;
+    // Stamp the scope this dispatch runs under. `searchParams` is read fresh
+    // here (Mantine's useDebouncedCallback holds the callback in a ref, so
+    // this closure is never stale) — the whole point is that a scope change
+    // followed by a re-dispatch must be observable to the settle/recovery
+    // effects below.
+    dispatchedParamsRef.current = searchParams;
     if (supportsSSE()) streamSearch(q);
     else doBatchSearch(q);
   }, SEARCH_DEBOUNCE_MS);
@@ -286,6 +309,36 @@ export function useContentCombobox({
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
   }, [debouncedSearch]);
+
+  // Scope chips change `searchParams`, and nothing re-ran the search: the chip
+  // lit up (aria-pressed) directly above a result list that was still whatever
+  // the previous scope returned, so the user believed a filter had applied
+  // that never did. Re-dispatch the CURRENT box text whenever the active scope
+  // changes.
+  //
+  // It goes through the SAME debounced dispatch the keystroke path uses rather
+  // than calling streamSearch directly, which buys two things: one dispatch
+  // site (so `search.dispatch`, queryRef and dispatchedParamsRef can never
+  // diverge between the two entry points), and free coalescing — a chip tapped
+  // on top of a still-pending keystroke just restarts the shared timer instead
+  // of racing a second request against it.
+  //
+  // Guarded on a ref rather than "did this effect run": the initial mount must
+  // not dispatch (nothing has been typed yet, and handleInput owns the first
+  // search), and a re-render that merely re-creates the callback must not
+  // re-fire.
+  const prevSearchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    if (prevSearchParamsRef.current === searchParams) return;
+    prevSearchParamsRef.current = searchParams;
+    const text = stateRef.current.search ?? '';
+    // Nothing meaningful in the box (closed, cleared, too short, or a bare
+    // `source:` prefix) — there is no search to re-run.
+    if (isBareSourcePrefix(text) || text.trim().length < 2) return;
+    setFellBackToAll(false); // a different scope invalidates the previous widening
+    log.info('search.rerun_for_scope', { textLength: text.length, scopeKey: scopeKey ?? null });
+    debouncedSearch(text);
+  }, [searchParams, scopeKey, debouncedSearch, log]);
 
   // F14: while searching, a `source:term` query scopes the backend search to
   // that one source. Surface the scope so the UI can show a removable chip.
@@ -640,6 +693,24 @@ export function useContentCombobox({
   const searchSettledRef = useRef(searchSettled);
   searchSettledRef.current = searchSettled;
 
+  // Every once-per-search guard below keys on the PAIR (query text, active
+  // scope params), never on the text alone. Keying on text alone made a scope
+  // change invisible to them: re-running "bluey" under a different chip is a
+  // genuinely new search that must be able to log its own settle, spend its
+  // own source-error retry, and widen on its own — but each of those was
+  // already "used up" by the first scope's run of the same text.
+  // (`searchKey` lives at module scope, near the top of this file.)
+
+  // A settle only belongs to the CURRENT scope once a dispatch has actually
+  // run under it. Between a chip tap and the re-dispatch firing, the
+  // transports are idle and the box text is unchanged, so `searchSettled` is
+  // still true while the visible results belong to the OLD scope — acting on
+  // that settle would log a bogus settle and could widen a scope that never
+  // ran. (The D5 widening deliberately does not update dispatchedParamsRef:
+  // its request overrides the params for one call without changing the active
+  // scope, so its own settle stays on the same key and the guards stay armed.)
+  const settleBelongsToScope = dispatchedParamsRef.current === searchParams;
+
   // Observability: the 2026-08-21 incident (phone search settled empty for a
   // title that existed) was undiagnosable because nothing recorded what a
   // search settled WITH. Log each settle transition once, with result counts
@@ -650,10 +721,11 @@ export function useContentCombobox({
   // from the brief's object-shaped assumption accordingly.
   const settleLoggedForRef = useRef(null);
   useEffect(() => {
-    if (!searchSettled) return;
+    if (!searchSettled || !settleBelongsToScope) return;
     const text = queryRef.current;
-    if (settleLoggedForRef.current === text) return;
-    settleLoggedForRef.current = text;
+    const key = searchKey(text, searchParams);
+    if (settleLoggedForRef.current === key) return;
+    settleLoggedForRef.current = key;
     const erroredSources = (sourceErrors || []).map((e) => e.source);
     log.info('search.settled', {
       textLength: text.length,
@@ -665,48 +737,63 @@ export function useContentCombobox({
     for (const { source, error } of sourceErrors || []) {
       log.warn('search.source_error', { source, error: String(error?.message ?? error) });
     }
-  }, [searchSettled, sourceErrors, rawResultCount, scopeKey, log]);
+  }, [searchSettled, settleBelongsToScope, sourceErrors, rawResultCount, searchParams, scopeKey, log]);
 
-  // One-shot recovery: a transient source error can settle a search at zero
-  // results for a title that exists (2026-08-21 phone incident). Task 4 keeps
-  // the user's text, but nothing re-runs the search until they edit it —
-  // so re-dispatch the same query once. Guarded per query text: a source
-  // that is genuinely down must not retry-loop.
-  const retriedForRef = useRef(null);
+  // ── Empty-settle recovery ladder (Task 5 retry + Task 11 / D5 widening) ──
+  //
+  // These two recoveries used to be separate effects, and the widening one
+  // opened with `if (sourceErrors.length > 0) return;` — a VETO, not an
+  // ordering. With a genuinely down source (Plex, in the 2026-08-21 incident)
+  // that meant: scoped search settles empty → retried once → errors again →
+  // and then nothing, ever. No results and no explanation, which is both
+  // halves of the original incident at once.
+  //
+  // They are now ONE effect running one rung per empty settle, so "retry
+  // first, widen second" is expressed as a sequence the user actually
+  // traverses instead of a condition that can strand them:
+  //
+  //   rung 1 — a source errored: re-run the SAME text under the SAME scope
+  //            once. Transient adapter failures are the common case and a
+  //            successful retry means the widening never needs to happen.
+  //   rung 2 — still empty (the retry is spent, or nothing errored at all):
+  //            widen to `fallbackSearchParams` and set `fellBackToAll` so the
+  //            surface can say so.
+  //
+  // Each rung fires at most once per (query text + scope), so a source that is
+  // genuinely down cannot retry-loop and the widened search cannot re-widen.
+  // The rungs are re-armed by a new query text OR a scope change — both are
+  // new searches and both deserve the full ladder. Ordering is guaranteed by
+  // the single early `return` after rung 1: the retry's own settle is a later
+  // render, so rung 2 can never fire in the same pass that started the retry.
+  const recoveryRef = useRef({ key: null, retried: false, widened: false });
   useEffect(() => {
-    if (!searchSettled) return;
+    if (!searchSettled || !settleBelongsToScope) return;
     const text = queryRef.current;
-    const erroredSources = (sourceErrors || []).map((e) => e.source);
-    if (erroredSources.length === 0) return;
-    if (stateRef.current.results.length > 0) return;
-    if (retriedForRef.current === text) return;
-    retriedForRef.current = text;
-    log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
-    if (supportsSSE()) streamSearch(text);
-    else doBatchSearch(text);
-  }, [searchSettled, sourceErrors, streamSearch, doBatchSearch, log]);
+    const key = searchKey(text, searchParams);
+    if (recoveryRef.current.key !== key) {
+      recoveryRef.current = { key, retried: false, widened: false };
+    }
+    const recovery = recoveryRef.current;
+    if (stateRef.current.results.length > 0) return; // not empty — nothing to recover from
 
-  // D5 fallback: a search scoped to a narrow library (e.g. Music>Ambient) can
-  // settle empty while the wider catalog has matches — the 2026-08-21 report
-  // that seeded this task was exactly that: scoped to Ambient, zero results,
-  // no explanation, no widening. On a CLEAN empty settle (no source errors —
-  // the retry effect above owns that case and must run first) re-dispatch the
-  // same text with `fallbackSearchParams` once per query text. Guarded so it
-  // never fires when the caller didn't opt in (fallbackSearchParams nullish —
-  // Admin/PlaybackHub don't pass it) or when the search is already
-  // catalog-wide (searchParams === fallbackSearchParams), which would
-  // otherwise loop the identical search forever.
-  const fallbackForRef = useRef(null);
-  useEffect(() => {
-    if (!searchSettled) return;
-    if (fallbackSearchParams == null) return; // opt-in only
-    if (searchParams === fallbackSearchParams) return; // already catalog-wide
-    const text = queryRef.current;
+    // Rung 1: same text, same scope, one more time.
     const erroredSources = (sourceErrors || []).map((e) => e.source);
-    if (erroredSources.length > 0) return; // Task 5's same-params retry owns this settle
-    if (stateRef.current.results.length > 0) return; // not empty — nothing to widen
-    if (fallbackForRef.current === text) return; // one-shot per query text
-    fallbackForRef.current = text;
+    if (erroredSources.length > 0 && !recovery.retried) {
+      recovery.retried = true;
+      log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
+      if (supportsSSE()) streamSearch(text);
+      else doBatchSearch(text);
+      return;
+    }
+
+    // Rung 2: widen. Skipped entirely for callers that never opted in
+    // (fallbackSearchParams nullish — Admin/PlaybackHub) and when the search
+    // is already catalog-wide (searchParams === fallbackSearchParams), which
+    // would otherwise loop the identical search forever.
+    if (fallbackSearchParams == null) return;
+    if (searchParams === fallbackSearchParams) return;
+    if (recovery.widened) return;
+    recovery.widened = true;
     setFellBackToAll(true);
     log.info('search.fallback_to_all', {
       textLength: text.length,
@@ -717,7 +804,10 @@ export function useContentCombobox({
     });
     if (supportsSSE()) streamSearch(text, fallbackSearchParams);
     else doBatchSearch(text, fallbackSearchParams);
-  }, [searchSettled, sourceErrors, searchParams, fallbackSearchParams, scopeKey, scopeLabel, streamSearch, doBatchSearch, log]);
+  }, [
+    searchSettled, settleBelongsToScope, sourceErrors, searchParams, fallbackSearchParams,
+    scopeKey, scopeLabel, streamSearch, doBatchSearch, log,
+  ]);
 
   const commit = useCallback((reason) => {
     const s = stateRef.current;

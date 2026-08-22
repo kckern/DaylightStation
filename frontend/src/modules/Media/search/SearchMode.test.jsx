@@ -204,9 +204,14 @@ describe('SearchMode', () => {
 
     fireEvent.click(screen.getByTestId('search-mode-result-plex:685088'));
 
+    // The third arg is the fix-round history option: a route this dispatch
+    // pushes must REPLACE the surface's marker entry (see
+    // SearchMode.history.test.jsx, which exercises that end to end against the
+    // real NavProvider — this suite mocks both sides of it).
     expect(dispatchMock).toHaveBeenCalledWith(
       'plex:685088',
-      expect.objectContaining({ id: 'plex:685088', title: 'Bluey' })
+      expect.objectContaining({ id: 'plex:685088', title: 'Bluey' }),
+      { replaceHistoryEntry: true }
     );
     expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
   });
@@ -300,6 +305,66 @@ describe('SearchMode', () => {
     expect(screen.getByTestId('destination-line')).toBeInTheDocument();
   });
 
+  // ── Fix round (Important 2): the D5 widening notice. The hook widened
+  // correctly and ContentCombobox rendered a notice on DESKTOP, but this
+  // surface — the mobile one the whole remediation exists for — destructured
+  // everything from the hook EXCEPT fellBackToAll and rendered nothing. The
+  // 2026-08-21 acceptance scenario (scope "Ambient", empty settle, silent
+  // catalog-wide re-run, Ambient chip still aria-pressed) therefore shipped
+  // inert here. ──
+  describe('D5 widening notice', () => {
+    async function renderWidened({ results, fellBackToAll = true, isSearching = false }) {
+      comboState = { search: 'bluey', results };
+      comboExtra = { fellBackToAll, isSearching };
+      render(<Harness />);
+      await screen.findByTestId('search-mode');
+      // The notice must name the scope that came up empty, so put the surface
+      // on the Ambient chip the way the incident did.
+      fireEvent.click(screen.getByTestId('scope-chip-ambient'));
+    }
+
+    it('names the empty scope and the widened result count once the widened search has landed', async () => {
+      await renderWidened({ results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }] });
+
+      const notice = screen.getByTestId('search-mode-widening-notice');
+      expect(notice).toHaveTextContent('Nothing in Ambient — showing 1 result from everywhere.');
+      // The chip that came up empty is still the pressed one — that is exactly
+      // why the notice has to exist.
+      expect(screen.getByTestId('scope-chip-ambient')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('pluralizes the widened result count', async () => {
+      await renderWidened({
+        results: [
+          { id: 'plex:1', title: 'Bluey', type: 'episode', thumbnail: null },
+          { id: 'plex:2', title: 'Bluey 2', type: 'episode', thumbnail: null },
+        ],
+      });
+      expect(screen.getByTestId('search-mode-widening-notice'))
+        .toHaveTextContent('Nothing in Ambient — showing 2 results from everywhere.');
+    });
+
+    it('says nothing was found anywhere when the widened search is also empty, and suppresses the generic empty line', async () => {
+      await renderWidened({ results: [] });
+      expect(screen.getByTestId('search-mode-widening-notice'))
+        .toHaveTextContent('Nothing in Ambient — and nothing found anywhere else either.');
+      expect(screen.queryByTestId('search-mode-empty')).toBeNull();
+    });
+
+    it('stays hidden while the widened search is still in flight', async () => {
+      await renderWidened({ results: [], isSearching: true });
+      expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+    });
+
+    it('renders no notice when the search never widened', async () => {
+      await renderWidened({
+        results: [{ id: 'plex:685088', title: 'Bluey', type: 'episode', thumbnail: null }],
+        fellBackToAll: false,
+      });
+      expect(screen.queryByTestId('search-mode-widening-notice')).toBeNull();
+    });
+  });
+
   // ── Task 14 (spec D6): the ONE tap grammar, wired via ResultRow ──
   describe('tap grammar (Task 14)', () => {
     it('a container row taps through dispatch (browse), never playContainerAsQueue', async () => {
@@ -312,7 +377,11 @@ describe('SearchMode', () => {
       await screen.findByTestId('search-mode-result-plex:663508');
       fireEvent.click(screen.getByTestId('search-mode-result-plex:663508'));
 
-      expect(dispatchMock).toHaveBeenCalledWith('plex:663508', expect.objectContaining({ id: 'plex:663508' }));
+      expect(dispatchMock).toHaveBeenCalledWith(
+        'plex:663508',
+        expect.objectContaining({ id: 'plex:663508' }),
+        { replaceHistoryEntry: true }
+      );
       expect(playContainerAsQueueMock).not.toHaveBeenCalled();
     });
 
@@ -400,7 +469,10 @@ describe('SearchMode', () => {
       fireEvent.click(screen.getByTestId('result-more-plex:685088'));
       fireEvent.click(await screen.findByTestId('result-action-detail-plex:685088'));
 
-      expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088' });
+      // `replaceEntry` (fix round, Critical 1): "Open detail" navigates, so it
+      // must take OVER the surface's marker history entry rather than stack on
+      // top of an entry the close path would then traverse back over.
+      expect(navPush).toHaveBeenCalledWith('detail', { contentId: 'plex:685088' }, { replaceEntry: true });
       expect(queuePlayNow).not.toHaveBeenCalled();
       expect(screen.queryByTestId('search-mode')).not.toBeInTheDocument();
     });

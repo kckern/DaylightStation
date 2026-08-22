@@ -154,6 +154,17 @@
   padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
 }
 
+// D5 widening notice: sits between the stream-status line and the results, so
+// the explanation arrives above the results it explains (never buried in an
+// empty-state branch that a successful widening skips past).
+.search-mode-widening-notice {
+  flex-shrink: 0;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--mantine-color-dark-1);
+  font-size: 12px;
+}
+
 .search-mode-results {
   flex: 1;
   min-height: 0;
