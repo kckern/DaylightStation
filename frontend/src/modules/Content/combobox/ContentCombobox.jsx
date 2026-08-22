@@ -29,6 +29,7 @@ import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from './comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes, isContainer } from './comboboxMachine.js';
+import { StreamStatusLine } from '../../Media/search/StreamStatusLine.jsx';
 import './ContentCombobox.scss';
 
 const TYPE_ICONS = {
@@ -48,15 +49,6 @@ const TYPE_ICONS = {
   conference: IconFolder,
   playlist: IconList,
   default: IconFile,
-};
-
-const SOURCE_ICONS = {
-  plex: '🎬',
-  immich: '📷',
-  audiobookshelf: '📚',
-  singalong: '🎵',
-  media: '📁',
-  default: '🔍',
 };
 
 const OPTION_CLASS = 'content-combobox-option';
@@ -183,6 +175,18 @@ export function ContentCombobox({
     onChange(text);
     handleClose('select');
   }, [search, value, onChange, handleClose, log]);
+
+  // ── Stream status retry (Task 10) ──
+  // No dedicated per-source retry transport exists — the streaming search
+  // hook only exposes a whole-query dispatch (handleInput, which feeds
+  // debouncedSearch). Re-running the currently-typed text is the same
+  // recovery useContentCombobox already performs automatically once after a
+  // settled-empty result (search.retry_after_source_error); this just lets
+  // the user trigger it manually without editing the box.
+  const handleStreamRetry = useCallback((source) => {
+    log.info('stream_status.retry', { source, text: search });
+    handleInput(search ?? '');
+  }, [handleInput, search, log]);
 
   // ── Option submit (mouse path; keyboard is fully component-owned) ──
   const handleOptionSubmit = (val) => {
@@ -655,33 +659,12 @@ export function ContentCombobox({
           </Box>
         )}
 
-        {/* Pending sources indicator */}
-        {pendingSources.length > 0 && !isBrowse && (
-          <Box p="xs" className="pending-sources" data-pending-sources style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
-            <Group gap="xs">
-              <Loader size="xs" />
-              <Text size="xs" c="dimmed">Searching:</Text>
-              {pendingSources.map((source) => (
-                <Badge key={source} size="xs" variant="light" color="gray">
-                  {SOURCE_ICONS[source] || SOURCE_ICONS.default} {source}
-                </Badge>
-              ))}
-            </Group>
-          </Box>
-        )}
-
-        {/* Per-source error indicator: which sources failed this search */}
-        {sourceErrors?.length > 0 && !isBrowse && (
-          <Box p="xs" className="source-errors" data-testid="combobox-source-errors" style={{ borderBottom: '1px solid var(--mantine-color-dark-4)' }}>
-            <Group gap="xs">
-              <Text size="xs" c="red">Unavailable:</Text>
-              {sourceErrors.map(({ source }) => (
-                <Badge key={source} size="xs" variant="light" color="red">
-                  {SOURCE_ICONS[source] || SOURCE_ICONS.default} {source}
-                </Badge>
-              ))}
-            </Group>
-          </Box>
+        {/* Stream status (Task 10, spec D3): one fixed-height line replacing
+            the old per-source badge cloud (a Badge per adapter — up to ~16 of
+            them — used to fill the whole above-the-fold area on a 360px
+            phone). Renders nothing once settled with no errors. */}
+        {!isBrowse && (
+          <StreamStatusLine pending={pendingSources} sourceErrors={sourceErrors} onRetry={handleStreamRetry} />
         )}
 
         <Combobox.Options>
