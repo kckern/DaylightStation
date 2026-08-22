@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Make a scanned OMR sheet always produce a visible outcome — credit a legitimate eraser instead of parking silently, announce every failure on the school screen, close the logging blind spots that hid all of this, and fix the card-allocation bug that gave one learner two conflicting row mappings for the same worksheet.
+**Goal:** Make every scan and every card tap produce a visible, truthful outcome — credit a legitimate eraser instead of parking silently, announce failures on the school screen, stop the thermal printer truncating and corrupting the next job, stop repeat taps flooding the printer, pair every QR with its keypad code, and close the logging blind spots that hid all of it.
 
-**Architecture:** Five independent slices over the existing paper pipeline (`omrRelay → quizScanRecorder → ResolveCardScan → RecordCardScanOutcome → CloseSessionOutcome`). Slice A fixes log fidelity so the rest is observable. Slice B adds a bounded leniency rule at the one place the verdict is decided. Slice C broadcasts scan outcomes on the existing `omr` event-bus topic. Slice D consumes that broadcast in the locked School panel as an audible/visible ceremony. Slice E repairs card allocation. Slices are ordered so each is independently shippable.
+**Architecture:** Eight independent slices over the paper pipeline (`omrRelay → quizScanRecorder → ResolveCardScan → RecordCardScanOutcome → CloseSessionOutcome`) and the thermal print path. **A** fixes log fidelity so everything else is observable. **B** adds bounded grading leniency. **C** broadcasts scan outcomes on the existing `omr` bus. **D** turns that into an on-screen ceremony. **E** addresses stale session resumption. **F** repairs the thermal printer wire contract. **G** adds an agenda print cooldown. **H** binds every QR to its code. Each slice is independently shippable; only D depends on C.
 
 **Tech Stack:** Node ESM backend (DDD layers `0_system` → `5_composition`), Vitest, React 18 frontend, VictoriaLogs (`logs.kckern.net`), existing `eventBus` WS bridge, `useWebSocketSubscription`.
 
@@ -12,7 +12,7 @@
 
 ## Background: what actually happened on 2026-08-22
 
-Three separate defects surfaced in one school session. All three are evidenced; do not re-derive them.
+Several separate defects surfaced in one school session. All are evidenced below from logs, session records and on-device probes; do not re-derive them. Where a first-draft finding was later corrected, the correction is marked inline — trust the correction, not the original claim.
 
 ### Incident 1 — Milo's sheet graded 5/6 then went silent
 
@@ -53,16 +53,9 @@ Felix's session `ses_f6Buxumv` was **created 2026-08-14** and never submitted. O
 
 **The "PRINT IT AGAIN" label was correct** — same artifact, genuinely printed before. The `reprinted` event already validates artifact identity (`sessionEvents.mjs:318-320`: *"reprinted artifactId … was never issued (a reprint reuses the original)"*). So print-again is **already artifact-scoped, not lesson-scoped**. The original hypothesis does not hold and must not be "fixed".
 
-The real defect is one layer down. The same artifact+revision has **two conflicting card allocations**:
+The real defect is that **an 8-day-old session resumed silently**. His one live card allocation is `5922785`, rows **7–16**, minted 2026-08-14 when `arts/pokemon-identification/quiz-1` held rows 1–6 of that shared physical card. So the sheet legitimately starts at question 7 and legitimately carries a different student number — for a packing context eight days stale that nobody in the room could see.
 
-| Card file | recordId | Rows | Created |
-|---|---|---|---|
-| `cards/3598689.yml` | `…ws-ses-f6buxumv@657194d82:v0:1-10` | 1–10 | 2026-08-19 |
-| `cards/5922785.yml` | `…ws-ses-f6buxumv@657194d82:v0:7-16` | 7–16 (sharing rows 1–6 with `arts/pokemon-identification/quiz-1`) | 2026-08-14 |
-
-That is why Felix saw a different student number and was told to start at question 7. Both allocations are live for one `@rev:variant`.
-
-**This is a grading-correctness hazard, not only a UX wart.** If the child fills the 1–10 card but the scan resolves through the 7–16 mapping, every answer is scored against the wrong question. `ResolveCardScan` has a `rowMappingDrifted` guard (`:256`) that may refuse the record — refusal is safer than mis-scoring, but it is another silent stop.
+A sweep of `artifacts/print/cards/` confirms only **one** allocation is `live` for that record; a rows 1–10 card (`3598689`) exists but is `released`. See Slice E for the full table and the correction it supersedes. **There is no data corruption here and no migration to write.**
 
 Also confirmed working and **not** to be changed: Milo (`profile` 6-item set) and Felix (`profile: upper`, 10 items) correctly received different content for the same unit.
 
@@ -299,7 +292,9 @@ Add the container facts from the Background section (name, retention, the three 
 5. Ordering is by question number, so the cap is deterministic and the earliest rows get the benefit.
 6. `archetype` (`documentV2.mjs:37` — `quiz` | `worksheet` | `infopage`) selects strictness: **`worksheet` lenient, `quiz` strict** (cap 0). Low-stakes work is generous; a real quiz is not.
 
-This intentionally changes documented behaviour: `ResolveCardScan.mjs:292` says a double-mark is ambiguous *"regardless of what was marked — never guessed at (spec §5.4)"*. **Amend `docs/reference/school/print-documents.md` §5.4 in the same commit** — do not leave code and spec disagreeing.
+**The spec change is the point, not a side effect.** `ResolveCardScan.mjs:292` and `print-documents.md` §5.4 currently say a double-mark is ambiguous *"regardless of what was marked — never guessed at"*. KC has decided (2026-08-22) that a double-mark **is** permitted under the bounded conditions above, because rules 1–6 already establish that no abuse is in play: two marks with one correct is an eraser, and anything resembling shotgunning (3+ marks, all choices covered, both marks wrong, or exceeding the per-sheet cap) still earns nothing and still holds for review.
+
+Rewrite §5.4 to state the new rule as the intended behaviour rather than an exception bolted onto a prohibition, and **amend it in the same commit as the code** — do not leave the spec and the resolver disagreeing.
 
 ### Task B1: The pure decision function
 
@@ -543,7 +538,22 @@ TDD as above: failing test → implement → pass → commit.
 
 An `role="status"` banner over the keypad/launch card, tone-coloured, large enough to read across the room.
 
-**Autoplay warning — read before writing the sound.** The garage Firefox kiosk blocks audible autoplay until a user gesture (`CLAUDE.local.md`), and the Portal WebView is gesture-poor. On the school panel the scan itself is *not* a DOM gesture, so a bare `new Audio().play()` may never sound. Either reuse the existing cue-unlock helper (`installCueAudioUnlock`, used by Fitness) primed by the keypad taps the child already makes, or use a WebAudio oscillator beep from a context resumed on the first keypad press. **Verify on the real panel — do not assume it plays.**
+**The target device — measured, not assumed.** The school panel is the **Facebook Portal 10"** (`data/household/screens/portal.yml`), Android 9, FullyKiosk 1.60.1-play at **10.0.0.92**, Chrome 131 WebView, 1280×800, mounted at `/screens/portal` with `school: { mode: locked }`. It has built-in speakers.
+
+**This has nothing to do with the garage Firefox kiosk.** An earlier draft of this plan wrongly imported that machine's autoplay constraint. Probed on the Portal's own FKB REST API on 2026-08-22:
+
+```
+autoplayAudio:   True
+autoplayVideos:  True
+resumeVideoAudio: True
+```
+
+FKB is configured to permit autoplay, so a programmatic `new Audio().play()` on a scan event should sound **without** needing a prior gesture. No unlock shim is required. Still confirm on the panel once — a WebView flag permitting autoplay and audio actually reaching the speaker are two different claims.
+
+Two things that do matter here:
+
+- **Respect the SPA software master.** `portal.yml` defines `volume.defaultMaster: 0.6` with a custom curve; the panel's volume keys drive it through the `portalKeys` APK. Route the cue through the same master rather than playing at raw full volume, or the ceremony will be the loudest thing in the room.
+- **Do not use the FKB alarm path.** `playAlarmSoundOnMovement` / `alarmSoundFileUrl` are a different subsystem with its own volume, and the Portal's Control Center already had to be disabled once for playing tones on the assistant audio path (see `portal.yml`).
 
 Distinct tones: a short rising pair for success, a low double-buzz for error.
 
@@ -572,52 +582,90 @@ Commit each task separately.
 
 ---
 
-## Slice E — Card allocation integrity
+## Slice E — Stale session resumption
 
-The highest-severity item: it can mis-score a child's work.
+> **CORRECTION (verified 2026-08-22, after the first draft of this plan).** An
+> earlier version of this slice claimed Felix's worksheet had *two conflicting
+> live card allocations* and called it a mis-scoring hazard. **That was wrong.**
+> Card records carry a `status` field and only one allocation is live:
+>
+> | Card | Rows | Status |
+> |---|---|---|
+> | `3598689` | 1–10 | `released` |
+> | `5922785` | 7–16 | **`live`** |
+>
+> A full sweep of `artifacts/print/cards/` found every duplicate base resolves
+> to at most one `live` record. **No data is corrupt and no repair is needed** —
+> KC's authorisation to repair data is noted and unspent. Do not write a
+> migration for this.
 
-### Task E1: Reproduce the duplicate allocation
+### What actually went wrong
+
+Felix's session `ses_f6Buxumv` was **created 2026-08-14 and never submitted**,
+then silently resumed eight days later. Everything he saw follows from that:
+
+- The **student number changed** because his one live allocation is card
+  `5922785`, minted 2026-08-14 — not the card he had most recently seen.
+- The sheet **starts at question 7** because that allocation is rows 7–16: when
+  it was minted, `arts/pokemon-identification/quiz-1` held rows 1–6 of the same
+  physical card. Correct behaviour for that allocation, bewildering eight days
+  later with no memory of the context.
+- **"PRINT IT AGAIN" was truthful** — same `artifactId`, genuinely printed
+  before (three times on 08-14). Print-again is already artifact-scoped
+  (`sessionEvents.mjs:318-320` refuses a reprint whose artifact was never
+  issued). **Do not rework print-again scoping.**
+
+So the bug is not allocation and not the label. It is that a week-old session
+can resume as if it were today's work.
+
+### Task E1: Find out why the stale sweep missed it
 
 **Files:**
-- Test: `tests/unit/domains/school/allocationUniqueness.test.mjs`
+- Read: `backend/src/5_composition/modules/schoolLifecycle.mjs` (`markSessionAbandoned` wiring)
+- Read: the stale-work sweep route ("admin advocacy A5")
 
-Write a failing test asserting that one `recordId` base (`<documentId>@<rev>:v<variant>`) resolves to **at most one** live card allocation. Reproduce with the real shape from the incident: the same `…ws-ses-f6buxumv@657194d82:v0` at rows `1-10` on one card and `7-16` on another.
+There is already a `markSessionAbandoned` use case and a stale-work sweep. An
+8-day-old `issued` session should have been caught. Determine whether the sweep
+never runs, runs with too long a threshold, or skips `issued`/`reprinted` states.
 
-**Do not guess the allocation-store API.** Read `backend/src/2_domains/school/documents/allocation.mjs` and the `allocationStore` wired in `5_composition/modules/schoolLifecycle.mjs` (`stores.allocationStore`) first, then write the test against the real interface.
+**Report the finding before changing behaviour.** The fix may be a config
+threshold rather than code, and auto-abandoning sessions is destructive if it
+fires too eagerly — a child mid-worksheet must not have it yanked.
 
-### Task E2: Decide and implement the rule
+### Task E2: Make a resumed session say so
 
-Two candidate rules — **confirm with KC before implementing**, since they trade off differently:
+**Files:**
+- Modify: the agenda/offer path that resolves an existing session (trace from
+  `school.selfservice.code.resolved`, which already logs `state: 'reprinted'`)
+- Test: `tests/unit/applications/school/staleSessionOffer.test.mjs`
 
-- **(i) Reprint reuses the original allocation.** Matches what `sessionEvents.mjs:320` already promises (*"a reprint reuses the original"*) — same card id, same rows, same student number every time. Best for the child: the paper is identical. Needs the mint path to look up an existing live allocation before packing a new one.
-- **(ii) Minting a new allocation retires the old.** Keeps card packing free but makes the newest allocation authoritative and marks the previous one superseded so a stale sheet is refused rather than mis-scored.
+Whatever the sweep decides, a reprint of work issued days ago should not present
+itself as fresh. Add the issue date to the offer so the paper carries it:
 
-Recommendation: **(i)**, with (ii)'s supersede marker as the safety net for allocations that already exist in the wild.
+```
+PRINT IT AGAIN · Unit 0 · 1/1
+Started Thu 14 Aug · questions 7-16
+```
 
-Add a `school.print.allocation-duplicate` `warn` whenever a mint finds a live allocation for the same `@rev:variant` — this is how the household finds out it happened again.
+Naming the row range is what would have made Felix's sheet legible without
+anyone reading a log. Add a `school.session.stale-resume` `info` log with
+`{ sessionId, learnerId, ageDays, rowRange }` so the household can see how often
+this happens.
 
-### Task E3: Audit and repair existing data
+### Task E3: Keep the duplicate check as a guard, not a repair
 
 **Files:**
 - Create: `cli/school-allocation-audit.cli.mjs`
 
-Read-only by default: walk `data/household/school/artifacts/print/cards/*.yml`, group by `recordId` base, report every base with more than one live card. `--fix` retires all but the most recent per the Task E2 rule.
+The data is clean today, but nothing *enforces* the one-live-allocation
+invariant. Ship the audit read-only as a standing check rather than a migration:
+group `artifacts/print/cards/*.yml` by `recordId` base and report any base with
+**more than one `live`** record. Expected output today: zero.
 
-Run it against the live tree and report the count before fixing anything:
+Add a `school.print.allocation-duplicate` `warn` at mint time if a second `live`
+allocation is ever created for one `@rev:variant`. That is the guard that would
+turn this from an archaeology exercise into an alert.
 
-```bash
-node cli/school-allocation-audit.cli.mjs
-```
-
-Felix's `ws-ses-f6buxumv@657194d82:v0` (cards `3598689` and `5922785`) must appear. **Do not `--fix` prod without KC's go-ahead** — retiring the wrong card invalidates paper that may be sitting on a desk.
-
-### Task E4: Stale-session hygiene (investigate, then propose)
-
-Felix's session sat unfinished for 8 days and then silently resumed, handing him week-old work. There is already a `markSessionAbandoned` use case (`schoolLifecycle.mjs`) and a *"stale-work sweep (admin advocacy A5)"* route.
-
-Find out why the sweep did not catch this session. **Report the finding before changing behaviour** — the fix might be a config threshold rather than code, and auto-abandoning live sessions is destructive if it fires too eagerly.
-
----
 
 ## Slice F — Thermal printer wire integrity
 
@@ -889,7 +937,8 @@ agenda codes were keyed by subject while QRs are minted per token."
 - [ ] A double-bubble worksheet row with one correct answer prints a receipt with no human step
 - [ ] A three-bubble row still holds for review
 - [ ] An unreadable sheet raises a banner on the panel *and* a `warn` in the store
-- [ ] The allocation audit reports zero duplicates after repair
+- [ ] The allocation audit reports zero bases with more than one LIVE record (expected: already true)
+- [ ] A resumed session older than a day prints its issue date and row range
 - [ ] A long receipt prints to completion, and the job printed **immediately after** it is not shifted
 - [ ] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback
 - [ ] A correct answer prints a visible check glyph, not `[]`
