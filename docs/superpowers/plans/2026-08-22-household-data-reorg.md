@@ -1035,40 +1035,19 @@ Replace every construction of the item path in `FeedbackService.mjs` with `feedb
 
 Ensure the write path creates the month dir (`fs.mkdir(path.dirname(file), { recursive: true })`) before writing.
 
-- [ ] **Step 7: Migrate the existing 74 files**
+- [ ] **Step 7: Do NOT migrate data in this task**
+
+The 74 existing files stay flat until after the deploy — see Task 10. Migrating here would move them out from under the OLD build that the container is still serving, 404ing every feedback read until Phase 6 ships. Task 10 runs the migration immediately after the deploy verification instead, which bounds the mismatch window to the seconds between those two steps rather than the whole build.
+
+This task is code-only. Confirm no data moved:
 
 ```bash
-sudo docker exec daylight-station sh -c '
-  set -e
-  for app in piano fitness; do
-    D=data/household/feedback/$app
-    [ -d "$D" ] || continue
-    for f in "$D"/*.yml; do
-      [ -e "$f" ] || continue
-      b=$(basename "$f")
-      m="${b:0:4}-${b:4:2}"
-      mkdir -p "$D/$m"
-      mv "$f" "$D/$m/$b"
-    done
-    chown -R node:node "$D"
-  done
-  echo "--- after:"; find data/household/feedback -type f | wc -l
-  find data/household/feedback -mindepth 1 -maxdepth 2 -type d
-'
+sudo docker exec daylight-station sh -c \
+  'find data/household/feedback -mindepth 1 -maxdepth 2 -type d'
 ```
-Expected: file count still 74; month dirs like `piano/2026-08`, `piano/2026-06`, `fitness/2026-07`.
+Expected: only `feedback/piano` and `feedback/fitness` — no month dirs yet.
 
-- [ ] **Step 8: Verify a feedback item still reads back**
-
-```bash
-ID=$(sudo docker exec daylight-station sh -c \
-  'ls data/household/feedback/piano/2026-08 | head -1' | sed 's/.yml//')
-echo "id: $ID"
-curl -s "http://localhost:3111/api/v1/feedback/piano/$ID" | head -c 300
-```
-Expected: JSON for that item, not a 404. A 404 means the service is still building flat paths — recheck Step 6.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add backend/src/3_applications/common/feedback/FeedbackService.mjs \
@@ -1143,6 +1122,60 @@ sudo docker exec daylight-station sh -c 'ls -la data/household/donow/ 2>&1'
 sudo docker exec daylight-station sh -c 'ls -la data/apps 2>&1'
 ```
 Expected: `data/apps` still absent (nothing has dispatched); `household/donow/` holds `config.yml`. The path change is proven by the unit test, not by a directory that only appears on first dispatch.
+
+---
+
+### Task 10: Migrate the feedback files (runs immediately after Task 9)
+
+Deferred out of Task 8 so the files move *after* the code that reads month paths is live. Run this as soon as Task 9 Step 5 confirms a healthy deploy — between the deploy and this migration the new build reads month paths while the files are still flat, so every feedback read 404s until this completes. Do not leave the gap open.
+
+**Files:**
+- Migrate (data volume): `household/feedback/{app}/*.yml` → `household/feedback/{app}/{YYYY-MM}/*.yml`
+
+**Interfaces:**
+- Consumes: `feedbackItemPath(root, app, id)` from Task 8, now deployed.
+- Produces: nothing.
+
+- [ ] **Step 1: Re-confirm the id format still holds**
+
+```bash
+sudo docker exec daylight-station sh -c \
+  'ls data/household/feedback/piano | grep -cvE "^[0-9]{14}_"'
+```
+Expected: `0`. Anything else — stop, do not migrate.
+
+- [ ] **Step 2: Migrate**
+
+```bash
+sudo docker exec daylight-station sh -c '
+  set -e
+  for app in piano fitness; do
+    D=data/household/feedback/$app
+    [ -d "$D" ] || continue
+    for f in "$D"/*.yml; do
+      [ -e "$f" ] || continue
+      b=$(basename "$f")
+      m="${b:0:4}-${b:4:2}"
+      mkdir -p "$D/$m"
+      mv "$f" "$D/$m/$b"
+    done
+    chown -R node:node "$D"
+  done
+  echo "--- after:"; find data/household/feedback -type f | wc -l
+  find data/household/feedback -mindepth 1 -maxdepth 2 -type d
+'
+```
+Expected: file count still 74; month dirs like `piano/2026-08`, `piano/2026-06`, `fitness/2026-07`.
+
+- [ ] **Step 3: Verify a feedback item reads back through the deployed code**
+
+```bash
+ID=$(sudo docker exec daylight-station sh -c \
+  'ls data/household/feedback/piano/2026-08 | head -1' | sed 's/.yml//')
+echo "id: $ID"
+curl -s "http://localhost:3111/api/v1/feedback/piano/$ID" | head -c 300
+```
+Expected: JSON for that item, not a 404. A 404 here means the deployed build is not using `feedbackItemPath` — investigate before leaving the tree half-migrated.
 
 ---
 
