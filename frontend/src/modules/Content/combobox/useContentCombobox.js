@@ -615,6 +615,51 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   const searchSettledRef = useRef(searchSettled);
   searchSettledRef.current = searchSettled;
 
+  // Observability: the 2026-08-21 incident (phone search settled empty for a
+  // title that existed) was undiagnosable because nothing recorded what a
+  // search settled WITH. Log each settle transition once, with result counts
+  // and any per-source stream errors.
+  //
+  // sourceErrors arrives from useStreamingSearch as an array of
+  // {source, error} objects (not an object keyed by source name) — adapted
+  // from the brief's object-shaped assumption accordingly.
+  const settleLoggedForRef = useRef(null);
+  useEffect(() => {
+    if (!searchSettled) return;
+    const text = queryRef.current;
+    if (settleLoggedForRef.current === text) return;
+    settleLoggedForRef.current = text;
+    const erroredSources = (sourceErrors || []).map((e) => e.source);
+    log.info('search.settled', {
+      textLength: text.length,
+      resultCount: stateRef.current.results.length,
+      rawResultCount,
+      sourceErrors: erroredSources,
+    });
+    for (const { source, error } of sourceErrors || []) {
+      log.warn('search.source_error', { source, error: String(error?.message ?? error) });
+    }
+  }, [searchSettled, sourceErrors, rawResultCount, log]);
+
+  // One-shot recovery: a transient source error can settle a search at zero
+  // results for a title that exists (2026-08-21 phone incident). Task 4 keeps
+  // the user's text, but nothing re-runs the search until they edit it —
+  // so re-dispatch the same query once. Guarded per query text: a source
+  // that is genuinely down must not retry-loop.
+  const retriedForRef = useRef(null);
+  useEffect(() => {
+    if (!searchSettled) return;
+    const text = queryRef.current;
+    const erroredSources = (sourceErrors || []).map((e) => e.source);
+    if (erroredSources.length === 0) return;
+    if (stateRef.current.results.length > 0) return;
+    if (retriedForRef.current === text) return;
+    retriedForRef.current = text;
+    log.info('search.retry_after_source_error', { textLength: text.length, sourceErrors: erroredSources });
+    if (supportsSSE()) streamSearch(text);
+    else doBatchSearch(text);
+  }, [searchSettled, sourceErrors, streamSearch, doBatchSearch, log]);
+
   const commit = useCallback((reason) => {
     const s = stateRef.current;
     const decision = decideCommit({
