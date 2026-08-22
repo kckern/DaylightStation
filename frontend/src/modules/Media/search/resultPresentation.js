@@ -3,7 +3,7 @@
 // ids and mediaType slugs never render — everything routes through friendly
 // labels ("Music · Album · 47 min", "TV Show · 155 episodes", "Audiobook").
 import { looksLikeMachineTitle } from '../../../hooks/useStreamingSearch.js';
-import { sourceLabel } from './sourceLabels.js';
+import { sourceLabel } from '../../Content/lib/sourceLabels.js';
 
 const TYPE_LABELS = {
   movie: 'Movie',

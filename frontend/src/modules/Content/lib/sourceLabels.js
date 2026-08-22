@@ -1,7 +1,11 @@
-// frontend/src/modules/Media/search/sourceLabels.js
-// Friendly, user-facing names for search source/adapter ids. Raw source ids
+// frontend/src/modules/Content/lib/sourceLabels.js
+// Friendly, user-facing names for content source/adapter ids. Raw source ids
 // (plex, abs, canvas-filesystem, …) must never render in the UI — every
-// component that mentions a source goes through this map.
+// component that mentions a source goes through this map. Lives in the
+// shared Content module (not Media/) because it's consumed from both sides —
+// Content/combobox/StreamStatusLine.jsx and Media/search/resultPresentation.js
+// — has no imports of its own, and describes content sources generally, not
+// anything Media-specific.
 
 export const SOURCE_LABELS = Object.freeze({
   plex: 'Movies & TV',

@@ -1,4 +1,4 @@
-// frontend/src/modules/Media/search/StreamStatusLine.test.jsx
+// frontend/src/modules/Content/combobox/StreamStatusLine.test.jsx
 // Task 10 (spec D3): one-line, fixed-height replacement for the per-source
 // badge cloud. Three states: pending (count line), settled+clean (null),
 // settled+error (per-source name + Retry wired to onRetry(source)).

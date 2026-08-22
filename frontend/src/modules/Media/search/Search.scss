@@ -88,59 +88,7 @@
   &:hover { color: var(--mantine-color-dark-0); }
 }
 
-// ---- Stream status line (spec D3) ------------------------------------------
-// Single-line, fixed-height replacement for ContentCombobox's old per-source
-// badge cloud (one Badge per adapter — FILES, PLEX, LOCAL-CONTENT, QUERY,
-// FRESHVIDEO, CANVAS-FILESYSTEM, RETROARCH, … — filled the whole
-// above-the-fold area on a 360px phone before a single result rendered).
-// Both the pending and error variants share one fixed row height so
-// searching -> settled never reflows the dropdown; content that doesn't fit
-// scrolls horizontally instead of wrapping to a second line.
-.stream-status-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 var(--mantine-spacing-sm);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  white-space: nowrap;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  font-size: 12px;
-  color: var(--mantine-color-dark-2);
-
-  &::-webkit-scrollbar { display: none; }
-}
-
-.stream-status-spinner {
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-  border: 2px solid var(--mantine-color-dark-4);
-  border-top-color: var(--mantine-color-amber-5);
-  border-radius: 50%;
-  // Reuses the keyframes defined above for .search-still-searching-spinner.
-  animation: search-still-searching-spin 0.8s linear infinite;
-}
-
-.stream-status-error-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  color: var(--mantine-color-red-4);
-}
-
-.stream-status-retry-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--mantine-color-amber-5);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  text-decoration: underline;
-
-  &:hover { color: var(--mantine-color-amber-3); }
-}
+// Stream status line (.stream-status-line, spec D3) lives in
+// ContentCombobox.scss, colocated with the component that renders it
+// (frontend/src/modules/Content/combobox/StreamStatusLine.jsx) — Media does
+// not mount it directly today, so its styles don't belong in this file.
