@@ -19,7 +19,7 @@
  */
 
 import { buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
-import { resolveCameraEndpoint } from './cameraArchiveJobHandler.mjs';
+import { resolveCameraEndpoint } from './resolveCameraEndpoint.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -70,9 +70,19 @@ export function createCameraLedgerJobHandler({
       return { skipped: true };
     }
 
-    // Host + credentials come from devices.yml (see cameraArchiveJobHandler.mjs
-    // resolveCameraEndpoint) — archive.yml no longer restates them.
-    const { authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId);
+    // Host + credentials come from devices.yml (see resolveCameraEndpoint.mjs)
+    // — archive.yml no longer restates them. resolveCameraEndpoint validates
+    // `host` too, which this auth-only lookup does not need — a missing or
+    // malformed camera-nvr entry must degrade to the same no-auth skip a bad
+    // ref used to produce, not hard-fail the only unconditionally-scheduled
+    // camera job.
+    let authRef;
+    try {
+      ({ authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId));
+    } catch (err) {
+      log.error?.('camera.ledger.no_auth', { executionId, error: err.message });
+      return { skipped: true, reason: 'no-auth' };
+    }
     const auth = configService.getHouseholdAuth(authRef, householdId);
     if (!auth?.username || !auth?.password) {
       log.error?.('camera.ledger.no_auth', { executionId, ref: authRef });

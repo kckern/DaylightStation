@@ -17,6 +17,7 @@
 
 import { ArchiveCameraDay } from '#apps/camera/usecases/ArchiveCameraDay.mjs';
 import { readLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { resolveCameraEndpoint } from './resolveCameraEndpoint.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -27,26 +28,6 @@ function localDay(offsetDays = 0, now = new Date()) {
     String(d.getMonth() + 1).padStart(2, '0'),
     String(d.getDate()).padStart(2, '0'),
   ].join('-');
-}
-
-/**
- * Resolve a camera's network endpoint from devices.yml — the single source of
- * truth for host + credentials. archive.yml used to restate both, so a re-IP'd
- * camera silently desynchronized the archive from the live view.
- *
- * @param {Object} configService - exposes getDeviceConfig(id, householdId)
- * @param {string} deviceId - devices.yml key
- * @param {string|null} householdId
- * @returns {{host: string, authRef: string|undefined}}
- */
-export function resolveCameraEndpoint(configService, deviceId, householdId) {
-  const device = configService.getDeviceConfig(deviceId, householdId);
-  if (!device?.host) {
-    throw new Error(
-      `camera archive: device '${deviceId}' has no host in devices.yml`,
-    );
-  }
-  return { host: device.host, authRef: device.auth_ref };
 }
 
 /**
@@ -88,7 +69,16 @@ export function createCameraArchiveJobHandler({
     // auth.yml's `ref` used to live in archive.yml (config.auth?.ref); it now
     // comes from devices.yml via the NVR entry, which every camera in this
     // pipeline shares (all auth_ref: reolink — see devices.yml camera-nvr).
-    const { authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId);
+    // resolveCameraEndpoint validates `host` too, which this auth-only lookup
+    // does not need — a missing/malformed camera-nvr entry must degrade to
+    // the same no-auth skip as a bad ref used to, not hard-fail the job.
+    let authRef;
+    try {
+      ({ authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId));
+    } catch (err) {
+      log.error?.('camera.archive.no_auth', { executionId, error: err.message });
+      return { skipped: true, reason: 'no-auth' };
+    }
     const auth = configService.getHouseholdAuth(authRef, householdId);
     if (!auth?.username || !auth?.password) {
       log.error?.('camera.archive.no_auth', { executionId });
