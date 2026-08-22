@@ -47,7 +47,7 @@ export const spec = {
 
   Part 1 keeps the original id and file; part 2 is written under its own
   date dir with a new id derived from the split time. A pre-split backup
-  lands in fitness/log/_split_backups/ — deliberately OUTSIDE any
+  lands in fitness/log/_backups/split/ — deliberately OUTSIDE any
   scanned YYYY-MM-DD dir, since the session lister globs every *.yml in a
   date folder and would load a backup as a duplicate sessionId.`,
 };
@@ -267,9 +267,9 @@ export async function run(argv, ctx) {
   // IMPORTANT: write the backup OUTSIDE any scanned day folder. The session
   // lister globs every *.yml in a YYYY-MM-DD dir, so a backup left there would be
   // loaded as a duplicate sessionId and shadow the real (truncated) part 1. The
-  // `_split_backups` sibling does not match the date regex, so it is ignored.
+  // `_backups` sibling does not match the date regex, so it is ignored.
   const sessionsRoot = path.dirname(path.dirname(FILE)); // fitness/log
-  const backupDir = path.join(sessionsRoot, '_split_backups');
+  const backupDir = path.join(sessionsRoot, '_backups', 'split');
   fs.mkdirSync(backupDir, { recursive: true });
   const backup = path.join(backupDir, `${part1Id}.${doc.session.date}.PRE-SPLIT.bak.yml`);
   fs.writeFileSync(backup, raw, 'utf8');
