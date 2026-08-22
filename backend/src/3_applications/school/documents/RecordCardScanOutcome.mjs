@@ -414,8 +414,17 @@ export class RecordCardScanOutcome {
             if (submitted.errors.length) throw new Error(submitted.errors.join('; '));
             await this.#sessions.appendEvent(sessionId, submitted.event);
           }
+          // The reasons/items ride along because the count alone says work
+          // stopped without saying WHY. On 2026-08-22 this line read
+          // `pendingReview: 1` and it took reading the queue file on disk to
+          // learn that one row was double-bubbled.
           this.#logger.info?.('school.print.scan-awaiting-review', {
-            sessionId, recordId: card.recordId, pendingReview: pending.length,
+            sessionId,
+            recordId: card.recordId,
+            pendingReview: pending.length,
+            learnerId: state.learnerId ?? null,
+            reasons: [...new Set(pending.map((row) => row.reason))],
+            items: pending.map((row) => row.itemId),
           });
           return {
             sessionId, advancedTo: 'submitted', reason: 'awaiting-review', pendingReview: pending.length,

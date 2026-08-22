@@ -23,16 +23,36 @@ import iconv from 'iconv-lite';
 /** iconv-lite's single-byte replacement for an unmappable character. */
 const REPLACEMENT_BYTE = 0x3f; // '?'
 
-/** Typographic characters absent from DOS code pages → ASCII equivalents. */
+/**
+ * Typographic and symbolic characters absent from DOS code pages → equivalents
+ * the ROM really has.
+ *
+ * The mark glyphs are here because of the 2026-08-22 result receipt: it prints
+ * `[✓]` per correct answer, and CP858 has no U+2713, so every correct mark was
+ * dropped and the paper showed an empty `[]`.
+ *
+ * Measured against iconv-lite's cp858 table, NOT assumed: U+2713 ✓, U+221A √,
+ * U+2717 ✗, U+2610 ☐ and U+2611 ☑ are all unrepresentable. CP858's 0xFB is
+ * `¹` — it is CP437 that carries `√` there — so the common "emit 0xFB for a
+ * tick" trick prints a superscript one on this configuration (`adapters.yml`
+ * sets `codepage: cp858` for the Volcora, chosen for its accent coverage).
+ * ASCII is the only honest target.
+ */
 const TRANSLITERATIONS = {
-  '—': '-',   // em dash
-  '–': '-',   // en dash
-  '‘': "'",   // left single quote
-  '’': "'",   // right single quote / apostrophe
-  '“': '"',   // left double quote
-  '”': '"',   // right double quote
-  '…': '...', // horizontal ellipsis
-  ' ': ' ',   // non-breaking space
+  '\u2014': '-',   // em dash
+  '\u2013': '-',   // en dash
+  '\u2018': "'",   // left single quote
+  '\u2019': "'",   // right single quote / apostrophe
+  '\u201c': '"',   // left double quote
+  '\u201d': '"',   // right double quote
+  '\u2026': '...', // horizontal ellipsis
+  '\u00a0': ' ',   // non-breaking space
+  '\u2713': '+',   // check → plus; pairs against '×' (0x9E) as right-vs-wrong
+  '\u2714': '+',
+  '\u2717': 'x',   // ballot X → lowercase x, distinct from the native '×'
+  '\u2718': 'x',
+  '\u2611': '+',
+  '\u2610': ' ',
 };
 
 /**

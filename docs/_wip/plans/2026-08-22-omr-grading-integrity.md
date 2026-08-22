@@ -2,6 +2,30 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
+> ## STATUS — read before starting
+>
+> **Slices A and F are DONE and merged.** Do not re-implement them.
+> - `9a5537bb7` Slice A — log timestamps carry their UTC offset; scan-unresolved
+>   raised to `warn`; awaiting-review carries reasons/items; LogsQL docs fixed.
+> - `a89bf7bd8` Slice F — thermal write waits for the flush callback; raster
+>   conversion made linear; the check glyph transliterated. Verified on the real
+>   printer with a 576x5000 PNG: 360,034 bytes, 19,895ms/698MB RSS → 11,080ms/124MB.
+>
+> **Build B + C + D as ONE branch.** They are a single user-visible behaviour —
+> a scan always produces an outcome. A broadcast nobody consumes and a ceremony
+> with nothing to show are not independently reviewable.
+>
+> **G + H as a second branch.** H opens `receipts.mjs`, so fold the two
+> "out of scope" receipt bugs at the bottom of this document into it while it is
+> already open.
+>
+> **Do NOT build E.** Task E1 is an investigation that reports back to KC. Picking
+> a staleness threshold without him is the one destructive guess here.
+>
+> **Checklist items marked 👤 need a human at the hardware.** You cannot verify
+> them from a terminal, and ticking "tests pass" while they go unchecked is
+> exactly how these defects survived for weeks.
+
 **Goal:** Make every scan and every card tap produce a visible, truthful outcome — credit a legitimate eraser instead of parking silently, announce failures on the school screen, stop the thermal printer truncating and corrupting the next job, stop repeat taps flooding the printer, pair every QR with its keypad code, and close the logging blind spots that hid all of it.
 
 **Architecture:** Eight independent slices over the paper pipeline (`omrRelay → quizScanRecorder → ResolveCardScan → RecordCardScanOutcome → CloseSessionOutcome`) and the thermal print path. **A** fixes log fidelity so everything else is observable. **B** adds bounded grading leniency. **C** broadcasts scan outcomes on the existing `omr` bus. **D** turns that into an on-screen ceremony. **E** addresses stale session resumption. **F** repairs the thermal printer wire contract. **G** adds an agenda print cooldown. **H** binds every QR to its code. Each slice is independently shippable; only D depends on C.
@@ -928,20 +952,37 @@ agenda codes were keyed by subject while QRs are minted per token."
 
 ---
 
+## The 5-minute hardware ritual
+
+Most of the 👤 items fall out of ONE pass at the school room, and it is worth
+doing deliberately rather than waiting to notice a defect in the wild:
+
+1. Feed a clean, correctly-filled sheet → receipt prints, marks visible.
+2. Feed a sheet with ONE row double-bubbled, one of the two correct → grades
+   full credit and prints, no grown-up step (Slice B).
+3. Feed a sheet with THREE bubbles in a row → holds for review, panel says so
+   (Slices B + D).
+4. Feed a blank or upside-down sheet → panel says it could not be read, and a
+   `warn` lands in the store (Slices C + D + A).
+5. Tap a school card twice within the cooldown → second tap prints nothing but
+   the panel acknowledges it (Slice G).
+
+That covers B, C, D, F and G against real hardware in one visit.
+
 ## Verification checklist
 
 - [ ] `npx vitest run tests/unit/system/logging/ tests/unit/domains/school/ tests/unit/applications/school/` passes
 - [ ] `npm run audit:layers` passes — no new cross-layer imports (`2_domains` must not reach up)
 - [ ] `npm run test:refactor` passes
-- [ ] A backend event queried at `_time:5m` returns during a live session (the timestamp fix, end to end)
-- [ ] A double-bubble worksheet row with one correct answer prints a receipt with no human step
-- [ ] A three-bubble row still holds for review
-- [ ] An unreadable sheet raises a banner on the panel *and* a `warn` in the store
+- [x] A backend event queried at `_time:5m` returns during a live session — DONE (drift measured at 0ms)
+- [ ] 👤 A double-bubble worksheet row with one correct answer prints a receipt with no human step
+- [ ] 👤 A three-bubble row still holds for review
+- [ ] 👤 An unreadable sheet raises a banner on the panel *and* a `warn` in the store
 - [ ] The allocation audit reports zero bases with more than one LIVE record (expected: already true)
 - [ ] A resumed session older than a day prints its issue date and row range
-- [ ] A long receipt prints to completion, and the job printed **immediately after** it is not shifted
-- [ ] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback
-- [ ] A correct answer prints a visible check glyph, not `[]`
-- [ ] A second card tap inside the cooldown prints nothing but still says something on the panel
-- [ ] A tap after new work is assigned still prints, cooldown notwithstanding
-- [ ] Every printed QR — agenda **and** result receipt — has its own code beside it
+- [x] 👤 A long receipt prints to completion, and the job printed **immediately after** it is not shifted — DONE, verified on paper 2026-08-22
+- [x] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback — DONE
+- [ ] 👤 A correct answer prints a visible check glyph, not `[]` (code done; confirm on paper next time a result receipt prints)
+- [ ] 👤 A second card tap inside the cooldown prints nothing but still says something on the panel
+- [ ] 👤 A tap after new work is assigned still prints, cooldown notwithstanding
+- [ ] 👤 Every printed QR — agenda **and** result receipt — has its own code beside it

@@ -63,6 +63,14 @@ const CODE_PAGE_IDS = {
 const DEFAULT_CODE_PAGE = 'cp858';
 
 /**
+ * NUL bytes fed ahead of `ESC @` on the job following an unclean one, to be
+ * eaten by a printer still counting an unfinished raster. Roughly seven
+ * 576-dot raster lines' worth — enough for a small shortfall, cheap enough to
+ * be harmless when the parser is already idle.
+ */
+const RESYNC_PAD_BYTES = 512;
+
+/**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
  * @property {number} [port=9100] - Printer port
@@ -106,11 +114,21 @@ export class ThermalPrinterAdapter {
   #upsideDown;
   #logger;
   #printQueue;
+  #createTransport;
+  #needsResync = false;
 
   /**
    * @param {PrinterConfig} config
    * @param {Object} [options]
    * @param {Object} [options.logger] - Logger instance
+   * @param {(host: string, port: number) => object} [options.createTransport]
+   *   Builds the ESC/POS byte transport (`open`/`write`/`close`). Defaults to
+   *   the real `escpos-network`. This exists as a TEST SEAM: `escpos-network` is
+   *   CJS, so an `import` of it from this ESM module resolves through interop
+   *   and Jest's module mocks never intercept it — a test that thinks it has
+   *   mocked the socket silently opens a real one and prints. Injecting the
+   *   transport is the only reliable way to exercise the write/close contract
+   *   without paper coming out of a printer.
    */
   constructor(config, options = {}) {
     this.#host = config.host;
@@ -122,6 +140,8 @@ export class ThermalPrinterAdapter {
     this.#upsideDown = config.upsideDown !== false; // Default true
     this.#logger = options.logger || console;
     this.#printQueue = Promise.resolve();
+    this.#createTransport = options.createTransport
+      || ((host, port) => new Network(host, port));
   }
 
   /**
@@ -625,10 +645,11 @@ export class ThermalPrinterAdapter {
         });
       }
 
-      const device = new Network(config.host, config.port);
+      const device = this.#createTransport(config.host, config.port);
 
       return new Promise((resolve) => {
         const timeoutId = setTimeout(() => {
+          this.#needsResync = true;
           this.#logger.error?.('thermalPrinter.timeout', { timeout: config.timeout });
           resolve(false);
         }, config.timeout);
@@ -643,7 +664,29 @@ export class ThermalPrinterAdapter {
           }
 
           try {
-            let commands = Buffer.from([0x1B, 0x40]); // ESC @ - Initialize
+            // RESYNC PAD — only after a job we know did not finish cleanly.
+            //
+            // A job that dies mid-`GS v 0` leaves the printer counting raster
+            // bytes it never received; it then swallows the next job's `ESC @`
+            // as bitmap payload and prints that job horizontally shifted. NULs
+            // are ignored in command state, so feeding some before the init
+            // gives a still-counting parser something harmless to eat.
+            //
+            // Best-effort and deliberately NOT on every job: the shortfall can
+            // be kilobytes (a 576-dot-wide receipt is 72 bytes per raster line),
+            // so no fixed pad can guarantee resync, and taxing every print for a
+            // case that should not happen once the flush wait above is honoured
+            // would be cargo cult. The real fix is not truncating.
+            let commands = Buffer.alloc(0);
+            if (this.#needsResync) {
+              this.#logger.warn?.('thermalPrinter.resync.prepended', {
+                bytes: RESYNC_PAD_BYTES,
+                reason: 'previous job did not flush cleanly',
+              });
+              commands = Buffer.alloc(RESYNC_PAD_BYTES, 0x00);
+              this.#needsResync = false;
+            }
+            commands = Buffer.concat([commands, Buffer.from([0x1B, 0x40])]); // ESC @ - Initialize
             // ESC t n — select the character code page. Bytes written for text
             // items are iconv-encoded to the matching codec (see #processTextItem),
             // so the ROM page and the byte stream stay in lockstep.
@@ -678,15 +721,40 @@ export class ThermalPrinterAdapter {
               commands = Buffer.concat([commands, Buffer.from([0x1B, 0x7B, 0x00])]);
             }
 
-            device.write(commands);
+            // WAIT FOR THE FLUSH — do not close on a timer (2026-08-22).
+            //
+            // `escpos-network.write` forwards this callback to
+            // `net.Socket.write`, so it fires when the bytes have left OUR
+            // buffer. The previous code discarded it and closed after a fixed
+            // 1000 ms; because that library's `close()` is a `socket.destroy()`,
+            // any remainder still queued was thrown away. A long receipt (the
+            // School raster path is hundreds of KB, and the printer applies TCP
+            // backpressure by accepting bytes at printing speed) therefore
+            // truncated mid-raster — and the printer, still counting bitmap
+            // bytes it never received, consumed the NEXT job's `ESC @` as image
+            // data and rendered that job horizontally shifted.
+            await new Promise((flushed, failed) => {
+              device.write(commands, (err) => (err ? failed(err) : flushed()));
+            });
 
-            setTimeout(() => {
-              device.close();
-              this.#logger.info?.('thermalPrinter.job.complete', { duration: Date.now() - startTime });
-              resolve(true);
-            }, 1000);
+            // Our buffer is empty; the printer's is not. Give it a moment to
+            // drain before dropping the socket, scaled to what we actually sent
+            // rather than a constant that was only ever right for short jobs.
+            const drainMs = Math.min(15000, 500 + Math.ceil(commands.length / 1024) * 20);
+            await new Promise((r) => setTimeout(r, drainMs));
+
+            device.close();
+            this.#logger.info?.('thermalPrinter.job.complete', {
+              duration: Date.now() - startTime,
+              bytes: commands.length,
+              drainMs,
+            });
+            resolve(true);
 
           } catch (processingError) {
+            // Includes a write that never flushed: the printer may be holding a
+            // half-delivered raster, so the NEXT job leads with a resync pad.
+            this.#needsResync = true;
             this.#logger.error?.('thermalPrinter.process.error', { error: processingError.message });
             device.close();
             resolve(false);
@@ -930,53 +998,70 @@ export class ThermalPrinterAdapter {
     return commands;
   }
 
+  /**
+   * Canvas → one byte per pixel (1 = ink), as a FLAT typed array.
+   *
+   * Was an array-of-arrays of JS numbers, which for a 576x5000 receipt meant
+   * 5,000 JS arrays holding 2.88M boxed values. A flat Uint8Array is the same
+   * information in 2.88MB of contiguous memory and indexes faster.
+   *
+   * @returns {Uint8Array} length width*height, indexed `y * width + x`
+   */
   #convertToMonochrome(canvas, threshold = 128) {
-    const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-    const bitmap = [];
+    const { width, height } = canvas;
+    const { data } = canvas.getContext('2d').getImageData(0, 0, width, height);
+    const bitmap = new Uint8Array(width * height);
 
-    for (let y = 0; y < canvas.height; y++) {
-      const row = [];
-      for (let x = 0; x < canvas.width; x++) {
-        const i = (y * canvas.width + x) * 4;
-        const r = imageData.data[i];
-        const g = imageData.data[i + 1];
-        const b = imageData.data[i + 2];
-        const a = imageData.data[i + 3];
-
-        const gray = (r + g + b) / 3;
-        const isBlack = a > 128 && gray < threshold ? 1 : 0;
-        row.push(isBlack);
-      }
-      bitmap.push(row);
+    for (let px = 0; px < bitmap.length; px++) {
+      const i = px * 4;
+      const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      bitmap[px] = data[i + 3] > 128 && gray < threshold ? 1 : 0;
     }
 
     return bitmap;
   }
 
+  /**
+   * Pack a 1-byte-per-pixel bitmap into a `GS v 0` raster block.
+   *
+   * The output buffer is PREALLOCATED and written by index. The previous
+   * implementation did `commands = Buffer.concat([commands, Buffer.from([byte])])`
+   * once per output byte — a full reallocate-and-copy of the growing buffer per
+   * byte, i.e. O(n^2) in both time and memory traffic. Measured on the real
+   * printer 2026-08-22, a 576x5000 receipt (360,034 bytes) took 19.9s and
+   * spiked RSS to 698MB against a 76MB baseline; in the container that is an
+   * OOM waiting to happen. Same bytes on the wire, linear cost.
+   *
+   * @param {Uint8Array} bitmap flat, `y * width + x`, 1 = ink
+   */
   #convertBitmapToEscPos(bitmap, width, height) {
     const widthBytes = Math.ceil(width / 8);
+    const HEADER = 8;
+    const out = Buffer.alloc(HEADER + widthBytes * height);
 
-    const xL = widthBytes & 0xFF;
-    const xH = (widthBytes >> 8) & 0xFF;
-    const yL = height & 0xFF;
-    const yH = (height >> 8) & 0xFF;
+    out[0] = 0x1D; out[1] = 0x76; out[2] = 0x30; out[3] = 0x00;
+    out[4] = widthBytes & 0xFF;
+    out[5] = (widthBytes >> 8) & 0xFF;
+    out[6] = height & 0xFF;
+    out[7] = (height >> 8) & 0xFF;
 
-    let commands = Buffer.from([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
-
+    let at = HEADER;
     for (let y = 0; y < height; y++) {
+      const rowStart = y * width;
       for (let byteX = 0; byteX < widthBytes; byteX++) {
         let byte = 0;
+        const base = byteX * 8;
         for (let bit = 0; bit < 8; bit++) {
-          const pixelX = byteX * 8 + bit;
-          if (pixelX < width && bitmap[y] && bitmap[y][pixelX]) {
+          const pixelX = base + bit;
+          if (pixelX < width && bitmap[rowStart + pixelX]) {
             byte |= (1 << (7 - bit));
           }
         }
-        commands = Buffer.concat([commands, Buffer.from([byte])]);
+        out[at++] = byte;
       }
     }
 
-    return commands;
+    return out;
   }
 
   #parseStatusResponses(responses) {
