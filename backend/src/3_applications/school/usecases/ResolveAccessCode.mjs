@@ -272,7 +272,7 @@ export class ResolveAccessCode {
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
     const plan = planLearnerWork({
-      learnerId, assignment, units, sessions: history, now: nowIso, coursePolicies,
+      learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
     });
     if (plan.errors.length) {
       this.#logger.warn?.('school.selfservice.plan-errors', { learnerId, subject, errors: plan.errors });

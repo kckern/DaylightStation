@@ -24,6 +24,16 @@ const SYLLABUS_NO_PROFILE = {
   schema: 'school.syllabus/v1', syllabusId: 'elements-upper', title: 'Elements — upper',
   courseId: 'elements', profile: null, policy: null, passing: null, term: null,
 };
+const TIMED_SYLLABUS = {
+  ...SYLLABUS,
+  syllabusId: 'elements-fourth-of-july',
+  timingTemplate: {
+    schema: 'school.timing-template/v1', defaultAnchorId: 'fourth-of-july',
+    opensBeforeDays: 21, closesAfterDays: 1, targetOffsetDays: -1,
+    targetStrength: 'firm', basePriority: 'high', flexibility: 'flexible',
+    normalBlocks: 1, urgentBlocks: 3, urgencyLeadDays: 10,
+  },
+};
 
 // Units ordered so `foundations` is NOT the first module to appear in the
 // array — `createCourseEnrollment` otherwise derives module order from
@@ -49,6 +59,7 @@ function harness({ assignment = null, open = [] } = {}) {
         get: async (id) => {
           if (id === 'elements-lower') return SYLLABUS;
           if (id === 'elements-upper') return SYLLABUS_NO_PROFILE;
+          if (id === 'elements-fourth-of-july') return TIMED_SYLLABUS;
           return null;
         },
       },
@@ -58,6 +69,9 @@ function harness({ assignment = null, open = [] } = {}) {
       },
       curriculum: { listUnits: async () => UNITS, listWorks: async () => [WORK] },
       sessions: { listOpenForLearner: async () => open },
+      timingAnchors: { get: async (id) => (id === 'fourth-of-july'
+        ? { anchorId: id, label: 'Fourth of July', kind: 'annual_date', month: 7, day: 4 }
+        : null) },
       teacherGate: { assert: () => true },
       clock: () => new Date('2026-09-08T12:00:00.000Z'),
       rng: () => 0,
@@ -92,6 +106,16 @@ describe('EnrollLearner', () => {
     await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
     const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
     expect(Object.keys(entry.enrollment.lessonOrder)).not.toContain('x');
+  });
+
+  it('materializes a syllabus timing template onto the learner enrollment', async () => {
+    await h.useCase.execute({ learnerId: 'milo', syllabusId: 'elements-fourth-of-july', enrolledBy: 'kckern', pin: '7410' });
+    const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.timing).toMatchObject({
+      anchor: { anchorId: 'fourth-of-july', resolvedOn: '2027-07-04' },
+      availability: { opensOn: '2027-06-13', closesOn: '2027-07-05' },
+      agenda: { normalBlocks: 1, urgentBlocks: 3 },
+    });
   });
 
   it('refuses an unknown syllabus by name', async () => {

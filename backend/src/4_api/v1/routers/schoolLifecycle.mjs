@@ -543,10 +543,10 @@ export function createSchoolLifecycleRouter({
 
   if (enrollLearner) {
     router.post('/enrollments/:learnerId', guarded(async (req, res) => {
-      const { syllabusId, rematerialize = false, enrolledBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      const { syllabusId, timingAnchorId = null, rematerialize = false, enrolledBy = null, pin = null, baseUpdatedAt } = req.body || {};
       res.json(await enrollLearner.execute({
         learnerId: req.params.learnerId, syllabusId, rematerialize: rematerialize === true,
-        enrolledBy, pin, baseUpdatedAt,
+        timingAnchorId, enrolledBy, pin, baseUpdatedAt,
       }));
     }));
   }
