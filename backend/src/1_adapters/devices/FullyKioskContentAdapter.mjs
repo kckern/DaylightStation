@@ -83,8 +83,8 @@ export class FullyKioskContentAdapter {
     const MAX_PREPARE_MS = 60_000; // Hard ceiling — never stall longer than 60s
     this.#metrics.prepares++;
     const FK_PACKAGE = 'de.ozerov.fully';
-    const MAX_FOREGROUND_ATTEMPTS = 15;
-    const FOREGROUND_RETRY_MS = 1000;
+    const MAX_FOREGROUND_ATTEMPTS = 6;
+    const FOREGROUND_RETRY_MS = 700;
 
     /** Check elapsed time and bail if we've exceeded the ceiling. */
     const checkTimeout = (phase) => {
@@ -649,27 +649,67 @@ export class FullyKioskContentAdapter {
    * @returns {Promise<{ok: boolean, step?: string, error?: string}>}
    */
   async #verifyForeground(fkPackage, maxAttempts, retryMs, startTime) {
+    let acked = false;
+    let usableReads = 0;
+    let lastAnomaly = null;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      await this.#sendCommand('toForeground');
-      await new Promise(r => setTimeout(r, retryMs));
+      const fgCmd = await this.#sendCommand('toForeground');
+      if (fgCmd.authError) {
+        this.#logger.error?.('fullykiosk.prepareForContent.authRejected', { cmd: 'toForeground', error: fgCmd.error });
+        return { ok: false, step: 'toForeground', error: `FKB rejected credentials: ${fgCmd.error}` };
+      }
+      if (fgCmd.ok) acked = true;
+
+      // Backoff: the old fixed 1s x 15 sent ~30 admin requests per dispatch and
+      // FKB throttles under that load — the retry strategy was sustaining the
+      // condition it retried against.
+      await new Promise(r => setTimeout(r, Math.min(retryMs * attempt, 5000)));
 
       const info = await this.#sendCommand('getDeviceInfo', { type: 'json' });
-      const foreground = info.data?.foreground;
-
-      if (foreground === fkPackage) {
-        this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
-          attempt, elapsedMs: Date.now() - startTime
-        });
-        return { ok: true };
+      if (info.authError) {
+        this.#logger.error?.('fullykiosk.prepareForContent.authRejected', { cmd: 'getDeviceInfo', error: info.error });
+        return { ok: false, step: 'toForeground', error: `FKB rejected credentials: ${info.error}` };
       }
 
-      this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
-        attempt, foreground, expected: fkPackage
+      // Only a real device-info object carrying the field says anything about
+      // which app is in front. Anything else is a transport/state anomaly and
+      // must NOT be recorded as "the wrong app is in the foreground".
+      const usable = info.ok && info.data && typeof info.data === 'object' && 'foreground' in info.data;
+      if (usable) {
+        usableReads++;
+        if (info.data.foreground === fkPackage) {
+          this.#logger.info?.('fullykiosk.prepareForContent.foregroundConfirmed', {
+            attempt, elapsedMs: Date.now() - startTime
+          });
+          return { ok: true };
+        }
+        this.#logger.warn?.('fullykiosk.prepareForContent.notInForeground', {
+          attempt, foreground: info.data.foreground, expected: fkPackage
+        });
+        continue;
+      }
+
+      lastAnomaly = info.unusablePayload
+        ? (info.snippet ?? info.error)
+        : 'device-info payload carried no foreground field';
+      this.#logger.warn?.('fullykiosk.prepareForContent.foregroundUnverifiable', {
+        attempt, reason: lastAnomaly, dataType: typeof info.data
       });
     }
 
+    // Never got a usable reading, but FKB acknowledged the foreground request:
+    // trust the ack rather than failing a dispatch that works. Failing here is
+    // what cost the 2026-08-21 session three 38s dead ends.
+    if (usableReads === 0 && acked) {
+      this.#logger.info?.('fullykiosk.prepareForContent.foregroundAssumed', {
+        attempts: maxAttempts, reason: lastAnomaly, elapsedMs: Date.now() - startTime
+      });
+      return { ok: true, assumed: true };
+    }
+
     this.#logger.error?.('fullykiosk.prepareForContent.foregroundFailed', {
-      attempts: maxAttempts, elapsedMs: Date.now() - startTime
+      attempts: maxAttempts, usableReads, elapsedMs: Date.now() - startTime
     });
     return { ok: false, step: 'toForeground', error: 'Could not bring Fully Kiosk to foreground' };
   }
