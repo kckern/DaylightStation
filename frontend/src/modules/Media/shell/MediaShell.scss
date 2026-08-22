@@ -132,6 +132,33 @@ $amber-ink: #1a1300;
   }
 }
 
+// Devices tab badge: the fleet-active-count signal that used to live only in
+// the dock's FleetIndicator ("Devices 2/5"), which is desktop-only now that
+// mobile's dock is a launcher (Task 13). A small numeric badge on the icon
+// covers the same "something's actively playing" glance at every width.
+.media-nav-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.media-nav-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--mantine-color-amber-5);
+  color: #1a1300;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .media-nav-rail {
   display: none;
 
@@ -168,12 +195,44 @@ $amber-ink: #1a1300;
   @include tablet-up { display: none; }
 }
 
-// Mobile dock: the fleet button collapses (fleet lives in the tab bar there,
-// but keep the dock indicator reachable — it is the canonical fleet entry).
+// ---- Dock: launcher (mobile) vs. persistent row (tablet+) -----------------
+// Mobile gets a launcher button + settings gear only — no room to contest
+// for a search input, scope chips, and an icon cluster in one row (see
+// Task 13 / spec D1-D2). Tablet+ keeps the persistent MediaContentSearch bar
+// and the fleet/cast cluster exactly as before; the launcher never shows
+// there (nothing wires it to anything at that width — SearchMode is a
+// mobile-only surface).
+.media-search-launcher {
+  display: none;
+}
+
 @include mobile-only {
-  .media-dock .media-dock-cluster [data-testid='fleet-indicator'] .mantine-Button-label {
-    // icon-only at phone width
-    font-size: 0;
+  .media-search-launcher {
+    display: flex;
+    align-items: center;
+    gap: var(--mantine-spacing-xs);
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--mantine-spacing-sm);
+    background: var(--mantine-color-dark-5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-1);
+    font-size: 14px;
+    text-align: left;
+    @include media-focus-ring;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .media-dock-desktop-search,
+  .media-dock-cluster {
+    display: none;
   }
 }
 
@@ -477,38 +536,17 @@ $amber-ink: #1a1300;
   .media-search-input-wrap { flex: 1; min-width: 0; }
 }
 
-// ---- Portrait: search gets the row while it is being used -------------------
-// A 360px dock has ~336px to spend. The scope control and the icon cluster
-// (168px) can take all of it, leaving the input too little typable width —
-// elementFromPoint at the field's centre returned the magnifier, so the tap
-// that should focus it never landed, and typed text was invisible. Field
-// report 2026-08-16: 18s to get into the box, then a query had to be retyped
-// blind. The scope <select> that caused this is gone (replaced by
-// .media-scope-chips, spec D5), but the row still has to share width with
-// the input, so the same idle/focus treatment applies to the chip row.
-@include mobile-only {
-  .media-search-bar {
-    max-width: none;
-
-    // Decoration, never a tap target.
-    .mantine-Input-section[data-position='left'] { pointer-events: none; }
-
-    // Both must be allowed below their intrinsic width or the input overflows
-    // the wrap and slides under the cluster.
-    .media-search-input-wrap { min-width: 0; }
-    input { min-width: 0; }
-
-    // Idle: cap the chip row so the field stays a real tap target.
-    .media-scope-chips { max-width: 40%; }
-  }
-
-  // In use, search owns the row. The chip row and the cluster come back on
-  // blur, so nothing is removed from the dock.
-  .media-dock:has(.media-search-bar:focus-within) {
-    .media-scope-chips,
-    .media-dock-cluster { display: none; }
-  }
-}
+// Portrait/mobile note (spec D1-D2, Task 13): the old fix-in-place here was
+// an idle/focus width contest between the scope control, the search input,
+// and a 168px icon cluster on a ~336px row — culminating in a
+// `.media-dock:has(.media-search-bar:focus-within)` rule that hid the scope
+// control and the icon cluster the instant the field got focus, the one
+// moment scope mattered. That whole subtree (`.media-dock-desktop-search`,
+// which wraps MediaContentSearch/.media-search-bar) is now display:none on
+// mobile outright (see the Dock launcher rules above) — mobile search lives
+// in the full-screen SearchMode surface instead, where width is never
+// contested. No mobile-only override of `.media-search-bar` is needed
+// anymore; it only ever renders at tablet-up widths now.
 
 .media-search-overlay {
   position: absolute;

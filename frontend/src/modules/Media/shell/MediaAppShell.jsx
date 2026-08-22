@@ -2,7 +2,7 @@
 // The shell: persistent dock (top), primary nav (rail on tablet+/tabs on
 // mobile), and a canvas showing exactly one view. Playback chrome (mini
 // player, dispatch tray) docks between canvas and tab bar on mobile.
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { NavProvider, useNav } from './NavProvider.jsx';
 import { DismissStackProvider } from './DismissStackProvider.jsx';
 import { Dock } from './Dock.jsx';
@@ -10,10 +10,12 @@ import { NavRail, TabBar } from './PrimaryNav.jsx';
 import { Canvas } from './Canvas.jsx';
 import { MiniPlayer } from './MiniPlayer.jsx';
 import { DispatchProgressTray } from '../cast/DispatchProgressTray.jsx';
+import { SearchMode } from '../search/SearchMode.jsx';
 import './MediaShell.scss';
 
 function ShellInner() {
   const { pop, depth } = useNav();
+  const [searchOpen, setSearchOpen] = useState(false);
   const baseDismiss = useCallback(() => {
     if (depth > 1) pop();
   }, [depth, pop]);
@@ -34,7 +36,7 @@ function ShellInner() {
   return (
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <div className="media-shell" data-testid="media-shell">
-        <Dock />
+        <Dock onOpenSearch={() => setSearchOpen(true)} />
         <div className="media-shell-body">
           <NavRail />
           <Canvas />
@@ -42,6 +44,7 @@ function ShellInner() {
         <DispatchProgressTray />
         <MiniPlayer />
         <TabBar />
+        {searchOpen && <SearchMode onClose={() => setSearchOpen(false)} />}
       </div>
     </DismissStackProvider>
   );
