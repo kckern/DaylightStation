@@ -30,6 +30,15 @@ const TRANSCRIBE_PROMPT = 'A short spoken software-feedback note: a bug report, 
  * Flat {app}/ directories grow without bound; the month dir is derivable
  * from the id itself, so no index or lookup is needed to find an item.
  *
+ * Transition-window asymmetry: list() scans the whole {app}/ tree
+ * (recursive: true), so it will surface a not-yet-migrated flat item and
+ * report its real id. get()/update()/remove() only ever compute the month
+ * path via this function, so that same id 404s on them until the item is
+ * actually migrated. The window is the few seconds between deploy and the
+ * Task 10 migration step, not a standing condition — do not "fix" this with
+ * a flat-path fallback here; that turns a seconds-long gap into permanent
+ * dead code that every future reader has to reason about.
+ *
  * @param {string} root - absolute path to household/feedback
  * @param {string} app - 'piano' | 'fitness' | ...
  * @param {string} id - '{YYYYMMDDHHMMSS}_{rand}'
@@ -222,13 +231,18 @@ export class FeedbackService {
 
   get(app, id) {
     if (!safeApp(app) || !safeId(id)) return null;
+    let file;
     try {
-      return loadYaml(feedbackItemPath(this.itemsRoot, app, id));
+      file = feedbackItemPath(this.itemsRoot, app, id);
     } catch {
       // Well-formed per safeId but no YYYYMM prefix to partition by — no
       // such item could ever have been created, so this is a 404, not a 500.
+      // Only the path derivation is guarded here: a real I/O failure inside
+      // loadYaml (bad YAML, permission error) must still propagate, not get
+      // reinterpreted as "not found".
       return null;
     }
+    return loadYaml(file);
   }
 
   update(app, id, patch = {}) {
@@ -246,15 +260,20 @@ export class FeedbackService {
     if (item?.audio) {
       try { fs.unlinkSync(path.join(this.config.getMediaDir(), item.audio)); } catch { /* already gone */ }
     }
+    let file;
     try {
-      // deleteYaml (unlike loadYaml/saveYaml) always appends '.yml'/'.yaml'
-      // itself rather than checking for an existing extension first — pass it
-      // the bare path or it looks for a literal "*.yml.yml" and never deletes.
-      const file = feedbackItemPath(this.itemsRoot, app, id);
-      return deleteYaml(file.replace(/\.yml$/, ''));
+      file = feedbackItemPath(this.itemsRoot, app, id);
     } catch {
+      // Same reasoning as get(): only the path derivation is guarded. This
+      // never masks an I/O error — deleteYaml itself already swallows fs
+      // errors and returns false (see FileIO.mjs deleteFile), so there is
+      // nothing further for this try/catch to be hiding.
       return false;
     }
+    // deleteYaml (unlike loadYaml/saveYaml) always appends '.yml'/'.yaml'
+    // itself rather than checking for an existing extension first — pass it
+    // the bare path or it looks for a literal "*.yml.yml" and never deletes.
+    return deleteYaml(file.replace(/\.yml$/, ''));
   }
 
   audioFilePath(app, id) {
