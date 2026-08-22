@@ -204,7 +204,23 @@ export async function createDonow({
     logger,
   });
   const approvals = new DoNowApprovals({ service, datastore, notifier, clock, logger });
-  const router = createDoNowRouter({ service, approvals, expectedToken: cfg.approvalsToken ?? null, logger });
+  // The approvals token is a SECRET, not app config: it is the only
+  // authentication on `POST /approvals/:id/{approve,deny}`, so it lives in
+  // `household/auth/donow.yml` alongside every other service credential
+  // rather than in `config/donow.yml`. Note `getHouseholdAuth` takes
+  // (service, householdId) — the reverse of `getHouseholdAppConfig` — and
+  // returns null when the file is absent.
+  const approvalsAuth = configService.getHouseholdAuth?.('donow', householdId) || {};
+  if (!approvalsAuth.approvalsToken) {
+    // Pre-existing posture, unchanged: a falsy expectedToken means the
+    // `authenticate` guard passes everything, so approve/deny take NO auth.
+    // Logged rather than thrown so a household that never configured one keeps
+    // booting — but an open approvals endpoint should never be invisible.
+    logger.warn?.('donow.approvals.no-token', { householdId });
+  }
+  const router = createDoNowRouter({
+    service, approvals, expectedToken: approvalsAuth.approvalsToken ?? null, logger,
+  });
 
   logger.info?.('donow.ready', {
     surfaces: [...surfaces.keys()],
