@@ -235,8 +235,16 @@ $amber-ink: #1a1300;
   // `.media-dock`, orphaning the `flex: 1` it relies on for its tablet-up
   // width (see Dock.jsx's comment; this regressed desktop 560px -> 205px
   // before the fix).
-  .media-search-bar,
-  .media-dock-cluster {
+  //
+  // Both selectors are qualified with `.media-dock` on purpose. The dock
+  // styles these as NESTED rules (`.media-dock { .media-dock-cluster { … } }`,
+  // specificity 0,2,0), and a media query adds no specificity — so a bare
+  // `.media-dock-cluster { display: none }` here loses to it at every width
+  // and the fleet/cast cluster stayed visible on phones, squeezing the search
+  // launcher to ~62px and truncating it to "S…". That is the same inverted
+  // dock hierarchy this work exists to remove, so it has to out-specify.
+  .media-dock .media-search-bar,
+  .media-dock .media-dock-cluster {
     display: none;
   }
 }
