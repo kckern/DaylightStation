@@ -72,3 +72,52 @@ describe('FullyKioskContentAdapter response-shape classification', () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe('FullyKioskContentAdapter foreground verification', () => {
+  test('assumes foreground when no usable device-info ever arrives but toForeground acks', async () => {
+    // The 2026-08-21 incident shape: 45 reads, every one lacking `foreground`,
+    // while toForeground acked OK the whole time.
+    const logger = makeLogger();
+    const adapter = makeAdapter((cmd) => {
+      if (cmd === 'getDeviceInfo' || cmd === 'deviceInfo') {
+        return { status: 200, data: { screenOn: true, isInScreensaver: false, packageName: 'de.ozerov.fully' } };
+      }
+      return { status: 200, data: { status: 'OK' } };
+    }, logger);
+    const result = await adapter.prepareForContent({ skipCameraCheck: true });
+    expect(result.ok).toBe(true);
+    expect(logger.info).toHaveBeenCalledWith(
+      'fullykiosk.prepareForContent.foregroundAssumed',
+      expect.objectContaining({ attempts: 6 })
+    );
+  }, 30_000);
+
+  test('still fails when usable payloads name a different foreground app', async () => {
+    const adapter = makeAdapter((cmd) => {
+      if (cmd === 'getDeviceInfo' || cmd === 'deviceInfo') {
+        return { status: 200, data: { foreground: 'com.netflix.ninja', screenOn: true } };
+      }
+      return { status: 200, data: { status: 'OK' } };
+    });
+    const result = await adapter.prepareForContent({ skipCameraCheck: true });
+    expect(result.ok).toBe(false);
+    expect(result.step).toBe('toForeground');
+  }, 30_000);
+
+  test('an unusable payload is logged as unverifiable, not as a foreground reading', async () => {
+    const logger = makeLogger();
+    const adapter = makeAdapter((cmd) => {
+      if (cmd === 'getDeviceInfo' || cmd === 'deviceInfo') return { status: 200, data: { screenOn: true } };
+      return { status: 200, data: { status: 'OK' } };
+    }, logger);
+    await adapter.prepareForContent({ skipCameraCheck: true });
+    expect(logger.warn).toHaveBeenCalledWith(
+      'fullykiosk.prepareForContent.foregroundUnverifiable',
+      expect.objectContaining({ attempt: 1 })
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      'fullykiosk.prepareForContent.notInForeground',
+      expect.anything()
+    );
+  }, 30_000);
+});
