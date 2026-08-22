@@ -293,12 +293,20 @@ function appendNoteLines(blocks, noteLines) {
  *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
  *   so a grown-up's feedback reaches the child without pretending to be a
  *   thing to scan.
+ * @param {string} [args.bulkToken] opaque scan token that prints every offered
+ *   subject's sheet in one job (self-service, bulk-print access code). Absent,
+ *   the receipt is byte-identical to one built before the feature existed.
+ * @param {string} [args.bulkAccessCode] six-digit panel code aliasing
+ *   `bulkToken`, formatted the same way as a per-token `accessCodesByToken`
+ *   entry — see `panelCodeBlocks`.
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  sections = [], tokensBySubject = {}, accessCodesByToken = {}, footer = null, notes = [],
+  sections = [], tokensBySubject = {}, accessCodesByToken = {},
+  bulkToken = null, bulkAccessCode = null,
+  footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -430,6 +438,23 @@ export function agendaDocument({
       blocks.push(text(label));
     }
   });
+
+  // One extra card at the end, printing every offered subject in one job: an
+  // alias for "scan each lesson card in turn," not a fourth kind of session.
+  // Same malformed-code-prints-nothing rule as a per-subject panel code
+  // (`panelCodeBlocks`) — a bad code is worse than no code.
+  if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
+    const printableSubjects = offered.map((s) => s.subject);
+    blocks.push({
+      type: 'scan_action',
+      action: bulkToken,
+      presentation: 'bulk_print',
+      label: 'Print all sheets',
+      hideCode: true,
+      subjects: printableSubjects,
+    });
+    blocks.push(...panelCodeBlocks(bulkAccessCode));
+  }
 
   appendNoteLines(blocks, noteLines);
   const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);

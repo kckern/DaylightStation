@@ -292,6 +292,72 @@ describe('agendaDocument', () => {
       expect(flat).toContain('Scanning is the only way in.');
     });
   });
+
+  /**
+   * The bulk-print block: one extra card, printed after every per-subject
+   * lesson card, that scans as "print all of today's sheets in one job."
+   * Same absent-means-unchanged and malformed-code-prints-nothing rules as
+   * the per-subject panel code above.
+   */
+  describe('the bulk-print block', () => {
+    const bulkSections = [
+      { subject: 'maths', servedToday: false, next: { unitId: 'u1', title: 'Fractions' } },
+      { subject: 'reading', servedToday: false, next: { unitId: 'u2', title: 'Chapter 5' } },
+    ];
+    const bulkTokens = { maths: 'sch:AAAA', reading: 'sch:BBBB' };
+    // Keyed by TOKEN (Slice H), matching `agendaDocument`'s `accessCodesByToken`.
+    const bulkCodes = { 'sch:AAAA': '111111', 'sch:BBBB': '222222' };
+
+    it('emits a bulk_print scan_action when bulkToken and bulkAccessCode are present', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user',
+        sections: bulkSections,
+        tokensBySubject: bulkTokens,
+        accessCodesByToken: bulkCodes,
+        bulkToken: 'sch:BULK1234',
+        bulkAccessCode: '999999',
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeDefined();
+      expect(bulkBlock.action).toBe('sch:BULK1234');
+      expect(bulkBlock.subjects).toEqual(['maths', 'reading']);
+      const codeBlock = doc.blocks.find((b) => b.type === 'rich_text' && b.md?.includes('999999'));
+      expect(codeBlock).toBeDefined();
+    });
+
+    it('omits the bulk block when bulkToken is absent', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user',
+        sections: [{ subject: 'maths', servedToday: false, next: { unitId: 'u1', title: 'Fractions' } }],
+        tokensBySubject: { maths: 'sch:AAAA' },
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeUndefined();
+    });
+
+    it('is still a valid receipt-target document with the bulk block', () => {
+      valid(agendaDocument({
+        learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens,
+        accessCodesByToken: bulkCodes, bulkToken: 'sch:BULK1234', bulkAccessCode: '999999',
+      }));
+    });
+
+    it('drops a malformed bulk code rather than printing digits a child cannot type', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens,
+        bulkToken: 'sch:BULK1234', bulkAccessCode: '4819',
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeUndefined();
+      expect(JSON.stringify(doc.blocks)).not.toContain('4819');
+    });
+
+    it('changes nothing at all when bulk args are absent — feature-off is byte-identical', () => {
+      const withoutBulk = { learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens, accessCodesByToken: bulkCodes };
+      const baseline = JSON.stringify(agendaDocument(withoutBulk));
+      expect(JSON.stringify(agendaDocument({ ...withoutBulk, bulkToken: null, bulkAccessCode: null }))).toBe(baseline);
+    });
+  });
 });
 
 describe('resultDocument', () => {
