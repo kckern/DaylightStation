@@ -1036,6 +1036,15 @@ rmdir "$D/config/school/surfaces" "$D/config/school"
 
 **Step 6: Verify the production warn stops**
 
+Measured baseline before the fix (2026-08-21 22:0x local):
+```
+query=_msg:school.surfaces.profile.unresolved AND _time:24h | stats count() as n
+-> {"n":"29"}
+```
+29 in 24h. The Portal only emits these while it is actually asking for a surface,
+so a quiet hour is not evidence of a fix — compare over a full 24h window, or
+load the Portal school surface deliberately and watch for a fresh row.
+
 Restart the running server, load the Portal school surface, then:
 
 ```bash
@@ -1414,6 +1423,19 @@ path is **ignored**, not that it works.
 ```
 npm run test:backend && npm run test:refactor && npm run audit:layers
 ```
+
+### Task 17b: Close the `.yaml` gap
+
+`ALLOWED_FILES` derives its entries by appending a hardcoded `.yml`, while the
+registry documents callers resolving `.yml` OR `.yaml` via `resolveYamlPath`.
+So an app whose file lands as `.yaml` resolves fine at boot but 403s in the
+admin YAML browser — the exact silent failure Task 5 exists to kill.
+
+No such file exists today, which is why Task 5 flagged it rather than
+speculatively doubling the list. Close it properly here: derive both extensions,
+or resolve the real on-disk extension once and derive from that.
+
+Add a test that a `.yaml`-suffixed registry entry is allowlisted.
 
 ### Task 18: Delete the directory
 
