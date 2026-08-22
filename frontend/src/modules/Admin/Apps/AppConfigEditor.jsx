@@ -9,16 +9,7 @@ import GratitudeConfig from './GratitudeConfig.jsx';
 import ShoppingConfig from './ShoppingConfig.jsx';
 import FinanceConfig from './FinanceConfig.jsx';
 import { capitalize } from '../utils/formatters.js';
-
-/**
- * Maps appId to config file path relative to data root.
- */
-const APP_CONFIG_PATHS = {
-  fitness: 'household/fitness/config.yml',
-  finance: 'household/config/finance.yml',
-  gratitude: 'household/gratitude/config.yml',
-  shopping: 'household/harvest/config.yml',
-};
+import { adminConfigPath } from '../utils/adminConfigPaths.js';
 
 /**
  * Registry for purpose-built editor components.
@@ -70,7 +61,7 @@ function AppConfigEditor() {
   }
 
   // Fallback to YAML editor
-  const configPath = APP_CONFIG_PATHS[appId];
+  const configPath = adminConfigPath(appId);
   if (!configPath) {
     return (
       <Alert
