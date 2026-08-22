@@ -13,6 +13,13 @@
  * 403ing the rest in the admin YAML browser. Both now derive from this map, so
  * adding an app here is the only edit an app needs.
  *
+ * SECURITY: this registry is a security boundary. Adding an entry grants the
+ * admin YAML browser read/write on that file, because
+ * YamlConfigFileService.ALLOWED_FILES derives from it. That is the intended
+ * trade — drift-proof beats hand-maintained — but never register a path under
+ * an auth directory. (MASKED_DIRS is checked before the allowlist, so a mask
+ * would still win, but do not rely on that as the only defence.)
+ *
  * Paths are relative to the household folder, WITHOUT extension — callers
  * resolve .yml/.yaml via `resolveYamlPath`.
  *
