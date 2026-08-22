@@ -47,11 +47,23 @@ export function NavProvider({ children }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const push = useCallback((view, params = {}) => {
+  // `opts.replaceEntry` grows the in-app stack exactly like a normal push but
+  // writes it over the CURRENT history entry instead of adding one. It exists
+  // for a caller that already owns the current entry and is handing it off:
+  // the mobile Search Mode pushes a marker entry when it opens (so browser
+  // Back closes it), and a container tap inside it navigates to browse. With a
+  // plain push, browse would sit ON TOP of that marker — the surface's own
+  // exit path would then have to traverse back over it, which lands on the
+  // marker's PRE-search nav stack and instantly un-navigates the user (they
+  // tap a show and end up on Home). Replacing lets the browse route take the
+  // marker's place: one entry, and Back from browse goes where it did before
+  // the search started.
+  const push = useCallback((view, params = {}, opts = {}) => {
+    const replaceEntry = opts.replaceEntry === true;
     setStack((prev) => {
       const next = [...prev, { view, params }];
-      syncHistory(next, 'push');
-      mediaLog.navPushed({ view, depth: next.length });
+      syncHistory(next, replaceEntry ? 'replace' : 'push');
+      mediaLog.navPushed({ view, depth: next.length, replaceEntry });
       return next;
     });
   }, []);

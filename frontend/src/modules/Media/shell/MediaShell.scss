@@ -653,6 +653,12 @@ $amber-ink: #1a1300;
     }
 
     .media-result-subtitle {
+      // The row's tap target is a <button>, whose UA `text-align: center`
+      // inherits down. .media-result-title overrides it; this didn't, so every
+      // result row on both surfaces rendered a left-aligned title above a
+      // centred subtitle (measured at 360px: title glyphs at x=12, subtitle
+      // glyphs at x=154.64).
+      text-align: left;
       color: var(--mantine-color-dark-1);
       font-size: 12px;
       overflow: hidden;
