@@ -31,7 +31,6 @@ export const STORAGE_KEYS = {
   DISPLAY_NAME: 'media-app.display-name',
   SESSION: 'media-app.session',
   URL_COMMAND_TOKEN: 'media-app.url-command-token',
-  SCOPE_LAST: 'media-scope-last',
 };
 
 export const SESSION_SCHEMA_VERSION = 1;

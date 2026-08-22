@@ -863,7 +863,6 @@ Two related traps, both fixed and both worth not re-introducing:
 | `media-app.display-name` | Human-readable client label. | string. |
 | `media-app.session` | Persisted local session. | `PersistedSession` — §11.2 |
 | `media-app.url-command-token` | Dedup token for URL-command processing. | string. |
-| `media-scope-last` | Last-used search scope key. | string. |
 | `media-scope-recents` | Last 5 scope keys that produced results. | `string[]`. |
 | `media-scope-favorites` | Starred scope keys. | `string[]`. |
 
