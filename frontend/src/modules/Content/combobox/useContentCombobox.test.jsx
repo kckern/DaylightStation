@@ -903,6 +903,7 @@ describe('useContentCombobox', () => {
         resultCount: 1,
         rawResultCount: 1,
         sourceErrors: [],
+        scopeKey: null,
       });
       // Logged exactly once for this settle — no duplicate on subsequent renders.
       const settledCalls = mockLog.info.mock.calls.filter(([event]) => event === 'search.settled');
@@ -939,6 +940,7 @@ describe('useContentCombobox', () => {
         resultCount: 1,
         rawResultCount: 1,
         sourceErrors: ['plex'],
+        scopeKey: null,
       });
       // Non-empty results ⇒ the recovery retry must NOT fire.
       expect(mockLog.info).not.toHaveBeenCalledWith('search.retry_after_source_error', expect.anything());
@@ -1080,6 +1082,44 @@ describe('useContentCombobox', () => {
 
       act(() => { result.current.handleInput('another'); });
       expect(result.current.fellBackToAll).toBe(false); // reset immediately on new INPUT
+    });
+
+    it('threads scopeKey/scopeLabel into search.dispatch, search.settled, and search.fallback_to_all — an observability gap from the 2026-08-21 incident', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({
+        searchParams: 'source=ambient', fallbackSearchParams: '',
+        scopeKey: 'music-ambient', scopeLabel: 'Ambient',
+      });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(mockLog.info).toHaveBeenCalledWith('search.dispatch', {
+        text: 'bluey', mode: 'sse', scopeKey: 'music-ambient',
+      });
+
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(mockLog.info).toHaveBeenCalledWith('search.settled', {
+        textLength: 'bluey'.length, resultCount: 0, rawResultCount: 0, sourceErrors: [],
+        scopeKey: 'music-ambient',
+      });
+      expect(mockLog.info).toHaveBeenCalledWith('search.fallback_to_all', {
+        textLength: 'bluey'.length, searchParams: 'source=ambient', fallbackSearchParams: null,
+        scopeKey: 'music-ambient', scopeLabel: 'Ambient',
+      });
+    });
+
+    it('scopeKey is absent for callers that never pass it — logs carry scopeKey: null, no behavior change', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({}); // no scopeKey — Admin/PlaybackHub shape
+
+      act(() => { result.current.handleInput('beet'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(mockLog.info).toHaveBeenCalledWith('search.dispatch', {
+        text: 'beet', mode: 'sse', scopeKey: null,
+      });
     });
   });
 });
