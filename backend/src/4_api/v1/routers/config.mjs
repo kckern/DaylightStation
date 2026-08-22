@@ -78,7 +78,13 @@ export function createConfigRouter(config) {
 
   /**
    * GET /api/v1/config/player
-   * Load player runtime config from data/household/config/player.yml
+   * Load player runtime config from data/household/player/config.yml
+   * (colocated under player/ like the rest; previously
+   * data/household/config/player.yml). Read directly rather than through the
+   * household app union, so `player` is deliberately not in the config
+   * registry. The file exists in no household today — absent at either path the
+   * endpoint returns the same defaults — so this move is behaviour-neutral and
+   * just keeps the reader off the config/ directory a later phase deletes.
    *
    * Response format:
    * {
@@ -89,7 +95,7 @@ export function createConfigRouter(config) {
    * }
    */
   router.get('/player', asyncHandler(async (req, res) => {
-    const configPath = path.join(householdDir, 'config', 'player');
+    const configPath = path.join(householdDir, 'player', 'config');
 
     logger.debug?.('config.player.request', { configPath });
 

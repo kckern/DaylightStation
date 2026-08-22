@@ -42,8 +42,14 @@ export async function loadArtmodeConfig(householdDir, logger = console) {
 // bare collection name resolve as a preset, so `art:baroque` needs no passthrough
 // preset in artmode.yml. `householdDir` is the resolved household base dir.
 export async function loadArtCollections(householdDir, logger = console) {
-  const doc = await readYamlDoc(
-    path.join(householdDir, 'config', 'art.yml'), logger, 'art.collections.read_failed');
+  // Same grouped-first rule as loadArtmodeConfig. HOUSEHOLD_APP_CONFIGS.art is
+  // 'art/config', so the collection catalog lands at art/config.yml.
+  const candidates = [
+    path.join(householdDir, 'art', 'config.yml'),
+    path.join(householdDir, 'config', 'art.yml'), // retiring — a later phase deletes this
+  ];
+  const target = candidates.find((p) => existsSync(p)) ?? candidates[0];
+  const doc = await readYamlDoc(target, logger, 'art.collections.read_failed');
   return doc.collections || {};
 }
 
