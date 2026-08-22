@@ -19,6 +19,7 @@
  */
 
 import { buildLedgerRecords, writeLedger } from '#apps/camera/usecases/BuildDetectionLedger.mjs';
+import { resolveCameraEndpoint } from './resolveCameraEndpoint.mjs';
 
 /** Local calendar date offset by N days — recordings are searched by local day. */
 function localDay(offsetDays = 0, now = new Date()) {
@@ -69,9 +70,22 @@ export function createCameraLedgerJobHandler({
       return { skipped: true };
     }
 
-    const auth = configService.getHouseholdAuth(config.auth?.ref ?? 'reolink', householdId);
+    // Host + credentials come from devices.yml (see resolveCameraEndpoint.mjs)
+    // — archive.yml no longer restates them. resolveCameraEndpoint validates
+    // `host` too, which this auth-only lookup does not need — a missing or
+    // malformed camera-nvr entry must degrade to the same no-auth skip a bad
+    // ref used to produce, not hard-fail the only unconditionally-scheduled
+    // camera job.
+    let authRef;
+    try {
+      ({ authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId));
+    } catch (err) {
+      log.error?.('camera.ledger.no_auth', { executionId, error: err.message });
+      return { skipped: true, reason: 'no-auth' };
+    }
+    const auth = configService.getHouseholdAuth(authRef, householdId);
     if (!auth?.username || !auth?.password) {
-      log.error?.('camera.ledger.no_auth', { executionId, ref: config.auth?.ref ?? 'reolink' });
+      log.error?.('camera.ledger.no_auth', { executionId, ref: authRef });
       return { skipped: true, reason: 'no-auth' };
     }
 
@@ -96,20 +110,24 @@ export function createCameraLedgerJobHandler({
     const results = [];
     for (const cameraCfg of config.cameras) {
       try {
+        const { host: cameraHost } = resolveCameraEndpoint(
+          configService, cameraCfg.id, householdId,
+        );
         const cameraSource = makeSource({
           kind: 'camera',
-          client: new ReolinkClient({ host: cameraCfg.host, ...auth, logger: log }),
+          client: new ReolinkClient({ host: cameraHost, ...auth, logger: log }),
           channel: 0,
           streamType,
         });
-        const nvrSource = config.nvr?.host
-          ? makeSource({
-              kind: 'nvr',
-              client: new ReolinkClient({ host: config.nvr.host, ...auth, logger: log }),
-              channel: cameraCfg.nvrChannel,
-              streamType,
-            })
-          : null;
+        const { host: nvrHost } = resolveCameraEndpoint(
+          configService, 'camera-nvr', householdId,
+        );
+        const nvrSource = makeSource({
+          kind: 'nvr',
+          client: new ReolinkClient({ host: nvrHost, ...auth, logger: log }),
+          channel: cameraCfg.nvrChannel,
+          streamType,
+        });
 
         const records = await buildLedgerRecords({
           camera: cameraCfg.id,

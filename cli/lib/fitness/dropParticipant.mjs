@@ -158,7 +158,7 @@ export async function dropParticipant({ file, participant, alsoDevices = [], wri
   // YYYY-MM-DD folder and would load a backup as a duplicate sessionId.
   const dateDir = path.dirname(file);
   const sessionsRoot = path.dirname(dateDir);
-  const backupDir = path.join(sessionsRoot, '_participant_backups');
+  const backupDir = path.join(sessionsRoot, '_backups', 'participant');
   await fs.mkdir(backupDir, { recursive: true });
   const base = path.basename(file, '.yml');
   report.backupPath = path.join(
@@ -199,7 +199,7 @@ export const spec = {
   session and treasureBox.buckets has no per-participant split. The summary is
   not rebuilt either, so the primary-media flag (the session title) stays put.
 
-  A pre-drop backup lands in fitness/log/_participant_backups/ —
+  A pre-drop backup lands in fitness/log/_backups/participant/ —
   deliberately outside any scanned YYYY-MM-DD dir.`,
 };
 

@@ -92,7 +92,6 @@ export async function createDonow({
   schoolService = null, clock = () => new Date(), logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'donow') || {};
-  const dataDir = configService.getDataDir();
   const timezone = configService.getTimezone?.() || null;
 
   // --- presence trackers (spec §5.1) -----------------------------------------
@@ -183,7 +182,7 @@ export async function createDonow({
   ]);
 
   // --- the service + approvals lifecycle + HA notifier -------------------------
-  const datastore = new YamlDoNowDatastore({ dataDir, logger });
+  const datastore = new YamlDoNowDatastore({ configService, householdId, logger });
 
   let notifier = null;
   if (cfg.notifyService && homeAutomationAdapters?.haGateway) {

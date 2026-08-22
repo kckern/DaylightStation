@@ -158,10 +158,14 @@ describe('dropParticipant — write', () => {
   it('writes a backup outside any date directory', async () => {
     const report = await dropParticipant({ file: sessionFile, participant: 'drive-by', write: true });
 
-    expect(report.backupPath).toContain('_participant_backups');
+    expect(report.backupPath).toContain('_backups');
     // The session lister globs every *.yml inside YYYY-MM-DD dirs, so a backup
-    // left in one would load as a duplicate sessionId.
-    expect(path.basename(path.dirname(report.backupPath))).toBe('_participant_backups');
+    // left in one would load as a duplicate sessionId. Pin the full two-level
+    // shape, not just the leaf, so a future flattening back to one dir fails
+    // this test instead of silently passing.
+    const backupParentDir = path.dirname(report.backupPath);
+    const tail = path.join(path.basename(path.dirname(backupParentDir)), path.basename(backupParentDir));
+    expect(tail).toBe(path.join('_backups', 'participant'));
     const backup = yaml.load(await readFile(report.backupPath, 'utf8'));
     expect(backup.participants['drive-by']).toBeDefined();
   });
