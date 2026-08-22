@@ -15,7 +15,11 @@ let currentScopeKey = 'all';
 // plain leaves. This mirrors the shape documented in
 // docs/reference/media/search-scopes.md ("a parent may also carry its own
 // params, making the whole category searchable in addition to its leaves").
-const scopes = [
+// The third shape — a parent with BOTH children AND its own params, e.g. a
+// real "Video" scope that's searchable on its own but also drills into
+// Movies/Shows — is covered by its own test below with a dedicated fixture,
+// so it doesn't have to share the constraints of the other three tests.
+const baseScopes = [
   { key: 'all', label: 'All', params: '' },
   { key: 'video', label: 'Video', params: 'mediaType=video' },
   {
@@ -30,6 +34,8 @@ const scopes = [
   },
   { key: 'books', label: 'Books', params: 'mediaType=book' },
 ];
+
+let scopes = baseScopes;
 
 vi.mock('./SearchProvider.jsx', () => ({
   useSearchContext: () => ({
@@ -49,6 +55,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 import { ScopeChips } from './ScopeChips.jsx';
 
 beforeEach(() => {
+  scopes = baseScopes;
   currentScopeKey = 'all';
   setScopeKey.mockReset();
   info.mockReset();
@@ -107,5 +114,39 @@ describe('ScopeChips', () => {
 
     expect(screen.getByTestId('scope-chip-music-hymns')).toBeInTheDocument();
     expect(screen.getByTestId('scope-chip-music-hymns')).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('tapping a parent that also carries its own params selects it AND reveals its children', () => {
+    // The real-config case (search-scopes.md): a parent that is itself a
+    // searchable scope ("All Video") in addition to grouping leaves under
+    // it. Distinct from the Music fixture above, which has no params and
+    // must NOT select on tap.
+    scopes = [
+      { key: 'all', label: 'All', params: '' },
+      {
+        key: 'video',
+        label: 'Video',
+        params: 'mediaType=video',
+        children: [
+          { key: 'video-movies', label: 'Movies', params: 'mediaType=video&form=movie' },
+          { key: 'video-shows', label: 'Shows', params: 'mediaType=video&form=show' },
+        ],
+      },
+      { key: 'books', label: 'Books', params: 'mediaType=book' },
+    ];
+
+    render(<ScopeChips />);
+
+    expect(screen.queryByTestId('scope-chip-video-movies')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('scope-chip-video'));
+
+    // (a) selects the parent itself
+    expect(setScopeKey).toHaveBeenCalledWith('video');
+    // (b) logs the selection
+    expect(info).toHaveBeenCalledWith('search.scope_selected', { scopeKey: 'video', viaFallback: false });
+    // (c) reveals the child row
+    expect(screen.getByTestId('scope-chip-video-movies')).toBeInTheDocument();
+    expect(screen.getByTestId('scope-chip-video-shows')).toBeInTheDocument();
   });
 });

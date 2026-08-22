@@ -3,7 +3,16 @@
 // 360px dock rendered the select at 96px/13px, and CSS hid it entirely
 // while the search field had focus — the one moment scope mattered. Chips
 // are laid out as a horizontally scrollable row instead of squeezing a
-// fixed-width control, so they never need to disappear.
+// fixed-width control, so a chip never gets shrunk into unreadability the
+// way the select did.
+//
+// Interim state: on today's dock, MediaShell.scss still hides
+// .media-scope-chips on mobile while the search field has focus, same as
+// the select before it — the dock row genuinely doesn't have room for both
+// at once. That collapse goes away when Task 13's full-screen Search Mode
+// (spec D1) lands: the mobile dock stops carrying scope at all, and this
+// component mounts inside the full-screen surface instead, where width
+// isn't contested.
 //
 // No props — everything comes from useSearchContext(), so this exact
 // component mounts unchanged inside the desktop popover header (here, via
