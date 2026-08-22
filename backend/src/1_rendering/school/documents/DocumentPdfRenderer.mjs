@@ -80,7 +80,7 @@ function applyAnswerSpaceGrowth(fragment, innerGapPt) {
 
   let cursor = 0;
   nodes.forEach((node, index) => {
-    if (index > 0) cursor += innerGapPt;
+    if (index > 0) cursor += node.gapBeforePt ?? innerGapPt;
     node.offsetYPt = cursor;
     cursor += node.heightPt;
   });
@@ -210,6 +210,12 @@ export function createDocumentPdfRenderer({
         // instead of `out.text`. Every other caller's runs never carry
         // `kind: 'blank'`, so this branch is unreachable for them.
         if (run.kind === 'blank') { drawClozeBlank(out, run, { xPt: xPt + run.xPt, yPt: cursorY, style }); continue; }
+        if (run.kind === 'math') {
+          SVGtoPDF(out, run.svgString, xPt + run.xPt, cursorY, {
+            width: run.widthPt, height: run.heightPt, assumePt: true,
+          });
+          continue;
+        }
         setFont(out, run.font, run.sizePt ?? style.sizePt, style.ink);
         out.text(run.text, xPt + run.xPt, cursorY, { lineBreak: false });
       }
@@ -265,20 +271,37 @@ export function createDocumentPdfRenderer({
 
     if (node.layout === 'compact') {
       const columns = node.columnCount ?? 2;
-      const rowLeading = Math.max(...node.cells.map((cell) => cell.lines.length), 1)
-        * choiceLeadingPt + 5;
+      const rowHeights = node.compactRowHeights
+        ?? Array.from({ length: Math.ceil(node.cells.length / columns) }, () => (
+          Math.max(...node.cells.map((cell) => cell.lines.length), 1) * choiceLeadingPt + 5
+        ));
+      const rowOffsets = rowHeights.reduce((offsets, height) => (
+        [...offsets, offsets.at(-1) + height]
+      ), [0]);
       node.cells.forEach((cell, index) => {
         const column = index % columns;
         const row = Math.floor(index / columns);
         const cellX = xPt + indentPt + column * node.cellWidthPt;
-        const cellY = rowYPt + row * rowLeading;
+        const cellY = rowYPt + rowOffsets[row];
         setFont(out, 'bold', labelSizePt);
         out.text(`${cell.choice}.`, cellX, cellY, { lineBreak: false });
         let lineY = cellY;
         for (const line of cell.lines) {
-          for (const run of line.runs) {
-            setFont(out, run.font, choiceSizePt);
-            out.text(run.text, cellX + theme.omr.compactLabelWidthPt + run.xPt, lineY, { lineBreak: false });
+          if (line.math) {
+            SVGtoPDF(out, line.math.svgString, cellX + theme.omr.compactLabelWidthPt, lineY, {
+              width: line.math.widthPt, height: line.math.heightPt, assumePt: true,
+            });
+          } else {
+            for (const run of line.runs) {
+              if (run.kind === 'math') {
+                SVGtoPDF(out, run.svgString, cellX + theme.omr.compactLabelWidthPt + run.xPt, lineY, {
+                  width: run.widthPt, height: run.heightPt, assumePt: true,
+                });
+                continue;
+              }
+              setFont(out, run.font, choiceSizePt);
+              out.text(run.text, cellX + theme.omr.compactLabelWidthPt + run.xPt, lineY, { lineBreak: false });
+            }
           }
           lineY += line.heightPt;
         }
@@ -316,9 +339,21 @@ export function createDocumentPdfRenderer({
 
       let lineY = textY;
       for (const line of cell.lines) {
-        for (const run of line.runs) {
-          setFont(out, run.font, choiceSizePt);
-          out.text(run.text, cellX + run.xPt, lineY, { lineBreak: false });
+        if (line.math) {
+          SVGtoPDF(out, line.math.svgString, cellX, lineY, {
+            width: line.math.widthPt, height: line.math.heightPt, assumePt: true,
+          });
+        } else {
+          for (const run of line.runs) {
+            if (run.kind === 'math') {
+              SVGtoPDF(out, run.svgString, cellX + run.xPt, lineY, {
+                width: run.widthPt, height: run.heightPt, assumePt: true,
+              });
+              continue;
+            }
+            setFont(out, run.font, choiceSizePt);
+            out.text(run.text, cellX + run.xPt, lineY, { lineBreak: false });
+          }
         }
         lineY += line.heightPt;
       }
@@ -453,6 +488,35 @@ export function createDocumentPdfRenderer({
     for (const child of node.childNodes) {
       drawNode(out, child, { ...position, xPt: innerXPt, yPt: innerYPt + child.offsetYPt });
     }
+  }
+
+  function drawLessonCard(out, node, { xPt, yPt }) {
+    out.save().lineWidth(node.borderWidthPt).strokeColor(theme.ink.box)
+      .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).stroke().restore();
+    const innerX = xPt + node.paddingPt;
+    const innerY = yPt + node.paddingPt;
+    const textX = innerX;
+    // A full-height subject mark belongs at the end of the card, where it
+    // frames rather than delays the reading flow. The measured rail reserves
+    // this exact width, so text can never collide with it.
+    const iconX = xPt + node.widthPt - node.paddingPt - node.icon.widthPt;
+    SVGtoPDF(out, node.icon.svg, iconX, innerY, { width: node.icon.widthPt, height: node.icon.heightPt, assumePt: true });
+    let cursorY = innerY;
+    const draw = (entry, styleKey) => {
+      if (!entry) return;
+      drawLines(out, entry.lines, { xPt: textX, yPt: cursorY, styleKey });
+      cursorY += entry.heightPt + node.gap;
+    };
+    draw(node.breadcrumb, 'caption');
+    draw(node.title, 'heading');
+    draw(node.reading, 'body');
+    draw(node.citation, 'caption');
+    cursorY += node.bandGap - node.gap;
+    out.save().lineWidth(0.6).strokeColor(theme.ink.rule)
+      // The divider belongs to the information rail.  It must stop before
+      // the full-height subject SVG instead of visually slicing through it.
+      .moveTo(textX, cursorY - 4).lineTo(xPt + node.widthPt - node.paddingPt - node.railPt, cursorY - 4).stroke().restore();
+    drawLines(out, node.success.lines, { xPt: textX, yPt: cursorY, styleKey: 'label' });
   }
 
   /** `divider` — a bare rule centred in its reserved vertical band. */
@@ -618,9 +682,11 @@ export function createDocumentPdfRenderer({
     const contentX = node.frame === 'double' ? xPt + node.framePaddingPt : xPt;
     const contentWidth = node.frame === 'double' ? node.widthPt - node.framePaddingPt * 2 : node.widthPt;
     if (node.frame === 'double') cursorY += node.framePaddingPt;
-    setFont(out, 'bold', titleSizePt);
-    out.text(node.title, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
-    cursorY += titleLeadingPt;
+    if (node.showTitle) {
+      setFont(out, 'bold', titleSizePt);
+      out.text(node.title, contentX, cursorY, { width: contentWidth, align: 'center', lineBreak: false });
+      cursorY += titleLeadingPt;
+    }
 
     for (const value of [node.subtitle, node.reading]) {
       if (!value) continue;
@@ -743,6 +809,7 @@ export function createDocumentPdfRenderer({
       case 'header': drawHeader(out, node, position); break;
       case 'cardHeader': drawCardHeader(out, node, position); break;
       case 'box': drawBox(out, node, position); break;
+      case 'lessonCard': drawLessonCard(out, node, position); break;
       case 'divider': drawDivider(out, node, position); break;
       case 'list': drawList(out, node, position); break;
       case 'wordbank': drawWordbank(out, node, position); break;

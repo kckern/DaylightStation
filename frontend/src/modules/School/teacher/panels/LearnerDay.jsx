@@ -3,6 +3,7 @@
  * filtered to the study day server-side (?window=today — the 4am boundary
  * lives in the backend, spec §4.7.3) plus their recent scores.
  */
+import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
@@ -20,6 +21,65 @@ function RetakeButton({ sessionId, onDone }) {
       <button type="button" disabled={busy === sessionId} onClick={offer}>Offer retake</button>
       {errors[sessionId] && <span className="teacher-panel__error">{errors[sessionId]}</span>}
     </>
+  );
+}
+
+/** A teacher picks actual paper-capable agenda sessions, never a guessed unit. */
+function WorksheetComposer({ learnerId, onIssued }) {
+  const printable = usePanelFetch(
+    () => schoolApi.printableWorksheetSessions(learnerId),
+    {
+      deps: [learnerId], panel: 'printable-worksheet-sessions', notFoundAs: 'unavailable',
+      isEmpty: (d) => !(d?.sessions ?? []).length,
+    },
+  );
+  const [selected, setSelected] = useState([]);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'worksheet-compose' });
+  const toggle = (sessionId) => setSelected((current) => (
+    current.includes(sessionId) ? current.filter((id) => id !== sessionId) : [...current, sessionId]
+  ));
+  const issue = () => run(`compose-${learnerId}`, ({ actorId, pin }) => schoolApi.composeWorksheets({
+    sessionIds: selected, issuedBy: actorId, pin,
+  }), { onSuccess: () => { setSelected([]); onIssued?.(); } });
+
+  if (printable.state === 'unavailable') return null;
+  return (
+    <section className="teacher-worksheet-compose" aria-label="Print selected worksheets">
+      <h4>Print selected worksheets</h4>
+      {printable.state === 'loading' && <p className="teacher-panel__empty">Checking today&rsquo;s paper lessons…</p>}
+      {printable.state === 'empty' && <p className="teacher-panel__empty">No printable lessons have been opened today.</p>}
+      {printable.state === 'ok' && (
+        <>
+          <p className="teacher-worksheet-compose__hint">Selected lessons flow onto the same sheets and share one answer card when they fit.</p>
+          <ul>
+            {printable.data.sessions.map((session) => (
+              <li key={session.sessionId}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(session.sessionId)}
+                    onChange={() => toggle(session.sessionId)}
+                  />
+                  <span>{session.title}</span>
+                  <small>{session.subject}{session.courseId ? ` · ${session.courseId}` : ''}</small>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={selected.length === 0 || busy === `compose-${learnerId}`}
+            onClick={issue}
+          >
+            {busy === `compose-${learnerId}` ? 'Printing…' : `Print ${selected.length || ''} selected worksheet${selected.length === 1 ? '' : 's'}`}
+          </button>
+          {errors[`compose-${learnerId}`] && <p className="teacher-panel__error">{errors[`compose-${learnerId}`]}</p>}
+        </>
+      )}
+      {printable.state === 'error' && (
+        <p className="teacher-panel__error">Couldn&rsquo;t load printable lessons.<button type="button" className="teacher-panel__retry" onClick={printable.retry}>Retry</button></p>
+      )}
+    </section>
   );
 }
 
@@ -83,6 +143,7 @@ export default function LearnerDay({ learnerId }) {
         </ul>
       )}
       {planned.state === 'empty' && <p className="teacher-panel__empty">Nothing assigned for today.</p>}
+      <WorksheetComposer learnerId={learnerId} onIssued={sessions.retry} />
       {sessions.state === 'ok' && (
         <ul className="teacher-learner-day__sessions">
           {sessions.data.sessions.map((s, i) => (

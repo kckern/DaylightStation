@@ -3,7 +3,7 @@ import { validateQuestionBank } from './questionBankValidation.mjs';
 import { publishDocument } from './documents/documentSource.mjs';
 import {
   normalizeQuestionBankV2, issueWorksheet,
-  createWorksheetInstance, worksheetInstanceDocument,
+  createWorksheetInstance, worksheetInstanceDocument, composedWorksheetDocument, formatPageSpans,
 } from './questionBankV2.mjs';
 
 const item = (id, type = 'multiple_choice') => ({
@@ -18,6 +18,9 @@ const bank = {
 };
 
 describe('question-bank/v2', () => {
+  it('formats authored printed-page ranges without dropping string spans', () => {
+    expect(formatPageSpans(['8-10', 12, '14–15'])).toBe('8–10, 12, 14–15');
+  });
   it('validates explicit answers and decoys, pool sizes, and forbids choices', () => {
     expect(validateQuestionBank(bank).ok).toBe(true);
     expect(validateQuestionBank({ ...bank, items: [{ ...item('bad'), choices: ['nope'] }] }).errors).toContainEqual(expect.stringMatching(/choices is forbidden/));
@@ -68,5 +71,59 @@ describe('question-bank/v2', () => {
     expect(questions).toHaveLength(6);
     expect(questions.every((block) => block.omr && block.blocks.at(-1).layout === 'compact')).toBe(true);
     expect(result.bank.items).toHaveLength(6);
+  });
+
+  it('never emits a book-only or placeholder reading instruction', () => {
+    const instance = createWorksheetInstance({
+      id: 'ws-reading', sessionId: 'session-reading', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'kansas', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    expect(worksheetInstanceDocument(instance, { title: 'Kansas', sourceTitle: 'Atlas', printedPages: [] }).header.reading)
+      .toBeUndefined();
+    const composed = composedWorksheetDocument({
+      id: 'no-placeholder',
+      sections: [{ instance, subjectId: 'science', courseId: 'matter', title: 'Atoms' }],
+    });
+    expect(composed.source.blocks[0].reading).toBeUndefined();
+    expect(JSON.stringify(composed.source)).not.toContain('assigned section');
+  });
+
+  it('uses an authored printed range on a composed card without an empty Read line', () => {
+    const instance = createWorksheetInstance({
+      id: 'ws-page-range', sessionId: 'session-range', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'range', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    const composed = composedWorksheetDocument({
+      id: 'pages', sections: [{ instance, title: 'Ranges', printedPages: ['8-10'] }],
+    });
+    expect(composed.source.blocks[0].reading).toBe('Read: pages 8–10');
+  });
+
+  it('composes immutable lesson instances with scoped item identities and attribution', () => {
+    const first = createWorksheetInstance({
+      id: 'ws-first', sessionId: 'session-first', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'first', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    const second = createWorksheetInstance({
+      id: 'ws-second', sessionId: 'session-second', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'second', profile: 'lower', seed: 'two', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    const composed = composedWorksheetDocument({
+      id: 'packet-today', seed: 42,
+      sections: [
+        { id: 'a', instance: first, subject: 'Science', subjectId: 'science', course: 'Matter', courseId: 'matter', title: 'First' },
+        { id: 'b', instance: second, subject: 'Science', subjectId: 'science', course: 'Matter', courseId: 'matter', title: 'Second' },
+      ],
+    });
+    const published = publishDocument(composed.source);
+    expect(published.errors).toBeUndefined();
+    expect(published.bank.items).toHaveLength(12);
+    expect(published.bank.items.map((entry) => entry.id)).toEqual(expect.arrayContaining([
+      composed.sections[0].itemIds[0], composed.sections[1].itemIds[0],
+    ]));
+    expect(composed.sections).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'a', sessionId: 'session-first', worksheetInstanceId: 'ws-first' }),
+      expect.objectContaining({ id: 'b', sessionId: 'session-second', worksheetInstanceId: 'ws-second' }),
+    ]));
   });
 });

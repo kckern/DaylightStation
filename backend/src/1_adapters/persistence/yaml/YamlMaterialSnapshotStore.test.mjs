@@ -13,11 +13,11 @@ let tmp;
 let warns;
 
 const makeStore = () => new YamlMaterialSnapshotStore({
-  configService: { getHouseholdPath: (rel) => path.join(tmp, rel) },
+  configService: { getRuntimeCachePath: (rel) => path.join(tmp, rel) },
   logger: { warn: (event, data) => warns.push({ event, data }), info: () => {} },
 });
 
-const snapshotFile = () => path.join(tmp, 'apps/school/cache/materials.yml');
+const snapshotFile = () => path.join(tmp, 'school/materials.yml');
 
 const full = {
   id: 'plex-123', title: 'Shakespeare Tales', unitCount: 2,

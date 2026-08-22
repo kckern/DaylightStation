@@ -32,7 +32,7 @@
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
-import { loadYamlSafe } from '#system/utils/FileIO.mjs';
+import { listYamlFiles, loadYamlSafe } from '#system/utils/FileIO.mjs';
 import { ICurriculumCatalog } from '#apps/school/ports/ICurriculumCatalog.mjs';
 import { SUBJECT_IDS } from '#domains/school/curriculum/unitValidation.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
@@ -74,6 +74,11 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     return path.join(this.#schoolDir(), subject, work);
   }
 
+  #courseConfig(subject, work) {
+    const root = this.#workDir(subject, work);
+    return loadYamlSafe(path.join(root, '_index')) ?? loadYamlSafe(path.join(root, 'index')) ?? loadYamlSafe(path.join(root, 'course'));
+  }
+
   /**
    * Work directories on one shelf. A work (Shakespeare Tales, math-fractions) is
    * a self-contained folder holding its own units, documents, manifests and
@@ -88,29 +93,63 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
   }
 
   #courseV2(subject, work) {
-    return loadYamlSafe(path.join(this.#workDir(subject, work), 'index'))?.schema === COURSE_V2;
+    return this.#courseConfig(subject, work)?.schema === COURSE_V2;
   }
 
-  /** V2 lesson indexes project into the existing unit port for compatibility. */
+  /**
+   * V2 lesson metadata projects into the existing unit port for compatibility.
+   *
+   * A compact lesson is one `<lessonId>.yml` question-bank file carrying its
+   * lesson metadata under `lesson:`. Rich lessons retain a directory with an
+   * `_index.yml` plus separately named artifacts. The catalog deliberately
+   * discovers the semantic records rather than treating `units/` and
+   * `lessons/` as required wrapper directories, so the filesystem remains an
+   * authoring convenience rather than a second curriculum model.
+   */
   #v2Lessons(subject, work, errors) {
     if (!this.#courseV2(subject, work)) return [];
-    const unitsDir = path.join(this.#workDir(subject, work), 'units');
+    const root = this.#workDir(subject, work);
+    const course = this.#courseConfig(subject, work);
+    // Each compact lesson owns its pedagogy, while the course index owns the
+    // print-book citation. Preserve that relationship in the unit projection
+    // so worksheet cards name the book a learner actually holds, not an EPUB
+    // authoring sidecar embedded in lesson provenance.
+    const sourceTitle = course?.source?.title ?? course?.title ?? null;
     const out = [];
-    let units = [];
-    try { units = fs.readdirSync(unitsDir, { withFileTypes: true }); } catch (err) {
-      if (err.code !== 'ENOENT') errors.push(`${subject}/${work}/units: unreadable directory (${err.message})`);
-    }
-    for (const unit of units.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
-      const lessonsDir = path.join(unitsDir, unit.name, 'lessons');
-      let lessons = [];
-      try { lessons = fs.readdirSync(lessonsDir, { withFileTypes: true }); } catch (err) {
-        if (err.code !== 'ENOENT') errors.push(`${subject}/${work}/units/${unit.name}/lessons: unreadable directory (${err.message})`);
-      }
-      for (const lesson of lessons.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
-        if (!CURRICULUM_ID_RE.test(lesson.name)) {
-          errors.push(`${subject}/${work}/units/${unit.name}/lessons/${lesson.name}: unsafe lesson id`); continue;
+    for (const file of listYamlFiles(root, { recursive: true, stripExtension: false })) {
+      const absolute = path.join(root, file);
+      const raw = loadYamlSafe(absolute);
+      const stem = file.replace(YAML_FILE_RE, '');
+      const fileStem = path.basename(stem);
+      const lessonIndex = ['index', '_index'].includes(fileStem);
+      const declaredUnitId = raw?.lesson?.unitId;
+      // A v2 lesson may live in a human-readable nested path (for example,
+      // `olympians/aphrodite.yml`) while its published curriculum identity is
+      // `greek-myths-14-aphrodite`.  The declared unitId is the identifier
+      // that assignments, history, and bank backlinks use; treating the leaf
+      // filename as canonical made those valid references unrecoverable.
+      const id = typeof declaredUnitId === 'string' && CURRICULUM_ID_RE.test(declaredUnitId)
+        ? declaredUnitId
+        : fileStem;
+      if (!CURRICULUM_ID_RE.test(id) && !lessonIndex) {
+        if (raw?.lesson) {
+          errors.push(`${subject}/${work}/${file}: unsafe lesson id`);
         }
-        out.push({ id: lesson.name, file: 'index.yml', subject, dir: path.join(lessonsDir, lesson.name) });
+        continue;
+      }
+      if (raw?.lesson && typeof raw.lesson === 'object' && !Array.isArray(raw.lesson)) {
+        if (!CURRICULUM_ID_RE.test(id)) {
+          errors.push(`${subject}/${work}/${file}: lesson.unitId must match ${CURRICULUM_ID_RE.source}`);
+          continue;
+        }
+        out.push({ id, file, subject, dir: root, embeddedLesson: true, sourceTitle });
+      } else if (lessonIndex && raw?.schema === 'school.unit/v1' && raw?.bank) {
+        const lessonId = CURRICULUM_ID_RE.test(raw.unitId) ? raw.unitId : path.basename(path.dirname(stem));
+        if (!CURRICULUM_ID_RE.test(lessonId)) {
+          errors.push(`${subject}/${work}/${file}: unsafe lesson id`);
+        } else {
+          out.push({ id: lessonId, file, subject, dir: root, embeddedLesson: false, sourceTitle });
+        }
       }
     }
     return out;
@@ -183,12 +222,15 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     for (let i = 0; i < entries.length; i += batch) {
       const slice = entries.slice(i, i + batch);
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir }) => {
+      const chunk = await Promise.all(slice.map(async ({ id, file, subject, dir, embeddedLesson = false, sourceTitle = null }) => {
         try {
-          const raw = yaml.load(await fs.promises.readFile(path.join(dir, file), 'utf8'));
+          const document = yaml.load(await fs.promises.readFile(path.join(dir, file), 'utf8'));
           // An empty (or `null`) file is not an entity. Reporting it beats
           // handing the validators a null to reject with a vaguer message.
-          if (raw === null || raw === undefined) return { id, error: 'file is empty' };
+          if (document === null || document === undefined) return { id, error: 'file is empty' };
+          const lesson = embeddedLesson ? document.lesson : document;
+          if (lesson === null || lesson === undefined) return { id, error: 'lesson metadata is empty' };
+          const raw = sourceTitle && !lesson.sourceTitle ? { ...lesson, sourceTitle } : lesson;
           return { id, raw, subject };
         } catch (err) {
           return { id, error: err.message };
@@ -210,6 +252,20 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
 
   async #get(kind, id) {
     if (typeof id !== 'string' || !CURRICULUM_ID_RE.test(id)) return null;
+    if (kind === KINDS.units) {
+      const errors = [];
+      for (const subject of SUBJECT_IDS) {
+        for (const work of this.#works(subject)) {
+          const match = this.#v2Lessons(subject, work, errors).find((entry) => entry.id === id);
+          if (!match) continue;
+          const document = loadYamlSafe(path.join(match.dir, match.file));
+          const lesson = match.embeddedLesson ? document?.lesson ?? null : document;
+          return match.sourceTitle && lesson && !lesson.sourceTitle
+            ? { ...lesson, sourceTitle: match.sourceTitle }
+            : lesson;
+        }
+      }
+    }
     // Ids are unique across works, so the first hit is the only hit.
     for (const subject of SUBJECT_IDS) {
       for (const work of this.#works(subject)) {
@@ -231,7 +287,12 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     for (const subject of SUBJECT_IDS) {
       for (const work of this.#works(subject)) {
         const v2 = this.#courseV2(subject, work);
-        const file = path.join(this.#workDir(subject, work), v2 ? 'index.yml' : 'work.yml');
+        const root = this.#workDir(subject, work);
+        const file = v2 && fs.existsSync(path.join(root, '_index.yml'))
+          ? path.join(root, '_index.yml')
+          : v2 && fs.existsSync(path.join(root, 'index.yml'))
+            ? path.join(root, 'index.yml')
+            : v2 ? path.join(root, 'course.yml') : path.join(root, 'work.yml');
         let text;
         try {
           text = await fs.promises.readFile(file, 'utf8'); // eslint-disable-line no-await-in-loop
@@ -257,7 +318,9 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
     if (typeof id !== 'string') return null;
     const [subject, work, ...rest] = id.split('/');
     if (rest.length || !SUBJECT_IDS.includes(subject) || !work || !CURRICULUM_ID_RE.test(work)) return null;
-    return loadYamlSafe(path.join(this.#workDir(subject, work), this.#courseV2(subject, work) ? 'index' : 'work')) ?? null;
+    return this.#courseV2(subject, work)
+      ? this.#courseConfig(subject, work)
+      : loadYamlSafe(path.join(this.#workDir(subject, work), 'work')) ?? null;
   }
 
   /** @param {{ batch?: number }} [options] */

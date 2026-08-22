@@ -108,7 +108,7 @@ export const schoolAdminApi = {
 
   /**
    * Write planner config for one learner. This is the ONLY write the planning
-   * screen makes, and it touches `apps/school/assignments/{learnerId}.yml` —
+   * screen makes, and it touches `school/plans/learners/{learnerId}.yml` —
    * never the published curriculum catalog (spec §7.2).
    *
    * `assignedBy` must be a grown-up's roster id: the server checks it against

@@ -33,6 +33,10 @@ export const WORKBOOK_DENSITIES = ['normal', 'compact'];
  */
 const SCALE_STYLES = {
   standard: {
+    // `rich_text`'s Markdown parser emits the renderer-neutral `heading`
+    // style for every ATX heading level. Keep that public block contract
+    // alongside the more granular internal heading scales used by furniture.
+    heading: { sizePt: 16, leadingPt: 20.5 },
     heading1: { sizePt: 20, leadingPt: 25 },
     heading2: { sizePt: 16, leadingPt: 20.5 },
     heading3: { sizePt: 13, leadingPt: 17 },
@@ -52,6 +56,7 @@ const SCALE_STYLES = {
     instruction: { sizePt: 10, leadingPt: 13 },
   },
   young: {
+    heading: { sizePt: 19, leadingPt: 24.5 },
     heading1: { sizePt: 24, leadingPt: 30.5 },
     heading2: { sizePt: 19, leadingPt: 24.5 },
     heading3: { sizePt: 15.5, leadingPt: 20 },
@@ -65,6 +70,7 @@ const SCALE_STYLES = {
 
 /** font/ink/spacingClass assignment per style — same for every scale. */
 const STYLE_META = {
+  heading: { font: 'bold', ink: 'text', spacingClass: 'heading' },
   heading1: { font: 'bold', ink: 'text', spacingClass: 'heading' },
   heading2: { font: 'bold', ink: 'text', spacingClass: 'heading' },
   heading3: { font: 'bold', ink: 'text', spacingClass: 'heading' },
@@ -315,7 +321,7 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
        * instruction line exists there), so this token has no effect on the
        * legacy circle-row geometry above.
        */
-      instructionGapPt: density === 'compact' ? 3 : 5,
+      instructionGapPt: density === 'compact' ? 1 : 3,
       spacingClass: 'body',
     },
 

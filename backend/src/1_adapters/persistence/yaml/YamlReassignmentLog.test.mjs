@@ -31,7 +31,7 @@ describe('YamlReassignmentLog', () => {
     await log.append(entry);
     expect(log.list()).toEqual([entry]);
     // Persisted to the expected file, not just held in memory.
-    const raw = await fs.readFile(path.join(dir, 'apps/school/reassignments.yml'), 'utf8');
+    const raw = await fs.readFile(path.join(dir, 'school/records/reassignments.yml'), 'utf8');
     expect(raw).toMatch(/fromLearnerId: felix/);
   });
 
@@ -56,7 +56,7 @@ describe('YamlReassignmentLog', () => {
   it('a corrupt file refuses to append rather than truncating itself, but reads degrade to empty with a warning', async () => {
     const log = new YamlReassignmentLog({ configService, logger: { error: vi.fn(), info: vi.fn() } });
     await log.append({ at: 't1', fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', moved: 1, reassignedBy: 'k' });
-    await fs.writeFile(path.join(dir, 'apps/school/reassignments.yml'), 'entries: { broken', 'utf8');
+    await fs.writeFile(path.join(dir, 'school/records/reassignments.yml'), 'entries: { broken', 'utf8');
     const logger = { error: vi.fn(), info: vi.fn() };
     const reread = new YamlReassignmentLog({ configService, logger });
     expect(reread.list()).toEqual([]);
@@ -73,14 +73,14 @@ describe('YamlReassignmentLog', () => {
  * to it.
  */
 describe.each([
-  ['YamlReassignmentLog', YamlReassignmentLog, 'reassignments.yml'],
-  ['YamlAttestationLog', YamlAttestationLog, 'attestations.yml'],
-  ['YamlTeacherNotes', YamlTeacherNotes, 'teacher-notes.yml'],
-  ['YamlEnrichmentLog', YamlEnrichmentLog, 'enrichment.yml'],
+  ['YamlReassignmentLog', YamlReassignmentLog, 'school/records/reassignments.yml'],
+  ['YamlAttestationLog', YamlAttestationLog, 'school/records/attestations.yml'],
+  ['YamlTeacherNotes', YamlTeacherNotes, 'school/records/teacher-notes.yml'],
+  ['YamlEnrichmentLog', YamlEnrichmentLog, 'school/records/enrichment.yml'],
 ])('%s write chain recovery', (name, LogClass, filename) => {
   it('append → forced failure (corrupt file) → fix the file → append succeeds (un-wedged)', async () => {
     const log = new LogClass({ configService, logger: { error: vi.fn(), info: vi.fn() } });
-    const file = path.join(dir, 'apps/school', filename);
+    const file = path.join(dir, filename);
     await log.append({ id: 'e1', at: 't1' });
     await fs.writeFile(file, 'entries: { broken', 'utf8');
     await expect(log.append({ id: 'e2', at: 't2' })).rejects.toThrow(/cannot be read/);

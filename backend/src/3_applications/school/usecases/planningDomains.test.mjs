@@ -57,7 +57,7 @@ describe('YamlAcademicPeriodStore', () => {
     const store = new YamlAcademicPeriodStore({ configService, fallback: null });
     await store.replacePeriods([PERIOD], { editedBy: 'kckern', at: 't1' });
     await store.replacePeriods([{ ...PERIOD, label: 'Fall!' }], { editedBy: 'liz', at: 't2' });
-    const raw = await fs.readFile(path.join(dir, 'apps/school/periods.yml'), 'utf8');
+    const raw = await fs.readFile(path.join(dir, 'school/plans/periods.yml'), 'utf8');
     expect(raw).toContain('t1');
     expect(raw).toContain('t2');
     expect(raw).toContain('editedBy: liz');
@@ -179,7 +179,7 @@ describe('corrupt-file posture (M3 F3)', () => {
   it('a corrupt periods file never silently reverts: reads warn, writes refuse', async () => {
     const store = new YamlAcademicPeriodStore({ configService, fallback: null, logger: { error: vi.fn(), info: vi.fn() } });
     await store.replacePeriods([PERIOD], { editedBy: 'k', at: 't1' });
-    await fs.writeFile(path.join(dir, 'apps/school/periods.yml'), '{ not: [ yaml', 'utf8');
+    await fs.writeFile(path.join(dir, 'school/plans/periods.yml'), '{ not: [ yaml', 'utf8');
     const logger = { error: vi.fn(), info: vi.fn() };
     const reread = new YamlAcademicPeriodStore({ configService, fallback: null, logger });
     expect(reread.listPeriods()).toEqual([]);
@@ -190,7 +190,7 @@ describe('corrupt-file posture (M3 F3)', () => {
   it('a corrupt enrichment log refuses to append rather than truncating itself', async () => {
     const log = new YamlEnrichmentLog({ configService, logger: { error: vi.fn(), info: vi.fn() } });
     await log.append({ id: 'e1', title: 'T', learnerIds: ['felix'], from: '2026-08-01', to: '2026-08-01' });
-    await fs.writeFile(path.join(dir, 'apps/school/enrichment.yml'), 'entries: { broken', 'utf8');
+    await fs.writeFile(path.join(dir, 'school/records/enrichment.yml'), 'entries: { broken', 'utf8');
     await expect(log.append({ id: 'e2', title: 'U', learnerIds: ['felix'], from: '2026-08-02', to: '2026-08-02' }))
       .rejects.toThrow(/cannot be read/);
   });

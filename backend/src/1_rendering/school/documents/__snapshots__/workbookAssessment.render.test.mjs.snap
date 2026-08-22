@@ -91,7 +91,7 @@ exports[`workbook assessment blocks — measure + draw > multi_select — square
   "answerSpace": null,
   "atomic": true,
   "hasBlank": undefined,
-  "heightPt": 77,
+  "heightPt": 64,
   "id": "blocks[0]",
   "lineCount": undefined,
   "nodeKinds": [
@@ -114,7 +114,7 @@ exports[`workbook assessment blocks — measure + draw > multi_select — square
         "C",
         "D",
       ],
-      "heightPt": 56.5,
+      "heightPt": 54.5,
       "instructionText": "Choose up to 2.",
       "kind": "omr",
       "multiSelect": true,

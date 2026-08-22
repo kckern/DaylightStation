@@ -18,12 +18,12 @@ export function createSchoolLearningLoop({
   evidenceRepository = null,
   learnerDirectory = null,
 } = {}) {
-  if (!configService || typeof configService.getHouseholdAppPath !== 'function'
+  if (!configService || typeof configService.getHouseholdPath !== 'function'
       || typeof randomBytesFactory !== 'function') {
     throw new Error('School learning-loop composition requires configService and entropy');
   }
   const sessions = new YamlRemediationSessionRepository({
-    directory: configService.getHouseholdAppPath('school', 'remediation', householdId),
+    directory: configService.getHouseholdPath('school/runtime/remediation', householdId),
   });
   const offers = new CreateAdaptiveRemediationOffer({
     sessions,

@@ -29,8 +29,8 @@ files nobody could reach.)
 | `content/school/<subject>/<course>/` | course packages | a person |
 | `content/school/learning-catalog/` | `school.catalog/v1` catalogs, documents, question banks | a person |
 | `content/_staging/school/` | imports, drafts, unfinished courses — **not live** | a person |
-| `household/apps/school/print-documents/` | published revisions, derived banks, allocations | `school-docs publish` |
-| `household/apps/school/ti86-packs/` | SchoolCalc device builds | the pack publisher |
+| `household/school/artifacts/print/` | published revisions, derived banks, allocations | `school-docs publish` |
+| `household/school/artifacts/calculator/ti-86/` | SchoolCalc device builds | the pack publisher |
 | `household/config/school/surfaces/` | surface profiles | a person |
 
 `content/_staging/` is a **sibling** of `content/school/`, not a child. That is
@@ -71,32 +71,39 @@ math/algebra/quizzes/functions/domain_and_range.yml
 A kind directory exists only where there is something to put in it. Most shelves
 are empty; that is the normal state, not a gap.
 
-## Hierarchical course packages (v2)
+## Compact course packages (v2)
 
-`school.course/v2` is the package layout for courses whose real hierarchy is
-course → instructional unit → lesson → artifact. It coexists with the flat v1
-layout above:
+`school.course/v2` keeps the curriculum hierarchy but does not encode empty
+wrapper layers in paths. The course root always has `_index.yml`; a normal
+one-artifact lesson is one named YAML file. A directory exists only for a real
+instructional group or a lesson that has several independent artifacts:
 
 ```text
 civilization/atlas/
-├── index.yml
-└── units/
-    └── northeast/
-        ├── index.yml
-        └── lessons/
-            └── maine/
-                ├── index.yml
-                ├── worksheet.yml
-                └── flashcards.yml
+├── _index.yml
+├── maine.yml                         # compact lesson + inline worksheet bank
+└── northeast/                        # a real grouping, only when useful
+    ├── _index.yml
+    ├── vermont.yml
+    └── new-hampshire/
+        ├── _index.yml                # rich lesson manifest
+        ├── worksheet.yml
+        └── video.yml
 ```
 
-The root index carries course policy and bibliography. A unit index owns the
-unit's ordering policy. A lesson index is projected through the existing unit
-catalog port for agenda and progress compatibility. Every other YAML file in a
-lesson folder is a typed gradable artifact; its filename is the final bank-id
-segment (`civilization/atlas/maine/worksheet`, `…/flashcards`). Artifact discovery is
-open-ended rather than limited to a fixed worksheet/quiz list. Existing v1
-`work.yml`, `units/`, and `quizzes/` works continue to load unchanged.
+A compact lesson remains a `school.question-bank/v2` document so worksheet
+tools consume it unchanged. Its `lesson:` mapping contains the former
+`school.unit/v1` metadata (identity, objectives, provenance, review state, and
+bank reference). The filename is the author-facing lesson id and must agree
+with `lesson.unitId`.
+
+For a rich lesson, `_index.yml` is the `school.unit/v1` manifest and each other
+YAML file is a typed artifact. The artifact's stable bank id, not its physical
+path, is its address; moving between compact and rich forms therefore does not
+invalidate progress. Existing legacy `units/<unit>/lessons/<lesson>/` packages
+continue to load during migration, but new authoring must use this compact
+form. Existing v1 `work.yml`, `units/`, and `quizzes/` works also continue to
+load unchanged.
 
 **`scripture/bom/`** is the exception — a generated package with its own internal
 shape (`spine.yml`, `plans.yml`, `renditions.yml`, `coverage.yml`, `maps/`,
@@ -161,7 +168,7 @@ know which one your content belongs to (admin advocacy #17):
 | `content/school/{subject}/{course}/…` (courses, units, lessons, documents, quizzes) | lifecycle curriculum | `node cli/school.mjs catalog validate` — parses, cross-resolves references, checks the bank↔unit seam (duplicate `unit:` claims and dead curriculum backlinks are refusals), and prints history drift |
 | `content/school/learning-catalog/…` (`school.catalog/v1` Learning Catalog) | Learning Catalog | `npm run school:certify` — catalog + surface certification |
 | `content/school/learning-catalog/documents/…` | print document SOURCES (`school.document-source/v1`) **and** learning documents (`school.learning-document/v1`) — one shelf, told apart by schema | `node cli/school.mjs docs validate` (print sources; skips learning documents) / `npm run school:certify` (learning documents) |
-| `household/apps/school/print-documents/…` | print ARTIFACTS — published revisions, derived banks, allocations | `node cli/school.mjs docs audit` |
+| `household/school/artifacts/print/…` | print ARTIFACTS — published revisions, derived banks, allocations | `node cli/school.mjs docs audit` |
 
 `school:certify` does NOT cover the lifecycle curriculum; run the
 school-catalog CLI before mounting new works.
@@ -171,5 +178,5 @@ school-catalog CLI before mounting new works.
 - Banks bind to a unit by carrying `unit:` (a unitId, or `plex:<ratingKey>` for
   media); the bank index resolves from there rather than from any list.
 - Per-student progress: `data/users/{id}/apps/school/`
-- Household-scoped school state: `data/household/apps/school/`
+- Household-scoped school data: `data/household/school/` (see the taxonomy in the School reference).
 - Policy and enrolment: `data/household/config/school.yml`, `config/works/`

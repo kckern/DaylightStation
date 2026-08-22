@@ -182,14 +182,29 @@ export function worksheetInstanceRoster(instance) {
  * which is what this line already printed for the common two-page case.
  */
 export function formatPageSpans(pages) {
-  const sorted = [...new Set(pages.map(Number).filter(Number.isFinite))].sort((a, b) => a - b);
+  const numeric = [];
+  const literal = [];
+  (pages ?? []).forEach((value) => {
+    if (Number.isFinite(Number(value))) {
+      numeric.push(Number(value));
+      return;
+    }
+    const text = String(value ?? '').trim();
+    const range = /^(\d+)\s*[-–]\s*(\d+)$/u.exec(text);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      for (let page = Math.min(start, end); page <= Math.max(start, end); page += 1) numeric.push(page);
+    } else if (text) literal.push(text);
+  });
+  const sorted = [...new Set(numeric)].sort((a, b) => a - b);
   const groups = [];
   for (const page of sorted) {
     const last = groups[groups.length - 1];
     if (last && page === last[last.length - 1] + 1) last.push(page);
     else groups.push([page]);
   }
-  return groups.map((g) => (g.length === 1 ? `${g[0]}` : `${g[0]}\u2013${g[g.length - 1]}`)).join(', ');
+  return [...groups.map((g) => (g.length === 1 ? `${g[0]}` : `${g[0]}\u2013${g[g.length - 1]}`)), ...[...new Set(literal)]].join(', ');
 }
 
 /** Convert an instance into a self-contained publishable OMR document source. */
@@ -231,7 +246,7 @@ export function worksheetInstanceDocument(instance, {
     header: {
       name: true, date: true, scoreBox: false, metaFirst: true, rule: false, frame: 'double',
       ...(description ? { subtitle: description } : {}),
-      ...(sourceTitle ? {
+      ...(sourceTitle && printedPages.length ? {
         reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${formatPageSpans(printedPages)}.`,
       } : {}),
     },
@@ -251,5 +266,99 @@ export function worksheetInstanceDocument(instance, {
           : { answer: question.options.find((option) => option.correct)?.label }),
       })),
     ],
+  };
+}
+
+/**
+ * Compose several immutable lesson instances into one publishable worksheet.
+ *
+ * The instances remain the grading authority.  This only creates a print-time
+ * document, with every derived-bank item namespaced by its section so two
+ * courses may safely reuse an authored item id.  `sections` is returned as
+ * durable row-attribution input for the allocation layer.
+ */
+export function composedWorksheetDocument({
+  id, seed = 0, title = 'Worksheet', subtitle = null, sections = [],
+} = {}) {
+  if (typeof id !== 'string' || !id.trim()) throw new Error('composed worksheet requires an id');
+  if (!Array.isArray(sections) || sections.length === 0) throw new Error('composed worksheet requires one or more sections');
+
+  let number = 1;
+  const blocks = [];
+  const attribution = [];
+  sections.forEach((section, index) => {
+    const instance = section?.instance;
+    if (!instance || !Array.isArray(instance.questions) || instance.questions.length === 0) {
+      throw new Error(`composed worksheet section ${index + 1} requires an issued worksheet instance`);
+    }
+    const sectionId = section.id ?? `section-${index + 1}`;
+    const sectionItems = [];
+    const printedPages = formatPageSpans(section.printedPages ?? []);
+    // This is a section-level study card, not part of question 1. The
+    // renderer honours `keepWithNext` so it moves with the first question
+    // rather than becoming a widow at a page boundary.
+    blocks.push({
+      type: 'inset', layout: 'lesson_card', keepWithNext: true,
+      subjectIcon: section.subjectId ?? section.subject ?? 'school',
+      breadcrumb: section.breadcrumb ?? [section.subject, section.discipline, section.topic]
+        .filter(Boolean).join(' › '),
+      lessonTitle: section.title ?? instance.lessonId,
+      // A card may omit this line when the lesson title/course already tell
+      // the learner what to open. Never substitute a vague fake instruction.
+      ...(section.reading ? { reading: section.reading } : (printedPages
+        ? { reading: `Read: pages ${printedPages}` } : {})),
+      citation: section.sourceTitle ?? null,
+      questionCount: instance.questions.length,
+      passPercent: section.passPercent ?? null,
+      // The source schema requires nested blocks for an inset. The specialised
+      // lesson-card renderer consumes the semantic fields above instead.
+      blocks: [{ type: 'rich_text', md: section.title ?? instance.lessonId }],
+    });
+    instance.questions.forEach((question) => {
+      const itemId = `${sectionId}--${question.itemId}`;
+      sectionItems.push(itemId);
+      blocks.push({
+        type: 'question', itemId, number: number++, omr: true, fillAfter: true,
+        blocks: [
+          { type: 'rich_text', md: question.prompt },
+          { type: 'omr_response', itemId, choices: question.options.length, layout: 'compact' },
+        ],
+        choices: question.options.map((option) => option.label),
+        ...(question.type === 'multi_select'
+          ? { answers: question.options.filter((option) => option.correct).map((option) => option.label) }
+          : { answer: question.options.find((option) => option.correct)?.label }),
+      });
+    });
+    attribution.push({
+      id: sectionId,
+      worksheetInstanceId: instance.id,
+      sessionId: instance.sessionId,
+      lessonId: instance.lessonId,
+      ...(section.subjectId ?? section.subject ? { subjectId: section.subjectId ?? section.subject } : {}),
+      ...(section.courseId ?? section.course ? { courseId: section.courseId ?? section.course } : {}),
+      itemIds: sectionItems,
+    });
+    // Headings provide the section boundary. Do not emit a standalone
+    // `divider` here: the worksheet renderer's compact theme intentionally
+    // accepts the core question-bank block set, while divider support belongs
+    // to the richer document-authoring surface. Keeping composition on the
+    // core set lets the CLI preview and production issuer share this source.
+  });
+
+  const numericSeed = [...String(seed)]
+    .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
+  return {
+    source: {
+      schema: 'school.document-source/v1', id, seed: numericSeed, variant: 0,
+      target: ['letter'], archetype: 'worksheet',
+      fit: { policy: 'prefer-one-page' },
+      title,
+      header: {
+        name: true, date: true, title: false, scoreBox: false, metaFirst: true, rule: false, frame: 'none',
+        ...(subtitle ? { subtitle } : {}),
+      },
+      blocks,
+    },
+    sections: attribution,
   };
 }

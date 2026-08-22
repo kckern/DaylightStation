@@ -57,6 +57,8 @@ const SCOPES = ['item', 'module', 'work'];
 const WHENS = ['study', 'checkpoint', 'remediation'];
 const SCANS = ['omr', 'none'];
 const ORDERING = ['fixed', 'shuffle_once'];
+const COURSE_V2_SCHEMA = 'school.course/v2';
+const COURSE_V2_MEDIA = [...MEDIA, 'ebook'];
 
 const isStr = (v) => typeof v === 'string' && v.trim().length > 0;
 const isObj = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -76,6 +78,16 @@ function oneOf(value, allowed, field, errors) {
 export function validateWork(raw, ctx = {}) {
   if (!isObj(raw)) return { errors: ['work must be a mapping'] };
   const errors = [];
+  // Course v2 packages deliberately keep their printable OMR definition on
+  // each compact lesson rather than duplicating a fictional document id in
+  // the course index.  Their sources also record real-world book metadata as
+  // available (or several source books), rather than requiring the legacy
+  // work.yml's title/publisher/isbn triplet.  Validate the common curriculum
+  // contract below, while applying those two schema-specific rules here.
+  const courseV2 = raw.schema === COURSE_V2_SCHEMA;
+  if (raw.schema !== undefined && !courseV2) {
+    errors.push(`schema must be ${COURSE_V2_SCHEMA} when present, got: ${raw.schema}`);
+  }
 
   if (!isStr(raw.work) || !SLUG.test(raw.work)) errors.push(`work must match ${SLUG.source}`);
   else if (ctx.work && raw.work !== ctx.work) errors.push(`work is "${raw.work}" but the directory is "${ctx.work}"`);
@@ -89,7 +101,7 @@ export function validateWork(raw, ctx = {}) {
   }
 
   oneOf(raw.category, CATEGORIES, 'category', errors);
-  oneOf(raw.medium, MEDIA, 'medium', errors);
+  oneOf(raw.medium, courseV2 ? COURSE_V2_MEDIA : MEDIA, 'medium', errors);
 
   // ── material ──────────────────────────────────────────────────────────────
   // Absent means the work has no external media at all (Khan banks, paper-only
@@ -102,7 +114,7 @@ export function validateWork(raw, ctx = {}) {
       if (isPresent(raw.material.root) && !isStr(raw.material.root)) errors.push('material.root must be a string');
       material = { adapter: raw.material.adapter, root: raw.material.root };
     }
-  } else if (raw.medium !== 'none' && raw.medium !== 'paper' && raw.medium !== 'app') {
+  } else if (!courseV2 && raw.medium !== 'none' && raw.medium !== 'paper' && raw.medium !== 'app') {
     errors.push(`medium is "${raw.medium}" but no material block says where it lives`);
   }
 
@@ -164,7 +176,7 @@ export function validateWork(raw, ctx = {}) {
     }
   }
   // An OMR gate has to be scanned from somewhere.
-  if (raw.grading?.gate === 'omr' && !(printables || []).some((p) => p?.scan === 'omr')) {
+  if (!courseV2 && raw.grading?.gate === 'omr' && !(printables || []).some((p) => p?.scan === 'omr')) {
     errors.push('grading.gate is omr but no printable declares scan: omr');
   }
 
@@ -225,9 +237,16 @@ export function validateWork(raw, ctx = {}) {
   let source;
   if (isPresent(raw.source)) {
     if (!isObj(raw.source)) errors.push('source must be an object');
-    else if (!isStr(raw.source.title) || !isStr(raw.source.publisher) || !isStr(raw.source.isbn)) {
+    else if (!isStr(raw.source.title) || (!courseV2 && (!isStr(raw.source.publisher) || !isStr(raw.source.isbn)))) {
       errors.push('source requires title, publisher, and isbn');
     } else source = raw.source;
+  }
+  let sources;
+  if (isPresent(raw.sources)) {
+    if (!courseV2) errors.push('sources is only supported by school.course/v2');
+    else if (!Array.isArray(raw.sources) || raw.sources.length === 0 || !raw.sources.every((entry) => isObj(entry) && isStr(entry.title))) {
+      errors.push('sources must be a non-empty array of source objects with titles');
+    } else sources = raw.sources;
   }
 
   if (errors.length) return { errors };
@@ -248,6 +267,7 @@ export function validateWork(raw, ctx = {}) {
       progression,
       profiles,
       source,
+      sources,
     },
   };
 }

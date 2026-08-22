@@ -1,12 +1,12 @@
 /**
  * YamlPassOverrideStore — mid-period pass-criteria overrides (plan W3-2):
- * `apps/school/pass-overrides.yml` `{overrides: {unitId: percent}, history}`.
+ * `school/plans/pass-overrides.yml` `{overrides: {unitId: percent}, history}`.
  * The one consumer is `CloseSessionOutcome` (effective passing percent =
  * override ?? the unit's authored `passing.percent`); authored curriculum
  * stays untouched — an override is data, reversible, and audited.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -29,7 +29,7 @@ export class YamlPassOverrideStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'pass-overrides.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/plans/pass-overrides.yml'); }
 
   #readState() {
     let text;

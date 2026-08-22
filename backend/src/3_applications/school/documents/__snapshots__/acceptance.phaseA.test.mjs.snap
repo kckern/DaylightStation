@@ -32,21 +32,21 @@ Score ____ / 10
 
 exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.8 type > both type-scale presets AND both densities produce distinct, deterministic, snapshot-pinned output 1`] = `
 {
-  "standard-compact": "bce730487d175fdda5d79f5a934b7ddd79e5262277dec5769e69f85a56a58540",
-  "standard-normal": "efc857f44962f3bb88dcf27a1da6f534ee884a17fb1777dd1501d023a1aa8ad1",
-  "young-compact": "243a06a269a5e2f07181dae9214b7037f1f8afc1a3cfb2e1fbcd23f41d60b60d",
-  "young-normal": "02ec23111c094cd096299e980c35b5a8feb1d85f4bb2e7c0d241b94104442445",
+  "standard-compact": "fcf4afaf6eacd6e42f687c508a493d34333474ac53e3b1c7f8c2fcc23dfc0d3f",
+  "standard-normal": "c8ccd1877d933f5057f36786eebdd7da28c28cfe3522854fb0b42d441971e957",
+  "young-compact": "198aa20bd9056cdb9bfde008a090383946f70fb627ecae3c7cd2fed87bac7514",
+  "young-normal": "0da1d7704f15ac14e52e95ff9728234ca533e86e31c9645a833e0365d1f9e122",
 }
 `;
 
 exports[`Phase A acceptance sweep (spec §12, items tagged [A]) > §12.10-A archetype dial — envelope-only difference (Phase A scope; visible score box is Phase B) > the SAME body renders to different bytes for quiz vs worksheet, purely from the archetype field (duplex threading) 1`] = `
 {
   "quiz": {
-    "hash": "7d7765a3b4a779f53b7e9606b083b4b3caaf24173e84bf7801ee64be94303090",
+    "hash": "0ddb88e4d24cf152a70614fe906a56e86ad0777a80c611dfcd939f60b834d037",
     "pageCount": 2,
   },
   "worksheet": {
-    "hash": "8ea693781eeba1e6bfe250b9dd611081385dba56b7a7313641970f2fbbe373c4",
+    "hash": "380475fc647fa05438add1ad2f8fb150208706a440ce13401ba53696e60c16b4",
     "pageCount": 2,
   },
 }

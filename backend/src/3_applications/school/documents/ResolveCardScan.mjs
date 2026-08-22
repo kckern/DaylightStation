@@ -746,6 +746,30 @@ export class ResolveCardScan {
     // doc comment for the two shapes it recognises).
     const rowItemIds = new Set(plan.rows.map((planned) => planned.itemId));
     const unscannedItems = unscannedItemsFor(prepared, rowItemIds);
+    // A composed print owns one physical card allocation, but each section
+    // remains an independently gradeable lesson.  Preserve the normal
+    // record-level result for card lifecycle decisions and attach immutable
+    // section slices for the evidence/session bridge. Older allocations lack
+    // `sections` and therefore retain their exact old result shape.
+    const sections = Array.isArray(record.sections)
+      ? record.sections.map((section) => {
+        const results = rowResults.filter((row) => (
+          row.row >= section.rowRange.start && row.row <= section.rowRange.end
+        ));
+        const totalPoints = results.reduce((sum, row) => sum + row.points, 0);
+        const earnedPoints = results.reduce((sum, row) => sum + row.earned, 0);
+        return {
+          id: section.id,
+          rowRange: { ...section.rowRange },
+          ...(section.worksheetInstanceId ? { worksheetInstanceId: section.worksheetInstanceId } : {}),
+          ...(section.sessionId ? { sessionId: section.sessionId } : {}),
+          ...(section.lessonId ? { lessonId: section.lessonId } : {}),
+          ...(section.subjectId ? { subjectId: section.subjectId } : {}),
+          ...(section.courseId ? { courseId: section.courseId } : {}),
+          results, totalPoints, earnedPoints,
+        };
+      }).filter((section) => section.results.length > 0)
+      : [];
 
     return {
       cardId: record.cardId,
@@ -769,6 +793,7 @@ export class ResolveCardScan {
       totalPoints,
       earnedPoints,
       unscannedItems,
+      ...(sections.length ? { sections } : {}),
     };
   }
 

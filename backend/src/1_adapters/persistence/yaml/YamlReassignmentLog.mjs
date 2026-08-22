@@ -1,6 +1,6 @@
 /**
  * YamlReassignmentLog — the evidence-reassignment audit trail (Task 12,
- * debt M5): `apps/school/reassignments.yml`, APPEND-ONLY
+ * debt M5): `school/records/reassignments.yml`, APPEND-ONLY
  * `{at, fromLearnerId, toLearnerId, day, assessmentId, moved, reassignedBy}`.
  * Written best-effort by `ReassignEvidence` AFTER the move already
  * succeeded — the move itself is already provenance-stamped in the moved
@@ -10,8 +10,8 @@
  * never itself edited or erased. Corrupt-file posture per the M3 rule:
  * reads warn and degrade to empty, writes refuse, all writes atomic.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -33,7 +33,7 @@ export class YamlReassignmentLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'reassignments.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/records/reassignments.yml'); }
 
   #readState() {
     let text;

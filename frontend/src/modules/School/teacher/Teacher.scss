@@ -220,6 +220,23 @@
   }
 }
 
+.teacher-worksheet-compose {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid #e8e1d2;
+  border-radius: 8px;
+  background: #faf7ef;
+
+  h4 { margin: 0 0 4px; font-size: 13px; }
+  ul { list-style: none; padding: 0; margin: 8px 0; }
+  li + li { margin-top: 5px; }
+  label { display: flex; align-items: baseline; gap: 7px; cursor: pointer; }
+  small { color: #756d5f; }
+  button { margin-top: 2px; }
+
+  &__hint { margin: 0; color: #756d5f; font-size: 12px; line-height: 1.35; }
+}
+
 @keyframes teacher-shimmer {
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }

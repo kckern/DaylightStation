@@ -36,6 +36,7 @@ import { createMeasurementDocument, measureDocumentFragments } from '#rendering/
 import { placeFragments, contentHeightPt } from '#rendering/school/documents/layout.mjs';
 import { contentBox } from '#rendering/school/documents/furniture.mjs';
 import { texToSvg as mathJaxTexToSvg } from '#rendering/school/documents/mathSvg.mjs';
+import { createSubjectIconResolver } from '#rendering/school/documents/assetResolver.mjs';
 import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 
 /**
@@ -716,7 +717,7 @@ export class RenderPrintDocument {
     measure = { createMeasurementDocument, measureDocumentFragments },
     layout = { placeFragments, contentHeightPt },
     texToSvg = mathJaxTexToSvg,
-    resolveAsset = null,
+    resolveAsset = createSubjectIconResolver(),
     allocationStore = null,
   } = {}) {
     this.#repository = repository;
@@ -1037,7 +1038,7 @@ export class RenderPrintDocument {
     // spilled costs nothing on one it can't help.
     const spilledPreferOnePage = document.fit.policy === 'prefer-one-page' && chosen.pageCount > 1;
     const growLastPage = (chosen.growLastPage ?? false) || spilledPreferOnePage;
-    const balance = spilledPreferOnePage;
+    const balance = (chosen.balance ?? false) || spilledPreferOnePage;
 
     // Teacher key (spec §4.1, §12.1, Task 6): a RENDER MODE, orthogonal to
     // everything above — the fit loop, `document`, `chosen` density/theme,
@@ -1071,18 +1072,21 @@ export class RenderPrintDocument {
       startRow: allocationRecord.rowRange.start,
       endRow: allocationRecord.rowRange.end,
       firstUse: cardContext.freshCard === true,
-    } : null;
+    } : (context.previewCard ?? null);
 
     const result = await renderer.render(document, {
       studentName: context.learnerName ?? null,
       date: context.date ?? null,
       furniture: furnitureOpts,
-      growLastPage: chosen.growLastPage ?? false,
+      growLastPage,
       // Same fit-plan flag family as `growLastPage` (see fit.mjs): policy
       // `fill` asks for balanced page assignment so the pages it just told us
       // to bottom out don't strand a handful of stretched questions on the
       // last one.
-      balance: chosen.balance ?? false,
+      // A worksheet that spills under `prefer-one-page` has already tried the
+      // compact fit. Once it genuinely needs another page, balance whole
+      // question fragments so it cannot leave a tiny question dangling alone.
+      balance,
       // v2's `*italic*` markdown grammar (spec §12.8) — v1 never opts in.
       // Measurement (`#measureAttempt` below) opts in with the SAME flag, so
       // wrap positions measured at fit-decision time can never drift from
@@ -1180,7 +1184,7 @@ export class RenderPrintDocument {
    */
   #resolveCardContext(context) {
     const {
-      cardId, freshCard, startRow, learnerId, sessionId,
+      cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution,
     } = context;
     if (cardId === undefined && freshCard !== true) return null;
     return {
@@ -1193,6 +1197,11 @@ export class RenderPrintDocument {
       // artifact a scan resolves — can carry the link back to the session a
       // graded scan must advance. Absent for every other caller.
       sessionId: sessionId ?? null,
+      // A composed worksheet has one physical allocation but several
+      // independently completable lesson sections. The composer supplies
+      // its immutable item ownership here; allocation converts it to row
+      // ranges after planning the exact rendered document.
+      sectionAttribution: sectionAttribution ?? null,
     };
   }
 
@@ -1213,7 +1222,7 @@ export class RenderPrintDocument {
    * even for a worksheet with gaps between row-consuming questions.
    */
   async #allocateCard(document, bank, {
-    cardId, freshCard, startRow, learnerId, sessionId,
+    cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution,
   }) {
     if (!this.#allocationStore) {
       throw new ValidationError(
@@ -1244,6 +1253,29 @@ export class RenderPrintDocument {
     }
 
     const rowRange = { start: plan.rows[0].row, end: plan.rows[plan.rows.length - 1].row };
+    const rowByItemId = new Map(plan.rows.map((row) => [row.itemId, row.row]));
+    const sections = sectionAttribution == null ? null : sectionAttribution.map((section) => {
+      if (!section || typeof section.id !== 'string' || !Array.isArray(section.itemIds)) {
+        throw new ValidationError('sectionAttribution entries require id and itemIds', {
+          code: 'ALLOCATION_SECTION_ATTRIBUTION_INVALID', details: { documentId: document.id },
+        });
+      }
+      const rows = section.itemIds.map((itemId) => rowByItemId.get(itemId));
+      if (!rows.length || rows.some((row) => !Number.isInteger(row))) {
+        throw new ValidationError(`section '${section.id}' does not own rendered OMR rows`, {
+          code: 'ALLOCATION_SECTION_ATTRIBUTION_INVALID', details: { documentId: document.id, sectionId: section.id },
+        });
+      }
+      return {
+        id: section.id,
+        rowRange: { start: Math.min(...rows), end: Math.max(...rows) },
+        ...(section.worksheetInstanceId ? { worksheetInstanceId: section.worksheetInstanceId } : {}),
+        ...(section.sessionId ? { sessionId: section.sessionId } : {}),
+        ...(section.lessonId ? { lessonId: section.lessonId } : {}),
+        ...(section.subjectId ? { subjectId: section.subjectId } : {}),
+        ...(section.courseId ? { courseId: section.courseId } : {}),
+      };
+    });
     const request = {
       documentId: document.id,
       rev: document.rev,
@@ -1252,6 +1284,7 @@ export class RenderPrintDocument {
       rowRange,
       ...(learnerId != null ? { learnerId } : {}),
       ...(sessionId != null ? { sessionId } : {}),
+      ...(sections ? { sections } : {}),
       // F4 (bank-select scan integrity vs mutable external banks): the row->
       // item mapping `planRows` JUST resolved, straight off THIS document/bank
       // pair — the store persists it verbatim as `rowItems` so a later scan

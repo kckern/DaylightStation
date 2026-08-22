@@ -137,7 +137,9 @@ export { listHouseholdDirs, parseHouseholdId, toFolderName };
  * Merges from three locations, later entries winning on key collision:
  *   1. apps/ directory              (legacy: subdirs with config.yml, top-level YAMLs)
  *   2. config/<appName>.yml         (retiring: config-only apps)
- *   3. <appName>/config.yml         (colocated, task-13 — preferred)
+ *   3. <appName>/config.yml         (colocated — preferred)
+ *      School is the deliberate exception: <school>/school.yml. A named
+ *      policy file is clearer than a generic config.yml beside records.
  * Non-app configs (household, integrations, devices) live outside both the
  * config/ scan and the colocated scan — household.yml and integrations.yml
  * sit at the household root, devices.yml under hardware/ — so they are never
@@ -175,7 +177,8 @@ function loadHouseholdApps(dataDir, folderName) {
     // review, Minor M5: this used to hardcode 'config.yml' only, so a
     // colocated config.yaml would resolve on reload but silently not exist
     // at boot.
-    const resolvedPath = resolveYamlPath(path.join(dataDir, folderName, subdir, 'config'));
+    const basename = subdir === 'school' ? 'school' : 'config';
+    const resolvedPath = resolveYamlPath(path.join(dataDir, folderName, subdir, basename));
     const config = resolvedPath ? readYaml(resolvedPath) : null;
     if (config) {
       appsFromColocated[subdir] = config;

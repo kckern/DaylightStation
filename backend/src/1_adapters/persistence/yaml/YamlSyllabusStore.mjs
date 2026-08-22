@@ -1,7 +1,7 @@
 /**
  * YAML persistence for syllabi (docs/reference/school/enrollment.md §4).
  *
- *   <dataDir>/household/apps/school/syllabi/{syllabusId}.yml
+ *   <dataDir>/household/school/plans/syllabi/{syllabusId}.yml
  *
  * Same posture as the sibling `YamlAssignmentStore`: parent-editable by hand,
  * atomic replace, one serialized write chain, and a refusal to clobber a file
@@ -38,7 +38,7 @@ export class YamlSyllabusStore {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('school/syllabi'); }
+  #root() { return this.#configService.getHouseholdPath('school/plans/syllabi'); }
 
   #fileFor(syllabusId) { return path.join(this.#root(), `${syllabusId}.yml`); }
 

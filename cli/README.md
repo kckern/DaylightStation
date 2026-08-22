@@ -289,12 +289,17 @@ pedagogically sound; those require a source-text audit and human review.
 #### Decoy audit
 
 `node cli/school.mjs decoys audit <subject/course>` is the read-only release
-gate for answer/decoy length cues. It treats one question (not each of its
-decoys) as the paired observation, uses deterministic two-sided sign
-permutations, and reports every correct option that is at least 25% longer than
-its longest decoy. A course passes only when both word and character tests have
-`p >= 0.05`, neither unique-correct-longest rate exceeds 40%, and all banks
-parse. Run with `--trials 200000` before approval; `all` defaults to 20,000 for
+gate for answer/decoy *format* cues. It treats one question (not each of its
+decoys) as the paired observation and reports every answer that is at least 25%
+longer or shorter than every decoy. Character counts use learner-visible text:
+TeX authoring syntax such as `\\times` and fraction braces is normalized before
+measurement. A course passes when the absolute mean paired difference is at
+most one word and five visible characters, neither unique-correct-length-extreme
+rate exceeds 40%, and all banks parse. Deterministic two-sided sign-permutation
+values remain diagnostic: with large banks, trivial and educationally harmless
+differences otherwise become statistically significant. This audit cannot judge
+substance or plausibility; source-text review and independent author review do
+that. Run with `--trials 200000` before approval; `all` defaults to 20,000 for
 faster discovery. `decoys verify <subject/course>` also checks that the staged
 `decoy-audit.yml` fingerprint matches the live choice pools.
 

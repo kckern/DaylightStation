@@ -1,12 +1,12 @@
 /**
  * YamlEnrichmentLog — out-of-band learning entries (plan W3-4, spec B6):
- * `apps/school/enrichment.yml` `{entries: [...]}`, APPEND-ONLY — an
+ * `school/records/enrichment.yml` `{entries: [...]}`, APPEND-ONLY — an
  * attributed evidence kind (recordedBy, learnerIds, date range, subjects),
  * a cousin of attestation: parent-recorded, never merged into graded
  * evidence, never inflating mastery.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -29,7 +29,7 @@ export class YamlEnrichmentLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'enrichment.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/records/enrichment.yml'); }
 
   #readState() {
     let text;

@@ -322,6 +322,11 @@ function tokenizeRuns(runs) {
       words.push({ pieces: [{ kind: 'blank', n: run.n, widthPt: run.widthPt }] });
       continue;
     }
+    if (run.kind === 'math') {
+      current = null;
+      words.push({ pieces: [{ kind: 'math', ...run }] });
+      continue;
+    }
     for (const part of run.text.split(/(\s+)/)) {
       if (!part) continue;
       if (/^\s+$/.test(part)) { current = null; continue; }
@@ -377,7 +382,7 @@ function wrapRuns(doc, theme, runs, { widthPt, sizePt, leadingPt }) {
     // `theme.blank` — it is never measured via `stringWidth` (it has no
     // `.text`/`.font`, only `n`/`widthPt`), which is what makes it a
     // fixed-width atom rather than one sized to its own content.
-    const pieces = word.pieces.map((piece) => (piece.kind === 'blank'
+    const pieces = word.pieces.map((piece) => (piece.kind === 'blank' || piece.kind === 'math'
       ? { ...piece, sizePt }
       : { ...piece, sizePt, widthPt: stringWidth(doc, theme, piece.font, sizePt, piece.text) }));
     const wordWidth = pieces.reduce((total, piece) => total + piece.widthPt, 0);
@@ -507,10 +512,24 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     ? ctx.resolveChoices(block.itemId, { choices: block.choices, path })
     : null;
   const { labels, multiSelect, maxSelect } = normalizeChoiceResolution(resolved);
+  const choiceRuns = (label) => segmentParagraph(label, { italic: false }).flatMap((segment) => {
+    if (segment.kind === 'text') return segment.runs;
+    const svg = ctx.texToSvg(segment.tex, {
+      display: false, fontSizePt: theme.omr.choiceSizePt, ink: theme.ink.text,
+    });
+    return [{ kind: 'math', svgString: svg.svgString, widthPt: svg.widthPt, heightPt: svg.heightPt }];
+  });
+  const mathOnly = (label) => /^\$([^$]+)\$$/u.exec(label.trim());
+  const choiceWidth = (label) => {
+    const runs = choiceRuns(label);
+    return runs.reduce((sum, run) => sum + (run.kind === 'math'
+      ? run.widthPt
+      : stringWidth(doc, theme, run.font, theme.omr.choiceSizePt, run.text)), 0);
+  };
   let columnCount = block.choices;
   if (compact) {
     const maxLabelPt = labels
-      ? Math.max(...labels.map((label) => stringWidth(doc, theme, 'regular', theme.omr.choiceSizePt, String(label))))
+      ? Math.max(...labels.map((label) => choiceWidth(String(label))))
       : availablePt;
     columnCount = Math.min(5, block.choices);
     while (columnCount > 2 && maxLabelPt > availablePt / columnCount - theme.omr.compactLabelWidthPt - 2) columnCount -= 1;
@@ -524,7 +543,7 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
       choice: theme.omr.letters[index],
       label,
       lines: label
-        ? wrapRuns(doc, theme, [{ text: label, font: 'regular' }], {
+        ? wrapRuns(doc, theme, choiceRuns(label), {
           widthPt: compact ? cellWidthPt - theme.omr.compactLabelWidthPt - 2 : cellWidthPt,
           sizePt: theme.omr.choiceSizePt, leadingPt: theme.omr.choiceLeadingPt,
         })
@@ -532,9 +551,6 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     });
   }
 
-  const textLines = labels
-    ? Math.max(...cells.map((cell) => cell.lines.length))
-    : theme.omr.probeChoiceLines;
   const compactRows = Math.ceil(block.choices / columnCount);
   // `compactRowPadPt` (theme-driven, not a bare literal): a compact omr row's
   // choices sit on one baseline per row with a fixed pad below the tallest
@@ -545,8 +561,24 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
   // not from this returned node's height) and MUST read the identical token —
   // a measure/draw disagreement here is exactly the "fit decision drawn
   // differently" class of bug this codebase's own doctrine forbids.
+  // Compact choices are a grid, not a fixed-height table. Each visual row
+  // gets only the height its own wrapped labels need; using the tallest label
+  // in the whole question for every row left a conspicuous empty band below a
+  // later all-one-line row before the final option(s).
+  const compactRowHeights = compact
+    ? Array.from({ length: compactRows }, (_, row) => {
+      const rowCells = cells.slice(row * columnCount, (row + 1) * columnCount);
+      const lineCount = labels
+        ? Math.max(...rowCells.map((cell) => cell.lines.length))
+        : theme.omr.probeChoiceLines;
+      return lineCount * theme.omr.choiceLeadingPt + theme.omr.compactRowPadPt;
+    })
+    : null;
+  const textLines = labels
+    ? Math.max(...cells.map((cell) => cell.lines.length))
+    : theme.omr.probeChoiceLines;
   const compactHeight = compact
-    ? compactRows * (textLines * theme.omr.choiceLeadingPt + theme.omr.compactRowPadPt)
+    ? compactRowHeights.reduce((sum, height) => sum + height, 0)
     : theme.omr.rowHeightPt + theme.omr.choiceGapPt + textLines * theme.omr.choiceLeadingPt;
 
   // multi_select's instruction caption (spec §5.3's row-mapped disposition
@@ -571,7 +603,16 @@ function measureOmrNode(ctx, block, { widthPt, path }) {
     multiSelect,
     layout: compact ? 'compact' : 'row',
     columnCount,
+    compactRowHeights,
     instruction,
+    // The instruction belongs to this answer row, not to the preceding
+    // prompt. Tuck it slightly into the prompt's trailing leading so
+    // "Mark all that apply" reads as a compact qualifier, rather than a
+    // separate paragraph with a conspicuous empty band above it.
+    // Treat the qualifier as the prompt's second line.  A full inter-node
+    // gap makes a short "Mark all that apply" caption look detached from its
+    // question and wastes vertical space on dense worksheets.
+    ...(instruction ? { gapBeforePt: -5 } : {}),
     widthPt,
     heightPt: (instruction ? instruction.heightPt + theme.omr.instructionGapPt : 0)
       + compactHeight,
@@ -929,23 +970,95 @@ function measureBoxNode(ctx, block, { widthPt, path }) {
   };
 }
 
+/** A semantic lesson card: icon rail + breadcrumb + assignment + mastery band. */
+function measureLessonCardNode(ctx, block, { widthPt, path }) {
+  const { theme } = ctx;
+  // A card's icon is structural, not a small decorative glyph. It expands to
+  // the card's usable height, but may never consume more than one fifth of
+  // the card width. Measure a few times because a narrower text rail may make
+  // a line wrap and thereby increase the card (and icon) height.
+  const pad = theme.box.paddingPt + 4;
+  const iconGapPt = 12;
+  const maxIconPt = widthPt * 0.2;
+  const resolved = ctx.resolveAsset?.(`subject-icon:${block.subjectIcon}`);
+  if (!resolved?.svg) throw new UnresolvedAssetError(`subject-icon:${block.subjectIcon}`, path);
+  const gap = 3;
+  const bandGap = 7;
+  const successText = `${block.questionCount ?? 0} questions${Number.isFinite(block.passPercent) ? `     MASTERY ${block.passPercent}%` : ''}`;
+  let iconSizePt = 0;
+  let breadcrumb;
+  let title;
+  let reading;
+  let citation;
+  let success;
+  let railPt;
+  let innerHeight = 0;
+  // Text reflows as the icon rail widens; a short breadcrumb can converge in
+  // two passes while a wrapped title/citation needs several.  Stop only once
+  // the icon has truly reached the card's usable height (or its 20% clamp),
+  // rather than leaving a visibly undersized SVG from an early measurement.
+  for (let pass = 0; pass < 8; pass += 1) {
+    railPt = iconSizePt > 0 ? iconSizePt + iconGapPt : 0;
+    const textWidthPt = widthPt - pad * 2 - railPt;
+    const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
+      widthPt: textWidthPt, styleKey,
+    });
+    breadcrumb = make(String(block.breadcrumb ?? '').toUpperCase(), 'caption');
+    title = make(String(block.lessonTitle ?? ''), 'heading');
+    reading = block.reading ? make(String(block.reading), 'body') : null;
+    citation = block.citation ? make(String(block.citation), 'caption') : null;
+    success = make(successText, 'label');
+    const content = [breadcrumb, title, reading, citation].filter(Boolean);
+    const measuredTopHeight = content.reduce((sum, entry) => sum + entry.heightPt, 0)
+      + Math.max(0, content.length - 1) * gap;
+    innerHeight = measuredTopHeight + bandGap + success.heightPt;
+    const nextIconSizePt = Math.min(maxIconPt, innerHeight);
+    if (Math.abs(nextIconSizePt - iconSizePt) < 0.01) break;
+    iconSizePt = nextIconSizePt;
+  }
+  // Last pass settled the text width at the final icon size. Icon height
+  // fills the card interior unless the 20%-of-width clamp takes over.
+  railPt = iconSizePt > 0 ? iconSizePt + iconGapPt : 0;
+  const textWidthPt = widthPt - pad * 2 - railPt;
+  const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
+    widthPt: textWidthPt, styleKey,
+  });
+  breadcrumb = make(String(block.breadcrumb ?? '').toUpperCase(), 'caption');
+  title = make(String(block.lessonTitle ?? ''), 'heading');
+  reading = block.reading ? make(String(block.reading), 'body') : null;
+  citation = block.citation ? make(String(block.citation), 'caption') : null;
+  success = make(successText, 'label');
+  const finalContent = [breadcrumb, title, reading, citation].filter(Boolean);
+  const finalTopHeight = finalContent.reduce((sum, entry) => sum + entry.heightPt, 0)
+    + Math.max(0, finalContent.length - 1) * gap;
+  innerHeight = Math.max(iconSizePt, finalTopHeight + bandGap + success.heightPt);
+  return {
+    kind: 'lessonCard', widthPt, heightPt: innerHeight + pad * 2, paddingPt: pad,
+    radiusPt: theme.box.radiusPt, borderWidthPt: theme.box.borderWidthPt,
+    icon: { svg: resolved.svg, widthPt: iconSizePt, heightPt: iconSizePt }, railPt,
+    breadcrumb, title, reading, citation, success, gap, bandGap,
+  };
+}
+
 /** One block → the nodes it contributes to its enclosing fragment. */
 function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
   const { theme } = ctx;
   switch (block.type) {
     case 'rich_text':
-      return splitParagraphs(block.md).flatMap((paragraph) =>
-        segmentParagraph(paragraph.text, { italic: ctx.italic }).map((segment) => (segment.kind === 'math'
-          ? measureMathNode(ctx, segment.tex, { display: true, widthPt, path })
-          : {
-            kind: 'text',
-            // Body prose inside a question is the `question` style; a heading
-            // stays a heading wherever it sits.
-            ...measureTextLines(ctx.doc, theme, segment.runs, {
-              widthPt, styleKey: paragraph.style === 'body' ? bodyStyleKey : paragraph.style,
-            }),
-            widthPt,
-          })));
+      return splitParagraphs(block.md).map((paragraph) => {
+        const styleKey = paragraph.style === 'body' ? bodyStyleKey : paragraph.style;
+        const style = theme.styles[styleKey];
+        const runs = segmentParagraph(paragraph.text, { italic: ctx.italic }).flatMap((segment) => {
+          if (segment.kind === 'text') return segment.runs;
+          const svg = ctx.texToSvg(segment.tex, { display: false, fontSizePt: style.sizePt, ink: theme.ink.text });
+          return [{ kind: 'math', svgString: svg.svgString, widthPt: svg.widthPt, heightPt: svg.heightPt }];
+        });
+        return {
+          kind: 'text',
+          ...measureTextLines(ctx.doc, theme, runs, { widthPt, styleKey }),
+          widthPt,
+        };
+      });
 
     case 'math':
       return [measureMathNode(ctx, block.tex, { display: block.display !== false, widthPt, path })];
@@ -984,6 +1097,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
       return buildFigureNodes(ctx, block, { widthPt, path });
 
     case 'inset':
+      if (block.layout === 'lesson_card') return [measureLessonCardNode(ctx, block, { widthPt, path })];
       return [measureBoxNode(ctx, block, { widthPt, path })];
 
     case 'list':
@@ -1108,7 +1222,7 @@ function measureNodes(ctx, block, { widthPt, path, bodyStyleKey = 'body' }) {
 function stackNodes(nodes, gapPt) {
   let cursor = 0;
   nodes.forEach((node, index) => {
-    if (index > 0) cursor += gapPt;
+    if (index > 0) cursor += node.gapBeforePt ?? gapPt;
     node.offsetYPt = cursor;
     cursor += node.heightPt;
   });
@@ -1336,6 +1450,14 @@ export function measureBlocks(blocks, {
     if ((block.type === 'short_answer' || block.type === 'essay') && fragments.length === 2) {
       fragments[0] = { ...fragments[0], stickToNextId: fragments[1].id };
     }
+    // A section-level study card can declare the same lightweight
+    // keep-with-next relationship as the short-answer prompt.  It remains a
+    // normal full-width block (rather than becoming question content), but
+    // placement moves it to the next page whenever its following question
+    // would not fit underneath it.
+    if (block.keepWithNext === true && fragments.length === 1 && index < blocks.length - 1) {
+      fragments[0] = { ...fragments[0], stickToNextId: `${path}[${index + 1}]` };
+    }
     return fragments;
   });
 }
@@ -1366,6 +1488,7 @@ function headerFragment(document, {
   const { header } = theme;
   const showName = headerConfig.name !== false;
   const showDate = headerConfig.date !== false;
+  const showTitle = headerConfig.title !== false;
   const showMetaLine = showName || showDate;
   const instructions = headerConfig.instructions || null;
   const subtitle = headerConfig.subtitle || null;
@@ -1398,7 +1521,7 @@ function headerFragment(document, {
   const metaRowHeightPt = showMetaLine || embeddedCard
     ? Math.max(showMetaLine ? header.metaLeadingPt : 0, embeddedCard?.heightPt ?? 0)
     : 0;
-  const heightPt = header.titleLeadingPt
+  const heightPt = (showTitle ? header.titleLeadingPt : 0)
     + (instructions ? header.metaLeadingPt : 0)
     + (subtitle ? theme.styles.body.leadingPt : 0)
     + (reading ? theme.styles.body.leadingPt : 0)
@@ -1416,6 +1539,7 @@ function headerFragment(document, {
   const node = {
     kind: 'header',
     title: document.title || document.id,
+    showTitle,
     studentName: studentName || null,
     // Prefilled learner date (RenderPrintDocument's `context.date`, spec §7);
     // omitted/null prints the blank ruled line, exactly as before this field

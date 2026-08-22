@@ -1,10 +1,10 @@
 /**
  * YAML persistence for OMR allocation records (spec §5.4), mirroring
  * `YamlPrintDocumentRepository`'s directory-root convention (same `directory`
- * as sources/published/derived-banks) and `YamlRemediationSessionRepository`'s
+ * as documents/cards/forms) and `YamlRemediationSessionRepository`'s
  * write-chain + injected-`io` conventions.
  *
- *   <directory>/allocations/<cardId>.yml     (one file per PHYSICAL CARD,
+ *   <directory>/cards/<cardId>.yml           (one file per PHYSICAL CARD,
  *                                              holding that card's full
  *                                              records array, oldest first)
  *
@@ -176,6 +176,11 @@ export class YamlAllocationStore {
         ...(request.learnerId != null ? { learnerId: request.learnerId } : {}),
         ...(request.sessionId != null ? { sessionId: request.sessionId } : {}),
         ...(Array.isArray(request.rowItems) ? { rowItems: request.rowItems } : {}),
+        // Optional immutable lesson ownership for a composed worksheet. It
+        // is deliberately stored with the allocation, not inferred from a
+        // mutable course/agenda later, so an old OMR card always resolves to
+        // the lesson sessions that were actually printed on it.
+        ...(Array.isArray(request.sections) ? { sections: request.sections } : {}),
         renderedAt: this.#now(),
         status: 'live',
       };
@@ -203,7 +208,7 @@ export class YamlAllocationStore {
    */
   async findByDocument(documentId) {
     const out = [];
-    for (const cardId of this.#io.list(path.join(this.#directory, 'allocations'))) {
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
       for (const record of this.#load(cardId)) {
         if (record.documentId === documentId) out.push(structuredClone(record));
       }
@@ -232,7 +237,7 @@ export class YamlAllocationStore {
     if (reuse === 'never') return null;
 
     const candidates = [];
-    for (const cardId of this.#io.list(path.join(this.#directory, 'allocations'))) {
+    for (const cardId of this.#io.list(path.join(this.#directory, 'cards'))) {
       const records = this.#load(cardId);
       const learnerRecords = records.filter((record) => record.learnerId === learnerId);
       if (learnerRecords.length === 0) continue;
@@ -318,7 +323,7 @@ export class YamlAllocationStore {
 
   /** Every card id with any records in the store — the near-miss pool for mis-bubbled-card diagnostics. */
   async listCardIds() {
-    return [...this.#io.list(path.join(this.#directory, 'allocations'))];
+    return [...this.#io.list(path.join(this.#directory, 'cards'))];
   }
 
   /**
@@ -389,7 +394,7 @@ export class YamlAllocationStore {
     return operation;
   }
 
-  #path(cardId) { return path.join(this.#directory, 'allocations', `${cardId}.yml`); }
+  #path(cardId) { return path.join(this.#directory, 'cards', `${cardId}.yml`); }
 
   #load(cardId) {
     const raw = this.#io.load(this.#path(cardId));
@@ -401,7 +406,7 @@ export class YamlAllocationStore {
   }
 }
 
-/** Card ids present in the allocations dir; a missing dir is simply "no cards yet". */
+/** Card ids present in the cards dir; a missing dir is simply "no cards yet". */
 function listAllocationCardIds(dir) {
   try {
     return fs.readdirSync(dir).filter((name) => name.endsWith('.yml')).map((name) => name.slice(0, -4));
@@ -510,6 +515,19 @@ function assertRequest(request) {
         'YamlAllocationStore.allocate request.rowItems must be an array of '
           + '{row:integer, itemId:string, itemType:string}',
       );
+    }
+  }
+  if (request.sections !== undefined) {
+    const valid = Array.isArray(request.sections) && request.sections.every((section) => (
+      section && typeof section.id === 'string' && section.id.trim()
+      && section.rowRange && Number.isInteger(section.rowRange.start) && Number.isInteger(section.rowRange.end)
+      && section.rowRange.start <= section.rowRange.end
+      && section.rowRange.start >= request.rowRange.start && section.rowRange.end <= request.rowRange.end
+      && (section.sessionId === undefined || typeof section.sessionId === 'string')
+      && (section.lessonId === undefined || typeof section.lessonId === 'string')
+    ));
+    if (!valid) {
+      throw new Error('YamlAllocationStore.allocate request.sections must be section ids with in-range rowRange values');
     }
   }
 }

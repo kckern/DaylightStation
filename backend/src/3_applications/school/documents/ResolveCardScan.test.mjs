@@ -123,6 +123,36 @@ describe('constructor', () => {
   });
 });
 
+describe('execute — composed allocation sections', () => {
+  it('returns independent lesson slices from one shared-card scan', async () => {
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const source = sourceDoc('composed-sections', [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta'], answer: 'Alpha' }),
+      mcQuestion('q2', 2, { choices: ['Alpha', 'Beta'], answer: 'Beta' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source,
+      context: {
+        freshCard: true, learnerId: 'milo',
+        sectionAttribution: [
+          { id: 'a', itemIds: ['q1'], sessionId: 'session-a', lessonId: 'lesson-a' },
+          { id: 'b', itemIds: ['q2'], sessionId: 'session-b', lessonId: 'lesson-b' },
+        ],
+      },
+    });
+    const result = await new ResolveCardScan({ allocationStore, repository }).execute({
+      testId: allocation.cardId, answers: { 1: 'A', 2: 'B' },
+    });
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].sections).toEqual([
+      expect.objectContaining({ id: 'a', sessionId: 'session-a', rowRange: { start: 1, end: 1 } }),
+      expect.objectContaining({ id: 'b', sessionId: 'session-b', rowRange: { start: 2, end: 2 } }),
+    ]);
+    expect(result.results[0].sections.every((section) => section.results[0].status === 'correct')).toBe(true);
+  });
+});
+
 describe('execute — CARD_ID_UNREADABLE (spec §5.4)', () => {
   it('never guesses a null testId', async () => {
     const allocationStore = fakeAllocationStore();

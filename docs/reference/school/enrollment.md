@@ -30,7 +30,7 @@
 per-learner, per-course record embedded in the assignment entry:
 
 ```yaml
-# household/apps/school/assignments/felix.yml
+# household/school/plans/learners/felix.yml
 learnerId: felix
 courses:
   - math-fractions                          # bare string: no enrollment
@@ -162,7 +162,7 @@ createCourseEnrollment({ courseId, profile, units, policy })
 ```
 
 ```yaml
-# household/apps/school/syllabi/elements.periods-1-2.yml
+# household/school/plans/syllabi/elements.periods-1-2.yml
 syllabusId: elements.periods-1-2
 title: The Elements — Periods 1 & 2
 courseId: the-elements-ted-gray

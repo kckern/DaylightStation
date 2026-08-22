@@ -1,11 +1,11 @@
 /**
  * YamlMilestoneStore — expected-progress targets (plan W3-3):
- * `apps/school/milestones.yml` `{milestones, history}`. Planner-scale
+ * `school/plans/milestones.yml` `{milestones, history}`. Planner-scale
  * whole-list replace (the assignments posture); statuses are DERIVED by
  * `GetMilestoneStatuses` on every read, never stored.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -28,7 +28,7 @@ export class YamlMilestoneStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'milestones.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/plans/milestones.yml'); }
 
   #readState() {
     let text;

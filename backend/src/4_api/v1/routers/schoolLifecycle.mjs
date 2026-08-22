@@ -107,6 +107,8 @@ function reply(res, result) {
  *   renderer (`createCanvas(document, {tokens})`); the other gate for all
  *   three agenda routes above
  * @param {object} [deps.issueDocument]
+ * @param {object} [deps.issueComposedWorksheet] - persistent multi-lesson worksheet issuer
+ * @param {object} [deps.listPrintableWorksheetSessions] - teacher-safe current paper-session selector
  * @param {object} [deps.dispatchMedia]
  * @param {object} [deps.recordMediaCompletion]
  * @param {object} [deps.submitPaperWork]
@@ -139,6 +141,8 @@ export function createSchoolLifecycleRouter({
   previewAgenda = null,
   receiptPngRenderer = null,
   issueDocument = null,
+  issueComposedWorksheet = null,
+  listPrintableWorksheetSessions = null,
   dispatchMedia = null,
   recordMediaCompletion = null,
   submitPaperWork = null,
@@ -170,7 +174,7 @@ export function createSchoolLifecycleRouter({
   const router = express.Router();
 
   const wired = Object.entries({
-    resolveScanAction, buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
+    resolveScanAction, buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
   }).filter(([, v]) => v).map(([k]) => k);
   if (!wired.length) {
@@ -309,11 +313,26 @@ export function createSchoolLifecycleRouter({
     router.get('/sessions/:sessionId/events', asyncHandler(async (req, res) => {
       res.json({ events: await sessions.readEvents(req.params.sessionId) });
     }));
+
+    if (listPrintableWorksheetSessions) {
+      router.get('/learners/:learnerId/printable-sessions', asyncHandler(async (req, res) => {
+        res.json({ sessions: await listPrintableWorksheetSessions.execute({
+          learnerId: req.params.learnerId, window: req.query.window ?? 'today',
+        }) });
+      }));
+    }
   }
 
   if (issueDocument) {
     router.post('/sessions/:sessionId/issue', asyncHandler(async (req, res) => {
       reply(res, await issueDocument.execute({ sessionId: req.params.sessionId }));
+    }));
+  }
+
+  if (issueComposedWorksheet) {
+    router.post('/worksheets/compose', asyncHandler(async (req, res) => {
+      const { sessionIds = [], issuedBy = null, pin = null } = req.body || {};
+      reply(res, await issueComposedWorksheet.execute({ sessionIds, issuedBy, pin }));
     }));
   }
 

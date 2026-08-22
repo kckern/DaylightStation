@@ -58,11 +58,13 @@ import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
+import { ListPrintableWorksheetSessions } from '#apps/school/usecases/ListPrintableWorksheetSessions.mjs';
 import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
 import { YamlPassOverrideStore } from '#adapters/persistence/yaml/YamlPassOverrideStore.mjs';
 import { YamlAttestationLog } from '#adapters/persistence/yaml/YamlAttestationLog.mjs';
 import { YamlTeacherNotes } from '#adapters/persistence/yaml/YamlTeacherNotes.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
+import { IssueComposedWorksheet } from '#apps/school/usecases/IssueComposedWorksheet.mjs';
 import { DispatchMedia } from '#apps/school/usecases/DispatchMedia.mjs';
 import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompletion.mjs';
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
@@ -179,18 +181,18 @@ export async function createSchoolLifecycle({
 
   // --- hardware --------------------------------------------------------------
   const useVirtual = (cfg.virtualDevices ?? lifecycleCfg.virtualDevices) === true;
-  const captureRoot = configService.getHouseholdPath('school/captures');
+  const captureRoot = configService.getHouseholdPath('school/artifacts/captures');
 
   // --- rendering (the one dependency the application layer cannot import) ----
   let documentRenderer = null;
   let receiptRenderer = null;
   try {
     const { createDocumentPdfRenderer } = await import('#rendering/school/documents/DocumentPdfRenderer.mjs');
-    const { createFileAssetResolver } = await import('#rendering/school/documents/assetResolver.mjs');
+    const { createSchoolAssetResolver } = await import('#rendering/school/documents/assetResolver.mjs');
     // Already the `IDocumentRenderer` shape: `render(document, opts)` →
     // `{pdf, pageCount, formMap}`. No adaptation needed, and none invented.
     documentRenderer = createDocumentPdfRenderer({
-      resolveAsset: createFileAssetResolver({
+      resolveAsset: createSchoolAssetResolver({
         rootDir: cfg.assets?.dir || path.join(dataDir, 'content', 'assets'),
         logger,
       }),
@@ -559,7 +561,7 @@ export async function createSchoolLifecycle({
   // output of the same renderer instance.
   // --- print documents (Task 7, spec §9): tracked quizzes through IssueDocument ---
   // Rooted at the SAME content root `school.mjs docs` defaults to
-  // (`<dataDir>/household/apps/school/print-documents`) — a unit
+  // (`<dataDir>/household/school/artifacts/print`) — a unit
   // authored/published via the CLI is exactly what a child's scan resolves
   // against here. These are machine-written artifacts, so they live with the
   // rest of School's household state rather than on the authored content
@@ -568,7 +570,7 @@ export async function createSchoolLifecycle({
   // lazily), and only ever exercised when a unit's `document` actually names
   // a `print/<id>@<rev>` reference (`IssueDocument`'s own prefix branch), so
   // wiring them unconditionally costs a legacy-only deployment nothing.
-  const printDocumentsRoot = path.join(dataDir, 'household/apps/school/print-documents');
+  const printDocumentsRoot = configService.getHouseholdPath('school/artifacts/print');
   // Hand-authored SOURCES are a different kind of thing from the artifacts
   // above — a document CLASS, not a published object. The artifacts are machine
   // written and live with School's household state; the sources are authored and
@@ -605,6 +607,12 @@ export async function createSchoolLifecycle({
     // edits the household's whole print posture from.
     printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
     bankReader, clock, rng: draw, logger,
+  });
+  const issueComposedWorksheet = new IssueComposedWorksheet({
+    curriculum, sessions: stores.sessions, assignments: stores.assignments,
+    worksheetInstances, bankReader, printDocuments, renderPrintDocument,
+    allocationStore, printer: laserPrinter, answerSheetPolicy: cfg.answer_sheets ?? null,
+    teacherGate, clock, logger,
   });
   const dispatchMedia = playback
     ? new DispatchMedia({
@@ -827,8 +835,11 @@ export async function createSchoolLifecycle({
     logger,
   });
 
+  const listLearnerSessions = new ListLearnerSessions({ sessions: stores.sessions, timezone, clock });
+  const listPrintableWorksheetSessions = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
+
   const useCases = {
-    buildAgenda, issueDocument, dispatchMedia, recordMediaCompletion,
+    buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
@@ -842,7 +853,8 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue,
     curriculum,
     sessions: stores.sessions,
-    listLearnerSessions: new ListLearnerSessions({ sessions: stores.sessions, timezone, clock }),
+    listLearnerSessions,
+    listPrintableWorksheetSessions,
     roster: displayRoster,
     syllabi,
     logger,

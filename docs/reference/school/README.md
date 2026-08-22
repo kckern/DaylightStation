@@ -45,6 +45,30 @@
 
 ---
 
+## Household data taxonomy
+
+`data/content/school/` is the authored curriculum. Household-specific School
+data has a separate, mutually exclusive layout under `data/household/school/`:
+
+| Root | Holds | Does not hold |
+|---|---|---|
+| `school.yml` | Household policy, roster, levels, and device policy | Per-learner work or generated data |
+| `plans/` | Reusable syllabi, academic periods, milestones, pass overrides, and each learner’s active course enrollments or standalone work | Today’s agenda or a worksheet |
+| `runtime/` | Revocable tokens, pending queues, live review work, and resumable remediation | Issued work or long-term evidence |
+| `records/` | Plan revisions, work sessions, issued worksheets, assessment scans, print events, attestations, notes, enrichment, and reassignments | Active/revocable runtime state |
+| `artifacts/` | Generated documents, physical-card records, form maps, captures, and calculator files | Authored curriculum |
+
+A course enrollment is one record inside a learner plan. An agenda is derived
+from that plan; choosing an agenda item opens a work session; issuing paper
+creates a worksheet record and a print artifact. Those are distinct records,
+not successive names for an “assignment.”
+
+Time-sensitive work follows the same boundary: a syllabus may offer defaults,
+but an enrollment or standalone-work plan owns the resolved household dates and
+priority. See [Time-sensitive School planning](./timing-and-priority.md).
+
+---
+
 ## 1. What School is
 
 The Portal — a repurposed Facebook Portal panel, touch-only, running FullyKiosk
@@ -885,8 +909,8 @@ the paper a child burns without changing what any request costs them.
 | Persistence | `YamlSchoolDatastore` — `readPrintLog`/`appendPrintLog`, `readPrintPending`/`savePrintPending` |
 | API | `backend/src/4_api/v1/routers/school.mjs` → `/api/v1/school/print/*` |
 | Frontend | `frontend/src/modules/School/print/PrintCenter.jsx` (rail tile + `…/print` deep link) |
-| Print log | `data/apps/school/print-log.yml` (append-only; feeds the quota) |
-| Pending queue | `data/apps/school/print-pending.yml` |
+| Print log | `data/household/school/records/print/jobs.yml` (append-only; feeds the quota) |
+| Pending queue | `data/household/school/runtime/queues/print.yml` |
 | Worksheet files | `data/household/content/worksheets/*.pdf` (for `type: pdf`) |
 | Device | `data/household/config/devices.yml` → `kitchen-printer` (Brother HL-L2460DW) |
 | Config | `data/household/config/school.yml` → `printing:` + `printables:` |
@@ -1059,7 +1083,7 @@ one source. The block set is closed in code, the same posture as
   adding the QR symbol at all moved 0.33% of a page and failed nothing.
 
 **Work sessions** — the durable record School lacked: append-only events per
-session under `data/apps/school/sessions/{date}/{sessionId}/events.yml`, with
+session under `data/household/school/records/sessions/{YYYY-MM}/{sessionId}.yml`, with
 state derived on every read (the language-ladder pattern). It supplies the
 context the attempt log intentionally lacks — why work was selected, what paper
 was issued, what comes next.
@@ -1163,7 +1187,7 @@ rewording the copy cannot remove the retry button.
 #### Configuration — two independent switches
 
 ```yaml
-# data/household/school/config.yml   (colocated path; NOT household/config/school.yml)
+# data/household/school/school.yml   (colocated policy; NOT household/config/school.yml)
 selfService:
   enabled: true                  # mint and print codes
   mediaSurface:
@@ -1592,16 +1616,16 @@ router stamps statuses by name at its boundary.
 
 **Wave 3 — the planning domains are live.** The Planning tab carries no
 stubs: assignments and academic periods are editable (periods are promoted
-from boot-cached config to `data/household/apps/school/periods.yml` with
+from boot-cached config to `data/household/school/plans/periods.yml` with
 append-only history — the stored file wins after the first teacher edit,
 config remains the fallback before it); pass-criteria overrides
-(`apps/school/pass-overrides.yml`) win over a unit's authored
+(`household/school/plans/pass-overrides.yml`) win over a unit's authored
 `passing.percent` at the one grading consumption point
-(`CloseSessionOutcome`); milestones (`apps/school/milestones.yml`,
+(`CloseSessionOutcome`); milestones (`household/school/plans/milestones.yml`,
 `2_domains/school/milestones.mjs`) carry derived met/behind/upcoming
 statuses joined from passed sessions — due dates are fixed facts, enrichment
 excusal is a report-time adjustment (wave 4); and the enrichment log
-(`apps/school/enrichment.yml`, append-only) records out-of-band learning as
+(`household/school/records/enrichment.yml`, append-only) records out-of-band learning as
 its own attributed evidence kind, never merged into graded evidence. Routes:
 `PUT /periods`, `GET/PUT /pass-overrides[/:unitId]`, `GET/PUT /milestones`
 (learner-scoped write — a one-learner save never touches siblings),
@@ -1618,7 +1642,7 @@ course with nothing graded — no fabricated diplomas. Only the three repair
 rows remain in the placeholder registry.
 
 **Wave 5 — repair is live; the placeholder registry is EMPTY.** Attestation
-overrides (`apps/school/attestations.yml`, append-only, reason mandatory)
+overrides (`household/school/records/attestations.yml`, append-only, reason mandatory)
 unlock gates for real — `BuildAgenda`/`ResolveSubjectNext` fold an attested
 unit into the planner's history as a synthetic pass, and milestones count it
 met — while the report card deliberately never reads them (an override is
@@ -1627,7 +1651,7 @@ attempt events themselves (`YamlSchoolDatastore.moveAttempts` — destination
 shard first, provenance stamped into each moved event, `attributedTo`
 rewritten), so every derived rollup follows the evidence; `GET
 /attempts-summary` feeds the picker and `POST /reassign` is the gated
-write. Standalone teacher notes (`apps/school/teacher-notes.yml`) ride the
+write. Standalone teacher notes (`household/school/records/teacher-notes.yml`) ride the
 same delivery surfaces as review notes: merged into `GET /review/learner`
 (kind:'note') and the agenda's "Notes for you" window. The **e2e journey
 test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
@@ -1806,7 +1830,7 @@ course gates correctly for the first time.
   at all.
 - **`/audit` gains reassignments; approvers can preview.** Every
   attribution move (`ReassignEvidence`) appends a best-effort entry to
-  `apps/school/reassignments.yml`, merged into `GET /audit` under its own
+  `household/school/records/reassignments.yml`, merged into `GET /audit` under its own
   `kind`. `GET /print/printables/:id/preview` streams the resolved PDF for a
   pending quota approval — no quota check, no print, no log — and a
   `Preview` link on each PrintCenter approval row lets the approver see the

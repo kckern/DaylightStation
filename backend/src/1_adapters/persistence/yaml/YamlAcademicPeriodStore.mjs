@@ -1,6 +1,6 @@
 /**
  * YamlAcademicPeriodStore — the periods config→data promotion (teacher-console
- * plan W3-1): `<dataDir>/household/apps/school/periods.yml` holding
+ * plan W3-1): `<dataDir>/household/school/plans/periods.yml` holding
  * `{periods, history}`. Until the FIRST successful write the store serves the
  * injected fallback (the boot-validated `ConfiguredAcademicPeriodSource`)
  * verbatim — no silent migration; a household that never edits keeps its
@@ -62,7 +62,7 @@ export class YamlAcademicPeriodStore {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'periods.yml'); }
+  #file() { return path.join(this.#configService.getHouseholdPath('school/plans'), 'periods.yml'); }
 
   /**
    * Missing and corrupt are DIFFERENT answers (M3 review): a missing file is
