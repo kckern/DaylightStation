@@ -13,7 +13,7 @@ import { shortId } from '#domains/core/utils/id.mjs';
  * the collection doubles as a triage inbox.
  *
  *   audio  → media/audio/feedback/{app}/{id}.{ext}
- *   item   → data/household/feedback/{app}/{id}.yml
+ *   item   → data/household/feedback/{app}/{YYYY-MM}/{id}.yml
  */
 
 const EXT_BY_MIME = {
@@ -24,6 +24,24 @@ const safeApp = (s) => typeof s === 'string' && /^[a-z0-9-]{1,40}$/.test(s);
 const safeId = (s) => typeof s === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(s);
 
 const TRANSCRIBE_PROMPT = 'A short spoken software-feedback note: a bug report, UX/layout quirk, or feature idea about an app the user was just using.';
+
+/**
+ * Path for one feedback item, partitioned by the month in its id.
+ * Flat {app}/ directories grow without bound; the month dir is derivable
+ * from the id itself, so no index or lookup is needed to find an item.
+ *
+ * @param {string} root - absolute path to household/feedback
+ * @param {string} app - 'piano' | 'fitness' | ...
+ * @param {string} id - '{YYYYMMDDHHMMSS}_{rand}'
+ * @returns {string}
+ */
+export function feedbackItemPath(root, app, id) {
+  // id is '{YYYYMMDDHHMMSS}_{rand}' — 14 digits total; DD/HH/MM/SS after the
+  // captured YYYY/MM leaves 8 digits, not 10 (\d{10} would demand 16).
+  const m = /^(\d{4})(\d{2})\d{8}_/.exec(id);
+  if (!m) throw new Error(`unpartitionable feedback id: ${id}`);
+  return path.join(root, app, `${m[1]}-${m[2]}`, `${id}.yml`);
+}
 
 export class FeedbackService {
   /**
@@ -53,9 +71,7 @@ export class FeedbackService {
    */
   async create({ app, audioBuffer = null, mimeType = 'audio/webm', durationMs = 0, context = {}, logs = null }) {
     if (!safeApp(app)) throw new Error('invalid app');
-    const itemsDir = this._itemsDir(app);
     const audioDir = this._audioDir(app);
-    fs.mkdirSync(itemsDir, { recursive: true });
 
     const created = new Date();
     const stamp = created.toISOString().replace(/[-:T]/g, '').slice(0, 14); // YYYYMMDDhhmmss
@@ -82,7 +98,9 @@ export class FeedbackService {
       context: context && typeof context === 'object' ? context : {},
       logs: logs || null,
     };
-    saveYaml(path.join(itemsDir, id), item);
+    // saveYaml creates the month dir (and every parent) before writing —
+    // see FileIO.mjs saveYaml's own fs.mkdirSync(dir, { recursive: true }).
+    saveYaml(feedbackItemPath(this.itemsRoot, app, id), item);
     this.logger.info?.('feedback.created', { app, id, durationMs: item.durationMs, hasAudio, willTranscribe: canTranscribe });
 
     this._notifyArrival(item);
@@ -141,7 +159,7 @@ export class FeedbackService {
       .then(() => this.transcription.transcribe(audioBuffer, { prompt: TRANSCRIBE_PROMPT }))
       .then((result) => {
         const text = (typeof result === 'string' ? result : result?.text || '').trim();
-        const file = path.join(this._itemsDir(app), id);
+        const file = feedbackItemPath(this.itemsRoot, app, id);
         const item = loadYaml(file);
         if (!item) return;
         item.transcript = text;
@@ -150,7 +168,7 @@ export class FeedbackService {
         this.logger.info?.('feedback.transcribed', { app, id, chars: text.length });
       })
       .catch((err) => {
-        const file = path.join(this._itemsDir(app), id);
+        const file = feedbackItemPath(this.itemsRoot, app, id);
         const item = loadYaml(file);
         if (item) { item.transcriptStatus = 'failed'; item.transcriptError = err.message; saveYaml(file, item); }
         this.logger.error?.('feedback.transcribe-failed', { app, id, error: err.message });
@@ -164,15 +182,27 @@ export class FeedbackService {
     } catch { return []; }
   }
 
-  /** Inbox listing — summaries across all apps (or one app), newest first. */
+  /**
+   * Inbox listing — summaries across all apps (or one app), newest first.
+   *
+   * Items now live one month dir down from {app}/ (see feedbackItemPath), so
+   * this has to descend a level rather than reading {app}/ as a flat
+   * directory of files — a plain (non-recursive) listYamlFiles would silently
+   * stop seeing anything once items move into {app}/{YYYY-MM}/. recursive:
+   * true also still finds any pre-migration items left flat in {app}/, so
+   * this reads correctly on both sides of the Task 10 migration.
+   */
   list({ app = null } = {}) {
     const apps = app ? (safeApp(app) ? [app] : []) : this._allApps();
     const items = [];
     for (const a of apps) {
       const dir = this._itemsDir(a);
       if (!dir) continue;
-      for (const id of listYamlFiles(dir)) {
-        const d = loadYaml(path.join(dir, id)) || {};
+      for (const rel of listYamlFiles(dir, { recursive: true })) {
+        const d = loadYaml(path.join(dir, rel)) || {};
+        // The filename (or "{YYYY-MM}/{filename}" once partitioned) is not
+        // the public id once nested — trust the id the item was saved with.
+        const id = d.id || path.posix.basename(rel);
         const t = d.transcript || null;
         items.push({
           id, app: a,
@@ -192,7 +222,13 @@ export class FeedbackService {
 
   get(app, id) {
     if (!safeApp(app) || !safeId(id)) return null;
-    return loadYaml(path.join(this._itemsDir(app), id));
+    try {
+      return loadYaml(feedbackItemPath(this.itemsRoot, app, id));
+    } catch {
+      // Well-formed per safeId but no YYYYMM prefix to partition by — no
+      // such item could ever have been created, so this is a 404, not a 500.
+      return null;
+    }
   }
 
   update(app, id, patch = {}) {
@@ -200,7 +236,7 @@ export class FeedbackService {
     if (!item) return null;
     if (typeof patch.status === 'string') item.status = patch.status;
     if (typeof patch.notes === 'string') item.notes = patch.notes;
-    saveYaml(path.join(this._itemsDir(app), id), item);
+    saveYaml(feedbackItemPath(this.itemsRoot, app, id), item);
     return item;
   }
 
@@ -210,7 +246,15 @@ export class FeedbackService {
     if (item?.audio) {
       try { fs.unlinkSync(path.join(this.config.getMediaDir(), item.audio)); } catch { /* already gone */ }
     }
-    return deleteYaml(path.join(this._itemsDir(app), id));
+    try {
+      // deleteYaml (unlike loadYaml/saveYaml) always appends '.yml'/'.yaml'
+      // itself rather than checking for an existing extension first — pass it
+      // the bare path or it looks for a literal "*.yml.yml" and never deletes.
+      const file = feedbackItemPath(this.itemsRoot, app, id);
+      return deleteYaml(file.replace(/\.yml$/, ''));
+    } catch {
+      return false;
+    }
   }
 
   audioFilePath(app, id) {
