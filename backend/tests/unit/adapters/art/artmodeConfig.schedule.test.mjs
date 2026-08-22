@@ -2,7 +2,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
-import { loadArtmodeConfig } from '#adapters/content/art/artmodeConfig.mjs';
+import { loadArtmodeConfig, loadArtCollections } from '#adapters/content/art/artmodeConfig.mjs';
 
 // loadArtmodeConfig takes the HOUSEHOLD dir and joins `config/artmode.yml`
 // itself — it is not given the data root. Passing dataPath made it look under
@@ -48,5 +48,36 @@ describe('loadArtmodeConfig schedule', () => {
     await write('presets:\n  b: { collection: sketches }\n');
     const cfg = await loadArtmodeConfig(householdPath);
     expect(Object.keys(cfg.presets)).toEqual(['a']);
+  });
+});
+
+// The collection catalog is the second facet of the same domain and follows the
+// same rule. HOUSEHOLD_APP_CONFIGS.art is 'art/config', so grouped is
+// art/config.yml and the retiring flat path is config/art.yml.
+describe('loadArtCollections', () => {
+  const writeLegacyArt = (body) => fs.writeFile(path.join(householdPath, 'config', 'art.yml'), body, 'utf8');
+  const writeGroupedArt = async (body) => {
+    await fs.mkdir(path.join(householdPath, 'art'), { recursive: true });
+    return fs.writeFile(path.join(householdPath, 'art', 'config.yml'), body, 'utf8');
+  };
+
+  it('still reads the legacy config/art.yml', async () => {
+    await writeLegacyArt('collections:\n  baroque: { query: caravaggio }\n');
+    expect(await loadArtCollections(householdPath)).toEqual({ baroque: { query: 'caravaggio' } });
+  });
+
+  it('reads the grouped art/config.yml', async () => {
+    await writeGroupedArt('collections:\n  impressionism: { query: monet }\n');
+    expect(await loadArtCollections(householdPath)).toEqual({ impressionism: { query: 'monet' } });
+  });
+
+  it('prefers grouped over legacy when both exist', async () => {
+    await writeGroupedArt('collections:\n  a: { query: grouped }\n');
+    await writeLegacyArt('collections:\n  b: { query: legacy }\n');
+    expect(Object.keys(await loadArtCollections(householdPath))).toEqual(['a']);
+  });
+
+  it('defaults to {} when absent at both paths', async () => {
+    expect(await loadArtCollections(householdPath)).toEqual({});
   });
 });
