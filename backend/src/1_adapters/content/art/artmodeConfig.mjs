@@ -22,15 +22,12 @@ async function readYamlDoc(filePath, logger, event) {
 // every preset; `frames` is the named frame-variety catalog (insets + mat + crop).
 // `householdDir` is the resolved household base dir (ConfigService.getHouseholdPath('')).
 export async function loadArtmodeConfig(householdDir, logger = console) {
-  // Grouped path first, flat `config/` second. This adapter may not import the
-  // config registry (layer rule `adapters-no-config-singleton` bans
-  // `#system/config/*`), so the grouped path is spelled literally here — it must
-  // stay in step with HOUSEHOLD_APP_CONFIGS.artmode ('art/artmode').
-  const candidates = [
-    path.join(householdDir, 'art', 'artmode.yml'),
-    path.join(householdDir, 'config', 'artmode.yml'), // retiring — a later phase deletes this
-  ];
-  const target = candidates.find((p) => existsSync(p)) ?? candidates[0];
+  // The grouped path, and only that — Phase E deleted the flat `config/`
+  // fallback. This adapter may not import the config registry (layer rule
+  // `adapters-no-config-singleton` bans `#system/config/*`), so the path is
+  // spelled literally here — it must stay in step with
+  // HOUSEHOLD_APP_CONFIGS.artmode ('art/artmode').
+  const target = path.join(householdDir, 'art', 'artmode.yml');
   const doc = await readYamlDoc(target, logger, 'artmode.config.read_failed');
   return {
     presets: doc.presets || {}, defaults: doc.defaults || {}, frames: doc.frames || {},
@@ -42,13 +39,9 @@ export async function loadArtmodeConfig(householdDir, logger = console) {
 // bare collection name resolve as a preset, so `art:baroque` needs no passthrough
 // preset in artmode.yml. `householdDir` is the resolved household base dir.
 export async function loadArtCollections(householdDir, logger = console) {
-  // Same grouped-first rule as loadArtmodeConfig. HOUSEHOLD_APP_CONFIGS.art is
+  // Same grouped-only rule as loadArtmodeConfig. HOUSEHOLD_APP_CONFIGS.art is
   // 'art/config', so the collection catalog lands at art/config.yml.
-  const candidates = [
-    path.join(householdDir, 'art', 'config.yml'),
-    path.join(householdDir, 'config', 'art.yml'), // retiring — a later phase deletes this
-  ];
-  const target = candidates.find((p) => existsSync(p)) ?? candidates[0];
+  const target = path.join(householdDir, 'art', 'config.yml');
   const doc = await readYamlDoc(target, logger, 'art.collections.read_failed');
   return doc.collections || {};
 }

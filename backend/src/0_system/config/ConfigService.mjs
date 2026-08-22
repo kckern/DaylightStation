@@ -10,10 +10,10 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists, resolveYamlPath } from '#system/utils/FileIO.mjs';
+import { loadYaml, loadYamlFromPath, listYamlFiles, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
-import { appConfigRelPath, legacyAppConfigRelPath } from '#shared/contracts/householdConfig.mjs';
+import { appConfigRelPath } from '#shared/contracts/householdConfig.mjs';
 
 export class ConfigService {
   #config;
@@ -230,27 +230,18 @@ export class ConfigService {
    * express it, and the old school-specific basename special case was the first
    * symptom of that.
    *
-   * The legacy <household>/config/<appName>.yml is still read second so a tree
-   * that has not synced the data move yet still resolves. A later phase deletes
-   * that fallback along with the directory.
+   * The retiring flat <household>/config/<appName>.yml fallback was deleted in
+   * Phase E. An UNREGISTERED app now resolves to null rather than degrading to
+   * a flat path — degrading would recreate the very directory being retired,
+   * and would do it silently on the WRITE side. Register the app instead.
    * @param {string} dataDir
    * @param {string} folderName
    * @param {string} appName
-   * @returns {string} base path (no .yml extension)
+   * @returns {string|null} base path (no .yml extension), or null if unregistered
    */
   #resolveHouseholdAppConfigPath(dataDir, folderName, appName) {
     const grouped = appConfigRelPath(appName);
-    if (grouped) {
-      const groupedPath = `${dataDir}/${folderName}/${grouped}`;
-      if (yamlExists(groupedPath)) return groupedPath;
-    }
-    // Retiring: a tree that has not synced the data move yet. A later phase
-    // deletes this branch along with the directory.
-    const legacyPath = `${dataDir}/${folderName}/${legacyAppConfigRelPath(appName)}`;
-    if (yamlExists(legacyPath)) return legacyPath;
-    // Neither exists — hand back the grouped path so a first write lands in the
-    // new home rather than recreating config/.
-    return grouped ? `${dataDir}/${folderName}/${grouped}` : legacyPath;
+    return grouped ? `${dataDir}/${folderName}/${grouped}` : null;
   }
 
   /**
@@ -267,15 +258,14 @@ export class ConfigService {
    * A second write mechanism, even one meant to mirror the read side, WILL
    * drift from it; this method is the single source of truth for both.
    *
-   * Same registry-first-with-legacy-fallback rule as the read side (both go
-   * through #resolveHouseholdAppConfigPath), and preserves whichever
-   * extension (.yml/.yaml) the file already has at
-   * whichever location wins — defaulting to .yml for a file that exists at
-   * neither location yet (matches the pre-task-13 default for a brand-new
-   * config file).
+   * Same registry rule as the read side (both go through
+   * #resolveHouseholdAppConfigPath), and preserves whichever extension
+   * (.yml/.yaml) the file already has — defaulting to .yml for a config that
+   * does not exist yet (matches the pre-task-13 default for a brand-new file).
    * @param {string|null} householdId - Household ID, defaults to default household
    * @param {string} appName - App name (e.g., 'notifications')
-   * @returns {string|null} absolute path, or null if the household doesn't exist
+   * @returns {string|null} absolute path; null if the household doesn't exist
+   *   or the app is not in HOUSEHOLD_APP_CONFIGS
    */
   getHouseholdAppConfigPath(householdId, appName) {
     const hid = householdId ?? this.getDefaultHouseholdId();
@@ -284,6 +274,7 @@ export class ConfigService {
     const folderName = household._folderName || hid;
     const dataDir = this.getDataDir();
     const base = this.#resolveHouseholdAppConfigPath(dataDir, folderName, appName);
+    if (!base) return null;
     return resolveYamlPath(base) ?? `${base}.yml`;
   }
 
@@ -300,7 +291,8 @@ export class ConfigService {
     if (!household) return null;
     const folderName = household._folderName || hid;
     const dataDir = this.getDataDir();
-    const fresh = loadYaml(this.#resolveHouseholdAppConfigPath(dataDir, folderName, appName)) ?? null;
+    const base = this.#resolveHouseholdAppConfigPath(dataDir, folderName, appName);
+    const fresh = (base ? loadYaml(base) : null) ?? null;
     // Write back into the served snapshot: getHouseholdAppConfig() reads
     // #config, and without this the reload only ever returned the fresh copy
     // to its direct caller while every other consumer kept the boot-time

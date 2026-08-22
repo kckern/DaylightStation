@@ -138,13 +138,16 @@ export { listHouseholdDirs, parseHouseholdId, toFolderName };
  *
  * Precedence, lowest to highest:
  *   1. apps/<name>.yml or apps/<name>/config.yml   (legacy)
- *   2. config/<name>.yml                            (retiring)
- *   3. the grouped path in HOUSEHOLD_APP_CONFIGS    (preferred)
+ *   2. the grouped path in HOUSEHOLD_APP_CONFIGS    (the registry)
  *
- * The config/ scan is kept until the data move lands so an unsynced tree still
- * boots, and it also catches an app missing from the registry rather than
- * dropping it silently — a previous enumeration change did exactly that to 8
- * apps and reported success.
+ * Phase E deleted the `config/` directory scan. That scan was the last thing
+ * that could invent an app name the registry does not know — it turned any
+ * stray `config/<name>.yml` into an app, which is exactly how retired names
+ * kept reappearing in enumerations of "every app". The registry is now the
+ * sole source of app names, guarded by
+ * `backend/tests/unit/system/config/registryCompleteness.test.mjs`, which
+ * fails if a registered path is missing on disk or an unregistered colocated
+ * `<subdir>/config.yml` appears.
  *
  * Non-app configs are never picked up here: household.yml and integrations.yml
  * sit at the household root, devices.yml under hardware/.
@@ -153,17 +156,7 @@ function loadHouseholdApps(dataDir, folderName) {
   const householdDir = path.join(dataDir, folderName);
   const appsFromLegacy = loadAppsFromDir(path.join(householdDir, 'apps'));
 
-  // Retiring flat directory.
-  const NON_APP_CONFIGS = new Set(['household', 'integrations', 'devices']);
-  const appsFromConfigDir = {};
-  for (const file of listYamlFiles(path.join(householdDir, 'config'))) {
-    const name = path.basename(file, '.yml');
-    if (NON_APP_CONFIGS.has(name)) continue;
-    const config = readYaml(file);
-    if (config) appsFromConfigDir[name] = config;
-  }
-
-  // Registry — the preferred location.
+  // Registry — the only location for a household app config.
   const appsFromRegistry = {};
   for (const [appName, relPath] of Object.entries(HOUSEHOLD_APP_CONFIGS)) {
     const resolved = resolveYamlPath(path.join(householdDir, relPath));
@@ -171,31 +164,25 @@ function loadHouseholdApps(dataDir, folderName) {
     if (config) appsFromRegistry[appName] = config;
   }
 
-  return { ...appsFromLegacy, ...appsFromConfigDir, ...appsFromRegistry };
+  return { ...appsFromLegacy, ...appsFromRegistry };
 }
 
 /**
  * Load integrations for a household.
- * Colocated first: integrations.yml at the household root, beside
- * household.yml (task-13). Legacy config/integrations.yml is still read as a
- * fallback until every household has been migrated.
+ * Colocated: integrations.yml at the household root, beside household.yml
+ * (task-13). The legacy config/integrations.yml fallback was deleted in Phase E.
  */
 function loadHouseholdIntegrations(dataDir, folderName) {
-  const colocatedPath = path.join(dataDir, folderName, 'integrations.yml');
-  const legacyPath = path.join(dataDir, folderName, 'config', 'integrations.yml');
-  return readYaml(colocatedPath) ?? readYaml(legacyPath) ?? {};
+  return readYaml(path.join(dataDir, folderName, 'integrations.yml')) ?? {};
 }
 
 /**
  * Load devices config for a household.
- * Colocated first: hardware/devices.yml, beside the device state hardware/
- * already holds (task-13). Legacy config/devices.yml is still read as a
- * fallback until every household has been migrated.
+ * Colocated: hardware/devices.yml, beside the device state hardware/ already
+ * holds (task-13). The legacy config/devices.yml fallback was deleted in Phase E.
  */
 function loadHouseholdDevices(dataDir, folderName) {
-  const colocatedPath = path.join(dataDir, folderName, 'hardware', 'devices.yml');
-  const legacyPath = path.join(dataDir, folderName, 'config', 'devices.yml');
-  return readYaml(colocatedPath) ?? readYaml(legacyPath) ?? {};
+  return readYaml(path.join(dataDir, folderName, 'hardware', 'devices.yml')) ?? {};
 }
 
 /**

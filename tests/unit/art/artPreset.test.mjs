@@ -26,8 +26,8 @@ const call = async (key) => {
 
 beforeEach(async () => {
   dataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'artpreset-'));
-  await fs.mkdir(path.join(dataPath, 'household', 'config'), { recursive: true });
-  await fs.writeFile(path.join(dataPath, 'household', 'config', 'artmode.yml'),
+  await fs.mkdir(path.join(dataPath, 'household', 'art'), { recursive: true });
+  await fs.writeFile(path.join(dataPath, 'household', 'art', 'artmode.yml'),
     'presets:\n  classical-evening:\n    collection: all\n    music: { queue: "plex:1" }\n    matMargin: 4\n');
 });
 afterEach(async () => { await fs.rm(dataPath, { recursive: true, force: true }); });
@@ -43,19 +43,19 @@ describe('art router /preset/:key', () => {
     expect(r.statusCode).toBe(404);
   });
   it('404 when artmode.yml is absent', async () => {
-    await fs.rm(path.join(dataPath, 'household', 'config', 'artmode.yml'));
+    await fs.rm(path.join(dataPath, 'household', 'art', 'artmode.yml'));
     const r = await call('classical-evening');
     expect(r.statusCode).toBe(404);
   });
 
   it('resolves a bare collection via fallback, with defaults + expanded frame', async () => {
-    await fs.writeFile(path.join(dataPath, 'household', 'config', 'artmode.yml'), [
+    await fs.writeFile(path.join(dataPath, 'household', 'art', 'artmode.yml'), [
       'frames:',
       '  gold: { insets: { top: 11, right: 6, bottom: 11, left: 7 }, matMargin: 4, cropMaxPerSide: 8 }',
       'defaults: { frame: gold, placard: true }',
       'presets: { gallery-silent: { collection: paintings } }',
     ].join('\n') + '\n');
-    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+    await fs.writeFile(path.join(dataPath, 'household', 'art', 'config.yml'),
       'collections:\n  baroque: { dateMin: 1600 }\n');
     const r = await call('baroque');
     expect(r.statusCode).toBe(200);
@@ -66,7 +66,7 @@ describe('art router /preset/:key', () => {
   });
 
   it('404 for a key that is neither a preset nor a collection', async () => {
-    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+    await fs.writeFile(path.join(dataPath, 'household', 'art', 'config.yml'),
       'collections:\n  baroque: { dateMin: 1600 }\n');
     const r = await call('totally-unknown');
     expect(r.statusCode).toBe(404);

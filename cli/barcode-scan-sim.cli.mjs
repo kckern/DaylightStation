@@ -301,14 +301,9 @@ function loadYamlSafe(filePath) {
  * for where the household's laser printer lives or how much it may print.
  */
 function resolvePrinterConfig(dataDir, flags) {
-  // Colocated first (task-13), falling back to the legacy config/ root for
-  // an un-migrated data dir.
-  const schoolCfg = loadYamlSafe(path.join(dataDir, 'household/school/school.yml'))
-    ?? loadYamlSafe(path.join(dataDir, 'household/config/school.yml'))
-    ?? {};
-  const devicesCfg = loadYamlSafe(path.join(dataDir, 'household/hardware/devices.yml'))
-    ?? loadYamlSafe(path.join(dataDir, 'household/config/devices.yml'))
-    ?? {};
+  // Colocated (task-13). Phase E deleted the legacy config/ fallback.
+  const schoolCfg = loadYamlSafe(path.join(dataDir, 'household/school/school.yml')) ?? {};
+  const devicesCfg = loadYamlSafe(path.join(dataDir, 'household/hardware/devices.yml')) ?? {};
   const printing = schoolCfg.printing ?? {};
   // `devices.yml` nests every device under a top-level `devices:` key (see
   // `ConfigService#getDeviceConfig`'s own `devices?.devices?.[deviceId]`) —

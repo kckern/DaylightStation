@@ -12,7 +12,7 @@
  *
  * Security semantics are preserved VERBATIM from the router, plus an
  * explicit-file addendum for task-13:
- * - Allowed dirs: system/config, household/config (list + read + write)
+ * - Allowed dirs: system/config (list + read + write)
  * - Allowed files: individual app configs colocated with their own domain
  *   folder (household/fitness/config.yml, etc.), DERIVED from the household
  *   config registry (shared/contracts/householdConfig.mjs) — listed one file
@@ -36,10 +36,12 @@ import {
 } from '#system/utils/errors/index.mjs';
 import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
-// Directories users can list, read, and write (relative to data root)
+// Directories users can list, read, and write (relative to data root).
+// `household/config` was removed in Phase E along with the directory itself —
+// every household app config is now reached through ALLOWED_FILES, derived from
+// the registry.
 const ALLOWED_DIRS = [
-  'system/config',
-  'household/config'
+  'system/config'
 ];
 
 /**
@@ -55,9 +57,19 @@ const ALLOWED_DIRS = [
  * the 11 files task-13 colocated, silently 403ing the other 8 with no error
  * anywhere — a file missing here is uneditable with no signal at all. Deriving
  * it means adding an app to the registry is the only edit an app needs.
+ *
+ * BOTH extensions are derived per registry entry. The registry stores paths
+ * WITHOUT an extension because every runtime reader resolves .yml OR .yaml via
+ * `resolveYamlPath`; appending only `.yml` here would let an app whose file
+ * landed as `.yaml` boot fine and then 403 in the admin YAML browser — exactly
+ * the silent, signal-free failure this derivation exists to kill. Listing a
+ * path that does not exist on disk costs nothing: `listFiles` skips missing
+ * files, and read/write still hit the real fs.
  */
+const bothExtensions = (rel) => [`household/${rel}.yml`, `household/${rel}.yaml`];
+
 export const ALLOWED_FILES = Object.freeze([
-  ...Object.values(HOUSEHOLD_APP_CONFIGS).map((rel) => `household/${rel}.yml`),
+  ...Object.values(HOUSEHOLD_APP_CONFIGS).flatMap(bothExtensions),
   // Not an app config: no dedicated write surface exists — IntegrationsQueryService
   // (backend/src/3_applications/admin/IntegrationsQueryService.mjs) has ZERO write
   // methods, so without this entry the file is editable only by shelling into the

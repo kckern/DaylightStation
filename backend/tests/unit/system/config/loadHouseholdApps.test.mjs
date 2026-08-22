@@ -28,12 +28,16 @@ describe('loadHouseholdApps', () => {
     expect(apps().scales).toEqual({ unit: 'g' });
   });
 
-  it('loads a legacy flat config while data has not moved', async () => {
+  // INVERTED in Phase E (was 'loads a legacy flat config while data has not
+  // moved'). The config/ scan is gone, so a flat file no longer produces an app.
+  it('IGNORES a flat config/<app>.yml — it no longer produces an app', async () => {
     await write('config/scales.yml', 'unit: kg\n');
-    expect(apps().scales).toEqual({ unit: 'kg' });
+    expect(apps().scales).toBeUndefined();
   });
 
-  it('lets the grouped config win over the legacy one', async () => {
+  // INVERTED in Phase E (was 'lets the grouped config win over the legacy one').
+  // Not precedence any more — the flat file is simply not read.
+  it('loads the grouped config and never merges a flat one over it', async () => {
     await write('hardware/scales.yml', 'unit: g\n');
     await write('config/scales.yml', 'unit: kg\n');
     expect(apps().scales).toEqual({ unit: 'g' });
@@ -43,8 +47,25 @@ describe('loadHouseholdApps', () => {
     expect(apps().scales).toBeUndefined();
   });
 
-  it('still loads an UNREGISTERED legacy config so nothing silently vanishes', async () => {
+  // INVERTED in Phase E (was 'still loads an UNREGISTERED legacy config so
+  // nothing silently vanishes'). That guarantee is now carried by
+  // registryCompleteness.test.mjs, which fails against the REAL data dir if any
+  // app config exists that the registry does not know — a check the fallback
+  // made impossible to run, since the fallback hid every omission. Here we
+  // assert the flat scan cannot invent an app NAME: it was the only thing that
+  // could put a name into the app map that the registry never declared.
+  it('cannot invent an app name from a stray flat file', async () => {
     await write('config/experimental-thing.yml', 'x: 1\n');
-    expect(apps()['experimental-thing']).toEqual({ x: 1 });
+    expect(apps()['experimental-thing']).toBeUndefined();
+    expect(Object.keys(apps())).toEqual([]);
+  });
+
+  // household.yml / integrations.yml / devices.yml were name-filtered out of the
+  // old flat scan. With the scan gone they cannot leak in as apps at all.
+  it('never surfaces non-app config as an app', async () => {
+    await write('config/household.yml', 'name: X\n');
+    await write('config/integrations.yml', 'plex: {}\n');
+    await write('config/devices.yml', 'devices: {}\n');
+    expect(Object.keys(apps())).toEqual([]);
   });
 });

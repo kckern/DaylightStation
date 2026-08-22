@@ -18,7 +18,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import path, { join } from 'path';
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 
 import { rebuildQuizDayFiles } from '#apps/quizzes/quizScanRecorder.mjs';
@@ -39,15 +39,12 @@ if (!dataDir) {
 }
 
 // Same config file the live recorder gets (dir overrides); defaults if absent.
-// Grouped path first (hardware/omr/readers.yml per shared/contracts/householdConfig.mjs),
-// falling back to the retiring flat config/ path for an un-migrated data dir —
-// the same shape as cli/lib/fitness/backfillPrimaryMedia.mjs. Getting this
-// wrong is not cosmetic: the `persistence.dir` / `quizzes.dir` overrides below
-// come from this file, so a miss silently rebuilds history into the DEFAULT
-// directories instead of the household's configured ones.
-const GROUPED_CONFIG_PATH = join(dataDir, 'household', 'hardware', 'omr', 'readers.yml');
-const LEGACY_CONFIG_PATH = join(dataDir, 'household', 'config', 'omr-readers.yml');
-const CONFIG_PATH = existsSync(GROUPED_CONFIG_PATH) ? GROUPED_CONFIG_PATH : LEGACY_CONFIG_PATH;
+// The grouped path (hardware/omr/readers.yml per shared/contracts/householdConfig.mjs)
+// is the only location — Phase E deleted the retiring flat config/ fallback.
+// Getting this wrong is not cosmetic: the `persistence.dir` / `quizzes.dir`
+// overrides below come from this file, so a miss silently rebuilds history into
+// the DEFAULT directories instead of the household's configured ones.
+const CONFIG_PATH = join(dataDir, 'household', 'hardware', 'omr', 'readers.yml');
 let config = {};
 try {
   config = yaml.load(readFileSync(CONFIG_PATH, 'utf8')) || {};
