@@ -192,7 +192,14 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
       }
 
       const code = tokens?.[block.action] ?? block.action;
-      if (block.presentation === 'lesson') {
+      if (block.presentation === 'bulk_print') {
+        items.push({ type: 'space', lines: 1 });
+        items.push({ type: 'text', content: '─'.repeat(width), align: 'center' });
+        items.push({ type: 'text', content: 'PRINT ALL SHEETS', align: 'left', style: { bold: true } });
+        for (const subj of (block.subjects ?? [])) {
+          items.push({ type: 'text', content: `• ${subj}`, align: 'left' });
+        }
+      } else if (block.presentation === 'lesson') {
         if (block.eyebrow) items.push({ type: 'text', content: block.eyebrow.toUpperCase(), align: 'left', style: { bold: true } });
         if (block.taxonomy) {
           items.push({ type: 'text', content: `Course · ${block.taxonomy.course}`, align: 'left' });
