@@ -167,3 +167,4 @@ __sabotage_*.mjs
 /*.pdf
 docs/_moveme/
 /.agents
+!scripts/migrate-household-config.mjs
