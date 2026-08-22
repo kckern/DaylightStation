@@ -10,7 +10,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { YamlConfigFileService } from '#apps/admin/YamlConfigFileService.mjs';
+import { YamlConfigFileService, ALLOWED_FILES } from '#apps/admin/YamlConfigFileService.mjs';
+import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 let tmpRoot;      // parent of the data root (used to plant an outside file)
 let dataRoot;     // the service's data root
@@ -31,6 +32,9 @@ beforeEach(() => {
 
   // Allowed dirs
   write('system/config/system.yml', 'port: 3111\nhost: localhost\n');
+  write('system/config/scratch.yml', 'name: TestHome\nusers:\n  - alice\n');
+  // Phase E: household/config/ is no longer an allowed dir. Still planted so
+  // the inverted assertions below can prove it is DENIED, not merely absent.
   write('household/config/household.yml', 'name: TestHome\nusers:\n  - alice\n');
   // Masked (auth) dirs
   write('system/auth/secret.yml', 'apiKey: SYS_SECRET\n');
@@ -116,15 +120,30 @@ describe('YamlConfigFileService — auth dir masking', () => {
 });
 
 describe('YamlConfigFileService — happy path', () => {
-  it('lists the editable config files', () => {
+  // INVERTED in Phase E: this used to assert household/config/household.yml
+  // appears in the listing. household/config/ was dropped from ALLOWED_DIRS
+  // with the directory itself, so the file must now be absent from the listing
+  // — and, per the case below, refused on read and write.
+  it('lists the editable config files and no longer lists household/config/', () => {
     const { files, count } = service.listFiles();
     const paths = files.map(f => f.path);
     expect(paths).toContain('system/config/system.yml');
-    expect(paths).toContain('household/config/household.yml');
+    expect(paths).not.toContain('household/config/household.yml');
+    expect(paths.filter(p => p.startsWith('household/config/'))).toEqual([]);
     expect(count).toBe(files.length);
     // Allowed files are not masked
     const sys = files.find(f => f.path === 'system/config/system.yml');
     expect(sys.masked).toBe(false);
+  });
+
+  // INVERTED in Phase E (the read/write round-trips below used to target
+  // household/config/household.yml and prove it EDITABLE).
+  it('DENIES reading and writing anything under the retired household/config/', () => {
+    expect(() => service.readFile('household/config/household.yml')).toThrow();
+    expect(() => service.writeFile('household/config/household.yml', { raw: 'name: Hacked\n' })).toThrow();
+    // The planted file must be untouched by the refused write.
+    expect(fs.readFileSync(path.join(dataRoot, 'household/config/household.yml'), 'utf8'))
+      .toBe('name: TestHome\nusers:\n  - alice\n');
   });
 
   it('reads an allowed file returning { raw, parsed }', () => {
@@ -134,16 +153,19 @@ describe('YamlConfigFileService — happy path', () => {
     expect(result.path).toBe('system/config/system.yml');
   });
 
+  // Retargeted in Phase E from household/config/household.yml (no longer an
+  // allowed dir) to a file in system/config/ — the round-trip is what these
+  // two cases are about, not the specific path.
   it('writes an allowed file and round-trips the content', () => {
-    const res = service.writeFile('household/config/household.yml', { raw: 'name: Updated\nusers:\n  - bob\n' });
+    const res = service.writeFile('system/config/scratch.yml', { raw: 'name: Updated\nusers:\n  - bob\n' });
     expect(res.ok).toBe(true);
-    const readback = service.readFile('household/config/household.yml');
+    const readback = service.readFile('system/config/scratch.yml');
     expect(readback.parsed).toEqual({ name: 'Updated', users: ['bob'] });
   });
 
   it('writes from a parsed object (dump) and round-trips', () => {
-    service.writeFile('household/config/household.yml', { parsed: { name: 'FromObject', count: 2 } });
-    const readback = service.readFile('household/config/household.yml');
+    service.writeFile('system/config/scratch.yml', { parsed: { name: 'FromObject', count: 2 } });
+    const readback = service.readFile('system/config/scratch.yml');
     expect(readback.parsed).toEqual({ name: 'FromObject', count: 2 });
   });
 
@@ -222,6 +244,50 @@ describe('YamlConfigFileService — colocated file allowlist (task-13)', () => {
     }
     // The telemetry sibling must NOT appear in the listing at all.
     expect(files.find(f => f.path === 'household/fitness/log/2026-08-16/session-abc123.yml')).toBeUndefined();
+  });
+});
+
+// Task 17b: the registry stores paths WITHOUT an extension because every
+// runtime reader resolves .yml OR .yaml via resolveYamlPath. ALLOWED_FILES used
+// to append a hardcoded '.yml', so an app whose file happened to land as .yaml
+// booted fine and then 403'd here — a silent, signal-free failure, the exact
+// class task-13's review found when 8 of 11 colocated files were unreachable.
+describe('YamlConfigFileService — .yaml registry entries are allowlisted (task-17b)', () => {
+  // Drive off the real registry rather than a literal so a renamed entry cannot
+  // leave this passing against a path that no longer exists.
+  const sampleRel = HOUSEHOLD_APP_CONFIGS.fitness;   // 'fitness/config'
+
+  it('allowlists BOTH extensions for every registry entry', () => {
+    for (const rel of Object.values(HOUSEHOLD_APP_CONFIGS)) {
+      expect(ALLOWED_FILES).toContain(`household/${rel}.yml`);
+      expect(ALLOWED_FILES).toContain(`household/${rel}.yaml`);
+    }
+  });
+
+  it('reads and writes a registry entry that landed on disk as .yaml', () => {
+    const rel = `household/${sampleRel}.yaml`;
+    write(rel, 'marker: yaml-extension\n');
+
+    expect(service.readFile(rel).parsed).toEqual({ marker: 'yaml-extension' });
+    expect(service.writeFile(rel, { parsed: { marker: 'updated' } }).ok).toBe(true);
+    expect(service.readFile(rel).parsed).toEqual({ marker: 'updated' });
+  });
+
+  it('lists a .yaml-suffixed config with masked:false', () => {
+    const rel = `household/${sampleRel}.yaml`;
+    write(rel, 'marker: yaml-extension\n');
+    const entry = service.listFiles().files.find(f => f.path === rel);
+    expect(entry, `expected ${rel} in listFiles()`).toBeDefined();
+    expect(entry.masked).toBe(false);
+  });
+
+  // Widening to a second extension must not have widened the grant beyond the
+  // registry: masking still wins, and a non-registry .yaml is still refused.
+  it('does not widen the grant to arbitrary .yaml files', () => {
+    write('household/fitness/log/2026-08-16/session-abc123.yaml', 'heartRate: 140\n');
+    expect(() => service.readFile('household/fitness/log/2026-08-16/session-abc123.yaml')).toThrow();
+    expect(() => service.readFile('household/auth/plex.yaml')).toThrow();
+    expect(ALLOWED_FILES.some(p => p.startsWith('household/auth/'))).toBe(false);
   });
 });
 
