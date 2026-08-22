@@ -3,25 +3,55 @@
 // navigates); playables open Detail with inline Play Now / Add. List-API
 // containers are addressed by id, not accumulated path, so the breadcrumb is
 // Home / [Back] / current label — never a raw id.
-import React from 'react';
+//
+// Task 15 (spec D6 addendum): a container tap ALWAYS browses (Task 14) —
+// that decision only pays off if browsing in costs the user nothing over
+// playing on tap. `containerItem` (forwarded by whichever caller opened this
+// specific container — useContentDispatch's dispatch(), or this component's
+// own nested-drill handler below) carries the tapped item along, so a
+// container-level browse view opens with a ▶ Play · 🔀 Shuffle · + Queue
+// header, all three acting on the WHOLE container against the visible
+// destination (DestinationLine). Root/category browse levels (Home's
+// source/mediaType cards, the plain "Browse" nav item) never pass a
+// containerItem, so the header stays absent there — nothing single to play.
+import React, { useMemo } from 'react';
 import { Skeleton, Alert, Text, Stack, Button } from '@mantine/core';
 import { IconChevronRight, IconAlertCircle } from '@tabler/icons-react';
 import { useListBrowse } from './useListBrowse.js';
 import { useSessionController } from '../controller/useSessionController.js';
 import { useNav } from '../shell/NavProvider.jsx';
+import { useContentDispatch } from '../search/useContentDispatch.js';
 import { resultToQueueInput } from '../search/resultToQueueInput.js';
+import { isContainer } from '../../Content/combobox/comboboxMachine.js';
+import { DestinationLine } from '../cast/DestinationLine.jsx';
+import getLogger from '../../../lib/logging/Logger.js';
 
 function splitPath(path) {
   if (!path) return [];
   return String(path).split('/').filter(Boolean);
 }
 
-export function BrowseView({ path, label, modifiers, take = 50 }) {
+export function BrowseView({ path, label, modifiers, containerItem = null, take = 50 }) {
   const { items, total, loading, error, loadMore } = useListBrowse(path, { modifiers, take });
   const { queue } = useSessionController('local');
   const { push, replace, pop, depth } = useNav();
+  const { playContainerAsQueue, addContainerToQueue } = useContentDispatch();
+  const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
 
   const crumbLabel = label ?? (splitPath(path).join(' / ') || 'All');
+
+  // Only a browse view opened FOR a specific container gets the dispatch
+  // header — reuses the same isContainer predicate the tap grammar itself
+  // is built on (comboboxMachine.js), not a second definition of "container".
+  const isContainerView = !!containerItem && isContainer(containerItem);
+  const containerId = containerItem?.id ?? null;
+
+  const runHeaderVerb = (action, fn) => {
+    if (!containerId) return;
+    log.info('dispatch_header_action', { action, contentId: containerId });
+    const route = fn(containerId, containerItem);
+    log.info('dispatch_header_result', { action, contentId: containerId, route });
+  };
 
   return (
     <Stack data-testid="browse-view" className="browse-view" gap="md">
@@ -41,6 +71,38 @@ export function BrowseView({ path, label, modifiers, take = 50 }) {
         <span className="browse-crumb-sep" aria-hidden="true">/</span>
         <span className="browse-crumb browse-crumb--current" aria-current="page">{crumbLabel}</span>
       </nav>
+
+      {isContainerView && (
+        <div className="browse-dispatch-header" data-testid="browse-dispatch-header">
+          <div className="browse-dispatch-actions">
+            <button
+              type="button"
+              data-testid="browse-dispatch-play"
+              className="browse-dispatch-btn browse-dispatch-btn--primary"
+              onClick={() => runHeaderVerb('play', playContainerAsQueue)}
+            >
+              <span aria-hidden="true">▶</span> Play
+            </button>
+            <button
+              type="button"
+              data-testid="browse-dispatch-shuffle"
+              className="browse-dispatch-btn"
+              onClick={() => runHeaderVerb('shuffle', (id, item) => playContainerAsQueue(id, item, { shuffle: true }))}
+            >
+              <span aria-hidden="true">🔀</span> Shuffle
+            </button>
+            <button
+              type="button"
+              data-testid="browse-dispatch-queue"
+              className="browse-dispatch-btn"
+              onClick={() => runHeaderVerb('queue', addContainerToQueue)}
+            >
+              <span aria-hidden="true">+</span> Queue
+            </button>
+          </div>
+          <DestinationLine surface="browse-header" />
+        </div>
+      )}
 
       {loading && (
         <Stack gap="xs" data-testid="browse-view-loading">
@@ -65,10 +127,10 @@ export function BrowseView({ path, label, modifiers, take = 50 }) {
           {items.map((row) => {
             const id = row.id ?? row.itemId;
             if (!id) return null;
-            const isContainer = row.itemType === 'container';
+            const rowIsContainer = row.itemType === 'container';
             return (
               <li key={id} data-testid={`browse-row-${id}`} className="browse-row">
-                {isContainer ? (
+                {rowIsContainer ? (
                   <button
                     data-testid={`browse-open-${id}`}
                     className="browse-row-open"
@@ -76,6 +138,7 @@ export function BrowseView({ path, label, modifiers, take = 50 }) {
                       path: String(id).replace(':', '/'),
                       label: row.title ?? id,
                       modifiers,
+                      containerItem: { ...row, id },
                     })}
                   >
                     <span className="browse-row-title">{row.title ?? id}</span>
