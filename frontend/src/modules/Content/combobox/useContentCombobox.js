@@ -152,12 +152,17 @@ async function fetchSiblingsData(contentId) {
  * @param {string} args.value - committed content id ('' when unset)
  * @param {(id: string, item?: object) => void} args.onChange
  * @param {string} [args.searchParams] - extra query params for search endpoints
+ * @param {string} [args.fallbackSearchParams] - catalog-wide params to widen to when a
+ *   search scoped by `searchParams` settles empty (D5: a search silently scoped to a
+ *   narrow library — e.g. Music>Ambient — must not present as "nothing exists"). Optional
+ *   and a no-op when omitted/nullish or equal to `searchParams` — non-Media consumers
+ *   (Admin, PlaybackHub) that never pass it see no change in behavior.
  * @param {boolean} [args.appResults] - merge app-registry matches ahead of content results
  * @param {string} [args.logApp] - which app owns these log events. The combobox is
  *   shared, so without this every host's search funnel files itself under 'admin'
  *   and is invisible to an `app:<host>` log query (2026-08-12 session review).
  */
-export function useContentCombobox({ value, onChange, searchParams = '', appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin' }) {
+export function useContentCombobox({ value, onChange, searchParams = '', fallbackSearchParams, appResults = false, selectContainers = false, allowFreeform = true, logApp = 'admin' }) {
   const log = useMemo(() => getChildLogger({ component: 'useContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const [state, dispatch] = useReducer(reducer, value ?? '', initialState);
 
@@ -216,20 +221,28 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
   // fallback which the server already limits to BATCH_TAKE.
   const [rawResultCount, setRawResultCount] = useState(0);
   const queryRef = useRef(''); // last dispatched search text (for app-result merge)
+  // D5: true once the current query text has widened from `searchParams` to
+  // `fallbackSearchParams` after a clean empty settle. Reset on every new
+  // INPUT (handleInput) so a stale flag never survives onto a different query.
+  const [fellBackToAll, setFellBackToAll] = useState(false);
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
   // omitted it, so prop changes never reached the batch URL (stale closure).
-  const doBatchSearch = useCallback(async (text) => {
+  // `overrideParams` mirrors useStreamingSearch's `search(query, overrideExtraQuery)` —
+  // the D5 fallback effect uses it to re-run the same text with wider params without
+  // waiting for the `searchParams` prop itself to change.
+  const doBatchSearch = useCallback(async (text, overrideParams) => {
     if (!text || text.length < 2) {
       log.debug('batch_search.skip', { text, reason: 'too_short' });
       setBatchResults([]);
       return;
     }
-    log.info('batch_search.start', { text });
+    const effectiveParams = overrideParams !== undefined ? overrideParams : searchParams;
+    log.info('batch_search.start', { text, params: effectiveParams || null });
     setBatchLoading(true);
     try {
       const response = await fetch(
-        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${searchParams ? '&' + searchParams : ''}`
+        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`
       );
       if (!response.ok) throw new Error('Search failed');
       const data = await response.json();
@@ -258,6 +271,7 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
 
   const handleInput = useCallback((text) => {
     invalidateBrowseLoads();
+    setFellBackToAll(false); // new text invalidates any prior D5 fallback flag
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
   }, [debouncedSearch]);
@@ -660,6 +674,35 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     else doBatchSearch(text);
   }, [searchSettled, sourceErrors, streamSearch, doBatchSearch, log]);
 
+  // D5 fallback: a search scoped to a narrow library (e.g. Music>Ambient) can
+  // settle empty while the wider catalog has matches — the 2026-08-21 report
+  // that seeded this task was exactly that: scoped to Ambient, zero results,
+  // no explanation, no widening. On a CLEAN empty settle (no source errors —
+  // the retry effect above owns that case and must run first) re-dispatch the
+  // same text with `fallbackSearchParams` once per query text. Guarded so it
+  // never fires when the caller didn't opt in (fallbackSearchParams nullish —
+  // Admin/PlaybackHub don't pass it) or when the search is already
+  // catalog-wide (searchParams === fallbackSearchParams), which would
+  // otherwise loop the identical search forever.
+  const fallbackForRef = useRef(null);
+  useEffect(() => {
+    if (!searchSettled) return;
+    if (fallbackSearchParams == null) return; // opt-in only
+    if (searchParams === fallbackSearchParams) return; // already catalog-wide
+    const text = queryRef.current;
+    const erroredSources = (sourceErrors || []).map((e) => e.source);
+    if (erroredSources.length > 0) return; // Task 5's same-params retry owns this settle
+    if (stateRef.current.results.length > 0) return; // not empty — nothing to widen
+    if (fallbackForRef.current === text) return; // one-shot per query text
+    fallbackForRef.current = text;
+    setFellBackToAll(true);
+    log.info('search.fallback_to_all', {
+      textLength: text.length, searchParams: searchParams || null, fallbackSearchParams: fallbackSearchParams || null,
+    });
+    if (supportsSSE()) streamSearch(text, fallbackSearchParams);
+    else doBatchSearch(text, fallbackSearchParams);
+  }, [searchSettled, sourceErrors, searchParams, fallbackSearchParams, streamSearch, doBatchSearch, log]);
+
   const commit = useCallback((reason) => {
     const s = stateRef.current;
     const decision = decideCommit({
@@ -761,6 +804,10 @@ export function useContentCombobox({ value, onChange, searchParams = '', appResu
     isSearching: streamSearching || batchLoading,
     pendingSources,
     sourceErrors,
+    // D5: true once this query text has widened from `searchParams` to
+    // `fallbackSearchParams` after a clean empty settle. Surfaces use this to
+    // render "Nothing in ‹scope› — showing N results from everywhere."
+    fellBackToAll,
     // Flag truncation so the UI can offer a "refine your search" affordance
     // (audit S6 / F6). Two independent caps can bite: the machine caps every
     // transport's results at RENDER_CAP (the SSE stream is otherwise uncapped

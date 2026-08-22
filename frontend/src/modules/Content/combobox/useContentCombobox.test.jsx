@@ -988,4 +988,98 @@ describe('useContentCombobox', () => {
       expect(retryCallsAfterSecond).toHaveLength(1); // still just the one retry, ever
     });
   });
+
+  // ── Task 11: scoped-empty fallback to All (spec D5) ──
+  // A search scoped to a narrow library (e.g. Music>Ambient) settling empty
+  // used to look identical to "this doesn't exist" — the 2026-08-21 incident
+  // this task fixes. Composes with Task 5's effects above: source errors take
+  // the same-params retry first; the wider-params fallback only fires on a
+  // CLEAN empty settle.
+
+  describe('scoped-empty fallback to All (Task 11)', () => {
+    it('re-dispatches the same text with fallbackSearchParams once on a clean empty settle, marks fellBackToAll, and does not loop on the fallback\'s own empty settle', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(MockEventSource.instances[0].url).toContain('source=ambient');
+      expect(result.current.fellBackToAll).toBe(false);
+
+      // First settle: clean (no source errors), zero results. The fallback
+      // fires within this same settle and immediately starts a NEW search —
+      // by the time this act() flushes, isSearching is already true again
+      // for the fallback dispatch, so searchSettled is not asserted here.
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(2); // fallback opened a NEW stream
+      expect(MockEventSource.instances[1].url).toContain('text=bluey');
+      expect(MockEventSource.instances[1].url).not.toContain('source=ambient'); // widened
+      expect(result.current.fellBackToAll).toBe(true);
+
+      // Second (fallback) settle, also empty — must NOT loop into a third stream.
+      act(() => { MockEventSource.instances[1].simulateMessage({ event: 'complete' }); });
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(result.current.fellBackToAll).toBe(true); // flag persists, no reset
+    });
+
+    it('does not fall back when fallbackSearchParams is absent — no-op for consumers that never opt in', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient' }); // no fallbackSearchParams
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(1); // no fallback dispatch
+      expect(result.current.fellBackToAll).toBe(false);
+    });
+
+    it('does not fall back when searchParams already equals fallbackSearchParams (already catalog-wide)', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: '', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(1); // would loop the identical search
+      expect(result.current.fellBackToAll).toBe(false);
+    });
+
+    it('source errors take priority: Task 5\'s same-params retry fires, the wider-params fallback does not', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => {
+        MockEventSource.instances[0].simulateMessage({ event: 'source_error', source: 'plex', error: 'timeout', pending: [] });
+      });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+
+      expect(MockEventSource.instances).toHaveLength(2); // Task 5's retry fired
+      expect(MockEventSource.instances[1].url).toContain('source=ambient'); // SAME params — not widened
+      expect(result.current.fellBackToAll).toBe(false); // fallback did not fire this round
+    });
+
+    it('a new query resets fellBackToAll even if the previous query had fallen back', async () => {
+      vi.stubGlobal('EventSource', MockEventSource);
+      vi.useFakeTimers();
+      const { result } = setup({ searchParams: 'source=ambient', fallbackSearchParams: '' });
+
+      act(() => { result.current.handleInput('bluey'); });
+      await act(async () => { vi.advanceTimersByTime(350); });
+      act(() => { MockEventSource.instances[0].simulateMessage({ event: 'complete' }); });
+      expect(result.current.fellBackToAll).toBe(true);
+
+      act(() => { result.current.handleInput('another'); });
+      expect(result.current.fellBackToAll).toBe(false); // reset immediately on new INPUT
+    });
+  });
 });
