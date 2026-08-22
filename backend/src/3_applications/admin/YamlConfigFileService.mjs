@@ -14,10 +14,13 @@
  * explicit-file addendum for task-13:
  * - Allowed dirs: system/config, household/config (list + read + write)
  * - Allowed files: individual app configs colocated with their own domain
- *   folder after task-13 (household/fitness/config.yml, etc.) — listed one
- *   file at a time, NOT as a directory grant. A directory grant on
+ *   folder (household/fitness/config.yml, etc.), DERIVED from the household
+ *   config registry (shared/contracts/householdConfig.mjs) — listed one file
+ *   at a time, NOT as a directory grant. A directory grant on
  *   e.g. household/fitness would also expose household/fitness/log/, a
  *   2000+-entry session-telemetry tree that has nothing to do with config.
+ *   MASKED_DIRS is checked BEFORE this list, so no allowlist entry — derived
+ *   or hand-added — can ever reach household/auth or system/auth.
  * - Masked dirs:  system/auth, household/auth (listed, but NOT readable/writable)
  * - Directory checks run on the NORMALIZED relative path derived from the
  *   RESOLVED absolute path (prevents ../auth bypass), after an absolute
@@ -31,6 +34,7 @@ import {
   NotFoundError,
   AuthorizationError
 } from '#system/utils/errors/index.mjs';
+import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 // Directories users can list, read, and write (relative to data root)
 const ALLOWED_DIRS = [
@@ -38,38 +42,35 @@ const ALLOWED_DIRS = [
   'household/config'
 ];
 
-// Individual files users can read/write even though they sit outside
-// ALLOWED_DIRS — every app config task-13 colocated with its own domain
-// folder. Deliberately a file allowlist, not a directory one (see header) —
-// e.g. a directory grant on household/fitness would also expose
-// household/fitness/log/, a 2000+-entry session-telemetry tree.
-// task-13 review, Important 4: this list first shipped with only 3 of the
-// 11 files colocation actually created, silently 403ing the other 8 in the
-// admin YAML browser even though they were reachable before the move. Keep
-// this in sync with every household/<app>/config.yml (and the two
-// non-`config.yml`-named colocated files) task-13 created.
-const ALLOWED_FILES = [
-  'household/fitness/config.yml',
-  'household/gratitude/config.yml',
-  'household/harvest/config.yml',
-  'household/school/school.yml',
-  'household/media/config.yml',
-  'household/livestream/config.yml',
-  'household/newsreporter/config.yml',
-  'household/notifications/config.yml',
-  'household/agents/config.yml',
-  'household/media/content-prefixes.yml',
-  // I3 (final-review fix wave, 2026-08-16): task-13 moved this out of
-  // config/ to the household root (household/integrations.yml) and its
-  // review deferred re-adding it here on the theory it "has a dedicated
-  // admin surface elsewhere" — false: IntegrationsQueryService
-  // (backend/src/3_applications/admin/IntegrationsQueryService.mjs) has ZERO
-  // write methods, so without this entry the file was editable only by
-  // shelling into the container. household.yml and hardware/devices.yml
-  // (task-13's other two moved-out files) DO have real dedicated write
+/**
+ * Individual files the admin YAML browser may read and write, even though they
+ * sit outside ALLOWED_DIRS.
+ *
+ * DERIVED from the household config registry — deliberately a file allowlist,
+ * never a directory one: a grant on `household/fitness` would also expose
+ * `household/fitness/log/`, a 2000+-entry session-telemetry tree that has
+ * nothing to do with config.
+ *
+ * This list used to be hand-maintained and it drifted: it shipped covering 3 of
+ * the 11 files task-13 colocated, silently 403ing the other 8 with no error
+ * anywhere — a file missing here is uneditable with no signal at all. Deriving
+ * it means adding an app to the registry is the only edit an app needs.
+ */
+export const ALLOWED_FILES = Object.freeze([
+  ...Object.values(HOUSEHOLD_APP_CONFIGS).map((rel) => `household/${rel}.yml`),
+  // Not an app config: no dedicated write surface exists — IntegrationsQueryService
+  // (backend/src/3_applications/admin/IntegrationsQueryService.mjs) has ZERO write
+  // methods, so without this entry the file is editable only by shelling into the
+  // container. household.yml and hardware/devices.yml DO have real dedicated write
   // surfaces and correctly stay off this list.
   'household/integrations.yml',
-];
+  'household/media/content-prefixes.yml',
+  // Trigger bindings, not an app config — but it WAS admin-editable via
+  // AppsConfigService before this migration. Without this entry, moving
+  // keyboard.yml out of the app registry would silently take away the only UI
+  // for editing the Office Keypad bindings.
+  'household/triggers/bindings/keyboard.yml',
+]);
 
 // Directories that appear in file listings but cannot be read or written
 const MASKED_DIRS = [
@@ -224,9 +225,15 @@ export class YamlConfigFileService {
       files.push(...collectYamlFiles(absDir, dataRoot));
     }
 
-    // Individual colocated files (task-13) — listed one at a time, not via
-    // directory recursion. See the ALLOWED_FILES comment for why.
+    // Individual colocated files — listed one at a time, not via directory
+    // recursion. See the ALLOWED_FILES comment for why.
     for (const relPath of ALLOWED_FILES) {
+      // Defence in depth: the file list is DERIVED, so a future registry entry
+      // under household/auth would land here. read/write already refuse it
+      // (isMasked runs before isAllowed), but without this guard the listing
+      // would show a SECOND row for it with masked:false and the admin UI would
+      // offer an edit affordance for a secret. Mask wins in the listing too.
+      if (isMasked(relPath)) continue;
       const absPath = path.join(dataRoot, relPath);
       if (!fs.existsSync(absPath)) continue;
       const stat = fs.statSync(absPath);
