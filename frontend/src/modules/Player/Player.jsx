@@ -1217,14 +1217,16 @@ const Player = forwardRef(function Player(props, ref) {
     },
     seekToItem: (targetContentId, seconds) => {
       if (!isQueue || !targetContentId) return;
-      const jumped = rawJumpTo(targetContentId);
+      const jumped = rawJumpTo(targetContentId, seconds);
       if (!jumped) return;
       setQueueHasAdvanced(true);
-      if (Number.isFinite(seconds) && seconds > 0) {
-        setTargetTimeSeconds(seconds);
-      }
+      playbackLog('seek-to-item', {
+        targetContentId,
+        seekSeconds: Number.isFinite(seconds) ? seconds : null,
+        fromContentId: effectiveMeta?.contentId ?? effectiveMeta?.assetId ?? null,
+      }, { level: 'info' });
     },
-  }), [isQueue, advance, singleAdvance, rawJumpTo, setTargetTimeSeconds, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
+  }), [isQueue, advance, singleAdvance, rawJumpTo, sessionVolume, sessionPlaybackRate, setSessionVolume, setSessionPlaybackRate]);
 
   useEffect(() => () => clearRemountTimer(), [clearRemountTimer]);
 
