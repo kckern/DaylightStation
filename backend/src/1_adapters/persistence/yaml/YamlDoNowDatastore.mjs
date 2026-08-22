@@ -4,7 +4,7 @@
  * in the domain/application layers; this adapter just reads and writes the
  * two files the spec names:
  *
- *   pending: <dataDir>/apps/donow/pending.yml
+ *   pending: household[-{hid}]/donow/pending.yml
  *     One row per outstanding parental-approval request
  *     (`{ id, surface, action, label, learnerId, requestedBy, ref, occupant,
  *     createdAt, expiresAt, repended? }`). Upserted by `id`; pruned lazily
@@ -14,7 +14,7 @@
  *     (not just filters what it returns) — otherwise the file grows forever
  *     with rows nobody will ever look at again.
  *
- *   dispatch log: <dataDir>/apps/donow/log/{YYYY-MM-DD}.yml   (append-only)
+ *   dispatch log: household[-{hid}]/donow/log/{YYYY-MM-DD}.yml   (append-only)
  *     One row per `dispatched` decision (`{ at, surface, decision, learnerId,
  *     requestedBy, ref, programId?, approvalId? }`), sharded by the UTC date
  *     of the row's `at` (the economy-ledger pattern) — Task 12 reads two
@@ -56,7 +56,8 @@ function utcDayOf(at) {
 }
 
 export class YamlDoNowDatastore {
-  #dataDir;
+  #configService;
+  #householdId;
   #logger;
   // One queue for every mutation on this instance (pending file AND log
   // shards alike) — see the header note on concurrency. A read path that
@@ -66,16 +67,21 @@ export class YamlDoNowDatastore {
 
   /**
    * @param {Object} config
-   * @param {string} config.dataDir - Absolute path to the data root.
+   * @param {Object} config.configService - Must expose getHouseholdPath(rel, hid).
+   * @param {string|null} [config.householdId] - null = default household.
    * @param {Object} [config.logger] - Logger with debug/info/warn/error methods.
    */
   constructor(config = {}) {
-    if (!config.dataDir) {
-      throw new Error('YamlDoNowDatastore requires dataDir');
+    if (typeof config.configService?.getHouseholdPath !== 'function') {
+      throw new Error('YamlDoNowDatastore requires configService with getHouseholdPath');
     }
-    this.#dataDir = config.dataDir;
+    this.#configService = config.configService;
+    this.#householdId = config.householdId ?? null;
     this.#logger = config.logger || console;
   }
+
+  /** Absolute path to this household's donow folder. Exposed for tests. */
+  rootPath() { return this.#root(); }
 
   /**
    * Run `fn` after every previously-enqueued operation on this instance has
@@ -89,7 +95,9 @@ export class YamlDoNowDatastore {
     return queued;
   }
 
-  #root() { return path.join(this.#dataDir, 'apps', 'donow'); }
+  #root() {
+    return this.#configService.getHouseholdPath('donow', this.#householdId);
+  }
 
   #pendingFile() { return path.join(this.#root(), PENDING_FILE); }
 
