@@ -5,7 +5,7 @@
 // missing-file handling live in exactly one place instead of being copy-pasted
 // per router. Missing files are non-fatal (an unconfigured install just gets
 // empty catalogs).
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 
@@ -22,8 +22,16 @@ async function readYamlDoc(filePath, logger, event) {
 // every preset; `frames` is the named frame-variety catalog (insets + mat + crop).
 // `householdDir` is the resolved household base dir (ConfigService.getHouseholdPath('')).
 export async function loadArtmodeConfig(householdDir, logger = console) {
-  const doc = await readYamlDoc(
-    path.join(householdDir, 'config', 'artmode.yml'), logger, 'artmode.config.read_failed');
+  // Grouped path first, flat `config/` second. This adapter may not import the
+  // config registry (layer rule `adapters-no-config-singleton` bans
+  // `#system/config/*`), so the grouped path is spelled literally here — it must
+  // stay in step with HOUSEHOLD_APP_CONFIGS.artmode ('art/artmode').
+  const candidates = [
+    path.join(householdDir, 'art', 'artmode.yml'),
+    path.join(householdDir, 'config', 'artmode.yml'), // retiring — a later phase deletes this
+  ];
+  const target = candidates.find((p) => existsSync(p)) ?? candidates[0];
+  const doc = await readYamlDoc(target, logger, 'artmode.config.read_failed');
   return {
     presets: doc.presets || {}, defaults: doc.defaults || {}, frames: doc.frames || {},
     schedule: Array.isArray(doc.schedule) ? doc.schedule : [],
