@@ -96,8 +96,11 @@ export function ActivitySkeleton({ shape }) {
  * Data comes through the shared stale-while-revalidate list cache, so a warm
  * kiosk paints the previous strip immediately and repaints only if the server
  * disagrees.
+ *
+ * `disabled` greys the whole strip out and blocks the course buttons — the menu
+ * passes it under curfew, when every door out of the home screen is shut.
  */
-export default function PianoMenuActivity({ onOpenCourse }) {
+export default function PianoMenuActivity({ onOpenCourse, disabled }) {
   const { data: players, loading } = usePianoList(
     ACTIVITY_PATH,
     (r) => (Array.isArray(r?.players) ? r.players : []),
@@ -113,7 +116,10 @@ export default function PianoMenuActivity({ onOpenCourse }) {
   if (loading) return <ActivitySkeleton shape={shape} />;
   if (!players.length) return null;
   return (
-    <div className="piano-menu-activity" aria-label="Recent course activity">
+    <div
+      className={`piano-menu-activity${disabled ? ' is-disabled' : ''}`}
+      aria-label="Recent course activity"
+    >
       {players.map((u) => {
         const stale = chipIsStale(u); // player-level: keyed off their newest course
         return (
@@ -132,7 +138,9 @@ export default function PianoMenuActivity({ onOpenCourse }) {
                   type="button"
                   key={c.courseId}
                   className="piano-menu-activity__course"
-                  onClick={() => onOpenCourse?.(c.courseId, u.userId)}
+                  disabled={disabled}
+                  aria-disabled={disabled || undefined}
+                  onClick={disabled ? undefined : () => onOpenCourse?.(c.courseId, u.userId)}
                   title={`${u.name} — ${c.courseTitle}: ${c.completed}/${c.total}`}
                 >
                   <span className="piano-menu-activity__poster">

@@ -50,6 +50,15 @@ export const PIANO_CONFIG_DEFAULTS = {
   autoRecord: { enabled: false, silenceSeconds: 25, minNotes: 5, minSeconds: 3, flushSeconds: 12 },
   // Screensaver disabled until a deviceId is configured (null = no screen control).
   screensaver: { deviceId: null, timeoutMinutes: 20, quietHours: null, offCooldownMinutes: 30 },
+  // Curfew: inside this window the kiosk menu goes dark — every tile and
+  // activity card greys out and stops responding. Free play is untouched:
+  // playing the keys still auto-enters Studio (autoStudio), so the piano works
+  // at any hour; only "put on a course / pick a game" closes for the night.
+  //
+  // Off by default and config-driven — the household's actual cut-off lives in
+  // data/household/piano/config.yml (`curfew:`), per piano or shared. A piano
+  // with no curfew block never greys out, so this can't surprise a new kiosk.
+  curfew: { enabled: false, start: '19:00', end: '06:00' },
   // Studio mode defaults. topPaneLayout: 'staff' (centered grand staff, default) |
   // 'triptych' (circle-of-fifths | staff | live chord name). Household default; a
   // per-user preference (preferences.yml → topPaneLayout) overrides it.
@@ -79,6 +88,18 @@ export function resolveScreensaver(shared, p) {
     timeoutMinutes: ps.timeoutMinutes ?? s.timeoutMinutes ?? d.timeoutMinutes,
     quietHours: ps.quietHours ?? s.quietHours ?? d.quietHours,
     offCooldownMinutes: ps.offCooldownMinutes ?? s.offCooldownMinutes ?? d.offCooldownMinutes,
+  };
+}
+
+/** Resolve curfew config: per-piano values override shared, over defaults. */
+export function resolveCurfew(shared, p) {
+  const s = shared.curfew || {};
+  const ps = p.curfew || {};
+  const d = PIANO_CONFIG_DEFAULTS.curfew;
+  return {
+    enabled: ps.enabled ?? s.enabled ?? d.enabled,
+    start: ps.start ?? s.start ?? d.start,
+    end: ps.end ?? s.end ?? d.end,
   };
 }
 
@@ -145,6 +166,7 @@ export function resolvePianoConfig(raw, pianoId) {
     autoRecord: resolveAutoRecord(shared, p),
     games: p.games ?? shared.games ?? null,
     screensaver: resolveScreensaver(shared, p),
+    curfew: resolveCurfew(shared, p),
     studio: {
       topPaneLayout: p.studio?.topPaneLayout
         ?? shared.studio?.topPaneLayout
