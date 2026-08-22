@@ -337,10 +337,10 @@ import {
   PianoImageHarvester
 } from '#adapters/harvester/index.mjs';
 
-// JamCorder adapters + use case (MIDI recorder harvest)
+// MIDI recording harvest: vendor (JamCorder) adapters + vendor-neutral use case
 import { HttpJamCorderSource } from '#adapters/jamcorder/HttpJamCorderSource.mjs';
 import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
-import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderRecordings.mjs';
+import { HarvestMidiRecordings } from '#apps/midi/HarvestMidiRecordings.mjs';
 
 // Piano MIDI→MP3 adapters + use case (daily render of media/midi/piano/log into media/audio/piano)
 import { FsMidiLibrary } from '#adapters/pianoaudio/FsMidiLibrary.mjs';
@@ -1441,8 +1441,10 @@ export function createHomeAutomationAdapters(config) {
  * Reads the hub's `baseUrl` from `services.playback_hub.docker` in
  * `data/system/config/services.yml` and the configurable timeout from
  * `services.playback_hub.request_timeout_sec` (default 2). Persists
- * household-side `playback-hub.yml` at
- * `<dataDir>/household/config/playback-hub.yml`.
+ * household-side `playback-hub.yml` at whichever path the household config
+ * registry resolves for the `playback-hub` app (grouped
+ * `<household>/playback-hub/config.yml`, falling back to the retiring flat
+ * `<household>/config/playback-hub.yml` while the data move is pending).
  *
  * Starts the HubStatusBroadcaster as part of `container.start()`. Returns the
  * container alongside the router so the caller can register
@@ -1479,7 +1481,11 @@ export async function createPlaybackHubServices(config) {
     logger,
   });
 
-  const yamlPath = path.join(configService.getDataDir(), 'household', 'config', 'playback-hub.yml');
+  // Resolve through the registry rather than hardcoding, so the read side
+  // (configLoader) and this write-capable datastore can never disagree about
+  // which file is authoritative. Returns an ABSOLUTE path WITH extension —
+  // the same shape the hardcoded path.join produced.
+  const yamlPath = configService.getHouseholdAppConfigPath(null, 'playback-hub');
   const configRepository = new YamlHubConfigDatastore({
     yamlPath,
     logger,
@@ -2833,7 +2839,8 @@ export async function createConciergeServices(config) {
   //     voice_sources: [plex]
   //     plex_library_ids: "5,10,11,16,18,19,21,22,23"
   //     prefix_aliases: {}
-  // Reads data/household/config/concierge.yml
+  // Reads data/household/agents/concierge.yml (falls back to the retiring
+  // data/household/config/concierge.yml until the data move lands).
   const conciergeConfig = configService.reloadHouseholdAppConfig?.(null, 'concierge') ?? {};
   const mediaConfig = conciergeConfig?.media ?? {};
 
@@ -3503,14 +3510,27 @@ export function createHarvesterServices(config) {
     }
   }
 
-  // JamCorder — daily MIDI harvest from the networked piano recorder.
+  // Daily MIDI harvest from the networked piano recorder.
+  // The 'jamcorder' key is the harvester's identity, not a name we are free to
+  // change: it must match the `jobs.yml` job id and the persisted per-job
+  // scheduler state in `system/scheduling/cron-runtime.yml`. Renaming it here
+  // would orphan that state and the job would stop running. (The real registry
+  // key is JamCorderHarvester.serviceId; this argument is only the log label,
+  // and is kept identical to it on purpose.)
+  //
+  // DECIDED 2026-08-22, not deferred: this name stays `jamcorder` for good.
+  // The 2026-08 rename moved the vendor name out of 2_domains/ and
+  // 3_applications/ (now `midi`), which was the point. JamCorderHarvester
+  // itself lives in 1_adapters/harvester/other/ — a vendor-specific adapter,
+  // where a vendor serviceId is CORRECT, not a leftover.
   if (httpClient) {
     registerHarvester('jamcorder', () => {
-      const jamcorderCfg = configService?.getHouseholdAppConfig?.(null, 'jamcorder') || {};
-      const host = jamcorderCfg.host || '10.0.0.244';
+      // Recorder address comes from the device registry (hardware/devices.yml),
+      // not an app config — it is a device, not an app.
+      const host = configService?.getDeviceConfig?.('midi-recorder')?.host || '10.0.0.244';
       const source = new HttpJamCorderSource({ httpClient, host, logger });
       const archive = new FsJamCorderArchive({ configService, logger });
-      const harvestUseCase = new HarvestJamCorderRecordings({ source, archive, logger });
+      const harvestUseCase = new HarvestMidiRecordings({ source, archive, logger });
       return new JamCorderHarvester({ harvestUseCase, logger });
     });
   }

@@ -13,6 +13,7 @@ import path from 'node:path';
 import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
+import { appConfigRelPath, legacyAppConfigRelPath } from '#shared/contracts/householdConfig.mjs';
 
 export class ConfigService {
   #config;
@@ -221,23 +222,35 @@ export class ConfigService {
   /**
    * Resolve the on-disk base path (no extension) for a household app config.
    *
-   * Colocated first: <household>/<appName>/config.yml — the app's own domain
-   * (School deliberately uses <household>/school/school.yml).
-   * folder. The legacy <household>/config/<appName>.yml is still read so a
-   * file that has not been moved off the retired config/ root yet still
-   * resolves — drop this fallback in a follow-up once every app config has
-   * been moved and a redeploy has proven nothing regresses (task-13, step 7
-   * intentionally deferred).
+   * Registry first: `shared/contracts/householdConfig` is the single source of truth for
+   * where an app's config lives under the household folder — a DOMAIN folder
+   * plus a facet filename (`hardware/scales`, `school/school`, `piano/config`).
+   * Grouping is why this is a map and not a convention: `hardware/scales.yml`
+   * is not `<app>/config.yml`, so no rule derived from the app name alone can
+   * express it, and the old school-specific basename special case was the first
+   * symptom of that.
+   *
+   * The legacy <household>/config/<appName>.yml is still read second so a tree
+   * that has not synced the data move yet still resolves. A later phase deletes
+   * that fallback along with the directory.
    * @param {string} dataDir
    * @param {string} folderName
    * @param {string} appName
    * @returns {string} base path (no .yml extension)
    */
   #resolveHouseholdAppConfigPath(dataDir, folderName, appName) {
-    const configBasename = appName === 'school' ? 'school' : 'config';
-    const colocated = `${dataDir}/${folderName}/${appName}/${configBasename}`;
-    if (yamlExists(colocated)) return colocated;
-    return `${dataDir}/${folderName}/config/${appName}`;
+    const grouped = appConfigRelPath(appName);
+    if (grouped) {
+      const groupedPath = `${dataDir}/${folderName}/${grouped}`;
+      if (yamlExists(groupedPath)) return groupedPath;
+    }
+    // Retiring: a tree that has not synced the data move yet. A later phase
+    // deletes this branch along with the directory.
+    const legacyPath = `${dataDir}/${folderName}/${legacyAppConfigRelPath(appName)}`;
+    if (yamlExists(legacyPath)) return legacyPath;
+    // Neither exists — hand back the grouped path so a first write lands in the
+    // new home rather than recreating config/.
+    return grouped ? `${dataDir}/${folderName}/${grouped}` : legacyPath;
   }
 
   /**
@@ -254,8 +267,9 @@ export class ConfigService {
    * A second write mechanism, even one meant to mirror the read side, WILL
    * drift from it; this method is the single source of truth for both.
    *
-   * Same colocated-first-with-legacy-fallback rule as the read side, and
-   * preserves whichever extension (.yml/.yaml) the file already has at
+   * Same registry-first-with-legacy-fallback rule as the read side (both go
+   * through #resolveHouseholdAppConfigPath), and preserves whichever
+   * extension (.yml/.yaml) the file already has at
    * whichever location wins — defaulting to .yml for a file that exists at
    * neither location yet (matches the pre-task-13 default for a brand-new
    * config file).

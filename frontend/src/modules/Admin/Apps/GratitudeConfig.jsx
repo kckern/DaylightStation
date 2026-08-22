@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack, NumberInput, TextInput, Switch, Paper, Text, Group } from '@mantine/core';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 
 function updateNested(data, path, value) {
   const next = JSON.parse(JSON.stringify(data));
@@ -100,7 +101,7 @@ function GratitudeConfigContent({ data, setData }) {
 function GratitudeConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/gratitude/config.yml"
+      filePath={configPath('gratitude')}
       title="Gratitude Configuration"
     >
       {({ data, setData }) => (

@@ -16,6 +16,9 @@
  * Writes are serialized through a Promise-chain mutex so two concurrent
  * scans of different unknown tags can't lose writes to each other.
  *
+ * Trigger config lives under ONE root, resolved per load (see TRIGGER_ROOT
+ * below). Reads and writes both use it; there is no per-file fallback.
+ *
  * @module adapters/trigger/YamlTriggerConfigRepository
  */
 
@@ -24,17 +27,54 @@ import { serializeNfcTags } from './parsers/nfcTagsSerializer.mjs';
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
-const PATHS = {
-  sources: 'config/triggers/sources',
-  bindingsNfc: 'config/triggers/bindings/nfc',
-  responses: 'config/triggers/responses',
-  endpoints: 'config/triggers/endpoints',
-};
+/** Grouped (destination) root. */
+const TRIGGER_ROOT = 'triggers';
+/** The retiring flat root. Deleted once the data move lands. */
+const LEGACY_TRIGGER_ROOT = 'config/triggers';
 
-/** Directory form of the NFC bindings: one file per group (books, cards, …). */
-const BINDINGS_NFC_DIR = 'config/triggers/bindings/nfc';
+/**
+ * ONE root is resolved per load, and every read AND every write then uses it.
+ * There is deliberately no per-file fallback anywhere in this class.
+ *
+ * Why not "read falls back to legacy, write always targets the new root": that
+ * loses data. Trace it — legacy holds bindings/nfc/{books,cards}.yml and the
+ * grouped root is empty. A read falls back and loads both. One note edit on a
+ * books tag flushes ONLY the books subset, to the GROUPED root. Next boot the
+ * grouped bindings directory is non-empty, so it wins outright and the legacy
+ * root is never consulted: every cards.yml tag silently disappears. Resolving a
+ * single root makes that split impossible — migration is an atomic move of all
+ * the files at once, and no incremental write can half-migrate the tree.
+ */
+const pathsFor = (root) => ({
+  sources: `${root}/sources`,
+  bindingsNfc: `${root}/bindings/nfc`,
+  responses: `${root}/responses`,
+  endpoints: `${root}/endpoints`,
+});
+
 /** Where a tag with no declared home lands. */
 const DEFAULT_TAG_FILE = 'unsorted.yml';
+
+/** A YAML blob counts as "present" only if it actually holds entries. */
+const hasEntries = (blob) => Boolean(blob) && typeof blob === 'object' && Object.keys(blob).length > 0;
+
+/**
+ * Which trigger CONFIG files exist under `root`. Deliberately probes the config
+ * surface (sources / responses / endpoints / bindings) and NOT the whole
+ * directory: `triggers/nfc.observed.yml` is machine-written runtime state and
+ * already lives under the grouped root today, so a bare "is triggers/ non-empty"
+ * test would select the grouped root right now and lose every binding.
+ */
+function configSurface(root, { loadFile, listDir }) {
+  const paths = pathsFor(root);
+  const found = [];
+  for (const facet of ['sources', 'responses', 'endpoints', 'bindingsNfc']) {
+    if (hasEntries(loadFile(paths[facet]))) found.push(paths[facet]);
+  }
+  const dir = typeof listDir === 'function' ? (listDir(paths.bindingsNfc) || []) : [];
+  if (dir.length) found.push(`${paths.bindingsNfc}/`);
+  return found;
+}
 
 export class YamlTriggerConfigRepository {
   #saveFile;
@@ -45,6 +85,10 @@ export class YamlTriggerConfigRepository {
   // the registry is a single legacy file. Drives round-trip writes.
   #tagSource = new Map();
   #tagFileMode = 'single';
+  // The ONE resolved root, and the paths derived from it. Both reads and writes
+  // go through these; nothing in this class may reach for the other root.
+  #root = LEGACY_TRIGGER_ROOT;
+  #paths = pathsFor(LEGACY_TRIGGER_ROOT);
 
   constructor({ saveFile, observedStore } = {}) {
     this.#saveFile = typeof saveFile === 'function' ? saveFile : null;
@@ -59,14 +103,46 @@ export class YamlTriggerConfigRepository {
    * @throws {ValidationError} if any YAML is malformed.
    */
   loadRegistry({ loadFile, listDir = null }) {
+    this.#resolveRoot({ loadFile, listDir });
     const blobs = {
-      sources: loadFile(PATHS.sources),
+      sources: loadFile(this.#paths.sources),
       bindingsNfc: this.#loadNfcBindings({ loadFile, listDir }),
-      responses: loadFile(PATHS.responses),
-      endpoints: loadFile(PATHS.endpoints),
+      responses: loadFile(this.#paths.responses),
+      endpoints: loadFile(this.#paths.endpoints),
     };
     this.#registry = buildTriggerRegistry(blobs);
     return this.#registry;
+  }
+
+  /** The root this registry was loaded from (and writes back to). */
+  get root() { return this.#root; }
+
+  /**
+   * Pick the single root for this load: the grouped `triggers/` if it holds any
+   * trigger config, otherwise the retiring `config/triggers/`.
+   *
+   * Config under BOTH roots is a HARD ERROR for the same reason the single-file
+   * / directory collision is: a half-migrated tree has two plausible sources of
+   * truth and nothing to say which is authoritative. Refusing to boot is the
+   * cheap version of that lesson — and with one root resolved per load, only a
+   * human or an interrupted migration can produce this state, never a write.
+   */
+  #resolveRoot({ loadFile, listDir }) {
+    const grouped = configSurface(TRIGGER_ROOT, { loadFile, listDir });
+    const legacy = configSurface(LEGACY_TRIGGER_ROOT, { loadFile, listDir });
+
+    if (grouped.length && legacy.length) {
+      throw new ValidationError(
+        `trigger config exists under BOTH ${TRIGGER_ROOT}/ (${grouped.join(', ')}) and `
+        + `${LEGACY_TRIGGER_ROOT}/ (${legacy.join(', ')}). Finish the move — put every trigger `
+        + 'file under one root and delete the other. Two roots for one trigger registry is how a '
+        + 'tag silently resolves to the wrong thing, or stops resolving at all.',
+        { code: 'TRIGGER_ROOTS_AMBIGUOUS', grouped, legacy }
+      );
+    }
+
+    this.#root = grouped.length ? TRIGGER_ROOT : LEGACY_TRIGGER_ROOT;
+    this.#paths = pathsFor(this.#root);
   }
 
   /**
@@ -84,12 +160,13 @@ export class YamlTriggerConfigRepository {
    * that file instead of collapsing every group into one.
    */
   #loadNfcBindings({ loadFile, listDir }) {
-    const files = typeof listDir === 'function' ? (listDir(BINDINGS_NFC_DIR) || []) : [];
-    const single = loadFile(PATHS.bindingsNfc);
+    const dirPath = this.#paths.bindingsNfc;
+    const files = typeof listDir === 'function' ? (listDir(dirPath) || []) : [];
+    const single = loadFile(this.#paths.bindingsNfc);
 
     if (files.length && single && Object.keys(single).length) {
       throw new ValidationError(
-        `NFC bindings exist BOTH as ${PATHS.bindingsNfc}.yml and as files in ${BINDINGS_NFC_DIR}/ `
+        `NFC bindings exist BOTH as ${this.#paths.bindingsNfc}.yml and as files in ${dirPath}/ `
         + `(${files.join(', ')}). Move the single file's entries into the directory and delete it — `
         + 'two sources of truth for one tag registry is how a card silently resolves to the wrong thing.',
         { code: 'NFC_BINDINGS_AMBIGUOUS', files }
@@ -110,7 +187,7 @@ export class YamlTriggerConfigRepository {
     this.#tagSource.clear();
     const merged = {};
     for (const file of files) {
-      const blob = loadFile(`${BINDINGS_NFC_DIR}/${file.replace(/\.ya?ml$/i, '')}`);
+      const blob = loadFile(`${dirPath}/${file.replace(/\.ya?ml$/i, '')}`);
       for (const [rawUid, entry] of Object.entries(blob || {})) {
         const uid = canonicalizeNfcUid(rawUid);
         const prior = this.#tagSource.get(uid);
@@ -118,7 +195,7 @@ export class YamlTriggerConfigRepository {
         // filesystem. Name both files so the fix is obvious.
         if (prior !== undefined) {
           throw new ValidationError(
-            `tag "${rawUid}" appears in both ${BINDINGS_NFC_DIR}/${prior} and ${BINDINGS_NFC_DIR}/${file}`,
+            `tag "${rawUid}" appears in both ${dirPath}/${prior} and ${dirPath}/${file}`,
             { code: 'DUPLICATE_TAG_ACROSS_FILES', field: rawUid, files: [prior, file] }
           );
         }
@@ -210,14 +287,15 @@ export class YamlTriggerConfigRepository {
   #flushBindings(uid) {
     const file = this.#tagSource.get(uid) ?? null;
     if (file === null) {
-      // Legacy single-file registry: unchanged behaviour.
-      return Promise.resolve(this.#saveFile(PATHS.bindingsNfc, serializeNfcTags(this.#registry.nfc.tags)));
+      // Single-file registry: unchanged behaviour, written back to the root the
+      // registry was loaded from.
+      return Promise.resolve(this.#saveFile(this.#paths.bindingsNfc, serializeNfcTags(this.#registry.nfc.tags)));
     }
     const subset = {};
     for (const [u, entry] of Object.entries(this.#registry.nfc.tags)) {
       if ((this.#tagSource.get(u) ?? null) === file) subset[u] = entry;
     }
-    const relPath = `${BINDINGS_NFC_DIR}/${file.replace(/\.ya?ml$/i, '')}`;
+    const relPath = `${this.#paths.bindingsNfc}/${file.replace(/\.ya?ml$/i, '')}`;
     return Promise.resolve(this.#saveFile(relPath, serializeNfcTags(subset)));
   }
 }

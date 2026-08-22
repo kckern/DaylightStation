@@ -16,6 +16,10 @@ backend/node_modules
 !backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 !backend/src/2_domains/fitness/services/__fixtures__/*.yml
 !backend/src/3_applications/school/sources/geography/*.yml
+# Backend-scoped fixture tree (mirrors the `!tests/_fixtures/**` rule above for
+# the root suite). These ARE test inputs — without this the suite only passes on
+# a machine where they happen to sit untracked in the working tree.
+!backend/tests/_fixtures/**/*.yml
 # Golden-page corpus: these ARE the test inputs. Without this the suite passes
 # only on a machine where they happen to sit untracked in the working tree.
 !tests/isolated/rendering/school/golden/corpus/*.yml
@@ -163,3 +167,4 @@ __sabotage_*.mjs
 /*.pdf
 docs/_moveme/
 /.agents
+!scripts/migrate-household-config.mjs

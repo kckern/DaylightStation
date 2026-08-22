@@ -5,6 +5,7 @@ import {
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 
 const US_TIMEZONES = [
   { value: 'America/New_York', label: 'Eastern (America/New_York)' },
@@ -172,7 +173,7 @@ function ShoppingConfigContent({ data, setData }) {
 function ShoppingConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/harvest/config.yml"
+      filePath={configPath('harvest')}
       title="Shopping Configuration"
     >
       {({ data, setData }) => (

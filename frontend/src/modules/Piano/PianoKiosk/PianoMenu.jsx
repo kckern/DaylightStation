@@ -8,6 +8,7 @@ import PianoTile from './PianoTile.jsx';
 import PianoMenuActivity from './PianoMenuActivity.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
+import usePianoCurfew from './usePianoCurfew.js';
 
 // Order maps to the 4-column grid, row by row (top row → bottom row):
 //   Courses    Music      Sheet Music  Studio
@@ -41,6 +42,12 @@ export const PIANO_MODES = [
 
 /**
  * PianoMenu — the touch-first home screen for a piano. Tiles route to each mode.
+ *
+ * Under curfew (config.curfew, default 19:00–06:00) the whole menu goes dark:
+ * every tile and every activity-strip card greys out and stops responding. The
+ * one thing still working is the piano — sitting down and playing auto-enters
+ * Studio (useAutoStudioEntry in PianoApp), which is deliberately independent of
+ * this menu, so evening free play is unaffected.
  */
 export function PianoMenu() {
   const navigate = useNavigate();
@@ -50,16 +57,19 @@ export function PianoMenu() {
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 11 → 4
+  const curfew = usePianoCurfew(config?.curfew);
 
   const open = (id) => {
+    if (curfew) return; // belt-and-braces: the tiles are already disabled
     logger.info('piano.mode-enter', { mode: id, pianoId });
     navigate(`${basePath}/${id}`);
   };
 
   return (
-    <main className="piano-home">
+    <main className={`piano-home${curfew ? ' is-curfew' : ''}`}>
       <div className="piano-home__body">
         <PianoMenuActivity
+          disabled={curfew}
           onOpenCourse={(courseId, userId) => {
             logger.info('piano.menu-activity.open-course', { courseId, userId });
             // Tapping a player's card IS picking that player: their progress,
@@ -76,12 +86,17 @@ export function PianoMenu() {
                 icon={m.icon}
                 label={m.label}
                 blurb={m.blurb}
-                disabled={m.disabled}
-                onClick={m.disabled ? undefined : () => open(m.id)}
+                disabled={m.disabled || curfew}
+                onClick={m.disabled || curfew ? undefined : () => open(m.id)}
               />
             </li>
           ))}
         </ul>
+        {curfew && (
+          <p className="piano-home__curfew" role="status">
+            Screen time is over for tonight — but the piano is still on. Just play.
+          </p>
+        )}
       </div>
       {/* Live keyboard at the foot of the home screen: lights up to the played
           notes (and is touch-playable). No waterfall, no staff — just feedback. */}

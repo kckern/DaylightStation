@@ -272,7 +272,10 @@ export function createHomeAutomationRouter(config) {
 
     const { keyboard_id } = req.params;
 
-    const keyboardData = loadFile('config/keyboard') || [];
+    // keyboard.yml is a uid'd bindings list (same shape as triggers/bindings/nfc/),
+    // not app config — it moves to triggers/bindings/keyboard.yml. Grouped first,
+    // retiring flat path second.
+    const keyboardData = loadFile('triggers/bindings/keyboard') || loadFile('config/keyboard') || [];
     const filtered = keyboardData.filter(k =>
       k.folder?.replace(/\s+/g, '').toLowerCase() === keyboard_id?.replace(/\s+/g, '').toLowerCase()
     );
