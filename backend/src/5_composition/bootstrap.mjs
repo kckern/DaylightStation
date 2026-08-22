@@ -3519,8 +3519,9 @@ export function createHarvesterServices(config) {
   // and is kept identical to it on purpose.)
   if (httpClient) {
     registerHarvester('jamcorder', () => {
-      const jamcorderCfg = configService?.getHouseholdAppConfig?.(null, 'jamcorder') || {};
-      const host = jamcorderCfg.host || '10.0.0.244';
+      // Recorder address comes from the device registry (hardware/devices.yml),
+      // not an app config — it is a device, not an app.
+      const host = configService?.getDeviceConfig?.('midi-recorder')?.host || '10.0.0.244';
       const source = new HttpJamCorderSource({ httpClient, host, logger });
       const archive = new FsJamCorderArchive({ configService, logger });
       const harvestUseCase = new HarvestMidiRecordings({ source, archive, logger });
