@@ -24,6 +24,7 @@ export const TOKEN_PREFIX = 'sch:';
 export const TOKEN_CLASSES = Object.freeze([
   'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
   'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion',
+  'agenda_print',
 ]);
 
 /**
@@ -148,6 +149,27 @@ export function createTokenRecord({
     if (!/^\d{7}$/.test(subject.cardId ?? '')) throw new Error(`${caller}: answer_sheet_lost subject requires a 7-digit cardId`);
     if (!isNonEmptyString(subject.authorizedBy)) throw new Error(`${caller}: answer_sheet_lost subject requires authorizedBy`);
     if (expiresAt == null) throw new Error(`${caller}: answer_sheet_lost token must expire`);
+  } else if (tokenClass === 'agenda_print') {
+    if (!isNonEmptyString(subject.learnerId)) {
+      throw new ValidationError(`${caller}: agenda_print subject requires a learnerId`, {
+        code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
+      });
+    }
+    if (!Array.isArray(subject.tokenRefs) || subject.tokenRefs.length === 0) {
+      throw new ValidationError(`${caller}: agenda_print subject requires a non-empty tokenRefs array`, {
+        code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
+      });
+    }
+    if (subject.tokenRefs.some((r) => typeof r !== 'string' || !r.startsWith(TOKEN_PREFIX))) {
+      throw new ValidationError(`${caller}: agenda_print tokenRefs must all be sch:-prefixed strings`, {
+        code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
+      });
+    }
+    if (new Set(subject.tokenRefs).size !== subject.tokenRefs.length) {
+      throw new ValidationError(`${caller}: agenda_print tokenRefs contains duplicates`, {
+        code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
+      });
+    }
   } else if (!isNonEmptyString(subject.sessionId)) {
     throw new Error(`${caller}: ${tokenClass} subject requires a sessionId`);
   }
@@ -156,7 +178,7 @@ export function createTokenRecord({
   // reliably HAS an `expiresAt` for the code's clock to be shorter than —
   // `identify` and `learning_action` forbid an expiry outright, so a code on
   // those could never be held to the outlives-its-token rule below.
-  if (accessCode != null && !['subject_next', 'worksheet_companion'].includes(tokenClass)) {
+  if (accessCode != null && !['subject_next', 'worksheet_companion', 'agenda_print'].includes(tokenClass)) {
     throw new ValidationError(`${caller}: only a subject_next token carries an access code`, {
       code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS', details: { caller, tokenClass },
     });
@@ -247,7 +269,7 @@ export function isAccessCodeLive(record, { now } = {}) {
   // `subject_next` SHAPE — a subject carrying both a learner and a subject. An
   // `identify` card wearing a code would resolve to a record with no
   // `subject.subject` at all, which is a lesson nobody can open.
-  if (!['subject_next', 'worksheet_companion'].includes(record.tokenClass)) return false;
+  if (!['subject_next', 'worksheet_companion', 'agenda_print'].includes(record.tokenClass)) return false;
   if (!isAccessCodeShaped(record.accessCode)) return false;
   if (!isIsoTimestamp(record.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
   // At the rollover it is already dead: the boundary belongs to the next day.
@@ -321,6 +343,10 @@ const SEMANTICS = {
     doneMessage: () => 'That replacement ticket has already been used.',
     readyMessage: 'Replacing the lost answer sheet.',
   },
+  agenda_print: {
+    actionable: () => true,
+    alreadyDone: () => false,
+  },
 };
 
 /**
@@ -353,7 +379,7 @@ export function resolveTokenState(record, { sessionState = null, now } = {}) {
   if (record.expiresAt && isIsoTimestamp(now) && Date.parse(now) > Date.parse(record.expiresAt)) {
     return { status: 'expired', message: 'That ticket is out of date. Scan your card for a new one.' };
   }
-  if (record.tokenClass === 'subject_next' || record.tokenClass === 'learning_action' || record.tokenClass === 'answer_sheet_lost') {
+  if (['subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print'].includes(record.tokenClass)) {
     // Sessionless, unlike identify it can still expire (checked above) — but it
     // never names a session, so there is no sessionState to require here.
     return { status: 'actionable', message: semantics.readyMessage };
