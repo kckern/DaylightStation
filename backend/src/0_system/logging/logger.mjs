@@ -6,21 +6,11 @@
 
 import os from 'os';
 import { getDispatcher, isLoggingInitialized } from './dispatcher.mjs';
+import { formatLocalTimestamp } from './localTimestamp.mjs';
 
 const hostname = os.hostname();
 
-/**
- * Get current timestamp from dispatcher (uses configured timezone)
- * Falls back to system local time if dispatcher not initialized
- * @returns {string} Timestamp in format "2026-01-23T16:54:50.536"
- */
-function getLocalTimestamp() {
-  // Fallback for pre-initialization logging
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  const localTime = new Date(now - offset);
-  return localTime.toISOString().slice(0, -1);
-}
+
 
 /**
  * Create a logger instance with preset context
@@ -55,7 +45,7 @@ export function createLogger({ source = 'backend', app = 'default', context = {}
 
     const dispatcher = getDispatcher();
     dispatcher.dispatch({
-      ts: getLocalTimestamp(),
+      ts: formatLocalTimestamp(),
       level,
       event,
       message: options.message,

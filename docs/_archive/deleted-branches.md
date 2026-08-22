@@ -253,3 +253,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-22 | feat/retire-household-config-bugs | cb4dfc0e0 | School surfaces + DoNow secret fixes; merged via above |
 | 2026-08-22 | feat/surround-wave-9 | 04a7594cd | Surround wave 9. Fully merged into main; no worktree, no uncommitted work. |
 | 2026-08-22 | feat/media-ux-remediation | 2965ac983 | MediaApp cast-failure remediation + mobile search/dispatch taxonomy (FKB payload classification, scope chips, Search Mode, tap grammar). Merged into main and deployed as 3e7e7daba; worktree removed with no uncommitted work. |
+| 2026-08-22 | fix/thermal-printer-flush | b05655611 | Thermal flush/raster fix + log timestamp offset (merged) |

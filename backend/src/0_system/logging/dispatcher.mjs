@@ -5,37 +5,20 @@
  * and fans out to registered transports (console, loggly, etc).
  */
 
+import { formatLocalTimestamp } from './localTimestamp.mjs';
+
 /**
- * Get current timestamp formatted for configured timezone
- * @returns {string} Timestamp in format "2026-01-23T16:54:50.536" (no Z suffix = local time)
+ * Current time as local wall-clock WITH its UTC offset, in the configured
+ * timezone when one has been set.
+ *
+ * The offset is not cosmetic: without it VictoriaLogs reads the local clock as
+ * UTC and files backend events hours away from the frontend events they belong
+ * beside. See `localTimestamp.mjs`.
+ *
+ * @returns {string} e.g. "2026-08-22T15:00:58.668-07:00"
  */
 function getLocalTimestamp() {
-  if (!globalTimezone) {
-    // Fallback to system local time if timezone not configured
-    const now = new Date();
-    const offset = now.getTimezoneOffset() * 60000;
-    const localTime = new Date(now - offset);
-    return localTime.toISOString().slice(0, -1);
-  }
-  
-  // Format in configured timezone
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: globalTimezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    fractionalSecondDigits: 3,
-    hour12: false
-  });
-  
-  const parts = formatter.formatToParts(now);
-  const getValue = (type) => parts.find(p => p.type === type)?.value;
-  
-  return `${getValue('year')}-${getValue('month')}-${getValue('day')}T${getValue('hour')}:${getValue('minute')}:${getValue('second')}.${getValue('fractionalSecond')}`;
+  return formatLocalTimestamp(new Date(), globalTimezone);
 }
 
 let globalTimezone = null;

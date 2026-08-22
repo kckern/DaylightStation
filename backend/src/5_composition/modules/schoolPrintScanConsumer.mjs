@@ -55,7 +55,19 @@ export function createSchoolPrintScanConsumer({
           // CARD_ID_UNREADABLE (or any future resolver error code) — never
           // guessed at; the recorder already persisted the raw/decoded scan
           // regardless, so there is nothing further for this consumer to do.
-          logger.debug?.('school.print.scan-unresolved', { testId, code: outcome.error.code });
+          //
+          // WARN, not debug: production runs at `info` (data/system/config/
+          // logging.yml), so at debug this line — the single best explanation
+          // for "I scanned it and nothing happened" — was dropped entirely and
+          // an unreadable sheet left no trace at all. The candidate list rides
+          // along because it is what says whether the id was unreadable or
+          // merely ambiguous.
+          logger.warn?.('school.print.scan-unresolved', {
+            testId,
+            code: outcome.error.code,
+            testIdCandidates: Array.isArray(testIdCandidates) ? testIdCandidates.length : 0,
+            answerCount: answers ? Object.keys(answers).length : 0,
+          });
           return;
         }
         if (outcome?.unknownCard) {
