@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the failure chain that made the 2026-08-21 19:49–19:56 PDT MediaApp session fail — three identical 38-second cast failures to `yellow-room-tablet` plus a phone search flow that destroyed the user's typed query — and add the observability that made this incident take a live-probe investigation to diagnose.
+**Goal:** Fix the failure chain that made the 2026-08-21 19:49–19:56 PDT MediaApp session fail — three identical 38-second cast failures to `yellow-room-tablet` plus a phone search flow that destroyed the user's typed query — add the observability the incident lacked, and implement the approved mobile search/dispatch taxonomy redesign (`docs/superpowers/specs/2026-08-21-media-search-taxonomy-design.md`).
 
-**Architecture:** One prod-data fix (stale FKB password), two backend adapter fixes (FKB error-envelope detection, foreground-verify fallback), two frontend fixes (combobox Enter policy, pull-to-refresh guard), one observability addition (search settle/error logging). Each is independently shippable.
+**Architecture:** Phase 1 (Tasks 1–6): prod-data fix (stale FKB password), backend adapter fixes (FKB error-envelope detection, foreground-verify fallback), combobox Enter policy, search settle logging/retry, pull-to-refresh guard. Phase 2 (Tasks 8–16): the taxonomy redesign — scope default-All, chips, stream status line, scoped-empty fallback, destination line, mobile Search Mode, tap grammar, browse dispatch header, Home/mini-player cleanup. Task 7 (deploy + live verification) runs LAST, after both phases.
 
-**Tech Stack:** Node ESM backend (`.mjs`), React frontend, vitest (isolated tests), FKB REST API.
+**Tech Stack:** Node ESM backend (`.mjs`), React frontend (Mantine), vitest (isolated + component tests), Playwright (flow test), FKB REST API.
 
 ## Diagnostic Summary (evidence, verified 2026-08-21)
 
@@ -522,12 +522,12 @@ git commit -m "fix(media): block pull-to-refresh remount on mobile"
 
 ---
 
-### Task 7: Deploy and end-to-end live verification
+### Task 7: Deploy and end-to-end live verification — RUNS LAST, after Tasks 8–16
 
 **Files:** none (operations).
 
 **Interfaces:**
-- Consumes: all prior tasks merged to `main` (merge directly, delete the worktree branch per CLAUDE.md branch rules; record it in `docs/_archive/deleted-branches.md`).
+- Consumes: all prior tasks (Phases 1 AND 2) merged to `main` (merge directly, delete the worktree branch per CLAUDE.md branch rules; record it in `docs/_archive/deleted-branches.md`).
 
 - [ ] **Step 1: Full test pass before merge**
 
@@ -548,9 +548,9 @@ Run the two gate commands from CLAUDE.local.md (`render_fps`/`videoState` count 
 sudo docker stop daylight-station && sudo docker rm daylight-station && sudo deploy-daylight
 ```
 
-- [ ] **Step 4: Re-run the failed user journey end-to-end**
+- [ ] **Step 4: Re-run the failed user journey end-to-end — at phone size**
 
-From a browser (or headless Playwright per `reference_headless_playwright_screenshot`), open `/media`, search "Boy from the moon", select "A Boy From The Moon", dispatch to `yellow-room-tablet`. Then verify in the log store:
+From headless Playwright at 360×740 (per `reference_headless_playwright_screenshot`), open `/media`: tap the dock search launcher → Search Mode opens → chips show All selected → type "Boy from the moon" → result paints → tap the destination line, pick `yellow-room-tablet` from the sheet (verify EVERY content_control device is listed) → tap the result. Also verify the scoped-empty fallback once: select the Music › Ambient chip, search the same title, confirm the "showing results from everywhere" fallback appears. Then verify in the log store:
 
 ```bash
 curl -s https://logs.kckern.net/select/logsql/query \
@@ -584,8 +584,183 @@ Expected: zero `rejected` events for host 10.0.0.245 after deploy. (Any that do 
 
 ---
 
+---
+
+## Phase 2 — Search & Dispatch Taxonomy Redesign
+
+Implements `docs/superpowers/specs/2026-08-21-media-search-taxonomy-design.md` (D1–D7). Read the spec before starting any Phase 2 task. All component tests follow the conventions of the neighboring existing `*.test.jsx` files — read the sibling test first, reuse its render/provider harness. Mobile breakpoint = the existing `mobile-only` mixin in `MediaShell.scss`.
+
+### Task 8: Scope state — default All, session-only (spec D5 state layer)
+
+**Files:**
+- Modify: `frontend/src/modules/Media/search/SearchProvider.jsx` (lines 25–42: load effect and `setScopeKey`)
+- Modify: `docs/reference/media/search-scopes.md` (§App Behavior, §Persistence)
+- Test: `frontend/src/modules/Media/search/SearchProvider.test.jsx` (extend)
+
+**Interfaces:**
+- Produces: `useSearchContext()` unchanged shape `{ scopes, currentScopeKey, currentScope, scopeError, setScopeKey }`, plus new `resetScope()` that returns to the default key. `currentScopeKey` initializes to the FIRST scope in config (`all`) on every mount — no localStorage read/write. Tasks 9/11/13 consume this.
+
+- [ ] **Step 1: Write the failing test** — in `SearchProvider.test.jsx`, following its existing mock of `DaylightAPI`:
+
+```jsx
+test('ignores a stored legacy scope key and defaults to the first scope', async () => {
+  localStorage.setItem('media-scope-last', 'music-ambient'); // legacy key must be inert
+  render(<SearchProvider><Probe /></SearchProvider>); // Probe: existing test helper exposing context
+  await waitFor(() => expect(screen.getByTestId('scope-key').textContent).toBe('all'));
+});
+
+test('setScopeKey does not persist across provider remounts', async () => {
+  const { unmount } = render(<SearchProvider><Probe /></SearchProvider>);
+  await waitFor(() => screen.getByTestId('scope-key'));
+  act(() => screen.getByTestId('set-ambient').click()); // Probe button calling setScopeKey('music-ambient')
+  unmount();
+  render(<SearchProvider><Probe /></SearchProvider>);
+  await waitFor(() => expect(screen.getByTestId('scope-key').textContent).toBe('all'));
+});
+```
+
+- [ ] **Step 2: Run to verify failure** — `node /opt/Code/DaylightStation/node_modules/.bin/vitest run frontend/src/modules/Media/search/SearchProvider.test.jsx` — both FAIL (stored key currently wins; setScopeKey writes localStorage).
+
+- [ ] **Step 3: Implement** — in `SearchProvider.jsx`: delete the `localStorage.getItem(SCOPE_KEY_LAST)` read and validity check (init to `loaded[0]?.key ?? null`); delete the `localStorage.setItem` in `setScopeKey`; add `resetScope = useCallback(() => setCurrentScopeKey(scopesRef→first key))` and expose it. Keep `SCOPE_KEY_LAST` exported only if something else imports it — if nothing does, delete the constant and its `STORAGE_KEYS` entry.
+
+- [ ] **Step 4: Run the search suite** — `… vitest run frontend/src/modules/Media/search/` — ALL PASS. Update `search-scopes.md`: persistence section now says scope is session-only, catalog-wide default each entry; remove the `media-scope-last` table row.
+
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): search scope defaults to All every session; retire media-scope-last persistence"`
+
+### Task 9: ScopeChips component (spec D5 UI)
+
+**Files:**
+- Create: `frontend/src/modules/Media/search/ScopeChips.jsx`, `frontend/src/modules/Media/search/ScopeChips.test.jsx`
+- Modify: `frontend/src/modules/Media/search/Search.scss` (chip styles: 44px min touch target, horizontal scroll row, `overscroll-behavior-x: contain`)
+- Modify: `frontend/src/modules/Media/search/MediaContentSearch.jsx` (desktop: replace the `<select>` with chips in the popover header per D5; the `<select>` and its optgroup rendering are deleted)
+
+**Interfaces:**
+- Consumes: `useSearchContext()` from Task 8.
+- Produces: `<ScopeChips />` — renders top-level scopes as chips, `(All)` first and selected by default; tapping a parent with children expands a second chip row of its children; tapping any chip calls `setScopeKey(key)` and logs `search.scope_selected { scopeKey, viaFallback: false }`. No props (context-driven), so SearchMode (Task 13) and the desktop popover mount it identically.
+
+- [ ] **Step 1: Failing tests** — render with a mocked context provider (follow `MediaContentSearch.test.jsx` harness):
+
+```jsx
+test('renders top-level scopes as chips with All selected', …);        // chips: All, Video, Music, Books; All has aria-pressed=true
+test('tapping a parent with children reveals the child chip row', …);  // tap Music → Library/Hymns/Children's/Ambient chips appear
+test('tapping a chip calls setScopeKey with its key', …);
+```
+
+- [ ] **Step 2: Verify failure, Step 3: implement, Step 4: suite passes** — buttons with `aria-pressed`, not Mantine Chips if the existing module avoids them; match `Search.scss` idiom. Desktop `MediaContentSearch` renders `<ScopeChips />` where the `<select>` was; delete the select + `scopeError` indicator moves beside the chips.
+
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): scope chips replace the scope select"`
+
+### Task 10: Stream status line (spec D3)
+
+**Files:**
+- Create: `frontend/src/modules/Media/search/StreamStatusLine.jsx` + test
+- Modify: `frontend/src/modules/Content/combobox/ContentCombobox.jsx` — remove the per-source "Searching:" badge-cloud block; render nothing in its place (the status line is mounted by the SURFACES: Task 13's SearchMode and Task 9's revised desktop popover header)
+
+**Interfaces:**
+- Consumes: `pending` (array of source names still searching) and `sourceErrors` from `useStreamingSearch` — already exposed through `useContentCombobox`'s return (`pendingSources`); thread them out if not already returned.
+- Produces: `<StreamStatusLine pending={[]} sourceErrors={{}} onRetry={fn} />` — renders `null` when settled and error-free; "Searching N sources…" + spinner while pending; "‹source› didn't answer · Retry" per errored source when settled. Single line, fixed height, never taller.
+
+- [ ] **Step 1: Failing tests** — three states: pending renders count line; settled+clean renders null; settled+error renders source name and Retry button wired to `onRetry(source)`.
+- [ ] **Step 2–4: fail → implement → suite passes.** Verify the badge cloud is gone from `ContentCombobox` and no other consumer of the combobox (Admin pickers) breaks — run `… vitest run frontend/src/modules/Content/combobox/ frontend/src/modules/Media/`.
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): one-line stream status replaces the source badge cloud"`
+
+### Task 11: Scoped-empty fallback to All (spec D5 fallback)
+
+**Files:**
+- Modify: `frontend/src/modules/Content/combobox/useContentCombobox.js` (builds directly on Phase 1 Task 5's settle effect)
+- Modify: `frontend/src/modules/Media/search/SearchEmptyState.jsx` (label: "Nothing in ‹scope label› — showing N results from everywhere" / plain empty state when even All is empty)
+- Test: `frontend/src/modules/Content/combobox/useContentCombobox.test.jsx` (extend)
+
+**Interfaces:**
+- Consumes: Task 8's context (scope label + params), Task 5's settle detection, the hook's `searchParams` prop and a new optional `fallbackSearchParams` prop.
+- Produces: when a search settles empty AND `searchParams !== fallbackSearchParams` (non-nullish), the hook re-dispatches the same text with `fallbackSearchParams` exactly once per query text, marks state `fellBackToAll: true` (exposed in the hook return), and logs it on `search.settled { scopeKey, fellBackToAll: true }`. Surfaces (Tasks 9/13) pass `fallbackSearchParams` = the `all` scope's params and render the D5 label when `fellBackToAll` is set.
+
+- [ ] **Step 1: Failing test** — scoped params + empty settle → expect a second `streamSearch` dispatch with fallback params and `fellBackToAll === true`; a second empty settle at fallback params does NOT loop.
+- [ ] **Step 2–4: fail → implement → suites pass.** The one-shot guard composes with Task 5's source-error retry: retry (same params) first if sources errored; fallback (wider params) only on a clean empty settle.
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): scoped search falls back to catalog-wide on empty settle"`
+
+### Task 12: Destination line + device sheet + named toasts (spec D4)
+
+**Files:**
+- Create: `frontend/src/modules/Media/cast/DestinationLine.jsx` + test
+- Modify: `frontend/src/modules/Media/cast/DispatchTargetPicker.jsx` (reused as the sheet body; verify it lists ALL `fleet.devices` — it does today — and add `mediaLog` call on open: `cast.sheet_opened { offeredDeviceIds }`)
+- Modify: `frontend/src/modules/Media/search/useContentDispatch.js` (dispatch confirmation toast names title + destination; failure toast names device + specific error from Phase 1's adapter fixes, with Retry re-invoking the same dispatch)
+- Modify: `frontend/src/modules/Media/logging/mediaLog.js` (new events: `castSheetOpened`, `destinationChanged`)
+
+**Interfaces:**
+- Consumes: `useCastTarget()` / `CastTargetProvider` state (targetIds, mode) — single source of truth shared with the dock chip.
+- Produces: `<DestinationLine />` — "▶ Playing to: **‹name›**" (resolves target id → device name via fleet; "This browser" when no remote target); tap opens the device sheet; changing logs `dispatch.destination_changed { from, to, surface }`. Mounted by SearchMode (Task 13) and the container dispatch header (Task 15).
+
+- [ ] **Step 1: Failing tests** — renders "This browser" with no target; renders device name with a target; tap opens sheet; sheet pick updates the shared CastTargetProvider state (assert via context probe).
+- [ ] **Step 2–4: fail → implement → suites pass** (`… vitest run frontend/src/modules/Media/cast/`).
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): visible dispatch destination line with full device sheet and named toasts"`
+
+### Task 13: Mobile Search Mode + dock launcher (spec D1–D2)
+
+**Files:**
+- Create: `frontend/src/modules/Media/search/SearchMode.jsx` + `SearchMode.test.jsx` + styles in `Search.scss`
+- Modify: `frontend/src/modules/Media/shell/Dock.jsx` (mobile: full-width launcher button reading "Search media…" + settings gear only; fleet indicator and cast chip removed at mobile widths — fleet badge moves to the Devices tab in `PrimaryNav.jsx`)
+- Modify: `frontend/src/modules/Media/shell/PrimaryNav.jsx` (Devices tab badge from `useFleetSummary`)
+- Modify: `frontend/src/modules/Media/logging/mediaLog.js` (`searchModeEntered/Exited`)
+- Modify: `docs/reference/media/media-app.md` (dock/shell section: mobile search-as-mode, destination line)
+
+**Interfaces:**
+- Consumes: Tasks 8–12 components (`ScopeChips`, `StreamStatusLine`, `DestinationLine`), `useContentCombobox` (with `allowFreeform:false`, `fallbackSearchParams`), `useContentDispatch`.
+- Produces: full-screen overlay surface — layout per spec D2 ASCII: ✕ + input (autofocus), DestinationLine, ScopeChips, StreamStatusLine, results list filling the rest. Exits on ✕, browser back (pushes a history entry on open; popstate closes), or successful dispatch (with toast). Scope resets to All on every open (`resetScope()` from Task 8). Container/leaf row behavior comes from Task 14.
+
+- [ ] **Step 1: Failing tests** — opens from dock launcher tap; autofocuses input; renders chips with All selected on every open (open→select Ambient→close→open→All again); ✕ closes; a `select` of a leaf result calls dispatch and closes.
+- [ ] **Step 2–4: fail → implement → suites pass.** The surface reuses the combobox HOOK, not the popover component — results render as a plain list owned by SearchMode. Verify desktop is untouched at ≥ tablet widths (existing `MediaContentSearch` path).
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): full-screen mobile search mode; dock becomes search launcher"`
+
+### Task 14: Tap grammar on result rows (spec D6)
+
+**Files:**
+- Create: `frontend/src/modules/Media/search/ResultRow.jsx` + test (shared by SearchMode list and desktop dropdown rows)
+- Modify: `frontend/src/modules/Media/search/useContentDispatch.js` (route: leaf tap → play-now to destination; container tap → browse view; new `playContainerAsQueue(id)` for the ▶ verb)
+- Modify: `frontend/src/modules/Content/combobox/comboboxMachine.js` ONLY if the existing `isContainer` predicate needs export — the grammar itself lives in `ResultRow`/`useContentDispatch`, NOT in the machine.
+
+**Interfaces:**
+- Consumes: `isContainer(item)` (existing predicate), `useContentDispatch`, Task 12 toasts.
+- Produces: `<ResultRow item onTap onPlayAll onMore />` — leaf: tap=dispatch play-now, trailing ⋯ opens the four queue verbs (Play Now / Play Next / Up Next / Add to Queue — wire to the existing queue action functions used by BrowseView rows; read `BrowseView.jsx` for their names) + "Open detail". Container: tap=browse into it, trailing ▶ = play-as-queue on destination.
+
+- [ ] **Step 1: Failing tests** — leaf tap calls dispatch with play-now; container tap routes to browse; container ▶ calls `playContainerAsQueue`; leaf ⋯ shows the four verbs.
+- [ ] **Step 2–4: fail → implement → suites pass** across `frontend/src/modules/Media/`.
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): unified tap grammar — leaves play, containers browse, explicit verbs on rows"`
+
+### Task 15: Container browse dispatch header (spec D6 addendum)
+
+**Files:**
+- Modify: `frontend/src/modules/Media/browse/BrowseView.jsx` (container header: **▶ Play · 🔀 Shuffle · + Queue** + inline `<DestinationLine />`)
+- Test: create `frontend/src/modules/Media/browse/BrowseView.dispatch-header.test.jsx`
+
+**Interfaces:**
+- Consumes: Task 12 `DestinationLine`, Task 14 `playContainerAsQueue` (Shuffle = same with shuffle flag — read how existing queue dispatch passes shuffle; the `?queue=…&shuffle=1` deep-link contract in J9 shows the param exists end-to-end).
+- Produces: every container browse view opens with the dispatch header directly under the title; all three verbs act on the whole container against the visible destination.
+
+- [ ] **Step 1: Failing test** — rendering BrowseView for a container shows Play/Shuffle/Queue and the destination name; Play invokes container-as-queue dispatch with the container id.
+- [ ] **Step 2–4: fail → implement → suites pass.**
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): prominent play/shuffle/queue dispatch header on container browse views"`
+
+### Task 16: Home cleanup + idle mini player (spec D7)
+
+**Files:**
+- Modify: `frontend/src/modules/Media/browse/HomeView.jsx` (remove the four "Browse X" cards; Recent leads)
+- Modify: `frontend/src/modules/Media/shell/MiniPlayer.jsx` (render `null` when no local session exists — read its existing session probe; extend `MiniPlayer.test.jsx` with an idle-renders-nothing case)
+
+**Interfaces:** self-contained; nothing downstream consumes these.
+
+- [ ] **Step 1: Failing tests** — HomeView renders no "Browse" cards; MiniPlayer with an idle/empty session renders nothing (no "Idle" text, zero height).
+- [ ] **Step 2–4: fail → implement → suites pass** (`… vitest run frontend/src/modules/Media/`).
+- [ ] **Step 5: Commit** — `git commit -m "feat(media): home leads with recent, idle mini player hidden"`
+
+## Execution Order
+
+Tasks **1 → 6** (Phase 1), then **8 → 16** (Phase 2), then **7** (deploy + live verification) LAST. Task 1 (the password) is the single highest-value change and can ship on its own the moment the backend restarts — it alone restores cast-ability and the piano screensaver's screen control.
+
 ## Self-Review Notes
 
-- Root causes 1–5 map to Tasks 1–6; Task 7 proves the original user journey end-to-end. The instant power/verify "done" needed no task (correct no-op for self-powered devices).
-- Deliberately out of scope, with reasons: RC4's content-id-like dismiss (line 115) keeps its intent — changing it needs its own design pass; the dispatch-failure toast UX was not redesigned — after Tasks 2–3 the error text becomes specific ("FKB rejected credentials: Please login") which is the actionable part; the phone's transient zero-results cannot be reproduced retroactively — Task 5 makes the next occurrence self-heal (one automatic retry) and diagnosable in one log query if it persists.
-- Type check: `authError` produced in Task 2 is consumed in Task 3; `assumed: true` is additive and nothing downstream switches on it; Task 4's `open` action is already handled by `commit()`'s existing `case 'open'`.
+- **Incident root causes → tasks:** stale password → 1; silent FKB error envelopes → 2; missing `foreground` field → 3; Enter destroying input → 4; zero-result blindness → 5 (+11 for the real cause, scope); pull-to-refresh remount → 6; scope stuck on Ambient → 8+11; unusable/vanishing scope control → 9+13; results buried under the badge cloud → 10; invisible cast destination + device-sheet uncertainty → 12; devices-page workaround → 12+14+15. Task 7 replays the whole journey at 360px.
+- **Spec coverage (D1–D7):** D1 → 13; D2 → 13; D3 → 10; D4 → 12; D5 → 8, 9, 11; D6 → 14, 15; D7 → 16. Spec observability events → 12 (`cast.sheet_opened`, `dispatch.destination_changed`), 13 (`search.mode_entered/exited`), 9 (`search.scope_selected`), 11 (`fellBackToAll` on `search.settled`). Spec doc-update requirements → 8 (search-scopes.md) and 13 (media-app.md).
+- **Deliberately out of scope, with reasons:** RC4's content-id-like dismiss (comboboxMachine.js:115) keeps its intent — changing it needs its own design pass; per-row multi-target casting is explicitly a spec non-goal (the modal destination model is retained); desktop restyling beyond chips/status-line/tap-grammar inheritance is out.
+- **Type consistency:** `authError` (Task 2) → consumed Task 3; `assumed: true` additive, nothing switches on it; Task 4's `open` action already handled by `commit()`'s `case 'open'`; `resetScope()` (Task 8) → called by Task 13; `fallbackSearchParams`/`fellBackToAll` (Task 11) → passed/read by Tasks 9 and 13; `DestinationLine` (Task 12) → mounted by Tasks 13 and 15; `playContainerAsQueue` (Task 14) → called by Task 15.
+- **Known open detail for the implementer, not a placeholder:** Task 14's queue-action function names and Task 15's shuffle-flag parameter must be read off `BrowseView.jsx` before writing those tasks' code — the plan names the file and the contract (the four Plex-style verbs; `shuffle=1` exists end-to-end per J9) rather than guessing signatures.
