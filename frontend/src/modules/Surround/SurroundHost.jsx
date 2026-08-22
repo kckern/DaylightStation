@@ -150,7 +150,7 @@ function SurroundStage({ contentId, surround, active, mode, logger, getMediaEl, 
     };
     document.addEventListener('surround-seek', handler);
     return () => document.removeEventListener('surround-seek', handler);
-  }, [active, getMediaEl, getPlayerHandle, contentId]);
+  }, [active, getMediaEl, getPlayerHandle, contentId, logger]);
 
   const onModuleError = (error) => {
     logger.error('surround.render.error', {
