@@ -337,10 +337,10 @@ import {
   PianoImageHarvester
 } from '#adapters/harvester/index.mjs';
 
-// JamCorder adapters + use case (MIDI recorder harvest)
+// MIDI recording harvest: vendor (JamCorder) adapters + vendor-neutral use case
 import { HttpJamCorderSource } from '#adapters/jamcorder/HttpJamCorderSource.mjs';
 import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
-import { HarvestJamCorderRecordings } from '#apps/jamcorder/HarvestJamCorderRecordings.mjs';
+import { HarvestMidiRecordings } from '#apps/midi/HarvestMidiRecordings.mjs';
 
 // Piano MIDI→MP3 adapters + use case (daily render of media/midi/piano/log into media/audio/piano)
 import { FsMidiLibrary } from '#adapters/pianoaudio/FsMidiLibrary.mjs';
@@ -3510,14 +3510,20 @@ export function createHarvesterServices(config) {
     }
   }
 
-  // JamCorder — daily MIDI harvest from the networked piano recorder.
+  // Daily MIDI harvest from the networked piano recorder.
+  // The 'jamcorder' key is the harvester's identity, not a name we are free to
+  // change: it must match the `jobs.yml` job id and the persisted per-job
+  // scheduler state in `system/scheduling/cron-runtime.yml`. Renaming it here
+  // would orphan that state and the job would stop running. (The real registry
+  // key is JamCorderHarvester.serviceId; this argument is only the log label,
+  // and is kept identical to it on purpose.)
   if (httpClient) {
     registerHarvester('jamcorder', () => {
       const jamcorderCfg = configService?.getHouseholdAppConfig?.(null, 'jamcorder') || {};
       const host = jamcorderCfg.host || '10.0.0.244';
       const source = new HttpJamCorderSource({ httpClient, host, logger });
       const archive = new FsJamCorderArchive({ configService, logger });
-      const harvestUseCase = new HarvestJamCorderRecordings({ source, archive, logger });
+      const harvestUseCase = new HarvestMidiRecordings({ source, archive, logger });
       return new JamCorderHarvester({ harvestUseCase, logger });
     });
   }

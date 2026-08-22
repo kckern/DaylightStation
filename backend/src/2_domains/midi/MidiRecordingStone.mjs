@@ -1,26 +1,29 @@
 /**
- * JamCorderStone — value object parsed from a JamCorder .mid recording.
+ * MidiRecordingStone — value object parsed from a networked MIDI recorder's
+ * .mid recording.
  *
  * Each recording embeds a sequencer-specific MIDI meta event (0xFF 0x7F) whose
  * payload is a JSON header `jmxStoneHdr{…}` carrying an SNTP-synced timestamp
  * (`time.unixtime`, `time.localOffset` minutes) plus device/performer metadata.
+ * `jmxStoneHdr`, its field names and the JAMCORDER_* error codes below are the
+ * recorder's on-the-wire format — they are read as-is, not renamed.
  *
- * Layer: DOMAIN value object (2_domains/jamcorder). Pure — parses a provided
+ * Layer: DOMAIN value object (2_domains/midi). Pure — parses a provided
  * buffer, no I/O, no system clock.
  *
- * @module domains/jamcorder/JamCorderStone
+ * @module domains/midi/MidiRecordingStone
  */
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
-export class JamCorderStone {
-  #unixtime; #localOffsetMin; #jamcorderName; #performerName; #assetUuid; #assetIdx;
+export class MidiRecordingStone {
+  #unixtime; #localOffsetMin; #recorderName; #performerName; #assetUuid; #assetIdx;
 
-  constructor({ unixtime, localOffsetMin, jamcorderName, performerName, assetUuid, assetIdx }) {
+  constructor({ unixtime, localOffsetMin, recorderName, performerName, assetUuid, assetIdx }) {
     this.#unixtime = unixtime;
     this.#localOffsetMin = localOffsetMin;
-    this.#jamcorderName = jamcorderName;
+    this.#recorderName = recorderName;
     this.#performerName = performerName;
     this.#assetUuid = assetUuid;
     this.#assetIdx = assetIdx;
@@ -29,7 +32,7 @@ export class JamCorderStone {
 
   /**
    * @param {Buffer} buffer - raw .mid bytes
-   * @returns {JamCorderStone}
+   * @returns {MidiRecordingStone}
    * @throws {ValidationError} if the jmxStoneHdr is missing or invalid
    */
   static fromMidiBuffer(buffer) {
@@ -62,10 +65,11 @@ export class JamCorderStone {
     if (typeof unixtime !== 'number' || typeof localOffsetMin !== 'number') {
       throw new ValidationError('jmxStoneHdr missing time.unixtime/localOffset', { code: 'JAMCORDER_BAD_HEADER' });
     }
-    return new JamCorderStone({
+    return new MidiRecordingStone({
       unixtime,
       localOffsetMin,
-      jamcorderName: hdr?.identities?.jamcorderName ?? null,
+      // `jamcorderName` is the recorder's own wire field name — read as-is.
+      recorderName: hdr?.identities?.jamcorderName ?? null,
       performerName: hdr?.identities?.performerName ?? null,
       assetUuid: hdr?.asset?.assetUuid ?? null,
       assetIdx: hdr?.asset?.assetIdx ?? null,
@@ -74,7 +78,7 @@ export class JamCorderStone {
 
   get unixtime() { return this.#unixtime; }
   get localOffsetMin() { return this.#localOffsetMin; }
-  get jamcorderName() { return this.#jamcorderName; }
+  get recorderName() { return this.#recorderName; }
   get performerName() { return this.#performerName; }
   get assetUuid() { return this.#assetUuid; }
   get assetIdx() { return this.#assetIdx; }
@@ -95,4 +99,4 @@ export class JamCorderStone {
   }
 }
 
-export default JamCorderStone;
+export default MidiRecordingStone;
