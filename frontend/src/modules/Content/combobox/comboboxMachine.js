@@ -115,7 +115,11 @@ export function decideCommit({ reason, search, value, results, highlightIdx, use
     return allowFreeform ? { action: 'literal', value: search } : { action: 'dismiss' };
   }
   if (results.length === 0) {
-    if (searchSettled) return allowFreeform ? { action: 'literal', value: search } : { action: 'dismiss' };
+    // Settled-empty + Enter in a dispatch context used to 'dismiss' — closing the
+    // box AND discarding the typed query. A transient empty result set then costs
+    // the user their whole input (2026-08-21 phone incident). Stay open instead:
+    // the text survives and the empty state explains itself.
+    if (searchSettled) return allowFreeform ? { action: 'literal', value: search } : { action: 'open' };
     return { action: 'open' };
   }
   // 4. Unambiguous leaf renders; containers / multiple stay open for the human to choose the level.

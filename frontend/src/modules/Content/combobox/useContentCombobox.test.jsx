@@ -786,7 +786,12 @@ describe('useContentCombobox', () => {
     expect(result.current.state.mode).toBe(Modes.DISPLAY);
   });
 
-  it("commit('enter') settled with empty results and allowFreeform:false DISMISSES: no onChange, no toast (RC4)", async () => {
+  it("commit('enter') settled with empty results and allowFreeform:false stays OPEN: no onChange, no toast, text intact (task 4)", async () => {
+    // 2026-08-21 incident: this used to DISMISS — closing the box AND
+    // discarding the typed query, costing the user their whole input on a
+    // transient empty result set. Updated for task 4: Enter now keeps the
+    // box open instead of dismissing (the raw text still never dispatches —
+    // no /play 404 — but the query is no longer destroyed).
     vi.useFakeTimers();
     const onChange = vi.fn();
     // Default fetchMock returns items:[] — a settled, empty search.
@@ -800,10 +805,11 @@ describe('useContentCombobox', () => {
     let decision;
     act(() => { decision = result.current.commit('enter'); });
 
-    expect(decision.action).toBe('dismiss');
+    expect(decision.action).toBe('open');
     expect(onChange).toHaveBeenCalledTimes(0);   // raw text NEVER dispatched (no /play 404)
     expect(notifyWarning).toHaveBeenCalledTimes(0);
-    expect(result.current.state.mode).toBe(Modes.DISPLAY);
+    expect(result.current.state.mode).toBe(Modes.SEARCH);        // box stays open
+    expect(result.current.state.search).toBe('Think! How Intelligent Are Animals?'); // text survives
   });
 
   it("handleClose('outside') with id-like text and allowFreeform:false REVERTS: no onChange (RC4)", () => {

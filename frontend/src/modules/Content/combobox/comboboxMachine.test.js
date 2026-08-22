@@ -418,13 +418,29 @@ describe('decideCommit', () => {
   // literal-from-typed-text branches are suppressed; every SELECT path (an
   // actual resolved result the user picks) still works.
   describe('allowFreeform gating (RC4)', () => {
-    it('Enter, empty settled results, allowFreeform:false → dismiss (not literal)', () => {
+    it('Enter, empty settled results, allowFreeform:false → open (box stays open, text intact)', () => {
+      // 2026-08-21 incident: Enter after a settled zero-result search used to
+      // 'dismiss' — closing the box AND discarding the typed query. Now it
+      // stays open instead: the text survives and the empty state explains
+      // itself. (Previously pinned 'dismiss'; updated for task 4.)
       const search = 'Think! How Intelligent Are Animals?';
       expect(decideCommit(base({ search, value: '', results: [], searchSettled: true, allowFreeform: false })))
-        .toEqual({ action: 'dismiss' });
+        .toEqual({ action: 'open' });
       // Contrast: default (allowFreeform omitted → true) still commits the raw literal.
       expect(decideCommit(base({ search, value: '', results: [], searchSettled: true })))
         .toEqual({ action: 'literal', value: search });
+    });
+
+    it('enter with settled zero results in dispatch context keeps the box open (no input destruction)', () => {
+      // 2026-08-21 incident: user typed a correct title on the phone, a transient
+      // empty result set settled, Enter discarded the whole query and closed the box.
+      const decision = decideCommit(base({ search: 'Boy from the moon', value: '', results: [], searchSettled: true, allowFreeform: false }));
+      expect(decision.action).toBe('open');
+    });
+
+    it('enter with settled zero results in freeform context still commits the literal', () => {
+      const decision = decideCommit(base({ search: 'files:clips/some-video.mp4', value: '', results: [], searchSettled: true, allowFreeform: true }));
+      expect(decision.action).toBe('literal');
     });
 
     it('Enter, id-like typed query, partial results, allowFreeform:false → dismiss (not literal)', () => {
