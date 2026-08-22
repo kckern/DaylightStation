@@ -24,9 +24,17 @@
 > and its drawer, behind `teacherGate`. There is still no console UI for
 > *authoring* a syllabus (`putSyllabus`/`archiveSyllabus` exist in the client
 > with no caller), so a syllabus must be written by hand or via API before the
-> drawer has anything to enroll from. Scope subsetting, the per-learner pass
-> bar, and terms/pacing remain designed, not built (waves 2–4). §3 inventories
-> four authored-but-unconsumed curriculum fields.
+> drawer has anything to enroll from. Scope subsetting and the per-learner pass
+> bar remain designed, not built (waves 2–4). Time-sensitive planning is
+> implemented separately below. §3 inventories four authored-but-unconsumed
+> curriculum fields.
+
+> **Time-sensitive planning (runtime core built):**
+> [`timing-and-priority.md`](./timing-and-priority.md) — household-owned event
+> anchors, materialized enrollment timing, automatic deadline urgency, and
+> temporary cross-subject focus days. Anchor/template editing remains
+> hand-authored/API-driven. It deliberately separates availability, targets,
+> scheduling priority, and durable learning evidence.
 >
 > **Cross-surface educational-technology audit:** [`edtech-research-audit.md`](./edtech-research-audit.md)
 >

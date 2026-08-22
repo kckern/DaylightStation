@@ -24,8 +24,10 @@
  * the shape `reduceSession` produces) and returns plain data.
  */
 
+import { evaluateTiming, studyDate } from './timing.mjs';
+
 /** Closed set — a status a caller cannot render is a status that cannot exist. */
-export const PLAN_STATUSES = Object.freeze(['completed', 'in_progress', 'locked', 'available']);
+export const PLAN_STATUSES = Object.freeze(['completed', 'in_progress', 'locked', 'available', 'upcoming', 'dormant']);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
@@ -39,12 +41,16 @@ function readAssignmentList(raw, key) {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {
-      if (isNonEmptyString(entry)) return { id: entry.trim(), elective: false, profile: null, enrollment: null };
+      if (isNonEmptyString(entry)) return { id: entry.trim(), elective: false, profile: null, enrollment: null, timing: null };
       if (isPlainObject(entry) && isNonEmptyString(entry[key])) {
         return {
           id: entry[key].trim(), elective: entry.elective === true,
           profile: isNonEmptyString(entry.profile) ? entry.profile : null,
           enrollment: isPlainObject(entry.enrollment) ? entry.enrollment : null,
+          // Preserve malformed parent-authored timing so evaluateTiming can
+          // fail closed with an explanatory dormant state instead of silently
+          // treating it as unrestricted work.
+          timing: entry.timing ?? null,
         };
       }
       return null;
@@ -73,7 +79,7 @@ function bySequence(a, b) {
  *   inProgress: object[], completed: object[], next: object|null, errors: string[],
  * }}
  */
-export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null, coursePolicies = {} } = {}) {
+export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null, timezone = null, coursePolicies = {} } = {}) {
   const errors = [];
   const catalog = (Array.isArray(units) ? units : []).filter((u) => isPlainObject(u) && isNonEmptyString(u.unitId));
   const byUnitId = new Map(catalog.map((u) => [u.unitId, u]));
@@ -85,8 +91,8 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** unitId → elective flag, in the order the agenda should offer them. */
   const wanted = new Map();
   const enrollmentByCourse = new Map();
-  assignedCourses.forEach(({ id, elective, profile, enrollment }) => {
-    enrollmentByCourse.set(id, { profile, enrollment });
+  assignedCourses.forEach(({ id, elective, profile, enrollment, timing }) => {
+    enrollmentByCourse.set(id, { profile, enrollment, timing });
     const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
     if (!members.length) {
       errors.push(`${id}: assigned but no published units belong to it`);
@@ -94,11 +100,13 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     }
     members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
   });
-  assignedUnits.forEach(({ id, elective }) => {
+  const timingByStandaloneUnit = new Map();
+  assignedUnits.forEach(({ id, elective, timing }) => {
     if (!byUnitId.has(id)) { errors.push(`${id}: assigned but not in the published catalog`); return; }
     // An explicit entry never DEMOTES a course unit to elective: the course
     // assignment is the stronger statement and was made first.
     if (!wanted.has(id)) wanted.set(id, elective);
+    if (timing) timingByStandaloneUnit.set(id, timing);
   });
 
   // --- what the session history says ---------------------------------------
@@ -215,20 +223,24 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     return a.position - b.position;
   });
 
+  const today = studyDate(now, timezone) ?? (typeof now === 'string' ? now.slice(0, 10) : null);
   const entries = ordering.map(({ unitId, elective }) => {
     const unit = byUnitId.get(unitId);
     // Program units never carry an open session — always sessionId: null, state: null
     const open = isNonEmptyString(unit.program) ? null : (openByUnit.get(unitId) ?? null);
     const blocker = blockerFor(unit);
 
+    const rawTiming = unit.courseId
+      ? enrollmentByCourse.get(unit.courseId)?.timing ?? null
+      : timingByStandaloneUnit.get(unitId) ?? null;
+    let timingDecision = null;
     let status = 'available';
     let lockReason = null;
     let remedy = null;
 
-    // Program units are never locked or completed — always available.
-    if (isNonEmptyString(unit.program)) {
-      status = 'available';
-    } else if (passedUnits.has(unitId)) {
+    // Program units do not complete through School evidence, but can still be
+    // time-gated like any other planned work.
+    if (!isNonEmptyString(unit.program) && passedUnits.has(unitId)) {
       status = 'completed';
     } else if (open) {
       // Beats the lock deliberately: a child holding a printed sheet must be
@@ -242,7 +254,12 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
         title: blocker.title,
         action: openByUnit.has(blocker.unitId) ? 'resume' : 'start',
       };
+    } else if (today) {
+      timingDecision = evaluateTiming(rawTiming, { today });
+      if (timingDecision.state === 'upcoming') status = 'upcoming';
+      if (timingDecision.state === 'dormant') status = 'dormant';
     }
+    if (open && today) timingDecision = evaluateTiming(rawTiming, { today, inProgress: true });
 
     return {
       unitId,
@@ -253,6 +270,10 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,
       module: unit.module ?? null,
       profile: enrollmentByCourse.get(unit.courseId)?.profile ?? null,
+      timing: timingDecision?.timing ?? rawTiming,
+      timingState: timingDecision?.state ?? 'available',
+      timingPriority: timingDecision?.priority ?? 3,
+      timingReasons: timingDecision?.reasons ?? ['default_priority'],
       elective,
       program: unit.program ?? null,
       cadence: unit.cadence ?? null,
@@ -267,8 +288,11 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   });
 
   const of = (status) => entries.filter((e) => e.status === status);
+  const positionFor = (entry) => ordering.findIndex((item) => item.unitId === entry.unitId);
+  const byEffectivePriority = (left, right) => left.timingPriority - right.timingPriority
+    || positionFor(left) - positionFor(right);
   const inProgress = of('in_progress');
-  const available = of('available');
+  const available = of('available').sort(byEffectivePriority);
 
   return {
     learnerId: isNonEmptyString(learnerId) ? learnerId : null,
@@ -279,7 +303,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     available,
     locked: of('locked'),
     completed: of('completed'),
-    next: inProgress[0] ?? available[0] ?? null,
+    next: [...inProgress, ...available].sort(byEffectivePriority)[0] ?? null,
     errors,
   };
 }

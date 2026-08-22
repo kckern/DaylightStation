@@ -15,13 +15,14 @@
  * (a session on a lesson leaving the enrollment would strand).
  */
 import { createCourseEnrollment } from '#domains/school/curriculum/enrollment.mjs';
+import { materializeTiming, studyDate } from '#domains/school/timing.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class EnrollLearner {
-  #syllabi; #assignments; #curriculum; #sessions; #teacherGate; #clock; #rng; #logger;
+  #syllabi; #assignments; #curriculum; #sessions; #timingAnchors; #teacherGate; #clock; #timezone; #rng; #logger;
 
-  constructor({ syllabi, assignments, curriculum, sessions = null, teacherGate, clock = () => new Date(), rng = Math.random, logger = console } = {}) {
+  constructor({ syllabi, assignments, curriculum, sessions = null, timingAnchors = null, teacherGate, clock = () => new Date(), timezone = null, rng = Math.random, logger = console } = {}) {
     if (!syllabi) throw new Error('EnrollLearner requires a syllabi store');
     if (!assignments) throw new Error('EnrollLearner requires an assignments store');
     if (!curriculum) throw new Error('EnrollLearner requires curriculum access');
@@ -30,8 +31,10 @@ export class EnrollLearner {
     this.#assignments = assignments;
     this.#curriculum = curriculum;
     this.#sessions = sessions;
+    this.#timingAnchors = timingAnchors;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
+    this.#timezone = timezone;
     this.#rng = rng;
     this.#logger = logger;
   }
@@ -49,7 +52,7 @@ export class EnrollLearner {
    *   caller loaded; a mismatch is a 409 rather than a silent clobber
    * @returns {Promise<object>} the stored assignment record
    */
-  async execute({ learnerId, syllabusId, enrolledBy = null, pin = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
+  async execute({ learnerId, syllabusId, timingAnchorId = null, enrolledBy = null, pin = null, rematerialize = false, baseUpdatedAt = undefined } = {}) {
     this.#teacherGate.assert({ userId: enrolledBy, pin, action: 'enrollment.put', context: { learnerId, syllabusId } });
 
     if (typeof learnerId !== 'string' || !learnerId.trim()) throw new ValidationError('learnerId is required');
@@ -116,6 +119,21 @@ export class EnrollLearner {
     // carry forward) contributes nothing here, which is correct.
     const priorEntry = indexOf !== -1 ? courses[indexOf] : null;
     const priorObj = (priorEntry && typeof priorEntry === 'object') ? priorEntry : {};
+    let timing = priorObj.timing ?? null;
+    if (syllabus.timingTemplate) {
+      const anchorId = timingAnchorId ?? syllabus.timingTemplate.defaultAnchorId;
+      if (!anchorId || !this.#timingAnchors) {
+        throw new ValidationError(`${courseId} has a timing template but no timing anchor is available`);
+      }
+      const anchor = await this.#timingAnchors.get(anchorId);
+      if (!anchor) throw new ValidationError(`unknown timing anchor: '${anchorId}'`);
+      const today = studyDate(nowIso, this.#timezone);
+      try {
+        timing = materializeTiming(syllabus.timingTemplate, anchor, { today });
+      } catch (error) {
+        throw new ValidationError(`invalid timing for ${courseId}: ${error.message}`);
+      }
+    }
 
     const entry = {
       ...priorObj,
@@ -125,6 +143,7 @@ export class EnrollLearner {
       passing: syllabus.passing,
       enrolledAt: priorObj.enrolledAt ?? nowIso,
       enrollment,
+      ...(timing ? { timing } : {}),
     };
     if (indexOf === -1) courses.push(entry); else courses[indexOf] = entry;
 

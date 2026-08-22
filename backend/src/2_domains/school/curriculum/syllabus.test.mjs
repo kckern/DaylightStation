@@ -71,6 +71,22 @@ describe('validateSyllabus', () => {
       .toContain('policy has unknown keys: nope');
   });
 
+  it('normalizes a reusable timing template without making it learner state', () => {
+    const { errors, syllabus } = validateSyllabus({
+      ...VALID,
+      timingTemplate: {
+        schema: 'school.timing-template/v1', defaultAnchorId: 'fourth-of-july',
+        opensBeforeDays: 21, closesAfterDays: 1, targetOffsetDays: -1,
+        targetStrength: 'firm', basePriority: 'high', flexibility: 'flexible',
+        normalBlocks: 1, urgentBlocks: 3, urgencyLeadDays: 10,
+      },
+    }, SETS);
+    expect(errors).toEqual([]);
+    expect(syllabus.timingTemplate).toMatchObject({
+      defaultAnchorId: 'fourth-of-july', basePriority: 'high', urgentBlocks: 3,
+    });
+  });
+
   it('degrades to accepting when reference sets are unavailable', () => {
     const { errors } = validateSyllabus({ ...VALID, courseId: 'anything' }, {});
     expect(errors).toEqual([]);
