@@ -391,7 +391,6 @@ export class ConfigService {
 
   /**
    * Get household-scoped path for state/history files
-   * @deprecated Use getHouseholdAppPath() for app data
    * @param {string} relativePath - Path relative to household dir (e.g., 'apps/fitness', 'history/menu_memory')
    * @param {string} [householdId] - Household ID, defaults to default household
    * @returns {string} Full path: data/household[-{id}]/relativePath
@@ -436,6 +435,9 @@ export class ConfigService {
 
   /**
    * Get canonical household app path following households/apps/{appName}/ pattern
+   * @deprecated Ignores `householdId` entirely and returns a `households/apps/`
+   *   shape that does not exist in this data tree. Do not use for
+   *   household-scoped paths — use getHouseholdPath() instead.
    * @param {string} appName - App name (fitness, nutribot, journalist, etc.)
    * @param {string} [relativePath] - Path relative to app dir (e.g., 'sessions', 'conversations')
    * @param {string} [householdId] - Household ID (ignored - kept for API compatibility)

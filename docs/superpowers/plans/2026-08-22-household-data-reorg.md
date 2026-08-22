@@ -17,6 +17,13 @@
 - **`npm run test:backend` is broken** — it invokes `node scripts/test-backend.mjs`, which does not exist. Never use it as a gate. Run the specific files named in each task.
 - **Never `rm` inside the data tree.** Move to `data/_deleteme/` (gitignored, user empties manually). `docker exec` runs as **root**, so `rm` always "succeeds" — that is the hazard, not the safeguard.
 - **The `claude` user cannot write the data volume directly.** All data-volume writes go through `sudo docker exec daylight-station sh -c '...'`. After creating files this way, `chown -R node:node` the touched paths — docker exec creates them root-owned.
+- **`sudo docker cp` and `docker exec -i` are BLOCKED by the sudoers policy** (discovered 2026-08-22 during Task 2 — neither is in the NOPASSWD allowlist). To push a locally-edited file onto the volume, use a base64 round-trip through plain `docker exec`:
+  ```bash
+  B64=$(base64 -w0 /local/path/file.yml)
+  sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/<rel>/file.yml"
+  sudo docker exec daylight-station sh -c 'chown node:node data/household/<rel>/file.yml'
+  ```
+  Always verify afterwards by reading the file back and diffing against the local copy.
 - **Do not use `sed -i` on YAML inside the container.** Write the complete file with a heredoc.
 - **Config is cached in-memory at startup.** Data-volume YAML edits need a container restart (or a `reloadHouseholdAppConfig` call) before they take effect.
 - **Deploy gate — this is its own step and MUST halt, never chained after a build.** Before `sudo deploy-daylight`, confirm BOTH are clear:
@@ -566,8 +573,9 @@ Edit the local copy. Immediately after the `doorbell:` block (it ends before the
 - [ ] **Step 3: Write it back and validate the YAML parses**
 
 ```bash
-sudo docker cp /tmp/claude-1001/-opt-Code-DaylightStation/devices.yml \
-  daylight-station:/usr/src/app/data/household/hardware/devices.yml
+# docker cp is sudoers-blocked — use the base64 round-trip (see Global Constraints)
+B64=$(base64 -w0 /tmp/claude-1001/-opt-Code-DaylightStation/devices.yml)
+sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/hardware/devices.yml"
 sudo docker exec daylight-station sh -c 'chown node:node data/household/hardware/devices.yml'
 sudo docker exec daylight-station sh -c "node -e \"
 const y=require('js-yaml'),fs=require('fs');
@@ -742,8 +750,9 @@ cameras:
 Delete the `nvr:` and `auth:` blocks entirely. Leave `sources:`, `ledger:`, `archive:`, `budget:`, `sessionize:`, `scoring:`, `sun:`, `timelapse:`, `contactSheets:`, `encoding:`, `classification:`, and `storage:` byte-identical.
 
 ```bash
-sudo docker cp /tmp/claude-1001/-opt-Code-DaylightStation/archive.yml \
-  daylight-station:/usr/src/app/data/household/camera/archive.yml
+# docker cp is sudoers-blocked — use the base64 round-trip (see Global Constraints)
+B64=$(base64 -w0 /tmp/claude-1001/-opt-Code-DaylightStation/archive.yml)
+sudo docker exec daylight-station sh -c "echo '$B64' | base64 -d > data/household/camera/archive.yml"
 sudo docker exec daylight-station sh -c 'chown node:node data/household/camera/archive.yml'
 sudo docker exec daylight-station sh -c "node -e \"
 const y=require('js-yaml'),fs=require('fs');
@@ -787,7 +796,21 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Phase 5 — Retention
 
-### Task 7: Give `weather/log` the prune-on-read treatment
+### Task 7: DROPPED (2026-08-22) — `weather/log` retention
+
+**Not implemented. Do not execute this task.** Kept for the reasoning.
+
+Three things killed it once the numbers were checked against the live tree:
+
+1. **The problem is imaginary at this scale.** `weather/log` is 1.1 MB across 145 daily shards (2026-03-31 → 2026-08-22), i.e. ~2.9 MB/year. Nothing is strained by that.
+2. **Pruning would degrade a real feature.** `WeeklyReviewService.mjs:153` calls `weatherStore.loadDate(date)` to attach weather to each photo day. A 30-day window blanks the weather in any weekly review older than a month — a silent quality regression traded for megabytes.
+3. **The drafted implementation violated a standing rule.** It called `fs.rm` on shards in the data tree. The house rule is *never* `rm` in the data tree — move to `data/_deleteme/` — explicitly including derived and cache files.
+
+The prune-on-read pattern this task was going to copy (`YamlDismissedItemsStore`, 30-day TTL, write-back, `feed.dismissed.pruned`) remains the right model **for a log that actually grows**. `weather/log` is not one. Revisit only if a real growth problem appears, and use move-not-delete when it does.
+
+Phase 5 is therefore Task 8 alone.
+
+### Task 7-original (superseded): prune-on-read for weather/log
 
 `feed` is the only domain in the tree with a working retention policy, and it is the pattern to copy: `YamlDismissedItemsStore` auto-prunes entries older than 30 days **on load**, writes the pruned file back, and logs `feed.dismissed.pruned`. No background job, no scheduler entry.
 
@@ -1035,40 +1058,19 @@ Replace every construction of the item path in `FeedbackService.mjs` with `feedb
 
 Ensure the write path creates the month dir (`fs.mkdir(path.dirname(file), { recursive: true })`) before writing.
 
-- [ ] **Step 7: Migrate the existing 74 files**
+- [ ] **Step 7: Do NOT migrate data in this task**
+
+The 74 existing files stay flat until after the deploy — see Task 10. Migrating here would move them out from under the OLD build that the container is still serving, 404ing every feedback read until Phase 6 ships. Task 10 runs the migration immediately after the deploy verification instead, which bounds the mismatch window to the seconds between those two steps rather than the whole build.
+
+This task is code-only. Confirm no data moved:
 
 ```bash
-sudo docker exec daylight-station sh -c '
-  set -e
-  for app in piano fitness; do
-    D=data/household/feedback/$app
-    [ -d "$D" ] || continue
-    for f in "$D"/*.yml; do
-      [ -e "$f" ] || continue
-      b=$(basename "$f")
-      m="${b:0:4}-${b:4:2}"
-      mkdir -p "$D/$m"
-      mv "$f" "$D/$m/$b"
-    done
-    chown -R node:node "$D"
-  done
-  echo "--- after:"; find data/household/feedback -type f | wc -l
-  find data/household/feedback -mindepth 1 -maxdepth 2 -type d
-'
+sudo docker exec daylight-station sh -c \
+  'find data/household/feedback -mindepth 1 -maxdepth 2 -type d'
 ```
-Expected: file count still 74; month dirs like `piano/2026-08`, `piano/2026-06`, `fitness/2026-07`.
+Expected: only `feedback/piano` and `feedback/fitness` — no month dirs yet.
 
-- [ ] **Step 8: Verify a feedback item still reads back**
-
-```bash
-ID=$(sudo docker exec daylight-station sh -c \
-  'ls data/household/feedback/piano/2026-08 | head -1' | sed 's/.yml//')
-echo "id: $ID"
-curl -s "http://localhost:3111/api/v1/feedback/piano/$ID" | head -c 300
-```
-Expected: JSON for that item, not a 404. A 404 means the service is still building flat paths — recheck Step 6.
-
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add backend/src/3_applications/common/feedback/FeedbackService.mjs \
@@ -1143,6 +1145,60 @@ sudo docker exec daylight-station sh -c 'ls -la data/household/donow/ 2>&1'
 sudo docker exec daylight-station sh -c 'ls -la data/apps 2>&1'
 ```
 Expected: `data/apps` still absent (nothing has dispatched); `household/donow/` holds `config.yml`. The path change is proven by the unit test, not by a directory that only appears on first dispatch.
+
+---
+
+### Task 10: Migrate the feedback files (runs immediately after Task 9)
+
+Deferred out of Task 8 so the files move *after* the code that reads month paths is live. Run this as soon as Task 9 Step 5 confirms a healthy deploy — between the deploy and this migration the new build reads month paths while the files are still flat, so every feedback read 404s until this completes. Do not leave the gap open.
+
+**Files:**
+- Migrate (data volume): `household/feedback/{app}/*.yml` → `household/feedback/{app}/{YYYY-MM}/*.yml`
+
+**Interfaces:**
+- Consumes: `feedbackItemPath(root, app, id)` from Task 8, now deployed.
+- Produces: nothing.
+
+- [ ] **Step 1: Re-confirm the id format still holds**
+
+```bash
+sudo docker exec daylight-station sh -c \
+  'ls data/household/feedback/piano | grep -cvE "^[0-9]{14}_"'
+```
+Expected: `0`. Anything else — stop, do not migrate.
+
+- [ ] **Step 2: Migrate**
+
+```bash
+sudo docker exec daylight-station sh -c '
+  set -e
+  for app in piano fitness; do
+    D=data/household/feedback/$app
+    [ -d "$D" ] || continue
+    for f in "$D"/*.yml; do
+      [ -e "$f" ] || continue
+      b=$(basename "$f")
+      m="${b:0:4}-${b:4:2}"
+      mkdir -p "$D/$m"
+      mv "$f" "$D/$m/$b"
+    done
+    chown -R node:node "$D"
+  done
+  echo "--- after:"; find data/household/feedback -type f | wc -l
+  find data/household/feedback -mindepth 1 -maxdepth 2 -type d
+'
+```
+Expected: file count still 74; month dirs like `piano/2026-08`, `piano/2026-06`, `fitness/2026-07`.
+
+- [ ] **Step 3: Verify a feedback item reads back through the deployed code**
+
+```bash
+ID=$(sudo docker exec daylight-station sh -c \
+  'ls data/household/feedback/piano/2026-08 | head -1' | sed 's/.yml//')
+echo "id: $ID"
+curl -s "http://localhost:3111/api/v1/feedback/piano/$ID" | head -c 300
+```
+Expected: JSON for that item, not a 404. A 404 here means the deployed build is not using `feedbackItemPath` — investigate before leaving the tree half-migrated.
 
 ---
 
