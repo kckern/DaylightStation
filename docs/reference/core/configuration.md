@@ -335,22 +335,18 @@ Two things stay at the household root because they are not domains: `auth/`
 
 ### Where an app config lives: `shared/contracts/householdConfig.mjs`
 
-**There is no `household/config/` directory.** It was retired in 2026-08. A flat
-directory of 26 app YAMLs sat beside the domain folders that owned them, and
-because nothing declared where a config lived, three separate hand-maintained
-path lists drifted from it — one of them silently 403ing eight files in the
-admin YAML browser with no error anywhere.
-
-One registry now declares every app config's location:
+There is no `household/config/` directory. `shared/contracts/householdConfig.mjs`
+is the only place an app's config path is declared — one registry, one map
+from app name to a domain-grouped path under the household folder:
 
 ```javascript
 // shared/contracts/householdConfig.mjs
 export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
-  scales:   'hardware/scales',
-  chess:    'gaming/chess',
-  vehicles: 'automotive/vehicles',
-  media:    'media/config',      // the DOMAIN
-  'media-app': 'media/app',      // the MediaApp SURFACE
+  scales:      'hardware/scales',
+  chess:       'gaming/chess',
+  vehicles:    'automotive/vehicles',
+  media:       'media/config',      // the DOMAIN (plex host, protocol, board ids)
+  'media-app': 'media/app',         // the MediaApp SURFACE (browse menu, searchScopes)
   …
 });
 ```
@@ -359,7 +355,11 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
 **Filename = the facet** — `config` for domain policy, another name for a
 surface or a second facet.
 
-Everything derives from it, so adding an app is ONE edit:
+**There is no fallback.** An app not in this registry has no config: reads
+resolve to `null` rather than degrading to a flat file, and writes refuse
+with a `NotFoundError` rather than silently creating a file nothing else will
+ever read back. Adding an app's config is exactly one edit — a line in this
+map — because everything else derives from it:
 
 | Consumer | What it derives |
 |---|---|
@@ -378,9 +378,30 @@ an entry grants the admin YAML browser read/write on that file. Never register
 a path under an auth directory. (`MASKED_DIRS` is checked before the allowlist,
 so a mask still wins — but do not rely on that as the only defence.)
 
-Configs that are NOT in the registry, deliberately: `home/dashboard` and
-`player/config` are read directly via `dataService.household.read()` rather
-than through the app union, and `triggers/` is bindings, not app config.
+**The admin per-app editor's IDs are not always the registry's app names.**
+`AppsConfigService.ADMIN_ID_TO_APP` maps the two that differ: the admin ID
+`media` resolves to the app name `media-app`, because the admin edits the
+MediaApp SURFACE (browse menu, searchScopes at `household/media/app.yml`) —
+never the `media` DOMAIN config (`household/media/config.yml`), which holds
+the Plex host and protocol and has no admin editor of its own. The admin ID
+`shopping` resolves to the app name `harvest` — the admin calls it Shopping;
+the app is `harvest`. Every other admin ID matches its app name directly.
+
+Configs that are NOT in the registry, deliberately:
+- `home/dashboard` and `player/config` are read directly via
+  `dataService.household.read()` rather than through the app union.
+- `triggers/` is bindings, not app config.
+- `household.yml`, `integrations.yml` and `hardware/devices.yml` are not app
+  configs either. The first two are loaded by `configLoader`'s own dedicated
+  loaders (household identity at the household root, `loadHouseholdIntegrations`
+  for integrations), not through the `HOUSEHOLD_APP_CONFIGS` union.
+  `integrations.yml` is still reachable through the admin YAML browser — it's
+  one of the few entries added to `ALLOWED_FILES` by hand rather than derived,
+  because `IntegrationsQueryService` is read-only and the file would otherwise
+  be editable only by shelling into the container. `household.yml` and
+  `hardware/devices.yml` deliberately stay off `ALLOWED_FILES`: both have a
+  dedicated admin write surface (`HouseholdAdminService`, including device
+  CRUD) instead of the generic YAML browser.
 
 **There is no `apps/`, `common/`, `shared/`, `history/` or `state/` root.**
 Those five sat side by side with no rule saying which one a domain belonged in,
