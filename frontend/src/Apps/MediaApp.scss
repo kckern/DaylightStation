@@ -12,9 +12,15 @@
 
   height: 100dvh;
   overflow: hidden;
-  // Chrome Android turns downward overscroll into pull-to-refresh, which
-  // remounts the app and destroys search/session state mid-flow
-  // (2026-08-21 incident). Contain it; inner scrollers keep their behavior.
+}
+
+// Chrome Android turns downward overscroll of the ROOT scroller into
+// pull-to-refresh, which remounts the app and destroys in-flight search and
+// session state. overscroll-behavior only acts on a real scroll container, so
+// it must sit on html/body — `.media-app` is height:100dvh; overflow:hidden and
+// never scrolls, so setting it there does nothing. Scoped with :has() so only
+// pages actually rendering the Media App are affected.
+html:has(.media-app),
+body:has(.media-app) {
   overscroll-behavior-y: none;
-  touch-action: pan-x pan-y;
 }
