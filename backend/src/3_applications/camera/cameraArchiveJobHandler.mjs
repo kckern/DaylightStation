@@ -30,6 +30,26 @@ function localDay(offsetDays = 0, now = new Date()) {
 }
 
 /**
+ * Resolve a camera's network endpoint from devices.yml — the single source of
+ * truth for host + credentials. archive.yml used to restate both, so a re-IP'd
+ * camera silently desynchronized the archive from the live view.
+ *
+ * @param {Object} configService - exposes getDeviceConfig(id, householdId)
+ * @param {string} deviceId - devices.yml key
+ * @param {string|null} householdId
+ * @returns {{host: string, authRef: string|undefined}}
+ */
+export function resolveCameraEndpoint(configService, deviceId, householdId) {
+  const device = configService.getDeviceConfig(deviceId, householdId);
+  if (!device?.host) {
+    throw new Error(
+      `camera archive: device '${deviceId}' has no host in devices.yml`,
+    );
+  }
+  return { host: device.host, authRef: device.auth_ref };
+}
+
+/**
  * @param {Object} deps
  * @param {Object} deps.configService
  * @param {string} [deps.householdId]
@@ -65,7 +85,11 @@ export function createCameraArchiveJobHandler({
       return { skipped: true, reason: 'disabled' };
     }
 
-    const auth = configService.getHouseholdAuth(config.auth?.ref ?? 'reolink', householdId);
+    // auth.yml's `ref` used to live in archive.yml (config.auth?.ref); it now
+    // comes from devices.yml via the NVR entry, which every camera in this
+    // pipeline shares (all auth_ref: reolink — see devices.yml camera-nvr).
+    const { authRef } = resolveCameraEndpoint(configService, 'camera-nvr', householdId);
+    const auth = configService.getHouseholdAuth(authRef, householdId);
     if (!auth?.username || !auth?.password) {
       log.error?.('camera.archive.no_auth', { executionId });
       return { skipped: true, reason: 'no-auth' };
@@ -80,21 +104,27 @@ export function createCameraArchiveJobHandler({
     const results = [];
     for (const cameraCfg of config.cameras) {
       try {
+        const { host: cameraHost } = resolveCameraEndpoint(
+          configService, cameraCfg.id, householdId,
+        );
         const sources = {
           camera: makeSource({
             kind: 'camera',
-            client: new ReolinkClient({ host: cameraCfg.host, ...auth, logger: log }),
+            client: new ReolinkClient({ host: cameraHost, ...auth, logger: log }),
             channel: 0,
             streamType,
           }),
-          nvr: config.nvr?.host
-            ? makeSource({
-                kind: 'nvr',
-                client: new ReolinkClient({ host: config.nvr.host, ...auth, logger: log }),
-                channel: cameraCfg.nvrChannel,
-                streamType,
-              })
-            : null,
+          nvr: (() => {
+            const { host: nvrHost } = resolveCameraEndpoint(
+              configService, 'camera-nvr', householdId,
+            );
+            return makeSource({
+              kind: 'nvr',
+              client: new ReolinkClient({ host: nvrHost, ...auth, logger: log }),
+              channel: cameraCfg.nvrChannel,
+              streamType,
+            });
+          })(),
         };
 
         const footageSource = sources[config.sources?.footageFrom ?? 'nvr'];
