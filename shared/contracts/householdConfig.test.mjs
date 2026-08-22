@@ -3,9 +3,9 @@ import {
   appConfigRelPath,
   legacyAppConfigRelPath,
   allAppNames,
-} from '#system/config/householdConfigRegistry.mjs';
+} from './householdConfig.mjs';
 
-describe('householdConfigRegistry', () => {
+describe('householdConfig registry', () => {
   it('maps an app to its grouped path under the household folder', () => {
     expect(appConfigRelPath('scales')).toBe('hardware/scales');
     expect(appConfigRelPath('vehicles')).toBe('automotive/vehicles');

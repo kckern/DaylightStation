@@ -17,26 +17,37 @@ import {
   ValidationError,
   NotFoundError
 } from '#system/utils/errors/index.mjs';
+import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
 
 /**
- * Registry mapping app IDs to their config file paths (relative to data root)
+ * Admin-app-ID → config file path, derived from the household config registry
+ * so it cannot drift from what the loader actually reads. Only the admin's
+ * friendly IDs differ from app names:
+ *   shopping → harvest      (the admin calls it Shopping)
+ *   media    → media-app    (the admin edits the SURFACE: browse + searchScopes)
+ *
+ * `chatbots` and `keyboard` deliberately left this map: chatbots.yml is a dead
+ * duplicate (the live identity mappings are built from users/<name>/profile.yml
+ * by configLoader.buildIdentityMappings), and keyboard.yml is a uid'd binding
+ * list, not app config — it moves to triggers/bindings/keyboard.yml and stays
+ * editable through the admin YAML browser instead.
  */
-// task-13: config/ is retiring in favor of colocating each app's config with
-// its own domain folder. Entries below point at the new location ONLY for
-// apps whose config has actually been moved (verified against disk, not
-// assumed) — the rest stay on the legacy household/config/ path until a
-// later task creates a matching domain folder for them.
-const APP_CONFIGS = {
-  fitness: 'household/fitness/config.yml',
-  finance: 'household/config/finance.yml',
-  gratitude: 'household/gratitude/config.yml',
-  shopping: 'household/harvest/config.yml',
-  media: 'household/config/media-app.yml',
-  chatbots: 'household/config/chatbots.yml',
-  entropy: 'household/config/entropy.yml',
-  keyboard: 'household/config/keyboard.yml',
-  piano: 'household/piano/config.yml',
+const ADMIN_ID_TO_APP = {
+  fitness: 'fitness',
+  finance: 'finance',
+  gratitude: 'gratitude',
+  shopping: 'harvest',
+  media: 'media-app',
+  entropy: 'entropy',
+  piano: 'piano',
 };
+
+export const APP_CONFIGS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(ADMIN_ID_TO_APP)
+      .map(([adminId, appName]) => [adminId, `household/${HOUSEHOLD_APP_CONFIGS[appName]}.yml`])
+  )
+);
 
 const YAML_DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true };
 
