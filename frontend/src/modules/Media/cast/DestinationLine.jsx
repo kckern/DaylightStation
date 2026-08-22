@@ -76,13 +76,17 @@ export function DestinationLine({ surface } = {}) {
       <Modal
         opened={open}
         onClose={close}
-        title="Cast to"
+        title="Destination"
         centered
         size="sm"
         transitionProps={{ duration: 0 }}
       >
         <div data-testid="destination-sheet">
-          <DispatchTargetPicker onComplete={handlePicked} verb="Cast" />
+          {/* intent="destination": this pick only changes the preferred
+              target (submit() is a no-op dispatch here per the hasContent
+              guard) — the chrome must say "Set destination", never "Cast",
+              or the CTA would claim an action it doesn't perform. */}
+          <DispatchTargetPicker onComplete={handlePicked} intent="destination" />
         </div>
       </Modal>
     </>

@@ -6,6 +6,18 @@
 // Transfer/fork jargon never reaches the screen: when something is playing
 // locally the choice reads "Move playback…" vs "Keep playing here too".
 // One component for inline cast (rows), the detail page, and hand-off.
+//
+// `intent` controls what the chrome CLAIMS will happen, matching what
+// useDispatchTargetPicker's submit() actually does:
+//   - "dispatch" (default) — every pre-existing caller (CastButton,
+//     NowPlayingView). A pick really does dispatch, so the CTA/mode-toggle/
+//     busy-warning all speak in cast/dispatch terms.
+//   - "destination" — DestinationLine's device sheet. Its picker mounts with
+//     NO source, so submit() is a no-op dispatch (see the hasContent guard
+//     in useDispatchTargetPicker.js) — it only changes the preferred
+//     destination. The chrome must say that, not "Cast", or a button
+//     labeled Cast would do nothing when pressed (2026-08-21 review
+//     finding). Selection semantics (single/multi) are unchanged either way.
 import React from 'react';
 import { useDispatchTargetPicker } from './useDispatchTargetPicker.js';
 import { useDevice } from '../fleet/useDevice.js';
@@ -44,28 +56,33 @@ function DeviceTile({ device, pressed, onSelect }) {
 }
 
 // Warns only when we KNOW the device is mid-something (snapshot present);
-// no snapshot means unknown, and unknown must not cry wolf.
-function BusyWarning({ device }) {
+// no snapshot means unknown, and unknown must not cry wolf. Wording matches
+// `intent`: a destination-only pick never "replaces" anything right now.
+function BusyWarning({ device, intent }) {
   const { entry } = useDevice(device.id);
   const busy = describeBusy(entry);
   if (!busy) return null;
+  const consequence = intent === 'destination'
+    ? 'future casts will go here'
+    : 'casting will replace it';
   return (
     <div
       role="status"
       data-testid={`cast-busy-warning-${device.id}`}
       className="cast-picker-warning"
     >
-      {deviceName(device)} is {busy.phrase} — casting will replace it
+      {deviceName(device)} is {busy.phrase} — {consequence}
     </div>
   );
 }
 
-export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast' }) {
+export function DispatchTargetPicker({ source, onComplete, autoFocus = true, verb = 'Cast', intent = 'dispatch' }) {
   const {
     devices, selected, multi, mode, canSubmit, localPlaying,
     select, toggleMulti, setMode, submit,
   } = useDispatchTargetPicker({ source, onComplete });
 
+  const isDestination = intent === 'destination';
   const selectedDevices = devices.filter((d) => selected.has(d.id));
   const targetLabel = selectedDevices.length === 1
     ? deviceName(selectedDevices[0])
@@ -73,9 +90,13 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
       ? `${selectedDevices.length} devices`
       : null;
 
+  const ctaLabel = canSubmit
+    ? (isDestination ? `Set destination: ${targetLabel}` : `${verb} to ${targetLabel}`)
+    : 'Select a device';
+
   return (
-    <div data-testid="dispatch-target-picker" className="cast-picker">
-      <div className="cast-picker-label">Cast to</div>
+    <div data-testid="dispatch-target-picker" className="cast-picker" data-intent={intent}>
+      <div className="cast-picker-label">{isDestination ? 'Destination' : 'Cast to'}</div>
       {devices.length === 0 && (
         <div data-testid="picker-no-devices" className="cast-picker-empty">No devices available.</div>
       )}
@@ -92,11 +113,15 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
           aria-pressed={multi}
           onClick={toggleMulti}
         >
-          + cast to more than one
+          {isDestination ? '+ add another device' : '+ cast to more than one'}
         </button>
       )}
-      {selectedDevices.map((d) => <BusyWarning key={d.id} device={d} />)}
-      {localPlaying && devices.length > 0 && (
+      {selectedDevices.map((d) => <BusyWarning key={d.id} device={d} intent={intent} />)}
+      {/* The transfer/fork choice only makes sense when a dispatch is
+          actually about to happen — a destination-only pick never plays or
+          moves anything, so the choice would be pure noise (and a lie about
+          what pressing the CTA does). */}
+      {localPlaying && devices.length > 0 && !isDestination && (
         <div className="cast-picker-mode" role="radiogroup" aria-label="What happens to playback here">
           <button
             type="button"
@@ -128,7 +153,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         disabled={!canSubmit}
         onClick={submit}
       >
-        {canSubmit ? `${verb} to ${targetLabel}` : 'Select a device'}
+        {ctaLabel}
       </button>
     </div>
   );
