@@ -19,6 +19,11 @@ afterEach(async () => { await fs.rm(dataPath, { recursive: true, force: true });
 
 const write = (body) => fs.writeFile(path.join(householdPath, 'config', 'artmode.yml'), body, 'utf8');
 
+const writeGrouped = async (body) => {
+  await fs.mkdir(path.join(householdPath, 'art'), { recursive: true });
+  return fs.writeFile(path.join(householdPath, 'art', 'artmode.yml'), body, 'utf8');
+};
+
 describe('loadArtmodeConfig schedule', () => {
   it('returns the schedule array when present', async () => {
     await write('schedule:\n  - days: [mon]\n    start: "07:00"\n    end: "09:00"\n    preset: impressionism\n');
@@ -30,5 +35,18 @@ describe('loadArtmodeConfig schedule', () => {
     await write('presets:\n  gallery-silent: { collection: paintings }\n');
     const cfg = await loadArtmodeConfig(householdPath);
     expect(cfg.schedule).toEqual([]);
+  });
+
+  it('reads the grouped art/artmode.yml', async () => {
+    await writeGrouped('schedule:\n  - days: [tue]\n    start: "08:00"\n    end: "10:00"\n    preset: baroque\n');
+    const cfg = await loadArtmodeConfig(householdPath);
+    expect(cfg.schedule).toEqual([{ days: ['tue'], start: '08:00', end: '10:00', preset: 'baroque' }]);
+  });
+
+  it('prefers grouped over legacy when both exist', async () => {
+    await writeGrouped('presets:\n  a: { collection: paintings }\n');
+    await write('presets:\n  b: { collection: sketches }\n');
+    const cfg = await loadArtmodeConfig(householdPath);
+    expect(Object.keys(cfg.presets)).toEqual(['a']);
   });
 });
