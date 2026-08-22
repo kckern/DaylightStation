@@ -15,7 +15,7 @@
  * @module adapters/jamcorder/HttpJamCorderSource
  */
 import http from 'node:http';
-import { IJamCorderSource } from '#apps/jamcorder/ports/IJamCorderSource.mjs';
+import { IMidiRecordingSource } from '#apps/midi/ports/IMidiRecordingSource.mjs';
 
 const ROOT = '/JAMC';
 const MAX_DEPTH = 5; // JAMC → year → session → file is 3; cap generously
@@ -43,7 +43,7 @@ export function httpGetBufferInsecure(url, { timeoutMs = DOWNLOAD_TIMEOUT_MS } =
   });
 }
 
-export class HttpJamCorderSource extends IJamCorderSource {
+export class HttpJamCorderSource extends IMidiRecordingSource {
   #httpClient; #host; #logger; #binaryGet;
 
   constructor({ httpClient, host, logger = console, binaryGet = httpGetBufferInsecure }) {
@@ -91,6 +91,7 @@ export class HttpJamCorderSource extends IJamCorderSource {
     );
     const files = resp?.data?.files;
     if (!Array.isArray(files)) {
+      // Log event name deliberately keeps the vendor name (queryable history).
       this.#logger.warn?.('jamcorder.list.unexpected', { filepath, status: resp?.status });
       return [];
     }

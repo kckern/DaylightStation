@@ -76,7 +76,6 @@ data/
 ├── household/                  # Default household — DOMAIN-FIRST
 │   ├── household.yml           # Identity, users
 │   ├── integrations.yml        # Service names + ports
-│   ├── config/                 # App config (loaded before any path resolver)
 │   ├── auth/
 │   │   ├── plex.yml            # token only
 │   │   └── homeassistant.yml
@@ -85,7 +84,11 @@ data/
 │   │   ├── exercise-index.yml  #   live state
 │   │   ├── workouts/           #   live state
 │   │   └── log/                #   append-only, date-keyed, prunable
-│   ├── school/  piano/  finances/  weather/  automotive/   …one per domain
+│   ├── school/  piano/  finance/  weather/  automotive/    …one per domain
+│   ├── hardware/               #   scales.yml, barcode/, omr/, pressure-mats/
+│   ├── gaming/                 #   chess.yml, games.yml, gameshow/, retroarch/
+│   ├── media/                  #   config.yml = DOMAIN, app.yml = SURFACE
+│   ├── triggers/               #   sources/responses/endpoints + bindings/ + state/
 │
 ├── household-jones/            # Secondary household
 │   ├── household.yml
@@ -326,10 +329,58 @@ strava:
 is the one reserved name** — append-only, date-keyed, prunable. Everything else
 in the folder is live state.
 
-Three things stay at the household root because they are not domains:
-`config/` and `auth/` (the bootstrap loads them before any path resolver
-exists), and `screens/` + `assets/` (a different scope — per-surface and
-shared static).
+Two things stay at the household root because they are not domains: `auth/`
+(the bootstrap loads it before any path resolver exists) and `screens/` +
+`assets/` (a different scope — per-surface and shared static).
+
+### Where an app config lives: `shared/contracts/householdConfig.mjs`
+
+**There is no `household/config/` directory.** It was retired in 2026-08. A flat
+directory of 26 app YAMLs sat beside the domain folders that owned them, and
+because nothing declared where a config lived, three separate hand-maintained
+path lists drifted from it — one of them silently 403ing eight files in the
+admin YAML browser with no error anywhere.
+
+One registry now declares every app config's location:
+
+```javascript
+// shared/contracts/householdConfig.mjs
+export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
+  scales:   'hardware/scales',
+  chess:    'gaming/chess',
+  vehicles: 'automotive/vehicles',
+  media:    'media/config',      // the DOMAIN
+  'media-app': 'media/app',      // the MediaApp SURFACE
+  …
+});
+```
+
+**Folder = the domain**, named after `backend/src/3_applications/`.
+**Filename = the facet** — `config` for domain policy, another name for a
+surface or a second facet.
+
+Everything derives from it, so adding an app is ONE edit:
+
+| Consumer | What it derives |
+|---|---|
+| `configLoader.loadHouseholdApps` | the app union built at boot |
+| `ConfigService.#resolveHouseholdAppConfigPath` | read AND write path resolution |
+| `AppsConfigService.APP_CONFIGS` | the admin per-app editor |
+| `YamlConfigFileService.ALLOWED_FILES` | the admin YAML browser allowlist |
+| `frontend/…/Admin/utils/adminConfigPaths.js` | the admin UI's fetch paths |
+
+It lives in `shared/` rather than `0_system/config/` because `3_applications/`
+may not import `#system/config/*` (rule `apps-no-config-internals`), and a
+naming contract is not config internals — no logic, no I/O.
+
+**It is a security boundary.** Because `ALLOWED_FILES` derives from it, adding
+an entry grants the admin YAML browser read/write on that file. Never register
+a path under an auth directory. (`MASKED_DIRS` is checked before the allowlist,
+so a mask still wins — but do not rely on that as the only defence.)
+
+Configs that are NOT in the registry, deliberately: `home/dashboard` and
+`player/config` are read directly via `dataService.household.read()` rather
+than through the app union, and `triggers/` is bindings, not app config.
 
 **There is no `apps/`, `common/`, `shared/`, `history/` or `state/` root.**
 Those five sat side by side with no rule saying which one a domain belonged in,

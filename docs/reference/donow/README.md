@@ -25,11 +25,39 @@ DoNow with every surface degraded per-key, never a missing service.
 | Key | Default | Meaning |
 |---|---|---|
 | `notifyService` | none | Dotted Home Assistant notify target (e.g. `notify.mobile_app_parent_phones`). A real `HaApprovalNotifier` is only constructed when this AND a `haGateway` are both present; either alone logs a warning and leaves pending requests un-notified (still pend, never notified). |
-| `approvalsToken` | none (open) | Shared-secret token gating `POST /approvals/:id/approve` and `.../deny`. Falsy means those routes take no auth — the same posture the trigger router's `authenticate` guard takes elsewhere. |
 | `pianoKioskDeviceParam` | `null` | The Piano Kiosk tablet's `?device=` localStorage identity string (NOT a `devices.yml` id — see the screensaver shared-deviceId lesson). Required for the `piano-kiosk` surface to actually reach a tablet; absent, dispatch degrades to `{dispatched: false}`. |
 | `livingroomDeviceId` | `'livingroom-tv'` | The `devices.yml` id `WakeAndLoadService` targets for the `livingroom-tv` surface. |
 | `thermalPrinterLocation` | none (registry default) | Which entry of the house `ThermalPrinterRegistry` the `thermal` surface resolves. Absent uses the registry's own default printer. |
 | `approvalTtlSeconds` | `120` | How long a `pending_approval` request stays open before it reads as expired on the approvals queue. Also the window `DoNowApprovals#repend`'s fresh expiry reuses (same duration as the original request). |
+
+## `auth/donow.yml` (household secret)
+
+`approvalsToken` is the ONLY authentication on `POST /approvals/:id/approve`
+and `.../deny` — anyone holding the string can approve a parental-approval
+request. It is a credential, so it lives in `household/auth/donow.yml` with
+every other service secret, read via `configService.getHouseholdAuth('donow',
+householdId)` (note the argument order is the reverse of
+`getHouseholdAppConfig`). It moved out of `config/donow.yml` on 2026-08-22.
+
+```yaml
+approvalsToken: <secret>
+```
+
+Falsy (no file, no key) means those routes take **no auth** — the same posture
+the trigger router's `authenticate` guard takes elsewhere. Composition logs
+`donow.approvals.no-token` at warn when that is the case, so an open approvals
+endpoint is at least visible.
+
+**How callers present it**, in precedence order (`readToken` in
+`4_api/v1/routers/donow.mjs`):
+
+1. `Authorization: Bearer <token>` — preferred.
+2. `token` in the JSON body.
+3. `?token=<token>` — **deprecated**, still accepted so Home Assistant's
+   existing approve/deny callbacks keep working. It lands in access logs and in
+   notification URLs, so each use logs `donow.approvals.token.query_deprecated`
+   at warn. Remove this branch once the HA automation posts a header and that
+   warn has gone quiet.
 
 ## `school.yml` — `programs:` (surface programs)
 

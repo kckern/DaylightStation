@@ -1,19 +1,23 @@
 /**
- * Use case: enumerate JamCorder recordings, download the new ones, parse each
- * one's embedded timestamp, and archive it. Orchestration only — all I/O is via
- * the injected source/archive ports.
+ * Use case: enumerate a networked MIDI recorder's recordings, download the new
+ * ones, parse each one's embedded timestamp, and archive it. Orchestration only
+ * — all I/O is via the injected source/archive ports.
  *
- * Layer: APPLICATION (3_applications/jamcorder).
- * @module applications/jamcorder/HarvestJamCorderRecordings
+ * The `jamcorder.*` log event names below deliberately keep the vendor name:
+ * they are queryable history in the log store and saved queries reference them.
+ * Do not rename them along with the class/module.
+ *
+ * Layer: APPLICATION (3_applications/midi).
+ * @module applications/midi/HarvestMidiRecordings
  */
-import { JamCorderStone } from '#domains/jamcorder/JamCorderStone.mjs';
+import { MidiRecordingStone } from '#domains/midi/MidiRecordingStone.mjs';
 
-export class HarvestJamCorderRecordings {
+export class HarvestMidiRecordings {
   #source; #archive; #logger;
 
   constructor({ source, archive, logger = console }) {
-    if (!source) throw new Error('HarvestJamCorderRecordings requires source');
-    if (!archive) throw new Error('HarvestJamCorderRecordings requires archive');
+    if (!source) throw new Error('HarvestMidiRecordings requires source');
+    if (!archive) throw new Error('HarvestMidiRecordings requires archive');
     this.#source = source;
     this.#archive = archive;
     this.#logger = logger;
@@ -34,7 +38,7 @@ export class HarvestJamCorderRecordings {
     for (const ref of fresh) {
       try {
         const buffer = await this.#source.download(ref);
-        const relPath = JamCorderStone.fromMidiBuffer(buffer).archiveRelPath();
+        const relPath = MidiRecordingStone.fromMidiBuffer(buffer).archiveRelPath();
         await this.#archive.save(relPath, buffer);
         await this.#archive.markProcessed(ref, relPath);
         saved += 1;
@@ -48,4 +52,4 @@ export class HarvestJamCorderRecordings {
   }
 }
 
-export default HarvestJamCorderRecordings;
+export default HarvestMidiRecordings;

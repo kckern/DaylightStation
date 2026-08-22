@@ -6,12 +6,12 @@
  * @module adapters/jamcorder/FsJamCorderArchive
  */
 import path from 'node:path';
-import { IJamCorderArchive } from '#apps/jamcorder/ports/IJamCorderArchive.mjs';
+import { IMidiRecordingArchive } from '#apps/midi/ports/IMidiRecordingArchive.mjs';
 import { writeBinary, fileExists, loadYamlSafe, saveYaml } from '#system/utils/FileIO.mjs';
 
 const REL_ROOT = path.join('midi', 'piano', 'log', 'jamcorder');
 
-export class FsJamCorderArchive extends IJamCorderArchive {
+export class FsJamCorderArchive extends IMidiRecordingArchive {
   #configService; #logger; #index;
 
   constructor({ configService, logger = console }) {
