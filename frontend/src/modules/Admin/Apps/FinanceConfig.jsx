@@ -1,6 +1,7 @@
 import React from 'react';
 import { Stack, NumberInput, TagsInput, Paper, Text } from '@mantine/core';
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 
 function updateNested(data, path, value) {
   const next = JSON.parse(JSON.stringify(data));
@@ -98,7 +99,7 @@ function FinanceConfigContent({ data, setData }) {
 function FinanceConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/config/finance.yml"
+      filePath={configPath('finance')}
       title="Finance Configuration"
     >
       {({ data, setData }) => (
