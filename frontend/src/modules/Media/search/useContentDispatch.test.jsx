@@ -9,8 +9,13 @@ vi.mock('../shell/NavProvider.jsx', () => ({
 }));
 
 const dispatchToTarget = vi.fn();
+const retryLast = vi.fn();
+// Mutable holder for the live per-dispatchId state DispatchProvider tracks —
+// the toast-on-failure watcher polls this the same way DispatchProgressTray
+// does. Empty Map by default (nothing pending).
+let dispatchesState = new Map();
 vi.mock('../cast/DispatchProvider.jsx', () => ({
-  useDispatch: () => ({ dispatchToTarget }),
+  useDispatch: () => ({ dispatchToTarget, dispatches: dispatchesState, retryLast }),
 }));
 
 const playNow = vi.fn();
@@ -29,14 +34,28 @@ vi.mock('../cast/useCastTarget.js', () => ({
   useCastTarget: () => castTargetState,
 }));
 
+let fleetDevices = [{ id: 'livingroom-tv', name: 'Living Room TV' }, { id: 'office-tv', name: 'Office TV' }];
+vi.mock('../fleet/FleetProvider.jsx', () => ({
+  useFleetContext: () => ({ devices: fleetDevices }),
+}));
+
+const notificationsShow = vi.fn();
+vi.mock('@mantine/notifications', () => ({
+  notifications: { show: (...a) => notificationsShow(...a) },
+}));
+
 import { useContentDispatch } from './useContentDispatch.js';
 
 beforeEach(() => {
   dispatchToTarget.mockClear();
+  retryLast.mockClear();
   playNow.mockClear();
   push.mockClear();
+  notificationsShow.mockClear();
   navState = { view: 'home', params: {} };
   castTargetState = { targetIds: [], mode: 'transfer' };
+  dispatchesState = new Map();
+  fleetDevices = [{ id: 'livingroom-tv', name: 'Living Room TV' }, { id: 'office-tv', name: 'Office TV' }];
 });
 
 describe('useContentDispatch', () => {
@@ -259,5 +278,125 @@ describe('useContentDispatch', () => {
     const first = result.current;
     rerender();
     expect(result.current).toBe(first);
+  });
+
+  // ── Named toasts (spec D4) — the incident this closes: a tap on a search
+  // result went to hidden dock-chip state with no acknowledgement, success
+  // or failure. ──
+  describe('cast toasts', () => {
+    // dispatchToTarget is fire-and-forget; give its .then() microtask a
+    // couple of ticks to run before asserting on pendingRef-driven state.
+    const flush = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    it('shows a confirmation toast naming title + destination the instant a cast routes', () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      expect(notificationsShow).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Casting Bluey', message: 'To Living Room TV' })
+      );
+    });
+
+    it('joins multiple destination names in the confirmation toast', () => {
+      castTargetState = { targetIds: ['livingroom-tv', 'office-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1', 'd2']);
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      expect(notificationsShow).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'To Living Room TV, Office TV' })
+      );
+    });
+
+    it('does not toast on local playback — nothing hidden to confirm', () => {
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('does not toast on peek dispatch — the destination is already the screen you are driving', () => {
+      navState = { view: 'peek', params: { deviceId: 'shield-tv' } };
+      const { result } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('shows a failure toast naming the device once the dispatch resolves to failed', async () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result, rerender } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      await flush();
+
+      notificationsShow.mockClear();
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'FKB rejected credentials: Please login' }]]);
+      rerender();
+
+      expect(notificationsShow).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Couldn't cast to Living Room TV" })
+      );
+    });
+
+    it('passes the backend error through verbatim, never a generic substitute', async () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result, rerender } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      await flush();
+
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'FKB rejected credentials: Please login' }]]);
+      rerender();
+
+      const call = notificationsShow.mock.calls.find((c) => c[0].title === "Couldn't cast to Living Room TV");
+      expect(call).toBeTruthy();
+      const [textEl] = call[0].message.props.children;
+      expect(textEl.props.children).toBe('FKB rejected credentials: Please login');
+    });
+
+    it('Retry on the failure toast re-invokes the exact same dispatch via retryLast', async () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result, rerender } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      await flush();
+
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
+      rerender();
+
+      const call = notificationsShow.mock.calls.find((c) => c[0].title === "Couldn't cast to Living Room TV");
+      const [, retryButtonEl] = call[0].message.props.children;
+      retryButtonEl.props.onClick();
+      expect(retryLast).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not toast while the dispatch is still running', async () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result, rerender } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      await flush();
+      notificationsShow.mockClear();
+
+      dispatchesState = new Map([['d1', { status: 'running' }]]);
+      rerender();
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
+
+    it('does not re-toast the same failed dispatchId on a later rerender', async () => {
+      castTargetState = { targetIds: ['livingroom-tv'], mode: 'transfer' };
+      dispatchToTarget.mockReturnValue(['d1']);
+      const { result, rerender } = renderHook(() => useContentDispatch());
+      act(() => { result.current('plex:1', { title: 'Bluey' }); });
+      await flush();
+
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]);
+      rerender();
+      expect(notificationsShow).toHaveBeenCalledTimes(2); // confirmation + failure
+
+      notificationsShow.mockClear();
+      dispatchesState = new Map([['d1', { status: 'failed', error: 'boom' }]]); // fresh Map, same content
+      rerender();
+      expect(notificationsShow).not.toHaveBeenCalled();
+    });
   });
 });
