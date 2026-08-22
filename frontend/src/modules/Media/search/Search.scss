@@ -1,8 +1,60 @@
 // frontend/src/modules/Media/search/Search.scss
 // Search-owned styles (co-located with the search components). Base overlay
 // and row layout live in shell/MediaShell.scss; rules here cover what the
-// search experience adds on top: the inline "still searching" row and the
-// non-interactive result title.
+// search experience adds on top: the inline "still searching" row, the
+// non-interactive result title, and the scope chip rows.
+
+// ---- Scope chips (spec D5) --------------------------------------------------
+// Replaces the native scope <select>, which rendered at 96px/13px on a 360px
+// dock and was CSS-hidden entirely while the search field had focus — the
+// one moment scope mattered (see MediaShell.scss's mobile-only block). Chips
+// scroll horizontally within their own row instead of being squeezed by a
+// fixed-width control or hidden outright.
+.media-scope-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.media-scope-chip-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar { display: none; }
+}
+
+.media-scope-chip {
+  flex-shrink: 0;
+  min-height: 44px; // touch target floor
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--mantine-color-dark-7);
+  color: var(--mantine-color-dark-1);
+  border: 1px solid var(--mantine-color-dark-4);
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    border-color: var(--mantine-color-dark-2);
+    color: var(--mantine-color-dark-0);
+  }
+
+  &[aria-pressed='true'] {
+    background: var(--mantine-color-amber-9);
+    border-color: var(--mantine-color-amber-5);
+    color: var(--mantine-color-dark-9);
+    font-weight: 600;
+  }
+}
 
 // Subtle straggler indicator at the bottom of the result list while slower
 // sources are still streaming in.

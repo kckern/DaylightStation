@@ -68,9 +68,11 @@ filters them out. For Plex scopes, omit `capability=playable` and rely on
 
 - On load, the app fetches the scope config, flattens parents and children
   into one lookup tree, and tracks a single current scope key.
-- The scope selector lives **in the search bar** — a native select where a
-  parent with children renders as a group (with an "All {label}" option when
-  the parent itself carries `params`) and leaves render as plain options.
+- The scope selector lives **in the search bar** as tappable chips
+  (`ScopeChips.jsx`): top-level scopes render as a chip row, and tapping a
+  parent with children expands a second row of its children inline. A parent
+  chip is itself selectable (in addition to expanding) only when it carries
+  its own `params`; a grouping-only parent just reveals its children.
 - Selecting any scope (parent-with-params or leaf) applies its `params` to
   every subsequent search request.
 - Scope is **session-only**: every provider mount starts catalog-wide, at the
@@ -90,6 +92,7 @@ older session, is ignored.
 ## Code Pointers
 
 - Scope loading & state: `frontend/src/modules/Media/search/SearchProvider.jsx`
-- Scope selector UI: `frontend/src/modules/Media/search/SearchBar.jsx`
+- Scope selector UI: `frontend/src/modules/Media/search/ScopeChips.jsx`, mounted
+  from `frontend/src/modules/Media/search/MediaContentSearch.jsx`
 - Search endpoint: `GET /api/v1/content/query/search/stream` (see
   [`media-app-technical.md` §2.2](./media-app-technical.md))
