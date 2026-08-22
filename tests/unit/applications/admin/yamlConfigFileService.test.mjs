@@ -175,7 +175,7 @@ describe('YamlConfigFileService — colocated file allowlist (task-13)', () => {
     'household/fitness/config.yml',
     'household/gratitude/config.yml',
     'household/harvest/config.yml',
-    'household/school/config.yml',
+    'household/school/school.yml',
     'household/media/config.yml',
     'household/livestream/config.yml',
     'household/newsreporter/config.yml',
