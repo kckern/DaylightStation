@@ -796,7 +796,21 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ## Phase 5 — Retention
 
-### Task 7: Give `weather/log` the prune-on-read treatment
+### Task 7: DROPPED (2026-08-22) — `weather/log` retention
+
+**Not implemented. Do not execute this task.** Kept for the reasoning.
+
+Three things killed it once the numbers were checked against the live tree:
+
+1. **The problem is imaginary at this scale.** `weather/log` is 1.1 MB across 145 daily shards (2026-03-31 → 2026-08-22), i.e. ~2.9 MB/year. Nothing is strained by that.
+2. **Pruning would degrade a real feature.** `WeeklyReviewService.mjs:153` calls `weatherStore.loadDate(date)` to attach weather to each photo day. A 30-day window blanks the weather in any weekly review older than a month — a silent quality regression traded for megabytes.
+3. **The drafted implementation violated a standing rule.** It called `fs.rm` on shards in the data tree. The house rule is *never* `rm` in the data tree — move to `data/_deleteme/` — explicitly including derived and cache files.
+
+The prune-on-read pattern this task was going to copy (`YamlDismissedItemsStore`, 30-day TTL, write-back, `feed.dismissed.pruned`) remains the right model **for a log that actually grows**. `weather/log` is not one. Revisit only if a real growth problem appears, and use move-not-delete when it does.
+
+Phase 5 is therefore Task 8 alone.
+
+### Task 7-original (superseded): prune-on-read for weather/log
 
 `feed` is the only domain in the tree with a working retention policy, and it is the pattern to copy: `YamlDismissedItemsStore` auto-prunes entries older than 30 days **on load**, writes the pruned file back, and logs `feed.dismissed.pruned`. No background job, no scheduler entry.
 
