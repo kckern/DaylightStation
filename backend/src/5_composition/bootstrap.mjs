@@ -3527,7 +3527,7 @@ export function createHarvesterServices(config) {
     registerHarvester('jamcorder', () => {
       // Recorder address comes from the device registry (hardware/devices.yml),
       // not an app config — it is a device, not an app.
-      const host = configService?.getDeviceConfig?.('midi-recorder')?.host || '10.0.0.244';
+      const host = configService?.getDeviceConfig?.('midi-recorder')?.host || '10.0.0.243';
       const source = new HttpJamCorderSource({ httpClient, host, logger });
       const archive = new FsJamCorderArchive({ configService, logger });
       const harvestUseCase = new HarvestMidiRecordings({ source, archive, logger });
