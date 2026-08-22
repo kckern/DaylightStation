@@ -4,7 +4,7 @@
  * Port for loading the home-dashboard configuration.
  *
  * load(): Promise<HomeDashboardConfig>
- *   Returns a plain object shaped like data/household/config/home-dashboard.yml.
+ *   Returns a plain object shaped like data/household/home/dashboard.yml.
  *   Implementations own storage format and path.
  */
 

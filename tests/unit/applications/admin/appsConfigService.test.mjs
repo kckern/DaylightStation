@@ -8,17 +8,20 @@
  *
  * A full swap to that shared resolver was ruled out here — it resolves by
  * appId under the household's OWN folder name, and at least 'shopping'
- * (real file: household/harvest/config.yml) and 'media' (real file:
- * household/config/media-app.yml, DISTINCT from the unrelated but
- * real household/media/config.yml) don't fit that shape. So the fix is a
+ * (real file: household/harvest/config.yml) and 'media' (the MediaApp SURFACE,
+ * household/media/app.yml, DISTINCT from the unrelated but real
+ * household/media/config.yml domain file) don't fit that shape. So the fix is a
  * guard: writeAppConfig now throws NotFoundError instead of silently
  * `mkdir -p`-ing a new tree when the resolved directory doesn't exist.
  *
+ * APP_CONFIGS now DERIVES its paths from the household config registry
+ * (shared/contracts/householdConfig.mjs) instead of being retyped by hand, so
+ * the map can no longer drift from what the loader reads. The guard below still
+ * matters: the registry can point at a path the data move has not created yet.
+ *
  * These tests prove both directions:
- *  - write-then-read agrees for 2 real app ids, one colocated (fitness,
- *    household/fitness/config.yml) and one still-legacy (finance,
- *    household/config/finance.yml) — the same shape of proof that caught
- *    the original NotificationConfigService bug.
+ *  - write-then-read agrees for 2 real app ids (fitness, finance) — the same
+ *    shape of proof that caught the original NotificationConfigService bug.
  *  - a stale/unrecognized-directory app id throws NotFoundError on write,
  *    rather than writing to nowhere.
  */
@@ -65,12 +68,12 @@ describe('AppsConfigService — write-then-read agreement (real app ids)', () =>
     expect(readback.parsed).toEqual({ marker: 'updated', governance: { enabled: true } });
   });
 
-  it('finance (still-legacy: household/config/finance.yml) — write lands where read looks', () => {
-    write('household/config/finance.yml', 'marker: original\n');
+  it('finance (colocated: household/finance/config.yml) — write lands where read looks', () => {
+    write('household/finance/config.yml', 'marker: original\n');
 
     const res = service.writeAppConfig('finance', { parsed: { marker: 'updated', payroll: { account_id: 732539 } } });
     expect(res.ok).toBe(true);
-    expect(res.configPath).toBe('household/config/finance.yml');
+    expect(res.configPath).toBe('household/finance/config.yml');
 
     const readback = service.readAppConfig('finance');
     expect(readback.parsed).toEqual({ marker: 'updated', payroll: { account_id: 732539 } });

@@ -67,7 +67,10 @@ describe('YamlTriggerConfigRepository', () => {
       const repo = new YamlTriggerConfigRepository({ saveFile: (p, data) => { saved[p] = data; } });
       const registry = repo.loadRegistry({
         loadFile: (p) => blobs[p] ?? null,
-        listDir: () => Object.keys(dirFiles),
+        // Path-aware on purpose: the repository probes BOTH roots to decide
+        // which one owns the config, so a stub that returns the same listing
+        // for any path would make the grouped root look populated.
+        listDir: (p) => (p === 'config/triggers/bindings/nfc' ? Object.keys(dirFiles) : []),
       });
       return { repo, registry, saved };
     }

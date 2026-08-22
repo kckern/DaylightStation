@@ -28,6 +28,7 @@ import {
 import ConfigFormWrapper from '../shared/ConfigFormWrapper.jsx';
 import CrudTable from '../shared/CrudTable.jsx';
 import ContentCombobox from '../../Content/combobox/ContentCombobox.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 
 /**
  * Deep-clone data and set a nested property by dot-path.
@@ -519,7 +520,7 @@ function FitnessConfigContent({ data, setData }) {
 function FitnessConfig() {
   return (
     <ConfigFormWrapper
-      filePath="household/fitness/config.yml"
+      filePath={configPath('fitness')}
       title="Fitness Configuration"
     >
       {({ data, setData }) => (
