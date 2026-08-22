@@ -40,16 +40,33 @@ export function SearchMode({ onClose }) {
   const dispatch = useContentDispatch();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   const inputRef = useRef(null);
-  // Guards against the ✕ path and the popstate path both firing a close (✕
-  // calls history.back() itself to consume the entry pushed on open, which
-  // fires a popstate too — this makes the second one a no-op).
+  // Guards against a close path AND the popstate it triggers both firing a
+  // close (every non-'back' close consumes the history entry pushed on open
+  // via history.back(), which itself fires a popstate — this makes that
+  // second one a no-op instead of a double-close).
   const closedRef = useRef(false);
 
+  // ALL exits — ✕, browser back, and a successful dispatch — must leave
+  // history exactly where it was before SearchMode opened. Centralizing the
+  // history.back() call here (rather than duplicating it per exit path) is
+  // what closes the CRITICAL 1 gap: handleChange used to call closeSurface
+  // directly without ever consuming the pushed entry, so the most common
+  // exit (tap a result) leaked a `mediaSearchMode: true` history entry that
+  // then propagated into every later pushState via the `{...history.state}`
+  // spread (here and in NavProvider's syncHistory) — the user's next real
+  // back press would silently no-op, compounding with every open→dispatch
+  // cycle.
   const closeSurface = useCallback((reason) => {
     if (closedRef.current) return;
     closedRef.current = true;
     mediaLog.searchModeExited({ reason });
     onClose?.();
+    if (reason !== 'back') {
+      // Consume the entry pushed on open so the user isn't left needing two
+      // backs. This fires a popstate too, but closedRef is already set, so
+      // the listener below no-ops for it.
+      window.history.back();
+    }
   }, [onClose]);
 
   const handleChange = useCallback((id, item) => {
@@ -113,13 +130,7 @@ export function SearchMode({ onClose }) {
   }, []);
 
   const closeViaButton = useCallback(() => {
-    if (closedRef.current) return;
     closeSurface('dismiss');
-    // Consume the history entry pushed on open so the user isn't left
-    // needing two backs to leave the app after closing via the button. This
-    // fires a popstate too, but closedRef is already set, so closeSurface
-    // above no-ops for it.
-    window.history.back();
   }, [closeSurface]);
 
   const handleStreamRetry = useCallback((source) => {

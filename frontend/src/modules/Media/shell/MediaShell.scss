@@ -230,7 +230,12 @@ $amber-ink: #1a1300;
     }
   }
 
-  .media-dock-desktop-search,
+  // Hides MediaContentSearch's own root class directly — no wrapper div.
+  // A wrapper here would give `.media-search-bar` a non-flex parent inside
+  // `.media-dock`, orphaning the `flex: 1` it relies on for its tablet-up
+  // width (see Dock.jsx's comment; this regressed desktop 560px -> 205px
+  // before the fix).
+  .media-search-bar,
   .media-dock-cluster {
     display: none;
   }

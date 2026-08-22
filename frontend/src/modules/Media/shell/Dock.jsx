@@ -40,9 +40,15 @@ export function Dock({ onOpenSearch }) {
         <IconSearch size={18} aria-hidden="true" />
         <span>Search media…</span>
       </button>
-      <div className="media-dock-desktop-search">
-        <MediaContentSearch />
-      </div>
+      {/* No wrapper div: MediaContentSearch's own root, `.media-search-bar`,
+          must stay a DIRECT flex child of `.media-dock` — it carries
+          `flex: 1` itself (MediaShell.scss), and a wrapper wraps it in an
+          unstyled block box instead, orphaning that `flex: 1` and collapsing
+          the bar to its content width on desktop (measured 560px -> 205px
+          at 1200px before this fix). Mobile hides `.media-search-bar`
+          directly by its own class (mobile-only rule below), not via a
+          wrapper. */}
+      <MediaContentSearch />
       <div className="media-dock-cluster">
         <FleetIndicator />
         <CastTargetChip />
