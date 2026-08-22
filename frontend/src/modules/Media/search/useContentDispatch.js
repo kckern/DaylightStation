@@ -1,29 +1,52 @@
 // frontend/src/modules/Media/search/useContentDispatch.js
-// Routes a selected content id to the right playback surface. Precedence:
-//   1. `peek` (remote-control) view → cast to the peeked device, mode:'fork'
-//      (a remote control must never stop the device it is driving),
-//   2. a cast target configured in the dock's chip → cast there in the chip's
-//      mode — the chip is a promise about where content goes, and the search
-//      bar sits beside it,
-//   3. a CONTAINER with no device aimed at it → open the full browse view.
-//      Picking "Tuttle Twins" in a search box means "show me the show", not
-//      "queue all 24 episodes"; the seasons/episodes belong on the canvas,
-//      not in a dropdown that dies on blur (2026-08-12 session review).
-//      Note this is deliberately BELOW the two cast branches: with a device
-//      aimed, "cast the album/playlist" is still the right read.
-//   4. otherwise → play locally, replacing the queue.
+// Routes a selected content id to the right playback surface. Task 14 (spec
+// D6) fixed the tap grammar to ONE rule used everywhere: a playable leaf
+// tap plays now; a CONTAINER tap ALWAYS browses. The old precedence let a
+// container tap CAST when a device was aimed (dock chip) — that's exactly
+// the "accidental queue blowaway" this remediation exists to stop: picking
+// "Van Halen" in a search box with a speaker aimed used to fan the whole
+// discography out to that speaker on a single tap, with no undo. Sending a
+// container anywhere is now an EXPLICIT verb — the ▶ action
+// (playContainerAsQueue), wired from the row's trailing button — never an
+// implicit side effect of tapping the row.
+//
+// `dispatch(id, item)` — tap/select precedence:
+//   1. CONTAINER (any item.isContainer/itemType/type) → push the full browse
+//      view (contentIdToBrowsePath). This is checked FIRST, above peek and
+//      the cast chip, so it wins regardless of what's aimed. Browsing is a
+//      pure navigation — it never touches any device's playback — so this
+//      is also safe for the peek (remote-control) case: opening a show's
+//      episode list on the canvas doesn't stop whatever the peeked device
+//      is doing.
+//   2. `peek` (remote-control) view with a leaf → cast to the peeked device,
+//      mode:'fork' (a remote control must never STOP the device it is
+//      driving — fork starts a fresh play without touching what's already
+//      running elsewhere).
+//   3. a cast target aimed via the dock's chip, leaf → cast there in the
+//      chip's mode.
+//   4. otherwise, leaf → play locally, replacing the queue.
 // Returns which branch it took so callers can log the destination.
 //
-// The 'cast' branch (2) is exactly the moment the pre-fix incident was
-// about: a tap on a search result went to hidden dock-chip state with no
+// `playContainerAsQueue(id, item)` — the ▶ verb, container rows only. Same
+// destination precedence as above minus the browse branch (there's no
+// "browse" reading of an explicit send-it-there action): peek wins (fork,
+// so the remote control still never stops its own device), then an aimed
+// cast target, then local. The local branch reuses resultToQueueInput so
+// the container's itemType/type/childCount markers survive into
+// queue.playNow — the session layer expands them into playable children
+// ASYNCHRONOUSLY (containerExpansion.js); no separate container-queueing
+// logic needed here.
+//
+// The cast branches are exactly the moment the pre-fix incident was about:
+// a tap on a search result went to hidden dock-chip state with no
 // acknowledgement at all — success or failure. Two toasts close that gap:
-// a synchronous "Casting <title> to <device>" the instant the tap routes
-// here (naming the destination the way DestinationLine/CastTargetChip
-// already show it), and — once the fleet dispatch actually resolves — a
-// failure toast naming the device and the SPECIFIC backend error (never a
+// a synchronous "Casting <title> to <device>" the instant a cast routes
+// (naming the destination the way DestinationLine/CastTargetChip already
+// show it), and — once the fleet dispatch actually resolves — a failure
+// toast naming the device and the SPECIFIC backend error (never a
 // substituted generic string), with Retry re-invoking the exact same
 // dispatch via DispatchProvider's retryLast.
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Group, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useNav } from '../shell/NavProvider.jsx';
@@ -34,6 +57,7 @@ import { useFleetContext } from '../fleet/FleetProvider.jsx';
 import { deviceName } from '../fleet/deviceDisplay.js';
 import { isContainer } from '../../Content/combobox/comboboxMachine.js';
 import { contentIdToBrowsePath } from '../browse/browsePath.js';
+import { resultToQueueInput } from './resultToQueueInput.js';
 
 function namesFor(ids, devices) {
   return ids.map((id) => deviceName(devices.find((d) => d.id === id), id)).join(', ');
@@ -85,38 +109,70 @@ export function useContentDispatch() {
     }
   }, [dispatches, devices, retryLast]);
 
-  return useCallback((id, item) => {
+  // Shared by both dispatch()'s cast branch and playContainerAsQueue()'s
+  // cast branch: fire the confirmation toast, dispatch, and register the
+  // resulting dispatchIds so the failure watcher above can name them.
+  const castTo = useCallback((castTargetIds, castMode, id, title) => {
+    const name = namesFor(castTargetIds, devices);
+    notifications.show({
+      id: 'content-dispatch-confirmation',
+      color: 'blue',
+      autoClose: 3000,
+      title: title ? `Casting ${title}` : 'Casting',
+      message: name ? `To ${name}` : null,
+    });
+    Promise.resolve(dispatchToTarget({ targetIds: castTargetIds, play: id, mode: castMode, title })).then((dispatchIds) => {
+      (dispatchIds ?? []).forEach((dispatchId, i) => {
+        pendingRef.current.set(dispatchId, castTargetIds[i]);
+      });
+    });
+  }, [dispatchToTarget, devices]);
+
+  const dispatch = useCallback((id, item) => {
     const title = item?.title ?? null;
+    // Containers ALWAYS browse — see header comment. Checked first so it
+    // wins over both the peek view and an aimed cast target.
+    if (item && isContainer(item)) {
+      push('browse', { path: contentIdToBrowsePath(id), label: title ?? id });
+      return 'browse';
+    }
     if (view === 'peek' && params?.deviceId) {
       dispatchToTarget({ targetIds: [params.deviceId], play: id, mode: 'fork', title });
       return 'peek';
     }
     if (targetIds.length > 0) {
-      const name = namesFor(targetIds, devices);
-      notifications.show({
-        id: 'content-dispatch-confirmation',
-        color: 'blue',
-        autoClose: 3000,
-        title: title ? `Casting ${title}` : 'Casting',
-        message: name ? `To ${name}` : null,
-      });
-      Promise.resolve(dispatchToTarget({ targetIds, play: id, mode, title })).then((dispatchIds) => {
-        (dispatchIds ?? []).forEach((dispatchId, i) => {
-          pendingRef.current.set(dispatchId, targetIds[i]);
-        });
-      });
+      castTo(targetIds, mode, id, title);
       return 'cast';
-    }
-    if (item && isContainer(item)) {
-      push('browse', { path: contentIdToBrowsePath(id), label: title ?? id });
-      return 'browse';
     }
     queue.playNow(
       { contentId: id, title, thumbnail: item?.thumbnail ?? null },
       { clearRest: true }
     );
     return 'local';
-  }, [view, params, push, dispatchToTarget, targetIds, mode, queue, devices]);
+  }, [view, params, push, dispatchToTarget, targetIds, mode, queue, castTo]);
+
+  // The ▶ verb on a container row: explicitly send the WHOLE container to
+  // the current destination, replacing the queue. Same destination
+  // precedence as leaves (peek wins, then an aimed cast target, then
+  // local) — there's just no browse reading of an explicit "send it"
+  // action, so that branch is absent here.
+  const playContainerAsQueue = useCallback((id, item) => {
+    const title = item?.title ?? null;
+    if (view === 'peek' && params?.deviceId) {
+      dispatchToTarget({ targetIds: [params.deviceId], play: id, mode: 'fork', title });
+      return 'peek';
+    }
+    if (targetIds.length > 0) {
+      castTo(targetIds, mode, id, title);
+      return 'cast';
+    }
+    const input = (item && resultToQueueInput({ ...item, id: item.id ?? id }))
+      ?? { contentId: id, title, thumbnail: item?.thumbnail ?? null };
+    queue.playNow(input, { clearRest: true });
+    return 'local';
+  }, [view, params, dispatchToTarget, targetIds, mode, queue, castTo]);
+
+  return useMemo(() => ({ dispatch, playContainerAsQueue }), [dispatch, playContainerAsQueue]);
 }
 
 export default useContentDispatch;

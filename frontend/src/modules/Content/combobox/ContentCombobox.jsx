@@ -30,6 +30,7 @@ import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes, isContainer } from './comboboxMachine.js';
 import { StreamStatusLine } from './StreamStatusLine.jsx';
+import { ResultRowActions } from './ResultRow.jsx';
 import './ContentCombobox.scss';
 
 const TYPE_ICONS = {
@@ -88,6 +89,14 @@ function optionTopIn(viewport, option) {
  * @param {(args: {onStartEdit: () => void, value: string, resolvedTitle: ?string}) => JSX} [props.renderValue]
  *   - when provided, rendered INSTEAD of the TextInput while in DISPLAY mode
  *     (lets callers keep rich display cards; clicking must call onStartEdit)
+ * @param {(item: object) => void} [props.onPlayAll] - Task 14 (spec D6): when
+ *   provided, a container row additionally renders a ▶ (play-as-queue) action
+ *   beside its existing badges/chevron. Omit (the default, every non-media
+ *   caller) and nothing changes — no button renders.
+ * @param {(action: string, item: object) => void} [props.onMore] - Task 14: when
+ *   provided, a LEAF row renders a ⋯ menu (Play Now/Play Next/Up Next/Add to
+ *   Queue/Open detail); action is one of those five verb strings. Omit and
+ *   nothing renders.
  */
 export function ContentCombobox({
   value,
@@ -102,6 +111,8 @@ export function ContentCombobox({
   renderValue = null,
   allowFreeform = true,
   logApp = 'admin',
+  onPlayAll = null,
+  onMore = null,
 }) {
   const log = useMemo(() => getChildLogger({ component: 'ContentCombobox', app: logApp, sessionLog: true }), [logApp]);
   const {
@@ -516,6 +527,13 @@ export function ContentCombobox({
                 <IconChevronRight size={16} />
               </ActionIcon>
             )}
+            {/* Task 14 (spec D6): additive trailing verb — a container gets ▶
+                (play-as-queue) when the caller passes onPlayAll, a leaf gets
+                the ⋯ four-verb menu when the caller passes onMore. Neither
+                prop is set by any non-media caller of this shared component
+                (admin content-id pickers), so ResultRowActions renders
+                nothing there — zero behavior change. */}
+            <ResultRowActions item={item} isContainerItem={container} onPlayAll={onPlayAll ? () => onPlayAll(item) : null} onMore={onMore ? (action) => onMore(action, item) : null} />
           </Group>
         </Group>
       </Combobox.Option>

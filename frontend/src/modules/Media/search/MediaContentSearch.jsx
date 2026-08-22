@@ -13,18 +13,34 @@
 //
 // Scope chips (ScopeChips.jsx, from SearchProvider's context) narrow the
 // search sources via ContentCombobox's searchParams passthrough.
+//
+// Task 14 (spec D6): the same ONE tap grammar as SearchMode's mobile list.
+// Row tap already routes through useContentDispatch's dispatch() (leaf ->
+// play now, container -> ALWAYS browse — no change needed here for that
+// part, it's the hook's job). What's new is the trailing verbs: ContentCombobox
+// takes optional onPlayAll/onMore props (additive — every other caller of
+// that shared, widely-used component leaves them unset and gets zero
+// behavior change) that light up ResultRowActions on the container ▶ and
+// leaf ⋯ respectively, wired to the exact same playContainerAsQueue /
+// applyResultRowVerb plumbing SearchMode uses.
 import React, { useCallback, useMemo } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { ContentCombobox } from '../../Content/combobox/ContentCombobox.jsx';
 import { useSearchContext } from './SearchProvider.jsx';
 import { ScopeChips } from './ScopeChips.jsx';
 import { useContentDispatch } from './useContentDispatch.js';
+import { useSessionController } from '../controller/useSessionController.js';
+import { useNav } from '../shell/NavProvider.jsx';
+import { applyResultRowVerb } from './resultRowVerbs.js';
+import { notifications } from '@mantine/notifications';
 import getLogger from '../../../lib/logging/Logger.js';
 import './Search.scss';
 
 export function MediaContentSearch() {
   const { scopes, currentScopeKey, currentScope, scopeError } = useSearchContext();
-  const dispatch = useContentDispatch();
+  const { dispatch, playContainerAsQueue } = useContentDispatch();
+  const { queue } = useSessionController('local');
+  const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'media-content-search' }), []);
 
   // Transient: ContentCombobox reverts to value="" on close, so a selection is
@@ -41,6 +57,34 @@ export function MediaContentSearch() {
     log.info('dispatch', { contentId: id, route });
   }, [dispatch, log]);
 
+  // Trailing ▶ on a container row: send the whole thing to the current
+  // destination. Same toast treatment as a local leaf dispatch — a cast
+  // already toasts via useContentDispatch itself.
+  const handlePlayAll = useCallback((item) => {
+    const id = item?.id;
+    if (!id) return;
+    log.info('select', { contentId: id, title: item?.title ?? null, type: item?.type ?? null, verb: 'playAll' });
+    const route = playContainerAsQueue(id, item);
+    log.info('dispatch', { contentId: id, route, verb: 'playAll' });
+    if (route === 'local') {
+      notifications.show({
+        id: 'media-content-search-dispatch-local',
+        color: 'teal',
+        autoClose: 2500,
+        title: item?.title ? `Playing ${item.title}` : 'Playing',
+      });
+    }
+  }, [playContainerAsQueue, log]);
+
+  // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
+  // / Open detail.
+  const handleMore = useCallback((action, item) => {
+    const id = item?.id;
+    if (!id) return;
+    log.info('row_action', { contentId: id, action });
+    applyResultRowVerb(action, item, { queue, push });
+  }, [queue, push, log]);
+
   return (
     <div data-testid="media-search-bar" className="media-search-bar">
       <div className="media-search-controls">
@@ -54,6 +98,8 @@ export function MediaContentSearch() {
           <ContentCombobox
             value=""
             onChange={handleChange}
+            onPlayAll={handlePlayAll}
+            onMore={handleMore}
             placeholder="Search media…"
             selectContainers
             searchParams={currentScope?.params ?? ''}

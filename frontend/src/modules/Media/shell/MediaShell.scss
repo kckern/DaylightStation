@@ -621,11 +621,19 @@ $amber-ink: #1a1300;
 }
 
 .result-row {
+  display: flex;
+  align-items: center;
   border-radius: var(--mantine-radius-sm);
   &:hover { background: var(--mantine-color-dark-5); }
   &--open { background: var(--mantine-color-dark-5); }
 
+  // Task 14 (spec D6): the tap target (thumb/title/subtitle) shares the row
+  // with the trailing ▶/⋯ verb (.media-result-actions below) — mirrors
+  // .browse-row/.browse-row-open/.browse-row-actions' flex:1 + actions-strip
+  // split further down this file.
   .result-row-main {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--mantine-spacing-sm);
