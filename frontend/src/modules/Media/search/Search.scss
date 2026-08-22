@@ -90,5 +90,79 @@
 
 // Stream status line (.stream-status-line, spec D3) lives in
 // ContentCombobox.scss, colocated with the component that renders it
-// (frontend/src/modules/Content/combobox/StreamStatusLine.jsx) — Media does
-// not mount it directly today, so its styles don't belong in this file.
+// (frontend/src/modules/Content/combobox/StreamStatusLine.jsx).
+
+// ---- Search Mode (spec D1-D2, Task 13) --------------------------------------
+// Full-screen mobile search surface, reachable only via the Dock launcher
+// (mobile-only there — see MediaShell.scss). Not itself breakpoint-gated:
+// it just never mounts at tablet-up widths in practice, since nothing in
+// that layout can open it.
+.search-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  background: var(--mantine-color-dark-7);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.search-mode-header {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-sm);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+
+  .search-mode-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    background: none;
+    border: none;
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-0);
+    cursor: pointer;
+
+    &:hover { background: var(--mantine-color-dark-5); }
+  }
+
+  .search-mode-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 var(--mantine-spacing-sm);
+    background: var(--mantine-color-dark-6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--mantine-radius-sm);
+    color: var(--mantine-color-dark-0);
+    font-size: 16px; // >=16px prevents iOS auto-zoom on focus
+
+    &::placeholder { color: var(--mantine-color-dark-2); }
+    &:focus-visible { outline: 2px solid var(--mantine-color-amber-5); outline-offset: 1px; }
+  }
+}
+
+.search-mode-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+}
+
+.search-mode-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.search-mode-hint {
+  padding: var(--mantine-spacing-md);
+  color: var(--mantine-color-dark-1);
+  font-size: 14px;
+}

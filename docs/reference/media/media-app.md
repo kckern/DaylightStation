@@ -212,14 +212,47 @@ and a **canvas** that shows exactly one view at a time:
 - the **dispatch progress tray** — live step-by-step progress of in-flight
   casts, with retry on failure.
 
-**On phones the dock cannot hold all of that at once.** At 360px there is
-~336px to spend, and the scope selector plus the icon cluster take all of it —
-which left the search input 14px of typable width, with its own left icon over
-the field's centre swallowing the tap that should focus it. Under
-`mobile-only`, focus therefore hands the entire row to search: the scope
-selector and the icon cluster hide while `.media-search-bar:focus-within` and
-return on blur, so nothing is removed from the dock. The left icon is
-`pointer-events: none` at every width — it is decoration, never a tap target.
+**On phones the dock cannot hold all of that at once — so it doesn't try.**
+At 360px there is ~336px to spend; splitting that between a scope selector, a
+search input, and a 168px icon cluster left the input ~50px wide (its own
+placeholder didn't fit), and a `.media-dock:has(.media-search-bar:focus-within)`
+rule used to hide the scope selector and the icon cluster the instant the
+field got focus — the one moment scope mattered. That rule is gone. Under
+`mobile-only` the dock is now a **launcher**: a full-width "Search media…"
+button plus the settings gear (`Dock.jsx`). Tapping the launcher mounts
+**Search Mode** (`search/SearchMode.jsx`) — a full-screen overlay, not a
+route, rendered by the shell alongside the current canvas view (which stays
+mounted underneath, untouched) — giving search the whole screen instead of a
+shared row:
+
+```
+┌────────────────────────────────────────┐
+│ ✕  [ search…                        ]   │
+│ ▶ Playing to: This browser              │
+│ [All] [Video] [Music] [Books]           │
+│ results…                                │
+└────────────────────────────────────────┘
+```
+
+Search Mode resets scope to catalog-wide ("All") on every open, autofocuses
+the input, and reuses `useContentCombobox` (the same search state/transport
+machine `MediaContentSearch` uses) but renders its own plain results list
+rather than mounting the Mantine `Combobox` popover, which doesn't fit a
+full-screen surface. It mounts `ScopeChips` and `DestinationLine` unchanged —
+the same components the desktop dock and Now Playing use — so "where does a
+tap go" reads identically everywhere. A row tap dispatches through the same
+`useContentDispatch` path as the desktop search bar and closes the surface
+(with a toast) on success; browser Back closes it too (a history entry is
+pushed on open, consumed on close either way, so the user is never left
+needing two backs). The fleet indicator and cast target chip are desktop/
+tablet-only now — on mobile the fleet-active signal moved to a small badge on
+the Devices tab (`PrimaryNav.jsx`, sourced from `useFleetSummary`) instead of
+occupying dock space that search now owns outright.
+
+At tablet-up widths the dock is unchanged: the persistent search bar (with
+inline scope chips), fleet indicator, and cast target chip all still render
+exactly as before. The left search icon remains `pointer-events: none` — it
+is decoration, never a tap target.
 
 ### Views
 

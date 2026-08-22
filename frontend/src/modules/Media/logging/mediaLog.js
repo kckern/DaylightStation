@@ -54,6 +54,8 @@ export const mediaLog = {
   searchIssued:           debug('search.issued'),
   searchResultChunk:      debug('search.result-chunk'),
   searchCompleted:        info('search.completed'),
+  searchModeEntered:      info('search.mode_entered'),
+  searchModeExited:       info('search.mode_exited'),
   dispatchInitiated:      info('dispatch.initiated'),
   dispatchStep:           sampled('dispatch.step', { maxPerMinute: 30, aggregate: true }),
   dispatchSucceeded:      info('dispatch.succeeded'),
