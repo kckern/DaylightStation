@@ -29,6 +29,11 @@ describe('donow approvals auth', () => {
       .set('Authorization', 'Bearer sekrit').expect(200);
   });
 
+  it('accepts a lowercase bearer scheme (RFC 7235 says the scheme is case-insensitive)', async () => {
+    await request(app()).post('/donow/approvals/x/approve')
+      .set('Authorization', 'bearer sekrit').expect(200);
+  });
+
   it('accepts the token in the body', async () => {
     await request(app()).post('/donow/approvals/x/approve')
       .send({ token: 'sekrit' }).expect(200);

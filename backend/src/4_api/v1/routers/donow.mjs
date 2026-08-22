@@ -68,7 +68,11 @@ export function createDoNowRouter({
  */
 function readToken(req, logger) {
   const header = req.get?.('authorization');
-  if (header?.startsWith('Bearer ')) return header.slice(7);
+  // RFC 7235: the auth scheme is case-INSENSITIVE. Home Assistant is the real
+  // caller here, and a lowercase `bearer` falling through to a 401 would break
+  // parental approvals in a way that looks like a bad token.
+  const bearer = /^bearer\s+(.+)$/i.exec(header ?? '');
+  if (bearer) return bearer[1].trim();
   if (req.body?.token) return req.body.token;
   if (req.query?.token) {
     logger?.warn?.('donow.approvals.token.query_deprecated', { path: req.path });
