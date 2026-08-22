@@ -11,8 +11,11 @@ import { authenticate } from '#apps/trigger/guards/authenticate.mjs';
  * @param {Object} config
  * @param {Object} config.service - DoNowService (`dispatch`, `listSurfaces`).
  * @param {Object} config.approvals - DoNowApprovals (`listPending`, `approve`, `deny`).
- * @param {string|null} [config.expectedToken] - `donow.approvalsToken`; open (no auth) when falsy —
- *   the exact posture the trigger router's `authenticate` guard already takes.
+ * @param {string|null} [config.expectedToken] - the DoNow `approvalsToken`
+ *   secret, injected by composition (this layer does not know where it is
+ *   stored). Open (no auth) when falsy — the exact posture the trigger
+ *   router's `authenticate` guard already takes. Callers present it as
+ *   `Authorization: Bearer <token>`, or in the JSON body; see `readToken`.
  * @param {Object} [config.logger]
  */
 export function createDoNowRouter({
@@ -39,7 +42,7 @@ export function createDoNowRouter({
   }));
 
   router.post('/approvals/:id/approve', express.json(), asyncHandler(async (req, res) => {
-    const auth = authenticate({ expectedToken, providedToken: readToken(req) });
+    const auth = authenticate({ expectedToken, providedToken: readToken(req, logger) });
     if (!auth.ok) return res.status(401).json({ ok: false, code: auth.code });
 
     const result = await approvals.approve({ id: req.params.id });
@@ -47,7 +50,7 @@ export function createDoNowRouter({
   }));
 
   router.post('/approvals/:id/deny', express.json(), asyncHandler(async (req, res) => {
-    const auth = authenticate({ expectedToken, providedToken: readToken(req) });
+    const auth = authenticate({ expectedToken, providedToken: readToken(req, logger) });
     if (!auth.ok) return res.status(401).json({ ok: false, code: auth.code });
 
     const result = await approvals.deny({ id: req.params.id });
@@ -57,8 +60,25 @@ export function createDoNowRouter({
   return router;
 }
 
-function readToken(req) {
-  return req.query?.token || req.body?.token;
+/**
+ * Prefer header, then body. `?token=` is still accepted so HA's existing
+ * callbacks keep working, but it lands in access logs and in notification URLs
+ * — it is removed once the HA automation has been updated and the deprecation
+ * warn has gone quiet.
+ */
+function readToken(req, logger) {
+  const header = req.get?.('authorization');
+  // RFC 7235: the auth scheme is case-INSENSITIVE. Home Assistant is the real
+  // caller here, and a lowercase `bearer` falling through to a 401 would break
+  // parental approvals in a way that looks like a bad token.
+  const bearer = /^bearer\s+(.+)$/i.exec(header ?? '');
+  if (bearer) return bearer[1].trim();
+  if (req.body?.token) return req.body.token;
+  if (req.query?.token) {
+    logger?.warn?.('donow.approvals.token.query_deprecated', { path: req.path });
+    return req.query.token;
+  }
+  return null;
 }
 
 export default createDoNowRouter;

@@ -147,7 +147,10 @@ export function createDeviceRouter(config) {
       };
     }
 
-    const keyboardData = loadFile('config/keyboard') || [];
+    // keyboard.yml is a uid'd bindings list (same shape as triggers/bindings/nfc/),
+    // not app config — it moves to triggers/bindings/keyboard.yml. Grouped first,
+    // retiring flat path second.
+    const keyboardData = loadFile('triggers/bindings/keyboard') || loadFile('config/keyboard') || [];
     const normalize = (s) => s?.replace(/\s+/g, '').toLowerCase();
     const target = normalize(inputCfg.keyboard_id);
     const entries = keyboardData.filter(k => normalize(k.folder) === target && k.key && k.function);

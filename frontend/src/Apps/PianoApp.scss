@@ -425,6 +425,17 @@
     background: #2a2a2a;
     .piano-keyboard { height: 8rem; }
   }
+
+  // Curfew line under the greyed tile wall: the kiosk's answer to "why is
+  // nothing tappable?". Muted — the dark tiles are the message, this is the
+  // caption. The live keyboard below it stays at full strength on purpose.
+  &__curfew {
+    margin: 0;
+    padding-top: var(--sp-3);
+    font-size: 1.1rem;
+    color: var(--piano-muted);
+    text-align: center;
+  }
 }
 
 @media (orientation: portrait) {
@@ -1382,6 +1393,13 @@
   // the aspect the ?w=140&h=200 transcode returns. Keep in sync with the
   // __poster / __thumb heights below.
   --activity-poster-w: 4.16rem;
+
+  // Curfew: the whole strip greys out with the tiles and its course buttons are
+  // disabled (see PianoMenuActivity's `disabled` prop).
+  &.is-disabled {
+    opacity: 0.4;
+    .piano-menu-activity__course { cursor: default; }
+  }
 
   display: flex;
   align-items: center;

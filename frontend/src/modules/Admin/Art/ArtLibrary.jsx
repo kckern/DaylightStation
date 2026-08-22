@@ -7,6 +7,7 @@ import { keyToAction } from './keymap.js';
 import Loupe from './Loupe.jsx';
 import GridView from './GridView.jsx';
 import ArtErrorBoundary from './ArtErrorBoundary.jsx';
+import { configPath } from '../utils/adminConfigPaths.js';
 import './Art.scss';
 
 // Toggle a value in/out of an array immutably.
@@ -20,7 +21,7 @@ export default function ArtLibrary() {
   const [saved, setSaved] = useState(false);
   const searchRef = useRef(null);
 
-  const cfg = useAdminConfig('household/config/art.yml');
+  const cfg = useAdminConfig(configPath('art'));
   useEffect(() => { cfg.load?.(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const quickTags = cfg.data?.quickTags || [];
 

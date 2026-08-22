@@ -38,18 +38,27 @@ import { SurfaceRegistry } from '#apps/school/surfaces/SurfaceRegistry.mjs';
  * @param {object} deps
  * @param {object} deps.schoolCatalog - The `createSchoolCatalog` composition
  *   result (needs `wired`, `catalogs`, `content`, `lessonBundles`,
- *   `moduleRegistry`, `diagnostics.contentRoot`).
+ *   `moduleRegistry`).
+ * @param {string} deps.dataDir - `configService.getDataDir()`; roots the
+ *   household surface-profile directory (see `surfacesDirectory` below).
  * @param {object} [deps.logger]
  * @returns {Promise<{wired: boolean, reason: string|null, registry: object|null, certification: object|null}>}
  */
-export async function createSchoolSurfaces({ schoolCatalog, logger = null } = {}) {
+export async function createSchoolSurfaces({ schoolCatalog, dataDir, logger = null } = {}) {
   if (!schoolCatalog?.wired || !schoolCatalog.catalogs || !schoolCatalog.content
       || !schoolCatalog.lessonBundles || !schoolCatalog.moduleRegistry) {
     return inert('School Catalog is not wired');
   }
+  if (typeof dataDir !== 'string' || dataDir.trim().length === 0) {
+    return inert('dataDir is required to locate surface profiles');
+  }
   try {
-    const { contentRoot } = schoolCatalog.diagnostics;
-    const surfacesDirectory = path.join(contentRoot, 'surfaces');
+    // Surface profiles are household RENDER POLICY (what a paper sheet or a
+    // browser screen can do), not curriculum — so they do NOT live under the
+    // catalog's contentRoot. They did until 2026-08-21, which is why the Portal
+    // logged `school.surfaces.profile.unresolved` for 'screen-browser' 29 times
+    // in 24h: contentRoot pointed at a directory that does not exist.
+    const surfacesDirectory = path.join(dataDir, 'household', 'school', 'surfaces');
     const profileRepository = new YamlSurfaceProfileRepository({
       directory: surfacesDirectory,
       customCapabilities: schoolCatalog.moduleRegistry.list().map((definition) => definition.capability),

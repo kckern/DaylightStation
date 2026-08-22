@@ -2655,6 +2655,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // certify without it.
   const schoolSurfaces = await createSchoolSurfaces({
     schoolCatalog,
+    // Profiles live under `household/school/surfaces` — render policy, not
+    // curriculum, so deliberately NOT under the catalog's contentRoot.
+    dataDir: configService.getDataDir(),
     logger: rootLogger.child({ module: 'school-surfaces' }),
   });
   // Screen-config lookup for surface-profile resolution, reusing the same
