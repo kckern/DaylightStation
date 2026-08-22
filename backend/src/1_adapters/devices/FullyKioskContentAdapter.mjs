@@ -603,6 +603,22 @@ export class FullyKioskContentAdapter {
           }
         }
 
+        // FKB answers HTTP 200 with several shapes that are NOT usable payloads.
+        // Treating them as success is what let a dispatch spend 38s reading
+        // `foreground` off an object that never had one (2026-08-21 incident).
+        if (typeof data === 'string' && data.trim().startsWith('<')) {
+          const snippet = data.slice(0, 200);
+          this.#logger.warn?.('fullykiosk.sendCommand.nonJsonResponse', { cmd, snippet, elapsedMs });
+          return { ok: false, error: 'FKB returned a non-JSON response', unusablePayload: true, snippet };
+        }
+        if (data && typeof data === 'object' && data.status === 'Error') {
+          const authError = /login/i.test(data.statustext || '');
+          this.#logger.warn?.('fullykiosk.sendCommand.rejected', {
+            cmd, statustext: data.statustext, authError, elapsedMs
+          });
+          return { ok: false, error: data.statustext || 'FKB error', authError, unusablePayload: true };
+        }
+
         this.#logger.debug?.('fullykiosk.sendCommand.success', { cmd, elapsedMs });
         return { ok: true, data };
       } else {
