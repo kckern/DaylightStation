@@ -119,17 +119,14 @@ class PlexSync {
         // NOT household/media/app.yml — that is the MediaApp SURFACE (browse
         // menu, searchScopes) and carries no plex host.
         //
-        // Selection is by CONTENT, not mere existence, unlike the plain
-        // existsSync ladder in cli/lib/fitness/backfillPrimaryMedia.mjs. The
-        // media migration SWAPS two files: today's household/media/config.yml
-        // is the pre-migration surface file (it becomes media/app.yml), while
-        // the plex host still lives in the legacy household/config/media-app.yml.
-        // So during the transition both paths exist and only one has plex.host
-        // — existence alone would pick the surface file and abort with
-        // "plex.host not found" on a tree that is perfectly readable.
+        // Phase E deleted the legacy household/config/media-app.yml candidate;
+        // the media migration has landed, so household/media/config.yml is the
+        // DOMAIN file that carries plex.host. Selection is still by CONTENT
+        // rather than mere existence — the file is read and plex.host checked —
+        // so a surface file accidentally sitting here fails loudly below rather
+        // than silently supplying a null host.
         const MEDIA_CONFIG_CANDIDATES = [
             path.join(DATA_PATH, 'household/media/config.yml'),
-            path.join(DATA_PATH, 'household/config/media-app.yml'),
         ];
         this.baseUrl = null;
         for (const candidate of MEDIA_CONFIG_CANDIDATES) {

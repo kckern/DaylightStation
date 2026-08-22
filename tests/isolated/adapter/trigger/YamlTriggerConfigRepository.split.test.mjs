@@ -4,10 +4,10 @@ import { YamlObservedStateStore } from '#adapters/persistence/yaml/YamlObservedS
 
 function harness(files = {}) {
   const disk = {
-    'config/triggers/sources': { livingroom: { modality: 'nfc', target: 'livingroom-tv', action: 'play-next' } },
-    'config/triggers/bindings/nfc': {},
-    'config/triggers/responses': {},
-    'config/triggers/endpoints': {},
+    'triggers/sources': { livingroom: { modality: 'nfc', target: 'livingroom-tv', action: 'play-next' } },
+    'triggers/bindings/nfc': {},
+    'triggers/responses': {},
+    'triggers/endpoints': {},
     'triggers/nfc.observed': {},
     ...files,
   };
@@ -26,15 +26,15 @@ describe('YamlTriggerConfigRepository split writes', () => {
     const r = await repo.recordObserved('aa', '2026-07-11 10:00:00');
     expect(r.created).toBe(true);
     expect(disk['triggers/nfc.observed'].aa.count).toBe(1);
-    expect(disk['config/triggers/bindings/nfc'].aa).toBeUndefined();
+    expect(disk['triggers/bindings/nfc'].aa).toBeUndefined();
   });
 
   it('setNfcNote writes note to bindings (config) and timestamp to history', async () => {
     const { repo, disk } = harness();
     const r = await repo.setNfcNote('bb', 'Pinocchio', '2026-07-11 10:00:00');
     expect(r.created).toBe(true);
-    expect(disk['config/triggers/bindings/nfc'].bb.note).toBe('Pinocchio');
-    expect(disk['config/triggers/bindings/nfc'].bb.scanned_at).toBeUndefined();
+    expect(disk['triggers/bindings/nfc'].bb.note).toBe('Pinocchio');
+    expect(disk['triggers/bindings/nfc'].bb.scanned_at).toBeUndefined();
     expect(disk['triggers/nfc.observed'].bb.last_seen).toBe('2026-07-11 10:00:00');
   });
 });

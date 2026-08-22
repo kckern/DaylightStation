@@ -51,13 +51,18 @@ describe('configLoader — colocated household app scan (task-13)', () => {
     expect(config.households.default.apps.apps).toBeUndefined();
   });
 
-  it('an app present ONLY via the legacy config/ directory still loads (fallback union)', () => {
+  // INVERTED in Phase E (was 'an app present ONLY via the legacy config/
+  // directory still loads (fallback union)'). The config/ scan is gone: a flat
+  // file is no longer a source of app config, and — more importantly — no
+  // longer a source of app NAMES. Kept rather than deleted so a reintroduced
+  // scan fails here.
+  it('an app present ONLY via the retired config/ directory does NOT load', () => {
     write('household/household.yml', 'name: Test\nusers: [alice]\n');
     write('household/config/finance.yml', 'source: legacy-config\n');
     // No household/finance/config.yml at all.
 
     const config = loadConfig(dataDir);
-    expect(config.households.default.apps.finance).toEqual({ source: 'legacy-config' });
+    expect(config.households.default.apps.finance).toBeUndefined();
   });
 
   it('an app present ONLY via the legacy apps/ directory still loads (fallback union)', () => {
@@ -141,13 +146,17 @@ describe('configLoader — colocated household.yml / integrations.yml / devices.
     expect(config.households.default.devices.devices.officetv.type).toBe('linux-pc');
   });
 
-  it('falls back to config/integrations.yml and config/devices.yml when un-migrated', () => {
+  // INVERTED in Phase E (was 'falls back to config/integrations.yml and
+  // config/devices.yml when un-migrated'). Both fallbacks are gone; a tree that
+  // only has the retired copies must read as UNCONFIGURED (empty), never as
+  // configured from a directory that no longer exists in production.
+  it('IGNORES config/integrations.yml and config/devices.yml', () => {
     write('household/household.yml', 'name: Test\nusers: [alice]\n');
     write('household/config/integrations.yml', 'plex:\n  enabled: true\n');
     write('household/config/devices.yml', 'devices:\n  officetv:\n    type: shield-tv\n');
 
     const config = loadConfig(dataDir);
-    expect(config.households.default.integrations.plex.enabled).toBe(true);
-    expect(config.households.default.devices.devices.officetv.type).toBe('shield-tv');
+    expect(config.households.default.integrations).toEqual({});
+    expect(config.households.default.devices).toEqual({});
   });
 });

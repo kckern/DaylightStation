@@ -283,7 +283,7 @@ export async function getConciergeConfig() {
     const value = cfg.reloadHouseholdAppConfig?.(null, 'concierge')
                   ?? cfg.getHouseholdAppConfig?.(null, 'concierge');
     if (!value) {
-      throw new Error('Concierge config not found (data/household/config/concierge.yml).');
+      throw new Error('Concierge config not found (data/household/agents/concierge.yml).');
     }
     _conciergeConfig = value;
     return _conciergeConfig;

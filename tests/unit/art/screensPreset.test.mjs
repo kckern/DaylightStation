@@ -10,7 +10,7 @@ const logger = { debug() {}, info() {}, warn() {}, error() {} };
 const writeScreen = (id, yamlStr) =>
   fs.writeFile(path.join(dataPath, 'household', 'screens', `${id}.yml`), yamlStr);
 const writeArtmode = (yamlStr) =>
-  fs.writeFile(path.join(dataPath, 'household', 'config', 'artmode.yml'), yamlStr);
+  fs.writeFile(path.join(dataPath, 'household', 'art', 'artmode.yml'), yamlStr);
 
 function getHandler(router) {
   const layer = router.stack.find((l) => l.route?.path === '/:screenId' && l.route.methods.get);
@@ -31,7 +31,7 @@ const call = async (id) => {
 beforeEach(async () => {
   dataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'screens-'));
   await fs.mkdir(path.join(dataPath, 'household', 'screens'), { recursive: true });
-  await fs.mkdir(path.join(dataPath, 'household', 'config'), { recursive: true });
+  await fs.mkdir(path.join(dataPath, 'household', 'art'), { recursive: true });
   await writeArtmode([
     'presets:',
     '  gallery-silent:',
@@ -69,7 +69,7 @@ describe('screens router preset expansion', () => {
   });
 
   it('missing artmode.yml → preset ref falls back to inline props', async () => {
-    await fs.rm(path.join(dataPath, 'household', 'config', 'artmode.yml'));
+    await fs.rm(path.join(dataPath, 'household', 'art', 'artmode.yml'));
     await writeScreen('room', 'screen: room\nscreensaver:\n  widget: art\n  preset: gallery-silent\n  props:\n    matMargin: 5\n');
     const r = await call('room');
     expect(r.body.screensaver.props).toEqual({ matMargin: 5 });
@@ -82,7 +82,7 @@ describe('screens router preset expansion', () => {
       'defaults: { frame: gold, placard: true }',
       'presets: { gallery-silent: { collection: paintings } }',
     ].join('\n') + '\n');
-    await fs.writeFile(path.join(dataPath, 'household', 'config', 'art.yml'),
+    await fs.writeFile(path.join(dataPath, 'household', 'art', 'config.yml'),
       'collections:\n  baroque: { dateMin: 1600 }\n');
     await writeScreen('room', 'screen: room\nscreensaver:\n  widget: art\n  preset: baroque\n');
     const r = await call('room');
