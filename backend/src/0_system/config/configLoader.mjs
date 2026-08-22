@@ -11,6 +11,7 @@ import yaml from 'js-yaml';
 import { deepMerge } from '../utils/deepMerge.mjs';
 import { listHouseholdDirs, parseHouseholdId, toFolderName } from '../utils/householdDirs.mjs';
 import { resolveYamlPath } from '../utils/FileIO.mjs';
+import { HOUSEHOLD_APP_CONFIGS } from './householdConfigRegistry.mjs';
 
 /**
  * Load all config from the data directory.
@@ -133,61 +134,44 @@ function loadAllHouseholds(dataDir) {
 export { listHouseholdDirs, parseHouseholdId, toFolderName };
 
 /**
- * Load apps for a household.
- * Merges from three locations, later entries winning on key collision:
- *   1. apps/ directory              (legacy: subdirs with config.yml, top-level YAMLs)
- *   2. config/<appName>.yml         (retiring: config-only apps)
- *   3. <appName>/config.yml         (colocated — preferred)
- *      School is the deliberate exception: <school>/school.yml. A named
- *      policy file is clearer than a generic config.yml beside records.
- * Non-app configs (household, integrations, devices) live outside both the
- * config/ scan and the colocated scan — household.yml and integrations.yml
- * sit at the household root, devices.yml under hardware/ — so they are never
- * picked up here regardless of migration state.
+ * Build the app config union for one household.
+ *
+ * Precedence, lowest to highest:
+ *   1. apps/<name>.yml or apps/<name>/config.yml   (legacy)
+ *   2. config/<name>.yml                            (retiring)
+ *   3. the grouped path in HOUSEHOLD_APP_CONFIGS    (preferred)
+ *
+ * The config/ scan is kept until the data move lands so an unsynced tree still
+ * boots, and it also catches an app missing from the registry rather than
+ * dropping it silently — a previous enumeration change did exactly that to 8
+ * apps and reported success.
+ *
+ * Non-app configs are never picked up here: household.yml and integrations.yml
+ * sit at the household root, devices.yml under hardware/.
  */
 function loadHouseholdApps(dataDir, folderName) {
-  // Legacy: load from apps/ directory
-  const appsDir = path.join(dataDir, folderName, 'apps');
-  const appsFromLegacy = loadAppsFromDir(appsDir);
+  const householdDir = path.join(dataDir, folderName);
+  const appsFromLegacy = loadAppsFromDir(path.join(householdDir, 'apps'));
 
-  // Retiring: load app configs from config/ directory
-  // Excludes known non-app configs (household, integrations, devices)
+  // Retiring flat directory.
   const NON_APP_CONFIGS = new Set(['household', 'integrations', 'devices']);
-  const configDir = path.join(dataDir, folderName, 'config');
-  const appsFromConfig = {};
-  for (const file of listYamlFiles(configDir)) {
+  const appsFromConfigDir = {};
+  for (const file of listYamlFiles(path.join(householdDir, 'config'))) {
     const name = path.basename(file, '.yml');
     if (NON_APP_CONFIGS.has(name)) continue;
     const config = readYaml(file);
-    if (config) {
-      appsFromConfig[name] = config;
-    }
+    if (config) appsFromConfigDir[name] = config;
   }
 
-  // Colocated: <household>/<appName>/config.yml — a direct child of the
-  // household root that itself has a config.yml. `config` and `apps` are
-  // excluded so the two loaders above are never re-scanned as if they were
-  // app domains.
-  const NON_APP_DIRS = new Set(['config', 'apps']);
-  const appsFromColocated = {};
-  for (const subdir of listDirs(path.join(dataDir, folderName))) {
-    if (NON_APP_DIRS.has(subdir)) continue;
-    // .yml OR .yaml, matching ConfigService#getHouseholdAppConfigPath /
-    // #resolveHouseholdAppConfigPath's yamlExists-based resolution — task-13
-    // review, Minor M5: this used to hardcode 'config.yml' only, so a
-    // colocated config.yaml would resolve on reload but silently not exist
-    // at boot.
-    const basename = subdir === 'school' ? 'school' : 'config';
-    const resolvedPath = resolveYamlPath(path.join(dataDir, folderName, subdir, basename));
-    const config = resolvedPath ? readYaml(resolvedPath) : null;
-    if (config) {
-      appsFromColocated[subdir] = config;
-    }
+  // Registry — the preferred location.
+  const appsFromRegistry = {};
+  for (const [appName, relPath] of Object.entries(HOUSEHOLD_APP_CONFIGS)) {
+    const resolved = resolveYamlPath(path.join(householdDir, relPath));
+    const config = resolved ? readYaml(resolved) : null;
+    if (config) appsFromRegistry[appName] = config;
   }
 
-  // Merge: colocated takes precedence over config/, which takes precedence
-  // over apps/.
-  return { ...appsFromLegacy, ...appsFromConfig, ...appsFromColocated };
+  return { ...appsFromLegacy, ...appsFromConfigDir, ...appsFromRegistry };
 }
 
 /**
