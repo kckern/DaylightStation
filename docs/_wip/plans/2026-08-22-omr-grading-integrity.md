@@ -619,6 +619,259 @@ Find out why the sweep did not catch this session. **Report the finding before c
 
 ---
 
+## Slice F — Thermal printer wire integrity
+
+Three reported symptoms; **two of them are one bug.**
+
+### The truncation and the offset are the same defect
+
+`ThermalPrinterAdapter.#executePrintJob` (`:678-686`) builds the entire job into one Buffer and then:
+
+```javascript
+device.write(commands);
+
+setTimeout(() => {
+  device.close();
+  this.#logger.info?.('thermalPrinter.job.complete', { duration: Date.now() - startTime });
+  resolve(true);
+}, 1000);
+```
+
+Every part of that is unsafe:
+
+1. **The flush callback is discarded.** `escpos-network` defines `write(data, callback)` and passes the callback straight to `net.Socket.write` — it is available and ignored.
+2. **`close()` is a hard destroy.** The library's `close` calls `this.device.destroy()`, not `end()`. Destroying a socket discards whatever is still queued in userspace.
+3. **1000 ms is a guess, not a completion signal.** A thermal printer applies TCP backpressure — it accepts bytes at printing speed. A raster receipt (Felix's laser equivalent was 255 KB; the School receipt path renders `{type:'image'}`) cannot flush in a second, so `socket.write` queues the remainder and the timer destroys it.
+4. **`resolve(true)` is unconditional.** `thermalPrinter.job.complete` is emitted even when the paper is half-printed, which is why every logged `duration` clusters at ~1.2 s regardless of job size. The success signal in the logs is meaningless today.
+
+**Why the next receipt prints shifted.** Truncation lands mid-`GS v 0` raster, with the printer still counting down an expected byte total. The following job's `ESC @` initialise bytes are consumed as bitmap payload instead of being parsed as a command, so the parser stays desynchronised and rows render horizontally rotated — the reported "left 15% cut off, printing on the right". This is why the corruption appeared on Milo's *agenda*, the job after the long one. It is not a printer memory fault; it is our contract.
+
+### Task F1: Wait for the flush, close cleanly
+
+**Files:**
+- Modify: `backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs:678-686`
+- Test: `tests/unit/adapters/hardware/thermalPrinterFlush.test.mjs`
+
+**Step 1: Write the failing test**
+
+Use a fake device exposing `open/write/close` where `write` holds its callback so the test can assert the adapter has *not* closed yet. Assert: (a) `close` is not called before the write callback fires; (b) `job.complete` is not logged before it either; (c) a write error resolves `false`, not `true`.
+
+**Step 2: Run it and watch it fail**
+
+Run: `npx vitest run tests/unit/adapters/hardware/thermalPrinterFlush.test.mjs`
+Expected: FAIL — `close` called on the timer while the write is still outstanding.
+
+**Step 3: Implement**
+
+```javascript
+await new Promise((resolveWrite, rejectWrite) => {
+  device.write(commands, (err) => (err ? rejectWrite(err) : resolveWrite()));
+});
+
+// The callback fires when the bytes leave OUR buffer. Give the printer a
+// brief, size-scaled grace period to drain its own before dropping the
+// socket — escpos-network's close() is a destroy(), so anything still in
+// flight would be discarded.
+const drainMs = Math.min(15000, 500 + Math.ceil(commands.length / 1024) * 20);
+await new Promise((r) => setTimeout(r, drainMs));
+
+device.close();
+this.#logger.info?.('thermalPrinter.job.complete', {
+  duration: Date.now() - startTime, bytes: commands.length, drainMs,
+});
+resolve(true);
+```
+
+Log `bytes` — without payload size in the logs there is no way to correlate a bad print with a big job, which is exactly what made this hard to see.
+
+**Step 4: Run the test**
+
+Run: `npx vitest run tests/unit/adapters/hardware/thermalPrinterFlush.test.mjs`
+Expected: PASS.
+
+**Step 5: Verify on real hardware**
+
+Print the longest receipt available (a full worksheet result) and confirm it completes, then immediately print an agenda and confirm it is **not** shifted. The second print is the real test — the offset only shows on the job *after* a truncated one.
+
+**Step 6: Commit**
+
+```bash
+git add backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs \
+        tests/unit/adapters/hardware/thermalPrinterFlush.test.mjs
+git commit -m "fix(thermal): wait for flush before destroying the socket
+
+A fixed 1000ms timer closed the socket mid-write on long jobs. Because
+escpos-network's close() is a destroy(), the queued remainder was dropped:
+the receipt truncated, and the printer — left mid-raster — rendered the
+NEXT job horizontally shifted."
+```
+
+### Task F2: Resynchronise defensively
+
+**Files:**
+- Modify: `backend/src/1_adapters/hardware/thermal-printer/ThermalPrinterAdapter.mjs`
+
+Even with F1, a mid-job power blip or cable knock can strand the printer mid-raster. Prefix each job with a short run of `NUL` padding **before** `ESC @`, so a printer still counting raster bytes consumes the padding and then meets a clean initialise. Cheap insurance; harmless when the parser is already idle.
+
+Verify a deliberately truncated job (kill the socket mid-write) still leaves the *next* print correctly aligned.
+
+### Task F3: The check mark never prints
+
+**Files:**
+- Modify: `backend/src/1_adapters/hardware/thermal-printer/escposEncode.mjs:26-35`
+- Test: `tests/unit/adapters/hardware/escposEncode.test.mjs`
+
+`DocumentEscPosRenderer.mjs:132` emits `[✓]` for a correct answer and `[×]` for a wrong one:
+
+```javascript
+content: Array.from({ length: block.totalCount },
+  (_, index) => (index < block.correctCount ? '[✓]' : '[×]')).join(' ')
+```
+
+`✓` (U+2713) is **not in CP858**. `encodeText` maps it to iconv's `0x3F` replacement and then deliberately drops it (`:56`), so a correct answer prints as an empty `[]` while a wrong one prints `[×]` — `×` (U+00D7) *is* in CP858. The mark row is therefore both broken and backwards-looking.
+
+Fix in the transliteration table, which is exactly the mechanism this case was built for:
+
+```javascript
+'✓': '√',   // U+2713 → U+221A, a real CP858 ROM glyph (0xFB) that reads as a check
+'✗': 'x',
+'☐': '[ ]',
+'☑': '[√]',
+```
+
+Add a regression test asserting `encodeText('[✓]')` yields three bytes ending `0xFB` before `]`, and a broader test that **no printable glyph silently vanishes** — iterate the characters the receipt renderers actually emit and assert each encodes to at least one byte. The silent-drop rule at `:56` is right for emoji but it is what let this ship, so the guard belongs in a test.
+
+Commit as `fix(thermal): print the check mark instead of dropping it`.
+
+---
+
+## Slice G — Agenda print cooldown
+
+**Requirement (KC):** children tap the NFC card repeatedly and the printer fires every time. Suppress a repeat agenda print within a configurable window; **15 minutes** is the starting value.
+
+The logs show the pattern plainly — Soren at 15:02:33, 15:04:00, 15:05:29, 15:07:09 (four prints in under five minutes), Alan at 15:06:22 and 15:08:03, every one of them printing the same "Nothing is assigned right now."
+
+### Task G1: Config-driven cooldown
+
+**Files:**
+- Modify: `data/household/school/school.yml` (add the policy block)
+- Modify: the agenda path behind `school.card.agenda-printed` (trace from `nfc.tap.school_card` in the `nfc-tap` module through `schoolLifecycle.mjs`)
+- Test: `tests/unit/applications/school/agendaCooldown.test.mjs`
+
+Config:
+
+```yaml
+# data/household/school/school.yml
+agenda:
+  # Repeat taps inside this window reprint nothing — the child already has
+  # the paper. 0 disables the cooldown.
+  cooldownMinutes: 15
+```
+
+**Rules:**
+
+1. Key the cooldown on **learnerId**, not card UID — a learner with two cards is still one child.
+2. Persist `lastAgendaPrintedAt` per learner so it survives a container restart. A restart currently reopens the floodgate.
+3. **Suppression must still acknowledge the tap.** A child who taps and gets *nothing* will tap harder — that is the behaviour we are trying to stop. Reuse Slice D's ceremony: broadcast a `agenda-suppressed` event so the panel says "You already have today's agenda — check your desk." No paper, but a response.
+4. **Bypass when the agenda content has changed** since the last print (new offers, a completed session). Reprinting genuinely new work is not abuse. Compare the rendered agenda's content hash; when it differs, print and reset the clock.
+5. Log `school.card.agenda-suppressed` at `info` with `{ learnerId, sinceMinutes, cooldownMinutes }` so the household can see whether 15 minutes is the right number.
+
+Rule 4 is what keeps this from being a blunt instrument — without it, a child who finishes a worksheet and taps for their next assignment gets stonewalled.
+
+**Step 1:** Write the failing test — a second tap inside the window with identical content does not print; outside the window it does; changed content prints regardless of the window.
+**Step 2:** Run it, watch it fail.
+**Step 3:** Implement.
+**Step 4:** Run it, watch it pass.
+**Step 5:** Commit as `feat(school): cool down repeat agenda prints`.
+
+---
+
+## Slice H — Bind every QR to its keypad code
+
+**Requirement (KC):** a QR code and its six-digit panel code are one affordance. The code must sit *with* its QR, never as a footnote at the bottom of the slip.
+
+### What is actually wrong
+
+The agenda already pairs them per section (`receipts.mjs:306` pushes `panelCodeBlocks` immediately after the tokened `lessonAction`), which is why Felix's single-offer slip looked right:
+
+```
+PRINT IT AGAIN · Unit 0 · 1/1
+sch:9EYZXPZUGUNGFSFV
+PANEL CODE 579078
+```
+
+Two real defects sit underneath that:
+
+1. **The result receipt emits QR tokens with no code at all.** `resultReceipt` pushes `lessonAction({ token })` and `{type:'scan_action', action: token}` and never calls `panelCodeBlocks`. Milo's printed receipt carried `sch:XAXYT6X849DUPEVX` under "Scan to print the next worksheet" with nothing to type. On a panel where scanning is awkward, that QR is a dead end.
+2. **The pairing is keyed to the wrong thing.** `accessCodesBySubject?.[section.subject]` maps codes by *subject*, while QRs are minted per *token*. Two offers in one subject cannot each get their own code, and nothing structurally prevents a QR from rendering codeless — it is a convention, not an invariant.
+
+### Task H1: Make the pairing structural
+
+**Files:**
+- Modify: `backend/src/2_domains/school/documents/receipts.mjs` (`panelCodeBlocks`, `lessonAction`, the agenda section loop, `resultReceipt`)
+- Test: `tests/unit/domains/school/receiptQrCodePairing.test.mjs`
+
+Re-key codes from subject to **token** (`accessCodesByToken`), then make the QR block itself own the code so the two cannot be separated. Emitting a scannable token should *require* its code, rather than relying on a caller to remember a second push.
+
+**Step 1: Write the failing test — the invariant, not the layout**
+
+```javascript
+// tests/unit/domains/school/receiptQrCodePairing.test.mjs
+import { describe, it, expect } from 'vitest';
+import { agendaReceipt, resultReceipt } from '#domains/school/documents/receipts.mjs';
+
+/** Every scannable block must be followed by its own PANEL CODE line. */
+function assertEveryQrHasAdjacentCode(blocks) {
+  const flat = JSON.stringify(blocks);
+  const qrCount = (flat.match(/scan_action|lesson_action/g) || []).length;
+  const codeCount = (flat.match(/PANEL CODE/g) || []).length;
+  expect(codeCount).toBe(qrCount);
+}
+
+describe('QR / panel-code pairing', () => {
+  it('pairs them on a result receipt (regression: Milo, 2026-08-22)', () => {
+    const r = resultReceipt({
+      sessionId: 'ses_x', unitTitle: 'The United States', result: 'passed', percent: 100,
+      actions: [{ token: 'XAXYT6X849DUPEVX', label: 'Scan to print the next worksheet',
+                  presentation: 'lesson', accessCode: '123456' }],
+    });
+    assertEveryQrHasAdjacentCode(r.blocks);
+  });
+
+  it('gives two offers in ONE subject two distinct codes', () => { /* … */ });
+
+  it('never prints a bare code with no QR above it', () => { /* … */ });
+});
+```
+
+Assert the **invariant** (counts match, order is QR-then-code), not exact strings — a layout tweak should not break the test, but a codeless QR must.
+
+**Step 2:** Run it, watch it fail — the result-receipt case reports 1 QR / 0 codes.
+
+**Step 3: Implement**
+
+Give `lessonAction`/`scan_action` an `accessCode` field and emit the code line as part of the same block group. Thread `accessCodesByToken` through the agenda loop and into `resultReceipt` (which does not receive codes at all today — the caller in `CloseSessionOutcome`/`ReceiptPrinting` must mint one for the next-up token, the same way the agenda path already does).
+
+Where no code can be minted, print the QR **with an explicit line saying scanning is the only way in** rather than leaving a silent gap — a missing code should be visible, not invisible.
+
+**Step 4:** Run the test, watch it pass.
+
+**Step 5:** Check the renderers still lay it out sanely — `DocumentEscPosRenderer.mjs` and `DocumentReceiptRenderer.mjs` both consume these blocks; a new nested shape may need handling in each. Print one of each receipt type on real paper before calling it done.
+
+**Step 6: Commit**
+
+```bash
+git add backend/src/2_domains/school/documents/receipts.mjs \
+        backend/src/1_rendering/school/documents/ \
+        tests/unit/domains/school/receiptQrCodePairing.test.mjs
+git commit -m "fix(school): bind every printed QR to its own keypad code
+
+The result receipt printed a scannable token with nothing to type, and
+agenda codes were keyed by subject while QRs are minted per token."
+```
+
+---
+
 ## Out of scope, worth fixing separately
 
 **The result receipt prints a literal `undefined · undefined of undefined`.** Observed in Milo's slip between "Passing is 80%" and "NOTES FOR YOU". A template hole in the receipt renderer that reaches every child. Trace from `CloseSessionOutcome.#printed` (`:351`) into the receipt document builder.
@@ -637,3 +890,9 @@ Find out why the sweep did not catch this session. **Report the finding before c
 - [ ] A three-bubble row still holds for review
 - [ ] An unreadable sheet raises a banner on the panel *and* a `warn` in the store
 - [ ] The allocation audit reports zero duplicates after repair
+- [ ] A long receipt prints to completion, and the job printed **immediately after** it is not shifted
+- [ ] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback
+- [ ] A correct answer prints a visible check glyph, not `[]`
+- [ ] A second card tap inside the cooldown prints nothing but still says something on the panel
+- [ ] A tap after new work is assigned still prints, cooldown notwithstanding
+- [ ] Every printed QR — agenda **and** result receipt — has its own code beside it
