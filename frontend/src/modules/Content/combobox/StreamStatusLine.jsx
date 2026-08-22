@@ -1,4 +1,4 @@
-// frontend/src/modules/Media/search/StreamStatusLine.jsx
+// frontend/src/modules/Content/combobox/StreamStatusLine.jsx
 // One-line, fixed-height status for the ~16-source streaming search. Replaces
 // the per-source badge cloud that used to fill ContentCombobox's dropdown
 // header (a Badge per adapter: FILES, PLEX, LOCAL-CONTENT, QUERY, FRESHVIDEO,
@@ -14,9 +14,20 @@
 // horizontally rather than wrapping — so the line's height never grows with
 // the number of pending/errored sources and never displaces the result list
 // beneath it.
+//
+// Lives beside its only mounter (ContentCombobox.jsx) rather than under
+// Media/ — this is a shared/generic combobox component, and a Content ->
+// Media import would invert that boundary for every ContentCombobox consumer
+// (including Admin/PlaybackHub). Props stay surface-agnostic (pending,
+// sourceErrors, onRetry) so a later task can mount the same component from a
+// full-screen mobile search surface without change. Styles live in
+// ContentCombobox.scss (imported by the mounter, not here) for the same
+// reason. sourceLabel comes from Content/lib/sourceLabels.js — it moved out
+// of Media/search/ into the shared module too, since it's consumed from both
+// Content (here) and Media (resultPresentation.js) and has no imports of its
+// own to tie it to either side.
 import React from 'react';
-import { sourceLabel } from './sourceLabels.js';
-import './Search.scss';
+import { sourceLabel } from '../lib/sourceLabels.js';
 
 /**
  * @param {object} props

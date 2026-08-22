@@ -29,7 +29,7 @@ import { getChildLogger } from '../../../lib/logging/singleton.js';
 import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from './comboboxScroll.js';
 import { useContentCombobox } from './useContentCombobox.js';
 import { Modes, isContainer } from './comboboxMachine.js';
-import { StreamStatusLine } from '../../Media/search/StreamStatusLine.jsx';
+import { StreamStatusLine } from './StreamStatusLine.jsx';
 import './ContentCombobox.scss';
 
 const TYPE_ICONS = {

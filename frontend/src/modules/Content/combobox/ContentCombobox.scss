@@ -1,8 +1,9 @@
 // ContentCombobox.scss — styles for the unified content combobox.
-// Merged from ContentSearchCombobox.scss (pending-sources strip) and the
-// combobox option styles in ContentLists.scss (highlighted/current/wrap-flash),
-// scoped to .content-combobox-option so the legacy selectors keep working
-// until both legacy implementations are removed.
+// Merged from the combobox option styles in ContentLists.scss
+// (highlighted/current/wrap-flash), scoped to .content-combobox-option so the
+// legacy selectors keep working until both legacy implementations are
+// removed. The original ContentSearchCombobox.scss pending-sources strip was
+// superseded by the stream-status-line rules below (Task 10, spec D3).
 
 // ── Portaled dropdown base color ──
 // Mantine renders Combobox.Dropdown in a portal at document.body, OUTSIDE the
@@ -15,37 +16,67 @@
   color: var(--ds-text-primary);
 }
 
-// ── Pending-sources strip (ported from ContentSearchCombobox.scss) ──
+// ── Stream status line (spec D3) ──
+// Single-line, fixed-height replacement for the old per-source badge cloud
+// (one Badge per adapter — FILES, PLEX, LOCAL-CONTENT, QUERY, FRESHVIDEO,
+// CANVAS-FILESYSTEM, RETROARCH, … — filled the whole above-the-fold area on
+// a 360px phone before a single result rendered). Colocated here with
+// StreamStatusLine.jsx, the component that renders it — this file is already
+// imported by ContentCombobox.jsx, the component's only mounter, so every
+// consumer (Media's dock search, Admin pickers) gets the styles without a
+// separate import. Both the pending and error variants share one fixed row
+// height so searching -> settled never reflows the dropdown; content that
+// doesn't fit scrolls horizontally instead of wrapping to a second line.
+.stream-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 var(--mantine-spacing-sm);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  font-size: 12px;
+  color: var(--mantine-color-dark-2);
 
-.pending-sources {
-  background-color: var(--mantine-color-dark-6);
-  animation: ccb-pulse 1.5s ease-in-out infinite;
-
-  .mantine-Badge-root {
-    animation: ccb-fade-in 0.2s ease-out;
-    // Fade out sources as they complete
-    transition: opacity 0.3s ease-out, transform 0.3s ease-out;
-  }
+  &::-webkit-scrollbar { display: none; }
 }
 
-@keyframes ccb-pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.7;
-  }
+.stream-status-spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid var(--mantine-color-dark-4);
+  border-top-color: var(--mantine-color-amber-5);
+  border-radius: 50%;
+  animation: stream-status-spin 0.8s linear infinite;
 }
 
-@keyframes ccb-fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+@keyframes stream-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+.stream-status-error-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--mantine-color-red-4);
+}
+
+.stream-status-retry-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--mantine-color-amber-5);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+
+  &:hover { color: var(--mantine-color-amber-3); }
 }
 
 // ── Option states (ported from ContentLists.scss:443-500) ──
