@@ -1,7 +1,7 @@
 /**
  * YAML persistence for printed action tokens (spec §6.1).
  *
- *   <dataDir>/household/school/tokens/{body}.yml
+ *   <dataDir>/household/school/runtime/tokens/{body}.yml
  *
  * No `apps/` segment: that layout applies to per-user data
  * (users/{id}/apps/{app}/), not to household-scoped school data.
@@ -135,7 +135,7 @@ export class YamlTokenRegistry extends ITokenRegistry {
     this.#logger = config.logger ?? null;
   }
 
-  #root() { return this.#configService.getHouseholdPath('school/tokens'); }
+  #root() { return this.#configService.getHouseholdPath('school/runtime/tokens'); }
 
   #fileFor(body) { return path.join(this.#root(), `${body}.yml`); }
 

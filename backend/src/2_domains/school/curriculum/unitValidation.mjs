@@ -116,6 +116,23 @@ export function validateUnit(raw, sets = {}) {
     else description = raw.description;
   }
 
+  // These values can be printed verbatim on a learner's worksheet card.
+  // Digital extraction sidecars remain provenance only; they are never an
+  // instruction for a child who has the physical book in front of them.
+  let reading;
+  if (isPresent(raw.reading)) {
+    if (!isNonEmptyString(raw.reading)) errors.push('reading must be a non-empty string when present');
+    else if (/\bassigned section\b/iu.test(raw.reading)) errors.push('reading must name a real section or page, not "assigned section"');
+    else if (/\b(?:EPUB|MOBI|HTML)\b|\.(?:epub|mobi|html?)\b/iu.test(raw.reading)) errors.push('reading must not reference a digital sidecar');
+    else reading = raw.reading.trim();
+  }
+  let sourceTitle;
+  if (isPresent(raw.sourceTitle)) {
+    if (!isNonEmptyString(raw.sourceTitle)) errors.push('sourceTitle must be a non-empty string when present');
+    else if (/\b(?:EPUB|MOBI|HTML)\b|\.(?:epub|mobi|html?)\b/iu.test(raw.sourceTitle)) errors.push('sourceTitle must not reference a digital sidecar');
+    else sourceTitle = raw.sourceTitle.trim();
+  }
+
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
   }
@@ -283,7 +300,17 @@ export function validateUnit(raw, sets = {}) {
   if (!isPlainObject(raw.provenance)) {
     errors.push('provenance must be an object');
   } else {
-    if (!isNonEmptyString(raw.provenance.source)) errors.push('provenance.source must be a non-empty string');
+    // A lesson may cite one source (`source`) or a deliberate companion set
+    // (`sources`).  Both forms exist in compact course packages; accepting
+    // the latter avoids forcing authors to discard the actual bibliography
+    // merely to satisfy a singular legacy field.
+    const hasSingularSource = isNonEmptyString(raw.provenance.source);
+    const hasSourceList = Array.isArray(raw.provenance.sources)
+      && raw.provenance.sources.length > 0
+      && raw.provenance.sources.every(isNonEmptyString);
+    if (!hasSingularSource && !hasSourceList) {
+      errors.push('provenance.source must be a non-empty string (or provenance.sources a non-empty string list)');
+    }
     if (!REVIEW_STATES.includes(raw.provenance.reviewState)) {
       errors.push(`provenance.reviewState must be ${REVIEW_STATES.join('|')}, got: ${raw.provenance.reviewState}`);
     }
@@ -296,6 +323,8 @@ export function validateUnit(raw, sets = {}) {
       unitId: raw.unitId,
       title: raw.title,
       description,
+      ...(reading ? { reading } : {}),
+      ...(sourceTitle ? { sourceTitle } : {}),
       subject: raw.subject,
       objectives,
       courseId,

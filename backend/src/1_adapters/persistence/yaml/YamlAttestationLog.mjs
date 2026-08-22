@@ -1,13 +1,13 @@
 /**
  * YamlAttestationLog — teacher attestation overrides (spec D2):
- * `apps/school/attestations.yml`, APPEND-ONLY `{id, at, attestedBy,
+ * `school/records/attestations.yml`, APPEND-ONLY `{id, at, attestedBy,
  * learnerId, unitId, reason}`. Its own evidence kind: it unlocks gates
  * (planner/milestones treat an attested unit as passed) but never
  * masquerades as an engine grade — the report card does not read it.
  * Corrupt-file posture per the M3 rule: reads warn, writes refuse, atomic.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -29,7 +29,7 @@ export class YamlAttestationLog {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'attestations.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/records/attestations.yml'); }
 
   #readState() {
     let text;

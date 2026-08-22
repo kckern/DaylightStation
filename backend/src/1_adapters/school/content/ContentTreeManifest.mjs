@@ -12,7 +12,7 @@ import yaml from 'js-yaml';
  * persists both — the nightly task logs the diff, and the manifest file IS
  * the record an administrator can compare across backups.
  *
- * Storage: `household/apps/school/content-manifest.yml`
+ * Storage: machine-local runtime cache at `school/content-manifest.yml`
  *   { generatedAt, fileCount, files: { <relative path>: <sha1-12> } }
  */
 export class ContentTreeManifest {

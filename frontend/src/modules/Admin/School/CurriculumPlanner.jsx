@@ -4,7 +4,7 @@
  * Assignments are PLANNER INPUT and nothing else (spec §7.2: "planning writes
  * planner config, never the published catalog"). The only write this screen can
  * make is `PUT /lifecycle/assignments/:learnerId`, which lands in
- * `apps/school/assignments/{learnerId}.yml`. There is no code path from here to
+ * `school/plans/learners/{learnerId}.yml`. There is no code path from here to
  * a unit, a document or a bank — a parent can reassign all day without any risk
  * of editing curriculum.
  *

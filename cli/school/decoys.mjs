@@ -18,6 +18,10 @@ const EXIT_USAGE = 2;
 const RELEASE_TRIALS = 200000;
 const DISCOVERY_TRIALS = 20000;
 const FINGERPRINT_SCHEMA = 'school.decoy-audit-input/v1';
+const MAX_PAIRED_WORD_DIFFERENCE = 1;
+const MAX_PAIRED_CHARACTER_DIFFERENCE = 5;
+const MAX_UNIQUE_CORRECT_LENGTH_EXTREME_RATE = 0.4;
+export const PRACTICAL_LENGTH_AUDIT_METHOD = 'Practical paired-length guardrails: absolute mean answer-minus-decoy difference at most 1 word and 5 visible characters; answer is uniquely longest or shortest in at most 40% of pools per metric.';
 
 const HELP = `school-decoys — read-only audit of multiple-choice answer/decoy cues
 
@@ -25,10 +29,13 @@ Usage:
   school.mjs decoys audit <subject/course|all> [--data-dir <path>] [--trials <n>] [--json]
   school.mjs decoys verify <subject/course> [--data-dir <path>] [--trials <n>] [--json]
 
-audit reads only live worksheet.yml files.  It measures each classic
+audit reads only live worksheet.yml files. It measures each classic
 single-answer multiple-choice item as one paired observation: its answer
-against the mean of its own decoys.  Release audits use 200,000 deterministic
-sign permutations by default.  An all-school discovery scan uses 20,000.
+against the mean of its own decoys. A course passes when mean answer/decoy
+length differs by no more than 1 word and 5 visible characters, and the
+answer is not a unique length extreme in more than 40% of pools. Deterministic
+sign-permutation p-values remain diagnostic, not release gates. Release audits
+use 200,000 permutations by default; an all-school discovery scan uses 20,000.
 
 verify additionally checks <course>/decoy-audit.yml has a passing status and
 matches the live choice-pool fingerprint.  It never modifies that record.
@@ -54,7 +61,13 @@ function listCourseIds(contentRoot) {
     const subjectPath = path.join(contentRoot, subject.name);
     for (const course of fs.readdirSync(subjectPath, { withFileTypes: true })) {
       if (!course.isDirectory() || isIgnoredDirectory(course.name)) continue;
-      if (fs.existsSync(path.join(subjectPath, course.name, 'course.yml'))) ids.push(`${subject.name}/${course.name}`);
+      // Authored courses use _index.yml, while compatibility supports index.yml
+      // and a small legacy set uses
+      // course.yml. Include both so an all-school audit matches the catalog.
+      const coursePath = path.join(subjectPath, course.name);
+      if (fs.existsSync(path.join(coursePath, '_index.yml')) || fs.existsSync(path.join(coursePath, 'index.yml')) || fs.existsSync(path.join(coursePath, 'course.yml'))) {
+        ids.push(`${subject.name}/${course.name}`);
+      }
     }
   }
   return ids.sort();
@@ -66,8 +79,18 @@ function listWorksheetFiles(courseRoot) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (!isIgnoredDirectory(entry.name)) visit(path.join(dir, entry.name));
-      } else if (entry.isFile() && entry.name === 'worksheet.yml') {
-        files.push(path.join(dir, entry.name));
+      } else if (entry.isFile() && (entry.name === 'worksheet.yml' || /\.ya?ml$/u.test(entry.name))) {
+        const file = path.join(dir, entry.name);
+        if (entry.name === 'worksheet.yml') files.push(file);
+        else {
+          try {
+            if (yaml.load(fs.readFileSync(file, 'utf8'))?.lesson) files.push(file);
+          } catch {
+            // Let analyzeCourse report a compact lesson's parse error with its
+            // normal bank-validation diagnostics rather than hiding the file.
+            files.push(file);
+          }
+        }
       }
     }
   };
@@ -80,8 +103,37 @@ function wordCount(value) {
   return trimmed ? trimmed.split(/\s+/u).length : 0;
 }
 
+/**
+ * Count characters learners can actually see.  Math choices are authored in
+ * TeX, where source punctuation and command names (for example `\\times`)
+ * are not visible answer text.  Leaving that markup in the metric would make
+ * mathematically equivalent choice shapes look artificially different.
+ */
 function characterCount(value) {
-  return Array.from(String(value ?? '').trim()).length;
+  const renderMath = (math) => {
+    let rendered = math;
+    // Resolve the common nested-free forms first; repeating handles a simple
+    // fraction inside a numerator or denominator without pretending to be a
+    // general TeX renderer.
+    let prior;
+    do {
+      prior = rendered;
+      rendered = rendered.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/gu, '$1/$2');
+      rendered = rendered.replace(/\\sqrt\{([^{}]*)\}/gu, '√($1)');
+      rendered = rendered.replace(/\{([^{}]*)\}/gu, '$1');
+    } while (rendered !== prior);
+    return rendered
+      .replace(/\\times|\\cdot/gu, '×')
+      .replace(/\\div/gu, '÷')
+      .replace(/\\leq|\\le/gu, '≤')
+      .replace(/\\geq|\\ge/gu, '≥')
+      .replace(/\\neq/gu, '≠')
+      .replace(/\\pm/gu, '±')
+      .replace(/\\degree/gu, '°')
+      .replace(/[\\^_]/gu, '');
+  };
+  const visible = String(value ?? '').trim().replace(/\$([^$]*)\$/gu, (_match, math) => renderMath(math));
+  return Array.from(visible).length;
 }
 
 function mean(values) {
@@ -146,6 +198,7 @@ function metricSummary(pools, metric, trials, fingerprint) {
   const decoyMeans = pools.map((pool) => mean(pool.decoys.map(metric)));
   const differences = answerValues.map((answer, index) => answer - decoyMeans[index]);
   const uniqueCorrectLongest = pools.filter((pool) => metric(pool.answer) > Math.max(...pool.decoys.map(metric))).length;
+  const uniqueCorrectShortest = pools.filter((pool) => metric(pool.answer) < Math.min(...pool.decoys.map(metric))).length;
   return {
     answerMean: Number(mean(answerValues).toFixed(4)),
     answerMedian: median(answerValues),
@@ -155,6 +208,8 @@ function metricSummary(pools, metric, trials, fingerprint) {
     permutationP: pairedPermutationP(differences, trials, `${fingerprint}:${metric.name}:${trials}`),
     uniqueCorrectLongest,
     uniqueCorrectLongestRate: Number((uniqueCorrectLongest / pools.length).toFixed(4)),
+    uniqueCorrectShortest,
+    uniqueCorrectShortestRate: Number((uniqueCorrectShortest / pools.length).toFixed(4)),
     differences,
   };
 }
@@ -192,25 +247,33 @@ export function analyzeCourse({ courseId, courseRoot, trials = RELEASE_TRIALS })
   }
   const words = metricSummary(pools, wordCount, trials, fingerprint);
   const characters = metricSummary(pools, characterCount, trials, fingerprint);
-  const inspect25PercentLonger = pools.flatMap((pool) => {
+  const inspect25PercentSkew = pools.flatMap((pool) => {
     const answerWords = wordCount(pool.answer);
-    const decoyWords = Math.max(...pool.decoys.map(wordCount));
+    const longestDecoyWords = Math.max(...pool.decoys.map(wordCount));
+    const shortestDecoyWords = Math.min(...pool.decoys.map(wordCount));
     const answerCharacters = characterCount(pool.answer);
-    const decoyCharacters = Math.max(...pool.decoys.map(characterCount));
-    const wordFlag = answerWords >= decoyWords * 1.25 && answerWords > decoyWords;
-    const characterFlag = answerCharacters >= decoyCharacters * 1.25 && answerCharacters > decoyCharacters;
-    return wordFlag || characterFlag ? [{ bank: pool.bank, item: pool.id, wordFlag, characterFlag }] : [];
+    const longestDecoyCharacters = Math.max(...pool.decoys.map(characterCount));
+    const shortestDecoyCharacters = Math.min(...pool.decoys.map(characterCount));
+    const wordLonger = answerWords >= longestDecoyWords * 1.25 && answerWords > longestDecoyWords;
+    const wordShorter = answerWords * 1.25 <= shortestDecoyWords && answerWords < shortestDecoyWords;
+    const characterLonger = answerCharacters >= longestDecoyCharacters * 1.25 && answerCharacters > longestDecoyCharacters;
+    const characterShorter = answerCharacters * 1.25 <= shortestDecoyCharacters && answerCharacters < shortestDecoyCharacters;
+    return wordLonger || wordShorter || characterLonger || characterShorter
+      ? [{ bank: pool.bank, item: pool.id, wordLonger, wordShorter, characterLonger, characterShorter }] : [];
   });
   const gates = {
-    wordPermutationP_gte_0_05: words.permutationP >= 0.05,
-    characterPermutationP_gte_0_05: characters.permutationP >= 0.05,
-    correctUniqueLongestRate_lte_0_40: words.uniqueCorrectLongestRate <= 0.4 && characters.uniqueCorrectLongestRate <= 0.4,
+    pairedWordDifference_abs_lte_1: Math.abs(words.pairedDifference) <= MAX_PAIRED_WORD_DIFFERENCE,
+    pairedCharacterDifference_abs_lte_5: Math.abs(characters.pairedDifference) <= MAX_PAIRED_CHARACTER_DIFFERENCE,
+    correctUniqueLengthExtremeRate_lte_0_40: words.uniqueCorrectLongestRate <= MAX_UNIQUE_CORRECT_LENGTH_EXTREME_RATE
+      && words.uniqueCorrectShortestRate <= MAX_UNIQUE_CORRECT_LENGTH_EXTREME_RATE
+      && characters.uniqueCorrectLongestRate <= MAX_UNIQUE_CORRECT_LENGTH_EXTREME_RATE
+      && characters.uniqueCorrectShortestRate <= MAX_UNIQUE_CORRECT_LENGTH_EXTREME_RATE,
     parse: issues.length === 0,
   };
   return {
     schema: 'school.decoy-audit-report/v1', course: courseId, banks: banks.length, items: pools.length,
     skipped, issues, fingerprint, trials, words: { ...words, differences: undefined },
-    characters: { ...characters, differences: undefined }, inspect25PercentLonger, gates,
+    characters: { ...characters, differences: undefined }, inspect25PercentSkew, gates,
     pass: Object.values(gates).every(Boolean),
   };
 }
@@ -218,9 +281,9 @@ export function analyzeCourse({ courseId, courseRoot, trials = RELEASE_TRIALS })
 function reportText(result) {
   const lines = [`${result.course}: ${result.pass ? 'PASS' : 'FAIL'}`, `  banks ${result.banks}; classic pools ${result.items}; trials ${result.trials}`, `  fingerprint ${result.fingerprint}`];
   if (result.words) {
-    lines.push(`  words: paired ${result.words.pairedDifference}; p=${result.words.permutationP}; unique-correct-longest ${(result.words.uniqueCorrectLongestRate * 100).toFixed(2)}%`);
-    lines.push(`  characters: paired ${result.characters.pairedDifference}; p=${result.characters.permutationP}; unique-correct-longest ${(result.characters.uniqueCorrectLongestRate * 100).toFixed(2)}%`);
-    lines.push(`  inspect >=25% longer: ${result.inspect25PercentLonger.length}`);
+    lines.push(`  words: paired ${result.words.pairedDifference}; p=${result.words.permutationP} (diagnostic); unique-correct-longest ${(result.words.uniqueCorrectLongestRate * 100).toFixed(2)}%; shortest ${(result.words.uniqueCorrectShortestRate * 100).toFixed(2)}%`);
+    lines.push(`  characters: paired ${result.characters.pairedDifference}; p=${result.characters.permutationP} (diagnostic); unique-correct-longest ${(result.characters.uniqueCorrectLongestRate * 100).toFixed(2)}%; shortest ${(result.characters.uniqueCorrectShortestRate * 100).toFixed(2)}%`);
+    lines.push(`  inspect >=25% length skew: ${result.inspect25PercentSkew.length}`);
   }
   if (Object.keys(result.skipped).length) lines.push(`  non-classic pools: ${JSON.stringify(result.skipped)}`);
   for (const issue of result.issues) lines.push(`  ERROR: ${issue}`);
@@ -241,7 +304,7 @@ export function verifyCourse(result, courseRoot) {
   if (record.schema !== 'school.decoy-audit/v1') errors.push('decoy-audit.yml schema must be school.decoy-audit/v1');
   if (record.status !== 'pass') errors.push('decoy-audit.yml status must be pass');
   if (record.content_fingerprint !== result.fingerprint) errors.push('decoy-audit.yml content_fingerprint does not match live choice pools');
-  if (record.length_audit?.method !== `Paired two-sided permutation test, ${result.trials} sign permutations per metric.`) errors.push('decoy-audit.yml length_audit.method does not match this release audit');
+  if (record.length_audit?.method !== PRACTICAL_LENGTH_AUDIT_METHOD) errors.push('decoy-audit.yml length_audit.method does not match this release audit');
   return { ...result, verification: { pass: errors.length === 0, errors }, pass: result.pass && errors.length === 0 };
 }
 

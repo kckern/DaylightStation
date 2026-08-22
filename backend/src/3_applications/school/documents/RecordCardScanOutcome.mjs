@@ -114,6 +114,37 @@ export class RecordCardScanOutcome {
     if (!card || card.error || !Array.isArray(card.results)) {
       return { recorded: false, reason: 'not-a-graded-result' };
     }
+    // One composed allocation can carry several lesson sessions. Resolve and
+    // record each immutable section as if it had been printed alone, while
+    // retaining the shared card/record provenance for deduplication. This is
+    // also what lets a re-scan advance lesson A after its rows are complete
+    // without waiting for the learner to finish lesson B on the same card.
+    if (Array.isArray(card.sections) && card.sections.length > 0) {
+      const sectionOutcomes = [];
+      for (const section of card.sections) {
+        // eslint-disable-next-line no-await-in-loop
+        sectionOutcomes.push(await this.execute({
+          testId,
+          card: {
+            ...card,
+            sections: undefined,
+            results: section.results,
+            totalPoints: section.totalPoints,
+            earnedPoints: section.earnedPoints,
+            sessionId: section.sessionId ?? null,
+            subjectId: section.subjectId ?? null,
+            courseId: section.courseId ?? null,
+            lessonId: section.lessonId ?? null,
+            sectionId: section.id,
+          },
+          cardIdInferred,
+        }));
+      }
+      return {
+        recorded: sectionOutcomes.some((outcome) => outcome.recorded),
+        sectionOutcomes,
+      };
+    }
     const learnerId = card.learnerId ?? null;
     if (learnerId == null) {
       // An anonymous allocation (worksheet, or a legacy pre-binding card):
@@ -201,8 +232,8 @@ export class RecordCardScanOutcome {
     // comes off the ISSUING WORK SESSION when there is one — a URL-printed
     // sheet has no session and therefore no unit, never guessed at.
     const documentSegments = card.documentId.split('/');
-    const subjectId = documentSegments.length > 1 ? documentSegments[0] : null;
-    const courseId = documentSegments.length > 2 ? documentSegments[1] : null;
+    const subjectId = card.subjectId ?? (documentSegments.length > 1 ? documentSegments[0] : null);
+    const courseId = card.courseId ?? (documentSegments.length > 2 ? documentSegments[1] : null);
 
     // Read + reduce the issuing session ONCE, up front — never inside
     // `#bridgeSession` (which used to do its own `readEvents` call). A read
@@ -253,6 +284,7 @@ export class RecordCardScanOutcome {
           row: row.row,
           rowStatus: row.status,
           scanKey: key,
+          ...(card.sectionId ? { sectionId: card.sectionId } : {}),
           ...(card.reScored ? { reScored: true } : {}),
           // The card id this row's allocation was resolved against was
           // INFERRED (best-effort match against a `?`-bearing scan), not

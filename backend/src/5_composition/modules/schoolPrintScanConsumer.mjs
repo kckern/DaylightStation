@@ -154,8 +154,17 @@ export function createSchoolPrintScanConsumer({
           // per-card so one failure never swallows a cardmate's recording.
           recordCardScanOutcome.execute({ testId, card, cardIdInferred: outcome.cardIdInferred ?? null })
             .then(async (recorded) => {
-              if (recorded?.session?.advancedTo === 'graded' && closeSessionOutcome && card.sessionId) {
-                await closeSessionOutcome.execute({ sessionId: card.sessionId });
+              // A composed worksheet records one outcome per independently
+              // completable lesson section. A legacy/single worksheet still
+              // returns the original single outcome shape.
+              const outcomes = recorded?.sectionOutcomes ?? [recorded];
+              for (const sectionOutcome of outcomes) {
+                if (sectionOutcome?.session?.advancedTo === 'graded' && closeSessionOutcome) {
+                  // The bridge returns the authoritative session id (a
+                  // composed card itself has no single session owner).
+                  // eslint-disable-next-line no-await-in-loop
+                  await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                }
               }
             })
             .catch((err) => {

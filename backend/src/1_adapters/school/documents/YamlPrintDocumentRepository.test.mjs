@@ -31,9 +31,10 @@ function fakeStore({ mtimes = {} } = {}) {
   return {
     store,
     io: {
-      list: (dir) => [...store.keys()]
-        .filter((p) => p.startsWith(`${dir}/`) && !p.slice(dir.length + 1).includes('/'))
-        .map((p) => p.slice(dir.length + 1)),
+      list: (dir, { recursive = false } = {}) => [...store.keys()]
+        .filter((p) => p.startsWith(`${dir}/`))
+        .map((p) => p.slice(dir.length + 1))
+        .filter((relative) => recursive || !relative.includes('/')),
       load: (basePath) => (store.has(basePath) ? store.get(basePath) : null),
       save: (basePath, content) => { store.set(basePath, content); },
       stat: (basePath) => (store.has(basePath)
@@ -292,8 +293,8 @@ describe('writePublished / getPublished / getDerivedBank (Task 5, spec §3/§4.3
       document: { written: true, alreadyPublished: false },
       bank: { written: true, alreadyPublished: false },
     });
-    expect(store.get('/docs/published/states-quiz-3@abc123')).toEqual(document);
-    expect(store.get('/docs/derived-banks/states-quiz-3@abc123')).toEqual(bank);
+    expect(store.get('/docs/documents/states-quiz-3/abc123/document')).toEqual(document);
+    expect(store.get('/docs/documents/states-quiz-3/abc123/answers')).toEqual(bank);
   });
 
   it('writes only the published document when bank is null (no answer-bearing content)', () => {
@@ -302,21 +303,21 @@ describe('writePublished / getPublished / getDerivedBank (Task 5, spec §3/§4.3
     const result = repo.writePublished({ document, bank: null, rev: 'abc123' });
 
     expect(result.bank).toBeNull();
-    expect(store.has('/docs/derived-banks/states-quiz-3@abc123')).toBe(false);
+    expect(store.has('/docs/documents/states-quiz-3/abc123/answers')).toBe(false);
   });
 
   it('re-publishing IDENTICAL content at the same rev is an idempotent no-op', () => {
     const { io, store } = fakeStore();
     const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });
     repo.writePublished({ document, bank, rev: 'abc123' });
-    const before = store.get('/docs/published/states-quiz-3@abc123');
+    const before = store.get('/docs/documents/states-quiz-3/abc123/document');
 
     const second = repo.writePublished({ document: { ...document }, bank: { ...bank }, rev: 'abc123' });
     expect(second).toEqual({
       document: { written: false, alreadyPublished: true },
       bank: { written: false, alreadyPublished: true },
     });
-    expect(store.get('/docs/published/states-quiz-3@abc123')).toBe(before); // untouched, not re-saved
+    expect(store.get('/docs/documents/states-quiz-3/abc123/document')).toBe(before); // untouched, not re-saved
   });
 
   it('refuses to overwrite an existing rev with DIFFERENT content (append-only)', () => {
@@ -353,8 +354,8 @@ describe('writePublished / getPublished / getDerivedBank (Task 5, spec §3/§4.3
   it('getPublished(id) with no rev picks the LATEST (most recently written) revision', () => {
     const { io } = fakeStore({
       mtimes: {
-        '/docs/published/states-quiz-3@rev1': 100,
-        '/docs/published/states-quiz-3@rev2': 200,
+        '/docs/documents/states-quiz-3/rev1/document': 100,
+        '/docs/documents/states-quiz-3/rev2/document': 200,
       },
     });
     const repo = new YamlPrintDocumentRepository({ directory: '/docs', io });

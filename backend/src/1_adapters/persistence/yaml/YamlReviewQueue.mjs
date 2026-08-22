@@ -1,8 +1,8 @@
 /**
  * YAML persistence for the parent review queue (spec §7.3).
  *
- *   <dataDir>/household/apps/school/review/{sessionId}.yml            (live — has unresolved items)
- *   <dataDir>/household/apps/school/review/{sessionId}.settled.yml    (every item resolved)
+ *   <dataDir>/household/school/runtime/review/{sessionId}.yml            (live — has unresolved items)
+ *   <dataDir>/household/school/runtime/review/{sessionId}.settled.yml    (every item resolved)
  *
  * One file per session, so a queue read for a session that has just been
  * submitted costs one read, and a corrupt file isolates to the one piece of work
@@ -45,7 +45,7 @@ export class YamlReviewQueue extends IReviewQueue {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('school/review'); }
+  #root() { return this.#configService.getHouseholdPath('school/runtime/review'); }
 
   #liveFile(sessionId) { return path.join(this.#root(), `${sessionId}.yml`); }
 

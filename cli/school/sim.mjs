@@ -124,7 +124,7 @@ export async function main(argv = process.argv.slice(2)) {
   const lessonRoot = path.join(courseRoot, lessonRel);
   const lesson = yaml.load(fs.readFileSync(path.join(lessonRoot, 'index.yml'), 'utf8'));
   const assignment = yaml.load(fs.readFileSync(
-    path.join(dataDir, 'household/school/assignments', `${LOWER_ID}.yml`), 'utf8',
+    path.join(dataDir, 'household/school/plans/learners', `${LOWER_ID}.yml`), 'utf8',
   ));
   const course = assignment.courses.find((entry) => entry.courseId === lesson.courseId);
   if (!course?.enrollment?.enrollmentId || course.profile !== 'lower') {

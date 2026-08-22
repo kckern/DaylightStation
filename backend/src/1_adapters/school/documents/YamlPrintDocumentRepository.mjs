@@ -22,9 +22,9 @@ function statBase(basePath) {
  *   `sourceDirectory`  — the authored CLASSES, on the School catalog shelf
  *                        (`content/school/learning-catalog/documents/`), beside the
  *                        `school.learning-document/v1` files. `list()`/`get()`.
- *   `directory`        — the ARTIFACT root (`household/apps/school/print-documents/`),
- *                        parent of `published/`, `derived-banks/` and
- *                        `allocations/`. `getPublished()`/`getDerivedBank()`/
+ *   `directory`        — the ARTIFACT root (`household/school/artifacts/print/`),
+ *                        parent of `documents/`, `cards/` and `forms/`.
+ *                        `getPublished()`/`getDerivedBank()`/
  *                        `writePublished()`, and `YamlAllocationStore`'s root.
  *
  * SOURCE DISCOVERY IS POSITIVE, BY SCHEMA. The catalog shelf is SHARED with
@@ -75,8 +75,8 @@ function statBase(basePath) {
  * repository's job — two sibling directories under the ARTIFACT `directory`
  * root (which the sources no longer share):
  *
- *   <directory>/published/<id>@<rev>.yml       (always written)
- *   <directory>/derived-banks/<id>@<rev>.yml    (written only when a bank exists)
+ *   <directory>/documents/<id>/<rev>/document.yml  (always written)
+ *   <directory>/documents/<id>/<rev>/answers.yml   (only when a bank exists)
  *
  * APPEND-ONLY (spec §4.3 "prior revisions are retained"): `rev` is a content
  * hash of the validated source (`documentSource.mjs`'s `computeRev`), so two
@@ -91,8 +91,8 @@ export class YamlPrintDocumentRepository {
 
   /**
    * @param {object} args
-   * @param {string} args.directory - the ARTIFACT root (`published/`,
-   *   `derived-banks/`, `allocations/` hang off it). Required.
+   * @param {string} args.directory - the ARTIFACT root (`documents/`,
+   *   `cards/`, `forms/` hang off it). Required.
    * @param {string|null} [args.sourceDirectory] - the authored-source root.
    *   Singular, not a `sourceDirectories` array (which would match
    *   `YamlLearningContentRepository`'s `documentDirectories`): `list()`
@@ -120,7 +120,7 @@ export class YamlPrintDocumentRepository {
   }
 
   /** Artifact subtrees that are never source documents, whichever root they turn up under. */
-  static #ARTIFACT_DIRS = new Set(['published', 'derived-banks', 'allocations']);
+  static #ARTIFACT_DIRS = new Set(['documents', 'cards', 'forms', 'published', 'derived-banks', 'allocations']);
 
   /** Schemas this system owns. A file on the shared catalog shelf is a source iff it declares one. */
   static #SOURCE_SCHEMAS = new Set([DOCUMENT_SOURCE_SCHEMA, DOCUMENT_V2_SCHEMA]);
@@ -182,9 +182,9 @@ export class YamlPrintDocumentRepository {
    * @returns {*|null} the raw parsed published document, or null when none exists.
    */
   getPublished(id, rev) {
-    const dir = path.join(this.#directory, 'published');
+    const dir = path.join(this.#directory, 'documents', id);
     if (rev !== undefined && rev !== null) {
-      return this.#io.load(path.join(dir, `${id}@${rev}`));
+      return this.#io.load(path.join(dir, rev, 'document'));
     }
     const latest = this.#latestRevFile(dir, id);
     return latest ? this.#io.load(path.join(dir, latest)) : null;
@@ -202,7 +202,7 @@ export class YamlPrintDocumentRepository {
     if (typeof rev !== 'string' || rev.trim().length === 0) {
       throw new Error('getDerivedBank requires a rev');
     }
-    return this.#io.load(path.join(this.#directory, 'derived-banks', `${id}@${rev}`));
+    return this.#io.load(path.join(this.#directory, 'documents', id, rev, 'answers'));
   }
 
   /**
@@ -225,35 +225,27 @@ export class YamlPrintDocumentRepository {
       throw new Error('writePublished requires rev');
     }
     const docResult = this.#writeArtifact(
-      path.join(this.#directory, 'published', `${document.id}@${rev}`), document,
+      path.join(this.#directory, 'documents', document.id, rev, 'document'), document,
     );
     const bankResult = bank
-      ? this.#writeArtifact(path.join(this.#directory, 'derived-banks', `${document.id}@${rev}`), bank)
+      ? this.#writeArtifact(path.join(this.#directory, 'documents', document.id, rev, 'answers'), bank)
       : null;
     return { document: docResult, bank: bankResult };
   }
 
-  /** Most-recent-mtime `<id>@*` entry under `dir` (published/ only) — see `getPublished`'s own doc comment. */
+  /** Most-recent document revision under one document id — see `getPublished`. */
   #latestRevFile(dir, id) {
-    // Hierarchical ids nest their artifacts (`published/<subject>/<course>/
-    // <slug>@<rev>.yml`), so the listing happens in the id's own subdirectory
-    // and candidates are re-prefixed back to dir-relative paths.
-    const segments = id.split('/');
-    const slug = segments.pop();
-    const subdir = segments.length ? path.join(dir, ...segments) : dir;
-    const relative = (name) => (segments.length ? path.join(...segments, name) : name);
-    const prefix = `${slug}@`;
-    const candidates = [...this.#io.list(subdir)]
-      .filter((name) => name.startsWith(prefix))
-      .map(relative);
+    const candidates = [...this.#io.list(dir, { recursive: true })]
+      .filter((name) => name.endsWith('/document') || name.endsWith(`${path.sep}document`))
+      .map((name) => name.split(/[\\/]/)[0]);
     let best = null;
     let bestMtime = -Infinity;
     for (const name of candidates) {
-      const stat = this.#io.stat(path.join(dir, name));
+      const stat = this.#io.stat(path.join(dir, name, 'document'));
       const mtime = stat?.mtimeMs ?? -Infinity;
       if (mtime >= bestMtime) { bestMtime = mtime; best = name; }
     }
-    return best;
+    return best ? path.join(best, 'document') : null;
   }
 
   /**

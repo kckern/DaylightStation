@@ -1,12 +1,12 @@
 /**
  * YamlTeacherNotes — standalone teacher notes (spec D3):
- * `apps/school/teacher-notes.yml`, APPEND-ONLY `{id, at, from, learnerId,
+ * `school/records/teacher-notes.yml`, APPEND-ONLY `{id, at, from, learnerId,
  * note}`. Delivery reuses the review-note surfaces (student panel Feedback
  * list, the agenda's "Notes for you" window) — one delivery path, two
  * sources. Corrupt-file posture per the M3 rule.
  */
-import path from 'path';
 import fsSync from 'fs';
+import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 
@@ -28,7 +28,7 @@ export class YamlTeacherNotes {
     this.#logger = logger;
   }
 
-  #file() { return path.join(this.#configService.getHouseholdPath('school'), 'teacher-notes.yml'); }
+  #file() { return this.#configService.getHouseholdPath('school/records/teacher-notes.yml'); }
 
   #readState() {
     let text;

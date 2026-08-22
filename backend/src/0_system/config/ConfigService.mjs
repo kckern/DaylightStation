@@ -8,6 +8,8 @@
  * that can be changed at runtime (e.g. via admin UI).
  */
 
+import os from 'node:os';
+import path from 'node:path';
 import { loadYaml, loadYamlFromPath, listYamlFiles, yamlExists, resolveYamlPath } from '#system/utils/FileIO.mjs';
 import { ConfigurationError } from '#system/utils/errors/index.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
@@ -220,6 +222,7 @@ export class ConfigService {
    * Resolve the on-disk base path (no extension) for a household app config.
    *
    * Colocated first: <household>/<appName>/config.yml — the app's own domain
+   * (School deliberately uses <household>/school/school.yml).
    * folder. The legacy <household>/config/<appName>.yml is still read so a
    * file that has not been moved off the retired config/ root yet still
    * resolves — drop this fallback in a follow-up once every app config has
@@ -231,7 +234,8 @@ export class ConfigService {
    * @returns {string} base path (no .yml extension)
    */
   #resolveHouseholdAppConfigPath(dataDir, folderName, appName) {
-    const colocated = `${dataDir}/${folderName}/${appName}/config`;
+    const configBasename = appName === 'school' ? 'school' : 'config';
+    const colocated = `${dataDir}/${folderName}/${appName}/${configBasename}`;
     if (yamlExists(colocated)) return colocated;
     return `${dataDir}/${folderName}/config/${appName}`;
   }
@@ -404,6 +408,24 @@ export class ConfigService {
     // Flat structure: data/household[-{id}]/
     const basePath = `${dataDir}/${folderName}`;
     return relativePath ? `${basePath}/${relativePath}` : basePath;
+  }
+
+  /**
+   * Machine-local, regenerable cache space. This intentionally lives outside
+   * Dropbox-backed household data: caches are neither policy nor evidence and
+   * should not create sync churn or look like records a parent must preserve.
+   */
+  getRuntimeCachePath(relativePath = '', householdId = null) {
+    const hid = householdId ?? this.getDefaultHouseholdId();
+    const household = this.#config.households?.[hid];
+    if (!household) {
+      throw new ConfigurationError(`Household not found: ${hid}`, {
+        code: 'HOUSEHOLD_NOT_FOUND', key: 'households', details: { householdId: hid },
+      });
+    }
+    const folderName = household._folderName || hid;
+    const basePath = path.join(os.tmpdir(), 'daylight-station', 'cache', folderName);
+    return relativePath ? path.join(basePath, relativePath) : basePath;
   }
 
   /**

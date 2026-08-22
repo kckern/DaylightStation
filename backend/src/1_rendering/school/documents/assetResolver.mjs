@@ -27,6 +27,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Slug segments only: lowercase, digits, hyphen, underscore, separated by `/`.
@@ -108,6 +109,72 @@ export function createFileAssetResolver({ rootDir, logger = console } = {}) {
     cache.set(ref, resolved);
     return resolved;
   };
+}
+
+/**
+ * Resolve the real subject icons used by the School frontend.  They live with
+ * the shared visual vocabulary rather than curriculum artwork, and their
+ * `currentColor`/`1em` browser conventions need a concrete PDF equivalent.
+ *
+ * This is intentionally a separate, prefix-only resolver: ordinary authored
+ * assets keep the data-root safety boundary in `createFileAssetResolver`.
+ */
+export function createSubjectIconResolver({
+  rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../frontend/src/modules/School/home/icons/svg'),
+  logger = console,
+} = {}) {
+  const root = path.resolve(rootDir);
+  const cache = new Map();
+  const prefix = 'subject-icon:';
+  const subjectPattern = /^[a-z0-9][a-z0-9-]*$/;
+
+  return function resolveSubjectIcon(ref) {
+    if (typeof ref !== 'string' || !ref.startsWith(prefix)) return null;
+    if (cache.has(ref)) return cache.get(ref);
+    const subject = ref.slice(prefix.length);
+    if (!subjectPattern.test(subject)) {
+      logger.warn?.('school.subject_icon.unresolved', { ref, reason: 'malformed-ref' });
+      cache.set(ref, null);
+      return null;
+    }
+    const file = path.resolve(root, `${subject}.svg`);
+    if (file !== root && !file.startsWith(root + path.sep)) {
+      logger.warn?.('school.subject_icon.unresolved', { ref, reason: 'outside-root' });
+      cache.set(ref, null);
+      return null;
+    }
+    let raw;
+    try {
+      raw = fs.readFileSync(file, 'utf8');
+    } catch (err) {
+      logger.warn?.('school.subject_icon.unresolved', { ref, reason: err.code === 'ENOENT' ? 'not-found' : err.code || 'unreadable' });
+      cache.set(ref, null);
+      return null;
+    }
+    if (!raw.includes('<svg')) {
+      logger.warn?.('school.subject_icon.unresolved', { ref, reason: 'not-svg' });
+      cache.set(ref, null);
+      return null;
+    }
+    const svg = raw
+      .replaceAll('currentColor', '#000000')
+      // Browser icons frequently use width/height="1em".  Leaving a concrete
+      // root size lets svg-to-pdf ignore the card's requested dimensions, so
+      // strip the browser sizing and let the renderer's width/height options
+      // scale the viewBox to the full measured icon rail.
+      .replace(/\swidth="[^"]*"/iu, '')
+      .replace(/\sheight="[^"]*"/iu, '');
+    const resolved = { svg, ...svgDimensions(svg) };
+    cache.set(ref, resolved);
+    return resolved;
+  };
+}
+
+/** Compose the two intentionally disjoint asset namespaces used by School. */
+export function createSchoolAssetResolver({ rootDir, subjectIconRootDir, logger = console } = {}) {
+  const resolveFile = createFileAssetResolver({ rootDir, logger });
+  const resolveSubject = createSubjectIconResolver({ rootDir: subjectIconRootDir, logger });
+  return (ref) => (typeof ref === 'string' && ref.startsWith('subject-icon:') ? resolveSubject(ref) : resolveFile(ref));
 }
 
 export default createFileAssetResolver;

@@ -193,6 +193,61 @@ Moving a source file never invalidates an artifact: allocations, worksheet
 instances, and published filenames all key off the document's `id`, never its
 path.
 
+### Composed daily worksheets
+
+A daily worksheet is a **single flowed document**, not a stack of individually
+rendered PDFs. It has one name/date header, continuous question numbers, and
+one shared physical OMR card. Each lesson begins with a full-width lesson card:
+the real subject SVG, a subject/course/topic breadcrumb, lesson title, quiet
+print-book citation, and question/mastery metric. A `Read:` line appears only
+when the course supplies a real learner-facing section locator or printed page
+range; sidecar EPUB filenames, chapter-file numbers, and generic text such as
+"assigned section" never reach a child. The component lesson instances remain
+immutable; composition only creates a new print artifact that scopes their
+question ids by section.
+
+When a `prefer-one-page` worksheet genuinely spills after compact fitting, the
+renderer balances whole question fragments across the resulting pages. It
+therefore avoids a small final orphan question while preserving the sequence;
+a substantial question may still begin a page on its own when moving it would
+create a worse break.
+
+The allocation persists each section's exact row range and session/lesson
+ownership beside the card record. A scan can therefore be repeated while the
+card is in progress: nonblank rows become evidence immediately, a completed
+section advances only its own session, and the card remains live until every
+allocated row has an answer. A document exceeding the 50-row OMR capacity is
+split into sequential parts, each with its own card.
+
+For safe proofing without issuing an enrollment, use the same composition core
+from the CLI:
+
+```sh
+node cli/school.mjs worksheet compose \
+  --lesson science/molecules-ted-gray/molecules-ch01-house-built-of-elements \
+  --lesson science/molecules-ted-gray/molecules-ch02-power-of-names \
+  --profile upper --seed friday --out /tmp/friday.pdf
+```
+
+`--lesson` and deterministic `--sample subject/course:N` may both be repeated.
+This preview writes only the requested PDF; it does not create an enrollment,
+worksheet instance, published revision, allocation, or OMR card record.
+
+For a real multi-lesson issue, `POST /api/v1/school/lifecycle/worksheets/compose` accepts
+`{ "sessionIds": ["…"], "issuedBy": "teacher-id", "pin": "…" }`. It creates (or reuses) the immutable per-lesson
+instances, publishes one composed document per 50-row card, persists each
+section's row ownership in the allocation, and appends the corresponding
+issue/reprint event to every participating session. This is the production
+entry point for an agenda or teacher-selected subset; its teacher stamp/PIN is
+checked server-side and it does not introduce a second, packet-only grading
+record.
+
+The teacher console obtains its checklist from
+`GET /api/v1/school/lifecycle/learners/:learnerId/printable-sessions?window=today`.
+That endpoint filters out terminal, media-only, and document-backed sessions;
+the compose endpoint validates the same bank-only constraint again before it
+can dispatch paper.
+
 **Renders are published-first.** Every render lane that can pin a revision —
 the HTTP route, the tracked-quiz issue path, and the CLI's card mode —
 resolves the published artifact; the raw source only renders when the
@@ -503,7 +558,7 @@ record — recover with `release-card`. Accepted at household scale.
   than pinning a phantom rev.
 - `reprint <instanceId> --out <pdf>` — reproduce an exact historical print from
   a persisted worksheet instance, with **no manual flags**. Reads
-  `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml` and
+  `<dataDir>/household/school/records/worksheets/<sessionId>.yml` and
   derives everything the original sheet carried — learner name, issue date,
   answer-sheet number, row range, question order — from that record, so the
   reprint is byte-identical to the paper that first came out of the tray. This

@@ -1,7 +1,7 @@
 /**
  * YAML persistence for per-learner curriculum assignments (spec §7.2).
  *
- *   <dataDir>/household/apps/school/assignments/{learnerId}.yml
+ *   <dataDir>/household/school/plans/learners/{learnerId}.yml
  *
  * Parent-editable by design: this is the one School file a grown-up is expected
  * to open in a text editor, so it is a flat, obvious mapping and the reader is
@@ -21,6 +21,20 @@ const YAML_FILE_RE = /\.(yml|yaml)$/;
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 const isSafeLearnerId = (id) => typeof id === 'string' && LEARNER_ID_RE.test(id);
+
+// The persistence shape never mixes shorthand course ids with enrollment
+// records. The application contract remains compatible while its callers are
+// retired gradually: strings are normalized at the storage boundary.
+const normalizeEnrollment = (value) => (
+  typeof value === 'string' ? { courseId: value } : value
+);
+const toDomainRecord = (raw, learnerId) => ({
+  learnerId: typeof raw?.learnerId === 'string' ? raw.learnerId : learnerId,
+  courses: (Array.isArray(raw?.enrollments) ? raw.enrollments : raw?.courses ?? []).map(normalizeEnrollment),
+  units: Array.isArray(raw?.standaloneWork) ? raw.standaloneWork : raw?.units ?? [],
+  updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : null,
+  assignedBy: typeof raw?.assignedBy === 'string' ? raw.assignedBy : null,
+});
 
 const stagingPathFor = (filePath) => `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -47,13 +61,13 @@ export class YamlAssignmentStore extends IAssignmentStore {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('school/assignments'); }
+  #root() { return this.#configService.getHouseholdPath('school/plans/learners'); }
 
   #fileFor(learnerId) { return path.join(this.#root(), `${learnerId}.yml`); }
 
   // History lives one level up, alongside (not inside) the current-state
-  // directory: `apps/school/history/{learnerId}.yml`, not `apps/school/assignments/history/...`.
-  #historyRoot() { return path.join(this.#root(), '..', 'history'); }
+  // Plans are current intent; their immutable change history is separate evidence.
+  #historyRoot() { return this.#configService.getHouseholdPath('school/records/plans/learners'); }
 
   #historyFileFor(learnerId) { return path.join(this.#historyRoot(), `${learnerId}.yml`); }
 
@@ -77,7 +91,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
     try {
       const raw = yaml.load(text);
       this.#corruptHistory.delete(learnerId);
-      return Array.isArray(raw) ? raw : [];
+      return Array.isArray(raw) ? raw.map((entry) => toDomainRecord(entry, learnerId)) : [];
     } catch {
       this.#markHistoryCorrupt(learnerId);
       return [];
@@ -114,15 +128,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
     }
     this.#corruptCurrent.delete(learnerId);
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-    return {
-      learnerId: typeof raw.learnerId === 'string' ? raw.learnerId : learnerId,
-      courses: Array.isArray(raw.courses) ? raw.courses : [],
-      units: Array.isArray(raw.units) ? raw.units : [],
-      updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
-      // Written on every put and then DROPPED on read for two waves — the
-      // UI's "Assigned by …" line was dead code (admin advocacy #9).
-      assignedBy: typeof raw.assignedBy === 'string' ? raw.assignedBy : null,
-    };
+    return toDomainRecord(raw, learnerId);
   }
 
   #markCurrentCorrupt(learnerId) {
@@ -158,8 +164,8 @@ export class YamlAssignmentStore extends IAssignmentStore {
     if (!isSafeLearnerId(learnerId)) throw new Error(`YamlAssignmentStore: unsafe learnerId: ${learnerId}`);
     const stored = {
       learnerId,
-      courses: Array.isArray(record.courses) ? record.courses : [],
-      units: Array.isArray(record.units) ? record.units : [],
+      enrollments: (Array.isArray(record.courses) ? record.courses : []).map(normalizeEnrollment),
+      standaloneWork: Array.isArray(record.units) ? record.units : [],
       // WHO changed the plan. The write is adult-only (SetAssignments), and the
       // record is the only place that fact survives — a plan that changed with
       // nobody's name on it is a plan nobody can ask about.
@@ -195,7 +201,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
       history.push(entry);
       await this.#writeYamlAtomic(this.#historyFileFor(learnerId), history);
       this.#corruptHistory.delete(learnerId);
-      return stored;
+      return toDomainRecord(stored, learnerId);
     });
     this.#writeChain = queued.catch(() => {});
     return queued;

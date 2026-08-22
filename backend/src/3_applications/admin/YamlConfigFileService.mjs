@@ -52,7 +52,7 @@ const ALLOWED_FILES = [
   'household/fitness/config.yml',
   'household/gratitude/config.yml',
   'household/harvest/config.yml',
-  'household/school/config.yml',
+  'household/school/school.yml',
   'household/media/config.yml',
   'household/livestream/config.yml',
   'household/newsreporter/config.yml',

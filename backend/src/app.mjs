@@ -795,7 +795,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataDir,
     outRoot: omrReadersConfig?.quizzes?.dir
       ? path.join(dataDir, ...String(omrReadersConfig.quizzes.dir).replace(/^\/+/, '').split('/'))
-      : configService.getHouseholdPath('school/quizzes', householdId),
+      : configService.getHouseholdPath('school/records/assessments/omr', householdId),
     config: omrReadersConfig,
     logger: rootLogger.child({ module: 'quiz-scan' }),
   });
@@ -2508,7 +2508,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   // Periods: config→data promotion (teacher-console W3-1). The stored source
   // serves the boot-validated config until the first teacher edit writes
-  // apps/school/periods.yml; every downstream consumer (report cards, the
+  // school/plans/periods.yml; every downstream consumer (report cards, the
   // /periods route, agendas) inherits the same instance.
   const { YamlAcademicPeriodStore } = await import('#adapters/persistence/yaml/YamlAcademicPeriodStore.mjs');
   const schoolAcademicPeriods = new YamlAcademicPeriodStore({
@@ -4316,7 +4316,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         const { ContentTreeManifest } = await import('#adapters/school/content/ContentTreeManifest.mjs');
         new ContentTreeManifest({
           contentDir: path.join(contentPath, 'school'),
-          manifestFile: configService.getHouseholdPath('school/content-manifest.yml'),
+          manifestFile: configService.getRuntimeCachePath('school/content-manifest.yml'),
           logger: rootLogger.child({ module: 'school-content-manifest' }),
         }).run();
       } catch (err) {

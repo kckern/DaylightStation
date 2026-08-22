@@ -303,7 +303,7 @@ function loadYamlSafe(filePath) {
 function resolvePrinterConfig(dataDir, flags) {
   // Colocated first (task-13), falling back to the legacy config/ root for
   // an un-migrated data dir.
-  const schoolCfg = loadYamlSafe(path.join(dataDir, 'household/school/config.yml'))
+  const schoolCfg = loadYamlSafe(path.join(dataDir, 'household/school/school.yml'))
     ?? loadYamlSafe(path.join(dataDir, 'household/config/school.yml'))
     ?? {};
   const devicesCfg = loadYamlSafe(path.join(dataDir, 'household/hardware/devices.yml'))
@@ -379,7 +379,7 @@ function buildCurriculumAccess(dataDir, clock) {
 /** Sessions/tokens/worksheet-instances/form-maps/print-documents/allocations, all rooted at `stateDir`. */
 function buildPersistentStores(stateDir) {
   const writeConfig = buildWriteConfigService(stateDir);
-  const printDocumentsRoot = path.join(stateDir, 'content/school/print-documents');
+  const printDocumentsRoot = path.join(stateDir, 'artifacts/print');
   const printDocuments = new YamlPrintDocumentRepository({ directory: printDocumentsRoot });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot });
   return {

@@ -2,16 +2,11 @@
  * YAML persistence for work-session event logs (spec §5.1). Dumb storage only —
  * lifecycle policy lives in `#domains/school/sessions/sessionEvents.mjs`.
  *
- *   events: <dataDir>/household/apps/school/sessions/{YYYY-MM-DD}/{sessionId}/events.yml   (append-only)
- *   index:  <dataDir>/household/apps/school/sessions/{YYYY-MM-DD}/index.yml                (open sessions by learner)
+ *   record: <dataDir>/household/school/records/sessions/{YYYY-MM}/{sessionId}.yml
  *
- * The day bucket is the day the session was CREATED, not the day of each event:
- * a session is one folder for its whole life, so a piece of work started before
- * bedtime and finished the next morning stays one record.
- *
- * The index is a derived convenience — it is rebuilt from the log on every
- * append, never edited independently — so "what is this child in the middle of"
- * costs one file read per day instead of a walk over every session's events.
+ * A record contains its append-only `events:` array. The month bucket is from
+ * creation time; no separate folder or hand-maintained index duplicates the
+ * same session facts.
  */
 import path from 'path';
 import { promises as fs } from 'fs';
@@ -23,9 +18,7 @@ import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 // and a nested path all fail to match, which is what keeps traversal out (same
 // guard shape as YamlSchoolDatastore's bank ids).
 const SESSION_ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-const EVENTS_FILE = 'events.yml';
-const INDEX_FILE = 'index.yml';
+const MONTH_RE = /^\d{4}-\d{2}$/;
 
 const dumpYaml = (value) => yaml.dump(value, { indent: 2, lineWidth: -1, noRefs: true });
 const isSafeSessionId = (id) => typeof id === 'string' && SESSION_ID_RE.test(id);
@@ -40,7 +33,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   // event is a lost piece of a child's work record — throughput is not the
   // thing worth optimising here. (House precedent: barcodeRelay.mjs.)
   #writeChain = Promise.resolve();
-  #dayCache = new Map();
+  #monthCache = new Map();
 
   constructor(config = {}) {
     super();
@@ -51,14 +44,14 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     this.#logger = config.logger || console;
   }
 
-  #root() { return this.#configService.getHouseholdPath('school/sessions'); }
+  #root() { return this.#configService.getHouseholdPath('school/records/sessions'); }
 
   async #readYaml(file) {
     let text;
     try {
       text = await fs.readFile(file, 'utf8');
     } catch (err) {
-      // Missing is the ordinary case (a day with no sessions, a probe for the
+      // Missing is the ordinary case (a month with no sessions, a probe for the
       // bucket a session lives in) and stays quiet. An unreadable-but-present
       // file is not ordinary, so it is reported before being answered the same.
       if (err?.code !== 'ENOENT') {
@@ -78,8 +71,8 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     }
   }
 
-  /** Day directories, newest first. */
-  async #days() {
+  /** Creation-month directories, newest first. */
+  async #months() {
     let entries;
     try {
       entries = await fs.readdir(this.#root(), { withFileTypes: true });
@@ -87,67 +80,45 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       return [];
     }
     return entries
-      .filter((e) => e.isDirectory() && DAY_RE.test(e.name))
+      .filter((e) => e.isDirectory() && MONTH_RE.test(e.name))
       .map((e) => e.name)
       .sort()
       .reverse();
   }
 
   /**
-   * Which day folder holds this session.
+   * Which month folder holds this session.
    *
-   * Resolution order: cache, then a newest-first scan of the day folders, then —
+   * Resolution order: cache, then a newest-first scan of the month folders, then —
    * only for an event that is opening a new session — the event's own timestamp.
    */
-  async #resolveDay(sessionId, event = null) {
-    const cached = this.#dayCache.get(sessionId);
+  async #resolveMonth(sessionId, event = null) {
+    const cached = this.#monthCache.get(sessionId);
     if (cached) return cached;
-    for (const day of await this.#days()) {
+    for (const month of await this.#months()) {
       try {
-        await fs.access(path.join(this.#root(), day, sessionId, EVENTS_FILE));
-        this.#dayCache.set(sessionId, day);
-        return day;
-      } catch { /* not this day */ }
+        await fs.access(path.join(this.#root(), month, `${sessionId}.yml`));
+        this.#monthCache.set(sessionId, month);
+        return month;
+      } catch { /* not this month */ }
     }
     if (!event) return null;
     const at = typeof event.at === 'string' ? event.at : '';
-    const day = at.slice(0, 10);
-    if (!DAY_RE.test(day) || Number.isNaN(Date.parse(at))) {
+    const month = at.slice(0, 7);
+    if (!MONTH_RE.test(month) || Number.isNaN(Date.parse(at))) {
       throw new Error('YamlWorkSessionDatastore: event.at must be an ISO-8601 timestamp');
     }
-    this.#dayCache.set(sessionId, day);
-    return day;
+    this.#monthCache.set(sessionId, month);
+    return month;
   }
 
-  async #readEventsAt(day, sessionId) {
-    const raw = await this.#readYaml(path.join(this.#root(), day, sessionId, EVENTS_FILE));
-    if (!Array.isArray(raw)) return [];
+  async #readEventsAt(month, sessionId) {
+    const raw = await this.#readYaml(path.join(this.#root(), month, `${sessionId}.yml`));
+    if (!Array.isArray(raw?.events)) return [];
     // Entries are sorted but never filtered: a malformed entry is the reducer's
     // to report, and dropping it here would hide it from the one place a parent
     // could see that something went wrong.
-    return [...raw].sort((a, b) => seqOf(a) - seqOf(b));
-  }
-
-  /** Rebuild this session's row in the day index from its whole log. */
-  async #reindex(day, sessionId, events) {
-    const file = path.join(this.#root(), day, INDEX_FILE);
-    const raw = await this.#readYaml(file);
-    const index = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-    const state = reduceSession(events);
-    const last = events[events.length - 1];
-    index[sessionId] = {
-      learnerId: state.learnerId,
-      unitId: state.unitId,
-      state: state.state,
-      open: !state.terminal,
-      // The gating question ("has this unit been passed?") must be answerable
-      // from the index alone, or the planner would reduce every session a
-      // learner has ever had just to draw one agenda.
-      result: state.outcome?.result ?? null,
-      gradedPercent: state.gradedPercent ?? null,
-      updatedAt: (last && typeof last === 'object' ? last.at : null) ?? null,
-    };
-    await fs.writeFile(file, dumpYaml(index), 'utf8');
+    return [...raw.events].sort((a, b) => seqOf(a) - seqOf(b));
   }
 
   /** @inheritdoc */
@@ -159,18 +130,20 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       throw new Error('YamlWorkSessionDatastore: event must be a mapping');
     }
     const run = async () => {
-      const day = await this.#resolveDay(sessionId, event);
-      const dir = path.join(this.#root(), day, sessionId);
+      const month = await this.#resolveMonth(sessionId, event);
+      const dir = path.join(this.#root(), month);
       await fs.mkdir(dir, { recursive: true });
-      const events = await this.#readEventsAt(day, sessionId);
+      const events = await this.#readEventsAt(month, sessionId);
       // seq is assigned HERE, inside the queue, and overrides whatever the
       // caller passed: two callers that each read nextSeq() before either wrote
       // would otherwise be handed the same number.
       const maxSeq = events.reduce((m, e) => Math.max(m, seqOf(e)), 0);
       const stored = { ...event, sessionId, seq: maxSeq + 1 };
       events.push(stored);
-      await fs.writeFile(path.join(dir, EVENTS_FILE), dumpYaml(events), 'utf8');
-      await this.#reindex(day, sessionId, events);
+      await fs.writeFile(path.join(dir, `${sessionId}.yml`), dumpYaml({
+        schema: 'school.work-session/v1', sessionId,
+        startedAt: events[0]?.at ?? null, events,
+      }), 'utf8');
       return stored;
     };
     const queued = this.#writeChain.then(run);
@@ -183,9 +156,9 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   /** @inheritdoc */
   async readEvents(sessionId) {
     if (!isSafeSessionId(sessionId)) return [];
-    const day = await this.#resolveDay(sessionId);
-    if (!day) return [];
-    return this.#readEventsAt(day, sessionId);
+    const month = await this.#resolveMonth(sessionId);
+    if (!month) return [];
+    return this.#readEventsAt(month, sessionId);
   }
 
   /** @inheritdoc */
@@ -194,19 +167,29 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     return events.reduce((m, e) => Math.max(m, seqOf(e)), 0) + 1;
   }
 
-  /** Every indexed row for a learner, newest day first. */
+  /** Every session fact for a learner, newest creation month first. */
   async #rowsFor(learnerId) {
     if (typeof learnerId !== 'string' || learnerId.trim() === '') return [];
     const out = [];
-    for (const day of await this.#days()) {
-      // eslint-disable-next-line no-await-in-loop
-      const raw = await this.#readYaml(path.join(this.#root(), day, INDEX_FILE));
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
-      Object.entries(raw)
-        .filter(([, row]) => row && typeof row === 'object' && row.learnerId === learnerId)
-        .forEach(([sessionId, row]) => out.push({ sessionId, day, row }));
+    for (const month of await this.#months()) {
+      let entries;
+      try { entries = await fs.readdir(path.join(this.#root(), month), { withFileTypes: true }); } catch { continue; }
+      for (const entry of entries.filter((candidate) => candidate.isFile() && candidate.name.endsWith('.yml'))) {
+        const sessionId = entry.name.slice(0, -4);
+        if (!isSafeSessionId(sessionId)) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const events = await this.#readEventsAt(month, sessionId);
+        const state = reduceSession(events);
+        if (state.learnerId !== learnerId) continue;
+        const last = events[events.length - 1];
+        out.push({ sessionId, day: events[0]?.at?.slice(0, 10) ?? null, row: {
+          learnerId: state.learnerId, unitId: state.unitId, state: state.state,
+          open: !state.terminal, result: state.outcome?.result ?? null,
+          gradedPercent: state.gradedPercent ?? null, updatedAt: last?.at ?? null,
+        } });
+      }
     }
-    return out; // days already newest-first
+    return out; // months already newest-first
   }
 
   /** @inheritdoc */
@@ -228,27 +211,14 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
     const rows = await this.#rowsFor(learnerId);
     const facts = [];
     for (const { sessionId, day, row } of rows) {
-      let gradedPercent = row.gradedPercent ?? null;
-      // Pre-upgrade row: index written before gradedPercent was added.
-      // Production has live terminal sessions with no gradedPercent key
-      // but real percent values in their event logs. Recompute to restore
-      // the grade for consumers (planDailyAgenda, etc).
-      if (!('gradedPercent' in row)) {
-        const events = await this.#readEventsAt(day, sessionId);
-        const state = reduceSession(events);
-        gradedPercent = state.gradedPercent ?? null;
-      }
       facts.push({
         sessionId,
         learnerId: row.learnerId,
         unitId: row.unitId ?? null,
         state: row.state ?? null,
-        // A session written before the index carried a result reduces to
-        // `open: true, result: null`, which reads as "unfinished" — the safe
-        // direction: worst case a completed unit is offered again.
         terminal: row.open === false,
         outcome: row.result ? { result: row.result } : null,
-        gradedPercent,
+        gradedPercent: row.gradedPercent ?? null,
         day,
         updatedAt: row.updatedAt ?? null,
       });

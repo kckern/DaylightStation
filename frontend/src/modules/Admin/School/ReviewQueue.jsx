@@ -3,7 +3,7 @@
  *
  * The console grades through a PERSON on purpose. A smudged bubble row, an empty
  * one, a written sentence with no answer key behind it — none of those get a
- * machine verdict. They land in `apps/school/review/{sessionId}.yml` and the
+ * machine verdict. They land in `school/runtime/review/{sessionId}.yml` and the
  * session stops until a grown-up says correct or incorrect. Until this page
  * existed, that queue had no door.
  *

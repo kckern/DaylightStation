@@ -3,7 +3,7 @@
  * policy (see SchoolService). Mirrors YamlEconomyDatastore's layout:
  *   banks:         <dataDir>/content/school/{subject}/{work}/quizzes/{rest}.yml
  *   attempts:      <userDir>/apps/school/attempts/{YYYY-MM-DD}.yml  (append-only)
- *   quiz requests: <dataDir>/household/apps/school/quiz-requests.yml  (one household list —
+ *   quiz requests: <dataDir>/household/school/runtime/queues/quiz-requests.yml  (one household list —
  *                  NOT under a quizzes dir, where listBankIds would sweep it up)
  *
  * Banks live inside their WORK, beside that work's units and documents, the way
@@ -99,29 +99,34 @@ export class YamlSchoolDatastore {
     return path.join(this.#schoolDir(), subject, work);
   }
 
-  #courseV2(subject, work) {
-    return loadYamlSafe(path.join(this.#workDir(subject, work), 'index'))?.schema === COURSE_V2;
+  #courseConfig(subject, work) {
+    const root = this.#workDir(subject, work);
+    return loadYamlSafe(path.join(root, '_index')) ?? loadYamlSafe(path.join(root, 'index')) ?? loadYamlSafe(path.join(root, 'course'));
   }
 
-  /** Every non-index YAML in a v2 lesson folder is a typed bank artifact. */
+  #courseV2(subject, work) {
+    return this.#courseConfig(subject, work)?.schema === COURSE_V2;
+  }
+
+  /**
+   * Every question-bank YAML inside a v2 course is a typed bank artifact.
+   * This is intentionally semantic discovery: compact `<lessonId>.yml` files
+   * and rich lesson directories both work, while the bank's stable `id` stays
+   * independent of its author-facing location.
+   */
   #v2BankEntries(subject, work) {
     if (!this.#courseV2(subject, work)) return [];
-    const root = path.join(this.#workDir(subject, work), 'units');
-    const entries = [];
-    let units = [];
-    try { units = fs.readdirSync(root, { withFileTypes: true }); } catch { return entries; }
-    for (const unit of units.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
-      const lessonsRoot = path.join(root, unit.name, 'lessons');
-      let lessons = [];
-      try { lessons = fs.readdirSync(lessonsRoot, { withFileTypes: true }); } catch { continue; }
-      for (const lesson of lessons.filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))) {
-        const dir = path.join(lessonsRoot, lesson.name);
-        for (const file of listYamlFiles(dir).filter((name) => name !== 'index')) {
-          entries.push({ id: `${subject}/${work}/${lesson.name}/${file}`, file: path.join(dir, file) });
-        }
-      }
+    const compactRoot = this.#workDir(subject, work);
+    const entries = new Map();
+    for (const file of listYamlFiles(compactRoot, { recursive: true })) {
+      if (['index', '_index'].includes(path.basename(file))) continue;
+      const base = path.join(compactRoot, file);
+      const raw = loadYamlSafe(base);
+      if (!raw || !['school.question-bank/v1', 'school.question-bank/v2'].includes(raw.schema)
+        || typeof raw.id !== 'string' || !raw.id) continue;
+      entries.set(raw.id, { id: raw.id, file: base });
     }
-    return entries;
+    return [...entries.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
 
   #works(subject) {
@@ -155,7 +160,7 @@ export class YamlSchoolDatastore {
   }
 
   #quizRequestsPath() {
-    return this.#configService.getHouseholdPath('school/quiz-requests');
+    return this.#configService.getHouseholdPath('school/runtime/queues/quiz-requests');
   }
 
   readQuizRequests() {
@@ -169,10 +174,10 @@ export class YamlSchoolDatastore {
 
   // Printing: an append-only log of completed jobs (feeds the rolling quota)
   // and a pending queue of jobs awaiting a grown-up's approval. Both are one
-  // household-wide list under household/apps/school (attribution is the per-entry
+  // household-wide list split between runtime state and retained history (attribution is the per-entry
   // userId), same shape as quiz-requests.
-  #printLogPath() { return this.#configService.getHouseholdPath('school/print-log'); }
-  #printPendingPath() { return this.#configService.getHouseholdPath('school/print-pending'); }
+  #printLogPath() { return this.#configService.getHouseholdPath('school/records/print/jobs'); }
+  #printPendingPath() { return this.#configService.getHouseholdPath('school/runtime/queues/print'); }
 
   readPrintLog() { return loadYamlSafe(this.#printLogPath()) || []; }
 
@@ -198,7 +203,7 @@ export class YamlSchoolDatastore {
       if (entry?.at && entry.at < cutoffIso) old.push(entry); else keep.push(entry);
     }
     if (!old.length) return 0;
-    const archivePath = this.#configService.getHouseholdPath('school/print-log.archive');
+    const archivePath = this.#configService.getHouseholdPath('school/records/print/archive');
     const archived = loadYamlSafe(archivePath) || [];
     saveYamlToPathAtomic(withYamlExt(archivePath), [...archived, ...old], { noRefs: true });
     saveYamlToPathAtomic(withYamlExt(this.#printLogPath()), keep, { noRefs: true });

@@ -26,7 +26,7 @@
  * TWO ROOTS. `--source-root` (default `content/school/learning-catalog/documents`) is
  * where hand-authored document CLASSES live, on the School catalog shelf
  * beside the `school.learning-document/v1` files; `--content-root` (default
- * `household/apps/school/print-documents`) is the ARTIFACT root — `published/`,
+ * `household/school/artifacts/print`) is the ARTIFACT root — `published/`,
  * `derived-banks/`, `allocations/` and nothing else. A non-absolute positional
  * resolves against the source root first and the content root second (see
  * `resolveDocumentPath`), which is what keeps a `published/<id>@<rev>.yml`
@@ -100,11 +100,13 @@ import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrin
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { rangesOverlap } from '#domains/school/documents/allocation.mjs';
 import { SAFE_WORKSHEET_INSTANCE_ID } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
+import { createSubjectIconResolver } from '#rendering/school/documents/assetResolver.mjs';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
 const EXIT_USAGE = 2;
 const ENTRYPOINT = fileURLToPath(import.meta.url);
+const resolveSubjectIcon = createSubjectIconResolver();
 
 const DENSITIES = new Set(['normal', 'compact']);
 const V2_LIKE_SCHEMAS = new Set([DOCUMENT_V2_SCHEMA, DOCUMENT_SOURCE_SCHEMA]);
@@ -128,6 +130,7 @@ const RENDER_FLAGS = new Set([
   'start-row',
   'fresh-card',
   'learner-id',
+  'preview-card',
 ]);
 const RELEASE_CARD_FLAGS = new Set([...COMMON_FLAGS, 'rows']);
 const LIST_CARDS_FLAGS = new Set([...COMMON_FLAGS, 'status', 'older-than']);
@@ -177,7 +180,7 @@ Options:
   --data-dir <path>      data root (default: $DAYLIGHT_BASE_PATH/data)
   --content-root <path>  ARTIFACT root, absolute or data-relative — where
                          published/, derived-banks/ and allocations/ live
-                         (default: household/apps/school/print-documents)
+                         (default: household/school/artifacts/print)
   --source-root <path>   authored SOURCE root, absolute or data-relative —
                          where hand-written document classes live, on the
                          learning-catalog shelf beside the learning documents
@@ -251,7 +254,7 @@ export function resolveSchoolDocsContentPaths({ flags = {}, env = process.env } 
   );
   const contentRoot = resolveFrom(
     dataDir,
-    valueFlag(flags['content-root'], '--content-root') ?? 'household/apps/school/print-documents',
+    valueFlag(flags['content-root'], '--content-root') ?? 'household/school/artifacts/print',
   );
   const sourceRoot = resolveFrom(
     dataDir,
@@ -441,6 +444,9 @@ function overridesContext(flags) {
   if (flags['fresh-card'] === true) context.freshCard = true;
   if (flags['start-row'] !== undefined) context.startRow = Number(flags['start-row']);
   if (flags['learner-id'] !== undefined) context.learnerId = flags['learner-id'];
+  if (flags['preview-card'] !== undefined) {
+    context.previewCard = { cardId: flags['preview-card'], startRow: 1, endRow: 50, firstUse: true };
+  }
   return context;
 }
 
@@ -577,7 +583,7 @@ export async function runRender({
   const allocationStore = cardMode
     ? new YamlAllocationStore({ directory: paths.contentRoot })
     : null;
-  const useCase = new RenderPrintDocument({ repository, banks, allocationStore });
+  const useCase = new RenderPrintDocument({ repository, banks, allocationStore, resolveAsset: resolveSubjectIcon });
 
   try {
     const result = await useCase.execute({ document, context: overridesContext(flags) });
@@ -614,7 +620,7 @@ export async function runRender({
 }
 
 /**
- * `<dataDir>/household/apps/school/worksheet-instances/<instanceId>.yml`.
+ * `<dataDir>/household/school/records/worksheets/<sessionId>.yml`.
  *
  * SINGLE-HOUSEHOLD ASSUMPTION: `household/` is hardcoded here, whereas the
  * canonical reader (`YamlWorksheetInstanceStore`) resolves the same directory
@@ -627,8 +633,17 @@ export async function runRender({
  * (`SAFE_WORKSHEET_INSTANCE_ID`) before it reaches this function — an
  * unvalidated id interpolated here is a path traversal.
  */
-function resolveWorksheetInstancePath(dataDir, instanceId) {
-  return path.join(dataDir, 'household/apps/school/worksheet-instances', `${instanceId}.yml`);
+async function resolveWorksheetInstancePath(dataDir, instanceId) {
+  const root = path.join(dataDir, 'household/school/records/worksheets');
+  let entries;
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return path.join(root, `${instanceId}.yml`); }
+  for (const entry of entries.filter((candidate) => candidate.isFile() && /\.ya?ml$/i.test(candidate.name))) {
+    const file = path.join(root, entry.name);
+    try {
+      if (yaml.load(fs.readFileSync(file, 'utf8'))?.id === instanceId) return file;
+    } catch { /* report the requested instance as missing; a corrupt sibling is unrelated */ }
+  }
+  return path.join(root, `${instanceId}.yml`);
 }
 
 /** Same rule the canonical `YamlWorksheetInstanceStore` applies, imported so the two cannot drift. */
@@ -667,7 +682,7 @@ export async function runReprint({ instanceId, outPath, paths }) {
     ]);
   }
 
-  const instancePath = resolveWorksheetInstancePath(paths.dataDir, instanceId);
+  const instancePath = await resolveWorksheetInstancePath(paths.dataDir, instanceId);
   let instance;
   try {
     instance = loadYamlDocument(instancePath);

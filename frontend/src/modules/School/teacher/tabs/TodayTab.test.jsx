@@ -9,6 +9,8 @@ vi.mock('../../schoolApi.js', () => ({
     teacherToday: vi.fn(),
     lifecycleReview: vi.fn(),
     learnerSessions: vi.fn(),
+    printableWorksheetSessions: vi.fn(),
+    composeWorksheets: vi.fn(),
     progress: vi.fn(),
     printPending: vi.fn(),
     quizRequests: vi.fn(),
@@ -52,6 +54,11 @@ beforeEach(() => {
     { sessionId: 'ses_1', itemId: 'q3', learnerId: 'user_2', prompt: 'Explain photosynthesis', given: 'plants eat light', questionNumber: 3 },
   ] }));
   schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [{ sessionId: 'ses_1', state: 'graded', unitId: 'math.01' }] }));
+  schoolApi.printableWorksheetSessions.mockResolvedValue(ok({ sessions: [
+    { sessionId: 'ses_print_1', title: 'Fractions', subject: 'math', courseId: 'fractions', state: 'created' },
+    { sessionId: 'ses_print_2', title: 'Atoms', subject: 'science', courseId: 'chemistry', state: 'created' },
+  ] }));
+  schoolApi.composeWorksheets.mockResolvedValue(ok({ parts: [{ compositionId: 'composed/user_3/ws-123' }] }));
   schoolApi.progress.mockResolvedValue(ok({ recentScores: [] }));
   schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
     { subject: 'science', servedToday: false, next: { title: 'Pokemon Basics' } },
@@ -77,6 +84,20 @@ describe('TodayTab', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /User_2/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /User_2/ })); });
     await waitFor(() => expect(schoolApi.learnerSessions).toHaveBeenCalledWith('user_2', { window: 'today' }));
+  });
+
+  it('a claimed teacher can select only printable current sessions and combine them', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'kckern');
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /User_2/ })).toBeTruthy());
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /User_2/ })); });
+    await waitFor(() => expect(schoolApi.printableWorksheetSessions).toHaveBeenCalledWith('user_2'));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Fractions/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Atoms/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Print 2 selected worksheets/ }));
+    await waitFor(() => expect(schoolApi.composeWorksheets).toHaveBeenCalledWith({
+      sessionIds: ['ses_print_1', 'ses_print_2'], issuedBy: 'kckern', pin: null,
+    }));
   });
 
   it('one failing panel leaves its siblings rendered', async () => {

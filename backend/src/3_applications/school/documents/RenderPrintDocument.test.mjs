@@ -1500,6 +1500,26 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(stored[0].recordId).toBe(result.allocation.recordId);
   });
 
+  it('persists immutable section row ownership for a composed card', async () => {
+    const allocationStore = fakeAllocationStore();
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: omrSourceDoc(3),
+      context: {
+        freshCard: true,
+        sectionAttribution: [
+          { id: 'lesson-a', itemIds: ['oq1', 'oq2'], sessionId: 'session-a', lessonId: 'a' },
+          { id: 'lesson-b', itemIds: ['oq3'], sessionId: 'session-b', lessonId: 'b' },
+        ],
+      },
+    });
+    const [record] = await allocationStore.findByCard(result.allocation.cardId);
+    expect(record.sections).toEqual([
+      expect.objectContaining({ id: 'lesson-a', rowRange: { start: 1, end: 2 }, sessionId: 'session-a' }),
+      expect.objectContaining({ id: 'lesson-b', rowRange: { start: 3, end: 3 }, sessionId: 'session-b' }),
+    ]);
+  });
+
   it('the page footer carries the card number on EVERY page, page 1 included (end-to-end, real extracted PDF text)', async () => {
     const allocationStore = fakeAllocationStore();
     const useCase = new RenderPrintDocument({ allocationStore });

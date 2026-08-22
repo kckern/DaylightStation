@@ -1,0 +1,219 @@
+/**
+ * IssueComposedWorksheet — one physical worksheet for several current lesson
+ * sessions.  It deliberately reuses the ordinary immutable worksheet-instance
+ * and allocation records: composition changes paper layout, never grading
+ * ownership.
+ */
+import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { createWorksheetInstance, worksheetInstanceDocument, composedWorksheetDocument } from '#domains/school/questionBankV2.mjs';
+import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
+import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
+import { slugify } from '#domains/school/documents/receipts.mjs';
+import { shortId } from '#domains/core/utils/id.mjs';
+
+const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
+
+function answerSheetPolicy(raw) {
+  const reuse = raw?.reuse ?? 'after_scan';
+  const capacity = raw?.capacity ?? 50;
+  if (!['never', 'after_scan', 'school_day', 'until_full'].includes(reuse)) throw new Error(`unknown answer-sheet reuse policy '${reuse}'`);
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) throw new Error('answer-sheet capacity must be 1..50');
+  return { reuse, capacity };
+}
+
+function chunksForCard(sections, capacity) {
+  const chunks = [];
+  let current = [];
+  let count = 0;
+  for (const section of sections) {
+    const size = section.instance.questions.length;
+    if (size > capacity) throw new Error(`lesson '${section.instance.lessonId}' exceeds one answer card`);
+    if (current.length && count + size > capacity) { chunks.push(current); current = []; count = 0; }
+    current.push(section); count += size;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function learnerSourceTitle(value) {
+  if (typeof value !== 'string') return null;
+  return value.replace(/\s+\b(?:EPUB|PDF|MOBI|HTML)\b/giu, '').trim() || null;
+}
+
+function learnerReading(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const cleaned = value.trim();
+  if (/\bassigned section\b|\b(?:EPUB|MOBI|HTML)\b|\.(?:epub|mobi|html?)\b/iu.test(cleaned)) return null;
+  return /^read\s*:/iu.test(cleaned) ? cleaned : `Read: ${cleaned}`;
+}
+
+export class IssueComposedWorksheet {
+  #curriculum; #sessions; #assignments; #worksheetInstances; #bankReader;
+  #printDocuments; #render; #allocations; #publish; #printer; #teacherGate; #clock; #logger; #policy;
+
+  constructor({
+    curriculum, sessions, assignments, worksheetInstances, bankReader,
+    printDocuments, renderPrintDocument, allocationStore, printer,
+    publishPrintDocument = null, answerSheetPolicy: policy = null,
+    teacherGate = null, clock = () => new Date(), logger = console,
+  } = {}) {
+    if (!curriculum || !sessions || !assignments || !worksheetInstances || !bankReader
+      || !printDocuments || !renderPrintDocument || !allocationStore || !printer) {
+      throw new Error('IssueComposedWorksheet requires curriculum, sessions, assignments, worksheetInstances, bankReader, printDocuments, renderPrintDocument, allocationStore, and printer');
+    }
+    this.#curriculum = curriculum; this.#sessions = sessions; this.#assignments = assignments;
+    this.#worksheetInstances = worksheetInstances; this.#bankReader = bankReader;
+    this.#printDocuments = printDocuments; this.#render = renderPrintDocument; this.#allocations = allocationStore;
+    this.#publish = publishPrintDocument ?? new PublishPrintDocument({ repository: printDocuments });
+    this.#printer = printer; this.#teacherGate = teacherGate;
+    this.#clock = clock; this.#logger = logger; this.#policy = answerSheetPolicy(policy);
+  }
+
+  async execute({ sessionIds, issuedBy = null, pin = null } = {}) {
+    const ids = [...new Set(Array.isArray(sessionIds) ? sessionIds : [])];
+    if (!ids.length) throw new Error('IssueComposedWorksheet requires one or more sessionIds');
+    // A combined paper handout is a teacher decision: it changes what is
+    // physically issued and can cause a printer dispatch.  Keep the server
+    // as the authority even when a console supplies a claimed teacher stamp.
+    this.#teacherGate?.assert({
+      userId: issuedBy, pin, action: 'worksheet.compose', context: { sessionIds: ids },
+    });
+    const nowIso = this.#clock().toISOString();
+    const prepared = [];
+    for (const sessionId of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      prepared.push(await this.#prepareSection({ sessionId, nowIso }));
+    }
+    const learnerId = prepared[0].state.learnerId;
+    if (!learnerId || prepared.some((entry) => entry.state.learnerId !== learnerId)) {
+      throw new Error('a composed worksheet must contain sessions for one learner');
+    }
+    const outputs = [];
+    const chunks = chunksForCard(prepared, this.#policy.capacity);
+    for (let index = 0; index < chunks.length; index += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      outputs.push(await this.#issueChunk({
+        sections: chunks[index], learnerId, nowIso, part: index + 1, parts: chunks.length,
+      }));
+    }
+    return { learnerId, parts: outputs, sessionIds: ids };
+  }
+
+  async #prepareSection({ sessionId, nowIso }) {
+    const state = reduceSession(await this.#sessions.readEvents(sessionId));
+    if (!state.sessionId || !ISSUABLE.has(state.state)) throw new Error(`session '${sessionId}' is not issuable`);
+    const unit = await this.#curriculum.getUnit(state.unitId);
+    if (!unit?.bank || unit.document) throw new Error(`session '${sessionId}' is not a bank-only lesson`);
+    const assignment = await this.#assignments.get(state.learnerId);
+    const course = (assignment?.courses ?? []).find((entry) => entry.courseId === unit.courseId
+      || Object.values(entry.enrollment?.lessonOrder ?? {}).flat().includes(unit.unitId));
+    const enrollmentId = course?.enrollment?.enrollmentId;
+    const profile = course?.profile ?? course?.enrollment?.profile;
+    if (!enrollmentId || !profile) throw new Error(`session '${sessionId}' has no active enrollment`);
+
+    let instance = await this.#worksheetInstances.findBySession(sessionId);
+    let created = false;
+    if (!instance) {
+      const bank = this.#bankReader.getBank(unit.bank);
+      if (!bank) throw new Error(`lesson '${unit.unitId}' has no question bank`);
+      instance = createWorksheetInstance({
+        id: `${slugify(unit.subject ?? 'school')}/${slugify(course.courseId ?? unit.courseId ?? 'course')}/ws-${slugify(sessionId)}`,
+        sessionId, bank, learnerId: state.learnerId, enrollmentId, lessonId: unit.unitId,
+        profile, seed: `${sessionId}:${state.variant ?? 0}`, issuedAt: nowIso,
+        itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
+      });
+      const published = await this.#publish.execute({ source: worksheetInstanceDocument(instance, {
+        title: unit.title, description: unit.description ?? null,
+        printedPages: unit.provenance?.printed_pages ?? [],
+      }) });
+      instance = { ...instance, documentId: published.id, documentRevision: published.rev };
+      created = true;
+    }
+    return {
+      id: `section-${slugify(sessionId)}`, instance, created, state, unit,
+      subjectId: unit.subject ?? 'school', courseId: unit.courseId ?? null,
+      subject: unit.subject ?? 'School', course: unit.courseTitle ?? unit.courseId ?? null,
+      breadcrumb: [unit.subject, unit.discipline, unit.topic].filter(Boolean).join(' › '),
+      title: unit.title, reading: learnerReading(unit.reading),
+      sourceTitle: unit.sourceTitle ?? learnerSourceTitle(unit.provenance?.source), passPercent: unit.passing?.percent ?? null,
+      printedPages: unit.provenance?.printed_pages ?? [],
+    };
+  }
+
+  async #issueChunk({ sections, learnerId, nowIso, part, parts }) {
+    const compositionId = `composed/${slugify(learnerId)}/ws-${shortId(10)}-${part}`;
+    const composition = composedWorksheetDocument({
+      id: compositionId, seed: `${nowIso}:${compositionId}`, title: 'Worksheet',
+      subtitle: parts > 1 ? `Part ${part} of ${parts}` : null, sections,
+    });
+    const published = await this.#publish.execute({ source: composition.source });
+    const document = await this.#printDocuments.getPublished(published.id, published.rev);
+    const learnerName = deriveLearnerName(learnerId);
+    const issueDate = deriveIssueDate(nowIso);
+    const rowsNeeded = sections.reduce((sum, section) => sum + section.instance.questions.length, 0);
+    const reusable = parts === 1 && typeof this.#allocations.findReusableCard === 'function'
+      ? await this.#allocations.findReusableCard({ learnerId, rowsNeeded, capacity: this.#policy.capacity, reuse: this.#policy.reuse })
+      : null;
+    let rendered;
+    try {
+      rendered = await this.#render.execute({
+        document,
+        context: {
+          ...(reusable ?? { freshCard: true }), learnerId, learnerName, date: issueDate,
+          sectionAttribution: composition.sections,
+        },
+      });
+    } catch (err) {
+      if (err.details?.allocation?.cardId) await this.#allocations.release({ cardId: err.details.allocation.cardId });
+      throw err;
+    }
+    const records = await this.#allocations.findByCard(rendered.allocation.cardId);
+    const allocation = records.find((record) => record.recordId === rendered.allocation.recordId);
+    const bySectionId = new Map((allocation?.sections ?? []).map((section) => [section.id, section]));
+    const newlyCreated = sections.filter((section) => section.created);
+    for (const section of newlyCreated) {
+      const owned = bySectionId.get(section.id);
+      if (!owned) throw new Error(`allocation did not retain section '${section.id}'`);
+      const instance = {
+        ...section.instance,
+        omr: { cardId: rendered.allocation.cardId, recordId: rendered.allocation.recordId, rowRange: owned.rowRange },
+      };
+      // eslint-disable-next-line no-await-in-loop
+      await this.#worksheetInstances.put(instance);
+      section.instance = instance;
+    }
+    let printResult;
+    try {
+      printResult = await this.#printer.printPdf(rendered.bytes, {
+        jobName: `school-${compositionId}`, user: learnerId, duplex: rendered.duplex ?? undefined,
+      });
+    } catch (err) {
+      await this.#allocations.release({ cardId: rendered.allocation.cardId });
+      throw err;
+    }
+    for (const section of sections) {
+      const type = section.created ? 'issued' : 'reprinted';
+      const { errors, event } = createEvent({
+        type, at: nowIso, sessionId: section.state.sessionId, artifactId: compositionId,
+        // Preview/capture printers can explicitly say no physical paper was
+        // dispatched.  Preserve the issue lineage but do not arm the real
+        // print cooldown from a sheet that never reached the tray.
+        confirmed: printResult?.confirmed !== false,
+      });
+      if (errors.length) throw new Error(`could not record composed issue: ${errors.join('; ')}`);
+      // eslint-disable-next-line no-await-in-loop
+      await this.#sessions.appendEvent(section.state.sessionId, event);
+    }
+    this.#logger.info?.('school.composed-worksheet.printed', {
+      compositionId, learnerId, sessionIds: sections.map((section) => section.state.sessionId),
+      cardId: rendered.allocation.cardId,
+    });
+    return {
+      compositionId, documentId: published.id, revision: published.rev,
+      allocation: rendered.allocation, pageCount: rendered.pageCount,
+      sessionIds: sections.map((section) => section.state.sessionId),
+    };
+  }
+}
+
+export default IssueComposedWorksheet;

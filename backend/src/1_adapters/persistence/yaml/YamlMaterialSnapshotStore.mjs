@@ -5,7 +5,7 @@
  * full Plex rebuild (~26s: the provider serializes requests server-side, so
  * concurrency can't shrink it — only persistence can).
  *
- *   <dataDir>/household/apps/school/cache/materials.yml
+ *   <runtime cache>/school/materials.yml
  *   { [materialId]: { fetchedAt: ISO, full: {...} } }
  *
  * This file is a CACHE, not a record — every byte is regenerable from the
@@ -36,8 +36,8 @@ export class YamlMaterialSnapshotStore {
   #flushTimer = null;
 
   constructor(config = {}) {
-    if (!config.configService || typeof config.configService.getHouseholdPath !== 'function') {
-      throw new InfrastructureError('YamlMaterialSnapshotStore requires configService with getHouseholdPath()', {
+    if (!config.configService || typeof config.configService.getRuntimeCachePath !== 'function') {
+      throw new InfrastructureError('YamlMaterialSnapshotStore requires configService with getRuntimeCachePath()', {
         code: 'MISSING_DEPENDENCY', dependency: 'configService',
       });
     }
@@ -45,7 +45,7 @@ export class YamlMaterialSnapshotStore {
     this.#logger = config.logger || console;
   }
 
-  #base() { return path.join(this.#configService.getHouseholdPath('school/cache'), 'materials'); }
+  #base() { return path.join(this.#configService.getRuntimeCachePath('school'), 'materials'); }
 
   #serialize(full) {
     if (!(full?.trackParents instanceof Map)) return full;
@@ -70,11 +70,11 @@ export class YamlMaterialSnapshotStore {
       try {
         raw = loadYaml(base);
       } catch (err) {
-        this.#logger.error?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: err?.message });
+        this.#logger.warn?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: err?.message });
         raw = null;
       }
       if (raw != null && (typeof raw !== 'object' || Array.isArray(raw))) {
-        this.#logger.error?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: 'not a mapping' });
+        this.#logger.warn?.('school.material.snapshot-corrupt', { file: `${base}.yml`, error: 'not a mapping' });
         raw = null;
       }
     }

@@ -11,7 +11,7 @@ import {
 describe('shared School learning-loop composition', () => {
   it('wires one surface-neutral durable loop beneath the School app state root', () => {
     const configService = {
-      getHouseholdAppPath: (app, relative) => path.join('/state', app, relative),
+      getHouseholdPath: (relative) => path.join('/state', relative),
     };
     const loop = createSchoolLearningLoop({
       configService,
@@ -26,7 +26,7 @@ describe('shared School learning-loop composition', () => {
 
   it('wires idempotent probe interactions when shared School evidence is available', () => {
     const loop = createSchoolLearningLoop({
-      configService: { getHouseholdAppPath: (app, relative) => path.join('/state', app, relative) },
+      configService: { getHouseholdPath: (relative) => path.join('/state', relative) },
       evidenceRepository: { appendEvidence: () => {}, listEvidence: () => [] },
       learnerDirectory: { hasLearner: () => true },
     });

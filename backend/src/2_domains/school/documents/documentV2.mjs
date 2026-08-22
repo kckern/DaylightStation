@@ -211,7 +211,7 @@ export function validateDocumentV2(raw, { allowAnswers = false } = {}) {
   if (!rawHeaderValid) errors.push('header must be a mapping');
   const rawHeader = rawHeaderValid && raw.header ? raw.header : {};
   const header = { ...preset };
-  for (const field of ['name', 'date', 'scoreBox', 'metaFirst', 'rule']) {
+  for (const field of ['name', 'date', 'title', 'scoreBox', 'metaFirst', 'rule']) {
     if (rawHeader[field] === undefined) continue;
     if (typeof rawHeader[field] !== 'boolean') errors.push(`header.${field} must be a boolean`);
     else header[field] = rawHeader[field];
