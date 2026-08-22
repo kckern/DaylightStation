@@ -27,10 +27,15 @@ vi.mock('../../../lib/api.mjs', () => ({
   }),
 }));
 
-import { SearchProvider, useSearchContext, SCOPE_KEY_LAST } from './SearchProvider.jsx';
+import { SearchProvider, useSearchContext } from './SearchProvider.jsx';
+
+// Legacy persistence key from the pre-session-only scope behavior. No longer
+// exported by SearchProvider (nothing reads/writes it anymore) — a literal
+// here proves a value left over from an old session is inert.
+const LEGACY_SCOPE_KEY_LAST = 'media-scope-last';
 
 function Probe() {
-  const { scopes, currentScopeKey, currentScope, scopeError, setScopeKey } = useSearchContext();
+  const { scopes, currentScopeKey, currentScope, scopeError, setScopeKey, resetScope } = useSearchContext();
   return (
     <div>
       <span data-testid="scopes">{scopes.map((s) => s.key).join(',')}</span>
@@ -38,6 +43,8 @@ function Probe() {
       <span data-testid="current-params">{currentScope?.params ?? ''}</span>
       <span data-testid="scope-error">{scopeError ? scopeError.message : ''}</span>
       <button onClick={() => setScopeKey('video')} data-testid="pick-video">video</button>
+      <button onClick={() => setScopeKey('video-movies')} data-testid="pick-video-movies">video-movies</button>
+      <button onClick={() => resetScope()} data-testid="reset-scope">reset</button>
     </div>
   );
 }
@@ -55,22 +62,38 @@ describe('SearchProvider', () => {
     await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('all'));
   });
 
-  it('persists current scope to localStorage and restores on next mount', async () => {
+  it('ignores a stored legacy scope key and defaults to the first scope', async () => {
+    localStorage.setItem(LEGACY_SCOPE_KEY_LAST, 'video');
+    render(<SearchProvider><Probe /></SearchProvider>);
+    await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('all'));
+  });
+
+  it('does not persist setScopeKey across provider remounts', async () => {
     const { unmount } = render(<SearchProvider><Probe /></SearchProvider>);
     await waitFor(() => screen.getByTestId('pick-video'));
     act(() => { screen.getByTestId('pick-video').click(); });
     await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('video'));
-    expect(localStorage.getItem(SCOPE_KEY_LAST)).toBe('video');
+    expect(localStorage.getItem(LEGACY_SCOPE_KEY_LAST)).toBeNull();
     unmount();
 
     render(<SearchProvider><Probe /></SearchProvider>);
+    await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('all'));
+  });
+
+  it('resetScope returns to the first configured scope', async () => {
+    render(<SearchProvider><Probe /></SearchProvider>);
+    await waitFor(() => screen.getByTestId('pick-video'));
+    act(() => { screen.getByTestId('pick-video').click(); });
     await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('video'));
+    act(() => { screen.getByTestId('reset-scope').click(); });
+    await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('all'));
   });
 
   it('resolves currentScope for a child key (searches children, not just top level)', async () => {
     mockBehavior = 'children';
-    localStorage.setItem(SCOPE_KEY_LAST, 'video-movies');
     render(<SearchProvider><Probe /></SearchProvider>);
+    await waitFor(() => screen.getByTestId('pick-video-movies'));
+    act(() => { screen.getByTestId('pick-video-movies').click(); });
     await waitFor(() => expect(screen.getByTestId('current')).toHaveTextContent('video-movies'));
     expect(screen.getByTestId('current-params')).toHaveTextContent('type=movie');
   });

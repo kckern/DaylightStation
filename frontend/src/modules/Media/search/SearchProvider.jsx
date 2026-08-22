@@ -1,12 +1,11 @@
 // frontend/src/modules/Media/search/SearchProvider.jsx
 // Loads search scopes from the household media config, flattens parents +
-// children into one lookup tree, tracks and persists the current scope.
+// children into one lookup tree, tracks the current scope for this session
+// only. Scope is never persisted: every mount (and every resetScope() call)
+// starts catalog-wide, at the first configured scope.
 // See docs/reference/media/search-scopes.md.
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { STORAGE_KEYS } from '../constants.js';
-
-export const SCOPE_KEY_LAST = STORAGE_KEYS.SCOPE_LAST;
 
 const SearchContext = createContext(null);
 
@@ -14,8 +13,9 @@ export function SearchProvider({ children }) {
   const [scopes, setScopes] = useState([]);
   const [currentScopeKey, setCurrentScopeKey] = useState(null);
   const [scopeError, setScopeError] = useState(null);
+  const scopesRef = useRef([]);
 
-  // Flatten parent scopes + their children so a stored child key resolves and
+  // Flatten parent scopes + their children so a child key resolves and
   // currentScope can search the whole tree, not just the top level.
   const flatScopes = useMemo(
     () => scopes.flatMap((s) => [s, ...(Array.isArray(s.children) ? s.children : [])]),
@@ -28,17 +28,20 @@ export function SearchProvider({ children }) {
       if (cancelled) return;
       const loaded = Array.isArray(cfg?.searchScopes) ? cfg.searchScopes : [];
       setScopes(loaded);
-      const flat = loaded.flatMap((s) => [s, ...(Array.isArray(s.children) ? s.children : [])]);
-      const stored = localStorage.getItem(SCOPE_KEY_LAST);
-      const storedValid = stored && flat.find((s) => s.key === stored);
-      setCurrentScopeKey(storedValid ? stored : loaded[0]?.key ?? null);
+      scopesRef.current = loaded;
+      setCurrentScopeKey(loaded[0]?.key ?? null);
     }).catch((err) => { if (!cancelled) setScopeError(err); });
     return () => { cancelled = true; };
   }, []);
 
   const setScopeKey = useCallback((key) => {
     setCurrentScopeKey(key);
-    try { localStorage.setItem(SCOPE_KEY_LAST, key); } catch { /* ignore */ }
+  }, []);
+
+  // Returns to the catalog-wide default — the first scope in the loaded
+  // config, not a hardcoded string, since the tree is household config.
+  const resetScope = useCallback(() => {
+    setCurrentScopeKey(scopesRef.current[0]?.key ?? null);
   }, []);
 
   const currentScope = useMemo(
@@ -47,8 +50,8 @@ export function SearchProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ scopes, currentScopeKey, currentScope, scopeError, setScopeKey }),
-    [scopes, currentScopeKey, currentScope, scopeError, setScopeKey]
+    () => ({ scopes, currentScopeKey, currentScope, scopeError, setScopeKey, resetScope }),
+    [scopes, currentScopeKey, currentScope, scopeError, setScopeKey, resetScope]
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

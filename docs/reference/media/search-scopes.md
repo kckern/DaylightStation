@@ -73,17 +73,19 @@ filters them out. For Plex scopes, omit `capability=playable` and rely on
   the parent itself carries `params`) and leaves render as plain options.
 - Selecting any scope (parent-with-params or leaf) applies its `params` to
   every subsequent search request.
-- The last-used scope persists per browser and is restored on the next visit
-  (validated against the current scope tree; a vanished key falls back to the
-  default).
+- Scope is **session-only**: every provider mount starts catalog-wide, at the
+  first scope in the config (`all`). Nothing is persisted to localStorage, so
+  a scope chosen earlier — in this tab or a previous one — never silently
+  narrows a later search. `resetScope()` returns to that same catalog-wide
+  default on demand (e.g. every time the mobile search surface opens).
 - If the scope config fails to load, search still works catalog-wide; the
   search bar shows a small error indicator next to the selector.
 
 ### Persistence (localStorage)
 
-| Key | Value |
-|-----|-------|
-| `media-scope-last` | Key of the last-used scope. |
+Scope selection is not persisted. There is no localStorage key for it —
+the legacy `media-scope-last` key has been retired and, if present from an
+older session, is ignored.
 
 ## Code Pointers
 
