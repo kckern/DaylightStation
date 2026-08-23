@@ -256,3 +256,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-22 | fix/thermal-printer-flush | b05655611 | Thermal flush/raster fix + log timestamp offset (merged) |
 | 2026-08-22 | worktree-household-data-reorg | 7084e534c | Household data tree reorg: dead apps: block, sheets header, junk quarantine, _backups consolidation, DoNow household scoping, camera SSoT, feedback month partitioning |
 | 2026-08-22 | fix/preexisting-test-failures | 83b95dddf | Fixed 11 pre-existing stale test files; no production code changed |
+| 2026-08-22 | fix/laser-duplex-honesty | 3018a6f7f | Laser adapter reads printer's real sides-default; honest duplex reporting |
+| 2026-08-22 | fix/gate-vitest-failures | 5056a6036 | Fixed all 28 gate-failing test files; baseline 12 -> 0; 2 real production bugs |
