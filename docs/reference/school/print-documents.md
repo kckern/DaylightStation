@@ -737,8 +737,13 @@ visible.
 **The grading hook.** When a Home Assistant gateway is configured for the
 household, `SchoolGradingHookAdapter`
 (`backend/src/1_adapters/school/SchoolGradingHookAdapter.mjs`) fires one HA
-script on every terminal scan outcome — a signal in the room, not just on a
-screen or in the log store. `school.yml`:
+script on each of the four terminal scan outcomes below — a signal in the
+room, not just on a screen or in the log store. It does **not** fire on a
+card the store has never seen, a card whose records are all retired, or a
+scan that resolves to no live allocation at all (`unknownCard`, `deadCard`,
+no-allocation — see the diagnostics table further down); those are not
+outcomes of a resolved scan, they are scans that never reached one.
+`school.yml`:
 
 ```yaml
 grading_hook:
@@ -775,14 +780,27 @@ an HA template can write `{{ percent }}` without an `is defined` guard:
 | `items` | `[]` | ✓ | `[]` | `[]` |
 | `code` | `null` | `null` | ✓ | ✓ |
 
-\* `percent` is `null` whenever `total` is `0` or missing; otherwise
-`round(earned / total * 10000) / 100`, so it never comes through as `NaN`.
+\* `percent`, `earned`, and `total` are the **gradebook's own numbers** —
+`RecordCardScanOutcome` surfaces the row-count `percent`/`correctCount`/
+`totalCount` it just wrote into the session's `graded` event (the SAME
+numbers `reduceSession` turns into `gradedPercent`, which drives pass/fail,
+course grades, and the report card) onto the session object the consumer
+reads, and the consumer sends those on unchanged. They are deliberately
+**not** an independently computed points-based figure
+(`earnedPoints`/`totalPoints`) — on a weighted worksheet (rows worth
+different point values) the two disagree, and sending the points figure here
+let the room announce a different outcome than the report card recorded.
+`percent` is `null` only if the session bridge did not attach a number
+(defensive; the ordinary path always does); otherwise
+`round(correctCount / totalCount * 10000) / 100`, so it never comes through
+as `NaN`.
 
 For a composed multi-section worksheet, the hook fires **once per section**
 as each section independently reaches `graded` or lands in review — every
-fire carries that section's own `earned`/`total`/`percent`, never the whole
-card's aggregate score. A single-section (legacy) card fires once, same as
-any other outcome.
+fire carries that section's own row-count `earned`/`total`/`percent` (not the
+whole card's aggregate score), because `RecordCardScanOutcome` grades and
+bridges each section as its own independent session. A single-section
+(legacy) card fires once, same as any other outcome.
 
 **Home Assistant owns everything downstream of `result`.** This repo hands
 over the outcome and gets out of the way; HA branches on `result` (and
@@ -798,13 +816,29 @@ this repo's config.
 **The hook can never affect grading.** The consumer calls
 `gradingHook.fire(...)` fire-and-forget — never awaited into the grading
 path — with a `.catch(() => {})` at each call site as belt-and-suspenders
-for a hook that somehow rejects outright. The adapter itself never throws: a
-gateway failure returns `{ok:false, error}` instead. A circuit breaker opens
-after 5 consecutive gateway failures, backs off exponentially (capped at
-60s), and a success closes it again. There is no deduplication and no
-throttle — two learners each scoring 83% both deserve their own light, and
-three children scanning in succession must all fire, so nothing here
-collapses or drops a repeat.
+for a hook that somehow rejects outright. The adapter itself never throws:
+`fire()` always resolves, to `{ok:true, ...}` or `{ok:false, error}`.
+
+A "gateway failure" that arms the circuit breaker means **either** a thrown
+error **or** a returned `{ok:false, error}` — the real
+`HomeAssistantAdapter#callService` never throws at all; a downed HA, a bad
+token, or a missing domain/service all come back as `{ok:false, error}`, with
+no network call made in the last case. The adapter checks `result.ok` and
+throws internally when it's falsy, so both shapes land in the same inner
+`catch` and both count toward the breaker identically. (Before this was
+fixed, only a thrown error counted — a gateway that only ever returns
+`{ok:false}`, which is what the real one does, could never open the breaker
+at all, and every one of its failures logged as a `fired` success.)
+
+A circuit breaker opens after 5 consecutive gateway failures and backs off
+exponentially (capped at 60s). Mechanically, a success does **not** reset
+`backoffUntil` — the backoff window simply *elapses* (this is what gates the
+next attempt back in), and if that next attempt succeeds, `failureCount`
+zeroes; `backoffUntil` itself is never explicitly reset by a success, it is
+just already in the past by the time the next failure (if any) would
+recompute it. There is no deduplication and no throttle — two learners each
+scoring 83% both deserve their own light, and three children scanning in
+succession must all fire, so nothing here collapses or drops a repeat.
 
 Adapter-side logs: `school.grading_hook.fired` (script + result), `.skipped`
 (reason `not_configured` or `backoff`), `.failed`, `.circuit_open`, and
