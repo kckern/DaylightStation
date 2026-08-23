@@ -36,6 +36,7 @@
 import { DomainInvariantError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
 import { planRows, resolveAmbiguousCardId } from '#domains/school/documents/allocation.mjs';
 import { gradeAnswer } from '#domains/school/grading.mjs';
+import { creditsAsEraser, leniencyCap } from '#domains/school/documents/ambiguityLeniency.mjs';
 import { prepareV2Document, mergeBank } from './RenderPrintDocument.mjs';
 
 /**
@@ -242,6 +243,80 @@ function letterToChoice(item, letter) {
 }
 
 /**
+ * The exact inverse of `letterToChoice` above, against `item.answer` (spec
+ * §5.4 eraser-leniency — `ambiguityLeniency.mjs`'s `creditsAsEraser` needs
+ * the letter the answer key expects, not the choice VALUE `gradeRow` already
+ * resolved `given` into). `true_false` has no `choices` array to invert
+ * (spec §5.3's fixed Ⓐ True / Ⓑ False), so its two letters are hardcoded
+ * against the boolean `item.answer` directly, mirroring `gradeAnswer`'s own
+ * A='true'/B='false' mapping. Returns `null` — never a guess — when the
+ * letter can't be derived (an item with no `choices` array and not
+ * `true_false`, or an `answer` that isn't actually among `choices`, both
+ * refused elsewhere but defended here too since this function has no
+ * business assuming the input is already clean).
+ */
+function correctLetterFor(item) {
+  if (item.type === 'true_false') {
+    if (item.answer === true) return 'A';
+    if (item.answer === false) return 'B';
+    return null;
+  }
+  if (!Array.isArray(item.choices)) return null;
+  const index = item.choices.indexOf(item.answer);
+  return index === -1 ? null : (LETTERS[index] ?? null);
+}
+
+/**
+ * Promotes eraser-signature `ambiguous` rows to `correct`, cheapest-
+ * explanation first and capped per sheet (spec §5.4 eraser-leniency policy,
+ * 2026-08-22). Runs AFTER per-row grading (`gradeRow` stays a pure per-row
+ * function with no sheet-level knowledge) because the cap is a property of
+ * the SHEET — this record's own row count — not any one row.
+ *
+ * `rowContext` carries `{item, choiceCount}` for exactly the rows `gradeRow`
+ * marked `ambiguous` (built by the caller from data already resolved while
+ * grading — never re-fetched here). Rule 5 (deterministic cap spend) is
+ * explicit: rows are walked in ascending `row` order regardless of the
+ * incoming array's order, so the earliest questions always get first claim
+ * on the budget. A row that is not eligible, or is eligible but the budget
+ * is already spent, is returned completely untouched — same object,
+ * same status — so a non-lenient archetype (cap 0) or an ineligible row
+ * never has its shape perturbed by this pass at all.
+ */
+function applyLeniency({
+  results, archetype, rowContext, logger,
+}) {
+  let budget = leniencyCap({ archetype, rowCount: results.length });
+  if (budget <= 0) return results;
+
+  const promotedRows = new Set();
+  const byQuestionNumber = [...results].sort((a, b) => a.row - b.row);
+  for (const row of byQuestionNumber) {
+    if (budget <= 0) break;
+    if (row.status !== 'ambiguous') continue;
+    const context = rowContext.get(row.row);
+    if (!context) continue;
+    const correctLetter = correctLetterFor(context.item);
+    const eligible = creditsAsEraser({
+      item: { choiceCount: context.choiceCount }, given: row.given, correctLetter,
+    });
+    if (!eligible) continue;
+    promotedRows.add(row.row);
+    budget -= 1;
+    logger?.info?.('school.print.scan-leniency-applied', {
+      itemId: row.itemId, row: row.row, given: row.given, correctLetter, remainingBudget: budget,
+    });
+  }
+  if (promotedRows.size === 0) return results;
+
+  return results.map((row) => (promotedRows.has(row.row)
+    ? {
+      ...row, status: 'correct', earned: row.points, leniency: 'eraser',
+    }
+    : row));
+}
+
+/**
  * Row->item mapping drift (F4 review fix — "bank-select scan integrity vs
  * mutable external banks"): true when ANY of `record.rowItems`'s OWNED-row
  * entries disagrees with what `planRows` just re-derived for that same row —
@@ -289,8 +364,14 @@ function gradeRow(item, given, points) {
     };
   }
 
-  // multiple_choice / true_false: single-select. A double-mark is ambiguous
-  // regardless of what was marked — never guessed at (spec §5.4).
+  // multiple_choice / true_false: single-select. `gradeRow` itself never
+  // guesses at a double-mark — it stays a pure per-row function with no
+  // sheet-level knowledge (spec §5.4) — so every multi-mark single-select
+  // row grades `ambiguous` here, unconditionally. Bounded eraser-leniency
+  // (spec §5.4, 2026-08-22 policy: two marks, one correct, not every choice
+  // covered, capped per sheet) is a SEPARATE second pass over the whole
+  // sheet's results — see `applyLeniency` below, run by `#resolveRecord`
+  // AFTER every row here has been graded.
   if (Array.isArray(given)) {
     return {
       status: 'ambiguous', given, points, earned: 0,
@@ -711,7 +792,11 @@ export class ResolveCardScan {
       ? new Map(record.rowItems.map((entry) => [entry.row, entry.itemId]))
       : null;
 
-    const rowResults = plan.rows
+    // Rows `gradeRow` marked `ambiguous` stash their bank item + choiceCount
+    // here as they're graded — the exact (and only) data `applyLeniency`
+    // below needs to test the eraser signature, never re-fetched.
+    const rowContext = new Map();
+    const rawRowResults = plan.rows
       .filter((planned) => ownedRows.includes(planned.row))
       .map((planned) => {
         const itemId = recordedItemIdByRow?.get(planned.row) ?? planned.itemId;
@@ -723,6 +808,9 @@ export class ResolveCardScan {
         }
         const points = pointsForRow(prepared, planned.blockPath);
         const graded = gradeRow(item, answers[planned.row], points);
+        if (graded.status === 'ambiguous') {
+          rowContext.set(planned.row, { item, choiceCount: planned.choiceCount });
+        }
         return {
           row: planned.row,
           itemId,
@@ -736,6 +824,19 @@ export class ResolveCardScan {
           concepts: item.concepts ?? [],
         };
       });
+
+    // Bounded eraser-leniency (spec §5.4, 2026-08-22 policy): a second pass
+    // over the freshly graded rows, because the per-sheet cap is a property
+    // of THIS record's own row count, never a single row in isolation.
+    // `prepared.archetype` (spec §4.1, `documentV2.mjs`'s `ARCHETYPES`) is
+    // this record's own prepared document's archetype — the SAME field
+    // `RenderPrintDocument.mjs` reads for header/duplex presets — so a
+    // `worksheet` scan is graded lenient and a `quiz`/`infopage` scan stays
+    // exactly as strict as it always was (cap 0, this pass is then a no-op
+    // that returns `rawRowResults` untouched).
+    const rowResults = applyLeniency({
+      results: rawRowResults, archetype: prepared.archetype, rowContext, logger: this.#logger,
+    });
 
     const totalPoints = rowResults.reduce((sum, row) => sum + row.points, 0);
     const earnedPoints = rowResults.reduce((sum, row) => sum + row.earned, 0);

@@ -11,11 +11,15 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import SchoolApp from '#frontend/modules/School/SchoolApp.jsx';
 import { REJECT_WORD } from '#frontend/modules/School/selfService/Keypad.jsx';
 
-// Capture the WS subscriber so a `school.launch` broadcast can be pushed
-// through the REAL useSchoolLaunch hook (pattern: SchoolApp.launch.test.jsx).
-const h = vi.hoisted(() => ({ handlers: [] }));
+// Capture the WS subscribers, KEYED BY TOPIC, so a `school.launch` broadcast
+// can be pushed through the REAL useSchoolLaunch hook. SchoolApp mounts more
+// than one useWebSocketSubscription now (school.launch AND the Slice D scan
+// ceremony's `omr` topic) — a single flat slot would let the second
+// subscriber silently clobber the first's callback (pattern:
+// SchoolApp.launch.test.jsx).
+const h = vi.hoisted(() => ({ byTopic: {} }));
 vi.mock('#frontend/hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: (_topic, cb) => { h.handlers[0] = cb; },
+  useWebSocketSubscription: (topic, cb) => { h.byTopic[topic] = cb; },
 }));
 
 const selfServiceLog = vi.fn();
@@ -107,7 +111,7 @@ const MOVE_CARD = {
 
 beforeEach(() => {
   localStorage.clear();
-  h.handlers.length = 0;
+  h.byTopic = {};
   selfServiceLog.mockClear();
   selfServiceErrorLog.mockClear();
   openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { sessionId: 'ses_1' } });
@@ -422,11 +426,11 @@ describe('locked panel — school.launch still lands', () => {
     // `banks` lands on its own un-awaited promise, separate from the one that
     // gates the first render — fire before it resolves and onPortalLaunch
     // correctly (but flakily, from here) sees an empty list. Flush it first.
-    await waitFor(() => expect(h.handlers[0]).toBeTypeOf('function'));
+    await waitFor(() => expect(h.byTopic.school).toBeTypeOf('function'));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
     act(() => {
-      h.handlers[0]({ topic: 'school', type: 'school.launch', learnerId: 'kid1', target: { kind: 'bank', bankId: 'caps' } });
+      h.byTopic.school({ topic: 'school', type: 'school.launch', learnerId: 'kid1', target: { kind: 'bank', bankId: 'caps' } });
     });
 
     expect(await screen.findByText('WA?')).toBeInTheDocument();
