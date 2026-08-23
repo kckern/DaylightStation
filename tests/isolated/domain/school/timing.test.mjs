@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateTiming, materializeTiming, studyDate } from '#domains/school/timing.mjs';
+import { datedModuleState, evaluateTiming, materializeTiming, studyDate } from '#domains/school/timing.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 
@@ -93,5 +93,38 @@ describe('focus-day agenda allocation', () => {
       now: '2026-07-01T16:00:00Z', timezone: 'UTC',
     });
     expect(sections[0]).toMatchObject({ next: null, timingNotice: 'Ask a grown-up to continue or reschedule this work.' });
+  });
+});
+
+describe('datedModuleState', () => {
+  const window = { opensOn: '2026-09-14', closesOn: '2026-09-20' };
+
+  it('is upcoming before the window opens', () => {
+    expect(datedModuleState(window, { today: '2026-09-13' }).state).toBe('upcoming');
+  });
+
+  it('is available on the first and last day of the window', () => {
+    expect(datedModuleState(window, { today: '2026-09-14' }).state).toBe('available');
+    expect(datedModuleState(window, { today: '2026-09-20' }).state).toBe('available');
+  });
+
+  it('is catch_up after the window closes, however long ago', () => {
+    expect(datedModuleState(window, { today: '2026-09-21' }).state).toBe('catch_up');
+    expect(datedModuleState(window, { today: '2027-04-01' }).state).toBe('catch_up');
+  });
+
+  it('never returns dormant — dated backlog does not expire', () => {
+    expect(datedModuleState(window, { today: '2027-04-01' }).state).not.toBe('dormant');
+  });
+
+  it('rejects a malformed window rather than guessing', () => {
+    expect(() => datedModuleState({ opensOn: 'nope', closesOn: '2026-09-20' }, { today: '2026-09-15' }))
+      .toThrow(/window/);
+    expect(() => datedModuleState(window, { today: 'nope' })).toThrow(/today/);
+  });
+
+  it('rejects an inverted window', () => {
+    expect(() => datedModuleState({ opensOn: '2026-09-20', closesOn: '2026-09-14' }, { today: '2026-09-15' }))
+      .toThrow(/window closes before it opens/);
   });
 });
