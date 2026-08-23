@@ -211,6 +211,46 @@ describe('result score scale', () => {
   });
 });
 
+/**
+ * Per-question mark boxes (regression, 2026-08-22): a real child's 6/6 sheet
+ * printed as six tofu boxes (Roboto Condensed has no U+2713), and a 5/6 sheet
+ * always blamed the LAST wrong-looking box regardless of which question was
+ * actually missed. Both bugs live in the same `else` branch of the score-panel
+ * loop — one is "what gets drawn", the other is "which box gets which mark".
+ */
+describe('result score marks: vector, per-question', () => {
+  it('never draws the correct/incorrect mark as a font glyph — only vector strokes', async () => {
+    const { CanvasRenderingContext2D } = await import('canvas');
+    const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+    const texts = [];
+    CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...rest) {
+      texts.push(text);
+      return originalFillText.call(this, text, ...rest);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary',
+        headline: 'PASSED',
+        title: 'Fractions',
+        correctCount: 6,
+        totalCount: 6,
+        questionStart: 1,
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.fillText = originalFillText;
+    }
+    // Neither mark glyph this bug involved may ever reach fillText again:
+    // Roboto Condensed is missing U+2713 (✓), which is why a 6/6 sheet
+    // printed as tofu; × (U+00D7) happened to render, which is why only the
+    // check silently broke. Scoped to these two glyphs specifically — not
+    // "any non-ASCII fillText" — because the score line itself legitimately
+    // prints other non-ASCII punctuation (e.g. the "·" separator) that has
+    // nothing to do with this bug.
+    const glyphMarks = texts.filter((t) => t.includes('✓') || t.includes('×'));
+    expect(glyphMarks).toEqual([]);
+  });
+});
+
 describe("scanCodes: 'qr'", () => {
   const scanDoc = doc([{ type: 'scan_action', action: 'sch:ABCDEFGH23456789', label: 'Scan me' }]);
 
