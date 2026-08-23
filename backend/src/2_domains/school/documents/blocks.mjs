@@ -299,6 +299,13 @@ const VALIDATORS = {
     if (raw.questionStart !== undefined && (!Number.isInteger(raw.questionStart) || raw.questionStart < 1)) {
       push('result_summary questionStart must be an integer >= 1 when present');
     }
+    if (raw.marks !== undefined) {
+      if (!Array.isArray(raw.marks) || !raw.marks.length || raw.marks.some((m) => typeof m !== 'boolean')) {
+        push('result_summary marks must be a non-empty array of booleans when present');
+      } else if (Number.isInteger(raw.totalCount) && raw.marks.length !== raw.totalCount) {
+        push('result_summary marks length must equal totalCount when both are present');
+      }
+    }
     if (raw.percent !== undefined && (typeof raw.percent !== 'number' || !Number.isFinite(raw.percent))) {
       push('result_summary percent must be a finite number when present');
     }

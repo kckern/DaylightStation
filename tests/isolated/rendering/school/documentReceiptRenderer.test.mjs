@@ -249,6 +249,52 @@ describe('result score marks: vector, per-question', () => {
     const glyphMarks = texts.filter((t) => t.includes('✓') || t.includes('×'));
     expect(glyphMarks).toEqual([]);
   });
+
+  it('marks box 1 wrong when ONLY question 1 is wrong — never the trailing boxes', async () => {
+    const { CanvasRenderingContext2D } = await import('canvas');
+    const originalStroke = CanvasRenderingContext2D.prototype.strokeRect;
+    const originalFill = CanvasRenderingContext2D.prototype.fillRect;
+    const strokedBoxes = [];
+    const filledBoxes = [];
+    CanvasRenderingContext2D.prototype.strokeRect = function patchedStrokeRect(x, y, w, h) {
+      strokedBoxes.push({ x, y, w, h });
+      return originalStroke.call(this, x, y, w, h);
+    };
+    CanvasRenderingContext2D.prototype.fillRect = function patchedFillRect(x, y, w, h) {
+      filledBoxes.push({ x, y, w, h });
+      return originalFill.call(this, x, y, w, h);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary',
+        headline: 'TRY AGAIN',
+        title: 'Fractions',
+        correctCount: 5,
+        totalCount: 6,
+        questionStart: 1,
+        // Per-question evidence: only question 1 (index 0) is wrong.
+        marks: [false, true, true, true, true, true],
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.strokeRect = originalStroke;
+      CanvasRenderingContext2D.prototype.fillRect = originalFill;
+    }
+    // Every question box gets exactly one strokeRect outline, left to right,
+    // in question order — this is the panel's own box-position ground truth,
+    // independent of which are marked wrong.
+    const questionBoxes = strokedBoxes.filter((b) => b.w === b.h && b.w > 20 && b.w < 60);
+    expect(questionBoxes).toHaveLength(6);
+    const boxSize = questionBoxes[0].w;
+    // The WRONG indicator is the single solid box-sized knockout fill (the
+    // black square the X strokes over) — distinct from the identity panel,
+    // score-panel border, and outcome badge, none of which are box-sized
+    // squares.
+    const wrongFills = filledBoxes.filter((b) => b.w === boxSize && b.h === boxSize);
+    expect(wrongFills).toHaveLength(1);
+    // Box 1 (leftmost, first stroked) is the one that's wrong — not a box at
+    // the tail, which is what `index < correctCount` would have drawn.
+    expect(wrongFills[0].x).toBe(questionBoxes[0].x);
+  });
 });
 
 describe("scanCodes: 'qr'", () => {

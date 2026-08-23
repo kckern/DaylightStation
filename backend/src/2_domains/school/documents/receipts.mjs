@@ -421,11 +421,22 @@ export function agendaDocument({
  * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
  *   `reviewNoteLines`) — a grown-up's written feedback on this session's
  *   review items, reaching the child on the SAME receipt as the score.
+ * @param {boolean[]} [args.marks] per-question correctness, ONE entry per
+ *   question in printed order (`questionStart`-relative). When present and
+ *   `marks.length === totalCount`, the renderer marks box N from
+ *   `marks[N - questionStart]` instead of filling boxes left-to-right by
+ *   `correctCount` — the positional fill claims "the LAST wrong questions
+ *   were wrong", which is only true when the misses happen to be at the end
+ *   (regression: a child's paper missed question 7 of 12; the receipt's
+ *   numbered boxes blamed 11 and 12). Omitted when the caller has no
+ *   per-question evidence — the renderer falls back to the positional fill
+ *   rather than mis-index a partial array.
  * @returns {object}
  */
 export function resultDocument({
   sessionId, unitTitle, result, percent = null, passingPercent = null, objectives = [],
   correctCount = null, totalCount = null, questionStart = null, progress = null,
+  marks = null,
   subjectIcon = null,
   taxonomy = null,
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
@@ -441,6 +452,7 @@ export function resultDocument({
     ...(Number.isInteger(correctCount) ? { correctCount } : {}),
     ...(Number.isInteger(totalCount) ? { totalCount } : {}),
     ...(Number.isInteger(questionStart) ? { questionStart } : {}),
+    ...(Array.isArray(marks) && marks.length ? { marks } : {}),
     ...(progress ? { progress } : {}),
     ...(isNonEmptyString(subjectIcon) ? { icon: subjectIcon } : {}),
     ...(isNonEmptyString(learnerName) ? { learnerName } : {}),

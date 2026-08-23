@@ -317,6 +317,18 @@ export class CloseSessionOutcome {
       const zone = String(question.source?.zone ?? '').replaceAll(/[.-]/g, ' ');
       return [`${row}: review ${[page, zone].filter(Boolean).join(' · ')}.`];
     });
+    // Per-question marks for the result receipt's numbered score boxes —
+    // straight off the same evidence `hints` above already reads (this
+    // worksheet instance's own roster, cross-checked against the scan's own
+    // `missedItemIds`), NOT a left-to-right fill by `correctCount`. A
+    // positional fill under a NUMBERED box makes a specific, false claim
+    // about which question was wrong whenever the misses aren't the last
+    // ones on the sheet. Only trusted when it accounts for every graded
+    // question — a partial/mismatched roster falls back (in the renderer) to
+    // the old positional fill rather than mis-index a short array.
+    const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
+      ? worksheet.questions.map((question) => !missed.has(question.itemId))
+      : null;
     const document = resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
@@ -325,6 +337,7 @@ export class CloseSessionOutcome {
       correctCount: state.gradedCorrectCount,
       totalCount: state.gradedTotalCount,
       questionStart: worksheet?.omr?.rowRange?.start ?? null,
+      marks,
       passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
       progress,
       subjectIcon: unit?.subject ?? null,
