@@ -50,10 +50,13 @@ export function sheetMusicViewPath(basePath, contentId) {
  * @param {(path: string) => void} args.navigate
  * @returns {boolean} true when it navigated, false when it warned + no-op'd
  */
-export function openPianoContent({ contentId, basePath, navigate }) {
+export function openPianoContent({ contentId, basePath, navigate, play = null }) {
   if (isSheetMusicContentId(contentId)) {
-    logger().info('piano-content-open', { contentId, mode: 'sheetmusic' });
-    navigate(sheetMusicViewPath(basePath, contentId));
+    logger().info('piano-content-open', { contentId, mode: 'sheetmusic', play });
+    // `play` rides as a query param the viewer reads once: ScorePlayer switches
+    // to that mode and auto-starts when the score is engraved and ready.
+    const suffix = play ? `?play=${encodeURIComponent(play)}` : '';
+    navigate(sheetMusicViewPath(basePath, contentId) + suffix);
     return true;
   }
   logger().warn('piano-launch-content-open-unreachable', { contentId });

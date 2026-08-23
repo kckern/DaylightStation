@@ -67,7 +67,21 @@ describe('openPianoContent', () => {
 
     expect(opened).toBe(true);
     expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic/view/hymn:12');
-    expect(info).toHaveBeenCalledWith('piano-content-open', { contentId: 'hymn:12', mode: 'sheetmusic' });
+    expect(info).toHaveBeenCalledWith('piano-content-open', { contentId: 'hymn:12', mode: 'sheetmusic', play: null });
+  });
+
+  // Remote-play (2026-08-23): a `play` mode rides as a query param the viewer
+  // consumes once, so the bus can say "open this AND perform it".
+  it('appends ?play= when a play mode is given', () => {
+    const opened = openPianoContent({
+      contentId: 'files:docs/sheet-music/green-hill-zone.mxl',
+      basePath: '/piano', navigate, play: 'listen',
+    });
+
+    expect(opened).toBe(true);
+    expect(navigate).toHaveBeenCalledWith(
+      '/piano/sheetmusic/view/files:docs/sheet-music/green-hill-zone.mxl?play=listen',
+    );
   });
 
   it('warns and no-ops for a contentId with no reachable resolver', () => {

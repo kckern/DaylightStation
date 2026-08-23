@@ -229,7 +229,7 @@ function KioskLaunchListener() {
   const navigate = useNavigate();
   const { basePath } = usePianoKioskConfig();
   const onPianoOpen = useCallback(
-    (contentId) => { openPianoContent({ contentId, basePath, navigate }); },
+    (contentId, { play = null } = {}) => { openPianoContent({ contentId, basePath, navigate, play }); },
     [basePath, navigate]
   );
   useKioskLaunchCommand({ onPianoOpen });

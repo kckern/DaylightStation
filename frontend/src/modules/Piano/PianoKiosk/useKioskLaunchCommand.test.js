@@ -192,9 +192,34 @@ describe('useKioskLaunchCommand', () => {
       mount({ onPianoOpen });
       await deliver({ deviceId: 'yellow-room-tablet', contentId: 'hymn:12', type: 'piano.launch' });
 
-      expect(onPianoOpen).toHaveBeenCalledWith('hymn:12');
+      expect(onPianoOpen).toHaveBeenCalledWith('hymn:12', { play: null });
       expect(h.DaylightAPI).not.toHaveBeenCalled();
       expect(h.launchIntent).not.toHaveBeenCalled();
+    });
+
+    // The remote-PLAY arm (2026-08-23): the bus can ask the kiosk not just to
+    // open a score but to perform it. `play` rides through to openPianoContent,
+    // which turns it into ?play= for ScorePlayer's one-shot auto-start.
+    it('passes a play hint through to onPianoOpen', async () => {
+      const onPianoOpen = vi.fn();
+      mount({ onPianoOpen });
+      await deliver({
+        deviceId: 'yellow-room-tablet', contentId: 'files:docs/x.mxl',
+        type: 'piano.launch', play: 'listen',
+      });
+
+      expect(onPianoOpen).toHaveBeenCalledWith('files:docs/x.mxl', { play: 'listen' });
+    });
+
+    it('ignores a non-string play hint rather than passing junk downstream', async () => {
+      const onPianoOpen = vi.fn();
+      mount({ onPianoOpen });
+      await deliver({
+        deviceId: 'yellow-room-tablet', contentId: 'hymn:12',
+        type: 'piano.launch', play: { evil: true },
+      });
+
+      expect(onPianoOpen).toHaveBeenCalledWith('hymn:12', { play: null });
     });
 
     it('ignores a piano.launch addressed to a different device', async () => {

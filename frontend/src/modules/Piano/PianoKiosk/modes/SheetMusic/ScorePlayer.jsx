@@ -180,7 +180,19 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   const [layout, setLayout] = useState({ events: [], notes: [], steps: [], measures: [], tempoEntries: [], width: 0, height: 0, flow: null, scale: null, transpose: null });
   const [step, setStep] = useState(0);
+  // Remote-play hint (?play=listen|learn|polish|perform), set by a bus-dispatched
+  // `piano.launch` (openPianoContent). Read ONCE at mount: a later in-app
+  // navigation must not re-trigger it. Overrides the restored per-score mode —
+  // the dispatcher asked for a performance, not for where practice left off.
+  const autoplayMode = useMemo(() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('play');
+      return VALID_MODES.includes(p) ? p : null;
+    } catch { return null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [mode, setMode] = useState(() => {
+    if (autoplayMode) return autoplayMode;
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
@@ -1805,6 +1817,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // NOTE: reads the live cursor via `stepRef.current` (mirrors `step`), NOT the
     // `step` closure — so `step` is deliberately OUT of the dep array.
   }, [countIn, transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, logger, stepTimeline, tempoMap, tempoMult, parsed, tapIntent]);
+
+  // Remote-play auto-start: once the score is engraved and the transport is
+  // ready, press play exactly the way a finger would (same toggleRun, same
+  // count-in rules). One-shot — a user pausing afterwards stays paused.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!autoplayMode || autoStartedRef.current) return;
+    if (!(events.length > 0 && layoutFresh) || running) return;
+    autoStartedRef.current = true;
+    logger.info('score.autoplay', { play: autoplayMode });
+    toggleRun();
+  }, [autoplayMode, events.length, layoutFresh, running, toggleRun, logger]);
 
   // Toggle a staff's active state — the chip fallback for >2 staves. One branch,
   // every mode (wave-3 A): Learn/Polish need ≥1 active staff or the all-notes rule
