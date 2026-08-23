@@ -184,6 +184,54 @@ describe('DoNow Policy — dispatch decision', () => {
       });
     });
 
+    // Anonymous-occupant surfaces (2026-08-23 field bug). The piano kiosk's
+    // MidiPresenceTracker reports state:'active' with occupantId ALWAYS null —
+    // it knows the piano is in use, never by whom. Before this case, such an
+    // approval could never resolve: it re-pended once, then denied, so the
+    // "we asked a grown-up" path was a dead end and the surface unreachable
+    // whenever anyone had touched the piano within the 5-minute TTL.
+    describe('anonymous occupant (surface cannot identify who is there)', () => {
+      it('both pending and current occupant null → dispatch (the parent approved THIS situation)', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'active', occupantId: null },
+          learnerId: null,
+          pendingOccupant: null,
+          repended: false,
+        });
+        expect(result).toBe('dispatch');
+      });
+
+      it('anonymous + a learnerId still dispatches — no name was ever on offer', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'active', occupantId: null },
+          learnerId: 'alice',
+          pendingOccupant: null,
+          repended: false,
+        });
+        expect(result).toBe('dispatch');
+      });
+
+      it('does NOT loosen identified surfaces: named pending → anonymous now still re-pends', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'active', occupantId: null },
+          learnerId: 'alice',
+          pendingOccupant: 'bob',
+          repended: false,
+        });
+        expect(result).toBe('repend');
+      });
+
+      it('does NOT loosen identified surfaces: anonymous pending → named now still re-pends', () => {
+        const result = decideOnApprove({
+          occupancy: { state: 'active', occupantId: 'charlie' },
+          learnerId: 'alice',
+          pendingOccupant: null,
+          repended: false,
+        });
+        expect(result).toBe('repend');
+      });
+    });
+
     describe('different occupant', () => {
       it('different occupant first time → repend', () => {
         const result = decideOnApprove({
@@ -229,14 +277,24 @@ describe('DoNow Policy — dispatch decision', () => {
     });
 
     describe('null pendingOccupant edge cases', () => {
-      it('occupant null when pendingOccupant null → repend (unknown changes require re-ask)', () => {
+      // REVERSED 2026-08-23 (was: 'repend — unknown changes require re-ask').
+      // Field evidence: the piano kiosk's presence tracker reports occupantId
+      // null ALWAYS, so this branch re-pended once and then DENIED every
+      // approval — the surface was unreachable whenever anyone had played in
+      // the last 5 minutes, and the parent's "yes" did nothing. The original
+      // rationale also does not survive scrutiny: when pendingOccupant was
+      // already null the parent was never shown a name, and a re-ask presents
+      // that IDENTICAL nameless state — there is no new fact to re-ask about.
+      // Re-pending only earns its keep when the NAME changed, which the
+      // neighbouring cases still cover.
+      it('occupant null when pendingOccupant null → dispatch (a re-ask would show the parent nothing new)', () => {
         const result = decideOnApprove({
           occupancy: { state: 'active', occupantId: null },
           learnerId: 'alice',
           pendingOccupant: null,
           repended: false,
         });
-        expect(result).toBe('repend');
+        expect(result).toBe('dispatch');
       });
 
       it('occupant null when pendingOccupant is string → different, first time → repend', () => {
