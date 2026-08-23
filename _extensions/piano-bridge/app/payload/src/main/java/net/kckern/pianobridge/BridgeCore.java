@@ -106,6 +106,7 @@ public class BridgeCore {
     private TouchPulser touchPulser;
     private KioskWatchdog kioskWatchdog;
     private KioskSettingsGuard kioskSettingsGuard;
+    private Heartbeat heartbeat;
 
     /**
      * Wall-clock ms of the last POST /update. The kiosk-settings guard stands down for
@@ -153,13 +154,23 @@ public class BridgeCore {
 
         if (controlServer == null) {
             controlServer = new ControlServer(this);
-            try {
-                // 0 timeout = no socket read timeout; daemon thread.
-                controlServer.start(0, true);
-                Log.i(TAG, "ControlServer started on port " + ControlServer.PORT);
-            } catch (IOException e) {
-                Log.e(TAG, "ControlServer failed to start", e);
+            // On a hot swap the OLD payload's server has JUST been stopped and its
+            // socket can still be closing, so the first bind races it (EADDRINUSE,
+            // seen 2026-08-23 on the p4 rollback). Retry briefly rather than leave
+            // :8770 dead until the next restart.
+            IOException last = null;
+            for (int attempt = 1; attempt <= 10; attempt++) {
+                try {
+                    controlServer.start(0, true); // 0 timeout = no socket read timeout; daemon thread.
+                    Log.i(TAG, "ControlServer started on port " + ControlServer.PORT + " (attempt " + attempt + ")");
+                    last = null;
+                    break;
+                } catch (IOException e) {
+                    last = e;
+                    try { Thread.sleep(300L); } catch (InterruptedException ignored) { break; }
+                }
             }
+            if (last != null) Log.e(TAG, "ControlServer failed to start after retries", last);
         }
 
         startBleMidi();
@@ -183,6 +194,15 @@ public class BridgeCore {
         } else {
             kioskSettingsGuard.updateConfig(config);
         }
+
+        // Outbound heartbeat — the only thing the tablet says unprompted. Same
+        // create-once / update-config lifecycle as the guards.
+        if (heartbeat == null) {
+            heartbeat = new Heartbeat(this, config);
+            heartbeat.start();
+        } else {
+            heartbeat.updateConfig(config);
+        }
     }
 
     /** Tear down cleanly (before a payload swap or shell shutdown). */
@@ -190,6 +210,7 @@ public class BridgeCore {
         Log.i(TAG, "BridgeCore stopping");
         if (kioskWatchdog != null) { kioskWatchdog.stop(); kioskWatchdog = null; }
         if (kioskSettingsGuard != null) { kioskSettingsGuard.stop(); kioskSettingsGuard = null; }
+        if (heartbeat != null) { heartbeat.stop(); heartbeat = null; }
         CrashLog.markCleanShutdown(); // so the next start isn't misread as a crash
         if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
         if (a2dpConnector != null) { a2dpConnector.stop(); a2dpConnector = null; }
@@ -548,6 +569,10 @@ public class BridgeCore {
 
     public boolean isMidiWriteOpen() { return midiWriteOpen; }
 
+    public boolean isMidiPortOpen() { return midiPortOpen; }
+
+    public Heartbeat getHeartbeat() { return heartbeat; }
+
     public String getMidiWriteLastError() { return midiWriteLastError; }
 
     /** The port-retry executor, created on first use. Shared by the read and write
@@ -605,6 +630,7 @@ public class BridgeCore {
         config = DeviceConfig.load(ctx);
         if (kioskWatchdog != null) kioskWatchdog.updateConfig(config);
         if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
+        if (heartbeat != null) heartbeat.updateConfig(config);
     }
 
     /** Re-read the device config (after a pbctl /config edit) and reconnect. */
@@ -623,6 +649,7 @@ public class BridgeCore {
         // Same for the kiosk-settings guard, so `pbctl config set` takes effect
         // without a restart and its repair counters survive the reload.
         if (kioskSettingsGuard != null) kioskSettingsGuard.updateConfig(config);
+        if (heartbeat != null) heartbeat.updateConfig(config);
     }
 
     private synchronized void closeMidi() {

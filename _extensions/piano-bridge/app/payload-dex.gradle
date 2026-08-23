@@ -48,12 +48,44 @@ project(':payload') {
             // their classes are NOT under classesDir and therefore not in the dex —
             // the payload links against the shell's copies at runtime.
             workingDir classesDir
-            commandLine([d8, '--min-api', '29', '--lib', androidJar,
-                         '--output', new File(outDir, jarName).absolutePath] +
-                        fileTree(classesDir).matching { include '**/*.class' }.files.collect { it.absolutePath })
+            // The class list MUST be resolved at EXECUTION time (doFirst), not when
+            // Gradle configures the task. At configuration time the compile hasn't
+            // run yet, so a class added since the last build is simply absent from
+            // the list — p4-heartbeat shipped without Heartbeat.class that way and
+            // the shell (correctly) rolled it back with NoClassDefFoundError.
+            doFirst {
+                def classes = fileTree(classesDir).matching { include '**/*.class' }.files.collect { it.absolutePath }
+                if (classes.isEmpty()) throw new GradleException("no classes under ${classesDir}")
+                commandLine([d8, '--min-api', '29', '--lib', androidJar,
+                             '--output', new File(outDir, jarName).absolutePath] + classes)
+                println "payloadDex: ${classes.size()} classes"
+            }
         }
 
-        task payloadSha(dependsOn: payloadDex) {
+        // Gate: the jar must contain the payload entry class AND every source file's
+        // class. Catches the configuration-time list bug above, and any future
+        // "compiled but not dexed" drift, BEFORE a jar is served to the tablet.
+        task payloadVerify(dependsOn: payloadDex) {
+            group = 'payload'
+            doLast {
+                def jar = new File(outDir, jarName)
+                def dexdump = new File(buildToolsDir, 'dexdump').absolutePath
+                def tmp = File.createTempDir()
+                ant.unzip(src: jar, dest: tmp)
+                def out = new ByteArrayOutputStream()
+                exec { commandLine dexdump, '-l', 'plain', new File(tmp, 'classes.dex').absolutePath; standardOutput = out }
+                def inDex = out.toString().readLines().findAll { it.contains('Class descriptor') }
+                        .collect { (it =~ /'L(.*);'/)[0][1] } as Set
+                def expected = fileTree("${projectDir}/src/main/java").matching { include '**/*.java' }.files
+                        .collect { it.path.replaceAll(/.*src\/main\/java\//, '').replaceAll(/\.java$/, '') }
+                def missing = expected.findAll { !inDex.contains(it) }
+                if (!inDex.contains('net/kckern/pianobridge/payload/Main')) missing << 'payload/Main (ENTRY)'
+                if (missing) throw new GradleException("payload jar is missing classes: ${missing}")
+                println "payloadVerify: ${inDex.size()} classes, all ${expected.size()} sources present"
+            }
+        }
+
+        task payloadSha(dependsOn: payloadVerify) {
             group = 'payload'
             def jar = new File(outDir, jarName)
             outputs.file new File(outDir, jarName + '.sha256')

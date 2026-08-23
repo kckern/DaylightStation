@@ -110,6 +110,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
                             .put("GET /log").put("POST /panic")
+                            .put("GET|POST /beat               (outbound heartbeat state / send one now)")
                             .put("GET|POST /midi/send?hex=F0…F7&repeat=3  (raw MIDI/SysEx OUT to the piano)")
                             .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
@@ -219,6 +220,17 @@ public class ControlServer extends NanoWSD {
                     o.put("requested", bound ? count : 0);
                     if (!bound) o.put("note", "a11y service not bound — nothing dispatched");
                     return json(o);
+                }
+                case "/beat": {
+                    // Outbound heartbeat: GET = its state, POST = send one NOW and return
+                    // the body that went out (so you can see exactly what the store sees).
+                    Heartbeat hb = service.getHeartbeat();
+                    if (hb == null) return json(err("heartbeat not started"));
+                    if (method == NanoHTTPD.Method.POST) {
+                        JSONObject sent = hb.beat();
+                        return json(ok().put("sent", sent).put("state", hb.snapshot()));
+                    }
+                    return json(ok().put("heartbeat", hb.snapshot()));
                 }
                 case "/reboot": {
                     // FKB-INDEPENDENT device restart (the watchdog's L5 rung, on demand).
