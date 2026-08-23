@@ -24,10 +24,6 @@ describe('dated_modules progression', () => {
     expect(validateWork(dated()).errors).toEqual([]);
   });
 
-  it('does not require one_active_module (that is a module_blocks rule)', () => {
-    expect(validateWork(dated()).errors.join()).not.toMatch(/one_active_module/);
-  });
-
   it('rejects a module with no window', () => {
     const raw = dated();
     delete raw.modules[1].opensOn;
@@ -66,10 +62,23 @@ describe('dated_modules progression', () => {
     expect(validateWork(raw).errors.join()).toMatch(/only meaningful/);
   });
 
-  it('leaves module_blocks and sequential courses alone', () => {
+  // The two undated modes must come through untouched: dating is additive, and
+  // a course whose position is earned rather than handed to it by the calendar
+  // should not acquire a date requirement.
+  const undated = [{ module: 'w35', title: 'Week 35' }, { module: 'w36', title: 'Week 36' }];
+
+  it('leaves a module_blocks course alone', () => {
     const raw = dated({
       progression: { mode: 'module_blocks', one_active_module: true, module_order: 'fixed', lesson_order: 'shuffle_once' },
-      modules: [{ module: 'w35', title: 'Week 35' }, { module: 'w36', title: 'Week 36' }],
+      modules: undated,
+    });
+    expect(validateWork(raw).errors).toEqual([]);
+  });
+
+  it('leaves a sequential course alone', () => {
+    const raw = dated({
+      progression: { mode: 'sequential', module_order: 'fixed', lesson_order: 'fixed' },
+      modules: undated,
     });
     expect(validateWork(raw).errors).toEqual([]);
   });
