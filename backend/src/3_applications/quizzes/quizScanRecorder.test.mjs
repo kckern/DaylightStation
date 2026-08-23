@@ -121,13 +121,24 @@ describe('decodeQuizSheet', () => {
   });
 });
 
+// Both entry points take their roots EXPLICITLY (`outRoot`, and `historyRoot`
+// for the rebuild) rather than deriving them from `dataDir`. This test used to
+// pass `dataDir` alone and read back from a hard-coded
+// `household/apps/quizzes/<reader>/`; when the quizzes tree moved under
+// `school/records/assessments/omr` the callers were updated and the roots
+// became parameters, so every spec here threw "outRoot required" — invisible,
+// because backend/ was outside the vitest gate's population at the time. The
+// roots are named here the way `app.mjs` and `cli/school/omr.mjs` name them,
+// so the fixture cannot drift from the shape production passes again.
 describe('createQuizScanRecorder', () => {
   let dataDir;
+  let outRoot;
   let bus;
   let recorder;
 
   beforeEach(async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quiz-scan-'));
+    outRoot = path.join(dataDir, 'household', 'school', 'records', 'assessments', 'omr');
     bus = makeBus();
   });
 
@@ -138,11 +149,11 @@ describe('createQuizScanRecorder', () => {
   });
 
   function start(config = {}) {
-    recorder = createQuizScanRecorder({ eventBus: bus, dataDir, config, logger: NOOP_LOGGER });
+    recorder = createQuizScanRecorder({ eventBus: bus, dataDir, outRoot, config, logger: NOOP_LOGGER });
   }
 
   async function readDay(day = '2026-07-30', id = READER_ID) {
-    const file = path.join(dataDir, 'household', 'apps', 'quizzes', id, `${day}.yml`);
+    const file = path.join(outRoot, id, `${day}.yml`);
     const parsed = yaml.load(await fs.readFile(file, 'utf8'));
     return Array.isArray(parsed) ? parsed : [];
   }
@@ -168,7 +179,7 @@ describe('createQuizScanRecorder', () => {
     start();
     bus.broadcast('omr', sheetPayload(CALIBRATION_MARKS));
     await flush();
-    const file = path.join(dataDir, 'household', 'apps', 'quizzes', READER_ID, '2026-07-30.yml');
+    const file = path.join(outRoot, READER_ID, '2026-07-30.yml');
     const text = await fs.readFile(file, 'utf8');
     expect(text).toMatch(/^\s+1: A$/m);
     expect(text).not.toMatch(/'1'/);
@@ -204,9 +215,17 @@ describe('createQuizScanRecorder', () => {
 
 describe('rebuildQuizDayFiles', () => {
   let dataDir;
+  let historyRoot;
+  let outRoot;
 
   beforeEach(async () => {
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'quiz-backfill-'));
+    // The same two roots `cli/school/omr.mjs` resolves — raw byte-faithful
+    // manifests in, decoded day files out. They are deliberately different
+    // trees; a rebuild that wrote back over its own input would be untestable
+    // for idempotence.
+    historyRoot = path.join(dataDir, 'household', 'hardware', 'omr', 'log');
+    outRoot = path.join(dataDir, 'household', 'school', 'records', 'assessments', 'omr');
   });
 
   afterEach(async () => {
@@ -214,7 +233,7 @@ describe('rebuildQuizDayFiles', () => {
   });
 
   it('rebuilds decoded day files from the raw manifest, skipping non-sheet events', async () => {
-    const historyDir = path.join(dataDir, 'household', 'history', 'omr', READER_ID);
+    const historyDir = path.join(historyRoot, READER_ID);
     await fs.mkdir(historyDir, { recursive: true });
     const manifest = [
       { ts: '2026-07-30 20:51:35', event: 'nfc', uid: '04669C0FCB2A81', piccType: 'NTAG 215' },
@@ -222,10 +241,10 @@ describe('rebuildQuizDayFiles', () => {
     ];
     await fs.writeFile(path.join(historyDir, '2026-07-30.yml'), yaml.dump(manifest), 'utf8');
 
-    const result = await rebuildQuizDayFiles({ dataDir, config: {}, logger: NOOP_LOGGER });
+    const result = await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
     expect(result.sheets).toBe(1);
 
-    const out = path.join(dataDir, 'household', 'apps', 'quizzes', READER_ID, '2026-07-30.yml');
+    const out = path.join(outRoot, READER_ID, '2026-07-30.yml');
     const records = yaml.load(await fs.readFile(out, 'utf8'));
     expect(records).toHaveLength(1);
     expect(records[0].testId).toBe('0123456');
@@ -233,16 +252,16 @@ describe('rebuildQuizDayFiles', () => {
   });
 
   it('is idempotent — rebuilding twice does not duplicate records', async () => {
-    const historyDir = path.join(dataDir, 'household', 'history', 'omr', READER_ID);
+    const historyDir = path.join(historyRoot, READER_ID);
     await fs.mkdir(historyDir, { recursive: true });
     await fs.writeFile(
       path.join(historyDir, '2026-07-30.yml'),
       yaml.dump([{ ts: '2026-07-30 21:16:43', event: 'sheet', columns: 32, markedColumns: 17, marks: CALIBRATION_MARKS }]),
       'utf8',
     );
-    await rebuildQuizDayFiles({ dataDir, config: {}, logger: NOOP_LOGGER });
-    await rebuildQuizDayFiles({ dataDir, config: {}, logger: NOOP_LOGGER });
-    const out = path.join(dataDir, 'household', 'apps', 'quizzes', READER_ID, '2026-07-30.yml');
+    await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
+    await rebuildQuizDayFiles({ historyRoot, outRoot, config: {}, logger: NOOP_LOGGER });
+    const out = path.join(outRoot, READER_ID, '2026-07-30.yml');
     expect(yaml.load(await fs.readFile(out, 'utf8'))).toHaveLength(1);
   });
 });

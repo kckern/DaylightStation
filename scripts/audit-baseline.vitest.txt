@@ -1,7 +1,19 @@
 # GATE-VITEST baseline — the SET of vitest files currently failing.
-# Population: *.test.{js,jsx,mjs} under tests/unit + tests/isolated that
-# import from vitest, minus suite/ (jest) and backend/ (node:test).
+# Population: *.test.{js,jsx,mjs} under tests/unit, tests/isolated and
+# backend/ that vitest OWNS (explicit vitest import, or bare globals with
+# no runner import), minus suite/ (jest) and node:test files.
 # A file failing that is NOT listed here is a REGRESSION (gate exits 1).
-# Captured: 10744 tests, 10732 pass, 0 fail.
+# Captured: 15176 tests, 15079 pass, 42 fail.
 # Regenerate with: node scripts/gate-vitest.mjs --update
-
+backend/src/1_adapters/chess/StockfishEngineAdapter.test.mjs
+backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs
+backend/src/1_adapters/glossika/LegacyDumpReader.test.mjs
+backend/src/3_applications/gameshow/GameShowService.test.mjs
+backend/src/3_applications/school/documents/RenderPrintDocument.test.mjs
+backend/src/4_api/v1/agents/mountAgentHttp.test.mjs
+backend/src/4_api/v1/agents/wireFormats/native.test.mjs
+backend/src/4_api/v1/routers/piano.courses.test.mjs
+backend/src/4_api/v1/routers/piano.effect-audit.test.mjs
+backend/src/4_api/v1/routers/piano.loop-manifest.test.mjs
+tests/isolated/adapter/content/filesystem/resolvers/scripture.test.mjs
+tests/isolated/assembly/infrastructure/infrastructure-ownership.test.mjs
