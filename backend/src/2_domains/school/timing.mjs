@@ -187,4 +187,25 @@ export function evaluateTiming(raw, { today, inProgress = false } = {}) {
   return { timing, state: 'available', priority: PRIORITY[timing.basePriority], reasons: [`${timing.basePriority}_base_priority`] };
 }
 
+/**
+ * Where today sits relative to ONE dated module's window.
+ *
+ * Deliberately never returns `dormant`. A closed dated module is `catch_up`:
+ * still offerable, just outranked. Backlog in a dated course does not expire
+ * and never needs a grown-up to revive it — it sinks by losing the sort
+ * (planner.mjs ranks catch_up modules newest-first), not by a rule.
+ */
+export function datedModuleState(window, { today } = {}) {
+  if (!isDay(today)) throw new Error('datedModuleState requires today YYYY-MM-DD');
+  if (!isObject(window) || !isDay(window.opensOn) || !isDay(window.closesOn)) {
+    throw new Error('datedModuleState requires a window with opensOn and closesOn as YYYY-MM-DD');
+  }
+  if (compareDay(window.opensOn, window.closesOn) > 0) {
+    throw new Error('datedModuleState window closes before it opens');
+  }
+  if (compareDay(today, window.opensOn) < 0) return { state: 'upcoming', reasons: ['opens_later'] };
+  if (compareDay(today, window.closesOn) > 0) return { state: 'catch_up', reasons: ['catch_up'] };
+  return { state: 'available', reasons: ['current_module'] };
+}
+
 export const TIMING_PRIORITY = PRIORITY;
