@@ -284,14 +284,39 @@ No caching or memoization layer: the read cost is identical to what
 `BuildAgenda` already pays per build today, and adding a cache ahead of a
 demonstrated hot path is scope this design doesn't need.
 
+### `CloseSessionOutcome` gains one new publish (small, additive)
+
+Verified against the just-landed Glossika integration
+(`f1d40e127`, `feat(school): integrate Glossika daily study`): no bus event
+exists today for "a session settled." `CloseSessionOutcome` has no
+`eventBus` dependency; the only live School bus topic,
+`school.language.day-complete` (`LanguageStudyService.mjs:183`), is an
+upstream dispatch trigger consumed by `CloseLanguageDay`, not a
+settled-fact notification. `CloseLanguageDay.mjs:64` funnels every language
+day through the same `closeSessionOutcome.execute(...)` ordinary curriculum
+closes use, so the fix is one new optional dependency on
+`CloseSessionOutcome`, following the existing optional-degrade pattern
+(`reviewQueue = null`, etc.):
+
+```js
+constructor({ /* existing deps */, eventBus = null } = {}) { /* ... */ }
+```
+
+and one unconditional `this.#eventBus?.publish('school.session.outcome-recorded',
+{ learnerId, sessionId, unitId, result, at: nowIso })` call inside `#settle`,
+regardless of pass/fail — a fail settle won't move any section's
+`obligation`, so the bridge's own transition-only guard (below) filters it
+out for free; no need to special-case it here. This covers curriculum and
+language uniformly: the bridge subscribes to exactly this one topic and
+never needs to know `CloseLanguageDay` exists.
+
 ### `SchoolCompletionBridge` (new, same shape as `DoNowSchoolBridge`)
 
-Subscribes to the events that can move completion — a session outcome
-recorded, a program day settled (the Glossika bridge's own settle event,
-consumed read-only) — recomputes via `GetLearnerDayCompletion`, and
-broadcasts `school.completion.changed` **only on an actual state
-transition** (never on every recompute, so a flapping launcher or a rapid
-sequence of passes doesn't spam the bus). Payload:
+Subscribes to `school.session.outcome-recorded` (above), recomputes via
+`GetLearnerDayCompletion`, and publishes `school.completion.changed`
+**only on an actual state transition** (never on every recompute, so a
+flapping launcher or a rapid sequence of passes doesn't spam the bus).
+Payload:
 
 ```js
 { learnerId, state, previousState, at }
@@ -304,7 +329,7 @@ lookup before acting.
 Completion truth never depends on the bridge having fired — exactly the
 constraint the Glossika design states for its own `servedToday` reads
 (§5.4 of that doc): any consumer can call `GetLearnerDayCompletion` directly
-at any time and get the same answer the bridge would have broadcast. The
+at any time and get the same answer the bridge would have published. The
 event is a push convenience for subscribers that don't want to poll, never
 the source of truth.
 
@@ -389,10 +414,16 @@ unmodified.
 `obligation`/completion result `BuildAgenda` would compute for identical
 inputs — no drift between the print path and the read path.
 
-**Application (`SchoolCompletionBridge.test.mjs`):** broadcasts only on an
+**Application (`CloseSessionOutcome.test.mjs` addition):** `#settle`
+publishes `school.session.outcome-recorded` when an `eventBus` is supplied,
+on both pass and fail, and is a no-op (no throw) when `eventBus` is omitted.
+
+**Application (`SchoolCompletionBridge.test.mjs`):** publishes only on an
 actual state transition, not on every recompute; idempotent under a
 duplicate upstream event (mirroring `DoNowSchoolBridge`'s ownership-filter
-test style).
+test style); fires correctly for a language-day settle routed through
+`CloseLanguageDay` as well as an ordinary curriculum close, since both funnel
+through the same `CloseSessionOutcome#settle`.
 
 **Cross-workstream:** once §7's durable signal exists on the `dated_modules`
 side, one integration-style test: a CFM learner with a completed current
