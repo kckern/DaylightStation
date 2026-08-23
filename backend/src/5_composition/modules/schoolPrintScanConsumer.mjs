@@ -30,11 +30,18 @@ import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRe
  *   job — see `schoolLifecycle.mjs`'s own `stores.allocationStore`/
  *   `stores.printDocuments`).
  * @param {object} [deps.logger]
+ * @param {{fire: Function}} [deps.gradingHook] - `SchoolGradingHookAdapter`-shaped
+ *   (or any fake with a `fire(outcome)`), optional. Fired fire-and-forget
+ *   (never awaited) at each of the four terminal scan outcomes — unresolved,
+ *   refused, graded, review — so a slow or broken Home Assistant can never
+ *   delay or prevent a grade being recorded. The adapter itself never
+ *   throws; the `.catch(() => {})` at each call site is belt-and-suspenders
+ *   for a fake/hook that rejects outright.
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
   eventBus, config = {}, resolveCardScan, recordCardScanOutcome = null,
-  closeSessionOutcome = null, logger = console,
+  closeSessionOutcome = null, gradingHook = null, logger = console,
 }) {
   if (!eventBus?.subscribe) {
     throw new Error('createSchoolPrintScanConsumer: eventBus with subscribe required');
@@ -68,6 +75,10 @@ export function createSchoolPrintScanConsumer({
             testIdCandidates: Array.isArray(testIdCandidates) ? testIdCandidates.length : 0,
             answerCount: answers ? Object.keys(answers).length : 0,
           });
+          // Home automation is a bystander: never awaited into the grading path
+          // and never able to fail it. The adapter already swallows its own
+          // errors; this catch covers a hook that rejects outright.
+          gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code }).catch(() => {});
           return;
         }
         if (outcome?.unknownCard) {
@@ -131,6 +142,12 @@ export function createSchoolPrintScanConsumer({
             logger.warn?.('school.print.scan-record-refused', {
               testId, recordId: card.recordId, documentId: card.documentId, code: card.error.code,
             });
+            // Home automation is a bystander: never awaited into the grading path
+            // and never able to fail it. The adapter already swallows its own
+            // errors; this catch covers a hook that rejects outright.
+            gradingHook?.fire({
+              result: 'refused', testId, recordId: card.recordId, code: card.error.code, learnerId: card.learnerId ?? null,
+            }).catch(() => {});
             continue;
           }
           logger.info?.('school.print.scan-resolved', {
@@ -171,11 +188,35 @@ export function createSchoolPrintScanConsumer({
               // returns the original single outcome shape.
               const outcomes = recorded?.sectionOutcomes ?? [recorded];
               for (const sectionOutcome of outcomes) {
-                if (sectionOutcome?.session?.advancedTo === 'graded' && closeSessionOutcome) {
-                  // The bridge returns the authoritative session id (a
-                  // composed card itself has no single session owner).
-                  // eslint-disable-next-line no-await-in-loop
-                  await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                if (sectionOutcome?.session?.advancedTo === 'graded') {
+                  // Home automation is a bystander: never awaited into the
+                  // grading path and never able to fail it. The adapter
+                  // already swallows its own errors; this catch covers a
+                  // hook that rejects outright.
+                  gradingHook?.fire({
+                    result: 'graded',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    earned: card.earnedPoints,
+                    total: card.totalPoints,
+                    sessionId: sectionOutcome.session.sessionId,
+                  }).catch(() => {});
+                  if (closeSessionOutcome) {
+                    // The bridge returns the authoritative session id (a
+                    // composed card itself has no single session owner).
+                    // eslint-disable-next-line no-await-in-loop
+                    await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                  }
+                } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
+                  gradingHook?.fire({
+                    result: 'review',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    sessionId: sectionOutcome.session.sessionId,
+                    pendingReview: sectionOutcome.session.pendingReview,
+                    reasons: sectionOutcome.session.reasons,
+                    items: sectionOutcome.session.items,
+                  }).catch(() => {});
                 }
               }
             })
