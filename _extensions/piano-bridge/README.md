@@ -1,47 +1,80 @@
 # Piano Bridge (APK)
 
-> **STATUS (2026-08-23): SHELL + HOT-SWAPPABLE PAYLOAD. versionCode 29 / `2.0-shell`
-> installed on the SM-T590. Deploying bridge logic no longer touches the tablet.**
+> **STATUS (2026-08-23): SHELL v30 + HOT-SWAPPABLE PAYLOAD p10, on the SM-T590. The
+> tablet is designed to run with NO physical access — it is "out to sea".**
 >
-> The installed APK is a thin **shell** — only what Android freezes at install time
-> (manifest entry points, permissions, the a11y service, the native `.so`). Every line
-> of bridge logic is a **payload** `.jar` loaded at runtime with `DexClassLoader` and
-> swapped over the LAN with zero taps:
+> ## The five things to know
 >
+> **1. Deploy logic with zero taps.** The installed APK is a thin *shell*; all bridge
+> logic is a payload `.jar` loaded at runtime and swapped over the LAN in ~2 s:
 > ```bash
 > cd _extensions/piano-bridge/app
-> ./gradlew :payload:payload -PpayloadVersion=p3-whatever     # -> payload/build/payload/p3-whatever.jar + .sha256
-> # serve it anywhere the tablet can reach, then:
-> pbctl payload http://<host>/p3-whatever.jar $(cat payload/build/payload/p3-whatever.jar.sha256)
-> pbctl payload              # status: active / current / previous / available
-> pbctl payload rollback     # current <- previous, instantly
+> ./gradlew :payload:payload -PpayloadVersion=p11-whatever   # -> payload/build/payload/p11-whatever.jar + .sha256
+> #   (payloadVerify gate refuses a jar missing any class — never bypass it)
+> # host it where the tablet can always reach it: prod's dist/payloads/
+> scp payload/build/payload/p11-whatever.jar* homeserver.local:/tmp/ && \
+>   ssh homeserver.local 'docker cp /tmp/p11-whatever.jar daylight-station:/usr/src/app/frontend/dist/payloads/'
+> pbctl payload https://daylightlocal.kckern.net/payloads/p11-whatever.jar $(cat payload/build/payload/p11-whatever.jar.sha256)
+> pbctl payload              # active / previous / available      pbctl payload rollback
 > ```
+> Bump `VERSION` in `payload/.../payload/Main.java` AND `BUILT_BY` in `ControlServer.java`
+> to match. sha256 is mandatory. A payload whose `start()` throws rolls back in ~1 s;
+> 3 crash-boots in 10 min rolls back at the next boot; a baked copy in `assets/` means
+> a fresh install is never payload-less.
 >
-> Verified on hardware 2026-08-23: baked p1 → p2 swap in <1 s; rollback in <1 s; re-activate
-> in <1 s; BLE, MIDI write (Jamcorder `ble.in` +3) and the a11y service all carried across
-> the swap. sha256 is REQUIRED on every drop. A payload whose `start()` throws rolls back
-> immediately; 3 process boots in 10 min rolls back at the next boot; a baked copy in
-> `assets/` means a fresh install is never payload-less. `shell.log` records every
-> fetch/verify/ACTIVE/ROLLBACK durably. Design: `docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md`.
+> **2. Read `servedBy`, not just the loader.** `GET :8770/status` → `servedBy` names the
+> payload whose HTTP server actually owns the port. Before p6 a swap could leave the OLD
+> payload's server answering (the kiosk's WebSocket pinned the port). If the loader says
+> p11 but `servedBy` says p10, bounce the process: `fkb.cli.mjs launch net.kckern.pianobridge`.
 >
-> **When you DO still need an APK install** (a manifest change: new permission, new
-> receiver, a11y xml, native code): follow the deploy checklist below exactly. The
-> 2026-08-22 evening cost two wasted trips by skipping it. Two traps it now covers that
-> bit that night: (1) the OLD build's watchdog had no install-hold and **L4-rebooted the
-> confirm dialog away** — disable the reboot rung first
-> (`pbctl config set watchdogRebootEnabled false`), never `watchdogRecoverEnabled`
-> (that is the only thing that restarts a dead FKB); (2) verify the dialog with
-> `deviceInfo.foregroundApp == com.google.android.packageinstaller`, not a screenshot.
-> From v29 the shell's `BootReceiver` handles `MY_PACKAGE_REPLACED`, so step 7's manual
-> relaunch is belt-and-braces.
+> **3. The lifeline — `:8771`.** A shell-owned server that stays up whatever the payload
+> does. `pbctl shell [restart|rollback|log]`. Use it when `:8770` is dead but the tablet
+> pings. Deliberately no `/exec`.
 >
-> **Build JDK:** openjdk@17 works and was used for v26–v29 (the "JDK 11 only" note below
-> is stale but harmless — either builds).
+> **4. Trust DATA, not state.** `ble: CONNECTED` and `midiIn.portOpen: true` were both true
+> through an hour of zero bytes flowing (a JamCorder reboot left a *zombie* BLE link).
+> The only conclusive witness is the piano's own MIDI echo:
+> ```bash
+> pbctl loopback        # ✓ PIANO RECEIVED IT (echoed in 46ms)   — exit 1 on no echo
+> ```
+> Every 60 s heartbeat carries `data.linkVerdict` = `VERIFIED` | `ZOMBIE` | `DOWN` into the
+> log store; the status page header is red unless VERIFIED; 3 unanswered probes force a
+> BLE reconnect automatically (one kick per 10 min). Alarm query:
+> `context.app:piano-bridge AND _msg:bridge.heartbeat AND data.linkVerdict:ZOMBIE AND _time:10m`
+> — and ABSENCE (`…AND _time:5m` returning 0 rows) means the tablet is dark.
 >
-> `TouchPulser` **does not lift the SM-T590 frame throttle** — measured 2026-08-22, 78
-> a11y bursts at 5 fps with no change. The "OPEN QUESTION" in `performance.md` is closed:
-> accessibility-injected gestures are not counted as input by the throttle. Only real
-> touch is. It stays enabled (harmless) pending the gfxinfo/renderer-priority capture.
+> **5. Self-reported diagnosis — `http://10.0.0.245:8770/`** in a browser. One page,
+> 30 s refresh: MIDI link verdict, BLE, FKB, page fps, a11y, speaker, heartbeat, payload +
+> rollback slot, IP, uptime, battery, thermal, last death, recent events.
+> `GET /midi/tap` = the raw bytes the read port delivered (the ground truth when the
+> parser is suspect). `GET|POST /beat`, `GET|POST /loopback`.
+>
+> ## Physical facts that software cannot fix
+> - **The JamCorder's reboot drops the piano off USB** — twice on 2026-08-23. Its
+>   3-hour auto-reboot is now DISABLED (`autoRebootTime: -1` via `/api/auto-reboot/settings/set`).
+>   If `activeInputs` lacks `usb`, reseat the piano→JamCorder cable.
+> - **The piano's own volume** can be at 0 (it reports `B0 07 00` on its read port). 18
+>   test tones were received and silent for exactly this. `pbctl midi "B0 07 7F"` pushes it up.
+> - **The SM-T590 frame throttle** (~5 fps without real touch) is not lifted by the a11y
+>   `TouchPulser` — measured; the "OPEN QUESTION" in performance.md is closed.
+>
+> ## When you DO need an APK install (manifest change only)
+> Follow the deploy checklist below exactly. Two traps from 2026-08-22, both now covered:
+> (1) the OLD watchdog L4-rebooted the confirm dialog away — `pbctl config set
+> watchdogRebootEnabled false` first, never `watchdogRecoverEnabled`; (2) FKB's
+> `runInForeground` reclaims the screen — set it false for the install, restore after.
+> Verify the dialog with `deviceInfo.foregroundApp == com.google.android.packageinstaller`,
+> not a screenshot. v29+ handles `MY_PACKAGE_REPLACED`, so the service self-restarts.
+> Shell v30 pre-declares every permission a payload plausibly needs (23 total) and the
+> a11y capability flags — another install should be rare.
+>
+> **Build JDK:** openjdk@17 (used for v26–v30; the "JDK 11 only" note below is stale).
+>
+> ## Architecture: `docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md`
+> Shell = manifest entry points, permissions, a11y xml, native `.so`, `PianoEngine`
+> (in `shell-api`), `PayloadLoader`/`PayloadStore` (13 JVM tests), `ShellServer`.
+> Payload = everything else (`BridgeCore` is the old service body). Verified with dexdump:
+> zero class leakage either way.
 
 A native multi-engine synth host for an Android tablet, driven over WebSocket by
 the browser kiosk. It reads the BLE-MIDI piano directly via Android
