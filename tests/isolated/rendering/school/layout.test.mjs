@@ -170,6 +170,29 @@ describe('placeFragments — keep-with-next (stickToNextId)', () => {
     expect(idsOf(result)).toEqual([['prompt'], ['space']]);
   });
 
+  it('is not broken by the balance pass — the rebalance must not strand a prompt its partner was glued to', () => {
+    // REGRESSION (phaseB kitchen sink, 2026-08-23): the `fill` policy's
+    // rebalance runs BEFORE the keep-with-next check, and would end the page
+    // on the write-space purely because stopping there landed nearer the
+    // per-page target — leaving the essay prompt alone at the foot of one
+    // page and its ruled lines at the top of the next.
+    //
+    // Geometry: 160pt usable, 228pt of content over 2 pages → a 114pt/page
+    // target. After filler(70)+prompt(20) the page holds 96pt; adding the
+    // 50pt space reaches 152pt, which overshoots 114 by more (38) than
+    // stopping short of it does (18) — so balance wants to break exactly
+    // between the two. It must not: the space fits under the hard ceiling
+    // (58pt left), which is the only thing that gets to decide here.
+    const fragments = [
+      frag('filler', 70),
+      frag('prompt', 20, { stickToNextId: 'space' }),
+      frag('space', 50, { atomic: true }),
+      frag('tail', 70),
+    ];
+    const result = placeFragments(fragments, { ...page, balance: true });
+    expect(idsOf(result)).toEqual([['filler', 'prompt', 'space'], ['tail']]);
+  });
+
   it('is a no-op when the very next fragment is not the named partner', () => {
     const result = placeFragments(
       [

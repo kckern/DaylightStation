@@ -508,12 +508,21 @@ describe('Phase C acceptance sweep (spec §12.3/§12.4/§12.5, plus the Phase-C 
 
       const published = await runSchoolDocs(['publish', sourceFile, '--content-root', contentRoot]);
       expect(published.exitCode).toBe(0);
-      const publishedFile = path.join(contentRoot, 'published', `${published.report.id}@${published.report.rev}.yml`);
 
+      // The SOURCE file, not a hand-built `published/<id>@<rev>.yml` path.
+      // In card mode `<file>` supplies only the document ID — the CLI always
+      // resolves the published revision through the repository (re-review
+      // wave 2, F2), so source and published copy resolve to the same place.
+      // This test used to construct that published path itself and broke
+      // silently when the repository moved published revisions to
+      // `documents/<id>/<rev>/document.yml`: `render` got a nonexistent path,
+      // exited 1, and the failure read as a release-card bug rather than a
+      // stale assumption about on-disk layout. Naming the id-bearing file the
+      // caller already has cannot rot that way.
       const rendered = await runSchoolDocs([
-        'render', publishedFile, '--out', path.join(contentRoot, 'card.pdf'), '--content-root', contentRoot, '--fresh-card',
+        'render', sourceFile, '--out', path.join(contentRoot, 'card.pdf'), '--content-root', contentRoot, '--fresh-card',
       ]);
-      expect(rendered.exitCode).toBe(0);
+      expect(rendered.exitCode, JSON.stringify(rendered.report?.errors ?? [])).toBe(0);
       const { cardId } = rendered.report.allocation;
 
       const released = await runSchoolDocs(['release-card', cardId, '--content-root', contentRoot]);

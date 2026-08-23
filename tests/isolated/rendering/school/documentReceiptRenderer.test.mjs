@@ -6,9 +6,25 @@
  * scanned) and that the human-readable token text reaches the paper.
  */
 import { describe, it, expect } from 'vitest';
+import { createRequire } from 'node:module';
 import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
 import { documentReceiptTheme as theme } from '#rendering/school/documents/documentReceiptTheme.mjs';
 import { texToSvg } from '#rendering/school/documents/mathSvg.mjs';
+
+// The repo carries TWO installs of `canvas` — one at the root and one under
+// `backend/`. They are separate native modules with separate prototypes, and
+// the renderer (living under `backend/src/`) resolves the backend copy. A
+// plain `import 'canvas'` from this file gets the ROOT copy, so patching its
+// `CanvasRenderingContext2D.prototype` to spy on draw calls silently
+// intercepts nothing: the spy array stays empty and any `toEqual([])`
+// assertion built on it passes vacuously. Resolving `canvas` from the
+// renderer's own directory is what makes the spy real — the specs below
+// additionally assert their spy caught SOMETHING, so a future duplication
+// fails loudly instead of going quiet.
+const rendererRequire = createRequire(
+  new URL('../../../../backend/src/1_rendering/school/documents/DocumentReceiptRenderer.mjs', import.meta.url),
+);
+const { CanvasRenderingContext2D } = rendererRequire('canvas');
 
 const renderer = createDocumentReceiptRenderer({ theme, texToSvg });
 
@@ -220,7 +236,6 @@ describe('result score scale', () => {
  */
 describe('result score marks: vector, per-question', () => {
   it('never draws the correct/incorrect mark as a font glyph — only vector strokes', async () => {
-    const { CanvasRenderingContext2D } = await import('canvas');
     const originalFillText = CanvasRenderingContext2D.prototype.fillText;
     const texts = [];
     CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...rest) {
@@ -246,12 +261,15 @@ describe('result score marks: vector, per-question', () => {
     // "any non-ASCII fillText" — because the score line itself legitimately
     // prints other non-ASCII punctuation (e.g. the "·" separator) that has
     // nothing to do with this bug.
+    // The spy must have caught the panel's ordinary text (the score line, the
+    // headline) — otherwise "no glyph marks" would mean "no interception",
+    // not "no glyphs", and this assertion would pass on a broken spy.
+    expect(texts.length).toBeGreaterThan(0);
     const glyphMarks = texts.filter((t) => t.includes('✓') || t.includes('×'));
     expect(glyphMarks).toEqual([]);
   });
 
   it('marks box 1 wrong when ONLY question 1 is wrong — never the trailing boxes', async () => {
-    const { CanvasRenderingContext2D } = await import('canvas');
     const originalStroke = CanvasRenderingContext2D.prototype.strokeRect;
     const originalFill = CanvasRenderingContext2D.prototype.fillRect;
     const strokedBoxes = [];
