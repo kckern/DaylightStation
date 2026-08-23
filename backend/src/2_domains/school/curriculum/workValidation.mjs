@@ -25,6 +25,9 @@
  * before this file existed.
  */
 import { SUBJECT_IDS } from './unitValidation.mjs';
+// The same predicate the runtime uses to read a window, so a manifest cannot
+// declare a date the planner would later refuse.
+import { isStudyDay as isDay } from '../timing.mjs';
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 const ID_PATH = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i;
@@ -180,7 +183,10 @@ export function validateWork(raw, ctx = {}) {
     errors.push('grading.gate is omr but no printable declares scan: omr');
   }
 
-  // ── modules (optional, editorial order only) ──────────────────────────────
+  // ── modules (optional; editorial order, or a calendar) ────────────────────
+  // `dated_modules` pins each module to a real week, so its windows are policed
+  // here rather than at runtime: a typo'd date must fail the manifest, not
+  // strand a week nobody notices is missing.
   let modules;
   if (isPresent(raw.modules)) {
     if (!Array.isArray(raw.modules) || raw.modules.length === 0) {
@@ -188,6 +194,9 @@ export function validateWork(raw, ctx = {}) {
     } else if (raw.structure?.shape !== 'modules') {
       errors.push(`modules[] listed but structure.shape is ${raw.structure?.shape}`);
     } else {
+      // Read straight off `raw`: progression is validated further down, but a
+      // string comparison against it is safe at any shape.
+      const isDated = raw.progression?.mode === 'dated_modules';
       const seen = new Set();
       raw.modules.forEach((m, i) => {
         const at = `modules[${i}]`;
@@ -197,7 +206,31 @@ export function validateWork(raw, ctx = {}) {
         else seen.add(m.module);
         if (!isStr(m.title)) errors.push(`${at}.title is required`);
         if (isPresent(m.media) && !isStr(m.media)) errors.push(`${at}.media must be a locator string`);
+        if (isDated) {
+          if (!isDay(m.opensOn)) errors.push(`${at}.opensOn must be YYYY-MM-DD for dated_modules`);
+          if (!isDay(m.closesOn)) errors.push(`${at}.closesOn must be YYYY-MM-DD for dated_modules`);
+          if (isDay(m.opensOn) && isDay(m.closesOn) && m.opensOn > m.closesOn) {
+            errors.push(`${at}: window closes before it opens`);
+          }
+        } else if (isPresent(m.opensOn) || isPresent(m.closesOn)) {
+          errors.push(`${at}: opensOn/closesOn are only meaningful when progression.mode is dated_modules`);
+        }
       });
+      // Two modules that are both current would leave the runtime no way to
+      // answer "which week is today's". Sort by opensOn first so the message
+      // names a genuinely adjacent pair rather than whichever two the author
+      // happened to list side by side.
+      if (isDated) {
+        const windows = raw.modules
+          .filter((m) => isObj(m) && isDay(m.opensOn) && isDay(m.closesOn))
+          .sort((a, b) => a.opensOn.localeCompare(b.opensOn));
+        windows.forEach((m, i) => {
+          const prev = windows[i - 1];
+          if (prev && m.opensOn <= prev.closesOn) {
+            errors.push(`modules: "${prev.module}" and "${m.module}" have overlapping windows`);
+          }
+        });
+      }
       modules = raw.modules;
     }
   }
@@ -216,11 +249,22 @@ export function validateWork(raw, ctx = {}) {
       const p = raw.progression;
       oneOf(p.module_order, ORDERING, 'progression.module_order', errors);
       oneOf(p.lesson_order, ORDERING, 'progression.lesson_order', errors);
-      if (p.mode !== 'sequential' && p.mode !== 'module_blocks') {
-        errors.push('progression.mode must be sequential|module_blocks');
+      if (!['sequential', 'module_blocks', 'dated_modules'].includes(p.mode)) {
+        errors.push('progression.mode must be sequential|module_blocks|dated_modules');
       }
       if (p.mode === 'module_blocks' && p.one_active_module !== true) {
         errors.push('progression.one_active_module must be true for module_blocks');
+      }
+      // Dated modules never gate each other, so the serial-chain knobs are a
+      // contradiction rather than a redundancy — refuse them by name.
+      if (p.mode === 'dated_modules') {
+        if (isPresent(p.one_active_module)) errors.push('progression.one_active_module is meaningless for dated_modules');
+        if (isPresent(p.required_opening_module)) errors.push('progression.required_opening_module is meaningless for dated_modules');
+        // The windows live on modules[], and only an enumerated list can carry
+        // them — a derived list has no dates. Without it the mode declares a
+        // calendar the runtime can never read, and the per-module checks above
+        // have nothing to iterate, so nothing else would report it.
+        if (!Array.isArray(raw.modules)) errors.push('progression.mode is dated_modules but modules[] does not enumerate the windows');
       }
       if (p.required_opening_module !== undefined && !isStr(p.required_opening_module)) {
         errors.push('progression.required_opening_module must be a string');
