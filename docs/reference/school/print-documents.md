@@ -734,6 +734,83 @@ session and why. A sheet parking silently in review, with no receipt printed
 and no signal in the room, is the failure mode these two events exist to make
 visible.
 
+**The grading hook.** When a Home Assistant gateway is configured for the
+household, `SchoolGradingHookAdapter`
+(`backend/src/1_adapters/school/SchoolGradingHookAdapter.mjs`) fires one HA
+script on every terminal scan outcome — a signal in the room, not just on a
+screen or in the log store. `school.yml`:
+
+```yaml
+grading_hook:
+  script: script.school_graded
+```
+
+Presence of `script` is the entire enable switch — no `enabled` flag, no
+score bands, no throttle knob. With no Home Assistant gateway configured at
+all, or with `grading_hook` absent from `school.yml`, the hook never fires
+and the scan consumer runs exactly as it did before this existed.
+
+Dispatch is `gateway.callService('script', <service>, variables)`. A
+configured `script.school_graded` and a bare `school_graded` both resolve to
+service `school_graded` — the `script.` prefix is optional.
+
+**All four terminal outcomes fire** — `graded`, `review` (awaiting-review),
+`unresolved`, and `refused` — every call carrying the SAME 11 keys,
+snake_case to match Home Assistant convention rather than this codebase's
+camelCase. A key that doesn't apply to a given outcome still rides along as
+`null` (or `[]` for the two list-valued keys) rather than being omitted, so
+an HA template can write `{{ percent }}` without an `is defined` guard:
+
+| variable | graded | review | unresolved | refused |
+|---|---|---|---|---|
+| `result` | `graded` | `review` | `unresolved` | `refused` |
+| `learner_id` | ✓ or `null` | ✓ or `null` | `null` | ✓ or `null` |
+| `test_id` | ✓ | ✓ | ✓ | ✓ |
+| `session_id` | ✓ | ✓ | `null` | `null` |
+| `percent` | ✓ or `null`* | `null` | `null` | `null` |
+| `earned` | ✓ | `null` | `null` | `null` |
+| `total` | ✓ | `null` | `null` | `null` |
+| `pending_review` | `null` | ✓ | `null` | `null` |
+| `reasons` | `[]` | ✓ | `[]` | `[]` |
+| `items` | `[]` | ✓ | `[]` | `[]` |
+| `code` | `null` | `null` | ✓ | ✓ |
+
+\* `percent` is `null` whenever `total` is `0` or missing; otherwise
+`round(earned / total * 10000) / 100`, so it never comes through as `NaN`.
+
+For a composed multi-section worksheet, the hook fires **once per section**
+as each section independently reaches `graded` or lands in review — every
+fire carries that section's own `earned`/`total`/`percent`, never the whole
+card's aggregate score. A single-section (legacy) card fires once, same as
+any other outcome.
+
+**Home Assistant owns everything downstream of `result`.** This repo hands
+over the outcome and gets out of the way; HA branches on `result` (and
+whatever else it needs) to decide what happens next. There is deliberately
+**no score-band → script mapping and no per-learner override in
+`school.yml`** — both were considered and rejected, because either would put
+behaviour in two places and force a redeploy of this repo to retune a light
+or change one child's rule. A household that wants a different scene above
+90%, or a distinct chime for one kid, writes that branch in the Home
+Assistant script keyed on `percent` / `learner_id` — it does not belong in
+this repo's config.
+
+**The hook can never affect grading.** The consumer calls
+`gradingHook.fire(...)` fire-and-forget — never awaited into the grading
+path — with a `.catch(() => {})` at each call site as belt-and-suspenders
+for a hook that somehow rejects outright. The adapter itself never throws: a
+gateway failure returns `{ok:false, error}` instead. A circuit breaker opens
+after 5 consecutive gateway failures, backs off exponentially (capped at
+60s), and a success closes it again. There is no deduplication and no
+throttle — two learners each scoring 83% both deserve their own light, and
+three children scanning in succession must all fire, so nothing here
+collapses or drops a repeat.
+
+Adapter-side logs: `school.grading_hook.fired` (script + result), `.skipped`
+(reason `not_configured` or `backoff`), `.failed`, `.circuit_open`, and
+`.error` for a config-load failure — distinct from `.failed` because it never
+touches the gateway or the breaker.
+
 **Resolution** (per card):
 
 - Any unreadable ID digit → refused (`CARD_ID_UNREADABLE`), never guessed.
