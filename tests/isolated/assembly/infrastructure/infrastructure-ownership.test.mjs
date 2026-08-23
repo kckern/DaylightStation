@@ -15,11 +15,25 @@ describe('Infrastructure Ownership', () => {
   describe('EventBus Singleton', () => {
     let bootstrap;
 
+    // 30s, not the 10s default. `bootstrap.mjs` is the composition root — a
+    // fresh import after `resetModules()` re-evaluates most of the backend's
+    // module graph, and it runs before EVERY test in this block because that
+    // is the only way to get a genuinely un-initialised `eventBusInstance`
+    // singleton to assert against.
+    //
+    // Alone that costs a couple of seconds and passes. In the full gate
+    // population (869 files, workers competing for CPU) the same import
+    // exceeded 10000ms and the hook — not any assertion — timed out, which is
+    // why this file passed in isolation and failed only under `npm run
+    // test:unit:vitest`. Measured 2026-08-22: 26.7s for this file's 16 tests
+    // during a full `tests/isolated/` run.
+    //
+    // The assertions are unchanged; only the budget for the setup work is.
     beforeEach(async () => {
       // Reset module cache to get fresh singleton
       vi.resetModules();
       bootstrap = await import('#composition/bootstrap.mjs');
-    });
+    }, 30000);
 
     afterEach(() => {
       vi.resetModules();
