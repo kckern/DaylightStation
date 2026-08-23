@@ -260,3 +260,5 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-22 | fix/gate-vitest-failures | 5056a6036 | Fixed all 28 gate-failing test files; baseline 12 -> 0; 2 real production bugs |
 | 2026-08-22 | feat/school-grading-hook | 57898150b | HA grading hook: one script, outcome as variables, all four terminal outcomes |
 | 2026-08-23 | feat/omr-scan-outcome | 24bc38c71 | School OMR scan-outcome broadcast: topic derived from resolveQuizScanTopics, scan-graded fields renamed to correctCount/totalCount, scan ceremony raised above material player, eraser-leniency rule 3 coverage. Fully merged into main; no worktree, no uncommitted work. |
+| 2026-08-23 | feat/omr-receipt-codes | 4fcc24f4c | OMR receipt codes + result-receipt marking; later carried the PianoCheckers destination-mode fix. Fully merged into main and deployed; worktree detached before deletion. |
+| 2026-08-23 | backup/pre-pii-scrub-origin (remote) | b86002952 | Pre-PII-scrub snapshot of origin. Every commit already contained in main; deleted from origin at user request during merged-branch cleanup. |
