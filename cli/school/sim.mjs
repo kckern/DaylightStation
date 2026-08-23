@@ -17,9 +17,10 @@
  */
 import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
+import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import dotenv from 'dotenv';
 import yaml from 'js-yaml';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
@@ -60,6 +61,32 @@ class MemoryTokens {
   records = new Map();
   async put(record) { this.records.set(record.token, record); return record; }
   async get(token) { return this.records.get(token) ?? null; }
+
+  /**
+   * The collision surface a panel-code mint draws against. Live means what
+   * `getByAccessCode` would resolve: unexpired, unrevoked, `subject_next`.
+   * Needed for `--self-service`; without it `BuildAgenda` refuses to construct.
+   */
+  async liveAccessCodes() {
+    const at = Date.now();
+    const live = new Set();
+    for (const record of this.records.values()) {
+      if (record.tokenClass !== 'subject_next') continue;
+      if (record.revokedAt) continue;
+      if (!record.accessCode) continue;
+      if (record.accessCodeExpiresAt && Date.parse(record.accessCodeExpiresAt) <= at) continue;
+      live.add(record.accessCode);
+    }
+    return live;
+  }
+
+  /** The reverse lookup a typed code resolves through. */
+  async getByAccessCode(code) {
+    for (const record of this.records.values()) {
+      if (record.accessCode === code && !record.revokedAt) return record;
+    }
+    return null;
+  }
 }
 
 class MemoryWorksheetInstances {
@@ -77,7 +104,16 @@ class MemoryAttempts {
   readAttemptsInRange(learnerId) { return this.readAllAttempts(learnerId); }
 }
 
-const DEFAULT_DATA = '/Users/kckern/Library/CloudStorage/Dropbox/Apps/DaylightStation/data';
+// The data dir comes from the environment, like every other school CLI
+// (`omr.mjs`, `docs.mjs`). It used to be a hardcoded macOS Dropbox path, which
+// made this command unusable on any other machine — including the production
+// host, where it failed with ENOENT on a `/Users/...` directory that has never
+// existed there. A tool for proving the lifecycle is worth nothing if it only
+// runs on one laptop.
+dotenv.config({ path: join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '.env') });
+const DEFAULT_DATA = process.env.DAYLIGHT_BASE_PATH
+  ? join(process.env.DAYLIGHT_BASE_PATH, 'data')
+  : null;
 let ARGV = process.argv.slice(2);
 const arg = (name, fallback) => {
   const at = ARGV.indexOf(`--${name}`);
@@ -85,7 +121,11 @@ const arg = (name, fallback) => {
 };
 export async function main(argv = process.argv.slice(2)) {
   ARGV = argv;
-  const dataDir = path.resolve(arg('data-dir', DEFAULT_DATA));
+  const dataDirArg = arg('data-dir', DEFAULT_DATA);
+  if (!dataDirArg) {
+    throw new Error('no data dir: pass --data-dir or set DAYLIGHT_BASE_PATH in .env');
+  }
+  const dataDir = path.resolve(dataDirArg);
 
   // Which course, which lesson, which two learners — all supplied. Nothing here
   // is specific to any one course; the Atlas was simply the first one proved.
@@ -104,29 +144,75 @@ export async function main(argv = process.argv.slice(2)) {
   const output = path.resolve(arg('out', path.join(os.tmpdir(), `daylight-school-sim-${COURSE}`)));
   const outcomeMode = arg('outcome', 'pass');
   if (!['pass', 'fail'].includes(outcomeMode)) throw new Error('--outcome must be pass or fail');
+  // Self-service is what mints the six-digit panel code beside each QR. Off by
+  // default (matching an install that has not turned it on), but exercisable —
+  // without this flag the "every printed QR carries its own code" property
+  // simply could not be checked from this CLI at all.
+  const selfService = ARGV.includes('--self-service') ? { enabled: true } : null;
+  const BUBBLE_MODE = ARGV.includes('--triple-bubble') ? 'triple'
+    : (ARGV.includes('--double-bubble') ? 'double' : null);
 
   // Default to the course's first lesson in sequence, so a caller who only
   // names a course still gets a runnable proof.
+  //
+  // COURSE LAYOUT, as it actually is on disk. This used to walk
+  // `units/<unit>/lessons/<lesson>/index.yml` — a shape no course in the tree
+  // uses any more, so the command failed with ENOENT on `units` for every one
+  // of them. A `school.course/v2` course is `<NN-module>/<lesson>.yml`, with
+  // `_index.yml` at the root describing the course itself. The old shape is
+  // still accepted first, so a course that has not been migrated keeps working.
   function firstLesson(root) {
-    const unitsRoot = path.join(root, 'units');
-    for (const unit of fs.readdirSync(unitsRoot).sort()) {
-      const lessonsRoot = path.join(unitsRoot, unit, 'lessons');
-      if (!fs.existsSync(lessonsRoot)) continue;
-      for (const dir of fs.readdirSync(lessonsRoot).sort()) {
-        if (fs.existsSync(path.join(lessonsRoot, dir, 'index.yml'))) return path.join('units', unit, 'lessons', dir);
+    const legacyUnits = path.join(root, 'units');
+    if (fs.existsSync(legacyUnits)) {
+      for (const unit of fs.readdirSync(legacyUnits).sort()) {
+        const lessonsRoot = path.join(legacyUnits, unit, 'lessons');
+        if (!fs.existsSync(lessonsRoot)) continue;
+        for (const dir of fs.readdirSync(lessonsRoot).sort()) {
+          if (fs.existsSync(path.join(lessonsRoot, dir, 'index.yml'))) return path.join('units', unit, 'lessons', dir);
+        }
       }
     }
-    throw new Error(`no lesson with an index.yml under ${root}`);
+    // `_index.yml` is the COURSE, not a lesson, and a leading `_` marks every
+    // non-lesson file in this tree — skip the lot rather than name them.
+    for (const entry of fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory() || entry.name.startsWith('_')) continue;
+      const moduleRoot = path.join(root, entry.name);
+      for (const file of fs.readdirSync(moduleRoot).sort()) {
+        if (file.startsWith('_') || !file.endsWith('.yml')) continue;
+        return path.join(entry.name, file);
+      }
+    }
+    throw new Error(`no lesson found under ${root}`);
   }
-  const lessonRel = LESSON
-    ? (LESSON.startsWith('units/') ? LESSON : path.join('units', LESSON))
-    : firstLesson(courseRoot);
-  const lessonRoot = path.join(courseRoot, lessonRel);
-  const lesson = yaml.load(fs.readFileSync(path.join(lessonRoot, 'index.yml'), 'utf8'));
+  const lessonRel = LESSON ?? firstLesson(courseRoot);
+  const lessonPath = path.join(courseRoot, lessonRel);
+  // v2 lessons are a single YAML file; the legacy shape was a directory with
+  // an `index.yml` inside it. Accept either, so this runs against both.
+  const lessonFile = fs.existsSync(lessonPath) && fs.statSync(lessonPath).isDirectory()
+    ? path.join(lessonPath, 'index.yml')
+    : lessonPath;
+  const lessonRoot = path.dirname(lessonFile);
+  const lessonRaw = yaml.load(fs.readFileSync(lessonFile, 'utf8'));
+  // A v2 lesson file is a QUESTION BANK (`school.question-bank/v2`) and carries
+  // neither `courseId` nor `unitId` — the legacy shape carried both. The course
+  // is the one the caller named (the same id the enrollment uses), and the unit
+  // is the bank's own `unit`. Legacy keys still win when present, so an
+  // unmigrated course behaves exactly as before.
+  const lesson = {
+    ...lessonRaw,
+    courseId: lessonRaw.courseId ?? COURSE,
+    unitId: lessonRaw.unitId ?? lessonRaw.unit ?? null,
+  };
+  if (!lesson.unitId) throw new Error(`lesson ${lessonRel} names no unit`);
   const assignment = yaml.load(fs.readFileSync(
     path.join(dataDir, 'household/school/plans/learners', `${LOWER_ID}.yml`), 'utf8',
   ));
-  const course = assignment.courses.find((entry) => entry.courseId === lesson.courseId);
+  // `enrollments` is the on-disk key; `courses` is what `YamlAssignmentStore`
+  // normalizes it to. This reads the file directly rather than through the
+  // store, so it has to know both — it used to know only `courses` and threw
+  // "Cannot read properties of undefined" on every real learner file.
+  const enrolments = assignment.enrollments ?? assignment.courses ?? [];
+  const course = enrolments.find((entry) => entry.courseId === lesson.courseId);
   if (!course?.enrollment?.enrollmentId || course.profile !== 'lower') {
     throw new Error(`${LOWER_ID} has no 'lower' enrollment in course ${lesson.courseId}`);
   }
@@ -151,6 +237,7 @@ export async function main(argv = process.argv.slice(2)) {
     let tokenDraw = 0;
     const agendaBuilder = new BuildAgenda({
       curriculum, assignments, sessions, tokens, timezone: 'America/Los_Angeles',
+      selfService,
       clock: () => new Date('2026-08-13T06:00:00.000Z'),
       rng: () => ((++tokenDraw * 0.61803398875) % 1),
       newSessionId: () => `virtual-sim-${++sessionNumber}`,
@@ -225,14 +312,40 @@ export async function main(argv = process.argv.slice(2)) {
       const shouldMiss = outcomeMode === 'fail' && index >= Math.floor(complete.questions.length / 2);
       const letters = question.options.filter((option) => (shouldMiss ? !option.correct : option.correct)).map((option) => option.letter);
       if (shouldMiss) letters.splice(1);
-      answers[complete.omr.rowRange.start + index] = question.type === 'multi_select' ? letters : letters[0];
+      let given = question.type === 'multi_select' ? letters : letters[0];
+
+      // MULTI-MARK ROWS, the two cases the paper pipeline has to tell apart
+      // and which nothing could exercise from this CLI before:
+      //
+      //   --double-bubble  one wrong option marked ALONGSIDE the correct one.
+      //                    The eraser signature: a child changed their mind and
+      //                    the rubber left a readable mark. Bounded leniency
+      //                    (`ambiguityLeniency`) credits it with no human step.
+      //   --triple-bubble  three marked. Past any eraser story, so it must
+      //                    still be held for a person rather than credited.
+      //
+      // Applied to the FIRST row only, so the rest of the sheet stays a clean
+      // control and the receipt shows one marked box among correct ones.
+      const extras = (BUBBLE_MODE && index === 0)
+        ? question.options.filter((option) => !option.correct).map((option) => option.letter)
+        : [];
+      if (extras.length) {
+        const wanted = BUBBLE_MODE === 'triple' ? 2 : 1;
+        given = [...(Array.isArray(given) ? given : [given]), ...extras.slice(0, wanted)];
+      }
+      answers[complete.omr.rowRange.start + index] = given;
     });
     const grade = await new ResolveCardScan({ allocationStore, repository }).execute({
       testId: complete.omr.cardId, answers,
     });
     const card = grade.results[0];
-    const expectedCorrect = outcomeMode === 'pass' ? card?.totalPoints : Math.floor(card?.totalPoints / 2);
-    if (!card || card.earnedPoints !== expectedCorrect) throw new Error(`virtual OMR grade did not produce ${expectedCorrect} correct`);
+    // A multi-mark run is PROVING what the grader does with an ambiguous row,
+    // so it must not also assert a clean-sheet score — that is the very thing
+    // under test. The outcome is reported instead, and the caller reads it.
+    if (!BUBBLE_MODE) {
+      const expectedCorrect = outcomeMode === 'pass' ? card?.totalPoints : Math.floor(card?.totalPoints / 2);
+      if (!card || card.earnedPoints !== expectedCorrect) throw new Error(`virtual OMR grade did not produce ${expectedCorrect} correct`);
+    }
     fs.writeFileSync(path.join(output, 'omr-result.yml'), yaml.dump(grade, { lineWidth: -1, noRefs: true }));
 
     const receiptRenderer = createDocumentReceiptRenderer({ scanCodes: 'qr' });
@@ -248,6 +361,7 @@ export async function main(argv = process.argv.slice(2)) {
     let printedResultDocument = null;
     const closed = await new CloseSessionOutcome({
       curriculum, sessions, tokens, assignments, worksheetInstances, timezone: 'America/Los_Angeles', grownUps: { assert() {} },
+      selfService,
       receipts: { async print(document) { printedResultDocument = document; return { printed: true }; } },
       clock: () => new Date('2026-08-13T06:06:00.000Z'),
       rng: () => ((++tokenDraw * 0.61803398875) % 1), logger: { warn() {}, info() {} },
@@ -300,9 +414,15 @@ export async function main(argv = process.argv.slice(2)) {
       documentId: complete.documentId, documentRevision: complete.documentRevision,
       cardId: complete.omr.cardId, rows: complete.omr.rowRange,
       score: `${card.earnedPoints}/${card.totalPoints}`,
+      // `--upper` is optional (see the usage string), so the second learner
+      // may genuinely be absent. It used to be read unconditionally here and
+      // threw "Cannot read properties of undefined" on every single-learner
+      // run — i.e. on the documented default way to invoke this command.
       agenda: {
         [LOWER_ID]: { profile: 'lower', unitId: lowerOffer.unitId, tokenClass: lowerOffer.tokenClass },
-        [UPPER_ID ?? 'upper']: { profile: 'upper', unitId: upperOffer.unitId, tokenClass: upperOffer.tokenClass },
+        ...(UPPER_ID && upperOffer
+          ? { [UPPER_ID]: { profile: 'upper', unitId: upperOffer.unitId, tokenClass: upperOffer.tokenClass } }
+          : {}),
       },
       agendaQr: lowerOffer.token,
       agendaScan: { status: scanIssue.status, physical: scanIssue.physical, enrollmentBound: true },
