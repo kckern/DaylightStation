@@ -702,7 +702,18 @@ export function createDocumentReceiptRenderer({
           ctx.font = theme.fonts.code;
           ctx.fillText(`${progress.completed} of ${progress.total}`, x + contentWidth, sy);
           sy += 31;
-          const segments = Math.min(theme.result.progressSegments, progress.total);
+          // ONE TICK PER LESSON. This used to be
+          // `Math.min(progressSegments, total)` with `progressSegments: 10`,
+          // which silently disagreed with the bar beside it: the FILL is
+          // `completed / total`, so on a 13-lesson unit the track was divided
+          // into 10 and the filled edge landed nowhere near a tick. A child
+          // counting ticks to see how much is left was counting the wrong
+          // thing, and "1 of 13" sat above ten marks. Course progress looked
+          // correct only by luck — 7 units is under the old cap.
+          //
+          // With `segments === total` the filled edge lands EXACTLY on the
+          // `completed`-th tick, by construction rather than coincidence.
+          const segments = Math.max(1, progress.total);
           const trackY = sy + theme.result.progressHeight / 2;
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -711,13 +722,20 @@ export function createDocumentReceiptRenderer({
           ctx.stroke();
           const filledWidth = (progress.completed / progress.total) * contentWidth;
           if (filledWidth > 0) ctx.fillRect(x, sy, filledWidth, theme.result.progressHeight);
-          for (let index = 0; index < segments; index += 1) {
-            ctx.lineWidth = 2;
-            const tickX = x + (index / segments) * contentWidth;
-            ctx.beginPath();
-            ctx.moveTo(tickX, sy - 2);
-            ctx.lineTo(tickX, sy + theme.result.progressHeight + 2);
-            ctx.stroke();
+          // Below a legible gap the ticks stop being countable and read as a
+          // hatch, so they are DROPPED rather than thinned to a wrong count —
+          // a tick that does not mean one lesson is the bug this replaced.
+          // The bar, its end caps and the "n of m" label still carry the
+          // whole story.
+          if (contentWidth / segments >= theme.result.progressMinTickGap) {
+            for (let index = 0; index < segments; index += 1) {
+              ctx.lineWidth = 2;
+              const tickX = x + (index / segments) * contentWidth;
+              ctx.beginPath();
+              ctx.moveTo(tickX, sy - 2);
+              ctx.lineTo(tickX, sy + theme.result.progressHeight + 2);
+              ctx.stroke();
+            }
           }
           ctx.beginPath();
           ctx.moveTo(x + contentWidth, sy - 2);

@@ -411,3 +411,75 @@ describe("scanCodes: 'qr'", () => {
     expect(dark2).toBeGreaterThan(500); // QR in second code area
   });
 });
+
+/**
+ * Progress ticks (2026-08-23). The tick count was
+ * `Math.min(progressSegments, total)` with `progressSegments: 10`, while the
+ * filled bar beside it is `completed / total`. On a 13-lesson unit the track
+ * was therefore divided into ten and the filled edge landed nowhere near a
+ * tick — "1 of 13" printed above ten marks. Course progress escaped notice
+ * only because 7 units is under the old cap.
+ */
+describe('progress ticks count lessons, not tenths', () => {
+  /** Vertical strokes drawn in the progress band, by x — one per tick. */
+  async function tickXsFor(progress) {
+    const originalMoveTo = CanvasRenderingContext2D.prototype.moveTo;
+    const originalLineTo = CanvasRenderingContext2D.prototype.lineTo;
+    const segments = [];
+    let pending = null;
+    CanvasRenderingContext2D.prototype.moveTo = function patchedMoveTo(x, y) {
+      pending = { x, y };
+      return originalMoveTo.call(this, x, y);
+    };
+    CanvasRenderingContext2D.prototype.lineTo = function patchedLineTo(x, y) {
+      if (pending && Math.abs(pending.x - x) < 0.001 && y > pending.y) {
+        segments.push({ x, height: y - pending.y });
+      }
+      return originalLineTo.call(this, x, y);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary',
+        headline: 'PASSED',
+        title: 'The Midwestern States',
+        correctCount: 6,
+        totalCount: 6,
+        progress: [progress],
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.moveTo = originalMoveTo;
+      CanvasRenderingContext2D.prototype.lineTo = originalLineTo;
+    }
+    // The ticks are the tallest cluster of identical-height vertical strokes
+    // in the band; the score panel's own strokes differ in height.
+    const byHeight = new Map();
+    segments.forEach((s) => byHeight.set(s.height, [...(byHeight.get(s.height) ?? []), s.x]));
+    const tallest = [...byHeight.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    return (tallest?.[1] ?? []).sort((a, b) => a - b);
+  }
+
+  it("draws one tick per lesson for a 13-lesson unit — not the old ten", async () => {
+    const xs = await tickXsFor({ label: 'Unit 1', completed: 1, total: 13 });
+    // 13 interior ticks (indices 0..12) plus the closing end cap.
+    expect(xs).toHaveLength(14);
+  });
+
+  it('puts the filled edge exactly on a tick, which is the whole point', async () => {
+    const xs = await tickXsFor({ label: 'Unit 1', completed: 1, total: 13 });
+    const spacing = xs[1] - xs[0];
+    // Evenly spaced, so tick[completed] is where the fill ends.
+    xs.slice(1).forEach((x, i) => expect(x - xs[i]).toBeCloseTo(spacing, 5));
+  });
+
+  it('still matches when the total is under the old cap — course progress was right by luck', async () => {
+    const xs = await tickXsFor({ label: 'Course', completed: 1, total: 7 });
+    expect(xs).toHaveLength(8);
+  });
+
+  it('drops the ticks entirely rather than drawing a wrong count when they would not be countable', async () => {
+    const xs = await tickXsFor({ label: 'Course', completed: 1, total: 400 });
+    // 530px of track / 400 would be ~1.3px apart — a hatch, not a count.
+    // The bar and its "n of m" label still carry it.
+    expect(xs.length).toBeLessThan(400);
+  });
+});

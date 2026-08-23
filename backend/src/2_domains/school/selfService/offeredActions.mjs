@@ -177,7 +177,9 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
  *
  * @returns {{work: object|null, sentence: string|null}}
  */
-function buildCard(resolution, { mediaSurface = null, bankPrintable = false } = {}) {
+// `now` is supplied by the caller, never read from a clock here — this module
+// is pure by construction (see its header) and that stays true.
+function buildCard(resolution, { mediaSurface = null, bankPrintable = false, now = null } = {}) {
   if (!resolution) return { work: null, sentence: TELL_A_GROWN_UP };
 
   switch (resolution.kind) {
@@ -214,11 +216,55 @@ function buildCard(resolution, { mediaSurface = null, bankPrintable = false } = 
     }
     case 'move': {
       const work = workAction(resolution, { mediaSurface, bankPrintable });
-      return { work, sentence: work ? null : waitingSentence(resolution) };
+      // A button normally says it all, with one exception: work first handed
+      // out on an earlier day. "Print it again" is truthful but reads as
+      // today's work, and the sheet that comes out can differ startlingly
+      // from what the child last held — a different student number, questions
+      // starting at 7 — all correct for an allocation minted days ago and
+      // bewildering with no memory of that context. Naming the start date is
+      // the whole fix: the child is told they are resuming, not starting.
+      if (work) return { work, sentence: resumedSentence(resolution, now) };
+      return { work: null, sentence: waitingSentence(resolution) };
     }
     default:
       return { work: null, sentence: TELL_A_GROWN_UP };
   }
+}
+
+/** Whole days between two ISO timestamps, or null when either is unusable. */
+export function resumeAgeDays(firstIssuedAt, now) {
+  if (typeof firstIssuedAt !== 'string' || !firstIssuedAt) return null;
+  const issued = Date.parse(firstIssuedAt);
+  const at = now instanceof Date ? now.getTime() : Date.parse(now);
+  if (!Number.isFinite(issued) || !Number.isFinite(at) || at < issued) return null;
+  return Math.floor((at - issued) / 86400000);
+}
+
+/**
+ * "Started Thu 14 Aug" — shown only for work first handed out a full day or
+ * more ago.
+ *
+ * ONE DAY, not the sweep's seven. They answer different questions: seven days
+ * is when a session is old enough to be considered ABANDONED (a destructive
+ * call, and one nothing currently schedules), whereas this only decides
+ * whether the child is told the date. Anything under a day is genuinely
+ * continuous work and the line would be noise; anything over it is a resume
+ * the child has no memory of. Measured in elapsed hours rather than calendar
+ * days on purpose — this module takes no timezone, and a UTC calendar
+ * comparison would call 11pm-to-1am "yesterday's work".
+ */
+function resumedSentence(resolution, now) {
+  const state = resolution.state?.state;
+  if (state !== 'issued' && state !== 'reprinted') return null;
+  const days = resumeAgeDays(resolution.state?.firstIssuedAt, now);
+  if (days === null || days < 1) return null;
+  // "Fri, 14 Aug 2026 15:00:00 GMT" -> "Fri 14 Aug". The year is dropped (a
+  // resume measured in years is not a case worth wording for) and a
+  // zero-padded day is unpadded, so a 4th reads "Fri 4 Sep" rather than
+  // "Fri 04 Sep".
+  const [weekday, day, month] = new Date(Date.parse(resolution.state.firstIssuedAt))
+    .toUTCString().slice(0, 11).replace(',', '').split(' ');
+  return `Started ${weekday} ${Number(day)} ${month}.`;
 }
 
 /** Why this card has no button — reached only when `workAction` found nothing. */
