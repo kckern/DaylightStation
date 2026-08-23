@@ -178,6 +178,15 @@ const receipt = (id, blocks, { title = null } = {}) => ({
  * child matches the note back to the sheet in their hand — and the bare
  * itemId otherwise.
  *
+ * READS `item.note` ONLY (Slice H, 2026-08-22). A review item also carries
+ * `internalNote` — the record-only twin, for a sign-off explanation or a
+ * machine-generated audit rationale (Slice B's eraser-leniency rows,
+ * `RecordCardScanOutcome.mjs`) — and this function has no parameter that
+ * could reach it. That is deliberate: the boundary between "for the record"
+ * and "for the reader" has to survive whatever gets written into
+ * `internalNote` in the future without anyone here remembering to keep it
+ * out. See `IReviewQueue.mjs`'s `ReviewItem` typedef for the full split.
+ *
  * @param {Array<{note?: string|null, questionNumber?: number|null,
  *   itemId?: string, gradedAt?: string|null}>} items
  * @param {object} [opts]

@@ -275,8 +275,11 @@ export class FakeReviewQueue extends IReviewQueue {
     const existing = this.#items.get(sessionId) ?? [];
     items.forEach((item) => {
       const at = existing.findIndex((e) => e.itemId === item.itemId);
-      if (at === -1) existing.push({ verdict: null, gradedBy: null, gradedAt: null, note: null, ...item });
-      else if (!existing[at].verdict) existing[at] = { ...existing[at], ...item };
+      if (at === -1) {
+        existing.push({
+          verdict: null, gradedBy: null, gradedAt: null, note: null, internalNote: null, ...item,
+        });
+      } else if (!existing[at].verdict) existing[at] = { ...existing[at], ...item };
     });
     this.#items.set(sessionId, existing);
     return existing;
@@ -284,14 +287,18 @@ export class FakeReviewQueue extends IReviewQueue {
 
   async listForSession(sessionId) { return [...(this.#items.get(sessionId) ?? [])]; }
 
-  async resolve({ sessionId, itemId, verdict, gradedBy = null, note = null, at }) {
+  async resolve({
+    sessionId, itemId, verdict, gradedBy = null, note = null, internalNote = null, at,
+  }) {
     const items = this.#items.get(sessionId) ?? [];
     const index = items.findIndex((i) => i.itemId === itemId);
     if (index === -1) return null;
     const written = typeof note === 'string' && note.trim() ? note.trim() : null;
+    const writtenInternal = typeof internalNote === 'string' && internalNote.trim() ? internalNote.trim() : null;
     items[index] = {
       ...items[index], verdict, gradedBy, gradedAt: at,
       note: written ?? items[index].note ?? null,
+      internalNote: writtenInternal ?? items[index].internalNote ?? null,
     };
     return items[index];
   }
