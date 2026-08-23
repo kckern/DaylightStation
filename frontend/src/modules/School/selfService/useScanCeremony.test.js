@@ -52,7 +52,7 @@ describe('useScanCeremony', () => {
     act(() => {
       deliver({
         topic: 'omr', event: 'scan-graded', testId: 't1', learnerId: 'kid1',
-        earnedPoints: 8, totalPoints: 10, percent: 80, result: 'graded', sessionId: 's1',
+        correctCount: 8, totalCount: 10, percent: 80, result: 'graded', sessionId: 's1',
         timestamp: 1000,
       });
     });
@@ -67,7 +67,7 @@ describe('useScanCeremony', () => {
   it('falls back to a scoreless success message when points are missing', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', testId: 't1', earnedPoints: null, totalPoints: null });
+      deliver({ topic: 'omr', event: 'scan-graded', testId: 't1', correctCount: null, totalCount: null });
     });
     expect(result.current.current.tone).toBe('success');
     expect(result.current.current.detail).toBe('Your sheet is printing.');
@@ -144,7 +144,7 @@ describe('useScanCeremony', () => {
   it('logs every ceremony through the schoolLog scan facade', () => {
     mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', earnedPoints: 5, totalPoints: 5 });
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
     expect(scanLog).toHaveBeenCalledWith('scan-graded', { tone: 'success', title: 'Scored!', code: null });
   });
@@ -152,7 +152,7 @@ describe('useScanCeremony', () => {
   it('a new scan replaces the current ceremony', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', earnedPoints: 5, totalPoints: 5 });
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
     expect(result.current.current.title).toBe('Scored!');
     act(() => {
@@ -164,7 +164,7 @@ describe('useScanCeremony', () => {
   it('auto-clears after ~12s', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', earnedPoints: 5, totalPoints: 5 });
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
     expect(result.current.current).not.toBeNull();
     act(() => {
@@ -176,7 +176,7 @@ describe('useScanCeremony', () => {
   it('a replacement scan restarts the auto-clear clock', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', earnedPoints: 5, totalPoints: 5 });
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
     act(() => {
       vi.advanceTimersByTime(9000);
@@ -197,7 +197,7 @@ describe('useScanCeremony', () => {
   it('clear() dismisses the ceremony immediately', () => {
     const { result } = mount();
     act(() => {
-      deliver({ topic: 'omr', event: 'scan-graded', earnedPoints: 5, totalPoints: 5 });
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
     act(() => {
       result.current.clear();

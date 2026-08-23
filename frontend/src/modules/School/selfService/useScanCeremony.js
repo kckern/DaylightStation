@@ -52,13 +52,16 @@ function buildCeremony(payload) {
   const at = typeof payload?.timestamp === 'number' ? payload.timestamp : Date.now();
   switch (payload?.event) {
     case 'scan-graded': {
-      const { earnedPoints, totalPoints } = payload;
-      const hasScore = typeof earnedPoints === 'number' && typeof totalPoints === 'number';
+      // ROW counts (`schoolPrintScanConsumer.mjs`'s session-sourced
+      // correctCount/totalCount), the same numbers the gradebook and report
+      // card use — never the card's points aggregate.
+      const { correctCount, totalCount } = payload;
+      const hasScore = typeof correctCount === 'number' && typeof totalCount === 'number';
       return {
         tone: 'success',
         title: 'Scored!',
         detail: hasScore
-          ? `${earnedPoints} of ${totalPoints} right — your sheet is printing.`
+          ? `${correctCount} of ${totalCount} right — your sheet is printing.`
           : 'Your sheet is printing.',
         at,
       };

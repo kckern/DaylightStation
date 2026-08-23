@@ -275,8 +275,13 @@ export function createSchoolPrintScanConsumer({
                     event: 'scan-graded',
                     testId,
                     learnerId: card.learnerId ?? null,
-                    earnedPoints: earned,
-                    totalPoints: total,
+                    // ROW counts (session.correctCount/totalCount), named for
+                    // what they are — never `earnedPoints`/`totalPoints`,
+                    // which would invite a future maintainer to reach for
+                    // `card.earnedPoints`/`card.totalPoints` instead, a
+                    // different points-based number two scopes away.
+                    correctCount: earned,
+                    totalCount: total,
                     percent,
                     result: 'graded',
                     sessionId: sectionOutcome.session.sessionId,
