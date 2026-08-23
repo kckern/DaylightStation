@@ -57,6 +57,7 @@ describe.each([
     const enrolled = await harness.container.enrollDevice.execute({
       platformId: fixture.platformId,
       label: `${fixture.name} A`,
+      catalogId: CATALOG.catalogId,
     });
     expect(enrolled.device).toMatchObject({
       deviceId: DEVICE_ID,
@@ -185,6 +186,7 @@ describe.each([
       const enrolled = await harness.container.enrollDevice.execute({
         platformId: fixture.platformId,
         label: `${fixture.name} ${String.fromCharCode(65 + index)}`,
+        catalogId: CATALOG.catalogId,
       });
       const learnerKey = enrolled.device.learnerBindings
         .find((binding) => binding.learnerId === learnerId)?.learnerKey;

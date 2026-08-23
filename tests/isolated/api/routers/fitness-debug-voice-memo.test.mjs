@@ -6,6 +6,27 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { createFitnessRouter } from '../../../../backend/src/4_api/v1/routers/fitness.mjs';
+import { writeBinary } from '../../../../backend/src/0_system/utils/FileIO.mjs';
+
+// NOTE: c2880857f "refactor(api/fitness): webhook policy + FS + household-id
+// out of router (audit API-3)" (2026-07-07) moved this route's filesystem
+// write behind an injected `voiceMemoDebugStore` provider (mirrors the real
+// wiring in backend/src/5_composition/modules/fitnessApi.mjs) so the router
+// itself no longer touches fs/path. This test was written 55c080b41
+// (2026-04-23), before that refactor, and never supplied the provider, so
+// every request 503'd on "Debug voice-memo store not configured". Added a
+// real-filesystem-backed fake store here (same shape as the composition-root
+// one) instead of relaxing the route.
+const makeVoiceMemoDebugStore = (dataDir) => ({
+  async save(buffer) {
+    const savedAt = Date.now();
+    const iso = new Date(savedAt).toISOString().replace(/:/g, '-');
+    const filename = `${iso}.webm`;
+    const filePath = path.join(dataDir, '_debug', 'voice_memos', filename);
+    writeBinary(filePath, buffer);
+    return { path: filePath, filename, size: buffer.length, savedAt };
+  },
+});
 
 describe('POST /api/v1/fitness/debug/voice-memo', () => {
   let app;
@@ -24,6 +45,7 @@ describe('POST /api/v1/fitness/debug/voice-memo', () => {
       configService,
       contentRegistry: null,
       transcriptionService: null,
+      voiceMemoDebugStore: makeVoiceMemoDebugStore(tmpDataDir),
       logger: { debug: () => {}, warn: () => {}, error: () => {} },
     });
     app = express();
@@ -91,6 +113,7 @@ describe('POST /api/v1/fitness/debug/voice-memo', () => {
       configService,
       contentRegistry: null,
       transcriptionService: null,
+      voiceMemoDebugStore: makeVoiceMemoDebugStore(tmpDataDir),
       enrichmentService,
       logger: { debug: () => {}, warn: () => {}, error: () => {} },
     });

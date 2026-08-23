@@ -91,7 +91,17 @@ export class YamlAssignmentStore extends IAssignmentStore {
     try {
       const raw = yaml.load(text);
       this.#corruptHistory.delete(learnerId);
-      return Array.isArray(raw) ? raw.map((entry) => toDomainRecord(entry, learnerId)) : [];
+      // toDomainRecord only knows the current-state shape (learnerId/courses/
+      // units/updatedAt/assignedBy) — a history entry additionally carries
+      // `recordedAt` (when THIS entry became current), which must survive the
+      // read or GetReportCard's period-window filter and the admin activity
+      // trail (school.mjs, `h.recordedAt`) silently see nothing.
+      return Array.isArray(raw)
+        ? raw.map((entry) => ({
+          ...toDomainRecord(entry, learnerId),
+          recordedAt: typeof entry?.recordedAt === 'string' ? entry.recordedAt : null,
+        }))
+        : [];
     } catch {
       this.#markHistoryCorrupt(learnerId);
       return [];

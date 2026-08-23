@@ -54,8 +54,8 @@ describe('listForLearner', () => {
     await store.resolve({
       sessionId: 'ses_settled', itemId: 'q1', verdict: 'correct', gradedBy: 'parent', at: '2026-07-27T09:05:00.000Z',
     });
-    expect(fs.existsSync(path.join(tmp, 'school/review', 'ses_settled.settled.yml'))).toBe(true);
-    expect(fs.existsSync(path.join(tmp, 'school/review', 'ses_settled.yml'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, 'school/runtime/review', 'ses_settled.settled.yml'))).toBe(true);
+    expect(fs.existsSync(path.join(tmp, 'school/runtime/review', 'ses_settled.yml'))).toBe(false);
 
     // A still-open session lives under the plain name; one resolved item
     // inside it must still surface even though the FILE is not settled.
@@ -96,7 +96,7 @@ describe('listForLearner', () => {
     await store.enqueue([item({ sessionId: 'ses_old', itemId: 'q1', learnerId: 'kid1' })]);
     await store.resolve({ sessionId: 'ses_old', itemId: 'q1', verdict: 'correct', gradedBy: 'p', at: '2020-01-01T00:00:00.000Z' });
     // Backdate the file's own mtime so the window-skip has something to bite on.
-    const file = path.join(tmp, 'school/review', 'ses_old.settled.yml');
+    const file = path.join(tmp, 'school/runtime/review', 'ses_old.settled.yml');
     const old = new Date('2020-01-01T00:00:00.000Z');
     fs.utimesSync(file, old, old);
 
