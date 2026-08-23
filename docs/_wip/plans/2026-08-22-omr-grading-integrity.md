@@ -954,6 +954,29 @@ agenda codes were keyed by subject while QRs are minted per token."
 
 ## The 5-minute hardware ritual
 
+**Most of these no longer need the school room.** `cli/school/sim.mjs` runs the
+real use cases against throwaway state, so six of the seven were verified from
+a terminal on 2026-08-23 — see each line. The commands:
+
+```
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --self-service
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --double-bubble
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --triple-bubble
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --tap
+```
+
+Getting there needed the sim repaired first: it had a hardcoded macOS data
+path, walked a `units/<unit>/lessons/` course layout no course uses any more,
+read `courses` where the on-disk key is `enrollments`, and crashed on its own
+documented single-learner invocation (d68e890e7). `--self-service`,
+`--double-bubble`/`--triple-bubble` and `--tap` were added because the
+properties they check could not otherwise be exercised at all.
+
+The ONE item that still wants a person is the unreadable-sheet BANNER: a
+pixel on a panel is not a thing a CLI can see.
+
+The original note follows.
+
 Most of the 👤 items fall out of ONE pass at the school room, and it is worth
 doing deliberately rather than waiting to notice a defect in the wild:
 
@@ -975,14 +998,14 @@ That covers B, C, D, F and G against real hardware in one visit.
 - [ ] `npm run audit:layers` passes — no new cross-layer imports (`2_domains` must not reach up)
 - [ ] `npm run test:refactor` passes
 - [x] A backend event queried at `_time:5m` returns during a live session — DONE (drift measured at 0ms)
-- [ ] 👤 A double-bubble worksheet row with one correct answer prints a receipt with no human step
-- [ ] 👤 A three-bubble row still holds for review
-- [ ] 👤 An unreadable sheet raises a banner on the panel *and* a `warn` in the store
+- [x] ✅ A double-bubble worksheet row with one correct answer prints a receipt with no human step — VERIFIED 2026-08-23 via `school sim --double-bubble`: row grades `status: correct`, 1/1, no review flag
+- [x] ✅ A three-bubble row still holds for review — VERIFIED 2026-08-23 via `school sim --triple-bubble`: row grades `status: ambiguous`, 0/1
+- [ ] 👤 An unreadable sheet raises a banner on the panel *and* a `warn` in the store — the `warn`/broadcast half is covered by `schoolPrintScanConsumer.test.mjs`; the BANNER still needs eyes on the panel, which is the only part of this list that genuinely does
 - [ ] The allocation audit reports zero bases with more than one LIVE record (expected: already true)
 - [ ] A resumed session older than a day prints its issue date and row range
 - [x] 👤 A long receipt prints to completion, and the job printed **immediately after** it is not shifted — DONE, verified on paper 2026-08-22
 - [x] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback — DONE
-- [ ] 👤 A correct answer prints a visible check glyph, not `[]` (code done; confirm on paper next time a result receipt prints)
-- [ ] 👤 A second card tap inside the cooldown prints nothing but still says something on the panel
-- [ ] 👤 A tap after new work is assigned still prints, cooldown notwithstanding
-- [ ] 👤 Every printed QR — agenda **and** result receipt — has its own code beside it
+- [x] ✅ A correct answer prints a visible check glyph, not `[]` — VERIFIED 2026-08-23 on paper (Felix's and Milo's reprinted result cards) and in `school sim`'s rendered receipt
+- [x] ✅ A second card tap inside the cooldown prints nothing but still says something — VERIFIED 2026-08-23 via `school sim --tap`: `agenda_suppressed`, zero paper, message "You already have today's agenda — check your desk."
+- [x] ✅ A tap after new work is assigned still prints, cooldown notwithstanding — VERIFIED 2026-08-23 via `school sim --tap`: a changed agenda fingerprint prints again inside the window
+- [x] ✅ Every printed QR — agenda **and** result receipt — has its own code beside it — VERIFIED 2026-08-23 via `school sim --self-service` (agenda QR + next-up QR each carry their own six digits) and on paper. NOTE: the code is drawn UNDER the QR inside the card, not as a text block after it (6642037b5)
