@@ -4650,13 +4650,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'scheduling-jobs' }),
   });
 
+  // School housekeeping. The stale-session sweep had no way to run before
+  // this: `listStale` was reachable only through a manual, teacher-gated
+  // route, so the threshold in it was never consulted and an issued-and-
+  // forgotten session stayed live indefinitely. Wired only when the school
+  // lifecycle itself is (an install without it has no sessions to sweep).
+  let schoolMaintenanceExecutor = null;
+  if (schoolLifecycle.wired && schoolLifecycle.useCases?.markSessionAbandoned) {
+    const { SchoolMaintenanceExecutor } = await import('#apps/school/SchoolMaintenanceExecutor.mjs');
+    schoolMaintenanceExecutor = new SchoolMaintenanceExecutor({
+      markSessionAbandoned: schoolLifecycle.useCases.markSessionAbandoned,
+      logger: rootLogger.child({ module: 'school-maintenance' }),
+    });
+  }
+
   const schedulerOrchestrator = new SchedulerOrchestrator({
     schedulerService,
     jobStore: compositeJobStore,
     stateStore: schedulingStateStore,
     harvesterExecutor: harvesterServices.jobExecutor,
     mediaExecutor,
-    newsReporterExecutor: newsReporter.executor
+    newsReporterExecutor: newsReporter.executor,
+    schoolExecutor: schoolMaintenanceExecutor
   });
 
   const scheduler = new Scheduler({
