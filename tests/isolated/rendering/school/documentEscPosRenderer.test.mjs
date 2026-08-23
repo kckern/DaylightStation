@@ -225,6 +225,61 @@ describe('the progress line on a result summary (regression: Milo, 2026-08-22)',
   });
 });
 
+describe('which questions were missed, on the text receipt', () => {
+  const scored = (extra) => resultDocument({
+    sessionId: 'ses_1', unitTitle: 'Unit Two', result: 'failed',
+    correctCount: 5, totalCount: 6, questionStart: 7, ...extra,
+  });
+
+  it('names the ACTUAL missed question, not the last box', () => {
+    // The old row drew boxes left-to-right from correctCount alone, which
+    // says "7-11 right, 12 wrong". Here question 7 is the miss.
+    const text = textOf(renderer.render(scored({ marks: [false, true, true, true, true, true] })));
+    expect(text).toContain('Check again: 7');
+    expect(text).not.toContain('Check again: 12');
+  });
+
+  it('names every miss, in the sheet\'s own numbering', () => {
+    const text = textOf(renderer.render(scored({
+      correctCount: 4, marks: [false, true, false, true, true, true],
+    })));
+    expect(text).toContain('Check again: 7, 9');
+  });
+
+  it('says nothing when every question is right', () => {
+    const text = textOf(renderer.render(scored({
+      correctCount: 6, result: 'passed', marks: [true, true, true, true, true, true],
+    })));
+    expect(text).toContain('6 of 6 correct');
+    expect(text).not.toContain('Check again');
+  });
+
+  it('stays silent rather than guessing when no marks were threaded', () => {
+    const text = textOf(renderer.render(scored({})));
+    expect(text).toContain('5 of 6 correct');
+    expect(text).not.toContain('Check again');
+  });
+
+  it('stays silent when marks do not cover every question', () => {
+    const text = textOf(renderer.render(scored({ marks: [false, true] })));
+    expect(text).not.toContain('Check again');
+  });
+
+  it('numbers from 1 when the caller threaded no questionStart', () => {
+    const text = textOf(renderer.render(resultDocument({
+      sessionId: 'ses_1', unitTitle: 'Unit Two', result: 'failed',
+      correctCount: 2, totalCount: 3, marks: [true, false, true],
+    })));
+    expect(text).toContain('Check again: 2');
+  });
+
+  it('prints no ✓/× — a codepage-dependent glyph is what put tofu on the canvas receipt', () => {
+    const text = textOf(renderer.render(scored({ marks: [false, true, true, true, true, true] })));
+    expect(text).not.toContain('✓');
+    expect(text).not.toContain('×');
+  });
+});
+
 describe('through the real thermal adapter', () => {
   it('LEAVES A READABLE TRANSCRIPT — an image job left it empty', async () => {
     const captureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'escpos-'));
