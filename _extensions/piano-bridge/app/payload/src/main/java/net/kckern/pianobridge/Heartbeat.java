@@ -146,6 +146,35 @@ public final class Heartbeat {
                 }
             } catch (Throwable ignored) { }
 
+            // Thermal + GPU per beat. The 2026-08-23 jank episode's chain was:
+            // WiFi PA sensor (pa_therm0) at 80-84C -> Samsung thermal engine caps the
+            // GPU to 320-400MHz (of 600) with thermal_pwrlevel still 0 -> every WebView
+            // frame costs 5-10x -> pageRafFps floors at 2-5. These three fields make
+            // that correlation readable straight from the log store next time.
+            try {
+                java.io.File base = new java.io.File("/sys/class/thermal");
+                String hotType = null; double hotC = -1;
+                String[] names = base.list();
+                if (names != null) for (String n : names) {
+                    if (!n.startsWith("thermal_zone")) continue;
+                    try {
+                        String type = readOneLine(new java.io.File(base, n + "/type"));
+                        String t = readOneLine(new java.io.File(base, n + "/temp"));
+                        if (t == null) continue;
+                        double degC = Double.parseDouble(t.trim());
+                        // Mixed scales per zone on this SoC (milli-C, deci-C, C) — same
+                        // normalization as SystemDiagnostics.thermal(): /10 until plausible.
+                        while (Math.abs(degC) > 150) degC /= 10.0;
+                        if (degC > hotC) { hotC = degC; hotType = type == null ? n : type.trim(); }
+                    } catch (Throwable ignored) { }
+                }
+                if (hotC >= 0) { o.put("hotZoneC", Math.round(hotC * 10) / 10.0); o.put("hotZone", hotType); }
+                String clk = readOneLine(new java.io.File("/sys/class/kgsl/kgsl-3d0/gpuclk"));
+                if (clk != null) o.put("gpuMhz", Long.parseLong(clk.trim()) / 1_000_000L);
+                String busy = readOneLine(new java.io.File("/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage"));
+                if (busy != null) o.put("gpuBusyPct", Integer.parseInt(busy.trim().replace("%", "").trim()));
+            } catch (Throwable ignored) { }
+
             // Samsung's power-saving mode writes Settings.Global restricted_device_performance
             // = "1,1" (a CPU/GPU clamp) even while the visible power-saving toggles read OFF
             // (observed 2026-08-23 after an unclean reboot). We hold WRITE_SECURE_SETTINGS,
@@ -285,5 +314,14 @@ public final class Heartbeat {
             o.put("backendUrl", cfg.heartbeatBackendUrl());
         } catch (Exception ignored) { }
         return o;
+    }
+
+    /** First line of a sysfs file, or null on any denial/absence (SELinux varies per node). */
+    private static String readOneLine(java.io.File f) {
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+            return r.readLine();
+        } catch (Throwable t) {
+            return null;
+        }
     }
 }

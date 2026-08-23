@@ -152,6 +152,58 @@ page** — the only honest aged-page probe; the CLI `jank`/`fps` probes reload a
 Full hypothesis set, the compositor-alive/main-dead constraint analysis, and the ordered
 attack plan: [`docs/_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md`](../../_wip/audits/2026-07-07-piano-kiosk-jank-fresh-hypotheses.md).
 
+### The 2026-08-23 live episode: it's THERMAL — a hot WiFi PA gets the GPU/memory clamped
+
+A ~2-hour 2-5 fps episode, worked entirely over the LAN (no ADB, nobody home), finally
+produced a mechanism that fits every observation. The forensics, all via `pbctl`-plane
+`/exec`, `/getsetting`, FKB REST, and screenshot diffing:
+
+| Ruled OUT, with data | Evidence |
+|---|---|
+| Power-save scheduling (07-07's prime suspect) | `PowerManager.isPowerSaveMode()` = **false** DURING the episode (p13 exposes it) |
+| Every Samsung power toggle | `low_power` 0, `adaptive_power_saving_setting` 0, `restricted_device_performance` 0,0 (found 1,1 once, repaired — repair changed nothing) |
+| Page decay / FKB state / device state | Episode survived page reload, `restartApp`, full reboot, screen-off/on cycle |
+| a11y-injected touch (07-01's designed fix) | **CONFIRMED NOT A LEVER**: neither the 34px micro-swipe nor a 400px/250ms swipe raised fps — Samsung's touch boost hooks the touchscreen driver, below a11y injection. `TouchPulser` cannot un-throttle |
+| The keep-alive dot / shimmer / page content | Hiding the dot changed nothing; `about:blank` idles the GPU (0%) — the page only *reveals* the state, per-frame cost is the disease |
+| CPU clamp / thermal on CPU sensors | All cores pinned 1.8 GHz, tsens ~42°C |
+| WebView 151 update (landed 08-19) | Episodes predate it all week (`piano.watchdog.jank-start` daily 08-17..08-23) |
+
+**What was measured:** every produced frame cost ~250 ms of GPU time regardless of damage
+(523 changed pixels/s on a static menu, yet GPU 60-99% busy; screenshot-diff proved how
+little was repainting). Meanwhile **`pa_therm0` — the WiFi power-amp thermistor — sat at
+80-84°C** (everything else ~42°C), `getCurrentThermalStatus()` = LIGHT, WiFi RTT to a LAN
+peer spiked 240ms-2.3s, and **the GPU sat at 320-400 MHz of 600 under 99% load** with
+`thermal_pwrlevel` still 0 — a cap applied *outside* the kgsl thermal knob, i.e. Samsung's
+thermal engine. A 2x frequency cap alone can't make a menu frame cost 250 ms; the working
+theory for the amplifier is the same mitigation clamping **DDR/bus bandwidth votes**, which
+makes the per-frame full-screen texture upload crawl. As the radio recovered (RTT back to
+5-120 ms), fps drifted 2 → 13 with zero config changes — the episode breathes with the
+radio, not with anything in software.
+
+**Causal chain:** struggling WiFi link → radio TX duty/power maxed → PA thermistor 80°C+ →
+Samsung thermal engine caps GPU freq (and, per the 250 ms/frame math, memory bandwidth) →
+every WebView frame costs 5-10x → main-thread frame delivery floors at 2-5 fps while
+compositor-only animation stays smooth. All software levers downstream of that are noise.
+
+**Standing instrumentation (payloads p13-p15):** every bridge heartbeat now carries
+`pageRafFps`, `thermalStatus`, `powerSaveMode`, `hotZone`/`hotZoneC` (hottest thermal zone,
+normalized), `gpuMhz`, `gpuBusyPct`. The correlation that took hours to dig out is now one
+LogsQL query: `context.app:piano-bridge AND _msg:bridge.heartbeat | fields _time, data.pageRafFps, data.hotZoneC, data.gpuMhz`.
+
+**Remedies (mostly physical — flag to the operator):** improve the tablet's WiFi situation
+(AP placement/band; the link is chronically poor), give the tablet airflow (it runs
+plugged-in at 100% against the piano), and consider trimming the kiosk's log-shipping
+volume during episodes (radio duty cycle is the heat source; `perf.diagnostics` densifies
+to 2s cadence exactly when the radio is already struggling — a feedback loop worth
+breaking). If `hotZoneC` reads a flat 80-84 for days regardless of load, suspect a
+degraded/stuck sensor pinning the thermal engine in mitigation — that would need service.
+
+Cleanups done the same day: FKB `injectJsCode` held a `history.pushState` back-button trap
+— the exact pattern this doc's own pitfall (4) warns multiplies into an instance storm on
+the SPA — now cleared; `webviewMixedContent` was 2 (blocked the page's `fetch` to
+`http://localhost:8770`, silently breaking the Operator drawer's Force Reset button) — now
+1. Neither was the jank cause; both were real defects.
+
 ### The 2026-07-01 regression: removing the keep-alive video
 
 Commit `7de308f70` ("gut KeepAliveVideo to CSS-only vsync driver") shipped in the 12:31 build on
