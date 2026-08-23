@@ -127,11 +127,38 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         items.push({ type: 'text', content: block.headline, align: 'center', style: { bold: true }, size: { width: 2, height: 2 } });
         items.push({ type: 'text', content: block.taxonomy ? `Lesson · ${block.title}` : block.title, align: 'center' });
         if (Number.isInteger(block.correctCount) && Number.isInteger(block.totalCount)) {
-          items.push({
-            type: 'text', align: 'center',
-            content: Array.from({ length: block.totalCount }, (_, index) => (index < block.correctCount ? '[✓]' : '[×]')).join(' '),
-          });
           items.push({ type: 'text', content: `${block.correctCount} of ${block.totalCount} correct`, align: 'center', style: { bold: true } });
+          // WHICH questions were missed — named, not implied by position.
+          // This used to print one box per question, filled left-to-right
+          // from `correctCount` alone, which says "the first N are right":
+          // a positional LIE the moment question 1 is the miss, sending a
+          // child to re-check a question they got right. `block.marks` is
+          // the session's own per-item verdict (one entry per box, the same
+          // contract `DocumentReceiptRenderer.mjs` reads) and is the only
+          // thing that can name a miss; it is trusted only when it covers
+          // every box. Without it this line is simply omitted — the count
+          // above already says how many, and silence beats a made-up list.
+          //
+          // A row of boxes is the CANVAS receipt's job (it has numbers above
+          // each box and room to draw them). Here the same truth is carried
+          // as words, because a box row in plain text has to answer "does a
+          // marked box mean right or wrong?" with no legend, and because
+          // ✓/× depend on whichever codepage the thermal printer happens to
+          // be in — the same class of failure that put tofu in the canvas
+          // receipt's score boxes. Question numbers use the sheet's own
+          // numbering when the caller threaded a `questionStart`.
+          if (Array.isArray(block.marks) && block.marks.length === block.totalCount) {
+            const first = Number.isInteger(block.questionStart) ? block.questionStart : 1;
+            const missed = block.marks
+              .map((mark, index) => (mark === true ? null : first + index))
+              .filter((number) => number !== null);
+            if (missed.length) {
+              items.push({
+                type: 'text', align: 'center',
+                content: `Check again: ${missed.join(', ')}`,
+              });
+            }
+          }
         } else if (typeof block.percent === 'number') {
           items.push({ type: 'text', content: `Score: ${Math.round(block.percent)}%`, align: 'center', style: { bold: true } });
         }
