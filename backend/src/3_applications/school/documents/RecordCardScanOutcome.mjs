@@ -142,7 +142,19 @@ export class RecordCardScanOutcome {
       }
       return {
         recorded: sectionOutcomes.some((outcome) => outcome.recorded),
-        sectionOutcomes,
+        // Each entry gets its OWN section's score (not the whole card's
+        // aggregate) — the caller (schoolPrintScanConsumer) fires one grading-
+        // hook event per section and needs section A's 2/2 to read differently
+        // from section B's 1/3 on the same card. `sectionOutcomes[i]` and
+        // `card.sections[i]` correspond by construction: this loop above
+        // pushes one outcome per `for (const section of card.sections)`
+        // iteration, in the same order, so the index correlation here is not
+        // a coincidence — it is guaranteed by the loop that built the array.
+        sectionOutcomes: sectionOutcomes.map((outcome, i) => ({
+          ...outcome,
+          earnedPoints: card.sections[i].earnedPoints,
+          totalPoints: card.sections[i].totalPoints,
+        })),
       };
     }
     const learnerId = card.learnerId ?? null;
@@ -418,16 +430,23 @@ export class RecordCardScanOutcome {
           // stopped without saying WHY. On 2026-08-22 this line read
           // `pendingReview: 1` and it took reading the queue file on disk to
           // learn that one row was double-bubbled.
+          const reviewReasons = [...new Set(pending.map((row) => row.reason))];
+          const reviewItems = pending.map((row) => row.itemId);
           this.#logger.info?.('school.print.scan-awaiting-review', {
             sessionId,
             recordId: card.recordId,
             pendingReview: pending.length,
             learnerId: state.learnerId ?? null,
-            reasons: [...new Set(pending.map((row) => row.reason))],
-            items: pending.map((row) => row.itemId),
+            reasons: reviewReasons,
+            items: reviewItems,
           });
           return {
-            sessionId, advancedTo: 'submitted', reason: 'awaiting-review', pendingReview: pending.length,
+            sessionId,
+            advancedTo: 'submitted',
+            reason: 'awaiting-review',
+            pendingReview: pending.length,
+            reasons: reviewReasons,
+            items: reviewItems,
           };
         }
       }
@@ -465,7 +484,21 @@ export class RecordCardScanOutcome {
       this.#logger.info?.('school.print.scan-session-graded', {
         sessionId, recordId: card.recordId, percent,
       });
-      return { sessionId, advancedTo: 'graded' };
+      // percent/correctCount/totalCount surfaced onto the session object
+      // (final review Fix 3, same pattern as the `reasons`/`items` surfaced
+      // on the awaiting-review branch above and the per-section
+      // earnedPoints/totalPoints `execute()` attaches to `sectionOutcomes`):
+      // this ROW-COUNT percent is the SAME number that becomes the session's
+      // `gradedPercent` via `reduceSession` (`sessionEvents.mjs`: `graded`
+      // event's `percent` -> `s.gradedPercent`), which drives pass/fail,
+      // course grades, and the report card. `schoolPrintScanConsumer` reads
+      // it from here for the grading-hook fire so Home Assistant can never
+      // announce a different percent than the gradebook records — the whole
+      // point of exposing it here rather than letting the caller recompute
+      // its own (points-based) percent from `earnedPoints`/`totalPoints`.
+      return {
+        sessionId, advancedTo: 'graded', percent, correctCount: correctRows, totalCount: card.results.length,
+      };
     } catch (err) {
       this.#logger.warn?.('school.print.scan-session-bridge-failed', {
         sessionId, recordId: card.recordId, error: err.message,
