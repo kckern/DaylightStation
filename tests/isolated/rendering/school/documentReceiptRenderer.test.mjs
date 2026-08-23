@@ -483,3 +483,82 @@ describe('progress ticks count lessons, not tenths', () => {
     expect(xs.length).toBeLessThan(400);
   });
 });
+
+/**
+ * PAST, PRESENT, FUTURE on the course bar (2026-08-23).
+ *
+ * The bar had two states — units done and units not — which filed the unit a
+ * child is currently working through with the ones they have never opened.
+ * `inProgress` marks that segment, drawn as a hatch: the empty track is
+ * already an outline, so an outlined segment would read as future, which is
+ * the confusion being fixed.
+ */
+describe('the in-progress segment on a progress bar', () => {
+  /** Vertical strokes drawn inside the bar band, by x. */
+  async function bandStrokes(progress) {
+    const originalMoveTo = CanvasRenderingContext2D.prototype.moveTo;
+    const originalLineTo = CanvasRenderingContext2D.prototype.lineTo;
+    const segments = [];
+    let pending = null;
+    CanvasRenderingContext2D.prototype.moveTo = function patchedMoveTo(x, y) {
+      pending = { x, y };
+      return originalMoveTo.call(this, x, y);
+    };
+    CanvasRenderingContext2D.prototype.lineTo = function patchedLineTo(x, y) {
+      if (pending && Math.abs(pending.x - x) < 0.001 && y > pending.y) segments.push({ x, height: y - pending.y });
+      return originalLineTo.call(this, x, y);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary', headline: 'PASSED', title: 'X', correctCount: 6, totalCount: 6, progress: [progress],
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.moveTo = originalMoveTo;
+      CanvasRenderingContext2D.prototype.lineTo = originalLineTo;
+    }
+    return segments;
+  }
+
+  /** Hatch strokes are exactly bar-height; ticks overhang it by 2px each side. */
+  const hatchOf = (segments) => segments.filter((s) => Math.abs(s.height - theme.result.progressHeight) < 0.001);
+
+  it('draws nothing extra when no segment is underway', async () => {
+    expect(hatchOf(await bandStrokes({ label: 'Course', completed: 2, total: 7 }))).toEqual([]);
+  });
+
+  it('hatches exactly the segment after the completed ones', async () => {
+    const hatch = hatchOf(await bandStrokes({ label: 'Course', completed: 2, total: 7, inProgress: 1 }));
+    expect(hatch.length).toBeGreaterThan(0);
+    // 530pt track / 7 = ~75.7 per segment; the hatch spans segment index 2.
+    const segmentWidth = (theme.canvas.width - 2 * theme.layout.margin) / 7;
+    const left = theme.layout.margin + 2 * segmentWidth;
+    const right = left + segmentWidth;
+    hatch.forEach((s) => {
+      expect(s.x).toBeGreaterThanOrEqual(left);
+      expect(s.x).toBeLessThanOrEqual(right);
+    });
+  });
+
+  it('is a texture, not a couple of strays — tight enough never to read as tick marks', async () => {
+    const hatch = hatchOf(await bandStrokes({ label: 'Course', completed: 2, total: 7, inProgress: 1 }));
+    const segmentWidth = (theme.canvas.width - 2 * theme.layout.margin) / 7;
+    // At the theme's pitch a ~76px segment carries a double-digit stripe count,
+    // while the segment TICKS on the same bar are one per ~76px.
+    expect(hatch.length).toBeGreaterThan(8);
+    expect(theme.result.progressHatchPitch).toBeLessThan(segmentWidth / 4);
+  });
+
+  it('refuses to run past the end of the bar', async () => {
+    // A malformed row claiming more in-progress than remains must not paint
+    // beyond the track; it is ignored rather than clamped silently mid-draw.
+    const hatch = hatchOf(await bandStrokes({ label: 'Course', completed: 6, total: 7, inProgress: 3 }));
+    expect(hatch).toEqual([]);
+  });
+
+  it('marks the last segment when the final unit is the one underway', async () => {
+    const hatch = hatchOf(await bandStrokes({ label: 'Course', completed: 6, total: 7, inProgress: 1 }));
+    expect(hatch.length).toBeGreaterThan(0);
+    const right = theme.canvas.width - theme.layout.margin;
+    hatch.forEach((s) => expect(s.x).toBeLessThanOrEqual(right));
+  });
+});

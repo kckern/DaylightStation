@@ -789,6 +789,28 @@ export function createDocumentReceiptRenderer({
           ctx.stroke();
           const filledWidth = (progress.completed / progress.total) * contentWidth;
           if (filledWidth > 0) ctx.fillRect(x, sy, filledWidth, theme.result.progressHeight);
+          // THE PRESENT TENSE. Solid means done and empty means untouched;
+          // the unit a child is actually working through is neither, and
+          // filing it with "never opened" is the state this hatch adds.
+          // Vertical stripes rather than an outline: the empty track is
+          // already an outline, so an outlined segment would read as future,
+          // which is the exact confusion being fixed. A hatch reads as
+          // "partly there" at a glance and survives 203 dpi, where a
+          // proportional part-fill of one narrow segment would not.
+          const inProgress = Number.isInteger(progress.inProgress) ? progress.inProgress : 0;
+          if (inProgress > 0 && progress.completed + inProgress <= progress.total) {
+            const hatchStart = x + filledWidth;
+            const hatchEnd = x + ((progress.completed + inProgress) / progress.total) * contentWidth;
+            ctx.save();
+            ctx.lineWidth = theme.result.progressHatchWidth;
+            for (let hx = hatchStart + theme.result.progressHatchPitch / 2; hx < hatchEnd; hx += theme.result.progressHatchPitch) {
+              ctx.beginPath();
+              ctx.moveTo(hx, sy);
+              ctx.lineTo(hx, sy + theme.result.progressHeight);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
           // Below a legible gap the ticks stop being countable and read as a
           // hatch, so they are DROPPED rather than thinned to a wrong count —
           // a tick that does not mean one lesson is the bug this replaced.

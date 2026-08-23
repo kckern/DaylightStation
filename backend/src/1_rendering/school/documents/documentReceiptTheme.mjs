@@ -159,6 +159,15 @@ export const documentReceiptTheme = Object.freeze({
     // before the ticks are dropped entirely — far past any real course, and
     // dropping them is the honest failure (see the renderer's own note).
     progressMinTickGap: 6,
+    // The in-progress hatch: stripe pitch and stroke, in canvas px, chosen by
+    // rendering four densities side by side. 3-on-6 is 50% ink — a fine even
+    // texture that reads as "part way" against both the solid fill and the
+    // empty track. A sparser hatch (3-on-12) reads as a row of tick marks
+    // instead, and a heavier one (5-on-8) starts to look solid. The pitch is
+    // also an order of magnitude tighter than the segment ticks (~75px on a
+    // 7-unit course), so the two can never be mistaken for each other.
+    progressHatchPitch: 6,
+    progressHatchWidth: 3,
   },
 });
 

@@ -44,6 +44,7 @@ import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
+import { inProgressSegments } from '#domains/school/progressRows.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 
 export class CloseSessionOutcome {
@@ -584,8 +585,27 @@ export class CloseSessionOutcome {
       return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
     }).length;
     const moduleIndex = enrollment?.moduleOrder?.indexOf(unit.module) ?? -1;
+    // PAST, PRESENT, FUTURE. The course bar used to have only two states —
+    // units done and units not — which quietly filed the unit the child is
+    // ACTUALLY IN with the ones they have never opened. They just finished a
+    // lesson inside it, so "not started" is the one thing it certainly is
+    // not. One segment is marked underway: the current module, whenever it
+    // is not itself complete (a module that just finished is already in
+    // `completedModules`, and a finished course has no present tense at all).
+    const currentModuleComplete = moduleEntries.length > 0
+      && moduleEntries.every((entry) => entry.status === 'completed');
+    const courseInProgress = inProgressSegments({
+      completed: completedModules,
+      total: requiredModules.length,
+      currentComplete: currentModuleComplete,
+    });
     const rows = [
-      { label: 'Course', completed: completedModules, total: requiredModules.length },
+      {
+        label: 'Course',
+        completed: completedModules,
+        total: requiredModules.length,
+        ...(courseInProgress ? { inProgress: courseInProgress } : {}),
+      },
       {
         label: moduleIndex >= 0 ? `Unit ${moduleIndex}` : 'Unit',
         completed: moduleEntries.filter((entry) => entry.status === 'completed').length,
