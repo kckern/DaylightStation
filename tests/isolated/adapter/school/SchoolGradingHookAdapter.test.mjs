@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { SchoolGradingHookAdapter } from '#adapters/school/SchoolGradingHookAdapter.mjs';
 
 function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) {
@@ -90,5 +90,62 @@ describe('SchoolGradingHookAdapter', () => {
     await adapter.fire(GRADED);
     await adapter.fire(GRADED);
     expect(calls).toHaveLength(2);
+  });
+
+  it('accepts a null outcome without throwing', async () => {
+    // Config is present and the gateway is healthy (default makeAdapter), so
+    // there is nothing here to skip or fail on — the defensive toVariables
+    // fix means a null outcome just becomes an all-null grade record and
+    // dispatches normally. This is the deliberate choice: `fire` never
+    // throws AND a null outcome still produces the uniform 11-key contract.
+    const { adapter, calls } = makeAdapter();
+    const res = await adapter.fire(null);
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].data).toEqual({
+      result: null, learner_id: null, test_id: null,
+      session_id: null, percent: null, earned: null, total: null,
+      pending_review: null, reasons: [], items: [], code: null,
+    });
+  });
+
+  it('never throws when loadSchoolConfig throws', async () => {
+    const gateway = { callService: async () => ({ ok: true }) };
+    const loadSchoolConfig = () => { throw new Error('yaml parse error'); };
+    const adapter = new SchoolGradingHookAdapter({ gateway, loadSchoolConfig });
+
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/yaml parse error/);
+  });
+
+  it('a throwing loadSchoolConfig does NOT open the circuit breaker', async () => {
+    const calls = [];
+    let configShouldThrow = true;
+    const gateway = {
+      callService: async (domain, service, data) => {
+        calls.push({ domain, service, data });
+        return { ok: true };
+      },
+    };
+    const loadSchoolConfig = () => {
+      if (configShouldThrow) throw new Error('config load error');
+      return { grading_hook: { script: 'script.school_graded' } };
+    };
+    const adapter = new SchoolGradingHookAdapter({ gateway, loadSchoolConfig });
+
+    for (let i = 0; i < 6; i++) {
+      const res = await adapter.fire(GRADED);
+      expect(res.ok).toBe(false);
+    }
+    expect(calls).toHaveLength(0); // config errors never reach the gateway
+
+    // Now make config resolution succeed. If the outer catch had wrongly
+    // shared the breaker with the inner one, 6 prior "failures" would have
+    // opened it and this call would be skipped instead of dispatched.
+    configShouldThrow = false;
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
   });
 });
