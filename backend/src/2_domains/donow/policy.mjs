@@ -59,6 +59,21 @@ export function decideOnApprove({ occupancy, learnerId, pendingOccupant, repende
     if (pendingOccupant != null && occupancy.occupantId === pendingOccupant) {
       return 'dispatch';
     }
+    // ANONYMOUS-OCCUPANT surfaces (2026-08-23). Some surfaces detect THAT they
+    // are in use but never WHO: the piano kiosk's MidiPresenceTracker reports
+    // `occupantId: null` always — MIDI activity has no identity. For those, the
+    // clause above can never match (the pendingOccupant != null guard fails),
+    // so the parent's approval re-pended once and then DENIED, every time: the
+    // "we asked a grown-up" path was unresolvable and the surface unreachable
+    // while anyone had touched the piano in the last 5 minutes.
+    //
+    // Both null means "still the same anonymous someone the parent said yes
+    // about" — which is exactly the situation they approved, since no name was
+    // ever on offer. This deliberately does NOT loosen identified surfaces:
+    // pendingOccupant 'alice' → occupant 'bob' still re-pends below.
+    if (pendingOccupant == null && occupancy.occupantId == null) {
+      return 'dispatch';
+    }
     // Different occupant → re-pend once (name the new occupant to the parent)
     return repended ? 'denied' : 'repend';
   }
