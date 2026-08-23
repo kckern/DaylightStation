@@ -85,6 +85,11 @@ public final class Heartbeat {
 
     /** Build and send one beat now (also used by the control plane's POST /beat). */
     public JSONObject beat() {
+        // Fire a loopback probe FIRST so this beat carries a fresh OUT verdict — the
+        // piano's own echo, not an upstream counter. ~1.5s window; the body is built
+        // after so outVerified reflects this probe, not the last one.
+        Loopback lb = core.getLoopback();
+        if (lb != null) { try { lb.probeAndWait(); } catch (Throwable t) { Log.w(TAG, "loopback probe failed", t); } }
         JSONObject body = buildBody();
         DeviceConfig c = cfg;
         boolean okLog = false, okBackend = false;
@@ -126,6 +131,13 @@ public final class Heartbeat {
             o.put("midiWriteOpen", core.isMidiWriteOpen());
             o.put("midiInOpen", core.isMidiPortOpen());
             o.put("a11yBound", A11y.isConnected());
+            Loopback lb2 = core.getLoopback();
+            if (lb2 != null) {
+                JSONObject l = lb2.snapshot();
+                o.put("outVerified", l.optBoolean("outVerified"));     // THE field: piano echoed our last probe
+                o.put("loopRttMs", l.optLong("lastRttMs", -1));
+                o.put("loopMisses", l.optInt("consecutiveMisses"));
+            }
             o.put("fkbReachable", FkbRest.reachable(c));
 
             KioskWatchdog wd = core.getKioskWatchdog();

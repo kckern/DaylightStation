@@ -543,8 +543,18 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
 
   const sendNote = useCallback((note, velocity = 80, channel = 0, durationMs = null) => {
     const out = outputRef.current;
-    if (!out) return false;
+    if (!out) {
+      // Witness the FAILURE too: an unbound output is a silent no-op otherwise.
+      logger().sampled('midi.out.note-dropped', { note, reason: 'no-output' }, { maxPerMinute: 10, aggregate: true });
+      return false;
+    }
     out.send([0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f]);
+    // Witness line for the note path. Until 2026-08-23 this was a bare send() —
+    // 18 test-tone presses left no trace, so "did it leave the browser" was
+    // unanswerable. Sampled: playback is high-frequency; the first few per minute
+    // with the handle's real state is what diagnosis needs.
+    logger().sampled('midi.out.note', { note, velocity, channel, conn: out.connection, state: out.state },
+      { maxPerMinute: 20, aggregate: true });
     if (durationMs != null) {
       out.send([0x80 | (channel & 0x0f), note & 0x7f, 0], (performance?.now?.() ?? 0) + durationMs);
     }
