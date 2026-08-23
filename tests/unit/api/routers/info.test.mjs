@@ -5,6 +5,7 @@ import express from 'express';
 
 // Must import from the future file path
 import { createInfoRouter } from '#api/v1/routers/info.mjs';
+import { resolveFormat } from '#domains/content/utils/resolveFormat.mjs';
 
 describe('Info Router', () => {
   let app;
@@ -46,6 +47,7 @@ describe('Info Router', () => {
     // Create Express app with the router
     app = express();
     app.use('/info', createInfoRouter({
+      resolveFormat,
       registry: mockRegistry,
       contentIdResolver: mockContentIdResolver,
       logger: mockLogger
@@ -364,7 +366,10 @@ describe('Info Router', () => {
           .get('/info/plex/12345')
           .expect(200);
 
-        expect(response.body.capabilities).toEqual([]);
+        // stripEmpty (added in d5c24fee3) removes empty-array fields from API
+        // responses entirely, so an item with no derived capabilities omits
+        // `capabilities` rather than serving `capabilities: []`.
+        expect(response.body.capabilities).toBeUndefined();
       });
     });
 
