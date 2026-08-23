@@ -14,6 +14,7 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs midi "<hex>" [n] # raw MIDI/SysEx OUT to the piano (v26+)
 //   node pbctl.mjs speaker           # A2DP speaker + fail-closed audio-guard status
 //   node pbctl.mjs bootstrap         # spend the one-time clamp window (drop→clamp→reconnect)
 //   node pbctl.mjs override [ms]     # reopen the SYNTH gate only, time-boxed (never unclamps)
@@ -108,6 +109,26 @@ const cmds = {
     (r.log || []).forEach((l) => console.log(l));
   },
   async panic() { pretty(await req('POST', '/panic')); },
+
+  // --- raw MIDI OUT to the piano (the APK write path, v26+) -------------------
+  // The ONLY route SysEx can take: the FKB WebView is permanently denied Web MIDI
+  // SysEx (NotAllowedError on {sysex:true}), so effects can never originate in the
+  // browser. Bytes are handed to the BLE write port; confirm they actually landed
+  // with `node cli/piano-midi-e2e.cli.mjs` (the JamCorder's ble.in counter).
+  //   pbctl midi "C0 18"                       # Program Change -> voice 24
+  //   pbctl midi "F0 41 10 42 12 40 01 30 04 15 F7" 3   # GS reverb=Hall2, x3
+  async midi(args) {
+    const hex = (args[0] || '').trim();
+    if (!hex) { console.error('usage: midi "<hex bytes>" [repeat]'); process.exit(1); }
+    const repeat = args[1] ? Number(args[1]) : 1;
+    const r = await req('POST', `/midi/send?repeat=${encodeURIComponent(repeat)}`, hex);
+    if (r && r.ok === false) { pretty(r); process.exit(1); }
+    if (r && r.writeOpen === false) {
+      console.log('⚠ write port is NOT open — nothing reached the piano.');
+      console.log('  check `pbctl status` -> midiWrite.lastError');
+    }
+    pretty(r);
+  },
 
   // --- A2DP speaker + fail-closed audio guard --------------------------------
   async speaker() {

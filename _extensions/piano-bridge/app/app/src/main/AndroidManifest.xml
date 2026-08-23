@@ -113,6 +113,17 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
+            <!-- Self-update survival. Without this the ADB-free update path is a TRAP:
+                 PackageInstaller replaces the APK, Android kills the old process, and
+                 nothing ever starts the new one — the bridge (MIDI, screen-wake, kiosk
+                 watchdog) stays dead until a human walks to the tablet and taps the
+                 icon. Exactly what happened on 2026-08-22 installing v26, on a device
+                 whose whole design goal is "never needs USB/ADB again".
+                 MY_PACKAGE_REPLACED is delivered to the NEW package only, and needs no
+                 data filter (a data-scheme filter here silently never matches). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
         </receiver>
 
         <!-- Receives PackageInstaller callbacks for self-update (see Updater/

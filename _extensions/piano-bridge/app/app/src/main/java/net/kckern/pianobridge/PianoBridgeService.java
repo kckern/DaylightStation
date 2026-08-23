@@ -14,6 +14,7 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.midi.MidiDevice;
 import android.media.midi.MidiDeviceInfo;
+import android.media.midi.MidiInputPort;
 import android.media.midi.MidiManager;
 import android.media.midi.MidiOutputPort;
 import android.media.midi.MidiReceiver;
@@ -64,6 +65,20 @@ public class PianoBridgeService extends Service {
     private MidiDevice openMidiDevice;
     private MidiOutputPort openMidiPort;
     private MidiReceiver midiReceiver;
+
+    // MIDI-OUT (the WRITE path: us → JamCorder → piano). In Android MIDI a device's
+    // INPUT port is the one you write INTO, so this is openInputPort(0) — the mirror
+    // of openMidiPort above. Added 2026-08-22.
+    //
+    // Why it exists: until now the APK could only READ. That left the browser as the
+    // sole writer, which (a) made it a second claimant on the one BLE radio, the
+    // contention behind the 2026-08-22 one-way outage, and (b) capped what could ever
+    // be sent — the FKB WebView is permanently denied Web MIDI SysEx
+    // (NotAllowedError, re-verified on Chrome 151), so reverb/chorus could not be
+    // expressed from the browser at all, no matter how healthy the link.
+    private MidiInputPort openMidiInPort;
+    private volatile boolean midiWriteOpen = false;
+    private volatile String midiWriteLastError = null;
 
     // MIDI-IN health (the note-read path: device output port → PianoMidiReceiver →
     // WS fan-out). Surfaced in /diagnostics so a dead input path is VISIBLE instead
@@ -490,6 +505,7 @@ public class PianoBridgeService extends Service {
             midiPortLastError = null;
             Log.i(TAG, "MIDI output port connected (attempt " + attempt + ")");
             CrashLog.note("MIDI", "note-IN port connected (attempt " + attempt + ")");
+            attemptOpenWritePort(device, 1);
             return;
         }
         if (attempt >= MIDI_PORT_MAX_ATTEMPTS) {
@@ -502,13 +518,97 @@ public class PianoBridgeService extends Service {
         scheduleOpenPortRetry(device, attempt + 1);
     }
 
-    private void scheduleOpenPortRetry(final MidiDevice device, final int nextAttempt) {
+    /**
+     * One attempt to open the device's INPUT port — the write path to the piano.
+     * Mirrors attemptOpenPort's defensiveness because it races the same Android-10
+     * BLE-MIDI port-registration bug: openInputPort() can throw (or hand back null)
+     * for a second or two after the device opens.
+     *
+     * Deliberately NON-fatal, unlike the read path. If every attempt fails we log and
+     * leave midiWriteOpen false rather than forcing a BLE reconnect: a reconnect would
+     * tear down the note-IN path that is (by then) already working, trading a working
+     * direction for a broken one. A dead write path is visible in /status and
+     * /diagnostics, and the next reconnect retries it anyway.
+     */
+    private synchronized void attemptOpenWritePort(MidiDevice device, int attempt) {
+        if (device != openMidiDevice) return; // superseded by a newer connect/close
+        MidiInputPort port = null;
+        try {
+            port = device.openInputPort(0);
+        } catch (Throwable t) {
+            midiWriteLastError = t.getClass().getSimpleName() + ": " + t.getMessage();
+            Log.w(TAG, "openInputPort attempt " + attempt + " threw", t);
+        }
+        if (port != null) {
+            openMidiInPort = port;
+            midiWriteOpen = true;
+            midiWriteLastError = null;
+            Log.i(TAG, "MIDI input port (write path) connected (attempt " + attempt + ")");
+            CrashLog.note("MIDI", "note-OUT port connected (attempt " + attempt + ")");
+            return;
+        }
+        if (attempt >= MIDI_PORT_MAX_ATTEMPTS) {
+            Log.e(TAG, "MIDI write port failed after " + attempt + " attempts — OUT stays closed");
+            CrashLog.note("MIDI", "note-OUT port FAILED after " + attempt
+                    + " attempts (" + midiWriteLastError + ")");
+            return;
+        }
+        final MidiDevice d = device;
+        final int next = attempt + 1;
+        ensureMidiPortExec().schedule(() -> {
+            try { attemptOpenWritePort(d, next); }
+            catch (Throwable t) { Log.e(TAG, "write-port retry crashed", t); }
+        }, MIDI_PORT_RETRY_MS, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Write raw MIDI bytes to the piano. This is the whole point of the write path:
+     * the caller hands over already-framed MIDI (including SysEx, which the kiosk
+     * WebView is permanently forbidden from sending), and we put it on the wire.
+     *
+     * Fire-and-forget by nature — the MDG-400 has no read-back — so the honest return
+     * value is "did we hand it to the port", not "did the piano act on it". Confirm
+     * delivery at the far end with the JamCorder's `ble.in` counter
+     * (cli/piano-midi-e2e.cli.mjs), which is outside this process's control.
+     */
+    public synchronized boolean sendMidi(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return false;
+        MidiInputPort port = openMidiInPort;
+        if (port == null) {
+            midiWriteLastError = "write port not open";
+            return false;
+        }
+        try {
+            port.send(bytes, 0, bytes.length);
+            return true;
+        } catch (Throwable t) {
+            // A flap between the null-check and the send lands here. Mark the path
+            // closed so /status stops advertising a port that no longer works; the
+            // next device open re-runs attemptOpenWritePort.
+            midiWriteOpen = false;
+            midiWriteLastError = t.getClass().getSimpleName() + ": " + t.getMessage();
+            Log.w(TAG, "sendMidi failed", t);
+            return false;
+        }
+    }
+
+    public boolean isMidiWriteOpen() { return midiWriteOpen; }
+
+    public String getMidiWriteLastError() { return midiWriteLastError; }
+
+    /** The port-retry executor, created on first use. Shared by the read and write
+     *  port openers; shut down in onDestroy. */
+    private synchronized ScheduledExecutorService ensureMidiPortExec() {
         if (midiPortExec == null || midiPortExec.isShutdown()) {
             midiPortExec = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "PianoBridge-midiport"); t.setDaemon(true); return t;
             });
         }
-        midiPortExec.schedule(() -> {
+        return midiPortExec;
+    }
+
+    private void scheduleOpenPortRetry(final MidiDevice device, final int nextAttempt) {
+        ensureMidiPortExec().schedule(() -> {
             try { attemptOpenPort(device, nextAttempt); }
             catch (Throwable t) { Log.e(TAG, "port-open retry crashed", t); }
         }, MIDI_PORT_RETRY_MS, TimeUnit.MILLISECONDS);
@@ -573,6 +673,14 @@ public class PianoBridgeService extends Service {
 
     private synchronized void closeMidi() {
         midiPortOpen = false;
+        midiWriteOpen = false;
+        try {
+            if (openMidiInPort != null) openMidiInPort.close();
+        } catch (IOException e) {
+            Log.w(TAG, "Error closing MIDI write port", e);
+        } finally {
+            openMidiInPort = null;
+        }
         try {
             if (openMidiPort != null) {
                 if (midiReceiver != null) openMidiPort.disconnect(midiReceiver);
