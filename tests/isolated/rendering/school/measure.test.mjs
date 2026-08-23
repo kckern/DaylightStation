@@ -100,13 +100,17 @@ describe('measureBlocks — rich_text', () => {
     expect(period.xPt).toBeCloseTo(form.xPt + form.widthPt, 9);
   });
 
-  it('renders inline $math$ as its own display-math fragment (v1 deferral)', () => {
+  it('renders inline $math$ as a run within the flowing paragraph, not a separate fragment', () => {
+    // Math-aware PDF text layout (bfdbe7598): inline math is no longer deferred
+    // out to its own display-math node — it flows as a same-line run alongside
+    // the surrounding text, so the paragraph stays a single fragment.
     const fragments = measure([{ type: 'rich_text', md: 'Simplify $\\frac{1}{2}$ now.' }]);
-    const kinds = fragments.map((f) => f.nodes?.[0]?.kind ?? 'text');
-    expect(kinds).toEqual(['text', 'math', 'text']);
+    expect(fragments).toHaveLength(1);
+    const runs = fragments[0].lines.flatMap((l) => l.runs);
+    expect(runs.map((r) => r.kind ?? 'text')).toEqual(['text', 'math', 'text']);
     // The `$` delimiters are consumed, never drawn (the source block stays
     // attached to the fragment for provenance, so only drawn text is checked).
-    const drawnWords = fragments.flatMap((f) => (f.lines ?? []).flatMap((l) => l.runs.map((r) => r.text)));
+    const drawnWords = runs.filter((r) => r.kind !== 'math').map((r) => r.text);
     expect(drawnWords.join(' ')).toBe('Simplify now.');
   });
 });
