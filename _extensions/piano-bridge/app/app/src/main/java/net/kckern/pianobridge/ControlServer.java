@@ -202,6 +202,32 @@ public class ControlServer extends NanoWSD {
                     JSONObject r = g.disarmForMinutes(minutes);
                     return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
                 }
+                case "/reboot": {
+                    // FKB-INDEPENDENT device restart (the watchdog's L5 rung, on demand).
+                    // Exists because every other reboot path runs through FKB's REST on
+                    // :2323, and when THAT is what died there was no lever at all.
+                    // Needs the a11y service bound (pbctl a11y-enable) — reports plainly
+                    // if it isn't, rather than pretending.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    Diag.log(TAG, "/reboot (a11y) from " + session.getRemoteIpAddress());
+                    if (!PianoTouchService.isConnected()) {
+                        return json(err("a11y service not bound — run: pbctl a11y-enable, then retry"));
+                    }
+                    CrashLog.recordReboot();
+                    CrashLog.note("RECOVERY", "manual /reboot via a11y power dialog");
+                    boolean dlg = PianoTouchService.powerDialog();
+                    boolean clicked = false;
+                    if (dlg) {
+                        try { Thread.sleep(1500L); } catch (InterruptedException ignored) { }
+                        clicked = PianoTouchService.clickText("restart") || PianoTouchService.clickText("reboot");
+                    }
+                    JSONObject o = ok();
+                    o.put("powerDialog", dlg);
+                    o.put("clickedRestart", clicked);
+                    if (!clicked) o.put("note", "power dialog " + (dlg ? "raised but no Restart control found" : "refused")
+                            + " — device may still be showing the dialog");
+                    return json(o);
+                }
                 case "/kiosk/settings/rearm": {
                     KioskSettingsGuard g = service.getKioskSettingsGuard();
                     if (g == null) return json(err("no_settings_guard"));
