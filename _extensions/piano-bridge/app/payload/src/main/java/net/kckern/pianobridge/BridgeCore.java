@@ -789,7 +789,7 @@ public class BridgeCore {
                     i = d + 2;
                 } else if (type == 0x80 && d + 1 < end) { // note off
                     int note = data[d] & 0x7F;
-                    if (loopback != null && (status & 0x0F) == Loopback.PROBE_CHANNEL && note == Loopback.PROBE_NOTE) { i = d + 2; continue; }
+                    if (loopback != null && note == Loopback.PROBE_NOTE) { i = d + 2; continue; }
                     handleNoteOff(note);
                     i = d + 2;
                 } else if (type == 0xB0 && d + 1 < end) { // control change
