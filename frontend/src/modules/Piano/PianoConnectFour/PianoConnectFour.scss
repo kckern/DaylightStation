@@ -42,7 +42,39 @@
 }
 
 .piano-connect-four .instrument-board-stage__top-rail {
+  /* Deliberately only the two terms the board's first two share. The board also
+     clamps on `calc(100cqh * 7 / 6)` (its height budget), but that term CANNOT
+     be repeated here: the rail lives in the stage's row 1, outside the
+     `container-type: size` element (`__primary`) those cq units resolve
+     against, so it would silently measure the viewport instead. Measured on the
+     tablet 2026-08-23 the two bounds agree (board 804px, rail 817px), so the
+     visible drift was pitch, not width — see the grid below. If a slot ever
+     gets short enough for the board's height term to bind, the rail will read
+     wide and the honest fix is to move it inside the size container, not to
+     paste a cq unit somewhere it cannot see. */
   width: min(100%, var(--pg-board-max));
+  margin-inline: auto;
+}
+
+/* The rail has to be laid out with the BOARD's geometry, not its own.
+   `.address-rail--horizontal` is a flex row with `gap: 0.4rem` and no padding;
+   the board is a 7-track grid with NO gap and a `padding: 2%` moulding ring.
+   Same width, two different pitches AND two different origins — so card N sat
+   left of column N, drifting further across the rail. Re-declare it here as
+   the same grid: 7 equal tracks, no gap, matching 2% inset. The breathing room
+   between cards comes from the card's own inline margin, which is symmetric
+   and therefore cannot move a card off its column's centre. */
+.piano-connect-four .instrument-board-stage__top-rail .address-rail {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+  padding-inline: 2%;
+}
+
+.piano-connect-four .instrument-board-stage__top-rail .address-rail__card {
+  /* 78% of the cell, centred — the same proportion the discs use, so a card
+     reads as sitting over its hole rather than over the moulding between. */
+  width: 78%;
   margin-inline: auto;
 }
 
