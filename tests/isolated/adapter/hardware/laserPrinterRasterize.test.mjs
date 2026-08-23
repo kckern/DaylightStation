@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { rasterizePdf } from '../../../../backend/src/1_adapters/hardware/laser-printer/rasterize.mjs';
 
@@ -27,6 +27,19 @@ try {
 } catch {
   hasGs = false;
 }
+
+// 30s per test, not the 5s default. Every test in this file shells out to a
+// REAL ghostscript and rasterizes a full Letter page — 2550x3300 px at 300dpi,
+// 5100x6600 at 600dpi. Alone that is well under a second and the default is
+// fine; in the full gate population (869 files, workers competing for CPU
+// alongside other ghostscript and pdfkit work) it exceeded 5000ms and the test
+// timed out. That is why this file passed on its own and failed only under
+// `npm run test:unit:vitest`.
+//
+// The assertions are unchanged — this only widens the budget for genuinely
+// slow subprocess work. If these ever exceed 30s, that is a real performance
+// regression in rasterize.mjs and should be investigated, not widened again.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe.runIf(hasGs)('rasterizePdf (real ghostscript)', () => {
   it('produces image/urf bytes starting with the UNIRAST magic', async () => {
