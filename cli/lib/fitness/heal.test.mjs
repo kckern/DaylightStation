@@ -96,7 +96,7 @@ describe('heal() — golden fixture 20260627195941', () => {
     expect(after).toBe(before);
     expect(result.changed).toBe(false);
     expect(result.plan.needsHeal).toBe(true);
-    expect([...result.plan.removedOccupants].sort()).toEqual(['parent-two', 'learner-one']);
+    expect([...result.plan.removedOccupants].sort()).toEqual(['learner-one', 'parent-two']);
   });
 
   it('apply:true folds learner-one/parent-two into grannie and rewrites the file', async () => {
@@ -314,7 +314,7 @@ describe('sweep() — golden + clean sessions in the same date dir', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0].date).toBe(DATE);
     expect(candidates[0].sessionId).toBe(SESSION_ID);
-    expect([...candidates[0].removed].sort()).toEqual(['parent-two', 'learner-one']);
+    expect([...candidates[0].removed].sort()).toEqual(['learner-one', 'parent-two']);
     expect(applied).toEqual([]);
 
     const goldenAfter = await readFile(goldenFile, 'utf8');
