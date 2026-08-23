@@ -96,14 +96,14 @@ describe('createSchoolPrintScanConsumer: broadcasts the four terminal scan outco
     expect(payload).toMatchObject({
       event: 'scan-graded',
       learnerId: 'milo',
-      earnedPoints: 5,
-      totalPoints: 6,
+      correctCount: 5,
+      totalCount: 6,
       percent: 83.33,
       result: 'graded',
     });
     // Never the card's own (deliberately mismatched) points aggregate.
-    expect(payload.earnedPoints).not.toBe(999);
-    expect(payload.totalPoints).not.toBe(999);
+    expect(payload.correctCount).not.toBe(999);
+    expect(payload.totalCount).not.toBe(999);
   });
 
   it('broadcasts scan-graded ONCE PER SECTION on a composed worksheet, each with its own section score', async () => {
@@ -140,10 +140,10 @@ describe('createSchoolPrintScanConsumer: broadcasts the four terminal scan outco
     const calls = outcomeCalls(bus);
     expect(calls).toHaveLength(2);
     expect(calls[0][1]).toMatchObject({
-      event: 'scan-graded', earnedPoints: 2, totalPoints: 2, percent: 100,
+      event: 'scan-graded', correctCount: 2, totalCount: 2, percent: 100,
     });
     expect(calls[1][1]).toMatchObject({
-      event: 'scan-graded', earnedPoints: 1, totalPoints: 3, percent: 33.33,
+      event: 'scan-graded', correctCount: 1, totalCount: 3, percent: 33.33,
     });
   });
 
