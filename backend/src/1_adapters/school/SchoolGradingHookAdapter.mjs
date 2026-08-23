@@ -102,7 +102,23 @@ export class SchoolGradingHookAdapter {
       const variables = toVariables(outcome);
 
       try {
-        await this.#gateway.callService('script', service, variables);
+        const result = await this.#gateway.callService('script', service, variables);
+        // The real gateway (`HomeAssistantAdapter#callService`) never throws
+        // — a downed HA, a bad token, or a typo'd script name all resolve to
+        // `{ok:false, error}` with no network call in some cases at all. "No
+        // throw" is therefore NOT "succeeded": without this check every one
+        // of those failures fell through to the success branch below and
+        // reported `firedCount++`/INFO, leaving `.failed`/`.circuit_open`
+        // permanently unreachable — a broken Home Assistant looked healthy.
+        // Thrown here (not just checked) so it lands in the SAME inner catch
+        // that owns the circuit breaker, matching the shape
+        // `AmbientLedAdapter#activateForZones` already uses for this exact
+        // gateway contract.
+        if (!result?.ok) {
+          throw new InfrastructureError(result?.error || 'HA service call failed', {
+            code: 'EXTERNAL_SERVICE_ERROR', service: 'HomeAssistant',
+          });
+        }
         this.failureCount = 0;
         this.metrics.firedCount++;
         this.metrics.lastFiredAt = new Date(now).toISOString();

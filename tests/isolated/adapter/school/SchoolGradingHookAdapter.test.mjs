@@ -76,6 +76,54 @@ describe('SchoolGradingHookAdapter', () => {
     expect(res.error).toMatch(/HA unreachable/);
   });
 
+  it('treats a gateway that RETURNS {ok:false} (never throws) as a failure, not a success', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const calls = [];
+    const adapter = new SchoolGradingHookAdapter({
+      gateway: {
+        callService: async (domain, service, data) => {
+          calls.push({ domain, service, data });
+          return { ok: false, error: 'HA unreachable' };
+        },
+      },
+      loadSchoolConfig: () => ({ grading_hook: { script: 'script.school_graded' } }),
+      logger,
+    });
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/HA unreachable/);
+    expect(calls).toHaveLength(1); // the call really happened — not a not-configured/backoff skip
+    expect(logger.error).toHaveBeenCalledWith('school.grading_hook.failed', expect.objectContaining({
+      error: expect.stringMatching(/HA unreachable/),
+      failureCount: 1,
+    }));
+  });
+
+  it('opens the circuit after 5 consecutive {ok:false}-returning (never-throwing) calls', async () => {
+    const calls = [];
+    const gateway = {
+      callService: async (domain, service, data) => {
+        calls.push({ domain, service, data });
+        return { ok: false, error: 'HA unreachable' };
+      },
+    };
+    const adapter = new SchoolGradingHookAdapter({
+      gateway,
+      loadSchoolConfig: () => ({ grading_hook: { script: 'script.school_graded' } }),
+    });
+    for (let i = 0; i < 5; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await adapter.fire(GRADED);
+      expect(res.ok).toBe(false);
+    }
+    expect(calls).toHaveLength(5);
+    const res = await adapter.fire(GRADED);
+    expect(res).toMatchObject({ ok: true, skipped: true, reason: 'backoff' });
+    expect(calls).toHaveLength(5); // no 6th attempt — the breaker actually opened
+    expect(adapter.getMetrics().circuitBreaker.isOpen).toBe(true);
+    expect(adapter.getMetrics().failureCount).toBe(5);
+  });
+
   it('opens the circuit after 5 consecutive failures and then skips', async () => {
     const { adapter, calls } = makeAdapter({ failWith: 'boom' });
     for (let i = 0; i < 5; i++) await adapter.fire(GRADED);
