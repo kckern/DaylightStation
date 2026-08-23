@@ -656,6 +656,11 @@ export async function createSchoolLifecycle({
     // Read-only: this session's own resolved-item notes on the result receipt
     // (spec R7) — the same store `gradeSubmission`/`resolveReviewItem` write.
     reviewQueue: stores.reviewQueue,
+    // The SAME `school.yml` block `buildAgenda` mints codes from (Slice H,
+    // 2026-08-22): without this, the "next up" QR on a result receipt never
+    // got a panel code even on a household with self-service on — the QR
+    // `resultDocument` had no code parameter for at all until this slice.
+    selfService: cfg.selfService,
     clock, rng: draw, logger,
   });
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });

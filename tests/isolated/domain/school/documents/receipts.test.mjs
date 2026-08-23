@@ -192,7 +192,7 @@ describe('agendaDocument', () => {
     };
 
     it('labels a panel code so it cannot be read as a calculator code', () => {
-      const doc = agendaDocument({ ...args, accessCodesBySubject: { math: '481920' } });
+      const doc = agendaDocument({ ...args, accessCodesByToken: { 'sch:AAAA': '481920' } });
       const flat = JSON.stringify(doc.blocks);
       expect(flat).toContain('PANEL CODE 481920');
       expect(flat).not.toContain('Enter on calculator');
@@ -200,7 +200,7 @@ describe('agendaDocument', () => {
 
     it('names a different device from the calculator code printed on the same page', () => {
       const text = textOf(agendaDocument({
-        ...args, sections: [...sections, calcSection], accessCodesBySubject: { math: '481920' },
+        ...args, sections: [...sections, calcSection], accessCodesByToken: { 'sch:AAAA': '481920' },
       }));
       // Both codes print, each under its own instruction, and the two
       // instructions name two different machines.
@@ -213,40 +213,76 @@ describe('agendaDocument', () => {
     });
 
     it('is still a valid receipt-target document', () => {
-      valid(agendaDocument({ ...args, accessCodesBySubject: { math: '481920' } }));
+      valid(agendaDocument({ ...args, accessCodesByToken: { 'sch:AAAA': '481920' } }));
     });
 
     // The safety property of the whole feature: self-service off is today,
-    // byte for byte.
+    // byte for byte — no code claimed for a token means no code printed AND
+    // no "scanning is the only way in" fallback either (Slice H's fallback
+    // only fires when a caller EXPLICITLY marks a code as unavailable).
     it('changes nothing at all when no codes are supplied', () => {
       const today = JSON.stringify(agendaDocument(args));
-      expect(JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: {} }))).toBe(today);
-      expect(JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: undefined }))).toBe(today);
+      expect(JSON.stringify(agendaDocument({ ...args, accessCodesByToken: {} }))).toBe(today);
+      expect(JSON.stringify(agendaDocument({ ...args, accessCodesByToken: undefined }))).toBe(today);
       expect(today).not.toContain('PANEL CODE');
+      expect(today).not.toContain('Scanning is the only way in');
     });
 
     it('prints no panel code beside a calculator handoff — that subject is typed elsewhere', () => {
       const text = textOf(agendaDocument({
-        ...args, sections: [calcSection], tokensBySubject: {}, accessCodesBySubject: { spelling: '481920' },
+        ...args, sections: [calcSection], tokensBySubject: {}, accessCodesByToken: { 'sch:SPELL': '481920' },
       }));
       expect(text).not.toContain('481920');
       expect(text).toContain('Enter on calculator.');
     });
 
-    it('ignores a code for an untokened section — a code aliases a token or nothing', () => {
+    it('ignores a code keyed to a token this section never mints — a code aliases a real token or nothing', () => {
       const doc = agendaDocument({
         learnerId: 'kid1',
         sections: [{ subject: 'science', servedToday: false, next: { title: 'Turn it in' } }],
         tokensBySubject: {},
-        accessCodesBySubject: { science: '481920' },
+        accessCodesByToken: { 'sch:NOT-ISSUED': '481920' },
       });
       expect(JSON.stringify(doc.blocks)).not.toContain('481920');
     });
 
     it('drops a malformed code rather than printing digits a child cannot type', () => {
-      const flat = JSON.stringify(agendaDocument({ ...args, accessCodesBySubject: { math: '4819' } }).blocks);
+      const flat = JSON.stringify(agendaDocument({ ...args, accessCodesByToken: { 'sch:AAAA': '4819' } }).blocks);
       expect(flat).not.toContain('PANEL CODE');
       expect(flat).not.toContain('4819');
+      // A code that WAS claimed (even a malformed one) but could not be
+      // printed still gets the explicit fallback — a missing code is
+      // visible, never a silent gap (Slice H).
+      expect(flat).toContain('Scanning is the only way in.');
+    });
+
+    it('two offers in different subjects each keep their OWN code — the old subject-keyed map could only ever hold one', () => {
+      const doc = agendaDocument({
+        learnerId: 'kid1',
+        sections: [
+          { subject: 'math', servedToday: false, next: { title: 'Unit Two' } },
+          { subject: 'language', servedToday: false, next: { title: 'Chapter 4' } },
+        ],
+        tokensBySubject: { math: 'sch:AAAA', language: 'sch:BBBB' },
+        accessCodesByToken: { 'sch:AAAA': '111111', 'sch:BBBB': '222222' },
+      });
+      const flat = JSON.stringify(doc.blocks);
+      expect(flat).toContain('PANEL CODE 111111');
+      expect(flat).toContain('PANEL CODE 222222');
+    });
+  });
+
+  describe('a QR with no code claims one is missing, never silently (Slice H, 2026-08-22)', () => {
+    it('prints "Scanning is the only way in." when a caller explicitly checked and found no code', () => {
+      const doc = agendaDocument({
+        learnerId: 'kid1',
+        sections: [{ subject: 'math', servedToday: false, next: { title: 'Unit Two' } }],
+        tokensBySubject: { math: 'sch:AAAA' },
+        accessCodesByToken: { 'sch:AAAA': null },
+      });
+      const flat = JSON.stringify(doc.blocks);
+      expect(flat).not.toContain('PANEL CODE');
+      expect(flat).toContain('Scanning is the only way in.');
     });
   });
 });
