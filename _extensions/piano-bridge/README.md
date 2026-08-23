@@ -1,34 +1,47 @@
 # Piano Bridge (APK)
 
-> **STATUS: BUILDS + RUNS. sfizz audio + screen-wake + ADB-free self-update all
-> verified 2026-07-02 on the SM-T590 (versionCode 10 / `1.6-selfupdate`).**
+> **STATUS (2026-08-23): SHELL + HOT-SWAPPABLE PAYLOAD. versionCode 29 / `2.0-shell`
+> installed on the SM-T590. Deploying bridge logic no longer touches the tablet.**
 >
-> The APK compiles (NDK r26b + cmake 3.22.1), installs on the tablet, runs the
-> foreground service + WebSocket control server on `:8770`, loads the Salamander
-> Grand SFZ via the vendored **sfizz** engine, and renders real audio through Oboe
-> (confirmed: `render signal peak>0` on note-on, no crash). **Dexed/FM is still
-> behind `#ifdef HAVE_DEXED` (silent) — not yet vendored.**
+> The installed APK is a thin **shell** — only what Android freezes at install time
+> (manifest entry points, permissions, the a11y service, the native `.so`). Every line
+> of bridge logic is a **payload** `.jar` loaded at runtime with `DexClassLoader` and
+> swapped over the LAN with zero taps:
 >
-> **Verified 2026-07-02:** note→`screenOn poke -> HTTP 200` wake (after the
-> `usesCleartextTraffic` fix); live wake-policy reconfig over `:8770` (quiet
-> hours/suppress, no reinstall); ADB-free self-update; reboot auto-start via
-> `BootReceiver`. **The device should never need USB/ADB again** — see
-> *Operate this WITHOUT ADB* below.
+> ```bash
+> cd _extensions/piano-bridge/app
+> ./gradlew :payload:payload -PpayloadVersion=p3-whatever     # -> payload/build/payload/p3-whatever.jar + .sha256
+> # serve it anywhere the tablet can reach, then:
+> pbctl payload http://<host>/p3-whatever.jar $(cat payload/build/payload/p3-whatever.jar.sha256)
+> pbctl payload              # status: active / current / previous / available
+> pbctl payload rollback     # current <- previous, instantly
+> ```
 >
-> ### What it took to build (gotchas, all fixed in this tree)
-> - Install toolchain: `JAVA_HOME=/opt/homebrew/opt/openjdk@17 sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"`.
-> - Vendor sfizz: `git clone --recursive https://github.com/sfztools/sfizz` into
->   `app/src/main/cpp/third_party/sfizz` (gitignored; ~445 MB). CMake block is now enabled.
-> - **Oboe prefab needs `-DANDROID_STL=c++_shared`** (else "No compatible library for //oboe/oboe") + `buildFeatures { prefab true }`.
-> - **SM-T590 is Android 10** → `minSdk 29`, and `targetSdk 29` + app-specific external
->   files dir for assets (Android-10 scoped storage / restricted `READ_EXTERNAL_STORAGE`
->   blocks native `fopen` on arbitrary `/sdcard` paths).
-> - **Foreground service** (`startForegroundService` + `startForeground`, `foregroundServiceType=mediaPlayback`)
->   so Fully Kiosk can't block the start / kill it. (No mic here, so the audio-bridge
->   `startForeground` avoidance does not apply.)
-> - **sfizz `renderBlock(buffers, frames, numOutputs)`**: `numOutputs` is stereo-pair
->   count — must be `1` for one L/R pair (passing 2 → SIGSEGV).
-> - Assets live on-device at `/sdcard/Android/data/net.kckern.pianobridge/files/piano-instruments/<id>/`.
+> Verified on hardware 2026-08-23: baked p1 → p2 swap in <1 s; rollback in <1 s; re-activate
+> in <1 s; BLE, MIDI write (Jamcorder `ble.in` +3) and the a11y service all carried across
+> the swap. sha256 is REQUIRED on every drop. A payload whose `start()` throws rolls back
+> immediately; 3 process boots in 10 min rolls back at the next boot; a baked copy in
+> `assets/` means a fresh install is never payload-less. `shell.log` records every
+> fetch/verify/ACTIVE/ROLLBACK durably. Design: `docs/_wip/plans/2026-08-23-piano-bridge-hotswap-payload.md`.
+>
+> **When you DO still need an APK install** (a manifest change: new permission, new
+> receiver, a11y xml, native code): follow the deploy checklist below exactly. The
+> 2026-08-22 evening cost two wasted trips by skipping it. Two traps it now covers that
+> bit that night: (1) the OLD build's watchdog had no install-hold and **L4-rebooted the
+> confirm dialog away** — disable the reboot rung first
+> (`pbctl config set watchdogRebootEnabled false`), never `watchdogRecoverEnabled`
+> (that is the only thing that restarts a dead FKB); (2) verify the dialog with
+> `deviceInfo.foregroundApp == com.google.android.packageinstaller`, not a screenshot.
+> From v29 the shell's `BootReceiver` handles `MY_PACKAGE_REPLACED`, so step 7's manual
+> relaunch is belt-and-braces.
+>
+> **Build JDK:** openjdk@17 works and was used for v26–v29 (the "JDK 11 only" note below
+> is stale but harmless — either builds).
+>
+> `TouchPulser` **does not lift the SM-T590 frame throttle** — measured 2026-08-22, 78
+> a11y bursts at 5 fps with no change. The "OPEN QUESTION" in `performance.md` is closed:
+> accessibility-injected gestures are not counted as input by the throttle. Only real
+> touch is. It stays enabled (harmless) pending the gfxinfo/renderer-priority capture.
 
 A native multi-engine synth host for an Android tablet, driven over WebSocket by
 the browser kiosk. It reads the BLE-MIDI piano directly via Android
