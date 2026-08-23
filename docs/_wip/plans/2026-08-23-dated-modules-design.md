@@ -86,6 +86,7 @@ standalone case:
 ```yaml
 progression:
   mode: dated_modules
+  module_order: fixed          # required; a dated course's order is its calendar
   lesson_order: shuffle_once   # unchanged: days within a week still freeze
 ```
 
@@ -123,13 +124,14 @@ wins), and one new timing state. No priority inflation, no focus blocks, no
 displacement machinery: `agenda.mjs` groups by subject and takes `[0]` within
 scripture, so ordering *inside* the subject is the only thing that matters.
 
-`evaluateTiming` gains a dated branch:
+A sibling of `evaluateTiming` — `evaluateDatedModule`, deliberately NOT
+shape-compatible with it — decides one module's state:
 
 | Module window vs. today | `timingState` | `status` | `timingRank` |
 | --- | --- | --- | --- |
 | Opens later | `upcoming` | `upcoming` | — |
 | Contains today | `available` | `available` | `0` |
-| Closed, lessons unfinished | `catch_up` | `available` | weeks stale (`1`, `2`, …) |
+| Closed, lessons unfinished | `catch_up` (reason `window_closed`) | `available` | rank by `closesOn` desc (`1`, `2`, …) |
 | Closed, all five passed | `available` | `completed` | — |
 
 `catch_up` deliberately keeps `status: 'available'`. That is what keeps backlog
@@ -171,6 +173,7 @@ prints `Starts 2026-09-21`. The caught-up state falls out for free.
 ```yaml
 progression:
   mode: dated_modules        # was module_blocks
+  module_order: fixed        # kept: still required, and still read at enrollment
   lesson_order: shuffle_once
   # required_opening_module and one_active_module drop out —
   # they are the strict-serial rules being removed

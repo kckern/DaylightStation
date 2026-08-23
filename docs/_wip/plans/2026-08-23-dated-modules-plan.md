@@ -29,7 +29,7 @@ Baseline at branch point: 115 files, 1123 tests, 0 failures (across `2_domains/s
 
 ---
 
-## Task 1: `datedModuleState` in the timing domain
+## Task 1: `evaluateDatedModule` in the timing domain
 
 A pure function answering, for ONE module window, where today sits relative to it. It knows nothing about siblings — ranking is the planner's job (Task 5), because "newest first" needs `closesOn` ordering across all modules.
 
@@ -42,43 +42,43 @@ A pure function answering, for ONE module window, where today sits relative to i
 Append to `tests/isolated/domain/school/timing.test.mjs`:
 
 ```javascript
-describe('datedModuleState', () => {
+describe('evaluateDatedModule', () => {
   const window = { opensOn: '2026-09-14', closesOn: '2026-09-20' };
 
   it('is upcoming before the window opens', () => {
-    expect(datedModuleState(window, { today: '2026-09-13' }).state).toBe('upcoming');
+    expect(evaluateDatedModule(window, { today: '2026-09-13' }).state).toBe('upcoming');
   });
 
   it('is available on the first and last day of the window', () => {
-    expect(datedModuleState(window, { today: '2026-09-14' }).state).toBe('available');
-    expect(datedModuleState(window, { today: '2026-09-20' }).state).toBe('available');
+    expect(evaluateDatedModule(window, { today: '2026-09-14' }).state).toBe('available');
+    expect(evaluateDatedModule(window, { today: '2026-09-20' }).state).toBe('available');
   });
 
   it('is catch_up after the window closes, however long ago', () => {
-    expect(datedModuleState(window, { today: '2026-09-21' }).state).toBe('catch_up');
-    expect(datedModuleState(window, { today: '2027-04-01' }).state).toBe('catch_up');
+    expect(evaluateDatedModule(window, { today: '2026-09-21' }).state).toBe('catch_up');
+    expect(evaluateDatedModule(window, { today: '2027-04-01' }).state).toBe('catch_up');
   });
 
   it('never returns dormant — dated backlog does not expire', () => {
-    expect(datedModuleState(window, { today: '2027-04-01' }).state).not.toBe('dormant');
+    expect(evaluateDatedModule(window, { today: '2027-04-01' }).state).not.toBe('dormant');
   });
 
   it('rejects a malformed window rather than guessing', () => {
-    expect(() => datedModuleState({ opensOn: 'nope', closesOn: '2026-09-20' }, { today: '2026-09-15' }))
+    expect(() => evaluateDatedModule({ opensOn: 'nope', closesOn: '2026-09-20' }, { today: '2026-09-15' }))
       .toThrow(/window/);
-    expect(() => datedModuleState(window, { today: 'nope' })).toThrow(/today/);
+    expect(() => evaluateDatedModule(window, { today: 'nope' })).toThrow(/today/);
   });
 });
 ```
 
-Add `datedModuleState` to the existing import at the top of the file.
+Add `evaluateDatedModule` to the existing import at the top of the file.
 
 **Step 2: Run it and watch it fail**
 
 ```bash
-npx vitest run tests/isolated/domain/school/timing.test.mjs -t datedModuleState
+npx vitest run tests/isolated/domain/school/timing.test.mjs -t evaluateDatedModule
 ```
-Expected: FAIL — `datedModuleState is not a function`.
+Expected: FAIL — `evaluateDatedModule is not a function`.
 
 **Step 3: Implement**
 
@@ -93,13 +93,13 @@ In `backend/src/2_domains/school/timing.mjs`, after `evaluateTiming`:
  * and never needs a grown-up to revive it — it sinks by losing the sort
  * (planner.mjs ranks catch_up modules newest-first), not by a rule.
  */
-export function datedModuleState(window, { today } = {}) {
-  if (!isDay(today)) throw new Error('datedModuleState requires today YYYY-MM-DD');
+export function evaluateDatedModule(window, { today } = {}) {
+  if (!isDay(today)) throw new Error('evaluateDatedModule requires today YYYY-MM-DD');
   if (!isObject(window) || !isDay(window.opensOn) || !isDay(window.closesOn)) {
-    throw new Error('datedModuleState requires a window with opensOn and closesOn as YYYY-MM-DD');
+    throw new Error('evaluateDatedModule requires a window with opensOn and closesOn as YYYY-MM-DD');
   }
   if (compareDay(window.opensOn, window.closesOn) > 0) {
-    throw new Error('datedModuleState window closes before it opens');
+    throw new Error('evaluateDatedModule window closes before it opens');
   }
   if (compareDay(today, window.opensOn) < 0) return { state: 'upcoming', reasons: ['opens_later'] };
   if (compareDay(today, window.closesOn) > 0) return { state: 'catch_up', reasons: ['catch_up'] };
@@ -119,6 +119,92 @@ Expected: PASS, and every pre-existing test in the file still passes.
 ```bash
 git add backend/src/2_domains/school/timing.mjs tests/isolated/domain/school/timing.test.mjs
 git commit -m "feat(school): a dated module knows where today sits in its own window"
+```
+
+---
+
+## Task 1b: `isDay` must reject a date that does not exist
+
+Found during Task 1 review. `isDay` validates with `!Number.isNaN(Date.parse(...))`, but V8 rolls an out-of-range day over instead of rejecting it:
+
+```
+2026-02-30 -> 2026-03-02
+2026-11-31 -> 2026-12-01
+2026-13-01 -> NaN (correctly rejected — month is out of range, day is not)
+```
+
+So `normalizeTiming`, `evaluateTiming`, `resolveTimingAnchor`, `materializeTiming`, and the new `evaluateDatedModule` all accept a window ending `2026-11-31` and silently treat it as Dec 1.
+
+This is pre-existing, but it lands squarely on this feature: Task 7 hand-authors 17 date pairs (including November, which has 30 days), and Task 2's whole purpose is that a typo'd date fails the manifest rather than silently stranding a week. Fix it before Task 2 clones the same predicate.
+
+**Files:**
+- Modify: `backend/src/2_domains/school/timing.mjs` (the `isDay` const)
+- Test: `tests/isolated/domain/school/timing.test.mjs`
+
+**Step 1: Write the failing tests**
+
+```javascript
+describe('isDay rejects dates that do not exist', () => {
+  it('rejects a rolled-over day through evaluateDatedModule', () => {
+    expect(() => evaluateDatedModule({ opensOn: '2026-11-01', closesOn: '2026-11-31' }, { today: '2026-11-15' }))
+      .toThrow(/opensOn and closesOn/);
+    expect(() => evaluateDatedModule({ opensOn: '2026-02-30', closesOn: '2026-03-05' }, { today: '2026-03-01' }))
+      .toThrow(/opensOn and closesOn/);
+  });
+
+  it('rejects a rolled-over day through normalizeTiming', () => {
+    const { errors } = normalizeTiming({
+      schema: 'school.timing/v1',
+      availability: { opensOn: '2026-01-01', closesOn: '2026-06-31' },
+    });
+    expect(errors.join()).toMatch(/closesOn/);
+  });
+
+  it('still accepts a real leap day', () => {
+    expect(evaluateDatedModule({ opensOn: '2028-02-29', closesOn: '2028-03-01' }, { today: '2028-02-29' }).state)
+      .toBe('available');
+  });
+
+  it('rejects Feb 29 in a non-leap year', () => {
+    expect(() => evaluateDatedModule({ opensOn: '2026-02-29', closesOn: '2026-03-05' }, { today: '2026-03-01' }))
+      .toThrow(/opensOn and closesOn/);
+  });
+});
+```
+
+**Step 2: Run and watch them fail**
+
+```bash
+npx vitest run tests/isolated/domain/school/timing.test.mjs -t "do not exist"
+```
+Expected: the rollover cases FAIL (no throw), the leap-day case passes already.
+
+**Step 3: Implement**
+
+Replace the `isDay` const in `backend/src/2_domains/school/timing.mjs`:
+
+```javascript
+// Round-trip rather than Date.parse: V8 rolls an out-of-range day OVER
+// ('2026-11-31' parses fine, as Dec 1) instead of rejecting it, which would
+// let a typo'd course window silently shift a week. Comparing the formatted
+// result back to the input is what actually rejects a date that never existed.
+const isDay = (value) => typeof value === 'string' && DAY.test(value)
+  && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+```
+
+**Step 4: Run the FULL suite**
+
+```bash
+npx vitest run backend/src/2_domains/school backend/src/3_applications/school tests/isolated/domain/school --reporter=dot
+```
+
+This tightens validation for every timing consumer, so a pre-existing test or fixture carrying an impossible date will now fail. If one does, that is the bug being caught — report it rather than loosening the check.
+
+**Step 5: Commit**
+
+```bash
+git add backend/src/2_domains/school/timing.mjs tests/isolated/domain/school/timing.test.mjs
+git commit -m "fix(school): a window ending November 31st is a typo, not December 1st"
 ```
 
 ---
@@ -201,11 +287,26 @@ Expected: FAIL — `progression.mode must be sequential|module_blocks`.
 
 **Step 3: Implement**
 
-Near the top of `workValidation.mjs`, beside the other predicates:
+**Do not write a second date predicate.** Task 1b established that this check has two traps — V8 rolls an out-of-range day over (`2026-11-31` → Dec 1), and `toISOString()` on an invalid month *throws* rather than returning something comparable. A duplicated copy will drift from the hardened one.
+
+Instead, promote `timing.mjs`'s module-private `isDay` to a named export and import it here. Both files live in `2_domains/school/`, so this crosses no layer boundary.
+
+In `backend/src/2_domains/school/timing.mjs`, change the const to an export and give it a name that says what it means in this domain:
 
 ```javascript
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-const isDay = (v) => typeof v === 'string' && DAY.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+/**
+ * A household-local study date, `YYYY-MM-DD`. Shared with workValidation so a
+ * course manifest and a materialized plan agree on what a date even is.
+ */
+export const isStudyDay = (value) => { … the Task 1b body, unchanged … };
+```
+
+Keep a module-private `const isDay = isStudyDay;` alias if that keeps the existing call sites in `timing.mjs` untouched, or rename them — either is fine, but do NOT change the behavior.
+
+Then in `workValidation.mjs`:
+
+```javascript
+import { isStudyDay as isDay } from '../timing.mjs';
 ```
 
 In the `modules` block (currently ending `if (isPresent(m.media) …)`), add window checks. The mode is read from `raw.progression` which is validated below — read it directly, it is only a string comparison:
@@ -342,47 +443,37 @@ Expected: FAIL — `moduleSchedule` is undefined.
 
 **Step 3: Implement**
 
-Change the signature and add the dated branch:
+Read the whole existing function first. It currently declares a local `const modules = [...]` (the module ids derived from the units), which **collides with the new `modules` parameter**. Rename that local to `publishedModules` and update its two uses (`optionalModules`, `otherModules`). That rename is the riskiest part of this task — the atlas tests will catch it if you get it wrong.
+
+Signature:
 
 ```javascript
-export function createCourseEnrollment({ enrollmentId = null, courseId, profile, units, modules = [], policy = {}, today = null, rng = Math.random } = {}) {
+export function createCourseEnrollment({
+  enrollmentId = null, courseId, profile, units,
+  modules = [], policy = {}, today = null, rng = Math.random,
+} = {}) {
 ```
 
-After `const optionalModules = …` and before `const otherModules = …`, insert:
+After `otherModules`, add the dated branch:
 
 ```javascript
-  // A dated course's calendar IS its order. Windows are copied onto the
-  // enrollment for the same reason lessonOrder is: a later course edit must
-  // not move a plan a learner is already living in.
+  // A dated course's calendar IS its order, so it never shuffles and never
+  // takes an opening module. Windows are copied onto the enrollment for the
+  // same reason lessonOrder is: a later course edit must not move a plan a
+  // learner is already living in.
   const dated = policy.mode === 'dated_modules';
-  let moduleSchedule;
-  if (dated) {
-    const windowed = (Array.isArray(modules) ? modules : [])
-      .filter((m) => m?.module && m.opensOn && m.closesOn && modules_has(m.module))
-      .filter((m) => !today || m.closesOn >= today)
-      .sort((a, b) => a.opensOn.localeCompare(b.opensOn));
-    moduleSchedule = Object.fromEntries(windowed.map((m) => [m.module, { opensOn: m.opensOn, closesOn: m.closesOn }]));
-  }
-```
-
-where `modules_has` is a local guard defined just above, keeping the enrollment to modules that actually publish units:
-
-```javascript
-  const modules_has = (id) => modules_set.has(id);
-  const modules_set = new Set(modules_list);
-```
-
-Simplify: `modules` here is the AUTHORED list and `modules_list` is the derived one already computed as `const modules = [...new Set(members.map(…))]`. That name now collides with the new parameter. **Rename the derived local to `publishedModules`** and update its three uses (`optionalModules`, `otherModules`, and the `for (const module of …)` loop), then:
-
-```javascript
   const published = new Set(publishedModules);
-  const windowed = (Array.isArray(modules) ? modules : [])
-    .filter((m) => m?.module && published.has(m.module) && m.opensOn && m.closesOn)
-    .filter((m) => !today || m.closesOn >= today)
-    .sort((a, b) => a.opensOn.localeCompare(b.opensOn));
+  const windowed = dated
+    ? (Array.isArray(modules) ? modules : [])
+      // Only modules that actually publish units, and only those still open:
+      // a week that closed before this learner enrolled was never theirs.
+      .filter((m) => m?.module && published.has(m.module) && m.opensOn && m.closesOn)
+      .filter((m) => !today || m.closesOn >= today)
+      .sort((a, b) => a.opensOn.localeCompare(b.opensOn))
+    : [];
 ```
 
-For a dated course `moduleOrder` is the calendar order and is never shuffled:
+Replace the `moduleOrder` assignment:
 
 ```javascript
   const moduleOrder = dated
@@ -393,16 +484,19 @@ For a dated course `moduleOrder` is the calendar order and is never shuffled:
     ];
 ```
 
-And in the returned object:
+Leave the `lessonOrder` loop alone. It iterates `[...moduleOrder, ...optionalModules]`, so dropping a closed module from `moduleOrder` drops it from `lessonOrder` too — which is what we want.
+
+Add one key to the returned object, after `lessonOrder`:
 
 ```javascript
-    moduleOrder,
-    optionalModules,
-    lessonOrder,
-    ...(dated ? { moduleSchedule } : {}),
+    ...(dated ? {
+      moduleSchedule: Object.fromEntries(
+        windowed.map((m) => [m.module, { opensOn: m.opensOn, closesOn: m.closesOn }]),
+      ),
+    } : {}),
 ```
 
-Note the `lessonOrder` loop iterates `[...moduleOrder, ...optionalModules]`, so dropping a closed module from `moduleOrder` also drops it from `lessonOrder` — which is what we want.
+**Do not add `moduleSchedule` for a non-dated course.** The key must be absent, not empty — Task 5 branches on the policy, and an empty object on an atlas enrollment would be a lie in the stored YAML.
 
 **Step 4: Run and verify green**
 
@@ -450,7 +544,15 @@ npx vitest run backend/src/3_applications/school/usecases/EnrollLearner.test.mjs
 
 **Step 3: Implement**
 
-`EnrollLearner` already computes a study day for `materializeTiming` via `studyDate(this.#clock(), this.#timezone)`. Reuse it. Read the course work from `this.#curriculum` (the same port `listUnits()` comes from — check the port for the work accessor; if none exists, derive modules from the units' `module` field is NOT sufficient because windows live on the work, so add the accessor to the port and its YAML adapter).
+`EnrollLearner` already computes a study day for `materializeTiming` via `studyDate(this.#clock(), this.#timezone)`. Reuse it.
+
+**The port accessor already exists** — `ICurriculumCatalog.getWork(id)` (`backend/src/3_applications/school/ports/ICurriculumCatalog.mjs:89`), and `schoolLifecycle.mjs:794` already injects that catalog as `curriculum`. No port change, no adapter change:
+
+```javascript
+const work = await this.#curriculum.getWork(courseId);
+```
+
+Guard it: `getWork` may answer `null` for a course with no authored work record, and a non-dated course has no `modules[]` at all. `modules: work?.modules ?? []` covers both, and Task 3 already ignores `modules` unless the policy is `dated_modules`.
 
 Pass both through:
 
@@ -620,7 +722,7 @@ npx vitest run tests/isolated/domain/school/planner.test.mjs -t dated_modules
       Object.entries(schedule).forEach(([moduleId, window]) => {
         let decided;
         try {
-          decided = datedModuleState(window, { today });
+          decided = evaluateDatedModule(window, { today });
         } catch {
           errors.push(`${courseId}: module '${moduleId}' has an unusable window`);
           return;
@@ -636,7 +738,7 @@ npx vitest run tests/isolated/domain/school/planner.test.mjs -t dated_modules
   }
 ```
 
-Import `datedModuleState` alongside `evaluateTiming` at the top of the file.
+Import `evaluateDatedModule` alongside `evaluateTiming` at the top of the file.
 
 **3d — stamp the entries.** Inside the `entries` map, after the existing `blocker` / `rawTiming` lines, add a dated branch that runs INSTEAD of `evaluateTiming` for these units:
 
@@ -763,10 +865,13 @@ progression:
   # earlier weeks stay available as catch-up, newest first. Days inside a
   # week shuffle once, the way the atlas shuffles lessons.
   mode: dated_modules
+  module_order: fixed
   lesson_order: shuffle_once
 ```
 
-Delete `required_opening_module`, `one_active_module`, and `module_order` — Task 2 now rejects the first two outright.
+Delete `required_opening_module` and `one_active_module` — Task 2 rejects both by name for a dated course.
+
+**Keep `module_order: fixed`.** `workValidation.mjs:71-73` checks it unconditionally via `oneOf`, so omitting it fails with `progression.module_order must be one of fixed|shuffle_once, got: undefined`. It is also still load-bearing: `enrollment.mjs` reads `policy.module_order` when freezing `moduleOrder`, which Task 5 keeps using alongside `moduleSchedule`. `fixed` is the honest value for a calendar-ordered course.
 
 Add a window to each of the 17 modules. Weeks run Monday–Sunday:
 
@@ -818,18 +923,22 @@ The data tree is not this repo — note the edit in the commit message but commi
 
 `$DAYLIGHT_BASE_PATH/data/household/school/plans/syllabi/come-follow-me-ot-2026.yml` — this directory does not exist yet; create it.
 
+Do NOT add a `modules:` key — `syllabus.mjs` refuses it (scope subsetting is not built). Do NOT add a `timingTemplate` — that is course-level anchor timing, a different mechanism from `moduleSchedule`.
+
+**A syllabus carries `profile`** (`syllabus.mjs:64-69`, validated against the course's own `work.profiles`), and `EnrollLearner` takes no profile override. So Milo and Felix need **two syllabus files**, identical but for id, title, and profile:
+
+`come-follow-me-ot-2026-lower.yml`
 ```yaml
 schema: school.syllabus/v1
-syllabusId: come-follow-me-ot-2026
-title: Come Follow Me — Old Testament 2026
+syllabusId: come-follow-me-ot-2026-lower
+title: Come Follow Me — Old Testament 2026 (lower)
 courseId: come-follow-me-ot-2026
+profile: lower
 policy:
   lesson_order: shuffle_once
 ```
 
-Do NOT add a `modules:` key — `syllabus.mjs` refuses it (scope subsetting is not built). Do NOT add a `timingTemplate` — that is course-level anchor timing, a different mechanism from `moduleSchedule`.
-
-Profiles differ per learner, so either author two syllabi (`-lower`, `-upper`) or confirm whether `EnrollLearner` accepts a profile override at the call site. Check `syllabus.mjs` for whether `profile` is a syllabus field before deciding; if it is, two syllabi is the honest answer.
+`come-follow-me-ot-2026-upper.yml` is the same with `-upper`, `(upper)`, and `profile: upper`. Both profiles are declared by the course, so validation will accept them.
 
 **Step 2: Restart the backend**
 
