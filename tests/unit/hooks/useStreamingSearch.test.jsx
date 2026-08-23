@@ -85,14 +85,17 @@ describe('useStreamingSearch', () => {
       es.simulateMessage({ event: 'results', source: 'plex', items: [{ id: '1' }], pending: ['immich'] });
     });
 
-    expect(result.current.results).toEqual([{ id: '1' }]);
+    // 8db154e80 ("ranked search") started annotating each item with
+    // `_score`/`_arrival` for stable relevance sort — items carry those
+    // extra fields now, so match on the fields the test actually cares about.
+    expect(result.current.results).toMatchObject([{ id: '1' }]);
     expect(result.current.pending).toEqual(['immich']);
 
     act(() => {
       es.simulateMessage({ event: 'results', source: 'immich', items: [{ id: '2' }], pending: [] });
     });
 
-    expect(result.current.results).toEqual([{ id: '1' }, { id: '2' }]);
+    expect(result.current.results).toMatchObject([{ id: '1' }, { id: '2' }]);
   });
 
   it('clears pending and isSearching on complete', () => {

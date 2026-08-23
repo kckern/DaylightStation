@@ -209,20 +209,26 @@ describe('buildStravaDescription — title generation', () => {
   });
 
   test('uses first episode when all durations are equal', () => {
+    // fad43d25b added a positional-bias tier ahead of the plain reduce: when
+    // >=2 survivors are each >=10 min, the LAST (chronologically latest) one
+    // wins, not the longest-reduce tie-break this test exercises. Durations
+    // here are kept under the 10-min bias threshold (>= 5 min T1 floor) so the
+    // cascade falls through to the reduce fallback, where a strict `>`
+    // comparison keeps the first candidate on an exact tie.
     const now = Date.now();
     const ep1 = createEpisodeEvent({
       grandparentTitle: 'First Show',
       title: 'First Ep',
-      durationSeconds: 1800,
+      durationSeconds: 400,
       start: now,
-      end: now + 30 * 60 * 1000,
+      end: now + 400 * 1000,
     });
     const ep2 = createEpisodeEvent({
       grandparentTitle: 'Second Show',
       title: 'Second Ep',
-      durationSeconds: 1800,
-      start: now + 30 * 60 * 1000,
-      end: now + 60 * 60 * 1000,
+      durationSeconds: 400,
+      start: now + 400 * 1000,
+      end: now + 800 * 1000,
     });
     const session = createSession({ events: [ep1, ep2] });
     const result = buildStravaDescription(session);
