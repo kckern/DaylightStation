@@ -138,6 +138,9 @@ import { rasterizePdf } from './rasterize.mjs';
 /** IPP printer-state enum (RFC 8011 §5.4.11). */
 const PRINTER_STATE = { 3: 'idle', 4: 'processing', 5: 'stopped' };
 
+/** The two `sides-default` values that mean "this printer will duplex on its own, unasked". */
+const TWO_SIDED_VALUES = new Set(['two-sided-long-edge', 'two-sided-short-edge']);
+
 /**
  * @typedef {Object} LaserPrinterConfig
  * @property {string} host - printer IP or hostname
@@ -208,6 +211,27 @@ export class LaserPrinterAdapter {
   }
 
   /**
+   * The printer's OWN duplex default/capability, straight off the wire.
+   * Reuses `#fetchAttributes()` — the exact same GET_PRINTER_ATTRIBUTES round
+   * trip `getStatus()` and `#getCapabilities()` already make — rather than
+   * inventing a second HTTP path. Deliberately a SEPARATE query, made only
+   * when a caller actually asked for duplex (`printPdf`'s `duplex === true`),
+   * and deliberately never touched by `#getCapabilities()`'s own attrs: the
+   * `printPdf` guard at its call site is what guarantees a failure here
+   * degrades the DUPLEX REPORT, not the print itself — see that call site's
+   * comment for why that separation matters.
+   *
+   * @returns {Promise<{sidesDefault: ?string, sidesSupported: string[]}>}
+   */
+  async #getSidesCapability() {
+    const attrs = await this.#fetchAttributes();
+    return {
+      sidesDefault: attrs['sides-default']?.[0] ?? null,
+      sidesSupported: attrs['sides-supported'] ?? [],
+    };
+  }
+
+  /**
    * The capabilities negotiation needs, straight off the wire — no guessing,
    * no caching (a print is rare enough that a fresh query every time is
    * cheap, and printer capabilities are exactly the kind of thing that must
@@ -252,27 +276,68 @@ export class LaserPrinterAdapter {
    * @throws {InfrastructureError} INVALID_DOCUMENT | PRINT_FORMAT_UNSUPPORTED | RASTERIZE_* | PRINT_VALIDATE_FAILED | PRINT_SEND_FAILED
    */
   /**
-   * `duplex` is ACCEPTED and NOT APPLIED, deliberately — see
-   * `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER` note. This printer advertises
-   * `sides-supported` and then returns `0x0505 server-error-temporary-error`
-   * the instant a `sides` attribute is present at ANY value, including its own
-   * `sides-default`. That was measured against the physical HL-L2460DW, which
-   * is why `sides` is first in the trim order. The alternative PJL duplex
-   * envelope was never measured on this hardware.
+   * `duplex` is still never sent as a job attribute — see `negotiate.mjs`'s
+   * `JOB_ATTRIBUTE_TRIM_ORDER` note and incident #3 above. This printer
+   * advertises `sides-supported` and then returns `0x0505
+   * server-error-temporary-error` the instant a `sides` attribute is present
+   * at ANY value, including its own `sides-default`. That was measured
+   * against the physical HL-L2460DW via Validate-Job (no paper produced) on
+   * 2026-08-22:
    *
-   * Callers (`IssueDocument`, `school.yml printing.duplex`) still pass their
-   * intent and it is logged, so the request is visible rather than silently
-   * dropped — but the job goes out one-sided. Reinstating duplex means
-   * proving, at the printer, that one of the two mechanisms actually works.
+   *   no `sides` attribute       -> ok, 0x0
+   *   sides=one-sided            -> 0x505
+   *   sides=two-sided-long-edge  -> 0x505
+   *
+   * i.e. it isn't the VALUE that's rejected, it's the attribute's presence at
+   * all. The alternative PJL duplex envelope was never measured on this
+   * hardware. So this adapter still can't ASK for duplex over the wire — but
+   * it doesn't need to, because this same printer, queried the same day via
+   * GET_PRINTER_ATTRIBUTES, reported:
+   *
+   *   sides-default   = ["one-sided"]
+   *   sides-supported = ["one-sided", "two-sided-long-edge", "two-sided-short-edge"]
+   *
+   * A printer with NO `sides` attribute in the job falls back to whatever
+   * `sides-default` it has configured on itself — a value this adapter never
+   * has to send and this firmware never has to see as a job attribute. The
+   * remedy for the original bug (a duplex-laid-out worksheet PDF printing
+   * one-sided) is therefore not in this file at all: it's changing the
+   * printer's OWN `sides-default`, at its web UI or front panel, from
+   * `one-sided` to `two-sided-long-edge`. Once that's done, an omitted
+   * `sides` attribute means duplex, for free, on hardware this code cannot
+   * make ask for it directly.
+   *
+   * What THIS file is responsible for is not lying about which world we're
+   * in. `#getSidesCapability()` reads the printer's live `sides-default`
+   * (same GET_PRINTER_ATTRIBUTES plumbing as `#getCapabilities()`/
+   * `getStatus()`, a separate round trip made only when `duplex === true`)
+   * and `printPdf` branches on it:
+   *  - `sides-default` is a two-sided value -> the job's own omission of
+   *    `sides` means the printer will duplex it anyway. Logged at info as
+   *    `laser-printer.duplex-via-printer-default` — NOT the not-applied
+   *    event; the request WAS satisfied, just not by us naming it.
+   *  - `sides-default` is `one-sided` (or anything else non-duplex) -> still
+   *    genuinely not applied. Logged as `laser-printer.duplex-requested-not-applied`
+   *    (same event name as before this fix, so existing log queries still
+   *    match), but now carrying `sidesDefault`/`sidesSupported` and a reason
+   *    that names the actual remedy — change the printer's own default —
+   *    instead of just noting the drop.
+   *  - the `sides-default` read itself fails (network hiccup, unexpected
+   *    response shape, whatever) -> caught inside `#getSidesCapability`'s
+   *    caller here, NEVER left to propagate. Degrades to the same
+   *    not-applied log, with the reason noting the lookup failed, and the
+   *    print proceeds exactly as it would have before this fix existed. A
+   *    printer-attribute read taken purely to make a LOG LINE more honest
+   *    must never be able to turn a working print into a failed one — that
+   *    would be strictly worse than the lie it's replacing.
+   *
+   * Callers (`IssueDocument`, `school.yml printing.duplex`) still just pass
+   * their intent; what changed is that the log now tells the truth about
+   * whether it happened, and, when it didn't, what to actually go fix.
    */
   async printPdf(pdf, {
     jobName = 'daylight-print', user = 'daylight', copies = 1, duplex = undefined,
   } = {}) {
-    if (duplex === true) {
-      this.#logger.info?.('laser-printer.duplex-requested-not-applied', {
-        host: this.#host, jobName, reason: 'printer rejects the IPP `sides` attribute at any value',
-      });
-    }
     if (!Buffer.isBuffer(pdf) || pdf.length === 0) {
       throw new InfrastructureError('printPdf requires non-empty PDF buffer', { code: 'INVALID_DOCUMENT' });
     }
@@ -280,6 +345,39 @@ export class LaserPrinterAdapter {
       throw new InfrastructureError('document is not a PDF', { code: 'INVALID_DOCUMENT' });
     }
     const nCopies = Math.max(1, Math.floor(copies));
+
+    if (duplex === true) {
+      let sidesDefault = null;
+      let sidesSupported = [];
+      let lookupFailed = false;
+      try {
+        ({ sidesDefault, sidesSupported } = await this.#getSidesCapability());
+      } catch (err) {
+        // See this method's header comment: a failed duplex-honesty read
+        // must never block or fail the print itself. Degrade to the
+        // pre-fix not-applied log below, with the failure noted in it.
+        lookupFailed = true;
+        this.#logger.warn?.('laser-printer.sides-default-lookup-failed', {
+          host: this.#host, jobName, error: err?.message ?? String(err),
+        });
+      }
+
+      if (!lookupFailed && TWO_SIDED_VALUES.has(sidesDefault)) {
+        this.#logger.info?.('laser-printer.duplex-via-printer-default', {
+          host: this.#host, jobName, sidesDefault,
+        });
+      } else {
+        this.#logger.info?.('laser-printer.duplex-requested-not-applied', {
+          host: this.#host,
+          jobName,
+          sidesDefault,
+          sidesSupported,
+          reason: lookupFailed
+            ? "printer rejects the IPP `sides` attribute at any value, and the printer's own sides-default could not be read to confirm whether it already duplexes — could not determine outcome; fix is changing the printer's own sides-default (web UI/front panel) to a two-sided value"
+            : "printer rejects the IPP `sides` attribute at any value; its own sides-default is not two-sided, so pages print one-sided — fix is changing the printer's own sides-default (web UI/front panel) to a two-sided value, not sending `sides` in the job",
+        });
+      }
+    }
 
     const caps = await this.#getCapabilities();
     // Decides BOTH the container (document-format) and, when rasterizing is
