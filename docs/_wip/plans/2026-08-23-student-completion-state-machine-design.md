@@ -67,18 +67,24 @@ never actionable.
 |---|---|---|---|
 | 1 | A **non-elective** entry in this subject passed today, or its program reports `doneToday` | `served` | — |
 | 2 | `suppressed !== null` (a focus day deliberately took this subject off the plate) | `excused` | `suppressed_by_focus` |
-| 3 | No actionable non-elective entry remains (unavailable program, dormant, upcoming, locked-with-no-offer, caught-up) | `excused` | `awaiting_grown_up` \| `opens_later` \| `blocked_no_offer` \| `caught_up` \| `program_unavailable` |
+| 3 | No actionable non-elective entry remains (nothing non-elective assigned at all, unavailable program, dormant, upcoming, locked-with-no-offer, or every non-elective entry already completed) | `excused` | `elective_only` \| `program_unavailable` \| `blocked_no_offer` \| `awaiting_grown_up` \| `opens_later` \| `caught_up` |
 | 4 | Every actionable non-elective entry is optional backlog (the `dated_modules` `catch_up` contract, §7) | `excused` | `optional_backlog` |
 | 5 | Every actionable non-elective entry is `available` with a `timing.target.dueOn` set and still outside its urgency lead window | `excused` | `not_due_yet` |
 | 6 | Otherwise | **`obligated`** | — |
 
 When more than one disqualifying condition could produce rule 3's reason (a
 subject can hold both a dormant entry and a locked-with-no-remedy entry at
-once), the reason follows the same precedence `agenda.mjs` already computes
-its own fields in: `program_unavailable` (candidacy already excluded these)
-> `blocked_no_offer` (`lockedRemedy`) > `awaiting_grown_up` (`dormant`) >
-`opens_later` (`upcoming`) > `caught_up`. This mirrors existing code order
-(`agenda.mjs:155-165`) rather than inventing a new priority.
+once), the reason follows this precedence: `elective_only` (no non-elective
+entry exists at all) > `program_unavailable` (candidacy already excluded
+these) > `blocked_no_offer` (`lockedRemedy`) > `awaiting_grown_up`
+(`dormant`) > `opens_later` (`upcoming`) > `caught_up` (fallback — every
+non-elective entry is `completed`, or is backlog-only work with nothing else
+to explain the absence of a candidate). The middle four terms mirror
+existing code order (`agenda.mjs:155-165`) rather than inventing a new
+priority; `elective_only` and the `caught_up` fallback are new, added when
+concretizing this table against a real subject holding only elective work,
+and against a subject whose required course finished on an earlier day with
+nothing new offered today.
 
 Plus one synthetic row, evaluated once per learner rather than per subject:
 if `plan.errors` is non-empty (a parent-authored `courseId`/`unitId` typo that
@@ -403,6 +409,12 @@ side ships, not assumed.
 5. All-subjects-`caught_up` → `no_work_today`, not `complete`.
 6. A dormant subject's reason (`awaiting_grown_up`) appears in `excused` even
    on an otherwise `complete` day.
+7. A subject holding only elective entries (no non-elective entry assigned at
+   all) excuses with `elective_only`.
+8. A subject whose required course finished on an earlier day, with nothing
+   new offered today, excuses with `caught_up` — and this reads `complete`
+   or `no_work_today` overall (per the consumer contract, §6), never
+   `incomplete`.
 
 **Domain (`agenda.test.mjs` additions):** the `programUnavailable` scoping
 fix (§2) — a subject with an erroring program AND a live curriculum
