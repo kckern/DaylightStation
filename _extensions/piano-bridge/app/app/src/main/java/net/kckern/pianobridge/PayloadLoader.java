@@ -126,6 +126,23 @@ public final class PayloadLoader {
         return "accepted: fetching " + url;
     }
 
+    /** Stop and re-start the CURRENT payload in place (no fetch). For a wedged server. */
+    public String requestRestart() {
+        String cur = store.current();
+        if (cur == null) return "refused: no current payload";
+        exec.submit(() -> { synchronized (this) {
+            unloadActive();
+            shell.note("PAYLOAD", "manual restart of " + cur);
+            if (!load(cur)) {
+                String to = null;
+                try { to = store.rollback(); } catch (Exception ignored) { }
+                shell.note("PAYLOAD", "restart of " + cur + " failed -> rollback to " + to + " (" + lastError + ")");
+                if (to != null) load(to);
+            }
+        } });
+        return "accepted: restarting " + cur;
+    }
+
     public String requestRollback() {
         if (store.previous() == null) return "refused: no previous payload";
         exec.submit(this::rollbackNow);

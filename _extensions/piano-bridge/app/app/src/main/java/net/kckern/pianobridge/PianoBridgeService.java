@@ -37,6 +37,7 @@ public class PianoBridgeService extends Service {
 
     private PianoEngine engine;
     private PayloadLoader loader;
+    private ShellServer shellServer;
     private volatile String notificationText = "Starting…";
 
     /** For PianoTouchService to reach the loader (a11y forwarding). */
@@ -58,6 +59,18 @@ public class PianoBridgeService extends Service {
             engine = new PianoEngine();
             if (!engine.init()) Log.e(TAG, "PianoEngine.init failed");
         }
+        // The lifeline comes up BEFORE the payload, so even a payload that wedges on
+        // start() leaves :8771 answering and /payload/rollback reachable.
+        if (shellServer == null) {
+            shellServer = new ShellServer(this);
+            try {
+                shellServer.start(0, true);
+                ShellLog.note("SHELL", "lifeline server on :" + ShellServer.PORT);
+            } catch (Exception e) {
+                Log.e(TAG, "ShellServer failed to start", e);
+                ShellLog.note("SHELL", "lifeline server FAILED: " + e.getMessage());
+            }
+        }
         if (loader == null) {
             loader = new PayloadLoader(this, new Shell());
             loader.boot();
@@ -71,6 +84,7 @@ public class PianoBridgeService extends Service {
     public void onDestroy() {
         ShellLog.note("SHELL", "service destroying");
         if (loader != null) { loader.shutdown(); loader = null; }
+        if (shellServer != null) { shellServer.stop(); shellServer = null; }
         if (engine != null) { engine.stop(); engine.release(); engine = null; }
         INSTANCE = null;
         super.onDestroy();
@@ -78,7 +92,10 @@ public class PianoBridgeService extends Service {
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
-    private int versionCode() {
+    /** Package-visible for ShellServer. */
+    PayloadLoader loaderOrNull() { return loader; }
+
+    int versionCode() {
         try {
             return (int) getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
         } catch (Exception e) { return -1; }
