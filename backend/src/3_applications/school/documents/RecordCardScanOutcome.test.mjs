@@ -470,13 +470,17 @@ describe('dedup read windowing', () => {
 });
 
 describe('session bridge', () => {
-  it('a complete scan of a session-tracked card advances issued → submitted → graded with a points percent', async () => {
+  it('a complete scan of a session-tracked card advances issued → submitted → graded with a row-count percent', async () => {
     const datastore = fakeDatastore();
     const sessions = fakeSessions(seededSession('ws-1'));
     const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
 
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
-    expect(outcome.session).toEqual({ sessionId: 'ws-1', advancedTo: 'graded' });
+    // gradedCard() default fixture: 2 results, row 1 correct, row 2 incorrect
+    // -> correctCount 1, totalCount 2, percent 1/2*100 = 50.
+    expect(outcome.session).toEqual({
+      sessionId: 'ws-1', advancedTo: 'graded', percent: 50, correctCount: 1, totalCount: 2,
+    });
 
     const types = (await sessions.readEvents('ws-1')).map((event) => event.type);
     expect(types).toEqual(['created', 'issued', 'submitted', 'graded']);
@@ -582,7 +586,11 @@ describe('review queue bridge', () => {
     const reviewQueue = fakeReviewQueue();
     const useCase = new RecordCardScanOutcome({ datastore, sessions, reviewQueue, logger: quietLogger });
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1', unscannedItems: [] }) });
-    expect(outcome.session).toEqual({ sessionId: 'ws-1', advancedTo: 'graded' });
+    // gradedCard() default fixture: 2 results, row 1 correct, row 2 incorrect
+    // -> correctCount 1, totalCount 2, percent 1/2*100 = 50.
+    expect(outcome.session).toEqual({
+      sessionId: 'ws-1', advancedTo: 'graded', percent: 50, correctCount: 1, totalCount: 2,
+    });
     expect(reviewQueue.items.every((i) => i.gradedBy === 'engine')).toBe(true);
   });
 
@@ -591,6 +599,10 @@ describe('review queue bridge', () => {
     const sessions = fakeSessions(seededSession('ws-1'));
     const useCase = new RecordCardScanOutcome({ datastore, sessions, logger: quietLogger });
     const outcome = await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
-    expect(outcome.session).toEqual({ sessionId: 'ws-1', advancedTo: 'graded' });
+    // gradedCard() default fixture: 2 results, row 1 correct, row 2 incorrect
+    // -> correctCount 1, totalCount 2, percent 1/2*100 = 50.
+    expect(outcome.session).toEqual({
+      sessionId: 'ws-1', advancedTo: 'graded', percent: 50, correctCount: 1, totalCount: 2,
+    });
   });
 });
