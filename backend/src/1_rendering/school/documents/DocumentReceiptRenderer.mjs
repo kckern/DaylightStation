@@ -637,10 +637,20 @@ export function createDocumentReceiptRenderer({
             ctx.strokeRect(bx, marksY, markSize, markSize);
             if (op.scoreMode === 'aggregate') {
               if (index < filledBoxes) ctx.fillRect(bx + 4, marksY + 4, markSize - 8, markSize - 8);
-            } else if (index < op.correctCount) {
-              drawCorrectMark(bx, marksY, markSize);
             } else {
-              drawIncorrectMark(bx, marksY, markSize);
+              // Per-question marks, from the SESSION'S OWN per-item result
+              // when the caller threaded one (`op.marks`, one entry per
+              // displayed box) — never a positional fill. A positional
+              // `index < correctCount` fill claims "the LAST N questions were
+              // wrong" regardless of which ones actually were, and these
+              // boxes are NUMBERED (the line above), so that claim is read
+              // and acted on. `op.marks` is only trusted when it covers every
+              // displayed box; anything short of that falls back to the
+              // positional count rather than mis-index a partial array.
+              const hasMarks = Array.isArray(op.marks) && op.marks.length === op.displayBoxCount;
+              const isCorrect = hasMarks ? op.marks[index] === true : index < op.correctCount;
+              if (isCorrect) drawCorrectMark(bx, marksY, markSize);
+              else drawIncorrectMark(bx, marksY, markSize);
             }
           }
           const scoreX = x + scoreColumnWidth / 2 + 2;
