@@ -48,14 +48,21 @@ const silentLogger = () => ({
 /** Flushes the microtask queue so the `.then/.catch` chain inside `onPayload` has settled. */
 const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
-/** Fake `SchoolGradingHookAdapter`-shaped hook: records every `fire()` call's payload. */
-function fakeHook({ rejects = false } = {}) {
+/**
+ * Fake `SchoolGradingHookAdapter`-shaped hook: records every `fire()` call's
+ * payload. `rejects: true` rejects every call; `rejectIndexes: [0]` rejects
+ * only specific calls by their 0-based order (e.g. the FIRST of two section
+ * fires) so a test can prove one rejection doesn't poison the rest of a loop.
+ */
+function fakeHook({ rejects = false, rejectIndexes = null } = {}) {
   const calls = [];
   return {
     calls,
     fire: vi.fn((outcome) => {
+      const index = calls.length;
       calls.push(outcome);
-      return rejects ? Promise.reject(new Error('hook unreachable')) : Promise.resolve({ ok: true });
+      const shouldReject = rejects || (rejectIndexes?.includes(index) ?? false);
+      return shouldReject ? Promise.reject(new Error('hook unreachable')) : Promise.resolve({ ok: true });
     }),
   };
 }
@@ -251,8 +258,12 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
 
     expect(gradingHook.calls).toHaveLength(1);
     expect(gradingHook.calls[0]).toMatchObject({
-      result: 'refused', testId: '0123456', recordId: 'r1', code: 'ALLOCATION_ROW_MAPPING_DRIFT', learnerId: 'milo',
+      result: 'refused', testId: '0123456', code: 'ALLOCATION_ROW_MAPPING_DRIFT', learnerId: 'milo',
     });
+    // `recordId` is deliberately NOT sent — SchoolGradingHookAdapter's
+    // `toVariables()` has no `record_id` key in its 11-key contract, so it
+    // would be silently discarded; the log line right above already carries it.
+    expect(gradingHook.calls[0]).not.toHaveProperty('recordId');
   });
 
   it('does nothing when no gradingHook is injected', async () => {
@@ -274,7 +285,7 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
     expect(recordCardScanOutcome.execute).toHaveBeenCalledTimes(1);
   });
 
-  it('still records the grade when the hook rejects', async () => {
+  it('still records the grade when the hook rejects (single section, no closeSessionOutcome wired)', async () => {
     const bus = makeBus();
     const gradingHook = fakeHook({ rejects: true });
     const card = singleCard();
@@ -296,5 +307,60 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
 
     expect(recordCardScanOutcome.execute).toHaveBeenCalledTimes(1);
     expect(gradingHook.fire).toHaveBeenCalledTimes(1);
+  });
+
+  it('the safety claim, actually exercised: a rejection on section A does not poison section B — both fire, both still bridge via closeSessionOutcome', async () => {
+    // The case above proves `recordCardScanOutcome.execute` still ran, but it
+    // never wires `closeSessionOutcome` and only has one section, so it can't
+    // say anything about the `.then()` loop itself surviving a mid-loop
+    // rejection. This test wires a REAL closeSessionOutcome stub, uses a
+    // COMPOSED two-section card so the loop iterates twice, and rejects
+    // specifically on section A's fire (call index 0) — the actual failure
+    // mode being guarded against: one hook rejection poisoning the rest of
+    // the for-loop and silently dropping section B's bridge call.
+    const bus = makeBus();
+    const gradingHook = fakeHook({ rejectIndexes: [0] });
+    const card = singleCard();
+    const recordCardScanOutcome = {
+      execute: vi.fn(async () => ({
+        recorded: true,
+        sectionOutcomes: [
+          {
+            recorded: true, session: { sessionId: 'sec-a', advancedTo: 'graded' }, earnedPoints: 2, totalPoints: 2,
+          },
+          {
+            recorded: true, session: { sessionId: 'sec-b', advancedTo: 'graded' }, earnedPoints: 1, totalPoints: 3,
+          },
+        ],
+      })),
+    };
+    const closeSessionOutcome = { execute: vi.fn(async () => ({ status: 'settled', result: 'passed' })) };
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => ({ results: [card] }) },
+      recordCardScanOutcome,
+      closeSessionOutcome,
+      gradingHook,
+      logger: silentLogger(),
+    });
+    expect(() => bus.broadcast('omr', sheetPayload())).not.toThrow();
+    await flush();
+    // Let the rejected `fire()` promise (section A's) settle too — the
+    // `.catch(() => {})` at the call site must swallow it silently and never
+    // reach the outer `.then()`'s own `.catch`, which would misreport this
+    // as a `scan-record-failed`.
+    await flush();
+
+    expect(recordCardScanOutcome.execute).toHaveBeenCalledTimes(1);
+    // Both sections' hooks fired — section A's rejection did not stop the
+    // loop from reaching section B.
+    expect(gradingHook.fire).toHaveBeenCalledTimes(2);
+    // Both sections still bridged via closeSessionOutcome — section A's
+    // rejected hook promise (never awaited) could not block the `await
+    // closeSessionOutcome.execute(...)` immediately below it, nor could it
+    // skip section B's own bridge call on the next loop iteration.
+    expect(closeSessionOutcome.execute).toHaveBeenCalledTimes(2);
+    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(1, { sessionId: 'sec-a' });
+    expect(closeSessionOutcome.execute).toHaveBeenNthCalledWith(2, { sessionId: 'sec-b' });
   });
 });
