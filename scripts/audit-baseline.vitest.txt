@@ -2,9 +2,6 @@
 # Population: *.test.{js,jsx,mjs} under tests/unit + tests/isolated that
 # import from vitest, minus suite/ (jest) and backend/ (node:test).
 # A file failing that is NOT listed here is a REGRESSION (gate exits 1).
-# Captured: 10744 tests, 10719 pass, 13 fail.
+# Captured: 10744 tests, 10732 pass, 0 fail.
 # Regenerate with: node scripts/gate-vitest.mjs --update
-tests/isolated/api/piano-router.test.mjs
-tests/isolated/api/routers/fitness-debug-voice-memo.test.mjs
-tests/isolated/domain/fitness/active-participant-state.unit.test.mjs
-tests/isolated/domain/fitness/build-session-summary.unit.test.mjs
+
