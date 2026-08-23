@@ -418,16 +418,23 @@ export class RecordCardScanOutcome {
           // stopped without saying WHY. On 2026-08-22 this line read
           // `pendingReview: 1` and it took reading the queue file on disk to
           // learn that one row was double-bubbled.
+          const reviewReasons = [...new Set(pending.map((row) => row.reason))];
+          const reviewItems = pending.map((row) => row.itemId);
           this.#logger.info?.('school.print.scan-awaiting-review', {
             sessionId,
             recordId: card.recordId,
             pendingReview: pending.length,
             learnerId: state.learnerId ?? null,
-            reasons: [...new Set(pending.map((row) => row.reason))],
-            items: pending.map((row) => row.itemId),
+            reasons: reviewReasons,
+            items: reviewItems,
           });
           return {
-            sessionId, advancedTo: 'submitted', reason: 'awaiting-review', pendingReview: pending.length,
+            sessionId,
+            advancedTo: 'submitted',
+            reason: 'awaiting-review',
+            pendingReview: pending.length,
+            reasons: reviewReasons,
+            items: reviewItems,
           };
         }
       }
