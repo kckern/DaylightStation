@@ -145,8 +145,11 @@ export function createSchoolPrintScanConsumer({
             // Home automation is a bystander: never awaited into the grading path
             // and never able to fail it. The adapter already swallows its own
             // errors; this catch covers a hook that rejects outright.
+            // `recordId` deliberately NOT sent — `toVariables()`'s 11-key
+            // contract has no `record_id`, so it would be silently discarded;
+            // the id is already on the adjacent log line for anyone who needs it.
             gradingHook?.fire({
-              result: 'refused', testId, recordId: card.recordId, code: card.error.code, learnerId: card.learnerId ?? null,
+              result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
             }).catch(() => {});
             continue;
           }
