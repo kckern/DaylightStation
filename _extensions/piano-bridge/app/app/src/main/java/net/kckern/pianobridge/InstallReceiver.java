@@ -27,19 +27,19 @@ public class InstallReceiver extends BroadcastReceiver {
             Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT);
             if (confirm != null) {
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                Diag.log(TAG, "launching install confirm dialog (tap Update on device)");
+                ShellLog.note("UPDATE", "launching install confirm dialog (tap Update on device)");
                 try {
                     context.startActivity(confirm);
                 } catch (Exception e) {
-                    Diag.log(TAG, "failed to launch confirm dialog: " + e.getMessage());
+                    ShellLog.note("UPDATE", "failed to launch confirm dialog: " + e.getMessage());
                 }
             } else {
-                Diag.log(TAG, "pending user action but no confirm intent");
+                ShellLog.note("UPDATE", "pending user action but no confirm intent");
             }
         } else if (status == PackageInstaller.STATUS_SUCCESS) {
-            Diag.log(TAG, "self-update SUCCESS");
+            ShellLog.note("UPDATE", "self-update SUCCESS");
         } else {
-            Diag.log(TAG, "self-update result status=" + status + " msg=" + msg);
+            ShellLog.note("UPDATE", "self-update result status=" + status + " msg=" + msg);
         }
     }
 }

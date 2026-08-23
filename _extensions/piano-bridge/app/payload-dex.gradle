@@ -1,0 +1,99 @@
+// payload-dex.gradle — turn the :payload library's classes into a loadable .jar.
+//
+// Applied from the root build.gradle. Produces:
+//   payload/build/payload/<version>.jar       classes.dex inside a jar (DexClassLoader input)
+//   payload/build/payload/<version>.jar.sha256
+// and, via :app:bakePayload, copies it to app/src/main/assets/payload-baked.jar so a
+// fresh shell install always has a payload to run (PayloadLoader.ensureBaked).
+//
+// The payload version string comes from -PpayloadVersion=…, default "p1-baseline".
+// It is ALSO what Main.version() should return — keep them in step when bumping.
+
+ext.payloadVersion = project.hasProperty('payloadVersion') ? project.payloadVersion : 'p1-baseline'
+
+def sdkDir = {
+    def lp = new File(rootDir, 'local.properties')
+    def props = new Properties()
+    if (lp.exists()) lp.withInputStream { props.load(it) }
+    def d = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    if (d == null) throw new GradleException('sdk.dir not set (local.properties) and no ANDROID_HOME')
+    return file(d)
+}()
+
+// Highest installed build-tools, for d8.
+def buildToolsDir = {
+    def bt = new File(sdkDir, 'build-tools')
+    def versions = bt.listFiles()?.findAll { it.isDirectory() }?.collect { it.name }?.sort()
+    if (!versions) throw new GradleException("no build-tools under ${bt}")
+    new File(bt, versions.last())
+}()
+
+project(':payload') {
+    afterEvaluate {
+        def classesDir = file("${buildDir}/intermediates/javac/debug/classes")
+        def outDir = file("${buildDir}/payload")
+        def jarName = "${rootProject.ext.payloadVersion}.jar"
+
+        // d8: .class -> classes.dex (min API 29, same as the shell).
+        task payloadDex(type: Exec, dependsOn: 'compileDebugJavaWithJavac') {
+            group = 'payload'
+            description = 'd8 the payload classes into a loadable jar'
+            inputs.dir classesDir
+            outputs.file new File(outDir, jarName)
+            doFirst { outDir.mkdirs() }
+            def d8 = new File(buildToolsDir, 'd8').absolutePath
+            def androidJar = new File(sdkDir, 'platforms/android-33/android.jar').absolutePath
+            // --lib: resolve android.* and the shell-side APIs without bundling them.
+            // The shell-api interfaces and NanoHTTPD are compileOnly in :payload, so
+            // their classes are NOT under classesDir and therefore not in the dex —
+            // the payload links against the shell's copies at runtime.
+            workingDir classesDir
+            commandLine([d8, '--min-api', '29', '--lib', androidJar,
+                         '--output', new File(outDir, jarName).absolutePath] +
+                        fileTree(classesDir).matching { include '**/*.class' }.files.collect { it.absolutePath })
+        }
+
+        task payloadSha(dependsOn: payloadDex) {
+            group = 'payload'
+            def jar = new File(outDir, jarName)
+            outputs.file new File(outDir, jarName + '.sha256')
+            doLast {
+                def md = java.security.MessageDigest.getInstance('SHA-256')
+                jar.withInputStream { is -> def buf = new byte[65536]; int n; while ((n = is.read(buf)) > 0) md.update(buf, 0, n) }
+                def hex = md.digest().collect { String.format('%02x', it) }.join()
+                new File(outDir, jarName + '.sha256').text = hex + '\n'
+                println "payload ${jarName}  sha256=${hex}"
+            }
+        }
+
+        task payload(dependsOn: payloadSha) {
+            group = 'payload'
+            description = "Build ${jarName} + .sha256 under payload/build/payload/"
+        }
+    }
+}
+
+project(':app') {
+    afterEvaluate {
+        // Bake the current payload into the shell APK so a fresh install runs something.
+        // A plain Copy task evaluates `from` at configuration time, BEFORE the jar
+        // exists, and silently copies nothing — the first build of the shell shipped
+        // with no baked asset for exactly that reason. Copy in doLast instead.
+        task bakePayload(dependsOn: ':payload:payload') {
+            group = 'payload'
+            def src = new File(project(':payload').buildDir, "payload/${rootProject.ext.payloadVersion}.jar")
+            // project(':app').file(): inside this root-script closure a bare file()
+            // resolves against the ROOT dir, not the module, and bakes to the wrong place.
+            def dst = project(':app').file('src/main/assets/payload-baked.jar')
+            inputs.file src
+            outputs.file dst
+            doLast {
+                if (!src.isFile()) throw new GradleException("payload jar missing: ${src}")
+                dst.parentFile.mkdirs()
+                dst.bytes = src.bytes
+                println "baked ${src.name} -> ${dst} (${dst.length()} bytes)"
+            }
+        }
+        tasks.matching { it.name.startsWith('merge') && it.name.endsWith('Assets') }.all { it.dependsOn bakePayload }
+    }
+}

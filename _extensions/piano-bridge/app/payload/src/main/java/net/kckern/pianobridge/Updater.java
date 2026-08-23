@@ -17,7 +17,7 @@ import java.io.OutputStream;
  * On this Android-10 tablet the app is NOT a device owner (a Google account is
  * present, which blocks `dpm set-device-owner`), so the commit returns
  * {@code STATUS_PENDING_USER_ACTION} and the system shows a one-tap confirm — see
- * {@link InstallReceiver}, which launches that dialog. There is no silent path here.
+ * InstallReceiver (shell-side), which launches that dialog. There is no silent path here.
  *
  * Requires the REQUEST_INSTALL_PACKAGES appop (pre-granted once over USB; it, like
  * the other grants, survives same-signature updates). The new APK must have a
@@ -51,7 +51,7 @@ final class Updater {
         // EXPLICIT component: InstallReceiver has no <intent-filter>, so an action-only
         // (setPackage) broadcast would never match it and STATUS_PENDING_USER_ACTION
         // would be dropped → the confirm dialog would never launch. Target the class.
-        Intent intent = new Intent(ctx, InstallReceiver.class).setAction(INSTALL_ACTION);
+        Intent intent = new Intent().setClassName(ctx, "net.kckern.pianobridge.InstallReceiver").setAction(INSTALL_ACTION);
         // Pre-S PendingIntents are mutable by default; FLAG_UPDATE_CURRENT is enough
         // for the framework to fill in the confirm Intent extra we forward.
         PendingIntent pending = PendingIntent.getBroadcast(

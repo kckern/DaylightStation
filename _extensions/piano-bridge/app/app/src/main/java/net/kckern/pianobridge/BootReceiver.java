@@ -36,7 +36,7 @@ public class BootReceiver extends BroadcastReceiver {
             Log.i(TAG, action + " — starting PianoBridgeService (foreground)");
             // Durable, because this is the record you want when the tablet comes back
             // from an update looking dead. Same reason the boot path is noted.
-            CrashLog.note("BOOT", action + " — relaunching bridge service");
+            ShellLog.note("BOOT", action + " — relaunching bridge service");
             Intent serviceIntent = new Intent(context, PianoBridgeService.class);
             context.startForegroundService(serviceIntent);
         }

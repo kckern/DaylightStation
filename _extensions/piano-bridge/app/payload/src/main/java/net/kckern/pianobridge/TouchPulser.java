@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * TouchPulser — while the piano is played, emits a cadence-limited synthetic
- * touch (via {@link PianoTouchService}) so the SM-T590's OS input-recency frame
+ * touch (via {@link A11y} (the shell-owned PianoTouchService)) so the SM-T590's OS input-recency frame
  * throttle stays lifted during MIDI play. Mirrors {@link ScreenWaker}: poke() is
  * called on the MIDI thread per note-on and is cheap (a time gate + one main-
  * thread post).
@@ -55,7 +55,7 @@ public final class TouchPulser {
         Log.i(TAG, "burst x" + count + " requested (watchdog L1)");
         for (int i = 0; i < count; i++) {
             main.postDelayed(() -> {
-                if (!PianoTouchService.swipe(x, y, len, dur)) {
+                if (!A11y.swipe(x, y, len, dur)) {
                     Log.w(TAG, "burst swipe not dispatched (a11y service not connected)");
                 }
             }, i * 150L);
@@ -70,7 +70,7 @@ public final class TouchPulser {
         if (now - last < cadenceMs) return;
         if (!lastAt.compareAndSet(last, now)) return;
         main.post(() -> {
-            if (!PianoTouchService.swipe(x, y, len, durationMs)) {
+            if (!A11y.swipe(x, y, len, durationMs)) {
                 // Not fatal — the a11y service may not be bound yet (just enabled),
                 // or accessibility injection may not un-throttle (the open question).
                 Log.w(TAG, "synthetic touch not dispatched (a11y service not connected)");

@@ -28,14 +28,14 @@ public final class SystemDiagnostics {
 
     private SystemDiagnostics() { }
 
-    public static JSONObject snapshot(PianoBridgeService service) {
+    public static JSONObject snapshot(BridgeCore service) {
         JSONObject o = new JSONObject();
         DeviceConfig cfg = service.getConfig();
         try {
             o.put("ok", true);
             o.put("time", time());
             o.put("cpu", safe(() -> ProcStats.sample(500)));
-            o.put("device", safe(() -> DeviceProbe.info(service)));
+            o.put("device", safe(() -> DeviceProbe.info(service.getContext())));
             o.put("thermal", safe(SystemDiagnostics::thermal));
             o.put("bridge", safe(() -> bridge(service)));
             o.put("kiosk", safe(() -> kiosk(service, cfg)));
@@ -97,7 +97,7 @@ public final class SystemDiagnostics {
         return o;
     }
 
-    private static JSONObject bridge(PianoBridgeService service) throws Exception {
+    private static JSONObject bridge(BridgeCore service) throws Exception {
         JSONObject o = new JSONObject();
         BleMidiConnector ble = service.getBleConnector();
         A2dpConnector spk = service.getA2dpConnector();
@@ -111,7 +111,7 @@ public final class SystemDiagnostics {
         return o;
     }
 
-    private static JSONObject kiosk(PianoBridgeService service, DeviceConfig cfg) throws Exception {
+    private static JSONObject kiosk(BridgeCore service, DeviceConfig cfg) throws Exception {
         JSONObject o = new JSONObject();
         KioskWatchdog wd = service.getKioskWatchdog();
         KioskSettingsGuard sg = service.getKioskSettingsGuard();

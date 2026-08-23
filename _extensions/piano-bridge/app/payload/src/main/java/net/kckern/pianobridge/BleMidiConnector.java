@@ -44,7 +44,7 @@ import java.util.Map;
  *    (multi-client open confirmed on hardware);
  *  - auto-reconnects on drop (a {@link MidiManager.DeviceCallback} watches for the
  *    device being removed) and retries scans that time out;
- *  - starts on boot (via PianoBridgeService + BootReceiver).
+ *  - starts on boot (via BridgeCore + BootReceiver).
  *
  * All BLE/MIDI callbacks run on a dedicated HandlerThread; state reads for the
  * /status endpoint are cheap volatiles.

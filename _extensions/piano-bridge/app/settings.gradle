@@ -1,2 +1,2 @@
 rootProject.name = 'PianoBridge'
-include ':app'
+include ':app', ':shell-api', ':payload'
