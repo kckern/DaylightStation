@@ -213,6 +213,19 @@ public class DeviceConfig {
     public boolean watchdogRecoverEnabled() { return boolOr("watchdogRecoverEnabled", true); }
     public boolean watchdogRebootEnabled() { return boolOr("watchdogRebootEnabled", true); }
     public int watchdogMinFps() { return intOr("watchdogMinFps", 12); }
+
+    // --- outbound heartbeat (Heartbeat.java) — the tablet's only unprompted signal ---
+    // Log store = VictoriaLogs jsonline insert on the LAN. The backend presence route
+    // is the Portal's BLUETOOTH gate (allowlisted, different semantics) — not used.
+    public boolean heartbeatEnabled() { return boolOr("heartbeatEnabled", true); }
+    public long heartbeatIntervalMs() { return intOr("heartbeatIntervalMs", 60_000); }
+    public String heartbeatDeviceId() { return values.getOrDefault("heartbeatDeviceId", "yellow-room-tablet"); }
+    public String heartbeatLogStoreUrl() {
+        return values.getOrDefault("heartbeatLogStoreUrl",
+            "http://10.0.0.10:9428/insert/jsonline?_stream_fields=context.source,context.app,context.device&_msg_field=_msg&_time_field=_time");
+    }
+    /** Optional second sink. Empty = off (the default; see note above). */
+    public String heartbeatBackendUrl() { return values.getOrDefault("heartbeatBackendUrl", ""); }
     public int watchdogSustainSec() { return intOr("watchdogSustainSec", 5); }
     public int watchdogBeatTimeoutMs() { return intOr("watchdogBeatTimeoutMs", 12000); }
     public int watchdogGraceMs() { return intOr("watchdogGraceMs", 15000); }
