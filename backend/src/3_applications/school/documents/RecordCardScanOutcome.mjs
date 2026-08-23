@@ -484,7 +484,21 @@ export class RecordCardScanOutcome {
       this.#logger.info?.('school.print.scan-session-graded', {
         sessionId, recordId: card.recordId, percent,
       });
-      return { sessionId, advancedTo: 'graded' };
+      // percent/correctCount/totalCount surfaced onto the session object
+      // (final review Fix 3, same pattern as the `reasons`/`items` surfaced
+      // on the awaiting-review branch above and the per-section
+      // earnedPoints/totalPoints `execute()` attaches to `sectionOutcomes`):
+      // this ROW-COUNT percent is the SAME number that becomes the session's
+      // `gradedPercent` via `reduceSession` (`sessionEvents.mjs`: `graded`
+      // event's `percent` -> `s.gradedPercent`), which drives pass/fail,
+      // course grades, and the report card. `schoolPrintScanConsumer` reads
+      // it from here for the grading-hook fire so Home Assistant can never
+      // announce a different percent than the gradebook records — the whole
+      // point of exposing it here rather than letting the caller recompute
+      // its own (points-based) percent from `earnedPoints`/`totalPoints`.
+      return {
+        sessionId, advancedTo: 'graded', percent, correctCount: correctRows, totalCount: card.results.length,
+      };
     } catch (err) {
       this.#logger.warn?.('school.print.scan-session-bridge-failed', {
         sessionId, recordId: card.recordId, error: err.message,

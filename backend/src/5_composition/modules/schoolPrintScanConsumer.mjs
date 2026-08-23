@@ -192,21 +192,34 @@ export function createSchoolPrintScanConsumer({
               const outcomes = recorded?.sectionOutcomes ?? [recorded];
               for (const sectionOutcome of outcomes) {
                 if (sectionOutcome?.session?.advancedTo === 'graded') {
-                  // A composed card's sectionOutcome carries ITS OWN section's
-                  // score (RecordCardScanOutcome correlates sectionOutcomes[i]
-                  // with card.sections[i] by construction) — falling back to
-                  // the card aggregate only for a single/non-composed card,
-                  // whose sectionOutcome (== `recorded` itself) never has an
-                  // `earnedPoints`/`totalPoints` of its own. Without this,
-                  // two sections firing twice would report the SAME whole-
-                  // card score for two different lesson results.
-                  const earned = sectionOutcome.earnedPoints ?? card.earnedPoints;
-                  const total = sectionOutcome.totalPoints ?? card.totalPoints;
-                  // percent is derived from the SAME earned/total this fire
-                  // sends, never from the card, so the three numbers can
-                  // never disagree. null (not NaN) when total is 0/missing.
-                  const percent = (typeof earned === 'number' && typeof total === 'number' && total > 0)
-                    ? Math.round((earned / total) * 10000) / 100
+                  // percent/earned/total come from the SESSION
+                  // (`RecordCardScanOutcome#bridgeSession`'s row-count
+                  // computation), never from points, because that row-count
+                  // percent is the SAME number `reduceSession` turns into the
+                  // session's `gradedPercent` — the value the report card,
+                  // course grade, and pass/fail all read (final review Fix
+                  // 3). The prior version sent a POINTS-based percent
+                  // (`earnedPoints/totalPoints`) here: on a worksheet with
+                  // rows worth different point values that disagreed with the
+                  // gradebook's row-count percent, so Home Assistant could
+                  // announce a passing score while the report card recorded a
+                  // failing one (or vice versa). Reading it off `session`
+                  // instead of recomputing it here means the two can never
+                  // diverge again. A composed card's sectionOutcome still
+                  // carries its OWN section's session (RecordCardScanOutcome
+                  // correlates sectionOutcomes[i] with card.sections[i] by
+                  // construction — see `execute()`'s own comment above), so
+                  // two sections still never report the same score for two
+                  // different lesson results. null (never NaN) when the
+                  // session bridge did not attach a real number.
+                  const percent = typeof sectionOutcome.session.percent === 'number'
+                    ? sectionOutcome.session.percent
+                    : null;
+                  const earned = typeof sectionOutcome.session.correctCount === 'number'
+                    ? sectionOutcome.session.correctCount
+                    : null;
+                  const total = typeof sectionOutcome.session.totalCount === 'number'
+                    ? sectionOutcome.session.totalCount
                     : null;
                   // Home automation is a bystander: never awaited into the
                   // grading path and never able to fail it. The adapter
