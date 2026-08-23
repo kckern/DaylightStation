@@ -18,11 +18,6 @@
 // consumer only ever ADDS a resolution; it can never subtract one.
 import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRecorder.mjs';
 
-// Same default topic `omrRelay.mjs`/`quizScanRecorder.mjs` use — the School
-// panel ceremony (Slice D) subscribes here for the four `scan-*` outcome
-// broadcasts below, no new transport required.
-const BROADCAST_TOPIC = 'omr';
-
 /**
  * @param {object} deps
  * @param {object} deps.eventBus - IEventBus (subscribe AND broadcast). Widened
@@ -64,6 +59,18 @@ export function createSchoolPrintScanConsumer({
   }
 
   const topics = resolveQuizScanTopics(config);
+  // The subscribe side already treats `topics` as the declared source of
+  // truth for which topics carry sheets (`resolveQuizScanTopics`, shared
+  // with `createQuizScanRecorder`/`createOmrRelay`); the broadcast side used
+  // to hardcode a second, independent 'omr' literal, so renaming the topic
+  // there could silently leave this one pointing at a dead string.
+  // `resolveQuizScanTopics` always seeds its result with the module's own
+  // `DEFAULT_TOPIC` first, ahead of any per-reader override — that first
+  // entry is the one fixed "front door" every deployment carries regardless
+  // of `config/omr-readers.yml`, and the one the School panel's
+  // `useScanCeremony.js` subscribes to, so it's the right one to broadcast
+  // outcomes on.
+  const [broadcastTopic] = topics;
 
   const onPayload = (payload) => {
     if (payload?.event !== 'sheet' || !Array.isArray(payload.marks)) return;
@@ -96,7 +103,7 @@ export function createSchoolPrintScanConsumer({
           // D) needs this on the wire too. Full candidate list (not just the
           // count the log line above carries) — the panel is expected to
           // show them, not just say how many there were.
-          eventBus.broadcast?.(BROADCAST_TOPIC, {
+          eventBus.broadcast?.(broadcastTopic, {
             event: 'scan-unresolved',
             code: outcome.error.code,
             testId,
@@ -176,7 +183,7 @@ export function createSchoolPrintScanConsumer({
             }).catch(() => {});
             // Same outcome, second listener: the School panel ceremony
             // (Slice D) needs this on the wire too.
-            eventBus.broadcast?.(BROADCAST_TOPIC, {
+            eventBus.broadcast?.(broadcastTopic, {
               event: 'scan-refused', code: card.error.code, recordId: card.recordId,
             });
             continue;
@@ -271,7 +278,7 @@ export function createSchoolPrintScanConsumer({
                   // gradebook/report card actually record (final review Fix
                   // 3), and the panel must never be able to show a different
                   // score than the report card will.
-                  eventBus.broadcast?.(BROADCAST_TOPIC, {
+                  eventBus.broadcast?.(broadcastTopic, {
                     event: 'scan-graded',
                     testId,
                     learnerId: card.learnerId ?? null,
@@ -304,7 +311,7 @@ export function createSchoolPrintScanConsumer({
                   }).catch(() => {});
                   // Same outcome, second listener: the School panel ceremony
                   // (Slice D) needs this on the wire too.
-                  eventBus.broadcast?.(BROADCAST_TOPIC, {
+                  eventBus.broadcast?.(broadcastTopic, {
                     event: 'scan-review',
                     testId,
                     learnerId: card.learnerId ?? null,
