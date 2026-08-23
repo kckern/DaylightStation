@@ -211,6 +211,92 @@ describe('result score scale', () => {
   });
 });
 
+/**
+ * Per-question mark boxes (regression, 2026-08-22): a real child's 6/6 sheet
+ * printed as six tofu boxes (Roboto Condensed has no U+2713), and a 5/6 sheet
+ * always blamed the LAST wrong-looking box regardless of which question was
+ * actually missed. Both bugs live in the same `else` branch of the score-panel
+ * loop — one is "what gets drawn", the other is "which box gets which mark".
+ */
+describe('result score marks: vector, per-question', () => {
+  it('never draws the correct/incorrect mark as a font glyph — only vector strokes', async () => {
+    const { CanvasRenderingContext2D } = await import('canvas');
+    const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+    const texts = [];
+    CanvasRenderingContext2D.prototype.fillText = function patchedFillText(text, ...rest) {
+      texts.push(text);
+      return originalFillText.call(this, text, ...rest);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary',
+        headline: 'PASSED',
+        title: 'Fractions',
+        correctCount: 6,
+        totalCount: 6,
+        questionStart: 1,
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.fillText = originalFillText;
+    }
+    // Neither mark glyph this bug involved may ever reach fillText again:
+    // Roboto Condensed is missing U+2713 (✓), which is why a 6/6 sheet
+    // printed as tofu; × (U+00D7) happened to render, which is why only the
+    // check silently broke. Scoped to these two glyphs specifically — not
+    // "any non-ASCII fillText" — because the score line itself legitimately
+    // prints other non-ASCII punctuation (e.g. the "·" separator) that has
+    // nothing to do with this bug.
+    const glyphMarks = texts.filter((t) => t.includes('✓') || t.includes('×'));
+    expect(glyphMarks).toEqual([]);
+  });
+
+  it('marks box 1 wrong when ONLY question 1 is wrong — never the trailing boxes', async () => {
+    const { CanvasRenderingContext2D } = await import('canvas');
+    const originalStroke = CanvasRenderingContext2D.prototype.strokeRect;
+    const originalFill = CanvasRenderingContext2D.prototype.fillRect;
+    const strokedBoxes = [];
+    const filledBoxes = [];
+    CanvasRenderingContext2D.prototype.strokeRect = function patchedStrokeRect(x, y, w, h) {
+      strokedBoxes.push({ x, y, w, h });
+      return originalStroke.call(this, x, y, w, h);
+    };
+    CanvasRenderingContext2D.prototype.fillRect = function patchedFillRect(x, y, w, h) {
+      filledBoxes.push({ x, y, w, h });
+      return originalFill.call(this, x, y, w, h);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary',
+        headline: 'TRY AGAIN',
+        title: 'Fractions',
+        correctCount: 5,
+        totalCount: 6,
+        questionStart: 1,
+        // Per-question evidence: only question 1 (index 0) is wrong.
+        marks: [false, true, true, true, true, true],
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.strokeRect = originalStroke;
+      CanvasRenderingContext2D.prototype.fillRect = originalFill;
+    }
+    // Every question box gets exactly one strokeRect outline, left to right,
+    // in question order — this is the panel's own box-position ground truth,
+    // independent of which are marked wrong.
+    const questionBoxes = strokedBoxes.filter((b) => b.w === b.h && b.w > 20 && b.w < 60);
+    expect(questionBoxes).toHaveLength(6);
+    const boxSize = questionBoxes[0].w;
+    // The WRONG indicator is the single solid box-sized knockout fill (the
+    // black square the X strokes over) — distinct from the identity panel,
+    // score-panel border, and outcome badge, none of which are box-sized
+    // squares.
+    const wrongFills = filledBoxes.filter((b) => b.w === boxSize && b.h === boxSize);
+    expect(wrongFills).toHaveLength(1);
+    // Box 1 (leftmost, first stroked) is the one that's wrong — not a box at
+    // the tail, which is what `index < correctCount` would have drawn.
+    expect(wrongFills[0].x).toBe(questionBoxes[0].x);
+  });
+});
+
 describe("scanCodes: 'qr'", () => {
   const scanDoc = doc([{ type: 'scan_action', action: 'sch:ABCDEFGH23456789', label: 'Scan me' }]);
 

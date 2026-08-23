@@ -54,13 +54,21 @@ export class ResolveReviewItem {
    * @param {string} args.itemId
    * @param {'correct'|'incorrect'} args.verdict
    * @param {string} args.gradedBy - a roster id that must be a grown-up's
-   * @param {string|null} [args.note] - what the parent wants the child to read
+   * @param {string|null} [args.note] - what the parent wants the CHILD to
+   *   read (Slice H, 2026-08-22): this is the only note field that reaches
+   *   the result receipt's "NOTES FOR YOU" block (`reviewNoteLines` reads
+   *   `note` alone).
+   * @param {string|null} [args.internalNote] - the record-only explanation
+   *   (audit trail) — NEVER printed, never surfaced to the learner. Use this,
+   *   not `note`, for anything written for the household's own reference.
    * @returns {Promise<object>} the resolved review item
    * @throws {import('#domains/school/errors.mjs').GuestForbiddenError} not a grown-up
    * @throws {ValidationError} the verdict is not correct|incorrect
    * @throws {EntityNotFoundError} nothing with that itemId is queued
    */
-  async execute({ sessionId, itemId, verdict, gradedBy = null, note = null, pin = null } = {}) {
+  async execute({
+    sessionId, itemId, verdict, gradedBy = null, note = null, internalNote = null, pin = null,
+  } = {}) {
     // TeacherGate (spec §1) subsumes the grown-up rule and adds role + pin;
     // absent (pre-console composition, paper flows' tests) → legacy gate.
     if (this.#teacherGate) this.#teacherGate.assert({ userId: gradedBy, pin, action: 'review.resolve', context: { sessionId, itemId } });
@@ -73,12 +81,12 @@ export class ResolveReviewItem {
     }
 
     const item = await this.#reviewQueue.resolve({
-      sessionId, itemId, verdict, gradedBy, note, at: this.#clock().toISOString(),
+      sessionId, itemId, verdict, gradedBy, note, internalNote, at: this.#clock().toISOString(),
     });
     if (!item) throw new EntityNotFoundError('review-item', `${sessionId}/${itemId}`);
 
     this.#logger.info?.('school.review.resolved', {
-      sessionId, itemId, verdict, gradedBy, note: Boolean(note),
+      sessionId, itemId, verdict, gradedBy, note: Boolean(note), internalNote: Boolean(internalNote),
     });
 
     // The review loop closes itself (student-advocacy A1): if that was the

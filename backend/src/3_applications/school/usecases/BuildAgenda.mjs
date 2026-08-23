@@ -199,7 +199,11 @@ export class BuildAgenda {
     const offers = [];
     const createdSessions = [];
     const tokensBySubject = {};
-    const accessCodesBySubject = {};
+    // Keyed by TOKEN, not subject (Slice H, 2026-08-22): `receipts.mjs` pairs
+    // a code with the QR that carries the SAME token, and a subject key could
+    // only ever alias one offer — two tokened offers sharing a subject would
+    // silently fight over a single code.
+    const accessCodesByToken = {};
     // Two sets, two kinds of collision. `mintedCodes` guards the sheet being
     // built — two lessons on ONE piece of paper must never carry the same code.
     // `liveCodes` guards ACROSS DAYS: a code still live from a previous agenda
@@ -282,7 +286,7 @@ export class BuildAgenda {
       await this.#tokens.put(record);
 
       tokensBySubject[section.subject] = record.token;
-      if (record.accessCode) accessCodesBySubject[section.subject] = record.accessCode;
+      if (record.accessCode) accessCodesByToken[record.token] = record.accessCode;
       actionLabelBySubject.set(section.subject, suffix);
       offers.push({
         subject: section.subject,
@@ -345,7 +349,7 @@ export class BuildAgenda {
       createdSessions,
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
-        sections: sectionsForDocument, tokensBySubject, accessCodesBySubject, notes,
+        sections: sectionsForDocument, tokensBySubject, accessCodesByToken, notes,
       }),
     };
   }
