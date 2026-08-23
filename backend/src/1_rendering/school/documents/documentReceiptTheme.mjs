@@ -138,7 +138,17 @@ export const documentReceiptTheme = Object.freeze({
     markInset: 7,
     progressHeight: 14,
     progressGap: 5,
+    // The aggregate-score BOX count. Despite the name it no longer has
+    // anything to do with the progress bars below the panel: those draw one
+    // tick per lesson (`segments === total`), because a tick that stands for
+    // "a tenth of the way" cannot line up with a fill computed as
+    // `completed / total`.
     progressSegments: 10,
+    // Narrowest gap, in canvas px, at which progress ticks are still
+    // countable. The track is 530px, so this permits a unit of ~88 lessons
+    // before the ticks are dropped entirely — far past any real course, and
+    // dropping them is the honest failure (see the renderer's own note).
+    progressMinTickGap: 6,
   },
 });
 

@@ -445,6 +445,47 @@ describe('reduceSession: lastPrintedAt', () => {
   });
 });
 
+// `firstIssuedAt` is the twin of `lastPrintedAt` above and exists because that
+// field cannot answer "when was this work assigned": every reprint moves it
+// forward, so a session issued last week and reprinted this morning looks like
+// this morning's work. That is exactly how Felix's 2026-08-14 session resumed
+// eight days later presenting itself as fresh.
+describe('reduceSession: firstIssuedAt', () => {
+  it('is null before anything has ever been issued', () => {
+    expect(reduceSession(log(['created'])).firstIssuedAt).toBeNull();
+  });
+
+  it("is stamped from the FIRST issued event's own `at`", () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z' },
+    ];
+    expect(reduceSession(events).firstIssuedAt).toBe('2026-08-14T09:00:05.000Z');
+  });
+
+  it('does NOT advance on a reprint, where lastPrintedAt does — this is the whole point', () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z' },
+      { ...ev('reprinted'), at: '2026-08-22T09:10:00.000Z' },
+    ];
+    const state = reduceSession(events);
+    expect(state.firstIssuedAt).toBe('2026-08-14T09:00:05.000Z');
+    expect(state.lastPrintedAt).toBe('2026-08-22T09:10:00.000Z');
+  });
+
+  it('records an UNCONFIRMED issue too — the work was assigned whether or not that attempt reached paper', () => {
+    const events = [
+      { ...ev('created'), at: '2026-08-14T09:00:00.000Z' },
+      { ...ev('issued'), at: '2026-08-14T09:00:05.000Z', confirmed: false },
+    ];
+    const state = reduceSession(events);
+    expect(state.firstIssuedAt).toBe('2026-08-14T09:00:05.000Z');
+    // ...while the print cooldown correctly ignores it.
+    expect(state.lastPrintedAt).toBeNull();
+  });
+});
+
 describe('reduceSession: annotation events', () => {
   it('reassignment moves the credited learner without advancing state', () => {
     const state = reduceSession(log(['created', 'issued', 'reassigned']));

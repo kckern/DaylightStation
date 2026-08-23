@@ -273,6 +273,14 @@ const emptyState = () => ({
   // cooldown lasts, for a sheet nobody ever saw. See the `issued`/
   // `reprinted` handlers below.
   lastPrintedAt: null,
+  // When this session's work was FIRST handed out, which `lastPrintedAt`
+  // cannot answer: every reprint moves that forward, so a week-old session
+  // reprinted this morning looks like this morning's work. Felix's session
+  // was created 2026-08-14, sat unsubmitted, and resumed eight days later
+  // presenting itself as fresh — a different student number and a sheet
+  // starting at question 7, with nothing on the paper explaining why. Set
+  // once, by the first `issued` event, and never moved after.
+  firstIssuedAt: null,
   attemptIds: [],
   gradedPercent: null,
   gradedPassingPercent: null,
@@ -314,6 +322,11 @@ const APPLY = {
     // set `lastPrintedAt` stops doing so. See this event type's own SCHEMA
     // comment for what `confirmed` represents and who sets it to false.
     if (e.confirmed !== false) s.lastPrintedAt = e.at;
+    // First issue wins, unconditionally — including an unconfirmed one. This
+    // records WHEN THE WORK WAS ASSIGNED, which is true whether or not that
+    // particular attempt reached paper, and it is deliberately not guarded by
+    // `confirmed` the way the print cooldown above is.
+    if (s.firstIssuedAt === null) s.firstIssuedAt = e.at;
   },
   reprinted(s, e, push) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) {

@@ -48,7 +48,7 @@
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { offeredActions, cardSentence } from '#domains/school/selfService/offeredActions.mjs';
+import { offeredActions, cardSentence, resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { nextMove } from './offerSession.mjs';
 
 /**
@@ -200,6 +200,9 @@ export class ResolveAccessCode {
       const options = {
         mediaSurface: this.#mediaSurface,
         bankPrintable: this.#bankPrintable(resolution.unit),
+        // `offeredActions` is pure and reads no clock of its own, so the one
+        // time value it needs comes from here.
+        now: this.#clock(),
       };
       const actions = offeredActions(resolution, options);
       const card = {
@@ -217,6 +220,22 @@ export class ResolveAccessCode {
         // A card whose only button is the exit is the interesting one.
         offered: actions.map((a) => a.kind),
       });
+      // How often a child picks up work from a previous day, which is the
+      // question Felix's eight-day resume raised and nothing could answer:
+      // the ordinary `code.resolved` line above says `state: 'reprinted'`
+      // without saying reprinted from WHEN. Logged whenever the card decided
+      // the work was old enough to name a date, so the log and the paper
+      // never disagree about what counts as a resume.
+      const resumeDays = resumeAgeDays(resolution.state?.firstIssuedAt, options.now);
+      if (resumeDays !== null && resumeDays >= 1) {
+        this.#logger.info?.('school.session.stale-resume', {
+          sessionId: resolution.state?.sessionId ?? null,
+          learnerId,
+          subject,
+          ageDays: resumeDays,
+          firstIssuedAt: resolution.state.firstIssuedAt,
+        });
+      }
       return { card, resolution };
     } catch (error) {
       return {

@@ -512,3 +512,54 @@ describe('purity', () => {
     expect(JSON.parse(JSON.stringify(actions))).toEqual(actions);
   });
 });
+
+/**
+ * Resumed work (Slice E, 2026-08-22-omr-grading-integrity). Felix's session was
+ * created 2026-08-14, never submitted, and picked up eight days later: the card
+ * said "Print it again" and the sheet that came out had a different student
+ * number and started at question 7. Every part of that was correct for an
+ * allocation minted on the 14th, and none of it was explicable to a child with
+ * no memory of that day. The card now names the start date.
+ */
+describe('resumed work names the day it started', () => {
+  const NOW = new Date('2026-08-22T09:00:00.000Z');
+  const issuedAt = (iso) => move({ unitId: 'u1', document: DOCUMENT }, 'issued', { firstIssuedAt: iso });
+
+  it('names the start date on work first issued days ago', () => {
+    const sentence = cardSentence(issuedAt('2026-08-14T15:00:00.000Z'), opts({ now: NOW }));
+    expect(sentence).toBe('Started Fri 14 Aug.');
+  });
+
+  it('still offers the reprint button — the date is context, never a refusal', () => {
+    const actions = offeredActions(issuedAt('2026-08-14T15:00:00.000Z'), opts({ now: NOW }));
+    expect(kinds(actions)).toContain('print');
+  });
+
+  it('says nothing for work issued the same day — under a day is continuous work, not a resume', () => {
+    expect(cardSentence(issuedAt('2026-08-22T07:30:00.000Z'), opts({ now: NOW }))).toBeNull();
+  });
+
+  it('says nothing at exactly under 24h, and speaks the moment a full day has passed', () => {
+    expect(cardSentence(issuedAt('2026-08-21T09:00:00.001Z'), opts({ now: NOW }))).toBeNull();
+    expect(cardSentence(issuedAt('2026-08-21T09:00:00.000Z'), opts({ now: NOW }))).toBe('Started Fri 21 Aug.');
+  });
+
+  it('applies to a reprinted session too, not just the first issue', () => {
+    const resolution = move({ unitId: 'u1', document: DOCUMENT }, 'reprinted', {
+      firstIssuedAt: '2026-08-14T15:00:00.000Z',
+    });
+    expect(cardSentence(resolution, opts({ now: NOW }))).toBe('Started Fri 14 Aug.');
+  });
+
+  it('stays silent when the session never recorded a first issue, or the caller passed no clock', () => {
+    expect(cardSentence(issuedAt(null), opts({ now: NOW }))).toBeNull();
+    expect(cardSentence(issuedAt('2026-08-14T15:00:00.000Z'), opts())).toBeNull();
+  });
+
+  it('never speaks for a state that is not a reprint — a fresh print is not a resume', () => {
+    const fresh = move({ unitId: 'u1', document: DOCUMENT }, 'media_completed', {
+      firstIssuedAt: '2026-08-14T15:00:00.000Z',
+    });
+    expect(cardSentence(fresh, opts({ now: NOW }))).toBeNull();
+  });
+});
