@@ -103,12 +103,23 @@ public class ControlServer extends NanoWSD {
         NanoHTTPD.Method method = session.getMethod();
         try {
             BleMidiConnector ble = service.getBleConnector();
+            // "/" is the self-reported diagnosis page for a human (phone/laptop browser);
+            // curl/pbctl (no text/html Accept) still get the JSON route list.
+            if ("/".equals(uri)) {
+                String accept = session.getHeaders().getOrDefault("accept", "");
+                if (accept.contains("text/html")) {
+                    NanoHTTPD.Response r = NanoHTTPD.newFixedLengthResponse(
+                            NanoHTTPD.Response.Status.OK, "text/html; charset=utf-8", StatusPage.render(service));
+                    return r;
+                }
+            }
             switch (uri) {
                 case "/":
                 case "/help":
                     return json(ok().put("routes", new JSONArray()
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
+                            .put("GET /                      (HTML status page for a browser; JSON here for curl)")
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
                             .put("GET|POST /midi/send?hex=F0…F7&repeat=3  (raw MIDI/SysEx OUT to the piano)")
