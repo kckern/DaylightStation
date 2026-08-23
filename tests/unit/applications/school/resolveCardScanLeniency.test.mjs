@@ -199,6 +199,50 @@ describe('ResolveCardScan — bounded eraser-leniency (spec §5.4, 2026-08-22 po
     const row2 = card.results.find((row) => row.row === 2);
     expect(row2).toMatchObject({ status: 'ambiguous', given: ['B', 'D'], earned: 0 });
   });
+
+  it('(e) a true/false row marked on BOTH options is refused even with the budget unspent (rule 3, resolver-level)', async () => {
+    // (c) above only proves rule 3 exists as a UNIT-level fact about
+    // `creditsAsEraser` (it hands in a literal `choiceCount`) — at the
+    // resolver level its rows 3-6 assertions are vacuous: the cap is 1,
+    // row 2 spends it, and `applyLeniency` (`ResolveCardScan.mjs`) BREAKS
+    // out of its loop the moment the budget hits zero, so rows 3-6 are
+    // never even evaluated for eligibility. Deleting rule 3 from
+    // `creditsAsEraser` would leave every assertion in this file green.
+    //
+    // This test closes that gap by making a true/false double-mark the
+    // FIRST (and only) ambiguous row on the sheet, so `applyLeniency`
+    // reaches it with the full budget still unspent. Marking both True and
+    // False covers every choice on a 2-choice row — rule 1 (two marks) and
+    // rule 2 (one of them correct) both look satisfied, so without rule 3
+    // this row would be wrongly promoted to full credit.
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore();
+    const blocks = [
+      mcQuestion('q1', 1, { choices: ['Alpha', 'Beta', 'Gamma', 'Delta'], answer: 'Alpha' }),
+      // The only ambiguous row: true/false marked True AND False.
+      tfQuestion('q2', 2, true),
+      mcQuestion('q3', 3, { choices: ['Alpha', 'Beta', 'Gamma', 'Delta'], answer: 'Beta' }),
+      mcQuestion('q4', 4, { choices: ['Alpha', 'Beta', 'Gamma', 'Delta'], answer: 'Gamma' }),
+      mcQuestion('q5', 5, { choices: ['Alpha', 'Beta', 'Gamma', 'Delta'], answer: 'Delta' }),
+    ];
+    // 5 rows -> cap = max(1, floor(5/5)) = 1, and nothing before row 2 is
+    // ambiguous, so the whole budget is on the table when row 2 is graded.
+    const answers = {
+      1: 'A', 2: ['A', 'B'], 3: 'B', 4: 'C', 5: 'D',
+    };
+    const source = sourceDoc('leniency-worksheet-e', blocks, { archetype: 'worksheet' });
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true, learnerId: 'kid-1' },
+    });
+
+    const useCase = new ResolveCardScan({ allocationStore, repository });
+    const result = await useCase.execute({ testId: allocation.cardId, answers });
+
+    const card = result.results[0];
+    const row2 = card.results.find((row) => row.row === 2);
+    expect(row2).toMatchObject({ status: 'ambiguous', given: ['A', 'B'], earned: 0 });
+    expect(row2.leniency).toBeUndefined();
+  });
 });
 
 describe('RecordCardScanOutcome — leniency verdict (spec §5.4)', () => {
