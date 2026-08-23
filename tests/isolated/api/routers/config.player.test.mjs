@@ -38,9 +38,9 @@ describe('GET /api/v1/config/player', () => {
   it('clamps preempt_seconds to [0, 600]', async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     await fs.writeFile(
-      `${tmpDir}/household/config/player.yml`,
+      `${tmpDir}/household/player/config.yml`,
       'on_deck:\n  preempt_seconds: 99999\n  displace_to_queue: true\n',
     );
 
@@ -59,9 +59,9 @@ describe('GET /api/v1/config/player', () => {
   it('clamps preempt_seconds to 0 when negative', async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     await fs.writeFile(
-      `${tmpDir}/household/config/player.yml`,
+      `${tmpDir}/household/player/config.yml`,
       'on_deck:\n  preempt_seconds: -5\n  displace_to_queue: false\n',
     );
 
@@ -80,9 +80,9 @@ describe('GET /api/v1/config/player', () => {
   it('uses default preempt_seconds when value is non-numeric', async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     await fs.writeFile(
-      `${tmpDir}/household/config/player.yml`,
+      `${tmpDir}/household/player/config.yml`,
       'on_deck:\n  preempt_seconds: "not-a-number"\n  displace_to_queue: false\n',
     );
 
@@ -101,9 +101,9 @@ describe('GET /api/v1/config/player', () => {
   it('uses default displace_to_queue when value is non-boolean', async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     await fs.writeFile(
-      `${tmpDir}/household/config/player.yml`,
+      `${tmpDir}/household/player/config.yml`,
       'on_deck:\n  preempt_seconds: 10\n  displace_to_queue: "yes"\n',
     );
 
@@ -122,9 +122,9 @@ describe('GET /api/v1/config/player', () => {
   it('returns full defaults when on_deck block is missing', async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     await fs.writeFile(
-      `${tmpDir}/household/config/player.yml`,
+      `${tmpDir}/household/player/config.yml`,
       '# empty player config\nsome_other_key: 42\n',
     );
 
@@ -144,9 +144,9 @@ describe('GET /api/v1/config/player', () => {
     const logger = makeLogger();
     const fs = await import('node:fs/promises');
     const tmpDir = `/tmp/on-deck-test-${Date.now()}`;
-    await fs.mkdir(`${tmpDir}/household/config`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player`, { recursive: true });
     // Write a directory where the file should be so loadYaml throws
-    await fs.mkdir(`${tmpDir}/household/config/player.yml`, { recursive: true });
+    await fs.mkdir(`${tmpDir}/household/player/config.yml`, { recursive: true });
 
     const app = express();
     app.use('/api/v1/config', createConfigRouter({
