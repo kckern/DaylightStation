@@ -46,6 +46,7 @@ import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnch
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
+import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
@@ -357,6 +358,10 @@ export async function createSchoolLifecycle({
     assignments: new YamlAssignmentStore({ configService, logger }),
     formMaps: new YamlFormMapStore({ configService }),
     reviewQueue: new YamlReviewQueue({ configService, logger }),
+    // Slice G (2026-08-22-omr-grading-integrity): per-learner "last agenda
+    // printed" record, so a repeat card tap inside `agenda.cooldownMinutes`
+    // does not put a second identical slip in the tray.
+    agendaCooldown: new YamlAgendaCooldownStore({ configService, logger }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
   // "unknown ticket" slip, which is what week-old paper deserves). Swept at
@@ -672,6 +677,13 @@ export async function createSchoolLifecycle({
   const resolvePersonalCard = new ResolvePersonalCard({
     buildAgenda, receipts,
     roster: displayRoster,
+    // Slice G: the SAME `school.yml` top level `agenda:` block a household
+    // edits alongside `printing:`/`selfService:` — `cooldownMinutes: 0`
+    // disables the cooldown outright; unset falls through to
+    // ResolvePersonalCard's own 15-minute default.
+    cooldown: stores.agendaCooldown,
+    cooldownMinutes: cfg.agenda?.cooldownMinutes,
+    clock,
     logger,
   });
   // The media leg is optional (a household with no playback target still prints
