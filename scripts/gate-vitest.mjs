@@ -19,7 +19,7 @@
  * BACKEND IS IN THE POPULATION, by content and not by path. This gate used to
  * exclude `/backend/` wholesale on the belief that the whole tree was
  * node:test. It is not: 92 backend files are node:test, but ~350 colocated
- * colocated `backend/src` and `backend/tests/unit` test files are vitest,
+ * `backend/src` and `backend/tests/unit` test files are vitest,
  * and every one of them was gated by nothing. The print-acceptance sweep
  * lived in that hole, which is how `acceptance.phaseB`/`phaseC` sat red
  * without any gate noticing. Ownership is therefore decided by what a file
@@ -35,7 +35,7 @@
  * not in the baseline = regression (exit 1). A baseline file that now passes is
  * fine; run --update to drop it so it is protected going forward.
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -90,6 +90,16 @@ function vitestPopulation() {
 
 function runVitest(files) {
   const outFile = path.join(ROOT, 'tests/output/results.gate-vitest.json');
+  // DELETE THE PREVIOUS REPORT FIRST. The existence check below is the only
+  // thing standing between a vitest that died before writing and a silently
+  // STALE verdict: leave last run's file in place and the gate happily parses
+  // it, prints its counts, and reports OK — for tests it never ran. That is
+  // not hypothetical. An invalid CLI flag (`--min-workers`, which this vitest
+  // does not accept) made vitest exit immediately, and three consecutive
+  // "gate-vitest: OK" lines came straight off a report from an earlier run
+  // that predated the tests being verified. A gate that can pass without
+  // running is worse than no gate.
+  try { rmSync(outFile, { force: true }); } catch { /* first run, or already gone */ }
   // Parallelism is CAPPED, not default. Default workers were fine while the
   // population was ~600 files; folding backend/ in took it past 1200 and the
   // contention started producing flakes — the same file passing alone and in
@@ -103,7 +113,7 @@ function runVitest(files) {
   const res = spawnSync(
     'npx',
     ['vitest', 'run', ...files, '--config', 'vitest.config.mjs',
-     `--max-workers=${workers}`, `--min-workers=1`,
+     `--max-workers=${workers}`,
      '--reporter=json', `--outputFile=${outFile}`],
     { cwd: ROOT, encoding: 'utf8', shell: true, maxBuffer: 1 << 28 }
   );

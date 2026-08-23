@@ -128,6 +128,20 @@ export function createSchoolPrintScanConsumer({
             answeredRowCount: outcome.answeredRowCount,
             nearMissCardIds: outcome.nearMissCardIds ?? [],
           });
+          // A warn line is for the grown-up reading logs later; the child is
+          // standing at the scanner NOW. This outcome used to return here with
+          // no hook and no broadcast, so a real sheet with real answers on it
+          // produced exactly nothing the child could see — the "nothing
+          // happened" failure spec §6.2 exists to forbid ("a scan never
+          // succeeds silently"). It rides the SAME `scan-refused` ceremony as
+          // a per-record refusal because the child's next move is identical
+          // (fetch a grown-up); only the `code` distinguishes them, which is
+          // all a grown-up needs to tell "card id we've never seen" from
+          // "record on a known card refused".
+          gradingHook?.fire({ result: 'unresolved', testId, code: 'unknown_card' }).catch(() => {});
+          eventBus.broadcast?.(broadcastTopic, {
+            event: 'scan-refused', code: 'unknown_card', recordId: null,
+          });
           return;
         }
         if (outcome?.deadCard) {
@@ -148,6 +162,15 @@ export function createSchoolPrintScanConsumer({
             // only in `ResolveCardScan`'s own separate `card-id-inferred` line.
             cardIdInferred: outcome.cardIdInferred ?? null,
           });
+          // Its OWN ceremony, not `scan-refused`, because the child's next
+          // move is genuinely different and they can do it themselves: this
+          // sheet is simply out of date, and scanning their card prints a
+          // fresh one. Refusing them to a grown-up here would send a child
+          // to fetch help for something self-service already solves.
+          gradingHook?.fire({ result: 'unresolved', testId, code: 'dead_card' }).catch(() => {});
+          eventBus.broadcast?.(broadcastTopic, {
+            event: 'scan-stale-sheet', code: 'dead_card', testId,
+          });
           return;
         }
         if (!outcome?.results?.length) {
@@ -166,6 +189,24 @@ export function createSchoolPrintScanConsumer({
           logger.warn?.('school.print.scan-live-record-unmarked', {
             testId, silentLiveRecords: outcome.silentLiveRecords,
           });
+          // Told to the HOUSE, not to the child's panel — deliberately the
+          // opposite call from `unknownCard`/`deadCard` above.
+          //
+          // Two reasons. First, there is no child action: "your answers went
+          // into another quiz's rows" is not something they can fix standing
+          // at the scanner, and the sheet still grades (this branch falls
+          // through to the per-record ceremonies rather than returning).
+          // Second, a panel event here could not be seen anyway: the
+          // per-record work below resolves asynchronously, so its `scan-
+          // graded`/`scan-review` ceremony lands AFTER this one and replaces
+          // it. A ceremony that is reliably overwritten is not a ceremony.
+          // The hook reaches a grown-up, which is who can actually act.
+          gradingHook?.fire({
+            result: 'partial',
+            testId,
+            code: 'live_record_unmarked',
+            silentLiveRecords: outcome.silentLiveRecords,
+          }).catch(() => {});
         }
         // One log line PER resolution (a card can carry more than one
         // allocation record, e.g. two documents sharing one physical card

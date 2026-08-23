@@ -2,8 +2,9 @@
  * useScanCeremony — the on-screen acknowledgement for a scan on the locked
  * self-service panel (Slice D, omr-grading-integrity design). Subscribes to
  * the SAME `omr` topic `schoolPrintScanConsumer.mjs` (Slice C) already
- * re-broadcasts the four terminal scan outcomes on — `scan-graded`,
- * `scan-review`, `scan-unresolved`, `scan-refused` — plus `reader-error`,
+ * re-broadcasts the terminal scan outcomes on — `scan-graded`,
+ * `scan-review`, `scan-unresolved`, `scan-refused`, `scan-stale-sheet` —
+ * plus `reader-error`,
  * which `omrRelay.mjs` broadcasts on the same topic for a reader-level
  * failure (a sheet that never made it to grading at all).
  *
@@ -99,6 +100,19 @@ function buildCeremony(payload) {
         tone: 'error',
         title: "That sheet doesn't match",
         detail: "This paper doesn't line up with what's on file. Ask a grown-up.",
+        at,
+        code: payload.code ?? null,
+      };
+    case 'scan-stale-sheet':
+      // Every allocation on this card is retired — the paper in the child's
+      // hand is an old printout, not a broken one. `warn` rather than
+      // `error` because nothing malfunctioned and the fix is self-service:
+      // scan the card, get a fresh sheet. Deliberately NOT `scan-refused`,
+      // which sends the child to find a grown-up they do not need.
+      return {
+        tone: 'warn',
+        title: 'That sheet is out of date',
+        detail: 'Scan your card to print a fresh one, then try again.',
         at,
         code: payload.code ?? null,
       };

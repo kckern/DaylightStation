@@ -120,6 +120,22 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('maps scan-stale-sheet to a warn ceremony that tells the child how to fix it themselves', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-stale-sheet', code: 'dead_card', testId: '0123456' });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'warn',
+      title: 'That sheet is out of date',
+      detail: 'Scan your card to print a fresh one, then try again.',
+      code: 'dead_card',
+    });
+    // `warn`, not `error`: nothing malfunctioned, and the tone family drives
+    // the sound (a held mid tone — "pause", not an alarm).
+    expect(result.current.current.tone).not.toBe('error');
+  });
+
   it('maps reader-error to an error ceremony', () => {
     const { result } = mount();
     act(() => {
