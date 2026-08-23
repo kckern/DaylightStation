@@ -47,12 +47,13 @@ export class SetAssignments {
    * @param {string} args.learnerId
    * @param {Array<string|object>} [args.courses]
    * @param {Array<string|object>} [args.units]
+   * @param {Array<object>} [args.programs]
    * @param {string} args.assignedBy - a roster id that must be a grown-up's
    * @returns {Promise<object>} the stored assignment record
    * @throws {import('#domains/school/errors.mjs').GuestForbiddenError} not a grown-up
    * @throws {ValidationError} the record is not a shape the store can hold
    */
-  async execute({ learnerId, courses = [], units = [], assignedBy = null, pin = null, baseUpdatedAt = undefined } = {}) {
+  async execute({ learnerId, courses = [], units = [], programs = [], assignedBy = null, pin = null, baseUpdatedAt = undefined } = {}) {
     if (this.#teacherGate) this.#teacherGate.assert({ userId: assignedBy, pin, action: 'assignments.put', context: { learnerId } });
     else this.#grownUps.assert(assignedBy, 'Only a grown-up can change what a child is assigned', {
       action: 'assignments.put', learnerId,
@@ -61,8 +62,8 @@ export class SetAssignments {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new ValidationError('learnerId is required');
     }
-    if (!Array.isArray(courses) || !Array.isArray(units)) {
-      throw new ValidationError('courses and units must be arrays');
+    if (!Array.isArray(courses) || !Array.isArray(units) || !Array.isArray(programs)) {
+      throw new ValidationError('courses, units, and programs must be arrays');
     }
     // Referential honesty (admin advocacy A4). Both checks are advisory in
     // posture — they DEGRADE to accepting when the reference source itself
@@ -96,7 +97,7 @@ export class SetAssignments {
     }
 
     const record = await this.#assignments.put({
-      learnerId, courses, units, assignedBy, updatedAt: this.#clock().toISOString(),
+      learnerId, courses, units, programs, assignedBy, updatedAt: this.#clock().toISOString(),
     });
     this.#logger.info?.('school.assignments.updated', {
       learnerId, assignedBy, courses: courses.length, units: units.length,

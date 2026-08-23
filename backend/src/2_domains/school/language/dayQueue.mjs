@@ -1,4 +1,4 @@
-import { chainFor, graduationEdges } from './ladder.mjs';
+import { chainFor } from './ladder.mjs';
 
 /**
  * Day-queue construction (design §3). Pure: no I/O, no Date.
@@ -71,6 +71,10 @@ function clearedIndex(log) {
  * @param {number}   args.day          the study day being built
  * @param {number}   args.dailyLimit   new sentences admitted per day
  * @param {number}   args.corpusSize   highest sequence number available
+ * @param {Iterable<number>} [args.admission] ordered candidate sequence
+ *        numbers for new material; omitted means 1..corpusSize
+ * @param {string[]} [args.rungChain] enrollment-owned credit chain; device
+ *        capabilities still remove rungs it cannot serve
  * @param {object}   [args.capabilities] {microphone, textInput[]} — filters the ladder
  * @param {{source: string, target: string}} args.languages - the corpus role binding
  * @param {Set<number>} [args.playable] - sequences that have audio; omit for "all".
@@ -81,10 +85,15 @@ function clearedIndex(log) {
  */
 export function buildDayQueue({
   log = [], day, dailyLimit, corpusSize, capabilities = {}, languages, playable = null,
+  admission = null,
+  rungChain = null,
 }) {
   const canDrill = (seq) => playable === null || playable.has(seq);
   const { byRung: cleared, everSeen } = clearedIndex(log);
-  const chain = chainFor(capabilities, languages);
+  const availableChain = chainFor(capabilities, languages);
+  const chain = Array.isArray(rungChain)
+    ? rungChain.filter((rung) => availableChain.includes(rung))
+    : availableChain;
   if (chain.length === 0) return [];
 
   const entryRung = chain[0];
@@ -113,7 +122,11 @@ export function buildDayQueue({
   // material would both duplicate it (it is already due at the next rung) and
   // throw away the progress the import exists to restore.
   let admitted = enteredToday.length;
-  for (let seq = 1; seq <= corpusSize && admitted < dailyLimit; seq += 1) {
+  const candidates = admission ?? Array.from({ length: corpusSize }, (_, i) => i + 1);
+  for (const rawSeq of candidates) {
+    const seq = Number(rawSeq);
+    if (!Number.isInteger(seq) || seq < 1 || seq > corpusSize) continue;
+    if (admitted >= dailyLimit) break;
     if (everSeen.has(seq)) continue;
     if (!canDrill(seq)) continue;
     queue.push({ seq, rung: entryRung, done: false });
@@ -121,7 +134,8 @@ export function buildDayQueue({
   }
 
   // --- 2. Graduates --------------------------------------------------------
-  for (const { from, to } of graduationEdges(capabilities, languages)) {
+  const edges = chain.slice(0, -1).map((from, i) => ({ from, to: chain[i + 1] }));
+  for (const { from, to } of edges) {
     const fromCleared = cleared.get(from) ?? new Map();
     const toCleared = cleared.get(to) ?? new Map();
     const due = [];

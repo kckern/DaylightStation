@@ -441,7 +441,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   // `useSelfService` keeps the card up unless this answers `true`.
   const onPortalLaunch = useCallback(async (target) => {
     if (target?.kind === 'program' && target.program === 'language') {
-      const courseId = courses[0]?.id ?? null;
+      const courseId = target.corpusId ?? courses[0]?.id ?? null;
       if (!courseId) { schoolLog.bank('program-unavailable', { program: target.program }); return false; }
       openSection(`lang:${courseId}`);
       return true;
@@ -820,7 +820,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
           <GlossikaProgram
             userId={currentUser?.id || null}
             corpusId={courseId}
-            onSignIn={openPicker}
+            onSignIn={lock.locked ? goHome : openPicker}
+            locked={lock.locked}
           />
         )}
       </main>

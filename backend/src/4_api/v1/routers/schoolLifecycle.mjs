@@ -516,9 +516,9 @@ export function createSchoolLifecycleRouter({
 
   if (setAssignments) {
     router.put('/assignments/:learnerId', guarded(async (req, res) => {
-      const { courses = [], units = [], assignedBy = null, pin = null, baseUpdatedAt } = req.body || {};
+      const { courses = [], units = [], programs = [], assignedBy = null, pin = null, baseUpdatedAt } = req.body || {};
       res.json(await setAssignments.execute({
-        learnerId: req.params.learnerId, courses, units, assignedBy, pin, baseUpdatedAt,
+        learnerId: req.params.learnerId, courses, units, programs, assignedBy, pin, baseUpdatedAt,
       }));
     }));
   }

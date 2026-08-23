@@ -266,7 +266,7 @@ describe('program units', () => {
     });
   });
 
-  it('a stray non-terminal session against a program unit does not leak sessionId/state', () => {
+  it('carries a non-terminal program session so the child can resume it', () => {
     const units = [
       { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
     ];
@@ -278,8 +278,8 @@ describe('program units', () => {
       now: NOW,
     });
     expect(result.entries[0]).toMatchObject({
-      unitId: 'language-daily', status: 'available', program: 'language', cadence: 'daily',
-      sessionId: null, state: null, lockReason: null,
+      unitId: 'language-daily', status: 'in_progress', program: 'language', cadence: 'daily',
+      sessionId: 'ses_stray', state: 'issued', lockReason: null,
     });
   });
 

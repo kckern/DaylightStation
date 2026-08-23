@@ -15,3 +15,5 @@ export { buildDayQueue, summarizeQueue } from './dayQueue.mjs';
 export { shouldRollDay, studyDayIndex } from './rollover.mjs';
 export { normalize, editDistance, accuracy, isCloseEnough, CLOSE_ENOUGH } from './transcription.mjs';
 export { validateCorpus, indexBySeq } from './corpus.mjs';
+export { taxonomyFor } from './taxonomy.mjs';
+export { validateProgramEnrollment } from './programEnrollment.mjs';

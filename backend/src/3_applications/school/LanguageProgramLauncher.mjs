@@ -64,10 +64,10 @@ export class LanguageProgramLauncher {
    * @param {{userId: string}} args
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */
-  async launch({ userId }) {
+  async launch({ userId, corpusId = null }) {
     return this.#donow.dispatch({
       surface: 'portal',
-      action: { target: { kind: 'program', program: 'language' } },
+      action: { target: { kind: 'program', program: 'language', ...(corpusId ? { corpusId } : {}) } },
       learnerId: userId,
       requestedBy: 'school-program',
       ref: 'language',

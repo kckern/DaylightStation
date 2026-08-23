@@ -43,6 +43,27 @@ export function validateCorpus(raw) {
     return { ok: false, errors };
   }
 
+  let banks;
+  if (raw.banks !== undefined) {
+    if (!Array.isArray(raw.banks)) errors.push('banks must be a list');
+    else {
+      const ids = new Set();
+      const maxSeq = raw.sentences.reduce((max, sentence) => Math.max(max, Number(sentence?.seq) || 0), 0);
+      banks = raw.banks.map((bank, i) => {
+        const range = bank?.range;
+        if (!ID_RE.test(String(bank?.id ?? ''))) errors.push(`banks[${i}].id must be alphanumeric with - or _`);
+        if (ids.has(bank?.id)) errors.push(`banks[${i}].id is duplicated`);
+        ids.add(bank?.id);
+        if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isInteger)) {
+          errors.push(`banks[${i}].range must be two integers`);
+        } else if (range[0] < 1 || range[0] > range[1] || range[1] > maxSeq) {
+          errors.push(`banks[${i}].range must be within 1..${maxSeq}`);
+        }
+        return { id: String(bank?.id ?? ''), label: String(bank?.label ?? bank?.id ?? ''), range };
+      });
+    }
+  }
+
   const seen = new Set();
   raw.sentences.forEach((sentence, i) => {
     const where = `sentences[${i}]`;
@@ -101,6 +122,7 @@ export function validateCorpus(raw) {
       size: sentences[sentences.length - 1].seq,
       // Precomputed once so the queue builder never re-scans the corpus.
       playable: new Set(sentences.filter((s) => s.audio).map((s) => s.seq)),
+      ...(banks ? { banks } : {}),
     },
   };
 }

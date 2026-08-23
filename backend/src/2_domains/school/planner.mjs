@@ -226,8 +226,9 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   const today = studyDate(now, timezone) ?? (typeof now === 'string' ? now.slice(0, 10) : null);
   const entries = ordering.map(({ unitId, elective }) => {
     const unit = byUnitId.get(unitId);
-    // Program units never carry an open session — always sessionId: null, state: null
-    const open = isNonEmptyString(unit.program) ? null : (openByUnit.get(unitId) ?? null);
+    // Program units may carry the bridge-created same-day session. They still
+    // never become `completed`; recurrence is governed by the program status.
+    const open = openByUnit.get(unitId) ?? null;
     const blocker = blockerFor(unit);
 
     const rawTiming = unit.courseId

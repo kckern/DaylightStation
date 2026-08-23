@@ -80,6 +80,7 @@ export class UnenrollLearner {
       learnerId,
       courses,
       units: current?.units ?? [],
+      programs: current?.programs ?? [],
       assignedBy: removedBy,
       updatedAt: this.#clock().toISOString(),
     });

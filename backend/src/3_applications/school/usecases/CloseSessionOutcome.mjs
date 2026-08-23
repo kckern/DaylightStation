@@ -151,7 +151,7 @@ export class CloseSessionOutcome {
    *   false here on a FAIL means the retry ticket is not in the child's hand.
    */
   async execute({
-    sessionId, honorClose = false, signedOff = false, signedOffBy = null, pin = null,
+    sessionId, honorClose = false, signedOff = false, signedOffBy = null, pin = null, rewardOverride = null,
   } = {}) {
     if (signedOff === true) {
       this.#grownUps.assert(signedOffBy, 'Only a grown-up can sign off a reward', {
@@ -178,7 +178,7 @@ export class CloseSessionOutcome {
       // A second close-out is a retry, not a second result. It re-prints and —
       // crucially — still routes through the reward step, whose own guard sees
       // the existing txn and skips.
-      return this.#settle({ sessionId, state, unit, outcome: state.outcome, signedOff, nowIso, resettling: true });
+      return this.#settle({ sessionId, state, unit, outcome: state.outcome, signedOff, rewardOverride, nowIso, resettling: true });
     }
 
     if (honorClose) {
@@ -189,11 +189,12 @@ export class CloseSessionOutcome {
       // changes nothing, and the caller gets the exact refusal a plain close
       // would give — a `graded` (or earlier) session can never be waved through
       // unevaluated just by naming the flag.
-      if (state.state !== 'launch_dispatched') {
+      if (state.state !== 'launch_dispatched' && state.state !== 'program_dispatched') {
         return this.#unavailable(sessionId, 'That work has not been marked yet.');
       }
       return this.#recordOutcomeAndSettle({
-        sessionId, state, unit, nowIso, signedOff, result: 'passed', reason: 'launch_dispatched',
+        sessionId, state, unit, nowIso, signedOff, rewardOverride, result: 'passed',
+        reason: state.state === 'program_dispatched' ? 'program_complete' : 'launch_dispatched',
       });
     }
 
@@ -222,7 +223,7 @@ export class CloseSessionOutcome {
    * one path a graded close and an honor-close both funnel through, so the
    * reward guard, unlock line and result receipt stay uniform between them.
    */
-  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, result, reason }) {
+  async #recordOutcomeAndSettle({ sessionId, state, unit, nowIso, signedOff, rewardOverride = null, result, reason }) {
     const outcomeId = outcomeIdFor(sessionId);
     const { errors, event } = createEvent({
       type: 'outcome_recorded', at: nowIso, sessionId, outcomeId, result, reason,
@@ -234,13 +235,13 @@ export class CloseSessionOutcome {
     });
 
     const outcome = { outcomeId, result, at: nowIso };
-    return this.#settle({ sessionId, state, unit, outcome, signedOff, nowIso, resettling: false });
+    return this.#settle({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso, resettling: false });
   }
 
-  async #settle({ sessionId, state, unit, outcome, signedOff, nowIso, resettling }) {
+  async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling }) {
     const passed = outcome.result === 'passed';
     const reward = passed
-      ? await this.#applyReward({ sessionId, state, unit, outcome, signedOff, nowIso })
+      ? await this.#applyReward({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso })
       : null;
 
     const retryToken = passed ? null : await this.#mintRetryToken({ sessionId, state, nowIso });
@@ -330,7 +331,7 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
-    const document = resultDocument({
+    const document = state.state === 'program_dispatched' ? null : resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
@@ -369,7 +370,7 @@ export class CloseSessionOutcome {
       retryToken,
       message: passed ? 'Nice work!' : 'Almost there — try again.',
       document,
-      ...(await this.#printed(document)),
+      ...(document ? await this.#printed(document) : { printed: false, printReason: 'program' }),
     };
   }
 
@@ -408,14 +409,14 @@ export class CloseSessionOutcome {
    * Pay, or record deliberately not paying. Either way the reward question ends
    * settled and the session reaches a terminal state.
    */
-  async #applyReward({ sessionId, state, unit, outcome, signedOff, nowIso }) {
+  async #applyReward({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso }) {
     if (state.rewardTxn) {
       return { amount: 0, txnId: state.rewardTxn, skipReason: 'already_rewarded' };
     }
 
     const decision = rewardDecision({
       outcome: { outcomeId: outcome.outcomeId, result: outcome.result, signedOff },
-      unitReward: unit?.reward,
+      unitReward: rewardOverride ?? unit?.reward,
       existingRewardTxn: state.rewardTxn,
       economyEnabled: this.#economyEnabled && Boolean(this.#economy),
     });

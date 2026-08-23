@@ -2,6 +2,7 @@ unitId: language-daily
 title: Language — today's sentences
 subject: language
 program: language        # NEW: delegates to a registered program
+programInstance: glossika-korean
 cadence: daily           # NEW: re-offers every study day; never terminally completed
 provenance:
   source: hand-authored

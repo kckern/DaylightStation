@@ -41,7 +41,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
     deps: [learnerId],
     panel: 'assignments',
     notFoundAs: 'empty',
-    isEmpty: (d) => !(d?.courses ?? []).length && !(d?.units ?? []).length,
+    isEmpty: (d) => !(d?.courses ?? []).length && !(d?.units ?? []).length && !(d?.programs ?? []).length,
   });
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
     panel: 'assignments-catalog',
@@ -72,6 +72,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
   const save = () => run('save', ({ actorId, pin }) => schoolApi.putAssignments(learnerId, {
     courses: mergeEntries(record.data?.courses, draft.courses, 'courseId'),
     units: mergeEntries(record.data?.units, draft.units, 'unitId'),
+    ...(record.data?.programs?.length ? { programs: record.data.programs } : {}),
     assignedBy: actorId,
     pin,
     // Concurrent-edit guard (B14): what we LOADED; a stale save is refused

@@ -289,6 +289,7 @@ import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDat
 import { createLanguageRouter } from './4_api/v1/routers/language.mjs';
 import { LanguageStudyService } from './3_applications/school/LanguageStudyService.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
+import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
@@ -2808,8 +2809,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // relieve — the worst possible recovery story for a control that will
   // sometimes be wrong. `gate.force: open|closed|auto` is the parent's lever.
   const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')?.gate || null;
+  const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
   const languageStudyService = new LanguageStudyService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
+    readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
+    eventBus,
     timezone: configService.getTimezone?.() || null,
     readGate: () => {
       const cfg = readGateConfig();
