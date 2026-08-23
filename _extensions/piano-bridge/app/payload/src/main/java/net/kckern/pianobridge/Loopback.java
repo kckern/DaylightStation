@@ -76,6 +76,8 @@ public final class Loopback {
                     lastRttMs = now - sentAt;
                     lastEchoAtMs = now;
                     consecutiveMisses = 0;
+                    episodeKicks = 0;          // an echo ends the zombie episode:
+                    episodeEscalated = false;  // the ladder is re-armed from rung 1
                     echoes++;
                     Log.i(TAG, "echo: probe " + oldest + " back in " + lastRttMs + "ms");
                 }
@@ -133,16 +135,43 @@ public final class Loopback {
      */
     static final int ZOMBIE_MISSES = 3;
     private volatile long lastZombieKickMs;
+    /** Kicks (L1 connectNow) fired in the CURRENT zombie episode; reset by any echo. */
+    private volatile int episodeKicks;
+    /** True once this episode has spent its one automatic forceResetLink. */
+    private volatile boolean episodeEscalated;
 
-    /** Called after each probe verdict. Kicks the connector once per zombie episode. */
+    /**
+     * Called after each probe verdict. Recovery ladder for a zombie link (BLE says
+     * CONNECTED, piano never echoes):
+     *   kick 1..2  — BleMidiConnector.connectNow(), one per 10 min (cheap, targeted)
+     *   kick 3     — core.forceResetLink(): the full L1 forget/reconnect + L2 radio
+     *                bounce ladder, echo-verified at each rung. Added in p12 because
+     *                on 2026-08-23 connectNow alone kicked a zombie every 10 min for
+     *                TEN HOURS without curing it, while one radio bounce fixed it in 9s.
+     * The escalation runs AT MOST ONCE per episode (an echo resets the episode): a
+     * piano that is simply switched off must not bounce the tablet's Bluetooth —
+     * and the paired speaker with it — every half hour all night.
+     */
     void maybeKickZombie() {
         if (consecutiveMisses < ZOMBIE_MISSES) return;
         long now = System.currentTimeMillis();
-        if (now - lastZombieKickMs < 10 * 60 * 1000L) return; // one kick per 10 min
+        if (now - lastZombieKickMs < 10 * 60 * 1000L) return; // one rung per 10 min
         lastZombieKickMs = now;
+        if (episodeKicks >= 2 && !episodeEscalated) {
+            episodeEscalated = true;
+            Log.w(TAG, "ZOMBIE persists after " + episodeKicks + " reconnect kicks — escalating to forceResetLink");
+            CrashLog.note("LOOP", "ZOMBIE survived " + episodeKicks + " BLE reconnects — auto force-reset (L1+L2 ladder)");
+            Thread t = new Thread(() -> {
+                try { core.forceResetLink(); } catch (Throwable e) { Log.e(TAG, "auto force-reset failed", e); }
+            }, "PianoBridge-AutoReset");
+            t.setDaemon(true);
+            t.start();
+            return;
+        }
+        episodeKicks++;
         BleMidiConnector ble = core == null ? null : core.getBleConnector();
-        Log.w(TAG, "ZOMBIE link: " + consecutiveMisses + " probes unanswered with BLE CONNECTED — forcing reconnect");
-        CrashLog.note("LOOP", "ZOMBIE link (" + consecutiveMisses + " unanswered probes) — forcing BLE reconnect");
+        Log.w(TAG, "ZOMBIE link: " + consecutiveMisses + " probes unanswered with BLE CONNECTED — forcing reconnect (kick " + episodeKicks + ")");
+        CrashLog.note("LOOP", "ZOMBIE link (" + consecutiveMisses + " unanswered probes) — forcing BLE reconnect (kick " + episodeKicks + ")");
         if (ble != null) ble.connectNow();
     }
 

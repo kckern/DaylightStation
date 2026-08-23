@@ -32,6 +32,37 @@ public final class DeviceProbe {
             o.put("uptimeMs", SystemClock.elapsedRealtime());
             o.put("pid", android.os.Process.myPid());
 
+            // The OS's OWN power/thermal verdicts — what Chromium and Samsung's SSRM
+            // actually react to, regardless of what the Settings.Global toggles read.
+            // (2026-08-23: every visible power-save setting was 0 during a 3fps episode;
+            // these two answer whether the OS still THINKS it is power-saving or hot.)
+            android.os.PowerManager pm =
+                    (android.os.PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                JSONObject pow = new JSONObject();
+                pow.put("powerSaveMode", pm.isPowerSaveMode());
+                if (Build.VERSION.SDK_INT >= 29) {
+                    int ts = pm.getCurrentThermalStatus();
+                    String name;
+                    switch (ts) {
+                        case android.os.PowerManager.THERMAL_STATUS_NONE:      name = "NONE"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_LIGHT:     name = "LIGHT"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_MODERATE:  name = "MODERATE"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_SEVERE:    name = "SEVERE"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_CRITICAL:  name = "CRITICAL"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_EMERGENCY: name = "EMERGENCY"; break;
+                        case android.os.PowerManager.THERMAL_STATUS_SHUTDOWN:  name = "SHUTDOWN"; break;
+                        default: name = "UNKNOWN(" + ts + ")";
+                    }
+                    pow.put("thermalStatus", name);
+                }
+                pow.put("locationPowerSaveMode", pm.getLocationPowerSaveMode());
+                pow.put("sustainedPerfSupported", pm.isSustainedPerformanceModeSupported());
+                pow.put("deviceIdleMode", pm.isDeviceIdleMode());
+                pow.put("interactive", pm.isInteractive());
+                o.put("power", pow);
+            }
+
             ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
             if (am != null) {
                 ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
