@@ -99,13 +99,16 @@ export class EnrollLearner {
     const work = works.find((w) => w.work === courseId) ?? null;
     const policy = { ...(work?.progression ?? {}), ...(syllabus.policy ?? {}) };
     const nowIso = this.#clock().toISOString();
+    const today = studyDate(nowIso, this.#timezone);
 
     const enrollment = createCourseEnrollment({
       enrollmentId: `enr-${learnerId}-${courseId}`,
       courseId,
       profile: syllabus.profile,
       units: courseUnits,
+      modules: work?.modules ?? [],
       policy,
+      today,
       rng: this.#rng,
     });
 
@@ -127,7 +130,6 @@ export class EnrollLearner {
       }
       const anchor = await this.#timingAnchors.get(anchorId);
       if (!anchor) throw new ValidationError(`unknown timing anchor: '${anchorId}'`);
-      const today = studyDate(nowIso, this.#timezone);
       try {
         timing = materializeTiming(syllabus.timingTemplate, anchor, { today });
       } catch (error) {

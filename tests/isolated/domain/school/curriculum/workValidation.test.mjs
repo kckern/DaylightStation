@@ -62,6 +62,22 @@ describe('dated_modules progression', () => {
     expect(validateWork(raw).errors.join()).toMatch(/only meaningful/);
   });
 
+  it('reports an unrecognized mode without falsely blaming its valid windows', () => {
+    const raw = dated({
+      progression: { mode: 'dated-modules', module_order: 'fixed', lesson_order: 'shuffle_once' },
+    });
+    const message = validateWork(raw).errors.join('\n');
+    expect(message).toContain('progression.mode must be one of sequential|module_blocks|dated_modules, got: dated-modules');
+    expect(message).not.toMatch(/only meaningful/);
+  });
+
+  it('still requires module_order for a dated course', () => {
+    const raw = dated({
+      progression: { mode: 'dated_modules', lesson_order: 'shuffle_once' },
+    });
+    expect(validateWork(raw).errors.join()).toMatch(/progression\.module_order must be one of fixed\|shuffle_once, got: undefined/);
+  });
+
   // The two undated modes must come through untouched: dating is additive, and
   // a course whose position is earned rather than handed to it by the calendar
   // should not acquire a date requirement.
