@@ -1766,7 +1766,12 @@
 // scanning alone has, so it is deliberately the loudest thing on the panel
 // short of the sound itself.
 .school-scan-ceremony {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 30;
+  // z-index MUST stay above `.school-material-player` (z-index: 40) AND its
+  // own `__overlay` (z-index: 50) — both live in this same stacking context
+  // (`.school-app__body`, z-index: auto) and a code-launched video renders
+  // outside the lock branch, so a scan landing mid-playback must still be
+  // visible over it. Do not let this regress back under 50.
+  position: absolute; top: 0; left: 0; right: 0; z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
   padding: 1.6rem 2rem; text-align: center;
   border-bottom: 5px solid var(--school-accent);
