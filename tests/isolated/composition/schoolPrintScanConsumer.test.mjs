@@ -216,6 +216,113 @@ describe('resolution outcomes', () => {
     }));
   });
 
+  // A warn line is read by a grown-up later; the child is at the scanner NOW.
+  // Both of these outcomes used to log and return with nothing on the wire, so
+  // a real sheet with real answers produced no ceremony at all — the "nothing
+  // happened" failure spec §6.2 forbids.
+  it('a dead card ALSO broadcasts its own stale-sheet ceremony — a self-service fix, not a grown-up', async () => {
+    const bus = makeBus();
+    const seen = [];
+    bus.subscribe('omr', (p) => { if (p?.event) seen.push(p); });
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        execute: async () => ({
+          results: [], deadCard: true, answeredRowCount: 4, recordStatuses: ['released'],
+        }),
+      },
+      logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(seen).toContainEqual({ event: 'scan-stale-sheet', code: 'dead_card', testId: '0123456' });
+    // NOT scan-refused: that copy sends the child to find a grown-up, and a
+    // stale sheet is fixed by scanning their own card for a fresh print.
+    expect(seen.some((p) => p.event === 'scan-refused')).toBe(false);
+  });
+
+  it('an unknown card ALSO broadcasts a refusal ceremony — same child action as a per-record refusal', async () => {
+    const bus = makeBus();
+    const seen = [];
+    bus.subscribe('omr', (p) => { if (p?.event) seen.push(p); });
+    const logger = silentLogger();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        execute: async () => ({
+          results: [], unknownCard: true, answeredRowCount: 4, nearMissCardIds: ['0123457'],
+        }),
+      },
+      logger,
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-unknown-card', expect.objectContaining({
+      testId: '0123456', answeredRowCount: 4, nearMissCardIds: ['0123457'],
+    }));
+    // The `code` is what tells a grown-up "card id we have never seen" apart
+    // from "record on a known card refused"; the child sees the same words.
+    expect(seen).toContainEqual({ event: 'scan-refused', code: 'unknown_card', recordId: null });
+  });
+
+  it('reports unmarked live records to the HOUSE, not the panel — no child action, and a panel event would be overwritten', async () => {
+    const bus = makeBus();
+    const seen = [];
+    bus.subscribe('omr', (p) => { if (p?.event) seen.push(p); });
+    const gradingHook = { fire: vi.fn(async () => ({ ok: true })) };
+    const logger = silentLogger();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: {
+        // A MIXED card — one record resolved, another live record got zero
+        // marks. `silentLiveRecords` is only reachable this way: an outcome
+        // with no results at all returns earlier, at `scan-no-allocation`.
+        execute: async () => ({
+          results: [{
+            cardId: '0123456', recordId: 'r2', documentId: 'd2', rev: 'a', variant: 0,
+            revisionSuperseded: false, results: [], totalPoints: 1, earnedPoints: 1,
+          }],
+          silentLiveRecords: [{ recordId: 'r9', rowRange: '1-5' }],
+        }),
+      },
+      gradingHook,
+      logger,
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-live-record-unmarked', expect.objectContaining({
+      testId: '0123456', silentLiveRecords: [{ recordId: 'r9', rowRange: '1-5' }],
+    }));
+    expect(gradingHook.fire).toHaveBeenCalledWith({
+      result: 'partial',
+      testId: '0123456',
+      code: 'live_record_unmarked',
+      silentLiveRecords: [{ recordId: 'r9', rowRange: '1-5' }],
+    });
+    // Nothing about the blank rows reaches the child's panel — that is the
+    // point. The resolved record still runs its own ceremony.
+    expect(seen.some((p) => p.code === 'live_record_unmarked')).toBe(false);
+  });
+
+  it('fires the grading hook for both, so an unreadable sheet is not silent to the house either', async () => {
+    for (const [outcome, code] of [
+      [{ results: [], unknownCard: true, answeredRowCount: 4, nearMissCardIds: [] }, 'unknown_card'],
+      [{ results: [], deadCard: true, answeredRowCount: 4, recordStatuses: ['released'] }, 'dead_card'],
+    ]) {
+      const bus = makeBus();
+      const gradingHook = { fire: vi.fn(async () => ({ ok: true })) };
+      createSchoolPrintScanConsumer({
+        eventBus: bus,
+        resolveCardScan: { execute: async () => outcome },
+        gradingHook,
+        logger: silentLogger(),
+      });
+      bus.broadcast('omr', sheetPayload());
+      await flush();
+      expect(gradingHook.fire).toHaveBeenCalledWith({ result: 'unresolved', testId: '0123456', code });
+    }
+  });
+
   it('a per-record refusal (drift / resolve failure) warns per record and is excluded from scan-resolved', async () => {
     const bus = makeBus();
     const logger = silentLogger();

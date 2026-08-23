@@ -4,6 +4,10 @@
 **Status:** gate is GREEN and usable; 12 pre-existing failures baselined as debt
 **Touches:** `scripts/gate-vitest.mjs`, `scripts/audit-baseline.vitest.txt`
 
+> `frontend/` and `cli/` hold vitest files too and are still **outside** this
+> gate's roots. Widening to them is the obvious next step; it was not done here
+> because the backend hole was the one with a live grading-path failure in it.
+
 ---
 
 ## What was wrong
@@ -47,6 +51,14 @@ Both are fixed. `SecretsHandler` keeps its own coverage under `tests/unit/suite/
    not even load — its own relative imports resolve against the real directory,
    not the link.
 4. **Worker parallelism is capped** at half the machine's cores.
+5. **The previous JSON report is deleted before vitest runs.** This one is
+   worth reading twice: the only thing between "vitest died before writing a
+   report" and a silently stale verdict was an `existsSync` check that the
+   *previous run's* file satisfies. Caught in the act — an invalid CLI flag
+   (`--min-workers`, which this vitest rejects) made vitest exit immediately,
+   and three consecutive `gate-vitest: OK` lines were parsed straight out of
+   an older report, reporting green for tests that had never run. If you add
+   a flag to the vitest invocation, confirm the report's mtime moves.
 
 Population: **880 → 1261 files**, 10,851 → 15,176 tests.
 
