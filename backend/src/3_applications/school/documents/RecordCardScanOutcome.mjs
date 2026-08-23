@@ -36,11 +36,14 @@
  *    is DONE — an ambiguous bubble row or a write-on question a bank cannot
  *    score still needs a person. Every row becomes a verdict-sheet entry
  *    (`IReviewQueue`, the same shape `GradeSubmission` writes): correct/
- *    incorrect rows are RESOLVED (`gradedBy: 'engine'`), ambiguous rows and
- *    `unscannedItems` (write-ons) are PENDING. Anything pending holds the
- *    session at `submitted` — never `graded` — until a grown-up clears it
- *    through `GradeSubmission`, which reads that same queue as the sheet's
- *    roster for a print-document unit.
+ *    incorrect rows are RESOLVED (`gradedBy: 'engine'`, or `'engine-leniency'`
+ *    for a row `ResolveCardScan`'s eraser-leniency pass promoted from
+ *    `ambiguous` — spec §5.4, 2026-08-22 policy — auditable via that same
+ *    row's `leniency: 'eraser'` marker), ambiguous rows and `unscannedItems`
+ *    (write-ons) are PENDING. Anything pending holds the session at
+ *    `submitted` — never `graded` — until a grown-up clears it through
+ *    `GradeSubmission`, which reads that same queue as the sheet's roster
+ *    for a print-document unit.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { createAttempt } from '#domains/school/attempt.mjs';
@@ -399,8 +402,16 @@ export class RecordCardScanOutcome {
             prompt: row.prompt ?? null, questionNumber: row.row, rubric: null,
             enqueuedAt: at,
             verdict: row.status === 'correct' ? 'correct' : 'incorrect',
-            gradedBy: 'engine', gradedAt: at,
+            // A row `ResolveCardScan`'s eraser-leniency pass promoted from
+            // `ambiguous` (spec §5.4, 2026-08-22 policy) carries its own
+            // `leniency: 'eraser'` marker — surfaced here as a distinct
+            // `gradedBy` so the verdict sheet stays auditable: a human can
+            // tell "the engine decided this outright" apart from "the engine
+            // extended eraser-leniency" without re-reading the scan.
+            gradedBy: row.leniency === 'eraser' ? 'engine-leniency' : 'engine',
+            gradedAt: at,
             attemptId: attemptIdByItem.get(row.itemId) ?? null,
+            ...(row.leniency ? { leniency: row.leniency } : {}),
           }));
         const pending = [
           ...card.results.filter((row) => row.status === 'ambiguous').map((row) => ({
