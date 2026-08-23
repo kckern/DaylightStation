@@ -21,10 +21,15 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 const MAX_FAILURES = 5;
 const MAX_BACKOFF_MS = 60000;
 
-/** Every call carries this key set; inapplicable values are null / []. */
-function toVariables(o) {
+/**
+ * Every call carries this key set; inapplicable values are null / [].
+ * A null/undefined outcome is treated as an empty grade — the same uniform
+ * 11-key shape still comes out, just all-null (plus [] for the array keys).
+ */
+function toVariables(outcome) {
+  const o = outcome ?? {};
   return {
-    result: o.result,
+    result: o.result ?? null,
     learner_id: o.learnerId ?? null,
     test_id: o.testId ?? null,
     session_id: o.sessionId ?? null,
@@ -71,54 +76,66 @@ export class SchoolGradingHookAdapter {
     this.metrics.totalRequests++;
     const now = Date.now();
 
-    const script = this.#loadSchoolConfig(outcome?.householdId)?.grading_hook?.script;
-    if (!script) {
-      this.metrics.skippedNotConfigured++;
-      this.#logger.debug?.('school.grading_hook.skipped', { reason: 'not_configured' });
-      return { ok: true, skipped: true, reason: 'not_configured' };
-    }
-
-    if (this.backoffUntil > now) {
-      this.metrics.skippedBackoff++;
-      this.#logger.warn?.('school.grading_hook.skipped', {
-        reason: 'backoff', remainingMs: this.backoffUntil - now, failureCount: this.failureCount,
-      });
-      return { ok: true, skipped: true, reason: 'backoff' };
-    }
-
-    // `script.school_graded` -> domain script, service school_graded.
-    // A bare `school_graded` is used as the service name as-is.
-    const service = script.startsWith('script.') ? script.slice('script.'.length) : script;
-    const variables = toVariables(outcome);
-
+    // Outer guard: config loading and outcome shaping are NOT gateway calls,
+    // so their failures must never reach or arm the circuit breaker below.
+    // The inner try/catch (around the actual gateway call) keeps sole
+    // ownership of failureCount/backoffUntil.
     try {
-      await this.#gateway.callService('script', service, variables);
-      this.failureCount = 0;
-      this.metrics.firedCount++;
-      this.metrics.lastFiredAt = new Date(now).toISOString();
-      this.metrics.resultHistogram[variables.result] =
-        (this.metrics.resultHistogram[variables.result] || 0) + 1;
-      this.#logger.info?.('school.grading_hook.fired', {
-        script, result: variables.result, learnerId: variables.learner_id,
-      });
-      return { ok: true };
-    } catch (error) {
-      this.failureCount++;
-      this.metrics.failureCount++;
-      if (this.failureCount >= MAX_FAILURES) {
-        const backoffMs = Math.min(
-          MAX_BACKOFF_MS, 1000 * (2 ** (this.failureCount - MAX_FAILURES)),
-        );
-        this.backoffUntil = Date.now() + backoffMs;
-        this.#logger.error?.('school.grading_hook.circuit_open', {
-          failureCount: this.failureCount, backoffMs, error: error.message,
-        });
-      } else {
-        this.#logger.error?.('school.grading_hook.failed', {
-          script, result: variables.result, error: error.message,
-          failureCount: this.failureCount,
-        });
+      const script = this.#loadSchoolConfig(outcome?.householdId)?.grading_hook?.script;
+      if (!script) {
+        this.metrics.skippedNotConfigured++;
+        this.#logger.debug?.('school.grading_hook.skipped', { reason: 'not_configured' });
+        return { ok: true, skipped: true, reason: 'not_configured' };
       }
+
+      if (this.backoffUntil > now) {
+        this.metrics.skippedBackoff++;
+        this.#logger.warn?.('school.grading_hook.skipped', {
+          reason: 'backoff', remainingMs: this.backoffUntil - now, failureCount: this.failureCount,
+        });
+        return { ok: true, skipped: true, reason: 'backoff' };
+      }
+
+      // `script.school_graded` -> domain script, service school_graded.
+      // A bare `school_graded` is used as the service name as-is.
+      const service = script.startsWith('script.') ? script.slice('script.'.length) : script;
+      const variables = toVariables(outcome);
+
+      try {
+        await this.#gateway.callService('script', service, variables);
+        this.failureCount = 0;
+        this.metrics.firedCount++;
+        this.metrics.lastFiredAt = new Date(now).toISOString();
+        this.metrics.resultHistogram[variables.result] =
+          (this.metrics.resultHistogram[variables.result] || 0) + 1;
+        this.#logger.info?.('school.grading_hook.fired', {
+          script, result: variables.result, learnerId: variables.learner_id,
+        });
+        return { ok: true };
+      } catch (error) {
+        this.failureCount++;
+        this.metrics.failureCount++;
+        if (this.failureCount >= MAX_FAILURES) {
+          const backoffMs = Math.min(
+            MAX_BACKOFF_MS, 1000 * (2 ** (this.failureCount - MAX_FAILURES)),
+          );
+          this.backoffUntil = Date.now() + backoffMs;
+          this.#logger.error?.('school.grading_hook.circuit_open', {
+            failureCount: this.failureCount, backoffMs, error: error.message,
+          });
+        } else {
+          this.#logger.error?.('school.grading_hook.failed', {
+            script, result: variables.result, error: error.message,
+            failureCount: this.failureCount,
+          });
+        }
+        return { ok: false, error: error.message };
+      }
+    } catch (error) {
+      // Config load / outcome-shaping errors — never the gateway's fault, so
+      // the breaker stays untouched. Distinct event name from `.failed`
+      // (which means "the gateway rejected the call").
+      this.#logger.error?.('school.grading_hook.error', { error: error.message });
       return { ok: false, error: error.message };
     }
   }
