@@ -16,13 +16,13 @@ function makeRepo(returnValue) {
 }
 
 describe('YamlHomeDashboardConfigRepository', () => {
-  it('loads and returns the config from household/config/home-dashboard', async () => {
+  it('loads and returns the config from home/dashboard', async () => {
     const { repo, dataService } = makeRepo({
       summary: { weather: true },
       rooms: [{ id: 'lr', label: 'Living Room' }],
     });
     const result = await repo.load();
-    expect(dataService.household.read).toHaveBeenCalledWith('config/home-dashboard', 'default');
+    expect(dataService.household.read).toHaveBeenCalledWith('home/dashboard', 'default');
     expect(result.rooms[0].id).toBe('lr');
   });
 
