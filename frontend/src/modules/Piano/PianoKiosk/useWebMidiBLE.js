@@ -6,7 +6,7 @@ import {
   isSustainDown,
 } from '../noteHistory.js';
 import { createNoteStore } from './noteStore.js';
-import { bridgeSendMidi, bridgeOutUp } from './bridgeMidiOut.js';
+import { bridgeSendMidi, bridgeSendMidiAt, bridgeOutUp } from './bridgeMidiOut.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
 
@@ -621,30 +621,66 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
    * Deliberately NO applyNoteOn/applyNoteOff: scheduled notes must not light the
    * keyboard ahead of when they sound; visuals fire separately at due time.
    */
+  // Bridge-first (2026-08-23 p17): scheduled sends ride the BRIDGE's clock
+  // (its process timer, jank-immune like Chromium's MIDI service, but on the
+  // loopback-verified write path). Web MIDI's timestamped send() is the
+  // fallback. THE HOLE THIS CLOSES: the first bridge-first pass carved these
+  // senders out, so score playback kept feeding a zombie Web MIDI handle —
+  // noteheads lit, piano silent, and the bare out.send logged NOTHING. Every
+  // path out of here now leaves a witness, including total failure.
   const sendNoteAt = useCallback((note, velocity = 80, atMs, channel = 0) => {
+    const bytes = [0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f];
+    const inMs = (atMs ?? 0) - (performance?.now?.() ?? 0);
+    if (bridgeSendMidiAt(bytes, inMs)) {
+      logger().sampled('midi.out.note-at', { note, inMs: Math.round(inMs), via: 'bridge' },
+        { maxPerMinute: 10, aggregate: true });
+      return true;
+    }
     const out = outputRef.current;
-    if (!out) return false;
-    out.send([0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f], atMs);
+    if (!out) {
+      // LOUD: the audio plane has no path at all — playback will be silent.
+      logger().sampled('midi.out.audio-plane-dead', { note, reason: 'no-bridge-no-output' },
+        { maxPerMinute: 6, aggregate: true });
+      return false;
+    }
+    out.send(bytes, atMs);
+    logger().sampled('midi.out.note-at', { note, via: 'webmidi', conn: out.connection, state: out.state },
+      { maxPerMinute: 10, aggregate: true });
     return true;
   }, []);
 
   const sendNoteOffAt = useCallback((note, atMs, channel = 0) => {
+    const bytes = [0x80 | (channel & 0x0f), note & 0x7f, 0];
+    const inMs = (atMs ?? 0) - (performance?.now?.() ?? 0);
+    if (bridgeSendMidiAt(bytes, inMs)) return true;
     const out = outputRef.current;
     if (!out) return false;
-    out.send([0x80 | (channel & 0x0f), note & 0x7f, 0], atMs);
+    out.send(bytes, atMs);
     return true;
   }, []);
 
   /** Schedule an array of {t, type:'note_on'|'note_off', note, velocity} events (t in ms from now). */
   const scheduleNotes = useCallback((events, channel = 0) => {
+    if (!events?.length) return false;
+    if (bridgeOutUp()) {
+      for (const e of events) {
+        const status = e.type === 'note_off' ? 0x80 : 0x90;
+        bridgeSendMidiAt([status | (channel & 0x0f), e.note & 0x7f, (e.velocity ?? 0) & 0x7f], e.t ?? 0);
+      }
+      logger().info('midi.out.schedule', { count: events.length, via: 'bridge' });
+      return true;
+    }
     const out = outputRef.current;
-    if (!out || !events?.length) return false;
+    if (!out) {
+      logger().warn('midi.out.audio-plane-dead', { reason: 'no-bridge-no-output', count: events.length });
+      return false;
+    }
     const base = performance?.now?.() ?? 0;
     for (const e of events) {
       const status = e.type === 'note_off' ? 0x80 : 0x90;
       out.send([status | (channel & 0x0f), e.note & 0x7f, (e.velocity ?? 0) & 0x7f], base + (e.t ?? 0));
     }
-    logger().info('midi.out.schedule', { count: events.length });
+    logger().info('midi.out.schedule', { count: events.length, via: 'webmidi' });
     return true;
   }, []);
 
