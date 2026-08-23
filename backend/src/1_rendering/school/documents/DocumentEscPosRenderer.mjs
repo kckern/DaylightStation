@@ -207,6 +207,14 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
       items.push(symbology === 'QR'
         ? { type: 'qrcode', content: code, label: block.label }
         : { type: 'barcode', content: code, label: block.label, format: symbology });
+      // The six-digit panel alias, immediately after the code it aliases and
+      // nowhere else. It moved from loose `rich_text` blocks (which the canvas
+      // renderer drew adrift BELOW the card) onto the block itself, so this
+      // renderer has to read the field or the operator transcript silently
+      // loses the only typable way in.
+      if (typeof block.panelCode === 'string' && block.panelCode.trim()) {
+        items.push({ type: 'text', content: `PANEL CODE ${block.panelCode.trim()}`, align: 'center' });
+      }
     }
     items.push({ type: 'line', content: '-', width });
     return { items, footer: { paddingLines: 3, autoCut: true } };

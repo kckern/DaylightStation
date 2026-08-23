@@ -42,7 +42,12 @@ function stripComments(src) {
 }
 
 const QR_TYPES = /scan_action|lesson_action/g;
-const PANEL_CODE = /PANEL CODE/g;
+// A present code is now a FIELD on the scan_action block, not a loose
+// "PANEL CODE …" text block after it. It moved because the old form drew
+// adrift BELOW the card on the canvas renderer, away from the QR it aliases.
+// Counting the field is counting the same thing this suite always counted:
+// how many QRs have a typable way in.
+const PANEL_CODE = /"panelCode":/g;
 const SCAN_ONLY = /Scanning is the only way in\./g;
 
 const countOf = (re, flat) => (flat.match(re) || []).length;
@@ -77,10 +82,8 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
       }],
     });
     assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
-    const flat = JSON.stringify(r.blocks);
-    expect(flat).toContain('PANEL CODE 123456');
-    // QR-then-code, never the reverse.
-    expect(flat.indexOf('scan_action')).toBeLessThan(flat.indexOf('PANEL CODE 123456'));
+    // On the QR's own block — there is no longer an ordering to get wrong.
+    expect(r.blocks.find((b) => b.type === 'scan_action').panelCode).toBe('123456');
   });
 
   it('prints an explicit "scanning only" line rather than a silent gap when no code could be minted', () => {
@@ -102,7 +105,7 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
     });
     assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).toContain('Scanning is the only way in.');
   });
 
@@ -132,8 +135,8 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
     });
     assertEveryQrIsExplained(r.blocks, { expectCount: 2 });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).toContain('PANEL CODE 111111');
-    expect(flat).toContain('PANEL CODE 222222');
+    expect(flat).toContain('"panelCode":"111111"');
+    expect(flat).toContain('"panelCode":"222222"');
     // Also prove it end-to-end through `agendaDocument`'s own token-keyed
     // map, for two sections of two DIFFERENT subjects (agenda's real shape)
     // — each keeps its own code rather than the two colliding on write.
@@ -148,8 +151,8 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
     });
     assertEveryQrIsExplained(agenda.blocks, { expectCount: 2 });
     const agendaFlat = JSON.stringify(agenda.blocks);
-    expect(agendaFlat).toContain('PANEL CODE 111111');
-    expect(agendaFlat).toContain('PANEL CODE 222222');
+    expect(agendaFlat).toContain('"panelCode":"111111"');
+    expect(agendaFlat).toContain('"panelCode":"222222"');
   });
 
   it('never prints a bare code with no QR above it', () => {
@@ -162,7 +165,7 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
       }],
     });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
   });
 
@@ -175,7 +178,7 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
       actions: [{ token: 'sch:DDDDDDDDDDDDDDDD', label: 'Try again with a fresh sheet', presentation: 'lesson' }],
     });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 
@@ -188,7 +191,7 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
       // that has not opted into self-service.
     });
     const flat = JSON.stringify(agenda.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 });
@@ -207,9 +210,8 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
       actions: [{ token: 'sch:FFFFFFFFFFFFFFFF', label: 'Scan to print the next worksheet', accessCode: '654321' }],
     });
     assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
-    const flat = JSON.stringify(r.blocks);
-    expect(flat).toContain('PANEL CODE 654321');
-    expect(flat.indexOf('scan_action')).toBeLessThan(flat.indexOf('PANEL CODE 654321'));
+    // On the QR's own block, so there is no ordering left to get wrong.
+    expect(r.blocks.find((b) => b.type === 'scan_action').panelCode).toBe('654321');
   });
 
   it('prints "scanning only" on the plain branch when no code could be minted', () => {
@@ -219,7 +221,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     });
     assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).toContain('Scanning is the only way in.');
   });
 
@@ -229,7 +231,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
       actions: [{ token: 'sch:HHHHHHHHHHHHHHHH', label: 'Scan to print the next worksheet' }],
     });
     const flat = JSON.stringify(r.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 
@@ -240,7 +242,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     });
     assertEveryQrIsExplained(n.blocks, { expectCount: 1 });
     const flat = JSON.stringify(n.blocks);
-    expect(flat).toContain('PANEL CODE 111222');
+    expect(flat).toContain('"panelCode":"111222"');
   });
 
   it('prints "scanning only" on a notice when no code could be minted', () => {
@@ -250,7 +252,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     });
     assertEveryQrIsExplained(n.blocks, { expectCount: 1 });
     const flat = JSON.stringify(n.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).toContain('Scanning is the only way in.');
   });
 
@@ -263,7 +265,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
       actions: [{ token: 'sch:KKKKKKKKKKKKKKKK', label: 'Replace lost answer sheet' }],
     });
     const flat = JSON.stringify(n.blocks);
-    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('panelCode');
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 

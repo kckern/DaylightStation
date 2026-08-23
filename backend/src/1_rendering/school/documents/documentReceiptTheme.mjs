@@ -39,6 +39,9 @@ export const documentReceiptTheme = Object.freeze({
     description: 'italic 21px "Roboto Condensed"',
     summary: 'bold 28px "Roboto Condensed"',
     code: '22px "Roboto Condensed"',
+    // The six-digit panel code under a QR: bigger and bolder than the fallback
+    // token, because it is read off paper and typed on a wall panel by a child.
+    panelCode: 'bold 30px "Roboto Condensed"',
     breadcrumb: '18px "Roboto Condensed"',
     breadcrumbStrong: 'bold 20px "Roboto Condensed"',
     identityLabel: 'bold 18px "Roboto Condensed"',
@@ -121,6 +124,13 @@ export const documentReceiptTheme = Object.freeze({
     iconPx: 42,
     identityHeight: 68,
     scorePanelHeight: 136,
+    // The review inset, drawn INSIDE the score panel beneath a hairline.
+    reviewPadX: 16,
+    reviewGap: 14,
+    reviewHeadingHeight: 30,
+    reviewLineHeight: 26,
+    reviewRowGap: 6,
+    reviewPadBottom: 14,
     scorePanelPad: 12,
     scorePanelGap: 18,
     headlineLineHeight: 42,

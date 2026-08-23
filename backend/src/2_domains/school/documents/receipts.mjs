@@ -45,7 +45,7 @@ const text = (md) => ({ type: 'rich_text', md });
  * caller cannot push the QR and forget the second push (Milo's receipt,
  * 2026-08-22: a `scan_action` with nothing typeable beneath it).
  *
- * Returns an ARRAY (the QR block, then whatever `codePairingBlocks` decides
+ * Returns an ARRAY (the QR block, then whatever `codeAbsenceBlocks` decides
  * belongs beside it) so the only legal way to put one of these on paper is
  * `blocks.push(...lessonAction(...))` — there is no second call for a caller
  * to remember, and therefore no way to separate the two.
@@ -60,67 +60,74 @@ function lessonAction({
     ...(isNonEmptyString(icon) ? { icon } : {}),
     ...(isNonEmptyString(meta) ? { meta } : {}),
     ...(taxonomy ? { taxonomy } : {}),
+    ...panelCodeField(accessCode),
   };
-  return [block, ...codePairingBlocks(accessCode)];
+  return [block, ...codeAbsenceBlocks(accessCode)];
 }
 
 /** Derived from the code itself, never restated — see `accessCode.mjs`. */
 const PANEL_CODE = new RegExp(`^\\d{${SCHOOL_ACCESS_CODE_DIGITS}}$`);
 
 /**
- * The panel access code that goes with a lesson card (self-service).
+ * The panel access code that goes with a lesson card (self-service), as a
+ * FIELD ON THE BLOCK.
  *
- * Body-size blocks BESIDE the card rather than a field on it: no renderer
- * draws an unrecognised `scan_action` field, so a code carried inside the
- * block would be a code that never reached the paper — and this one is meant
- * to be read across a room and typed by a child.
+ * UNDER THE QR, AND NOWHERE ELSE. This used to be two loose `rich_text`
+ * blocks pushed after the card — "PANEL CODE 928521" and "Type it on the
+ * school screen." — which put a bare number adrift BELOW the box instead of
+ * beneath the QR it aliases. On a printed card that reads as a stray number
+ * with no referent: a child cannot tell which offer it belongs to, and on a
+ * multi-offer agenda they genuinely cannot. Carrying it on the block instead
+ * lets the renderer draw it in the one place it means something — directly
+ * under its own QR, inside the card (`DocumentReceiptRenderer`'s
+ * `panelCode`/`codeLines`).
  *
  * One agenda can carry TWO six-digit codes for two different machines: the
- * SchoolCalc study code (`001 234`, "Enter on calculator.") and this one. They
- * are printed deliberately unalike — the panel code wears a label in FRONT of
- * its digits, is not spaced into threes, and its instruction names the screen —
- * so a child never has to work out which code belongs to which device.
+ * SchoolCalc study code (`001 234`, "Enter on calculator.") and this one.
+ * They stay distinguishable by POSITION now rather than by a label — this
+ * one sits under a QR, which is the thing that identifies it.
  *
  * A malformed code prints nothing at all. Digits a child cannot type are worse
  * than no code (they ask a grown-up), and a receipt builder must not throw the
  * agenda away over a decoration.
  */
-function panelCodeBlocks(code) {
-  if (typeof code !== 'string' || !PANEL_CODE.test(code)) return [];
-  return [text(`PANEL CODE ${code}`), text('Type it on the school screen.')];
+function panelCodeField(code) {
+  if (typeof code !== 'string' || !PANEL_CODE.test(code)) return {};
+  return { panelCode: code };
 }
 
 /**
+ * The one thing that still needs its own block: saying a code is ABSENT.
+ *
  * Called from exactly two places — `lessonAction` and `plainScanAction`,
- * below — the structural half of Slice H (2026-08-22). Before this, a QR's
- * code was a second, separate push a caller had to remember (`resultReceipt`
- * forgot it entirely: the bug this closes). Now the pairing is owned by the
- * block-building helper itself, so there is no code path left that can print
- * a QR without this running immediately after it.
+ * below. A present code is now a field on the block (`panelCodeField`), drawn
+ * under its QR; only the "there is no typable way in" case needs words, and
+ * words need a block.
  *
  * `accessCode` is deliberately TRI-STATE:
  *   - `undefined` (the argument omitted): this action makes no claim about
  *     a code at all. Nothing is printed. This is every receipt built before
  *     self-service existed, byte-identical.
- *   - a six-digit string: the alias, printed via `panelCodeBlocks`.
- *   - `null` (or any non-empty value `panelCodeBlocks` rejects as malformed):
+ *   - a six-digit string: the alias, carried on the block and drawn under
+ *     its QR. Nothing is added beside the card.
+ *   - `null` (or any non-empty value `panelCodeField` rejects as malformed):
  *     a code was EXPECTED — self-service is in play for this token, or the
  *     caller checked and none could be minted (a token class that can never
  *     carry one, a collision, self-service off) — and none exists. Printed
  *     as an explicit line rather than a silent gap, because a missing code
  *     has to be visible to be actionable.
  */
-function codePairingBlocks(accessCode) {
+function codeAbsenceBlocks(accessCode) {
   if (accessCode === undefined) return [];
-  const code = panelCodeBlocks(accessCode);
-  return code.length ? code : [text('Scanning is the only way in.')];
+  if (Object.keys(panelCodeField(accessCode)).length) return [];
+  return [text('Scanning is the only way in.')];
 }
 
 /**
  * The plain-QR counterpart to `lessonAction` — no lesson-card chrome
  * (eyebrow/description/meta), just the bare `scan_action` block a
- * non-lesson offer prints today, but wired through the SAME
- * `codePairingBlocks` contract.
+ * non-lesson offer prints today, but wired through the SAME panel-code
+ * contract.
  *
  * This closes the second half of the gap `lessonAction` closed for the
  * lesson presentation: `resultDocument`'s non-lesson branch and
@@ -130,7 +137,7 @@ function codePairingBlocks(accessCode) {
  * worksheet" with nothing typeable beneath it, on the branch Slice H didn't
  * touch). Every caller in this module that wants a bare scannable token now
  * goes through this function instead of constructing the block itself, so
- * `codePairingBlocks` has exactly two callers and a third unpaired push
+ * the panel-code contract has exactly two callers and a third unpaired push
  * would have to bypass both of them on purpose.
  *
  * `accessCode` is the same tri-state as `lessonAction`'s: omit it and the
@@ -139,7 +146,10 @@ function codePairingBlocks(accessCode) {
  * so one can start to without a third code path appearing.
  */
 function plainScanAction(token, label, accessCode) {
-  return [{ type: 'scan_action', action: token, label }, ...codePairingBlocks(accessCode)];
+  return [
+    { type: 'scan_action', action: token, label, ...panelCodeField(accessCode) },
+    ...codeAbsenceBlocks(accessCode),
+  ];
 }
 
 /**
@@ -407,7 +417,7 @@ export function agendaDocument({
  * @param {string[]} [args.objectives] objectives to revisit (printed only on a fail)
  * @param {Array<{token?: string, label: string, presentation?: 'lesson',
  *   accessCode?: string|null}>} [args.actions] every tokened action's
- *   `accessCode` is threaded through `codePairingBlocks` — via `lessonAction`
+ *   `accessCode` is threaded through the panel-code contract — via `lessonAction`
  *   when `presentation: 'lesson'`, via `plainScanAction` otherwise (2026-08-23:
  *   the plain branch used to push a bare `scan_action` with no pairing at
  *   all, the same defect Slice H closed for the lesson branch). A six-digit
