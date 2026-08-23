@@ -31,7 +31,11 @@ export const SCHOOL_LEARNER_FIELD = 'school_learner';
 
 /**
  * @param {object} deps
- * @param {{subscribe: Function}} deps.eventBus
+ * @param {{subscribe: Function, broadcast?: Function}} deps.eventBus - `broadcast`
+ *   is optional (`?.()` at every call site): a bus double that only
+ *   implements `subscribe` — every existing test harness for this module —
+ *   still works, it just never gets to acknowledge a cooldown-suppressed tap
+ *   on the wire (Slice G).
  * @param {string[]} [deps.topics] bus topics carrying relay `nfc` events
  * @param {object} deps.triggerConfig the live unified registry ({ nfc: { tags } })
  * @param {{handleEvent: Function}} [deps.triggerDispatchService]
@@ -79,6 +83,22 @@ export function createNfcTapIngress({
       logger.info?.('nfc.tap.school_card', {
         reader: id, uid: canonical, learnerId, status: result?.status, printed: result?.printed,
       });
+      // Rule 3 (Slice G, 2026-08-22-omr-grading-integrity): a cooldown-suppressed
+      // tap still gets ACKNOWLEDGED — no paper, but the panel must say
+      // something, or a child who taps and gets nothing at all just taps
+      // harder, which is the exact behaviour the cooldown exists to stop.
+      // Broadcast on the SAME `omr` topic Slice D's `useScanCeremony.js`
+      // already subscribes to (via `schoolPrintScanConsumer.mjs`'s own
+      // `scan-graded`/`scan-review`/... precedent) — no new transport.
+      if (result?.status === 'agenda_suppressed') {
+        eventBus.broadcast?.('omr', {
+          event: 'agenda-suppressed',
+          learnerId,
+          sinceMinutes: result.sinceMinutes ?? null,
+          cooldownMinutes: result.cooldownMinutes ?? null,
+          timestamp: Date.now(),
+        });
+      }
       return { status: result?.status ?? 'unknown', learnerId };
     }
 
