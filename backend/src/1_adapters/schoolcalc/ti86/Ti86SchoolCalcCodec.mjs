@@ -1376,6 +1376,16 @@ export class Ti86SchoolCalcCodec extends ISchoolCalcCodec {
 
   encodeStudyAcknowledgement(value) { return encodeTi86StudyAcknowledgement(value); }
 
+  // Which named calculator variables the client must write, and in what
+  // order, to land one Adaptive Study prescription (spec's DSSTDNEW/DSSYNC
+  // pair, plus the artifact variable itself when the device doesn't already
+  // have it installed). This is TI-86 SilentLink naming — it stays here, on
+  // the family codec, not in the resolve use case (application code deals
+  // only in neutral results; wire/variable-name vocabulary stays in adapters).
+  writeOrder({ artifactInstalled, artifactVariableName }) {
+    return artifactInstalled ? ['DSSTDNEW', 'DSSYNC'] : [artifactVariableName, 'DSSTDNEW', 'DSSYNC'];
+  }
+
   recognizesResult(record) {
     if (typeof record === 'string') return record.startsWith(RESULT_QR_PREFIX);
     return hasBinaryMagic(record, 'SCR1');

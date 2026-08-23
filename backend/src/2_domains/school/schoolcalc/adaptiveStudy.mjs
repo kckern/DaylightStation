@@ -16,7 +16,10 @@ export function curateAdaptiveStudy({ unit, bank } = {}) {
   const { itemCount } = descriptor.quiz;
   if (!Number.isInteger(cardCount) || cardCount < 1 || cardCount > 12
       || !Number.isInteger(itemCount) || itemCount < 1 || itemCount > cardCount) {
-    throw new Error('Adaptive Study policy exceeds the 48-byte TI-86 continuation budget');
+    // Bound is a plain business rule (at most 12 cards, at most one quiz item
+    // per card selected) — the domain does not know or care WHY any given
+    // calculator family enforces it; that's a codec/adapter concern.
+    throw new Error('Adaptive Study policy exceeds the allowed card/quiz-item count');
   }
   if (bank.items.length < cardCount) {
     throw new Error(`Adaptive Study bank '${bank.id}' has ${bank.items.length} items; ${cardCount} required`);
