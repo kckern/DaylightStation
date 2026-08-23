@@ -41,12 +41,15 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/sessions/outcome.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
+import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
+import { studyDayWindow } from '#domains/school/studyDay.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
+  #selfService;
 
   /**
    * @param {object} deps
@@ -75,6 +78,13 @@ export class CloseSessionOutcome {
    *   surface a grown-up's resolved-item notes on the result receipt (spec
    *   R7). Optional: absent, the receipt simply carries no "Notes for you"
    *   section, same as a household with no review queue wired at all.
+   * @param {{enabled?: boolean}|null} [deps.selfService] - the SAME `school.yml`
+   *   `selfService` block `BuildAgenda` reads. With `enabled: true`, the
+   *   "next up" QR on a PASSED result receipt also gets a six-digit panel
+   *   code, minted the same way the agenda's own subject_next tokens are
+   *   (Slice H, 2026-08-22 — this is what Milo's receipt was missing).
+   *   Absent or falsy: no code is minted, and the QR prints with an explicit
+   *   "Scanning is the only way in." line instead of a silent gap.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -85,6 +95,7 @@ export class CloseSessionOutcome {
     // Optional pass-criteria override store (teacher-console W3-2):
     // `{percentFor(unitId)}` — an override wins over the authored percent.
     passOverrides = null, worksheetInstances = null, timezone = 'UTC',
+    selfService = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -107,6 +118,10 @@ export class CloseSessionOutcome {
     this.#passOverrides = passOverrides;
     this.#worksheetInstances = worksheetInstances;
     this.#timezone = timezone || 'UTC';
+    // One switch, read once — same convention as `BuildAgenda`: anything but
+    // `enabled: true` behaves exactly as it did before self-service existed
+    // for THIS use case (no code minted, no key on the record).
+    this.#selfService = selfService?.enabled === true;
     this.#logger = logger;
   }
 
@@ -240,14 +255,28 @@ export class CloseSessionOutcome {
       title: unit?.title ?? 'Fresh worksheet',
       description: 'A fresh worksheet for the questions you missed.',
       icon: unit?.subject ?? null,
+      // A `remediation` token can never carry a panel code — `tokens.mjs`'s
+      // `createTokenRecord` whitelists `subject_next` only. `null` (not
+      // omitted) says so explicitly: `receipts.mjs` prints "Scanning is the
+      // only way in." rather than leaving this QR looking like every other
+      // one that DOES have a code beside it.
+      accessCode: null,
     });
     let nextSubjectToken = null;
     if (passed && unlocked && state.learnerId && unit?.subject) {
+      // The self-service panel alias for the "next up" QR — minted the SAME
+      // way `BuildAgenda` mints one for the agenda's own subject_next tokens
+      // (spec self-service, Slice H 2026-08-22). Before this the result
+      // receipt never threaded a code at all: `resultDocument` had no
+      // parameter for one, so this QR printed with nothing typeable beneath
+      // it (Milo, 2026-08-22) even on a household where self-service is on.
+      const accessCode = await this.#mintNextSubjectAccessCode({ sessionId, nowIso });
       const record = mintToken({
         tokenClass: 'subject_next',
         subject: { learnerId: state.learnerId, subject: unit.subject, continueToday: true },
         at: nowIso,
         rng: this.#rng,
+        ...(accessCode ? { accessCode, accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso) } : {}),
       });
       await this.#tokens.put(record);
       nextSubjectToken = record.token;
@@ -260,6 +289,10 @@ export class CloseSessionOutcome {
         description: unlocked.description,
         icon: unit.subject,
         taxonomy: unlocked.taxonomy,
+        // Explicit either way (a real code, or `null` when self-service is
+        // off or minting failed) — never omitted, so this QR can never fall
+        // back to the pre-Slice-H silence.
+        accessCode: record.accessCode ?? null,
       });
     }
 
@@ -433,6 +466,45 @@ export class CloseSessionOutcome {
       this.#logger.warn?.('school.outcome.retry-token-failed', { sessionId, error: err.message });
       return null;
     }
+  }
+
+  /**
+   * The self-service panel alias for the "next up" QR (Slice H, 2026-08-22),
+   * minted the same way `BuildAgenda` mints one for a subject's own
+   * subject_next token: draw against every code currently live, using the
+   * SAME registry both use cases share (`stores.tokens` in composition).
+   *
+   * Never throws and never blocks settlement — a self-service code is a
+   * convenience on top of the QR, not the thing that makes the QR work.
+   * Anything that goes wrong here (registry not self-service-capable, the
+   * 1,000,000-code space genuinely exhausted) degrades to `null`, which
+   * `resultDocument` turns into an explicit "Scanning is the only way in."
+   * line rather than a silently bare code.
+   */
+  async #mintNextSubjectAccessCode({ sessionId, nowIso }) {
+    if (!this.#selfService) return null;
+    try {
+      const live = await this.#tokens.liveAccessCodes();
+      if (!live || typeof live[Symbol.iterator] !== 'function') {
+        throw new Error('tokens.liveAccessCodes must resolve to an iterable of live codes');
+      }
+      return mintAccessCode({ rng: this.#rng, taken: (code) => live.has(code) });
+    } catch (err) {
+      this.#logger.warn?.('school.outcome.access-code-failed', { sessionId, error: err.message });
+      return null;
+    }
+  }
+
+  /**
+   * A code's own, shorter clock (mirrors `BuildAgenda#accessCodeExpiryFor`):
+   * it dies at the study-day rollover, regardless of how long the token
+   * itself lives — the "next up" token minted above carries no `expiresAt`
+   * at all (it is meant to survive as long as the unlock does), so the code
+   * would otherwise stay typable long after the day it was printed for.
+   */
+  #accessCodeExpiryFor(nowIso) {
+    const rolloverMs = studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone }).endAtMs;
+    return new Date(rolloverMs).toISOString();
   }
 
   /**

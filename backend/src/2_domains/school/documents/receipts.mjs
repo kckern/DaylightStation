@@ -39,9 +39,21 @@ export function slugify(value, fallback = 'x') {
 
 const text = (md) => ({ type: 'rich_text', md });
 
-/** Shared agenda/result lesson card: one QR, one hierarchy, no repeated token text. */
-function lessonAction({ token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null } = {}) {
-  return {
+/**
+ * Shared agenda/result lesson card: one QR, one hierarchy, no repeated token
+ * text — and, as of Slice H, its own panel-code pairing baked in, so a
+ * caller cannot push the QR and forget the second push (Milo's receipt,
+ * 2026-08-22: a `scan_action` with nothing typeable beneath it).
+ *
+ * Returns an ARRAY (the QR block, then whatever `codePairingBlocks` decides
+ * belongs beside it) so the only legal way to put one of these on paper is
+ * `blocks.push(...lessonAction(...))` — there is no second call for a caller
+ * to remember, and therefore no way to separate the two.
+ */
+function lessonAction({
+  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null, accessCode,
+} = {}) {
+  const block = {
     type: 'scan_action', action: token, label: title,
     presentation: 'lesson', eyebrow, hideCode: true,
     ...(isNonEmptyString(description) ? { description } : {}),
@@ -49,6 +61,7 @@ function lessonAction({ token, eyebrow, title, description = null, icon = null, 
     ...(isNonEmptyString(meta) ? { meta } : {}),
     ...(taxonomy ? { taxonomy } : {}),
   };
+  return [block, ...codePairingBlocks(accessCode)];
 }
 
 /** Derived from the code itself, never restated — see `accessCode.mjs`. */
@@ -75,6 +88,32 @@ const PANEL_CODE = new RegExp(`^\\d{${SCHOOL_ACCESS_CODE_DIGITS}}$`);
 function panelCodeBlocks(code) {
   if (typeof code !== 'string' || !PANEL_CODE.test(code)) return [];
   return [text(`PANEL CODE ${code}`), text('Type it on the school screen.')];
+}
+
+/**
+ * The ONLY place `panelCodeBlocks` is called from — the structural half of
+ * Slice H (2026-08-22). Before this, a QR's code was a second, separate
+ * push a caller had to remember (`resultReceipt` forgot it entirely: the
+ * bug this closes). Now the pairing is owned by `lessonAction` itself, so
+ * there is no code path left that can print a QR without this running
+ * immediately after it.
+ *
+ * `accessCode` is deliberately TRI-STATE:
+ *   - `undefined` (the argument omitted): this action makes no claim about
+ *     a code at all. Nothing is printed. This is every receipt built before
+ *     self-service existed, byte-identical.
+ *   - a six-digit string: the alias, printed via `panelCodeBlocks`.
+ *   - `null` (or any non-empty value `panelCodeBlocks` rejects as malformed):
+ *     a code was EXPECTED — self-service is in play for this token, or the
+ *     caller checked and none could be minted (a token class that can never
+ *     carry one, a collision, self-service off) — and none exists. Printed
+ *     as an explicit line rather than a silent gap, because a missing code
+ *     has to be visible to be actionable.
+ */
+function codePairingBlocks(accessCode) {
+  if (accessCode === undefined) return [];
+  const code = panelCodeBlocks(accessCode);
+  return code.length ? code : [text('Scanning is the only way in.')];
 }
 
 /**
@@ -194,9 +233,13 @@ function appendNoteLines(blocks, noteLines) {
  *   programUnavailable?: boolean,
  * }>} args.sections   `planDailyAgenda` sections, one per subject
  * @param {Record<string, string>} [args.tokensBySubject] subject -> opaque scan token, for that section's `next`
- * @param {Record<string, string>} [args.accessCodesBySubject] subject -> six-digit
- *   panel code aliasing that section's token (self-service). Absent or empty,
- *   the receipt is byte-identical to one built before the feature existed.
+ * @param {Record<string, string>} [args.accessCodesByToken] TOKEN -> six-digit
+ *   panel code aliasing that token (self-service). Keyed by token, not
+ *   subject (Slice H, 2026-08-22) — a subject key could only ever alias ONE
+ *   offer, so two tokened offers sharing a subject would silently fight over
+ *   a single code. Absent, or missing an entry for a given token, that
+ *   token's card carries no code claim at all and prints exactly as it did
+ *   before the feature existed.
  * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
  *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
  *   so a grown-up's feedback reaches the child without pretending to be a
@@ -206,7 +249,7 @@ function appendNoteLines(blocks, noteLines) {
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  sections = [], tokensBySubject = {}, accessCodesBySubject = {}, footer = null, notes = [],
+  sections = [], tokensBySubject = {}, accessCodesByToken = {}, footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -277,7 +320,7 @@ export function agendaDocument({
     }
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
-      blocks.push(lessonAction({
+      blocks.push(...lessonAction({
         token,
         eyebrow: `Today · ${section.subject}`,
         title: nextTitle,
@@ -299,11 +342,12 @@ export function agendaDocument({
           Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null,
         ].filter(isNonEmptyString).join(' · '),
         taxonomy: next.taxonomy,
+        // Keyed by TOKEN (Slice H): whatever this specific card's own code
+        // is, if any. Absent from the map (self-service off, or nothing
+        // minted for this token) means the argument stays `undefined` —
+        // `lessonAction` prints exactly what it always has.
+        accessCode: accessCodesByToken?.[token],
       }));
-      // Only ever beside a TOKENED card: the code is an alias for that token,
-      // so a section with nothing to alias prints no code, whatever it was
-      // handed.
-      blocks.push(...panelCodeBlocks(accessCodesBySubject?.[section.subject]));
     } else {
       blocks.push(text(`## ${String(section.subject || '').toUpperCase()}${suffix}`));
       blocks.push(text(label));
@@ -326,7 +370,14 @@ export function agendaDocument({
  * @param {'passed'|'needs_remediation'} args.result
  * @param {number} [args.percent]
  * @param {string[]} [args.objectives] objectives to revisit (printed only on a fail)
- * @param {Array<{token?: string, label: string}>} [args.actions]
+ * @param {Array<{token?: string, label: string, presentation?: 'lesson',
+ *   accessCode?: string|null}>} [args.actions] a `presentation: 'lesson'`
+ *   action's `accessCode` is threaded straight into `lessonAction` (Slice H):
+ *   a six-digit string prints the panel code beside the QR, `null` prints an
+ *   explicit "Scanning is the only way in." rather than a silent gap, and
+ *   omitting the field entirely makes no claim either way. The caller that
+ *   mints the token (`CloseSessionOutcome`) is the one place that knows
+ *   which of the three applies.
  * @param {{amount: number}|null} [args.reward] coins actually awarded
  * @param {string|null} [args.unlockedTitle] the unit this pass opened up
  * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
@@ -380,12 +431,13 @@ export function resultDocument({
   (Array.isArray(actions) ? actions : []).forEach((action) => {
     if (!action || !isNonEmptyString(action.label)) return;
     if (isNonEmptyString(action.token) && action.presentation === 'lesson') {
-      blocks.push(lessonAction({
+      blocks.push(...lessonAction({
         token: action.token, eyebrow: action.eyebrow ?? 'Next up',
         title: action.title ?? unlockedTitle ?? action.label, description: action.description,
         icon: action.icon,
         meta: action.meta ?? (passed ? 'Scan to print the next worksheet' : 'Scan to print your retry'),
         taxonomy: action.taxonomy,
+        accessCode: action.accessCode,
       }));
     } else if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });
     else blocks.push(text(action.label));
