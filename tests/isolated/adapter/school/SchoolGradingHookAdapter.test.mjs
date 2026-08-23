@@ -1,0 +1,199 @@
+import { describe, it, expect } from 'vitest';
+import { SchoolGradingHookAdapter } from '#adapters/school/SchoolGradingHookAdapter.mjs';
+
+function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) {
+  const calls = [];
+  const gateway = {
+    callService: async (domain, service, data) => {
+      calls.push({ domain, service, data });
+      if (failWith) throw new Error(failWith);
+      return { ok: true };
+    },
+  };
+  const loadSchoolConfig = () => (script ? { grading_hook: { script } } : {});
+  return { adapter: new SchoolGradingHookAdapter({ gateway, loadSchoolConfig }), calls };
+}
+
+const GRADED = {
+  result: 'graded', learnerId: 'felix', testId: '4071314',
+  sessionId: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
+};
+
+describe('SchoolGradingHookAdapter', () => {
+  it('calls the configured script with the graded variable set', async () => {
+    const { adapter, calls } = makeAdapter();
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].domain).toBe('script');
+    expect(calls[0].service).toBe('school_graded');
+    expect(calls[0].data).toEqual({
+      result: 'graded', learner_id: 'felix', test_id: '4071314',
+      session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
+      pending_review: null, reasons: [], items: [], code: null,
+    });
+  });
+
+  it('fills inapplicable keys with null and [] on an unresolved outcome', async () => {
+    const { adapter, calls } = makeAdapter();
+    await adapter.fire({ result: 'unresolved', testId: '12123F', code: 'CARD_ID_UNREADABLE' });
+    expect(calls[0].data).toEqual({
+      result: 'unresolved', learner_id: null, test_id: '12123F',
+      session_id: null, percent: null, earned: null, total: null,
+      pending_review: null, reasons: [], items: [], code: 'CARD_ID_UNREADABLE',
+    });
+  });
+
+  it('passes review reasons and items through', async () => {
+    const { adapter, calls } = makeAdapter();
+    await adapter.fire({
+      result: 'review', learnerId: 'milo', testId: '4071314', sessionId: 'ses_x',
+      pendingReview: 1, reasons: ['ambiguous'], items: ['q1'],
+    });
+    expect(calls[0].data.pending_review).toBe(1);
+    expect(calls[0].data.reasons).toEqual(['ambiguous']);
+    expect(calls[0].data.items).toEqual(['q1']);
+  });
+
+  it('accepts a bare service name without the script. prefix', async () => {
+    const { adapter, calls } = makeAdapter({ script: 'school_graded' });
+    await adapter.fire(GRADED);
+    expect(calls[0].domain).toBe('script');
+    expect(calls[0].service).toBe('school_graded');
+  });
+
+  it('is a no-op when grading_hook is not configured', async () => {
+    const { adapter, calls } = makeAdapter({ script: null });
+    const res = await adapter.fire(GRADED);
+    expect(res).toEqual({ ok: true, skipped: true, reason: 'not_configured' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('never throws when the gateway throws', async () => {
+    const { adapter } = makeAdapter({ failWith: 'HA unreachable' });
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/HA unreachable/);
+  });
+
+  it('treats a gateway that RETURNS {ok:false} (never throws) as a failure, not a success', async () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const calls = [];
+    const adapter = new SchoolGradingHookAdapter({
+      gateway: {
+        callService: async (domain, service, data) => {
+          calls.push({ domain, service, data });
+          return { ok: false, error: 'HA unreachable' };
+        },
+      },
+      loadSchoolConfig: () => ({ grading_hook: { script: 'script.school_graded' } }),
+      logger,
+    });
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/HA unreachable/);
+    expect(calls).toHaveLength(1); // the call really happened — not a not-configured/backoff skip
+    expect(logger.error).toHaveBeenCalledWith('school.grading_hook.failed', expect.objectContaining({
+      error: expect.stringMatching(/HA unreachable/),
+      failureCount: 1,
+    }));
+  });
+
+  it('opens the circuit after 5 consecutive {ok:false}-returning (never-throwing) calls', async () => {
+    const calls = [];
+    const gateway = {
+      callService: async (domain, service, data) => {
+        calls.push({ domain, service, data });
+        return { ok: false, error: 'HA unreachable' };
+      },
+    };
+    const adapter = new SchoolGradingHookAdapter({
+      gateway,
+      loadSchoolConfig: () => ({ grading_hook: { script: 'script.school_graded' } }),
+    });
+    for (let i = 0; i < 5; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await adapter.fire(GRADED);
+      expect(res.ok).toBe(false);
+    }
+    expect(calls).toHaveLength(5);
+    const res = await adapter.fire(GRADED);
+    expect(res).toMatchObject({ ok: true, skipped: true, reason: 'backoff' });
+    expect(calls).toHaveLength(5); // no 6th attempt — the breaker actually opened
+    expect(adapter.getMetrics().circuitBreaker.isOpen).toBe(true);
+    expect(adapter.getMetrics().failureCount).toBe(5);
+  });
+
+  it('opens the circuit after 5 consecutive failures and then skips', async () => {
+    const { adapter, calls } = makeAdapter({ failWith: 'boom' });
+    for (let i = 0; i < 5; i++) await adapter.fire(GRADED);
+    expect(calls).toHaveLength(5);
+    const res = await adapter.fire(GRADED);
+    expect(res).toMatchObject({ ok: true, skipped: true, reason: 'backoff' });
+    expect(calls).toHaveLength(5); // no 6th attempt
+  });
+
+  it('does NOT deduplicate identical consecutive grades', async () => {
+    const { adapter, calls } = makeAdapter();
+    await adapter.fire(GRADED);
+    await adapter.fire(GRADED);
+    expect(calls).toHaveLength(2);
+  });
+
+  it('accepts a null outcome without throwing', async () => {
+    // Config is present and the gateway is healthy (default makeAdapter), so
+    // there is nothing here to skip or fail on — the defensive toVariables
+    // fix means a null outcome just becomes an all-null grade record and
+    // dispatches normally. This is the deliberate choice: `fire` never
+    // throws AND a null outcome still produces the uniform 11-key contract.
+    const { adapter, calls } = makeAdapter();
+    const res = await adapter.fire(null);
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].data).toEqual({
+      result: null, learner_id: null, test_id: null,
+      session_id: null, percent: null, earned: null, total: null,
+      pending_review: null, reasons: [], items: [], code: null,
+    });
+  });
+
+  it('never throws when loadSchoolConfig throws', async () => {
+    const gateway = { callService: async () => ({ ok: true }) };
+    const loadSchoolConfig = () => { throw new Error('yaml parse error'); };
+    const adapter = new SchoolGradingHookAdapter({ gateway, loadSchoolConfig });
+
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/yaml parse error/);
+  });
+
+  it('a throwing loadSchoolConfig does NOT open the circuit breaker', async () => {
+    const calls = [];
+    let configShouldThrow = true;
+    const gateway = {
+      callService: async (domain, service, data) => {
+        calls.push({ domain, service, data });
+        return { ok: true };
+      },
+    };
+    const loadSchoolConfig = () => {
+      if (configShouldThrow) throw new Error('config load error');
+      return { grading_hook: { script: 'script.school_graded' } };
+    };
+    const adapter = new SchoolGradingHookAdapter({ gateway, loadSchoolConfig });
+
+    for (let i = 0; i < 6; i++) {
+      const res = await adapter.fire(GRADED);
+      expect(res.ok).toBe(false);
+    }
+    expect(calls).toHaveLength(0); // config errors never reach the gateway
+
+    // Now make config resolution succeed. If the outer catch had wrongly
+    // shared the breaker with the inner one, 6 prior "failures" would have
+    // opened it and this call would be skipped instead of dispatched.
+    configShouldThrow = false;
+    const res = await adapter.fire(GRADED);
+    expect(res.ok).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+});

@@ -30,11 +30,18 @@ import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRe
  *   job — see `schoolLifecycle.mjs`'s own `stores.allocationStore`/
  *   `stores.printDocuments`).
  * @param {object} [deps.logger]
+ * @param {{fire: Function}} [deps.gradingHook] - `SchoolGradingHookAdapter`-shaped
+ *   (or any fake with a `fire(outcome)`), optional. Fired fire-and-forget
+ *   (never awaited) at each of the four terminal scan outcomes — unresolved,
+ *   refused, graded, review — so a slow or broken Home Assistant can never
+ *   delay or prevent a grade being recorded. The adapter itself never
+ *   throws; the `.catch(() => {})` at each call site is belt-and-suspenders
+ *   for a fake/hook that rejects outright.
  * @returns {{ dispose: () => void }}
  */
 export function createSchoolPrintScanConsumer({
   eventBus, config = {}, resolveCardScan, recordCardScanOutcome = null,
-  closeSessionOutcome = null, logger = console,
+  closeSessionOutcome = null, gradingHook = null, logger = console,
 }) {
   if (!eventBus?.subscribe) {
     throw new Error('createSchoolPrintScanConsumer: eventBus with subscribe required');
@@ -68,6 +75,10 @@ export function createSchoolPrintScanConsumer({
             testIdCandidates: Array.isArray(testIdCandidates) ? testIdCandidates.length : 0,
             answerCount: answers ? Object.keys(answers).length : 0,
           });
+          // Home automation is a bystander: never awaited into the grading path
+          // and never able to fail it. The adapter already swallows its own
+          // errors; this catch covers a hook that rejects outright.
+          gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code }).catch(() => {});
           return;
         }
         if (outcome?.unknownCard) {
@@ -131,6 +142,15 @@ export function createSchoolPrintScanConsumer({
             logger.warn?.('school.print.scan-record-refused', {
               testId, recordId: card.recordId, documentId: card.documentId, code: card.error.code,
             });
+            // Home automation is a bystander: never awaited into the grading path
+            // and never able to fail it. The adapter already swallows its own
+            // errors; this catch covers a hook that rejects outright.
+            // `recordId` deliberately NOT sent — `toVariables()`'s 11-key
+            // contract has no `record_id`, so it would be silently discarded;
+            // the id is already on the adjacent log line for anyone who needs it.
+            gradingHook?.fire({
+              result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
+            }).catch(() => {});
             continue;
           }
           logger.info?.('school.print.scan-resolved', {
@@ -171,11 +191,65 @@ export function createSchoolPrintScanConsumer({
               // returns the original single outcome shape.
               const outcomes = recorded?.sectionOutcomes ?? [recorded];
               for (const sectionOutcome of outcomes) {
-                if (sectionOutcome?.session?.advancedTo === 'graded' && closeSessionOutcome) {
-                  // The bridge returns the authoritative session id (a
-                  // composed card itself has no single session owner).
-                  // eslint-disable-next-line no-await-in-loop
-                  await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                if (sectionOutcome?.session?.advancedTo === 'graded') {
+                  // percent/earned/total come from the SESSION
+                  // (`RecordCardScanOutcome#bridgeSession`'s row-count
+                  // computation), never from points, because that row-count
+                  // percent is the SAME number `reduceSession` turns into the
+                  // session's `gradedPercent` — the value the report card,
+                  // course grade, and pass/fail all read (final review Fix
+                  // 3). The prior version sent a POINTS-based percent
+                  // (`earnedPoints/totalPoints`) here: on a worksheet with
+                  // rows worth different point values that disagreed with the
+                  // gradebook's row-count percent, so Home Assistant could
+                  // announce a passing score while the report card recorded a
+                  // failing one (or vice versa). Reading it off `session`
+                  // instead of recomputing it here means the two can never
+                  // diverge again. A composed card's sectionOutcome still
+                  // carries its OWN section's session (RecordCardScanOutcome
+                  // correlates sectionOutcomes[i] with card.sections[i] by
+                  // construction — see `execute()`'s own comment above), so
+                  // two sections still never report the same score for two
+                  // different lesson results. null (never NaN) when the
+                  // session bridge did not attach a real number.
+                  const percent = typeof sectionOutcome.session.percent === 'number'
+                    ? sectionOutcome.session.percent
+                    : null;
+                  const earned = typeof sectionOutcome.session.correctCount === 'number'
+                    ? sectionOutcome.session.correctCount
+                    : null;
+                  const total = typeof sectionOutcome.session.totalCount === 'number'
+                    ? sectionOutcome.session.totalCount
+                    : null;
+                  // Home automation is a bystander: never awaited into the
+                  // grading path and never able to fail it. The adapter
+                  // already swallows its own errors; this catch covers a
+                  // hook that rejects outright.
+                  gradingHook?.fire({
+                    result: 'graded',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    earned,
+                    total,
+                    percent,
+                    sessionId: sectionOutcome.session.sessionId,
+                  }).catch(() => {});
+                  if (closeSessionOutcome) {
+                    // The bridge returns the authoritative session id (a
+                    // composed card itself has no single session owner).
+                    // eslint-disable-next-line no-await-in-loop
+                    await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                  }
+                } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
+                  gradingHook?.fire({
+                    result: 'review',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    sessionId: sectionOutcome.session.sessionId,
+                    pendingReview: sectionOutcome.session.pendingReview,
+                    reasons: sectionOutcome.session.reasons,
+                    items: sectionOutcome.session.items,
+                  }).catch(() => {});
                 }
               }
             })

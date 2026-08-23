@@ -3308,12 +3308,46 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
+      // Grading hook (Task 4, spec §grading-hook): fires one HA script per
+      // terminal scan outcome. Guarded on `homeAutomationAdapters.haGateway`
+      // the SAME way `homeApi.mjs`'s `callHomeAssistantService` is — a
+      // household with no Home Assistant configured gets `gradingHook: null`
+      // and boots exactly as it did before this task existed.
+      //
+      // Own try/catch, deliberately separate from the outer one wrapping this
+      // whole block (final review Fix 2): the outer catch's job is "the print
+      // scan-back consumer failed to wire, skip it" — but this construction
+      // used to run BEFORE `createSchoolPrintScanConsumer` inside that SAME
+      // outer try, so a broken import or constructor here (home automation's
+      // problem) would trip the outer catch and take the entire scan-back
+      // consumer down with it: no scan resolves, nothing is recorded, for the
+      // whole process lifetime. Home automation must never be able to do
+      // that, so a failure here degrades to `gradingHook: null` and the
+      // consumer below is still created.
+      let gradingHook = null;
+      if (homeAutomationAdapters.haGateway) {
+        try {
+          const { SchoolGradingHookAdapter } = await import('#adapters/school/SchoolGradingHookAdapter.mjs');
+          gradingHook = new SchoolGradingHookAdapter({
+            gateway: homeAutomationAdapters.haGateway,
+            // Same accessor/call shape `getPrintTeacherPin` above uses for this
+            // same `school.yml` — the household-id arg is accepted for the
+            // adapter's contract but this module always resolves against `null`.
+            loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+            logger: rootLogger.child({ module: 'school-grading-hook' }),
+          });
+        } catch (err) {
+          gradingHook = null;
+          schoolLifecycleLogger.warn('school.grading_hook.wiring-failed', { error: err.message });
+        }
+      }
       createSchoolPrintScanConsumer({
         eventBus,
         config: omrReadersConfig,
         resolveCardScan,
         recordCardScanOutcome,
         closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
+        gradingHook,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
