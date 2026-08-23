@@ -59,6 +59,18 @@ function ippServer({
   documentFormatSupported = [], documentFormatPreferred = null, urfSupported = [],
   pwgRasterDocumentTypeSupported = [], pwgRasterResolutionSupported = [],
   jobCreationAttributesSupported = [],
+  // sides-default / sides-supported — the printer's OWN duplex configuration,
+  // as reported by GET_PRINTER_ATTRIBUTES. Omitted by default (many of the
+  // other tests in this file don't care about duplex at all).
+  sidesDefault = null, sidesSupported = [],
+  // 1-indexed GET_PRINTER_ATTRIBUTES call number(s) at which the fake
+  // printer answers with a bare HTTP 500 instead of a real attributes
+  // response, instead of the normal path — e.g. `1` fails only the FIRST
+  // such call and lets every later one (including the capabilities call
+  // `#getCapabilities()` needs for format negotiation) succeed normally.
+  // Simulates the printer-attribute read done purely for the duplex-honesty
+  // log failing independently of the read format negotiation depends on.
+  attributesFailOn = [],
   // (decodedAttrs) => boolean — the fake printer's Validate-Job verdict for a
   // given candidate. Default accepts everything, matching a printer with no
   // incident-#3-shaped quirk. Tests below override this to reproduce the
@@ -67,6 +79,8 @@ function ippServer({
 } = {}) {
   const printJobs = [];
   const validateJobs = [];
+  const failOnSet = new Set(Array.isArray(attributesFailOn) ? attributesFailOn : [attributesFailOn]);
+  let attributesCallCount = 0;
   const capabilityAttrs = [
     { tag: 0x47, name: 'attributes-charset', value: 'utf-8' },
     { tag: 0x48, name: 'attributes-natural-language', value: 'en' },
@@ -77,6 +91,8 @@ function ippServer({
     ...pwgRasterDocumentTypeSupported.map((t) => ({ tag: 0x44, name: 'pwg-raster-document-type-supported', value: t })),
     ...pwgRasterResolutionSupported.map((r) => ({ tag: 0x32, name: 'pwg-raster-document-resolution-supported', value: resolutionValue(r) })),
     ...jobCreationAttributesSupported.map((a) => ({ tag: 0x44, name: 'job-creation-attributes-supported', value: a })),
+    ...(sidesDefault ? [{ tag: 0x44, name: 'sides-default', value: sidesDefault }] : []),
+    ...sidesSupported.map((s) => ({ tag: 0x44, name: 'sides-supported', value: s })),
   ];
 
   return new Promise((resolve) => {
@@ -87,6 +103,12 @@ function ippServer({
         const body = Buffer.concat(chunks);
         const operation = body.readUInt16BE(2); // same wire offset as a response's status-code
         if (operation === OPS.GET_PRINTER_ATTRIBUTES) {
+          attributesCallCount += 1;
+          if (failOnSet.has(attributesCallCount)) {
+            res.writeHead(500);
+            res.end();
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'application/ipp' });
           res.end(encodeRequest(0x0000, capabilityAttrs, null, 1));
           return;
@@ -137,7 +159,11 @@ function ippServer({
       });
     });
     httpServer.listen(0, '127.0.0.1', () => resolve({
-      httpServer, port: httpServer.address().port, printJobs, validateJobs,
+      httpServer,
+      port: httpServer.address().port,
+      printJobs,
+      validateJobs,
+      get attributesCallCount() { return attributesCallCount; },
     }));
   });
 }
@@ -389,6 +415,121 @@ describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Pr
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger: { info() {} } });
     await expect(p.validateJob({ jobAttributes: {} })).rejects.toThrow(/documentFormat/i);
     httpServer.close();
+  });
+});
+
+describe('LaserPrinterAdapter.printPdf — duplex honesty (reads the printer\'s own sides-default)', () => {
+  // Captures every logger call instead of asserting against real console
+  // output — `info`/`warn` calls are pushed with their event name + payload
+  // so tests can assert on exactly which event fired and what it carried.
+  function collectingLogger() {
+    const calls = [];
+    return {
+      logger: {
+        info(event, data) { calls.push({ level: 'info', event, data }); },
+        warn(event, data) { calls.push({ level: 'warn', event, data }); },
+      },
+      calls,
+    };
+  }
+
+  it('printer sides-default is two-sided: logs duplex-via-printer-default, never "not applied"', async () => {
+    const { httpServer, port } = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+      sidesDefault: 'two-sided-long-edge',
+      sidesSupported: ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'],
+    });
+    const { logger, calls } = collectingLogger();
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
+
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    const satisfied = calls.find((c) => c.event === 'laser-printer.duplex-via-printer-default');
+    expect(satisfied).toBeTruthy();
+    expect(satisfied.level).toBe('info');
+    expect(satisfied.data.sidesDefault).toBe('two-sided-long-edge');
+    // The whole point: the not-applied event must NOT also fire.
+    expect(calls.some((c) => c.event === 'laser-printer.duplex-requested-not-applied')).toBe(false);
+  });
+
+  it('printer sides-default is one-sided: logs not-applied carrying sidesDefault + sidesSupported and a remedy that names the fix', async () => {
+    const { httpServer, port } = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+      sidesDefault: 'one-sided',
+      sidesSupported: ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'],
+    });
+    const { logger, calls } = collectingLogger();
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
+
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    httpServer.close();
+
+    expect(result.ok).toBe(true);
+    const notApplied = calls.find((c) => c.event === 'laser-printer.duplex-requested-not-applied');
+    expect(notApplied).toBeTruthy();
+    expect(notApplied.data.sidesDefault).toBe('one-sided');
+    expect(notApplied.data.sidesSupported).toEqual(['one-sided', 'two-sided-long-edge', 'two-sided-short-edge']);
+    // Names the actual remedy (printer's own default), not just "dropped".
+    expect(notApplied.data.reason).toMatch(/sides-default/i);
+    expect(calls.some((c) => c.event === 'laser-printer.duplex-via-printer-default')).toBe(false);
+  });
+
+  it('the sides-default read failing does NOT prevent the print: degrades to not-applied with the lookup failure noted, and Print-Job still succeeds', async () => {
+    const fake = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+      // Would satisfy duplex if the read succeeded — proves the failure
+      // path isn't just coincidentally matching "one-sided" behavior.
+      sidesDefault: 'two-sided-long-edge',
+      sidesSupported: ['one-sided', 'two-sided-long-edge'],
+      // Fails ONLY the first GET_PRINTER_ATTRIBUTES call — the dedicated
+      // duplex-honesty read `printPdf` makes before capability negotiation.
+      // The second call (inside #getCapabilities, needed for the print
+      // itself) is left to succeed normally.
+      attributesFailOn: [1],
+    });
+    const { logger, calls } = collectingLogger();
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port: fake.port, logger });
+
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    fake.httpServer.close();
+
+    // The print itself succeeded — a duplex-honesty read failing must never
+    // turn a working print into a failed one.
+    expect(result.ok).toBe(true);
+    expect(fake.printJobs).toHaveLength(1);
+    expect(fake.attributesCallCount).toBe(2); // the failed duplex read + the successful capabilities read
+
+    const failure = calls.find((c) => c.event === 'laser-printer.sides-default-lookup-failed');
+    expect(failure).toBeTruthy();
+    expect(failure.level).toBe('warn');
+
+    const notApplied = calls.find((c) => c.event === 'laser-printer.duplex-requested-not-applied');
+    expect(notApplied).toBeTruthy();
+    expect(notApplied.data.sidesDefault).toBeNull();
+    expect(notApplied.data.reason).toMatch(/could not be read|lookup/i);
+    expect(calls.some((c) => c.event === 'laser-printer.duplex-via-printer-default')).toBe(false);
+  });
+
+  it('duplex not requested: no sides-default lookup happens at all (no extra GET_PRINTER_ATTRIBUTES round trip)', async () => {
+    const fake = await ippServer({
+      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+      documentFormatPreferred: 'application/pdf',
+      sidesDefault: 'one-sided',
+    });
+    const { logger, calls } = collectingLogger();
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port: fake.port, logger });
+
+    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two' }); // duplex omitted
+    fake.httpServer.close();
+
+    expect(result.ok).toBe(true);
+    expect(fake.attributesCallCount).toBe(1); // only #getCapabilities()'s own call, no separate duplex read
+    expect(calls.some((c) => c.event.startsWith('laser-printer.duplex') || c.event.startsWith('laser-printer.sides'))).toBe(false);
   });
 });
 
