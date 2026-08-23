@@ -112,9 +112,13 @@ export function useKioskLaunchCommand({
     // RetroArch intent. Branches out before the allowlist/intent machinery
     // below, which is retroarch-only.
     if (msg.type === 'piano.launch') {
-      logger().info('piano-launch-received', { contentId, deviceId });
+      // Optional `play` hint ('listen' | 'learn' | 'polish' | 'perform'):
+      // "load this score AND start it" — the remote-play arm added 2026-08-23
+      // so the event bus can not just open sheet music but perform it.
+      const play = typeof msg.play === 'string' ? msg.play : null;
+      logger().info('piano-launch-received', { contentId, deviceId, play });
       if (typeof onPianoOpen === 'function') {
-        onPianoOpen(contentId);
+        onPianoOpen(contentId, { play });
       } else {
         // The v1 boundary (see doc comment above): no reachable resolver from
         // a bare contentId to a specific mode's route, so refuse to guess.

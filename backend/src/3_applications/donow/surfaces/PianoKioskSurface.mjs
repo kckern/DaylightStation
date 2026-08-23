@@ -36,6 +36,9 @@
  */
 import { isSheetMusicContentId } from '#domains/donow/pianoContentShape.mjs';
 
+/** ScorePlayer's modes — mirrors VALID_MODES in modes/SheetMusic/ScorePlayer.jsx. */
+const PLAY_MODES = ['listen', 'learn', 'polish', 'perform'];
+
 export class PianoKioskSurface {
   #eventBus;
   #presence;
@@ -67,6 +70,12 @@ export class PianoKioskSurface {
     if (!isSheetMusicContentId(raw.contentId)) {
       return [`action.contentId "${raw.contentId}" is not a reachable piano-kiosk content shape (expected source:localId, e.g. hymn:12)`];
     }
+    // Optional remote-play mode. Rejected here rather than forwarded, for the
+    // same honesty rule as contentId: a payload the kiosk will silently ignore
+    // must not report dispatched:true.
+    if (raw.play != null && !PLAY_MODES.includes(raw.play)) {
+      return [`action.play "${raw.play}" is not a piano play mode (expected one of ${PLAY_MODES.join(', ')})`];
+    }
     return [];
   }
 
@@ -93,6 +102,10 @@ export class PianoKioskSurface {
         deviceId: this.#kioskDeviceParam,
         contentId: action.contentId,
         type: 'piano.launch',
+        // Optional remote-PLAY hint (2026-08-23): with it the kiosk opens the
+        // score AND starts it in that mode; without it the score just opens.
+        // Validated in validateAction — never forwarded unchecked.
+        ...(action.play ? { play: action.play } : {}),
       });
     } catch (err) {
       this.#logger.warn?.('donow.piano-kiosk.dispatch-failed', { error: err?.message || String(err) });

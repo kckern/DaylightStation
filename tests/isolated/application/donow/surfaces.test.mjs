@@ -496,6 +496,32 @@ describe('PianoKioskSurface', () => {
     });
   });
 
+  // Remote PLAY (2026-08-23): the bus can ask the kiosk to open a score AND
+  // perform it. An unknown mode is refused at validation rather than forwarded —
+  // same honesty rule as contentId: never report dispatched:true for a payload
+  // the kiosk will ignore.
+  it('validateAction accepts a known play mode and rejects an unknown one', () => {
+    const s = new PianoKioskSurface();
+    expect(s.validateAction({ contentId: 'hymn:12', play: 'listen' })).toEqual([]);
+    expect(s.validateAction({ contentId: 'hymn:12', play: 'perform' })).toEqual([]);
+    expect(s.validateAction({ contentId: 'hymn:12', play: 'karaoke' }).length).toBeGreaterThan(0);
+  });
+
+  it('dispatch carries the play hint, and omits the key entirely without one', async () => {
+    const broadcast = vi.fn();
+    const s = new PianoKioskSurface({ eventBus: { broadcast }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
+
+    await s.dispatch({ action: { contentId: 'files:docs/x.mxl', play: 'listen' }, learnerId: 'kid1' });
+    expect(broadcast).toHaveBeenCalledWith('kiosk.launch', {
+      topic: 'kiosk.launch', deviceId: 'piano-tablet-1', contentId: 'files:docs/x.mxl',
+      type: 'piano.launch', play: 'listen',
+    });
+
+    broadcast.mockClear();
+    await s.dispatch({ action: { contentId: 'hymn:12' }, learnerId: 'kid1' });
+    expect(broadcast.mock.calls[0][1]).not.toHaveProperty('play');
+  });
+
   it('no eventBus -> dispatched:false, never throws', async () => {
     const s = new PianoKioskSurface({ kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
     await expect(s.dispatch({ action: { contentId: 'hymn:12' }, learnerId: 'kid1' }))
