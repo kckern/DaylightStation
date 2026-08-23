@@ -100,9 +100,16 @@ export function createSchoolPrintScanConsumer({
           // errors; this catch covers a hook that rejects outright.
           gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code }).catch(() => {});
           // Same outcome, second listener: the School panel ceremony (Slice
-          // D) needs this on the wire too. Full candidate list (not just the
-          // count the log line above carries) — the panel is expected to
-          // show them, not just say how many there were.
+          // D) needs this broadcast too. `testIdCandidates` here is the RAW
+          // per-column digit-mark arrays `decodeQuizSheet` built (one entry
+          // per test-id column, each the digit(s) 0-9 that column's marks
+          // decoded to) — NOT a list of card ids, and not showable copy:
+          // `useScanCeremony.js`'s `scan-unresolved` case only ever reads
+          // `code`, never this field. The full array (not just the count the
+          // log line above carries) rides along as raw diagnostic payload
+          // for whatever inspects the wire directly, the same shape
+          // `ResolveCardScan` itself already consumed for best-effort
+          // resolution before this outcome was ever reached.
           eventBus.broadcast?.(broadcastTopic, {
             event: 'scan-unresolved',
             code: outcome.error.code,
