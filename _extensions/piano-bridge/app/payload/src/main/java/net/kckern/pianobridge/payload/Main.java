@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p10-echo-ch1";
+    private static final String VERSION = "p11-force-reset";
 
     private BridgeCore core;
 
