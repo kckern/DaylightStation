@@ -172,6 +172,59 @@ describe('what a child is told', () => {
   });
 });
 
+/**
+ * Regression: Milo's result receipt (2026-08-22) printed the literal
+ * `undefined · undefined of undefined` between "Passing is 80%" and "NOTES
+ * FOR YOU". `block.progress` is the ARRAY `CloseSessionOutcome#learningProgress`
+ * always returns (one row for the course, one for the unit) — the old
+ * `if (block.progress)` guard tested array TRUTHINESS (always true) and then
+ * read `.label`/`.completed`/`.total` off the ARRAY itself, which has none of
+ * those properties.
+ */
+describe('the progress line on a result summary (regression: Milo, 2026-08-22)', () => {
+  const withProgress = (progress) => resultDocument({
+    sessionId: 'ses_1', unitTitle: 'Unit Two', result: 'passed', percent: 90, progress,
+  });
+
+  it('prints nothing for the real, array-shaped progress a builder actually sends — no "undefined" leaks', () => {
+    const text = textOf(renderer.render(withProgress([])));
+    expect(text).not.toContain('undefined');
+  });
+
+  it('prints each row of a real progress array correctly', () => {
+    const text = textOf(renderer.render(withProgress([
+      { label: 'Course', completed: 2, total: 5 },
+      { label: 'Unit 1', completed: 1, total: 3 },
+    ])));
+    expect(text).toContain('Course · 2 of 5');
+    expect(text).toContain('Unit 1 · 1 of 3');
+    expect(text).not.toContain('undefined');
+  });
+
+  it('prints NOTHING for a row missing its fields, rather than "undefined · undefined of undefined"', () => {
+    const text = textOf(renderer.render(withProgress([{}])));
+    expect(text).not.toContain('undefined');
+    expect(text).not.toMatch(/·.*of/);
+  });
+
+  it('prints nothing for a partially-filled row (label present, counts missing)', () => {
+    const text = textOf(renderer.render(withProgress([{ label: 'Course' }])));
+    expect(text).not.toContain('undefined');
+    expect(text).not.toContain('Course ·');
+  });
+
+  it('still accepts a single-object shape defensively, matching the canvas renderer\'s normalisation', () => {
+    const text = textOf(renderer.render(withProgress({ label: 'Course', completed: 2, total: 5 })));
+    expect(text).toContain('Course · 2 of 5');
+  });
+
+  it('prints nothing at all when progress is absent, exactly as before', () => {
+    const text = textOf(renderer.render(withProgress(null)));
+    expect(text).not.toContain('undefined');
+    expect(text).not.toMatch(/·.*of/);
+  });
+});
+
 describe('through the real thermal adapter', () => {
   it('LEAVES A READABLE TRANSCRIPT — an image job left it empty', async () => {
     const captureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'escpos-'));

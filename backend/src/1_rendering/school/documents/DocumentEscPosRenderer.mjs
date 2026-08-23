@@ -138,12 +138,27 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         if (typeof block.passingPercent === 'number') {
           items.push({ type: 'text', content: `Passing is ${Math.round(block.passingPercent)}%`, align: 'center' });
         }
-        if (block.progress) {
-          items.push({
-            type: 'text', align: 'center',
-            content: `${block.progress.label} · ${block.progress.completed} of ${block.progress.total}`,
+        // `block.progress` is an ARRAY of rows (`CloseSessionOutcome#learningProgress`
+        // returns `[{label, completed, total}, ...]`, e.g. one row for the
+        // course and one for the unit) — never a bare object. The old
+        // `if (block.progress)` guard tested object/array TRUTHINESS, which
+        // an array always is, then read `.label`/`.completed`/`.total`
+        // straight off the array itself rather than an element of it —
+        // always `undefined`, printing the literal "undefined · undefined of
+        // undefined" onto Milo's receipt. A single-object shape is still
+        // accepted defensively (matching `DocumentReceiptRenderer.mjs`'s own
+        // array/object normalisation), and a row missing any of its three
+        // fields prints NOTHING rather than a garbled line — a guard on the
+        // actual fields used, not on truthiness.
+        (Array.isArray(block.progress) ? block.progress : (block.progress ? [block.progress] : []))
+          .forEach((row) => {
+            if (!row || typeof row.label !== 'string' || !row.label.trim()
+                || !Number.isFinite(row.completed) || !Number.isFinite(row.total)) return;
+            items.push({
+              type: 'text', align: 'center',
+              content: `${row.label} · ${row.completed} of ${row.total}`,
+            });
           });
-        }
         continue;
       }
 
