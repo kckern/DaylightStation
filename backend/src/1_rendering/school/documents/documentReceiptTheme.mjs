@@ -128,6 +128,14 @@ export const documentReceiptTheme = Object.freeze({
     boxSize: 31,
     boxGap: 8,
     boxLineWidth: 3,
+    // Per-question check/X are drawn as vector strokes, never a font glyph
+    // (Roboto Condensed has no U+2713 — a font swap or container rebuild
+    // must never be able to turn a CORRECT row back into tofu). `markInset`
+    // is a fixed px, not a ratio of the box, because `boxSize` only shrinks
+    // when more than ~14 items would otherwise overflow the panel width —
+    // well past the `scoreMode: 'items'` ceiling of 10 this path draws for.
+    markStrokeWidth: 3,
+    markInset: 7,
     progressHeight: 14,
     progressGap: 5,
     progressSegments: 10,

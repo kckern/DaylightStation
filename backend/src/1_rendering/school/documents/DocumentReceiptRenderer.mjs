@@ -512,6 +512,47 @@ export function createDocumentReceiptRenderer({
       ctx.restore();
     }
 
+    // Per-question CORRECT/INCORRECT marks on the result-summary score panel —
+    // vector strokes, never a font glyph. Roboto Condensed has no U+2713
+    // (checkmark), so drawing it with `fillText` renders tofu for every
+    // CORRECT question; `×` (U+00D7) happened to render, which is why only
+    // the check silently broke. Drawing BOTH as paths means a font swap can
+    // never take either one down again. The fill inversion stays as it was:
+    // wrong is the solid knockout box, correct is the plain outline.
+    function drawCorrectMark(bx, by, size) {
+      const inset = theme.result.markInset;
+      ctx.save();
+      ctx.strokeStyle = theme.colors.text;
+      ctx.lineWidth = theme.result.markStrokeWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx + inset, by + size * 0.55);
+      ctx.lineTo(bx + size * 0.42, by + size - inset);
+      ctx.lineTo(bx + size - inset, by + inset);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawIncorrectMark(bx, by, size) {
+      const inset = theme.result.markInset;
+      ctx.fillStyle = theme.colors.text;
+      ctx.fillRect(bx, by, size, size);
+      ctx.save();
+      ctx.strokeStyle = theme.colors.headerText;
+      ctx.lineWidth = theme.result.markStrokeWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx + inset, by + inset);
+      ctx.lineTo(bx + size - inset, by + size - inset);
+      ctx.moveTo(bx + size - inset, by + inset);
+      ctx.lineTo(bx + inset, by + size - inset);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = theme.colors.text;
+    }
+
     for (const op of ops) {
       if (op.kind === 'header') {
         ctx.fillStyle = theme.colors.text;
@@ -596,18 +637,10 @@ export function createDocumentReceiptRenderer({
             ctx.strokeRect(bx, marksY, markSize, markSize);
             if (op.scoreMode === 'aggregate') {
               if (index < filledBoxes) ctx.fillRect(bx + 4, marksY + 4, markSize - 8, markSize - 8);
+            } else if (index < op.correctCount) {
+              drawCorrectMark(bx, marksY, markSize);
             } else {
-              ctx.font = theme.fonts.eyebrow;
-              ctx.textAlign = 'center';
-              if (index < op.correctCount) {
-                ctx.fillText('✓', bx + markSize / 2, marksY + 3);
-              } else {
-                ctx.fillStyle = theme.colors.text;
-                ctx.fillRect(bx, marksY, markSize, markSize);
-                ctx.fillStyle = theme.colors.headerText;
-                ctx.fillText('×', bx + markSize / 2, marksY + 3);
-                ctx.fillStyle = theme.colors.text;
-              }
+              drawIncorrectMark(bx, marksY, markSize);
             }
           }
           const scoreX = x + scoreColumnWidth / 2 + 2;
