@@ -6,6 +6,7 @@ import {
   isSustainDown,
 } from '../noteHistory.js';
 import { createNoteStore } from './noteStore.js';
+import { bridgeSendMidi, bridgeOutUp } from './bridgeMidiOut.js';
 
 const STORAGE_KEY = 'piano-kiosk-midi-input-id';
 
@@ -71,8 +72,16 @@ const hex = (bytes) => bytes.map((b) => (b & 0xff).toString(16).padStart(2, '0')
 function emitOut(out, bytes, event, extra = {}) {
   const seq = ++_outSeq;
   const t = (typeof performance !== 'undefined' && performance.now) ? Math.round(performance.now()) : Date.now();
+  // Bridge-first (2026-08-23): the APK write path is the only OUT segment with a
+  // delivery verdict (the piano's echo). The Web MIDI handle — which can go
+  // zombie with no witness — is the fallback, not the default.
+  if (bridgeSendMidi(bytes)) {
+    logger().info(event, { seq, t, bytes: hex(bytes), via: 'bridge', ...extra });
+    return true;
+  }
+  if (!out) return false;
   out.send(bytes);
-  logger().info(event, { seq, t, bytes: hex(bytes), conn: out.connection, state: out.state, ...extra });
+  logger().info(event, { seq, t, bytes: hex(bytes), via: 'webmidi', conn: out.connection, state: out.state, ...extra });
   return true;
 }
 
@@ -96,8 +105,15 @@ const BLE_FLUSH_MS = 30;
 function flushOut(out, bytes) {
   setTimeout(() => {
     try {
+      // Same one-turn-late peripheral regardless of which side writes the BLE
+      // link, so the flush duplicate follows the same bridge-first routing.
+      if (bridgeSendMidi(bytes)) {
+        logger().debug('midi.out.flush', { bytes: hex(bytes), via: 'bridge' });
+        return;
+      }
+      if (!out) return;
       out.send(bytes);
-      logger().debug('midi.out.flush', { bytes: hex(bytes), conn: out.connection, state: out.state });
+      logger().debug('midi.out.flush', { bytes: hex(bytes), via: 'webmidi', conn: out.connection, state: out.state });
     } catch { /* port may have closed between send and flush — fire-and-forget */ }
   }, BLE_FLUSH_MS);
 }
@@ -484,7 +500,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
     const out = outputRef.current;
-    if (!out) return false;
+    if (!out && !bridgeOutUp()) return false;
     const bytes = [0xc0 | (channel & 0x0f), program & 0x7f];
     emitOut(out, bytes, 'midi.out.program', { program, channel });
     flushOut(out, bytes); // re-send to push the PC through BLE (one-turn-late fix)
@@ -495,7 +511,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // rendered instrument (APK) is the only sound; true restores onboard sound.
   const sendLocalControl = useCallback((on, channel = 0) => {
     const out = outputRef.current;
-    if (!out) return false;
+    if (!out && !bridgeOutUp()) return false;
     return emitOut(out, [0xb0 | (channel & 0x0f), 122, on ? 127 : 0], 'midi.out.local-control', { on, channel });
   }, []);
 
@@ -506,7 +522,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // one-turn-late bug.
   const sendVoice = useCallback((program, bank = 0, channel = 0) => {
     const out = outputRef.current;
-    if (!out) return false;
+    if (!out && !bridgeOutUp()) return false;
     if (bank) {
       emitOut(out, [0xb0 | (channel & 0x0f), 0, bank & 0x7f], 'midi.out.bank-msb', { bank, channel });
       emitOut(out, [0xb0 | (channel & 0x0f), 32, 0], 'midi.out.bank-lsb', { channel });
@@ -524,7 +540,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // only take effect once re-sent. See the one-turn-late bug doc.
   const sendControlChange = useCallback((controller, value, channel = 0) => {
     const out = outputRef.current;
-    if (!out) return false;
+    if (!out && !bridgeOutUp()) return false;
     const bytes = [0xb0 | (channel & 0x0f), controller & 0x7f, value & 0x7f];
     emitOut(out, bytes, 'midi.out.cc', { controller, value, channel });
     flushOut(out, bytes); // re-send to push the CC through BLE (one-turn-late fix)
@@ -534,29 +550,49 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // Panic: silence stuck notes (All Sound Off + All Notes Off on channel 1).
   const sendPanic = useCallback((channel = 0) => {
     const out = outputRef.current;
+    if (!out && !bridgeOutUp()) return false;
+    const soundOff = [0xb0 | (channel & 0x0f), 120, 0]; // All Sound Off
+    const notesOff = [0xb0 | (channel & 0x0f), 123, 0]; // All Notes Off
+    if (bridgeSendMidi(soundOff)) {
+      bridgeSendMidi(notesOff);
+      logger().info('midi.out.panic', { channel, via: 'bridge' });
+      return true;
+    }
     if (!out) return false;
-    out.send([0xb0 | (channel & 0x0f), 120, 0]); // All Sound Off
-    out.send([0xb0 | (channel & 0x0f), 123, 0]); // All Notes Off
-    logger().info('midi.out.panic', { channel });
+    out.send(soundOff);
+    out.send(notesOff);
+    logger().info('midi.out.panic', { channel, via: 'webmidi' });
     return true;
   }, []);
 
   const sendNote = useCallback((note, velocity = 80, channel = 0, durationMs = null) => {
     const out = outputRef.current;
+    const on = [0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f];
+    const off = [0x80 | (channel & 0x0f), note & 0x7f, 0];
+    // Bridge-first: the loopback-verified write path. The note-off is scheduled
+    // client-side here (the bridge has no timestamp queue) — acceptable for the
+    // immediate/virtual-key use of sendNote; the timestamped schedule* senders
+    // below stay on Web MIDI's browser-process scheduler.
+    if (bridgeSendMidi(on)) {
+      logger().sampled('midi.out.note', { note, velocity, channel, via: 'bridge' },
+        { maxPerMinute: 20, aggregate: true });
+      if (durationMs != null) setTimeout(() => bridgeSendMidi(off), durationMs);
+      return true;
+    }
     if (!out) {
       // Witness the FAILURE too: an unbound output is a silent no-op otherwise.
       logger().sampled('midi.out.note-dropped', { note, reason: 'no-output' }, { maxPerMinute: 10, aggregate: true });
       return false;
     }
-    out.send([0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f]);
+    out.send(on);
     // Witness line for the note path. Until 2026-08-23 this was a bare send() —
     // 18 test-tone presses left no trace, so "did it leave the browser" was
     // unanswerable. Sampled: playback is high-frequency; the first few per minute
     // with the handle's real state is what diagnosis needs.
-    logger().sampled('midi.out.note', { note, velocity, channel, conn: out.connection, state: out.state },
+    logger().sampled('midi.out.note', { note, velocity, channel, via: 'webmidi', conn: out.connection, state: out.state },
       { maxPerMinute: 20, aggregate: true });
     if (durationMs != null) {
-      out.send([0x80 | (channel & 0x0f), note & 0x7f, 0], (performance?.now?.() ?? 0) + durationMs);
+      out.send(off, (performance?.now?.() ?? 0) + durationMs);
     }
     return true;
   }, []);
@@ -570,8 +606,10 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // sendPanic path instead.
   const sendNoteOff = useCallback((note, channel = 0) => {
     const out = outputRef.current;
+    const off = [0x80 | (channel & 0x0f), note & 0x7f, 0];
+    if (bridgeSendMidi(off)) return true;
     if (!out) return false;
-    out.send([0x80 | (channel & 0x0f), note & 0x7f, 0]);
+    out.send(off);
     return true;
   }, []);
 
