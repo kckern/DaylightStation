@@ -121,7 +121,11 @@ describe('what a child is told', () => {
   it('carries the headline and every line of the agenda as text', () => {
     const text = textOf(renderer.render(agenda()));
     expect(text).toContain('TEST LEARNER');
-    expect(text).toContain('Printed Mon 27 Jul, 9:00 am');
+    // 041155a656 dropped the "Printed " prefix from agendaDocument's
+    // timestamp line (receipts.test.mjs's "prints the time a person can
+    // read" was updated at the same time) — the bare, person-readable time
+    // is the current wording.
+    expect(text).toContain('Mon 27 Jul, 9:00 am');
     expect(text).toContain('Finish “Equivalent Fractions” first');
     expect(text).not.toContain('sch:');
   });
