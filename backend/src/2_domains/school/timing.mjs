@@ -7,18 +7,25 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const PRIORITY = Object.freeze({ low: 4, medium: 3, high: 2, urgent: 1, in_progress: 0 });
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-// Round-trip rather than Date.parse: V8 rolls an out-of-range DAY over
-// ('2026-11-31' parses fine, as Dec 1) instead of rejecting it, which would let
-// a typo'd course window silently shift a week. Comparing the formatted result
-// back to the input is what actually rejects a date that never existed. The
-// NaN guard is not redundant: an out-of-range MONTH gives an Invalid Date,
-// whose toISOString() THROWS, and every caller here treats isDay as a
-// predicate that reports rather than raises.
-const isDay = (value) => {
+/**
+ * A household-local study date, `YYYY-MM-DD`. Exported because workValidation
+ * polices hand-authored course windows and must agree with this file on what a
+ * date even is — a second copy of this predicate would drift from this one.
+ *
+ * Round-trip rather than Date.parse: V8 rolls an out-of-range DAY over
+ * ('2026-11-31' parses fine, as Dec 1) instead of rejecting it, which would let
+ * a typo'd course window silently shift a week. Comparing the formatted result
+ * back to the input is what actually rejects a date that never existed. The
+ * NaN guard is not redundant: an out-of-range MONTH gives an Invalid Date,
+ * whose toISOString() THROWS, and every caller here treats isDay as a
+ * predicate that reports rather than raises.
+ */
+export const isStudyDay = (value) => {
   if (typeof value !== 'string' || !DAY.test(value)) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 };
+const isDay = isStudyDay;
 const dayMs = 86_400_000;
 const addDays = (day, offset) => new Date(Date.parse(`${day}T00:00:00Z`) + offset * dayMs).toISOString().slice(0, 10);
 const compareDay = (left, right) => left.localeCompare(right);
