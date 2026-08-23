@@ -107,6 +107,7 @@ public class BridgeCore {
     private KioskWatchdog kioskWatchdog;
     private KioskSettingsGuard kioskSettingsGuard;
     private Heartbeat heartbeat;
+    private Loopback loopback;
 
     /**
      * Wall-clock ms of the last POST /update. The kiosk-settings guard stands down for
@@ -208,6 +209,7 @@ public class BridgeCore {
 
         // Outbound heartbeat — the only thing the tablet says unprompted. Same
         // create-once / update-config lifecycle as the guards.
+        if (loopback == null) loopback = new Loopback(this);
         if (heartbeat == null) {
             heartbeat = new Heartbeat(this, config);
             heartbeat.start();
@@ -584,6 +586,8 @@ public class BridgeCore {
 
     public Heartbeat getHeartbeat() { return heartbeat; }
 
+    public Loopback getLoopback() { return loopback; }
+
     public String getMidiWriteLastError() { return midiWriteLastError; }
 
     /** The port-retry executor, created on first use. Shared by the read and write
@@ -712,6 +716,9 @@ public class BridgeCore {
                 if (type == 0x90 && i + 2 < end) { // note on
                     int note = data[i + 1] & 0x7F;
                     int vel = data[i + 2] & 0x7F;
+                    // Loopback probe coming back from the piano: record the echo and
+                    // swallow it — it must never light a key on screen or wake the display.
+                    if (loopback != null && loopback.onInboundNote(status, note, vel)) { i += 3; continue; }
                     if (vel == 0) {
                         handleNoteOff(note);
                     } else {
@@ -725,6 +732,7 @@ public class BridgeCore {
                     i += 3;
                 } else if (type == 0x80 && i + 2 < end) { // note off
                     int note = data[i + 1] & 0x7F;
+                    if (loopback != null && (status & 0x0F) == Loopback.PROBE_CHANNEL && note == Loopback.PROBE_NOTE) { i += 3; continue; }
                     handleNoteOff(note);
                     i += 3;
                 } else if (type == 0xB0 && i + 2 < end) { // control change

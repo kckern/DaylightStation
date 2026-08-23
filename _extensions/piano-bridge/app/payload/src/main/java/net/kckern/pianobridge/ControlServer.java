@@ -102,7 +102,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p6-ws-close";
+    public static final String BUILT_BY = "p7-loopback";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -142,6 +142,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /                      (HTML status page for a browser; JSON here for curl)")
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
+                            .put("GET|POST /loopback           (OUT assertion via piano ECHO: probe+wait / rolling state)")
                             .put("GET|POST /midi/send?hex=F0…F7&repeat=3  (raw MIDI/SysEx OUT to the piano)")
                             .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
@@ -174,7 +175,9 @@ public class ControlServer extends NanoWSD {
                     o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
-                    o.put("servedBy", BUILT_BY); // the payload whose ControlServer owns :8770
+                    o.put("servedBy", BUILT_BY);
+                    Loopback lbs = service.getLoopback();
+                    if (lbs != null) o.put("outVerified", lbs.snapshot().optBoolean("outVerified")); // the payload whose ControlServer owns :8770
                     // The write path to the piano. Surfaced because "BLE CONNECTED" says
                     // nothing about whether we can SEND — that gap is exactly what let the
                     // 2026-08-22 one-way outage hide behind a healthy-looking status.
@@ -252,6 +255,15 @@ public class ControlServer extends NanoWSD {
                     o.put("requested", bound ? count : 0);
                     if (!bound) o.put("note", "a11y service not bound — nothing dispatched");
                     return json(o);
+                }
+                case "/loopback": {
+                    // The conclusive OUT assertion: send an inaudible probe note and wait
+                    // for the PIANO to echo it back. POST = probe now and block for the
+                    // verdict; GET = rolling state. See Loopback.java.
+                    Loopback lb = service.getLoopback();
+                    if (lb == null) return json(err("loopback not started"));
+                    if (method == NanoHTTPD.Method.POST) return json(lb.probeAndWait());
+                    return json(ok().put("loopback", lb.snapshot()));
                 }
                 case "/beat": {
                     // Outbound heartbeat: GET = its state, POST = send one NOW and return
