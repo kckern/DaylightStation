@@ -6,7 +6,7 @@ export class ResolveSchoolCalcStudyEntry {
 
   constructor({ studies, devices, artifacts, codec, clock = () => new Date() } = {}) {
     if (!studies || !devices || !artifacts || !codec?.decodeStudyEntry
-        || !codec?.encodeStudyPrescription || !codec?.encodeStudyAcknowledgement) {
+        || !codec?.encodeStudyPrescription || !codec?.encodeStudyAcknowledgement || !codec?.writeOrder) {
       throw new Error('ResolveSchoolCalcStudyEntry requires studies, devices, artifacts, and codec');
     }
     this.#studies = studies;
@@ -82,9 +82,9 @@ export class ResolveSchoolCalcStudyEntry {
       commitRecord,
       artifact: artifactInstalled ? null : artifact,
       artifactInstalled,
-      writeOrder: artifactInstalled
-        ? ['DSSTDNEW', 'DSSYNC']
-        : [artifact.variableName, 'DSSTDNEW', 'DSSYNC'],
+      // Which calculator variables to write, and in what order, is family
+      // wire-format knowledge — the codec's, not this use case's.
+      writeOrder: this.#codec.writeOrder({ artifactInstalled, artifactVariableName: artifact.variableName }),
     };
   }
 }
