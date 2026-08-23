@@ -594,6 +594,75 @@ public class BridgeCore {
 
     public Loopback getLoopback() { return loopback; }
 
+    /**
+     * Escalating force-reset of the MIDI link, verified by the piano's echo at each
+     * step. This is what the Operator drawer's reset SHOULD have been doing all along.
+     * Runs on a worker thread (BLE ops + waits); returns a JSON verdict.
+     */
+    public org.json.JSONObject forceResetLink() {
+        org.json.JSONObject o = new org.json.JSONObject();
+        org.json.JSONArray steps = new org.json.JSONArray();
+        try {
+            CrashLog.note("RESET", "force-reset requested");
+            // L1: forget + reconnect the BLE device (drops both ports, re-opens fresh).
+            steps.put(step("L1 BLE reconnect", () -> {
+                if (bleConnector != null) { bleConnector.forget(); sleepMs(1200); bleConnector.connectNow(); }
+                waitConnected(12000);
+            }));
+            if (verifyEcho()) { o.put("fixed", true).put("recoveredAt", "L1").put("steps", steps); return finishReset(o); }
+
+            // L2: bounce the tablet's Bluetooth radio (BLUETOOTH_ADMIN). The nuclear
+            // option for a stack-level zombie the connector alone can't clear.
+            steps.put(step("L2 radio bounce", () -> {
+                android.bluetooth.BluetoothAdapter a = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+                if (a != null) {
+                    try { a.disable(); } catch (Throwable ignored) {}
+                    sleepMs(3000);
+                    try { a.enable(); } catch (Throwable ignored) {}
+                    sleepMs(6000);
+                }
+                if (bleConnector != null) bleConnector.connectNow();
+                waitConnected(15000);
+            }));
+            boolean fixed = verifyEcho();
+            o.put("fixed", fixed).put("recoveredAt", fixed ? "L2" : JSONObject.NULL).put("steps", steps);
+            if (!fixed) o.put("verdict", "STILL DOWN after radio bounce — likely physical (JamCorder/USB/piano power)");
+            return finishReset(o);
+        } catch (Throwable t) {
+            try { o.put("error", t.getClass().getSimpleName() + ": " + t.getMessage()).put("steps", steps); } catch (Exception ignored) {}
+            return o;
+        }
+    }
+
+    private org.json.JSONObject finishReset(org.json.JSONObject o) {
+        try {
+            boolean fixed = o.optBoolean("fixed");
+            CrashLog.note("RESET", fixed ? "force-reset OK (" + o.optString("recoveredAt") + ")" : "force-reset FAILED — still down");
+            o.put("linkVerdict", loopback != null && loopback.snapshot().optBoolean("outVerified") ? "VERIFIED" : "DOWN");
+            o.put("ok", true);
+        } catch (Exception ignored) {}
+        return o;
+    }
+
+    private interface ResetStep { void run() throws Exception; }
+    private org.json.JSONObject step(String name, ResetStep body) {
+        org.json.JSONObject s = new org.json.JSONObject();
+        long t0 = System.currentTimeMillis();
+        try { body.run(); s.put("step", name).put("ms", System.currentTimeMillis() - t0); }
+        catch (Exception e) { try { s.put("step", name).put("error", e.getMessage()); } catch (Exception ignored) {} }
+        return s;
+    }
+    private boolean verifyEcho() { return loopback != null && loopback.probeAndWait().optBoolean("echoed"); }
+    private void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
+    private void waitConnected(long budgetMs) {
+        long end = System.currentTimeMillis() + budgetMs;
+        while (System.currentTimeMillis() < end) {
+            org.json.JSONObject st = bleConnector == null ? null : bleConnector.status();
+            if (st != null && "CONNECTED".equals(st.optString("state"))) return;
+            sleepMs(500);
+        }
+    }
+
     private void tapMidiIn(byte[] data, int offset, int count) {
         midiInChunks++; midiInBytes += count;
         StringBuilder sb = new StringBuilder(count * 3 + 16);

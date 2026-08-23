@@ -102,7 +102,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p10-echo-ch1";
+    public static final String BUILT_BY = "p11-force-reset";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -143,6 +143,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /log").put("POST /panic")
                             .put("GET|POST /beat               (outbound heartbeat state / send one now)")
                             .put("GET|POST /loopback           (OUT assertion via piano ECHO: probe+wait / rolling state)")
+                            .put("POST /reset                 (FORCE-RESET the BLE link, escalate to radio bounce, verify by echo)")
                             .put("GET /midi/tap               (raw bytes the read port delivered; running-status count)")
                             .put("GET|POST /midi/send?hex=F0…F7&repeat=3  (raw MIDI/SysEx OUT to the piano)")
                             .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
@@ -261,6 +262,21 @@ public class ControlServer extends NanoWSD {
                     // Raw bytes the read port handed the receiver (last 64 chunks) + how
                     // often running status was used. THE witness for "did the parser get it".
                     return json(ok().put("tap", service.midiInTapSnapshot()));
+                }
+                case "/reset": {
+                    // FORCE-RESET the MIDI link and PROVE the result. The browser's
+                    // "reload MIDI" only re-acquires Chrome's Web MIDI handle — it never
+                    // touches the APK's BLE connection, which is what goes zombie, which
+                    // is why that button never fixed anything. This escalates the layer
+                    // that actually matters and verifies with the piano's echo:
+                    //   L1  forget + reconnect the BLE device, re-probe
+                    //   L2  if still no echo, bounce the tablet's Bluetooth radio, reconnect, re-probe
+                    // Returns the loopback verdict at the end, so the caller (and the
+                    // Operator drawer) can show "fixed" or "still down" HONESTLY.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    Diag.log(TAG, "/reset from " + session.getRemoteIpAddress());
+                    JSONObject o = service.forceResetLink();
+                    return json(o);
                 }
                 case "/loopback": {
                     // The conclusive OUT assertion: send an inaudible probe note and wait

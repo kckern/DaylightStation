@@ -149,12 +149,16 @@ describe('OperatorDrawer', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the MIDI OUT link as not-linked, and Reset link / Test tone call through', () => {
+  it('shows the MIDI OUT link as not-linked, and Force reset / Test tone call through', () => {
     midi.outputConnected = false; midi.outputName = null;
+    global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ fixed: true }) }));
     render(<OperatorDrawer open onClose={vi.fn()} />);
     expect(screen.getByText(/won.t reach the piano/i)).toBeTruthy();
-    fireEvent.click(screen.getByText('Reset link'));
+    // Force reset hits the bridge's /reset (the real BLE-layer fix) AND refreshes
+    // the browser handle. The old button only did the latter and never fixed a zombie.
+    fireEvent.click(screen.getByText('Force reset MIDI'));
     expect(resetLink).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8770/reset', expect.objectContaining({ method: 'POST' }));
     fireEvent.click(screen.getByText('Test tone'));
     expect(sendNote).toHaveBeenCalledWith(60, 100);
     act(() => { vi.advanceTimersByTime(500); });

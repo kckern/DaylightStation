@@ -84,9 +84,26 @@ export default function OperatorDrawer({ open, onClose }) {
     setTimeout(() => sendNoteOff(60), 500);
   }, [sendNote, sendNoteOff, outputConnected, logger]);
 
-  const resetMidiLink = useCallback(() => {
-    logger.info('piano.operator.reset-link', { outputConnected });
-    resetLink();
+  // The REAL fix. The old "Reset link" only re-acquired the browser's Web MIDI
+  // handle — it never touched the APK's BLE connection, which is the thing that
+  // goes zombie, which is why it never fixed anything. This POSTs to the bridge's
+  // /reset, which forgets+reconnects BLE, escalates to a Bluetooth radio bounce if
+  // needed, and VERIFIES with the piano's own echo — then reports the truth.
+  const [resetState, setResetState] = useState(null); // null | 'working' | 'fixed' | 'still-down' | 'unreachable'
+  const forceReset = useCallback(async () => {
+    logger.info('piano.operator.force-reset', { outputConnected });
+    setResetState('working');
+    resetLink(); // also refresh the browser handle, cheap and harmless
+    try {
+      const res = await fetch('http://localhost:8770/reset', { method: 'POST', signal: AbortSignal.timeout(40000) });
+      const r = await res.json();
+      logger.info('piano.operator.force-reset.result', { fixed: r?.fixed, recoveredAt: r?.recoveredAt, verdict: r?.verdict });
+      setResetState(r?.fixed ? 'fixed' : 'still-down');
+    } catch (err) {
+      logger.warn('piano.operator.force-reset.failed', { error: err?.message });
+      setResetState('unreachable');
+    }
+    setTimeout(() => setResetState(null), 8000);
   }, [resetLink, outputConnected, logger]);
 
   useEffect(() => { if (open) logger.info('piano.operator.open', {}); }, [open, logger]);
@@ -133,7 +150,13 @@ export default function OperatorDrawer({ open, onClose }) {
             <span className="piano-operator-drawer__hwname">
               {outputConnected ? (outputName || 'linked') : 'not linked — changes won’t reach the piano'}
             </span>
-            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={resetMidiLink}>Reset link</button>
+            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={forceReset} disabled={resetState === 'working'}>
+              {resetState === 'working' ? 'Resetting…'
+                : resetState === 'fixed' ? '✓ Fixed'
+                : resetState === 'still-down' ? '✗ Still down'
+                : resetState === 'unreachable' ? '✗ No bridge'
+                : 'Force reset MIDI'}
+            </button>
             <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={testTone}>Test tone</button>
           </div>
         </section>
