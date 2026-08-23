@@ -284,8 +284,32 @@ public final class KioskWatchdog {
         act("L4 rebootDevice", rebootCount);
         CrashLog.recordReboot();           // persist BEFORE the reboot so the cap survives it
         CrashLog.note("RECOVERY", "issuing FKB rebootDevice — hard latch unrecoverable by soft ladder");
-        FkbRest.command(c, "rebootDevice");
-        finish("issued reboot");           // process is about to die with the device
+        int rc = FkbRest.command(c, "rebootDevice");
+        if (rc >= 200 && rc < 300) {
+            finish("issued reboot");       // process is about to die with the device
+            return;
+        }
+
+        // L5 — FKB-independent reboot. We only get here when L4 could not even REACH
+        // FKB's REST (:2323 down): the exact failure where every rung above is an
+        // HTTP call into a dead server and the ladder used to end "NEEDS HUMAN".
+        // Raise the Android power dialog through our own AccessibilityService and
+        // click "Restart" by its text. Nothing FKB-owned is in this path.
+        // 2026-08-22: this hole cost two physical trips to the tablet in one evening.
+        CrashLog.note("RECOVERY", "L4 could not reach FKB REST (rc=" + rc
+                + ") — L5 a11y power-dialog restart");
+        if (!PianoTouchService.isConnected()) {
+            finish("UNRECOVERED — FKB REST down AND a11y service not bound; no lever — NEEDS HUMAN");
+            return;
+        }
+        if (!PianoTouchService.powerDialog()) {
+            finish("UNRECOVERED — a11y powerDialog refused — NEEDS HUMAN");
+            return;
+        }
+        sleep(1500); // let the dialog inflate
+        boolean clicked = PianoTouchService.clickText("restart");
+        if (!clicked) clicked = PianoTouchService.clickText("reboot");
+        finish(clicked ? "issued L5 a11y restart" : "UNRECOVERED — power dialog up but no Restart control found — NEEDS HUMAN");
     }
 
     private void act(String action, AtomicInteger counter) {

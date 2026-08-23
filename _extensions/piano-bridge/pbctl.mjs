@@ -14,6 +14,7 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs reboot            # FKB-independent device restart via a11y (v28+)
 //   node pbctl.mjs midi "<hex>" [n] # raw MIDI/SysEx OUT to the piano (v26+)
 //   node pbctl.mjs speaker           # A2DP speaker + fail-closed audio-guard status
 //   node pbctl.mjs bootstrap         # spend the one-time clamp window (drop→clamp→reconnect)
@@ -107,6 +108,13 @@ const cmds = {
   async log() {
     const r = await req('GET', '/log');
     (r.log || []).forEach((l) => console.log(l));
+  },
+  async reboot() {
+    // FKB-independent restart via the a11y power dialog (APK v28+). Use when
+    // :2323 is dead and `pbctl status` shows the kiosk ladder ended NEEDS HUMAN.
+    const r = await req('POST', '/reboot');
+    pretty(r);
+    if (r && r.ok && r.clickedRestart) console.log('  device is restarting — expect ~3 min before :8770 returns');
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
