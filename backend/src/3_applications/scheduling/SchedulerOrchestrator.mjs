@@ -25,7 +25,8 @@ export class SchedulerOrchestrator {
     moduleBasePath = null,
     harvesterExecutor = null,
     mediaExecutor = null,
-    newsReporterExecutor = null
+    newsReporterExecutor = null,
+    schoolExecutor = null
   }) {
     this.schedulerService = schedulerService;
     this.jobStore = jobStore;
@@ -34,6 +35,7 @@ export class SchedulerOrchestrator {
     this.harvesterExecutor = harvesterExecutor;
     this.mediaExecutor = mediaExecutor;
     this.newsReporterExecutor = newsReporterExecutor;
+    this.schoolExecutor = schoolExecutor;
     this.runningJobs = new Map();
   }
 
@@ -157,6 +159,19 @@ export class SchedulerOrchestrator {
       } else if (this.harvesterExecutor?.canHandle(job.id)) {
         await Promise.race([
           this.harvesterExecutor.execute(job.id, job.options || {}, { executionId }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
+          )
+        ]);
+
+        execution.succeed(timestamp);
+      } else if (this.schoolExecutor?.canHandle(job.id)) {
+        // School housekeeping (the stale-session sweep). Its own slot rather
+        // than a registration on `mediaExecutor`: that registry is generic
+        // enough to have accepted it, and naming a school job "media" is the
+        // kind of small lie that makes the next person hunt.
+        await Promise.race([
+          this.schoolExecutor.execute(job.id, job.options || {}, { executionId }),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Job timeout after ${job.timeout}ms`)), job.timeout)
           )

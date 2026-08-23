@@ -85,6 +85,95 @@ export class MarkSessionAbandoned {
     }
     return stale.sort((a, b) => String(a.updatedAt).localeCompare(String(b.updatedAt)));
   }
+
+  /**
+   * THE SWEEP: close out work that was handed to a child and never came back.
+   *
+   * Nothing scheduled ever called `listStale`. It was reachable only through a
+   * manual, teacher-gated `GET /sessions/stale`, so the seven-day threshold
+   * written into that route was never once consulted — which is how Felix's
+   * 2026-08-14 session was still live eight days later and resumed as if it
+   * were that morning's work.
+   *
+   * UNTOUCHED WORK ONLY (KC's call, 2026-08-23). A session is swept only when
+   * the child produced nothing to grade:
+   *
+   *   - the state machine must permit `abandoned` from its state. This is the
+   *     load-bearing guard and it is structural, not a list maintained here:
+   *     `TRANSITIONS` allows `abandoned` from `created`, `issued`, `reprinted`,
+   *     `media_dispatched`, `media_stalled` and `launch_dispatched` — every one
+   *     of them pre-submission. Anything `submitted` or later cannot be swept
+   *     even if this method tried.
+   *   - and it must carry no attempt ids. Belt to that brace: a session that
+   *     somehow accumulated graded evidence without advancing is exactly the
+   *     anomaly a sweep must leave for a person.
+   *
+   * NO TEACHER GATE, deliberately, and this is the one place in this class
+   * that skips it. The gate exists so a PERSON cannot close a child's work
+   * without authority; a threshold the household configured IS that authority,
+   * and a cron job has no PIN to offer. The authorship requirement is honoured
+   * rather than dropped — every event this writes names `system:stale-sweep`
+   * and carries a reason saying how old the work was.
+   *
+   * @param {object} [args]
+   * @param {number} [args.olderThanDays=14]
+   * @param {boolean} [args.dryRun=false] - report what WOULD be swept, write nothing
+   * @returns {Promise<{swept: Array, skipped: Array, olderThanDays: number, dryRun: boolean}>}
+   */
+  async sweepUntouched({ olderThanDays = 14, dryRun = false } = {}) {
+    const candidates = await this.listStale({ olderThanDays });
+    const swept = [];
+    const skipped = [];
+
+    for (const row of candidates) {
+      if (!(TRANSITIONS[row.state] ?? []).includes('abandoned')) {
+        skipped.push({ ...row, reason: 'state-settles-through-grading' });
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const events = await this.#sessions.readEvents(row.sessionId).catch(() => null);
+      if (!events) {
+        skipped.push({ ...row, reason: 'events-unreadable' });
+        continue;
+      }
+      const attempts = events.filter((event) => Array.isArray(event?.attemptIds) && event.attemptIds.length);
+      if (attempts.length) {
+        skipped.push({ ...row, reason: 'has-graded-attempts' });
+        continue;
+      }
+
+      const ageDays = Math.floor((this.#clock().getTime() - Date.parse(row.updatedAt)) / 86400000);
+      if (dryRun) {
+        swept.push({ ...row, ageDays });
+        continue;
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await this.#sessions.appendEvent(row.sessionId, {
+          type: 'abandoned',
+          at: this.#clock().toISOString(),
+          sessionId: row.sessionId,
+          reason: `untouched for ${ageDays} days — swept automatically`,
+          decidedBy: 'system:stale-sweep',
+        });
+        swept.push({ ...row, ageDays });
+        this.#logger.info?.('school.session.swept', {
+          sessionId: row.sessionId, learnerId: row.learnerId, state: row.state, ageDays,
+        });
+      } catch (error) {
+        // One unwritable session must never abort the rest of the sweep.
+        skipped.push({ ...row, reason: 'append-failed', error: error?.message ?? String(error) });
+        this.#logger.warn?.('school.session.sweep-failed', {
+          sessionId: row.sessionId, error: error?.message ?? String(error),
+        });
+      }
+    }
+
+    this.#logger.info?.('school.session.sweep-complete', {
+      olderThanDays, dryRun, swept: swept.length, skipped: skipped.length,
+    });
+    return { swept, skipped, olderThanDays, dryRun };
+  }
 }
 
 export default MarkSessionAbandoned;
