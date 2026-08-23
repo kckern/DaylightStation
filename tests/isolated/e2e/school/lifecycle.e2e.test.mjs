@@ -371,10 +371,36 @@ describe('scenario 5 — the idempotency matrix, driven for real', () => {
   it('a second card scan reuses the session it already opened', async () => {
     await h.scanCard();
     const first = (await h.sessionRows()).map((r) => r.sessionId);
-    await h.scanCard();
+    const second = await h.scanCard();
     expect((await h.sessionRows()).map((r) => r.sessionId)).toEqual(first);
     expect(first).toHaveLength(1);
-    // Both receipts are real and offer the same ticket.
+
+    // Slice G (2026-08-22-omr-grading-integrity, f94a7c726) added a per-learner
+    // agenda print cooldown: a repeat tap within the window reprints nothing —
+    // real logs showed a child tapping four times in five minutes, flooding the
+    // printer. But the tap is never SILENT: the use case still acknowledges it
+    // (`agenda_suppressed`, `printed:false`, a real message) so a child who taps
+    // twice isn't taught that tapping harder gets a result. This e2e harness
+    // drives cards through the barcode-relay/ResolveScanAction path, which hands
+    // that acknowledgement back synchronously in the return value — the `omr`
+    // broadcast half of Slice G's acknowledgement (for the real hardware NFC
+    // ingress, which has no synchronous caller to answer) is covered separately
+    // in nfcTapIngress.test.mjs. Only the first tap's receipt actually printed.
+    expect(second.status).toBe('agenda_suppressed');
+    expect(second.printed).toBe(false);
+    expect(second.message).toBeTruthy();
+    expect(h.receiptTexts()).toHaveLength(1);
+
+    // Rule 4: the cooldown is a window, not a lockout. Once it elapses, a
+    // repeat tap prints the agenda again — and it is still the same session,
+    // never a second one.
+    h.advanceClock(16 * 60 * 1000);
+    const third = await h.scanCard();
+    expect(third.status).toBe('agenda_printed');
+    expect(third.printed).toBe(true);
+    expect((await h.sessionRows()).map((r) => r.sessionId)).toEqual(first);
+
+    // Both real receipts (tap 1 and tap 3, post-cooldown) offer the same ticket.
     expect(h.receiptTexts()).toHaveLength(2);
     expect(h.tokensInLastReceipt()[0].token).toBeTruthy();
   });
