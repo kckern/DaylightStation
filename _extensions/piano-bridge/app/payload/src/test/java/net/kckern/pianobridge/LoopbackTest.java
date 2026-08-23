@@ -22,8 +22,10 @@ public class LoopbackTest {
         Loopback lb = new Loopback(null);
         // Real playing on channel 1, note 60: not ours.
         assertFalse(lb.onInboundNote(0x90, 60, 100));
-        // Same note number on the probe channel: ours (swallowed) even with no probe pending.
+        // The probe note on the SEND channel: ours.
         assertTrue(lb.onInboundNote(0x90 | Loopback.PROBE_CHANNEL, Loopback.PROBE_NOTE, 1));
+        // The probe note echoed on CHANNEL 1 — what the MDG-400 actually does: ours.
+        assertTrue(lb.onInboundNote(0x90, Loopback.PROBE_NOTE, 1));
         // Probe channel but a different note: not ours.
         assertFalse(lb.onInboundNote(0x90 | Loopback.PROBE_CHANNEL, 60, 1));
     }

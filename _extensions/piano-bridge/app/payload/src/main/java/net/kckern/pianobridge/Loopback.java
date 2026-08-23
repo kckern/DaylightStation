@@ -23,8 +23,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * received it — conclusively, by its own testimony. If it does not within the
  * window, OUT is dead somewhere between here and the piano's CPU.
  *
- * The probe note is C#-1 (note 1) on channel 16 at velocity 1: below the
- * keyboard's range, on a channel the kiosk never uses, effectively inaudible.
+ * The probe note is C#-1 (note 1) at velocity 1: below the keyboard's range and
+ * effectively inaudible. It is SENT on channel 16 but matched on note alone —
+ * the piano echoes everything back on channel 1.
  * It is also sent with an immediate note-off so even a non-echoing synth is
  * not left with a hanging voice.
  *
@@ -60,7 +61,11 @@ public final class Loopback {
      * can drop it instead of lighting a key on screen or waking the display).
      */
     public boolean onInboundNote(int status, int note, int velocity) {
-        if ((status & 0x0F) != PROBE_CHANNEL || note != PROBE_NOTE) return false;
+        // Match on NOTE only, not channel. The MDG-400 echoes on channel 1 whatever
+        // channel it received on (measured 2026-08-23: probe sent 9F 01 01, echo came
+        // back 90 01 01). Note 1 (C#-1) is below the keyboard, so a real player can't
+        // produce it; that alone makes the match unambiguous.
+        if (note != PROBE_NOTE) return false;
         long now = System.currentTimeMillis();
         if (!pending.isEmpty()) {
             // Match the OLDEST outstanding probe; a late echo still counts.
