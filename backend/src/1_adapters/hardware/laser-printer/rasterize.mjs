@@ -250,7 +250,7 @@ function validateRasterOutput({
  */
 export async function rasterizePdf(pdf, {
   format, dpi = 300, media = 'na_letter_8.5x11in', colorParams = DEFAULT_COLOR_PARAMS,
-  gsBin = 'gs', timeoutMs = 30000, logger = console, maxPages = null,
+  gsBin = 'gs', timeoutMs = 30000, logger = console, maxPages = null, duplex = false,
 } = {}) {
   const device = GS_DEVICE_BY_FORMAT[format];
   if (!device) {
@@ -289,6 +289,24 @@ export async function rasterizePdf(pdf, {
         // `pwgraster` devices — confirmed empirically, see module header.
         `-dcupsColorSpace=${cupsColorSpace}`,
         `-dcupsBitsPerColor=${bitsPerColor}`,
+        // DUPLEX LIVES IN THE RASTER, NOT IN THE IPP JOB. This printer rejects
+        // the IPP `sides` attribute at every value, so the adapter stopped
+        // sending it and fell back to the printer's own `sides-default`. That
+        // still printed one-sided, and this is why: every URF page carries its
+        // OWN duplex byte in its 32-byte header, and ghostscript writes 1
+        // (simplex) unless told otherwise. An explicit per-page "single-sided"
+        // instruction beats a printer default every time — the sheet was being
+        // told to print simplex by the very bytes we sent it.
+        //
+        // Measured on this ghostscript (2026-08-23), page-header byte 2:
+        //   -dDuplex=false               -> 1  (simplex)
+        //   -dDuplex=true -dTumble=true  -> 2  (short-edge binding)
+        //   -dDuplex=true                -> 3  (long-edge binding)
+        // `Tumble=false` is stated rather than left to default so the binding
+        // edge is a choice in the code, not an inherited one: long edge is the
+        // "book" fold a stapled worksheet wants.
+        `-dDuplex=${duplex === true}`,
+        '-dTumble=false',
         ...pageRange,
         `-sOutputFile=${outPath}`,
         inPath,

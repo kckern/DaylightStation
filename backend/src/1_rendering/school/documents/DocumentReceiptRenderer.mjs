@@ -762,7 +762,11 @@ export function createDocumentReceiptRenderer({
           ctx.stroke();
           ctx.font = theme.fonts.heading;
           ctx.textAlign = 'left';
-          ctx.fillText('REVIEW BEFORE YOU RETRY', x + 52, sy);
+          // The heading is the block's, because the same hint list means two
+          // different things: on a fail it is the work to do before retrying,
+          // on a pass it is a note about the one question that got away.
+          // Defaulted so any caller predating `reviewHeading` is unchanged.
+          ctx.fillText(op.reviewHeading || 'REVIEW BEFORE YOU RETRY', x + 52, sy);
           sy += 42;
           op.reviewRows.forEach((row) => {
             ctx.font = theme.fonts.label;

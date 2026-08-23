@@ -418,7 +418,18 @@ describe('LaserPrinterAdapter — Incident #3: Validate-Job before every real Pr
   });
 });
 
-describe('LaserPrinterAdapter.printPdf — duplex honesty (reads the printer\'s own sides-default)', () => {
+/**
+ * DUPLEX HONESTY, after the 2026-08-23 correction.
+ *
+ * The earlier version of this block asserted a theory that turned out to be
+ * wrong: that omitting the IPP `sides` attribute would let the printer's own
+ * `sides-default` apply. It was set to `two-sided-long-edge` and worksheets
+ * still printed one page per sheet, because ghostscript writes a per-page
+ * duplex byte of 1 (simplex) into every URF page header, and an explicit
+ * per-page instruction beats a printer default. Duplex is now applied in the
+ * raster, so the honest report is about WHICH CONTAINER the job took.
+ */
+describe('LaserPrinterAdapter.printPdf — duplex honesty (applied in the raster)', () => {
   // Captures every logger call instead of asserting against real console
   // output — `info`/`warn` calls are pushed with their event name + payload
   // so tests can assert on exactly which event fired and what it carried.
@@ -433,103 +444,75 @@ describe('LaserPrinterAdapter.printPdf — duplex honesty (reads the printer\'s 
     };
   }
 
-  it('printer sides-default is two-sided: logs duplex-via-printer-default, never "not applied"', async () => {
-    const { httpServer, port } = await ippServer({
-      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
-      documentFormatPreferred: 'application/pdf',
-      sidesDefault: 'two-sided-long-edge',
-      sidesSupported: ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'],
-    });
+  const rasterPrinter = () => ippServer({
+    documentFormatSupported: ['application/octet-stream', 'image/urf', 'image/pwg-raster'],
+    documentFormatPreferred: 'image/urf',
+    urfSupported: ['V1.4', 'RS300-600', 'W8'],
+  });
+
+  const directPdfPrinter = () => ippServer({
+    documentFormatSupported: ['application/octet-stream', 'application/pdf'],
+    documentFormatPreferred: 'application/pdf',
+  });
+
+  it.runIf(hasGs)('a rasterized job reports duplex APPLIED, via the page header', async () => {
+    const { httpServer, port } = await rasterPrinter();
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    const result = await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
     httpServer.close();
 
     expect(result.ok).toBe(true);
-    const satisfied = calls.find((c) => c.event === 'laser-printer.duplex-via-printer-default');
-    expect(satisfied).toBeTruthy();
-    expect(satisfied.level).toBe('info');
-    expect(satisfied.data.sidesDefault).toBe('two-sided-long-edge');
-    // The whole point: the not-applied event must NOT also fire.
+    const applied = calls.find((c) => c.event === 'laser-printer.duplex-applied');
+    expect(applied).toBeTruthy();
+    expect(applied.level).toBe('info');
+    expect(applied.data.via).toBe('raster-page-header');
+    expect(applied.data.format).toBe('image/urf');
     expect(calls.some((c) => c.event === 'laser-printer.duplex-requested-not-applied')).toBe(false);
   });
 
-  it('printer sides-default is one-sided: logs not-applied carrying sidesDefault + sidesSupported and a remedy that names the fix', async () => {
-    const { httpServer, port } = await ippServer({
-      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
-      documentFormatPreferred: 'application/pdf',
-      sidesDefault: 'one-sided',
-      sidesSupported: ['one-sided', 'two-sided-long-edge', 'two-sided-short-edge'],
-    });
+  it('a DIRECT-PDF job cannot duplex and says so — there is no page header of ours to write it into', async () => {
+    const { httpServer, port } = await directPdfPrinter();
     const { logger, calls } = collectingLogger();
     const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
     const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
     httpServer.close();
 
+    // The print still SUCCEEDS — an un-duplexed sheet beats no sheet.
     expect(result.ok).toBe(true);
     const notApplied = calls.find((c) => c.event === 'laser-printer.duplex-requested-not-applied');
     expect(notApplied).toBeTruthy();
-    expect(notApplied.data.sidesDefault).toBe('one-sided');
-    expect(notApplied.data.sidesSupported).toEqual(['one-sided', 'two-sided-long-edge', 'two-sided-short-edge']);
-    // Names the actual remedy (printer's own default), not just "dropped".
-    expect(notApplied.data.reason).toMatch(/sides-default/i);
-    expect(calls.some((c) => c.event === 'laser-printer.duplex-via-printer-default')).toBe(false);
+    expect(notApplied.level).toBe('warn');
+    expect(notApplied.data.format).toBe('application/pdf');
+    // The reason must name the real mechanism, not the old sides-default story.
+    expect(notApplied.data.reason).toMatch(/page header/i);
+    expect(calls.some((c) => c.event === 'laser-printer.duplex-applied')).toBe(false);
   });
 
-  it('the sides-default read failing does NOT prevent the print: degrades to not-applied with the lookup failure noted, and Print-Job still succeeds', async () => {
-    const fake = await ippServer({
-      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
-      documentFormatPreferred: 'application/pdf',
-      // Would satisfy duplex if the read succeeded — proves the failure
-      // path isn't just coincidentally matching "one-sided" behavior.
-      sidesDefault: 'two-sided-long-edge',
-      sidesSupported: ['one-sided', 'two-sided-long-edge'],
-      // Fails ONLY the first GET_PRINTER_ATTRIBUTES call — the dedicated
-      // duplex-honesty read `printPdf` makes before capability negotiation.
-      // The second call (inside #getCapabilities, needed for the print
-      // itself) is left to succeed normally.
-      attributesFailOn: [1],
-    });
+  it.runIf(hasGs)('says nothing about duplex when the caller never asked for it', async () => {
+    const { httpServer, port } = await rasterPrinter();
     const { logger, calls } = collectingLogger();
-    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port: fake.port, logger });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
-    fake.httpServer.close();
+    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two' });
+    httpServer.close();
 
-    // The print itself succeeded — a duplex-honesty read failing must never
-    // turn a working print into a failed one.
-    expect(result.ok).toBe(true);
-    expect(fake.printJobs).toHaveLength(1);
-    expect(fake.attributesCallCount).toBe(2); // the failed duplex read + the successful capabilities read
-
-    const failure = calls.find((c) => c.event === 'laser-printer.sides-default-lookup-failed');
-    expect(failure).toBeTruthy();
-    expect(failure.level).toBe('warn');
-
-    const notApplied = calls.find((c) => c.event === 'laser-printer.duplex-requested-not-applied');
-    expect(notApplied).toBeTruthy();
-    expect(notApplied.data.sidesDefault).toBeNull();
-    expect(notApplied.data.reason).toMatch(/could not be read|lookup/i);
-    expect(calls.some((c) => c.event === 'laser-printer.duplex-via-printer-default')).toBe(false);
+    expect(calls.some((c) => c.event?.startsWith('laser-printer.duplex'))).toBe(false);
   });
 
-  it('duplex not requested: no sides-default lookup happens at all (no extra GET_PRINTER_ATTRIBUTES round trip)', async () => {
-    const fake = await ippServer({
-      documentFormatSupported: ['application/octet-stream', 'application/pdf'],
-      documentFormatPreferred: 'application/pdf',
-      sidesDefault: 'one-sided',
-    });
+  it.runIf(hasGs)('never sends `sides` as a job attribute — the firmware refuses it at any value', async () => {
+    const { httpServer, port } = await rasterPrinter();
     const { logger, calls } = collectingLogger();
-    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port: fake.port, logger });
+    const p = new LaserPrinterAdapter({ host: '127.0.0.1', port, logger });
 
-    const result = await p.printPdf(PDF, { jobName: 'ws', user: 'learner-two' }); // duplex omitted
-    fake.httpServer.close();
+    await p.printPdf(REAL_PDF, { jobName: 'ws', user: 'learner-two', duplex: true });
+    httpServer.close();
 
-    expect(result.ok).toBe(true);
-    expect(fake.attributesCallCount).toBe(1); // only #getCapabilities()'s own call, no separate duplex read
-    expect(calls.some((c) => c.event.startsWith('laser-printer.duplex') || c.event.startsWith('laser-printer.sides'))).toBe(false);
+    const sent = calls.find((c) => c.event === 'laser-printer.job-sent');
+    expect(sent).toBeTruthy();
+    expect(sent.data.jobAttributes?.sides).toBeUndefined();
   });
 });
 
