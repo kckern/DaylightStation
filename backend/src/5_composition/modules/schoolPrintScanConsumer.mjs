@@ -20,7 +20,15 @@ import { decodeQuizSheet, resolveQuizScanTopics } from '#apps/quizzes/quizScanRe
 
 /**
  * @param {object} deps
- * @param {object} deps.eventBus - IEventBus (subscribe only)
+ * @param {object} deps.eventBus - IEventBus (subscribe AND broadcast). Widened
+ *   from subscribe-only (Slice C, 2026-08-22-omr-grading-integrity, Task C1):
+ *   alongside the existing `gradingHook` fire sites, this consumer now ALSO
+ *   re-broadcasts each of the four terminal scan outcomes — `scan-graded`,
+ *   `scan-review`, `scan-unresolved`, `scan-refused` — on the SAME `omr`
+ *   topic the relay already broadcasts sheets on, so the School panel (the
+ *   ceremony Slice D builds) can subscribe without any new transport. This
+ *   is a second, parallel consumer of the outcome, never a replacement for
+ *   the hook or the log lines beside it.
  * @param {object} [deps.config] - parsed config/omr-readers.yml — the SAME
  *   shape `createQuizScanRecorder`/`createOmrRelay` already take, so this
  *   consumer never disagrees with them about which topics carry sheets.
@@ -51,6 +59,18 @@ export function createSchoolPrintScanConsumer({
   }
 
   const topics = resolveQuizScanTopics(config);
+  // The subscribe side already treats `topics` as the declared source of
+  // truth for which topics carry sheets (`resolveQuizScanTopics`, shared
+  // with `createQuizScanRecorder`/`createOmrRelay`); the broadcast side used
+  // to hardcode a second, independent 'omr' literal, so renaming the topic
+  // there could silently leave this one pointing at a dead string.
+  // `resolveQuizScanTopics` always seeds its result with the module's own
+  // `DEFAULT_TOPIC` first, ahead of any per-reader override — that first
+  // entry is the one fixed "front door" every deployment carries regardless
+  // of `config/omr-readers.yml`, and the one the School panel's
+  // `useScanCeremony.js` subscribes to, so it's the right one to broadcast
+  // outcomes on.
+  const [broadcastTopic] = topics;
 
   const onPayload = (payload) => {
     if (payload?.event !== 'sheet' || !Array.isArray(payload.marks)) return;
@@ -79,6 +99,23 @@ export function createSchoolPrintScanConsumer({
           // and never able to fail it. The adapter already swallows its own
           // errors; this catch covers a hook that rejects outright.
           gradingHook?.fire({ result: 'unresolved', testId, code: outcome.error.code }).catch(() => {});
+          // Same outcome, second listener: the School panel ceremony (Slice
+          // D) needs this broadcast too. `testIdCandidates` here is the RAW
+          // per-column digit-mark arrays `decodeQuizSheet` built (one entry
+          // per test-id column, each the digit(s) 0-9 that column's marks
+          // decoded to) — NOT a list of card ids, and not showable copy:
+          // `useScanCeremony.js`'s `scan-unresolved` case only ever reads
+          // `code`, never this field. The full array (not just the count the
+          // log line above carries) rides along as raw diagnostic payload
+          // for whatever inspects the wire directly, the same shape
+          // `ResolveCardScan` itself already consumed for best-effort
+          // resolution before this outcome was ever reached.
+          eventBus.broadcast?.(broadcastTopic, {
+            event: 'scan-unresolved',
+            code: outcome.error.code,
+            testId,
+            testIdCandidates: Array.isArray(testIdCandidates) ? testIdCandidates : [],
+          });
           return;
         }
         if (outcome?.unknownCard) {
@@ -151,6 +188,11 @@ export function createSchoolPrintScanConsumer({
             gradingHook?.fire({
               result: 'refused', testId, code: card.error.code, learnerId: card.learnerId ?? null,
             }).catch(() => {});
+            // Same outcome, second listener: the School panel ceremony
+            // (Slice D) needs this on the wire too.
+            eventBus.broadcast?.(broadcastTopic, {
+              event: 'scan-refused', code: card.error.code, recordId: card.recordId,
+            });
             continue;
           }
           logger.info?.('school.print.scan-resolved', {
@@ -234,6 +276,30 @@ export function createSchoolPrintScanConsumer({
                     percent,
                     sessionId: sectionOutcome.session.sessionId,
                   }).catch(() => {});
+                  // Same outcome, second listener: the School panel ceremony
+                  // (Slice D) needs this on the wire too. SAME session-sourced
+                  // percent/earned/total the hook above just fired — never
+                  // recomputed from `card.earnedPoints`/`card.totalPoints`,
+                  // for the identical reason the hook doesn't: that points
+                  // aggregate can disagree with the row-count percent the
+                  // gradebook/report card actually record (final review Fix
+                  // 3), and the panel must never be able to show a different
+                  // score than the report card will.
+                  eventBus.broadcast?.(broadcastTopic, {
+                    event: 'scan-graded',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    // ROW counts (session.correctCount/totalCount), named for
+                    // what they are — never `earnedPoints`/`totalPoints`,
+                    // which would invite a future maintainer to reach for
+                    // `card.earnedPoints`/`card.totalPoints` instead, a
+                    // different points-based number two scopes away.
+                    correctCount: earned,
+                    totalCount: total,
+                    percent,
+                    result: 'graded',
+                    sessionId: sectionOutcome.session.sessionId,
+                  });
                   if (closeSessionOutcome) {
                     // The bridge returns the authoritative session id (a
                     // composed card itself has no single session owner).
@@ -250,6 +316,17 @@ export function createSchoolPrintScanConsumer({
                     reasons: sectionOutcome.session.reasons,
                     items: sectionOutcome.session.items,
                   }).catch(() => {});
+                  // Same outcome, second listener: the School panel ceremony
+                  // (Slice D) needs this on the wire too.
+                  eventBus.broadcast?.(broadcastTopic, {
+                    event: 'scan-review',
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    sessionId: sectionOutcome.session.sessionId,
+                    pendingReview: sectionOutcome.session.pendingReview,
+                    reasons: sectionOutcome.session.reasons,
+                    items: sectionOutcome.session.items,
+                  });
                 }
               }
             })

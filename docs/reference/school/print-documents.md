@@ -352,8 +352,33 @@ never reissued.
 The physical card is the sheet's identity. Card ids are **random 7-digit
 numbers** ("like a uuid" — never sequential), student-bubbled into the
 card's ID columns. Multi-mark rows are legal (select-all-that-apply grades as
-an exact set; a double mark on a single-select row grades *ambiguous*, never
-guessed).
+an exact set); a double mark on a single-select row grades *ambiguous* and is
+queued for a person to look at — **except for the eraser signature**
+(2026-08-22 policy), which is credited outright:
+
+- **Two marks, one of them correct, earn full credit.** A child who erases
+  one bubble and fills another often leaves enough graphite for the reader to
+  see both — that reads as an eraser, not a guess.
+- **Everything else about a multi-mark row still holds for review, never
+  guessed at.** Three or more marks never earn credit, even when one of them
+  is correct. Two marks where *both* are wrong never earn credit. Marks
+  covering **every available choice** never earn credit regardless of count —
+  this is what stops a true/false row (only two choices) from being
+  auto-credited by the rule above: marking both options *is* marking
+  everything.
+- **The credit is bounded per sheet:** at most `max(1, floor(rowCount / 5))`
+  rows on any one card may be credited this way, spent in question-number
+  order so the cap is deterministic. A row that would otherwise qualify but
+  finds the budget already spent falls through to the review queue exactly
+  like an ordinary ambiguous row.
+- **Strictness is archetype-driven.** A `worksheet` (low-stakes practice) is
+  graded leniently; a `quiz` (and `infopage`) is strict — the cap is 0, so a
+  quiz's double-marks are never credited and always hold for review, exactly
+  as before this policy existed.
+
+A row this rule promotes is recorded as `correct` with a `leniency: 'eraser'`
+marker carried through to the verdict sheet (`gradedBy: 'engine-leniency'`
+there, distinct from a plain `'engine'` verdict) — auditable, never silent.
 
 Every card-backed render writes (or reuses) an **allocation record** at
 `data/content/school/print-documents/allocations/<cardId>.yml`:
@@ -909,9 +934,12 @@ and the real attempt ids. Two things hold it back on purpose:
   never graded into the session.
 - **Anything a machine cannot honestly grade goes to a person first.**
   Machine-graded rows land in the review queue as *resolved* engine verdicts
-  (the durable per-item verdict sheet); ambiguous double-marks and write-on
-  questions (short answer / essay — top-level or inside an inset) are queued
-  *pending*, and the session holds at `submitted`. A grown-up resolves the
+  (the durable per-item verdict sheet) — including a double-mark the bounded
+  eraser-leniency rule credited (§5.4), resolved as `gradedBy:
+  'engine-leniency'` so it stays distinguishable from an outright single-mark
+  verdict. Every OTHER ambiguous double-mark and write-on question (short
+  answer / essay — top-level or inside an inset) is queued *pending*, and the
+  session holds at `submitted`. A grown-up resolves the
   pending items through the existing review flow, and the ordinary grading
   path finishes the session from the queue roster — print units derive their
   expected-item set from that same queue, which is the only roster that
