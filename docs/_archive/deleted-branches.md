@@ -258,3 +258,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-22 | fix/preexisting-test-failures | 83b95dddf | Fixed 11 pre-existing stale test files; no production code changed |
 | 2026-08-22 | fix/laser-duplex-honesty | 3018a6f7f | Laser adapter reads printer's real sides-default; honest duplex reporting |
 | 2026-08-22 | fix/gate-vitest-failures | 5056a6036 | Fixed all 28 gate-failing test files; baseline 12 -> 0; 2 real production bugs |
+| 2026-08-22 | feat/school-grading-hook | 57898150b | HA grading hook: one script, outcome as variables, all four terminal outcomes |
