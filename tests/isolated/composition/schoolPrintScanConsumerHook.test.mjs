@@ -92,7 +92,82 @@ describe('gradingHook: fired fire-and-forget at all four terminal scan outcomes'
       learnerId: 'milo',
       earned: 5,
       total: 6,
+      percent: 83.33,
       sessionId: 'ses-one',
+    });
+  });
+
+  it('a composed two-section card fires TWICE, each with its OWN section score, not the card aggregate', async () => {
+    // The defect this guards against: firing the whole-card aggregate
+    // (earnedPoints/totalPoints) for every section would make section A's
+    // 2/2 and section B's 1/3 report the SAME number to Home Assistant. The
+    // fake `recordCardScanOutcome.execute` mirrors RecordCardScanOutcome's
+    // real composed-return shape (Task 1's fix): a `sectionOutcomes` array
+    // whose entries carry their OWN `earnedPoints`/`totalPoints`, correlated
+    // by index with the sections that produced them.
+    const bus = makeBus();
+    const gradingHook = fakeHook();
+    // Deliberately mismatched vs. either section, so a fire that fell back
+    // to this aggregate instead of the section score would be caught.
+    const card = singleCard({ earnedPoints: 999, totalPoints: 999 });
+    const recordCardScanOutcome = {
+      execute: vi.fn(async () => ({
+        recorded: true,
+        sectionOutcomes: [
+          {
+            recorded: true, session: { sessionId: 'sec-a', advancedTo: 'graded' }, earnedPoints: 2, totalPoints: 2,
+          },
+          {
+            recorded: true, session: { sessionId: 'sec-b', advancedTo: 'graded' }, earnedPoints: 1, totalPoints: 3,
+          },
+        ],
+      })),
+    };
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => ({ results: [card] }) },
+      recordCardScanOutcome,
+      gradingHook,
+      logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(gradingHook.calls).toHaveLength(2);
+    expect(gradingHook.calls[0]).toMatchObject({
+      result: 'graded', sessionId: 'sec-a', earned: 2, total: 2, percent: 100,
+    });
+    expect(gradingHook.calls[1]).toMatchObject({
+      result: 'graded', sessionId: 'sec-b', earned: 1, total: 3, percent: 33.33,
+    });
+    // Neither fire used the card's own (deliberately mismatched) aggregate.
+    expect(gradingHook.calls.some((c) => c.earned === 999 || c.total === 999)).toBe(false);
+  });
+
+  it('a single non-composed card still reports the card aggregate (no section score to prefer)', async () => {
+    const bus = makeBus();
+    const gradingHook = fakeHook();
+    const card = singleCard({ earnedPoints: 4, totalPoints: 4 });
+    const recordCardScanOutcome = {
+      // The non-composed shape: `recorded` itself IS the sole "sectionOutcome"
+      // (`recorded?.sectionOutcomes ?? [recorded]` in the consumer) and, per
+      // RecordCardScanOutcome's real return shape, never carries its own
+      // earnedPoints/totalPoints — only `session`.
+      execute: vi.fn(async () => ({ recorded: true, session: { sessionId: 'ses-one', advancedTo: 'graded' } })),
+    };
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => ({ results: [card] }) },
+      recordCardScanOutcome,
+      gradingHook,
+      logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(gradingHook.calls).toHaveLength(1);
+    expect(gradingHook.calls[0]).toMatchObject({
+      result: 'graded', sessionId: 'ses-one', earned: 4, total: 4, percent: 100,
     });
   });
 

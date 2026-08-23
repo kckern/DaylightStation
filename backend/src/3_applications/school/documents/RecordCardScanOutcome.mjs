@@ -142,7 +142,19 @@ export class RecordCardScanOutcome {
       }
       return {
         recorded: sectionOutcomes.some((outcome) => outcome.recorded),
-        sectionOutcomes,
+        // Each entry gets its OWN section's score (not the whole card's
+        // aggregate) — the caller (schoolPrintScanConsumer) fires one grading-
+        // hook event per section and needs section A's 2/2 to read differently
+        // from section B's 1/3 on the same card. `sectionOutcomes[i]` and
+        // `card.sections[i]` correspond by construction: this loop above
+        // pushes one outcome per `for (const section of card.sections)`
+        // iteration, in the same order, so the index correlation here is not
+        // a coincidence — it is guaranteed by the loop that built the array.
+        sectionOutcomes: sectionOutcomes.map((outcome, i) => ({
+          ...outcome,
+          earnedPoints: card.sections[i].earnedPoints,
+          totalPoints: card.sections[i].totalPoints,
+        })),
       };
     }
     const learnerId = card.learnerId ?? null;

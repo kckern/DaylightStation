@@ -189,6 +189,22 @@ export function createSchoolPrintScanConsumer({
               const outcomes = recorded?.sectionOutcomes ?? [recorded];
               for (const sectionOutcome of outcomes) {
                 if (sectionOutcome?.session?.advancedTo === 'graded') {
+                  // A composed card's sectionOutcome carries ITS OWN section's
+                  // score (RecordCardScanOutcome correlates sectionOutcomes[i]
+                  // with card.sections[i] by construction) — falling back to
+                  // the card aggregate only for a single/non-composed card,
+                  // whose sectionOutcome (== `recorded` itself) never has an
+                  // `earnedPoints`/`totalPoints` of its own. Without this,
+                  // two sections firing twice would report the SAME whole-
+                  // card score for two different lesson results.
+                  const earned = sectionOutcome.earnedPoints ?? card.earnedPoints;
+                  const total = sectionOutcome.totalPoints ?? card.totalPoints;
+                  // percent is derived from the SAME earned/total this fire
+                  // sends, never from the card, so the three numbers can
+                  // never disagree. null (not NaN) when total is 0/missing.
+                  const percent = (typeof earned === 'number' && typeof total === 'number' && total > 0)
+                    ? Math.round((earned / total) * 10000) / 100
+                    : null;
                   // Home automation is a bystander: never awaited into the
                   // grading path and never able to fail it. The adapter
                   // already swallows its own errors; this catch covers a
@@ -197,8 +213,9 @@ export function createSchoolPrintScanConsumer({
                     result: 'graded',
                     testId,
                     learnerId: card.learnerId ?? null,
-                    earned: card.earnedPoints,
-                    total: card.totalPoints,
+                    earned,
+                    total,
+                    percent,
                     sessionId: sectionOutcome.session.sessionId,
                   }).catch(() => {});
                   if (closeSessionOutcome) {
