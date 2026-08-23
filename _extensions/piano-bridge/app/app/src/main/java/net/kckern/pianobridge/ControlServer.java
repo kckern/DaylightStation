@@ -110,6 +110,7 @@ public class ControlServer extends NanoWSD {
                             .put("GET /status").put("POST /connect").put("POST /forget")
                             .put("POST /scan?ms=4000").put("GET /config").put("POST /config (yaml body)")
                             .put("GET /log").put("POST /panic")
+                            .put("GET|POST /midi/send?hex=F0…F7&repeat=3  (raw MIDI/SysEx OUT to the piano)")
                             .put("GET /diagnostics            (FULL system+FKB health snapshot for `pbctl diag`)")
                             .put("GET /kiosk                  (WebView watchdog verdict + recovery counters)")
                             .put("POST /kiosk/beat            (page heartbeat ingest: {fps,visibility,url})")
@@ -138,6 +139,14 @@ public class ControlServer extends NanoWSD {
                     o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
+                    // The write path to the piano. Surfaced because "BLE CONNECTED" says
+                    // nothing about whether we can SEND — that gap is exactly what let the
+                    // 2026-08-22 one-way outage hide behind a healthy-looking status.
+                    JSONObject w = new JSONObject();
+                    w.put("open", service.isMidiWriteOpen());
+                    String werr = service.getMidiWriteLastError();
+                    w.put("lastError", werr == null ? JSONObject.NULL : werr);
+                    o.put("midiWrite", w);
                     o.put("preset", currentPresetId == null ? JSONObject.NULL : currentPresetId);
                     KioskWatchdog wd = service.getKioskWatchdog();
                     if (wd != null) {
@@ -301,6 +310,42 @@ public class ControlServer extends NanoWSD {
                 // process's /proc. So other-process CPU is impossible here — it needs adb's
                 // shell uid. What works: logcat (READ_LOGS), arbitrary in-sandbox exec, our
                 // OWN per-thread CPU (read in-process by ProcStats), and framework-API info.
+                case "/midi/send": {
+                    // Send raw MIDI to the piano over the APK's BLE write path.
+                    //   GET|POST /midi/send?hex=F0 41 10 42 12 40 01 30 04 15 F7[&repeat=3]
+                    // Hex may be spaced, comma-separated, or bare. This is the ONLY way
+                    // SysEx can reach the piano: the kiosk WebView is permanently denied
+                    // Web MIDI SysEx (NotAllowedError on {sysex:true}, Chrome 151), so
+                    // reverb/chorus have no browser-side route at all.
+                    String hex = strParam(session, "hex", null);
+                    if (hex == null && method == NanoHTTPD.Method.POST) hex = readBody(session);
+                    if (hex == null || hex.trim().isEmpty()) return json(err("missing hex"));
+                    byte[] bytes;
+                    try { bytes = parseHexBytes(hex); }
+                    catch (IllegalArgumentException e) { return json(err(e.getMessage())); }
+                    if (bytes.length == 0) return json(err("no bytes"));
+                    // The MDG-400 has no read-back and the JamCorder occasionally drops a
+                    // BLE→DIN SysEx message, so repeats are the documented mitigation
+                    // (piano/config.yml `effects.resend`). Spaced by more than one BLE
+                    // connection interval so each lands in its own packet.
+                    int repeat = Math.max(1, Math.min(10, parseIntParam(session, "repeat", 1)));
+                    int sent = 0;
+                    for (int i = 0; i < repeat; i++) {
+                        if (i > 0) { try { Thread.sleep(30L); } catch (InterruptedException ignored) { } }
+                        if (service.sendMidi(bytes)) sent++;
+                    }
+                    Diag.log(TAG, "/midi/send " + session.getRemoteIpAddress()
+                            + " bytes=" + bytes.length + " repeat=" + repeat + " sent=" + sent);
+                    JSONObject o = ok();
+                    o.put("bytes", bytes.length);
+                    o.put("repeat", repeat);
+                    o.put("sent", sent);
+                    o.put("writeOpen", service.isMidiWriteOpen());
+                    // Deliberately NOT a delivery claim: send() is fire-and-forget. Confirm
+                    // at the far end with the JamCorder's ble.in counter.
+                    o.put("note", "handed to the port; confirm delivery via JamCorder ble.in");
+                    return json(o);
+                }
                 case "/exec": {
                     String cmd = strParam(session, "cmd", null);
                     if (cmd == null && method == NanoHTTPD.Method.POST) cmd = readBody(session);
@@ -354,6 +399,24 @@ public class ControlServer extends NanoWSD {
 
     private JSONObject ok() { try { return new JSONObject().put("ok", true); } catch (JSONException e) { return new JSONObject(); } }
     private JSONObject err(String msg) { try { return new JSONObject().put("ok", false).put("error", msg == null ? "" : msg); } catch (JSONException e) { return new JSONObject(); } }
+
+    /**
+     * Parse a MIDI byte string: "F0 41 10 F7", "f0,41,10,f7" or "F0411 0F7" all work.
+     * Rejects odd-length and non-hex input loudly rather than sending a truncated
+     * SysEx — a half-sent SysEx can leave the synth waiting for a terminator.
+     */
+    static byte[] parseHexBytes(String s) {
+        String clean = s.replaceAll("(?i)0x", "").replaceAll("[^0-9a-fA-F]", "");
+        if (clean.isEmpty()) return new byte[0];
+        if (clean.length() % 2 != 0) {
+            throw new IllegalArgumentException("odd number of hex digits (" + clean.length() + ")");
+        }
+        byte[] out = new byte[clean.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(clean.substring(i * 2, i * 2 + 2), 16);
+        }
+        return out;
+    }
 
     private NanoHTTPD.Response json(JSONObject o) { return json(NanoHTTPD.Response.Status.OK, o); }
     private NanoHTTPD.Response json(NanoHTTPD.Response.Status status, JSONObject o) {
@@ -594,6 +657,36 @@ public class ControlServer extends NanoWSD {
                 case "note.off": {
                     int note = msg.optInt("note", -1);
                     if (note >= 0 && engine != null) engine.noteOff(note);
+                    break;
+                }
+                case "midi.raw": {
+                    // Browser → piano. NOTE the asymmetry with note.on/note.off above:
+                    // those drive the APK's INTERNAL synth, this one goes out over BLE to
+                    // the real instrument. Accepts {hex:"F0 …"} or {bytes:[240,65,…]}.
+                    //
+                    // This is what lets the kiosk send SysEx at all — the WebView is
+                    // permanently denied Web MIDI SysEx, so effects (reverb/chorus) can
+                    // only reach the piano through here.
+                    byte[] raw = null;
+                    String hex = msg.optString("hex", null);
+                    if (hex != null && !hex.isEmpty()) {
+                        try { raw = parseHexBytes(hex); }
+                        catch (IllegalArgumentException e) { sendError("bad_hex", e.getMessage()); break; }
+                    } else {
+                        JSONArray arr = msg.optJSONArray("bytes");
+                        if (arr != null) {
+                            raw = new byte[arr.length()];
+                            for (int i = 0; i < arr.length(); i++) raw[i] = (byte) arr.optInt(i, 0);
+                        }
+                    }
+                    if (raw == null || raw.length == 0) { sendError("no_bytes", "midi.raw needs hex or bytes"); break; }
+                    int reps = Math.max(1, Math.min(10, msg.optInt("repeat", 1)));
+                    boolean okAll = true;
+                    for (int i = 0; i < reps; i++) {
+                        if (i > 0) { try { Thread.sleep(30L); } catch (InterruptedException ignored) { } }
+                        okAll &= service.sendMidi(raw);
+                    }
+                    if (!okAll) sendError("write_failed", "MIDI write path not open");
                     break;
                 }
                 default:

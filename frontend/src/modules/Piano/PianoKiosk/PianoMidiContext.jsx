@@ -75,10 +75,14 @@ export function PianoMidiProvider({ children, preferredInputName }) {
     bridgeLink: bridge.link,
     bridgeUnavailable: bridge.unavailable,
     speakerConnected: bridge.speakerConnected,
+    // Raw-MIDI/SysEx OUT, which ONLY the bridge can carry (the WebView is denied
+    // Web MIDI SysEx). Effect TYPE changes ride this; see effectSysex.js.
+    sendSysex: bridge.sendSysex,
     connected,
     status,
     midiHealth,
-  }), [midi, bridge.link, bridge.unavailable, bridge.speakerConnected, connected, status, midiHealth]);
+  }), [midi, bridge.link, bridge.unavailable, bridge.speakerConnected, bridge.sendSysex,
+    connected, status, midiHealth]);
   return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
 }
 
