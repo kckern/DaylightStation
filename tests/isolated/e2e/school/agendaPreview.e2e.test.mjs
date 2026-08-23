@@ -86,7 +86,9 @@ afterEach(async () => {
   h?.dispose();
 });
 
-const tokenDir = () => path.join(h.dataDir, 'household', 'school', 'tokens');
+// bfdbe7598 moved token storage under the household school taxonomy's
+// `runtime/` slice (YamlTokenRegistry#root -> 'school/runtime/tokens').
+const tokenDir = () => path.join(h.dataDir, 'household', 'school', 'runtime', 'tokens');
 const tokenFiles = () => (fs.existsSync(tokenDir()) ? fs.readdirSync(tokenDir()) : []);
 
 describe('GET /learners/:learnerId/agenda/preview — dry-run agenda preview', () => {
