@@ -998,9 +998,13 @@ advances the issuing work session `issued → submitted → graded` — holding 
 short answers land in the parent review queue as pending; machine marks land
 as resolved engine verdicts on the same sheet). Mis-bubbled card ids, retired
 cards, and refused records all surface at `warn` with actionable detail —
-a child's work never vanishes silently. A configured `school.yml`
-`grading_hook.script` fires one Home Assistant script on every terminal scan
-outcome (see [`print-documents.md` §8, "The grading hook"](./print-documents.md#8-scan-back-grading-and-the-lifecycle)).
+a child's work never vanishes silently. When a Home Assistant gateway is
+configured for the household AND `school.yml` sets `grading_hook.script`,
+one HA script fires per **fully-resolved** terminal scan outcome — `graded`,
+`review` (awaiting-review), `unresolved`, and `refused` — never on
+`unknownCard`, `deadCard`, a card with no live allocation at all, or any
+other `recorded:false` outcome, none of which fire anything (see
+[`print-documents.md` §8, "The grading hook"](./print-documents.md#8-scan-back-grading-and-the-lifecycle)).
 
 `GET /api/v1/school/print/<taxonomy-id>` (variety defaults to `omr`;
 `variety=hand` for on-page bubbles) is the surface — and
