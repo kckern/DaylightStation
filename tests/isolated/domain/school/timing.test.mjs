@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateDatedModule, evaluateTiming, materializeTiming, studyDate } from '#domains/school/timing.mjs';
+import { evaluateDatedModule, evaluateTiming, materializeTiming, normalizeTiming, studyDate } from '#domains/school/timing.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 
@@ -164,13 +164,45 @@ describe('evaluateDatedModule', () => {
       .toThrow(/window closes before it opens/);
   });
 
-  // KNOWN GAP, pinned deliberately: the shared `isDay` helper validates shape via
-  // Date.parse, which ROLLS OVER an out-of-range day (2026-02-30 -> 2026-03-02)
-  // instead of rejecting it. So a nonsense calendar date is accepted here, and
-  // equally by normalizeTiming/evaluateTiming. If isDay is ever hardened, this
-  // test should flip to expect a throw.
-  it('does not yet reject an out-of-range calendar date (isDay limitation)', () => {
-    expect(evaluateDatedModule({ opensOn: '2026-02-30', closesOn: '2026-09-20' }, { today: '2026-09-15' }).state)
+});
+
+describe('isDay rejects dates that do not exist', () => {
+  it('rejects a rolled-over day through evaluateDatedModule', () => {
+    expect(() => evaluateDatedModule({ opensOn: '2026-11-01', closesOn: '2026-11-31' }, { today: '2026-11-15' }))
+      .toThrow(/opensOn and closesOn/);
+    expect(() => evaluateDatedModule({ opensOn: '2026-02-30', closesOn: '2026-03-05' }, { today: '2026-03-01' }))
+      .toThrow(/opensOn and closesOn/);
+  });
+
+  it('rejects a rolled-over day through normalizeTiming', () => {
+    const { errors } = normalizeTiming({
+      schema: 'school.timing/v1',
+      availability: { opensOn: '2026-01-01', closesOn: '2026-06-31' },
+    });
+    expect(errors.join()).toMatch(/closesOn/);
+  });
+
+  it('still accepts a real leap day', () => {
+    expect(evaluateDatedModule({ opensOn: '2028-02-29', closesOn: '2028-03-01' }, { today: '2028-02-29' }).state)
       .toBe('available');
+  });
+
+  it('rejects Feb 29 in a non-leap year', () => {
+    expect(() => evaluateDatedModule({ opensOn: '2026-02-29', closesOn: '2026-03-05' }, { today: '2026-03-05' }))
+      .toThrow(/opensOn and closesOn/);
+  });
+
+  it('REPORTS an out-of-range month instead of throwing', () => {
+    // isDay is a boolean predicate: normalizeTiming calls it expecting false and
+    // pushes an error string. A naive round-trip check throws RangeError here
+    // ('2026-13-01' is an Invalid Date, and toISOString() on that throws), which
+    // would crash manifest validation on a plausible typo instead of failing it.
+    expect(() => evaluateDatedModule({ opensOn: '2026-13-01', closesOn: '2026-12-05' }, { today: '2026-12-01' }))
+      .toThrow(/opensOn and closesOn/);
+    const { timing, errors } = normalizeTiming({
+      schema: 'school.timing/v1', availability: { opensOn: '2026-13-01' },
+    });
+    expect(timing).toBeNull();
+    expect(errors.join()).toMatch(/opensOn must be YYYY-MM-DD/);
   });
 });
