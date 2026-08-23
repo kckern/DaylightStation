@@ -370,6 +370,19 @@ Catalog/Subject/Course/Unit/Lesson/Module evidence locally. It does not own
 grading, progression, time semantics, or a subject-specific branch. QR and
 cable arrivals return to the same School result-import/idempotency path.
 
+**No calculator-family or wire-format vocabulary appears in domain or
+application production code.** "TI-86", device-family names, and wire concepts
+like write ordering belong in the adapter — `Ti86SchoolCalcCodec` and its
+siblings — never in `2_domains/school/` or `3_applications/school/`. This is
+enforced, not merely encouraged:
+`tests/isolated/application/school/schoolcalcArchitecture.test.mjs` fails on any
+such leak, alongside its checks that the School domain stays independent of
+outer layers and that SchoolCalc use cases depend only on domains, ports, and
+pure hashing. Feature work has drifted across this line before — a domain error
+message and a wire-ordering concern both had to be moved back out — so treat a
+failure of that test as a real boundary violation to relocate, not a test to
+relax.
+
 The adapter's 2026-08-03 owned-ROM MAME release gate exercises that projection
 alongside Catalog browsing, a reader, local quiz scoring, durable result
 queueing, and QR display. This is transport/client conformance evidence only;
@@ -788,74 +801,77 @@ the layer rules. The printer host defaults to the `kitchen-printer` entry in
 `devices.yml`; `school.yml` `printing:` need only opt in and can override
 limits.
 
-#### Duplex: double-sided by default, via PJL
+#### Duplex: supplied by the printer, not by the job
 
-**Jobs default to double-sided, long-edge (book-style) binding.** Nothing has
-to be configured for that — it is the adapter's constructor default.
+**Double-sided output comes from the printer's own `sides-default`, not from
+anything the job carries.** The adapter deliberately sends no `sides` attribute
+at all, and the document arrives duplexed because the device is configured to
+duplex everything.
 
-Because there is no CUPS layer here, the usual `-o sides=two-sided-long-edge`
-has nothing to attach to, and this printer's IPP path rejects PDF outright (see
-Transport above), so IPP job attributes are not an option either. What a raw
-JetDirect job *can* carry is a **PJL (Printer Job Language) envelope** wrapped
-around the PDF bytes — `pjlWrap()` in `LaserPrinterAdapter.mjs`. Every job goes
-out as:
+That is not a design preference — it is what this firmware permits. The
+HL-L2460DW advertises a complete, spec-shaped `sides-supported:
+["one-sided","two-sided-long-edge","two-sided-short-edge"]`, and then rejects a
+Print-Job with `0x0505 server-error-temporary-error` the instant a `sides`
+attribute is **present at any value — including its own `sides-default`**.
+Measured against the physical device with Validate-Job (no paper produced):
+
+| job attributes | result |
+|---|---|
+| no `sides` attribute | accepted, `0x0` |
+| `sides=one-sided` | rejected, `0x505` |
+| `sides=two-sided-long-edge` | rejected, `0x505` |
+
+That is why `sides` is first in `negotiate.mjs`'s `JOB_ATTRIBUTE_TRIM_ORDER`:
+the Validate-Job negotiation drops it before anything physically consequential,
+so the job is accepted at all. See Transport above for how that negotiation
+works and why it exists.
+
+**Setting it.** Duplex is a device setting, changed at the printer — its web UI
+(2-sided Print → Long Edge) or front panel (Settings → Printer → 2-sided). It
+is not in `school.yml` and cannot be set from this codebase. Read the live value
+over IPP without printing anything:
 
 ```
-<UEL>@PJL JOB NAME="<job name>"
-@PJL SET COPIES=1
-@PJL SET DUPLEX=ON
-@PJL SET BINDING=LONGEDGE      # omitted entirely when duplex is off
-@PJL ENTER LANGUAGE=PDF
-…the PDF bytes, unmodified…
-<UEL>@PJL EOJ
-<UEL>
+GET_PRINTER_ATTRIBUTES → decoded `.attrs`   (note: `.attrs`, not `.attributes`)
+  sides-default   = ["two-sided-long-edge"]   ← duplex is on
+  sides-supported = ["one-sided","two-sided-long-edge","two-sided-short-edge"]
 ```
 
-…where `<UEL>` is the Universal Exit Language escape `\x1B%-12345X`. The PDF
-itself passes through byte-for-byte; only the envelope is added. Every `SET`
-lands *before* the language switch — after it, the bytes belong to the PDF
-personality and PJL is no longer reading.
+**The layout already assumes it.** `DocumentPdfRenderer` alternates the binding
+gutter by page parity for duplex archetypes independently of any printer
+setting — so a worksheet is laid out for double-sided binding whether or not
+the device is currently duplexing. A printer left on `one-sided` therefore
+produces pages whose gutters alternate for no reason; that is the visible
+symptom of the device default having drifted.
 
-**Copies are the firmware's job.** `copies: 3` sends the document **once** with
-`@PJL SET COPIES=3`, not three concatenated PDFs. Concatenation hands the PDF
-personality one contiguous stream, which resolves a single document from its
-trailing xref — the plausible outcome is *"3 requested, 1 printed"*, silently,
-with the quota still charging 3. `COPIES` also gets copy boundaries right under
-duplex (each copy starts on a fresh sheet). Inferred from the PJL spec like the
-rest of this envelope, not measured.
+**`duplex` still travels with the job, but only drives reporting.**
+`printPdf({ duplex: true })` never changes the wire format. It makes the
+adapter read the printer's real `sides-default` and log which of two truths
+applies:
 
-**`binding` is whitelisted** to exactly `LONGEDGE` / `SHORTEDGE` (case and
-surrounding whitespace forgiven). A plausible typo — `long-edge` — would
-otherwise emit an invalid value that the printer rejects while keeping its own
-default: wrong physical output, nothing logged. A rejected value is replaced by
-the configured default and logged as `laser-printer.invalid-binding`, naming
-what was supplied and what was used.
+| log event | meaning |
+|---|---|
+| `laser-printer.duplex-via-printer-default` | duplex requested, and the device default satisfies it (carries `sidesDefault`) |
+| `laser-printer.duplex-requested-not-applied` | duplex requested, device default is not two-sided — pages will print single-sided (carries `sidesDefault`, `sidesSupported`, and the remedy) |
 
-`printPdf` resolves with `duplex` echoing what was *requested* (9100 gives no
-ack, so it is never a confirmation).
+The lookup is isolated: if reading printer attributes fails, it degrades the
+*duplex report*, never the print. A failed read logs
+`laser-printer.sides-default-lookup-failed` and the job proceeds.
 
-Overrides, both optional:
+**Copies are an IPP job attribute** (`printJobAttrs` in `ipp.mjs`) — `copies: 3`
+sends the document once and asks the firmware for three, rather than
+concatenating three PDFs. Concatenation would hand the raster personality one
+contiguous stream and plausibly print one copy while the quota charged three.
 
-```yaml
-printing:
-  duplex: true         # default true; false = single-sided
-  binding: LONGEDGE    # default LONGEDGE (book-style, right for portrait text); or SHORTEDGE
-```
+**`binding` is vestigial.** `schoolLifecycle.mjs` still threads
+`binding: cfg.printing?.binding || 'LONGEDGE'` into the adapter, and
+`tests/isolated/composition/schoolLifecyclePrinterOptions.test.mjs` still pins
+that wiring, but `LaserPrinterAdapter` no longer reads it — long-edge vs
+short-edge is whatever the device is set to. Treat a `printing.binding` entry
+in `school.yml` as having no effect.
 
-Both are read at **two** composition sites and must stay in sync: `app.mjs`
-(the `PrintService` adapter, behind `/print/*`) and
-`5_composition/modules/schoolLifecycle.mjs` (the adapter injected into
-`IssueDocument` / `ReplaceLostAnswerSheet` — every tracked worksheet and quiz).
-`tests/isolated/composition/schoolLifecyclePrinterOptions.test.mjs` pins the
-second one.
-
-Per-job overrides of the same two options are available on
-`printPdf(pdf, { duplex, binding })`, and the print-document pipeline uses
-them — see **Duplex follows the document** below.
-`VirtualLaserPrinterAdapter` takes the same `duplex`/`binding` constructor
-options (so a single-sided deployment is reproducible against the double) and
-records both in its job sidecar, but applies no PJL — it has no printer to
-parse it, so its captures stay plain readable PDFs.
+`VirtualLaserPrinterAdapter` records `duplex`/`binding` in its job sidecar and
+applies neither — it has no printer, so its captures stay plain readable PDFs.
 
 #### Duplex follows the document, not the adapter default
 
@@ -1223,6 +1239,15 @@ needs revisiting — the confirm assumes the child can check.
 > **Verified end to end on hardware 2026-07-29.** A tap produced
 > `school.card.agenda-printed` and paper came out of the thermal printer.
 
+> **Long agendas print completely, and do not shift the next job.** The thermal
+> adapter waits for its write's flush callback before closing, rather than
+> closing on a fixed timer — a timer-closed socket truncated long jobs and left
+> residual bytes that offset whatever printed next, so a long agenda could
+> corrupt the following receipt. Raster conversion is also linear now.
+> Verified on paper 2026-08-22 with a 576×5000 PNG: 360,034 bytes,
+> 19,895 ms / 698 MB RSS → 11,080 ms / 124 MB. `thermalPrinter.job.complete`
+> logs real byte counts, and only after the flush.
+
 The personal card is NFC, not a printed barcode. A child taps it on the reader in
 the school room and a **sectioned daily agenda** prints — one block per assigned
 subject, at most one scannable ticket per subject per study day (see
@@ -1439,6 +1464,16 @@ into a template." `GetReportCard` answers course grades, materials-framework
 progress, an evidence aggregate, active-instructional-days, concept mastery,
 open remediation arcs, and the review backlog for one learner and one
 period — read-only; nothing here writes.
+
+**Assignment history entries carry `recordedAt`, and it is load-bearing.**
+Period-window filtering is done on that timestamp, and the admin activity trail
+keys its rows on it. An entry read back without `recordedAt` does not fail
+loudly — it silently falls outside every window, so a report card quietly loses
+courses and the audit feed quietly loses rows. Any read path that maps stored
+history into domain records must preserve it: mapping through a projection that
+only knows current-state fields drops it, which is precisely how this broke
+once. `tests/isolated/adapter/school/lifecycleStores.test.mjs` pins the
+round-trip.
 
 Which courses appear is deliberately **not** "what is this learner currently
 assigned" — a course assigned in week 2 and dropped in week 6 still happened,
@@ -1957,18 +1992,18 @@ No code exists for anything in this section. Each links its spec.
   9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
   flush, not on the printer closing the socket, precisely so a fire-and-forget
   job doesn't hang on that.
-- **Duplex rides on a PJL envelope, and is not hardware-confirmed.** Every job
-  is now wrapped in `@PJL SET COPIES` / `SET DUPLEX=ON` / `BINDING=LONGEDGE`
-  around `@PJL ENTER LANGUAGE=PDF`. That envelope is standard and the PDF inside
-  is untouched, but no one has yet held a double-sided sheet from this printer
-  to prove the firmware honors it. If a job prints single-sided — or worse,
-  prints the PJL text as garbage — suspect `@PJL ENTER LANGUAGE=PDF` first (PDF
-  is a vendor personality, not a PJL-spec language) and see Printing → Duplex.
-  **Run the first physical test with a short stack of paper in the tray.** If
-  the firmware rejects `ENTER LANGUAGE=PDF` and falls back to a *text*
-  personality, "garbage" is not one wasted sheet: it would render a ~200KB
-  binary PDF as printable characters, which is **dozens to hundreds of pages**.
-  A near-empty tray is the cheapest abort switch there is.
+- **Duplex is the printer's setting, and the job cannot override it either
+  way.** The adapter sends no IPP `sides` attribute, because this firmware
+  rejects one at any value (see Printing → Duplex for the Validate-Job
+  measurements). So sidedness is whatever the device default is, applied
+  uniformly: a job cannot request duplex, and — the sharper edge — cannot
+  request single-sided. With the device on `two-sided-long-edge`, fixed-gutter
+  archetypes (`quiz`, `infopage`) print double-sided despite rendering
+  `duplex: false`, and their left-only punch margin lands on the wrong physical
+  edge on every verso. The PJL envelope that would carry a per-job override was
+  never measured on this hardware and no longer exists in the adapter; reviving
+  it would mean proving at the printer that it works, on a transport that now
+  sends rasterized `image/urf` rather than PDF.
 - **YAML scalar trap in question banks:** a choice written as a bare number
   (`- 12`) parses as an integer and fails the bank validator's non-empty-string
   check. Quote numeric choices (`'12'`). The error names the field but not the

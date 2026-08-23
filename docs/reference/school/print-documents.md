@@ -272,19 +272,32 @@ for any action block whose token was minted at issue time.
 Every other archetype — `quiz`, `infopage` — reserves the gutter on the **left
 of every page**; v1 legacy documents draw no gutter at all.
 
-That decision now travels with the render: `execute()` returns `duplex`
+That decision travels with the render: `execute()` returns `duplex`
 (`true` / `false` / `null` for v1), and `IssueDocument` and
-`ReplaceLostAnswerSheet` pass it to `printPdf({ duplex })`, overriding the
-printer adapter's global default. A `worksheet` prints double-sided; a
-multi-page `quiz` or `infopage` prints **single-sided**, because folding a
-fixed-gutter document onto one sheet would put facing pages' punch margins on
-opposite physical edges and punching the stack would destroy content on every
-verso. `null` leaves the adapter default in place.
+`ReplaceLostAnswerSheet` pass it to `printPdf({ duplex })`.
+
+> **⚠️ The per-document choice no longer reaches the paper.** `duplex: false`
+> is currently a **no-op**. Sidedness is supplied by the printer's own
+> `sides-default`, applied to every job, and the adapter cannot opt a single
+> job out: this firmware rejects the IPP `sides` attribute at *any* value —
+> including `one-sided` — so there is no way to request single-sided for one
+> document. See [`README.md` → Printing → Duplex](./README.md) for the
+> measurements.
+>
+> With the device set to `two-sided-long-edge`, a multi-page `quiz` or
+> `infopage` **will print double-sided**, which is exactly what the
+> fixed-gutter layout cannot survive: its punch margin sits on the left of
+> every page, so on a verso it lands on the wrong physical edge and punching
+> the stack destroys content. Multi-page fixed-gutter documents should be
+> printed single-sided by changing the device default, or the affected
+> archetypes should be given alternating gutters so duplex is safe for them
+> too. Single-page quizzes are unaffected.
+
+The layout rule itself is unchanged and remains correct: a `worksheet` is built
+for double-sided binding, and `quiz` / `infopage` are not.
 
 Adding an archetype to `DUPLEX_ARCHETYPES` changes page layout, not just a
-printer setting — it needs its own visual verification. See
-[`README.md` → Printing → Duplex](./README.md) for the PJL envelope that
-carries it (and the standing caveat that none of it is hardware-confirmed).
+printer setting — it needs its own visual verification.
 
 Two **varieties** exist at the request level:
 
@@ -679,6 +692,25 @@ The scan consumer subscribes alongside the household's existing bubble-sheet
 recorder (same bus topics, same decoder) — additive, never gating it. A
 decoded card resolves through the allocation store; the decoded test id IS
 the card id.
+
+**A scan that goes nowhere says so.** The two events that explain "I scanned it
+and nothing happened" are deliberately loud and carry their reasons:
+
+| event | level | carries |
+|---|---|---|
+| `school.print.scan-unresolved` | `warn` | `testId`, `code`, `testIdCandidates` count, `answerCount` |
+| `school.print.scan-awaiting-review` | `info` | `sessionId`, `recordId`, `pendingReview`, `learnerId`, `reasons`, `items` |
+
+`scan-unresolved` is `warn`, not `debug`, because debug-level events are not
+shipped to the log store at all — at debug this line was dropped entirely and
+an unreadable sheet left no trace anywhere. The candidate count is what
+distinguishes "the id was unreadable" from "the id was ambiguous."
+
+`scan-awaiting-review` names `reasons` and `items` because `pendingReview: 1`
+alone required reading the queue file on disk to learn *which* row stopped the
+session and why. A sheet parking silently in review, with no receipt printed
+and no signal in the room, is the failure mode these two events exist to make
+visible.
 
 **Resolution** (per card):
 
