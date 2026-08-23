@@ -7,6 +7,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { useLifeUser } from '#frontend/modules/Life/hooks/useLifeUser.js';
 import LifeApp from '#frontend/Apps/LifeApp.jsx';
 
+// LifeApp renders useAppNotifications (05fc6b606), which subscribes to the
+// shared WS client via useWebSocketSubscription. There is no real WebSocket
+// global in this test environment, so mock the hook at the module boundary —
+// same pattern as tests/isolated/modules/Life/AppNotifications.test.jsx.
+vi.mock('#frontend/hooks/useWebSocket.js', () => ({
+  useWebSocketSubscription: () => {},
+}));
+
 const jsonResponse = (body) => ({ ok: true, status: 200, json: async () => body });
 
 /**
