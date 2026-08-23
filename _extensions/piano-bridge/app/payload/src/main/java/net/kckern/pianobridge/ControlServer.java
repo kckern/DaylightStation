@@ -102,7 +102,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p8-running-status";
+    public static final String BUILT_BY = "p9-link-verdict";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {

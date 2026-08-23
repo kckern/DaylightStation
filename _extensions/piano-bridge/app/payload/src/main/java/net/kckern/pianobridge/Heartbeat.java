@@ -132,12 +132,24 @@ public final class Heartbeat {
             o.put("midiInOpen", core.isMidiPortOpen());
             o.put("a11yBound", A11y.isConnected());
             Loopback lb2 = core.getLoopback();
+            boolean outVerified = false;
             if (lb2 != null) {
                 JSONObject l = lb2.snapshot();
-                o.put("outVerified", l.optBoolean("outVerified"));     // THE field: piano echoed our last probe
+                outVerified = l.optBoolean("outVerified");
+                o.put("outVerified", outVerified);                   // the piano echoed our last probe
                 o.put("loopRttMs", l.optLong("lastRttMs", -1));
                 o.put("loopMisses", l.optInt("consecutiveMisses"));
             }
+            // THE verdict. "ble CONNECTED" and "portOpen" are GATT/handle state and were
+            // true through an entire evening of zero bytes flowing (2026-08-23: a
+            // JamCorder reboot left a zombie BLE link that Android called CONNECTED).
+            // Only evidence of DATA counts:
+            //   VERIFIED  — the piano echoed a probe within the window
+            //   ZOMBIE    — link says connected, probes sent, nothing ever comes back
+            //   DOWN      — no BLE link at all
+            String bleState = b == null ? "none" : b.optString("state", "?");
+            String verdict = !"CONNECTED".equals(bleState) ? "DOWN" : (outVerified ? "VERIFIED" : "ZOMBIE");
+            o.put("linkVerdict", verdict);
             o.put("fkbReachable", FkbRest.reachable(c));
 
             KioskWatchdog wd = core.getKioskWatchdog();

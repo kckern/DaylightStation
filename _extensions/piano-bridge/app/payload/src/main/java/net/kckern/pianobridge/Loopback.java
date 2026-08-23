@@ -109,7 +109,7 @@ public final class Loopback {
             try { Thread.sleep(20); } catch (InterruptedException e) { break; }
         }
         boolean echoed = !pending.containsKey(id);
-        if (!echoed) { pending.remove(id); consecutiveMisses++; }
+        if (!echoed) { pending.remove(id); consecutiveMisses++; maybeKickZombie(); }
         try {
             o.put("echoed", echoed);
             o.put("rttMs", echoed ? lastRttMs : JSONObject.NULL);
@@ -117,6 +117,28 @@ public final class Loopback {
                     : "NO ECHO in " + WINDOW_MS + "ms — OUT is dead between the tablet and the piano's CPU");
         } catch (Exception ignored) { }
         return o;
+    }
+
+    /**
+     * Consecutive misses at which the link is declared a ZOMBIE and the BLE connector is
+     * told to drop + reconnect. GATT-state-driven reconnect never fires for a zombie
+     * (Android says CONNECTED); this is the only thing that does. Three misses = three
+     * heartbeat cycles (~3 min) — long enough that a piano that is merely switched
+     * off does not churn the radio every minute, short enough to matter at sea.
+     */
+    static final int ZOMBIE_MISSES = 3;
+    private volatile long lastZombieKickMs;
+
+    /** Called after each probe verdict. Kicks the connector once per zombie episode. */
+    void maybeKickZombie() {
+        if (consecutiveMisses < ZOMBIE_MISSES) return;
+        long now = System.currentTimeMillis();
+        if (now - lastZombieKickMs < 10 * 60 * 1000L) return; // one kick per 10 min
+        lastZombieKickMs = now;
+        BleMidiConnector ble = core == null ? null : core.getBleConnector();
+        Log.w(TAG, "ZOMBIE link: " + consecutiveMisses + " probes unanswered with BLE CONNECTED — forcing reconnect");
+        CrashLog.note("LOOP", "ZOMBIE link (" + consecutiveMisses + " unanswered probes) — forcing BLE reconnect");
+        if (ble != null) ble.connectNow();
     }
 
     /** Expire probes past the window so a dead link shows as misses, not pending forever. */
