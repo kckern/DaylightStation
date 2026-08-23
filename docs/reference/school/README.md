@@ -889,11 +889,20 @@ depends on the archetype:
 | v1 legacy documents | no gutter drawn at all | adapter default |
 
 Print a fixed-gutter document double-sided and page 2's reserved punch margin
-sits on the opposite physical edge from page 1's while the two share one sheet
-— punching the stack destroys content on every verso. So the render reports its
-own decision (`duplex` on the `execute()` result: `true`, `false`, or `null` for
-v1), and `IssueDocument` / `ReplaceLostAnswerSheet` pass it straight to
-`printPdf({ duplex })`. `null` falls through to the adapter default.
+sits on the opposite physical edge from page 1's while the two share one sheet.
+**That is a comfort loss, not lost content.** These documents are loose-leaf;
+punching is archival, not primary. And the 54pt `page.marginPt` is applied to
+*both* edges independently of the 18pt gutter, so on the gutter-less side
+content still starts 54pt in — clear of a standard ¼″ hole centred ½″ from the
+edge, whose outer rim reaches only ~45pt. The gutter buys room from the binder
+rings, not hole clearance. The **Printed** column above describes what the
+render *asks* for; what actually comes out is the device's `sides-default`
+(see Duplex below), and that asymmetry is tolerable for exactly this reason.
+
+The render still reports its own decision (`duplex` on the `execute()` result:
+`true`, `false`, or `null` for v1), and `IssueDocument` /
+`ReplaceLostAnswerSheet` pass it straight to `printPdf({ duplex })`, where it
+now drives reporting rather than the wire format.
 
 `PrintService`'s quota path (`/print/request`, bank worksheets and `type: pdf`
 files) has no such per-document decision and stays on the adapter default.
@@ -1999,11 +2008,14 @@ No code exists for anything in this section. Each links its spec.
   uniformly: a job cannot request duplex, and — the sharper edge — cannot
   request single-sided. With the device on `two-sided-long-edge`, fixed-gutter
   archetypes (`quiz`, `infopage`) print double-sided despite rendering
-  `duplex: false`, and their left-only punch margin lands on the wrong physical
-  edge on every verso. The PJL envelope that would carry a per-job override was
-  never measured on this hardware and no longer exists in the adapter; reviving
-  it would mean proving at the printer that it works, on a transport that now
-  sends rasterized `image/urf` rather than PDF.
+  `duplex: false`. **Accepted, and not a defect:** these are loose-leaf
+  documents, and the 54pt base margin on both edges already clears a standard
+  three-hole punch (~45pt) without help from the 18pt gutter, so the cost is
+  binding-edge comfort on archived versos, not content. The PJL envelope that
+  would carry a per-job override was never measured on this hardware and no
+  longer exists in the adapter; reviving it would mean proving at the printer
+  that it works, on a transport that now sends rasterized `image/urf` rather
+  than PDF — a lot of work to buy back 18pt of comfort.
 - **YAML scalar trap in question banks:** a choice written as a bare number
   (`- 12`) parses as an integer and fails the bank validator's non-empty-string
   check. Quote numeric choices (`'12'`). The error names the field but not the

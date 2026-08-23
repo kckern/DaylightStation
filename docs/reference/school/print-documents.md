@@ -285,19 +285,41 @@ That decision travels with the render: `execute()` returns `duplex`
 > measurements.
 >
 > With the device set to `two-sided-long-edge`, a multi-page `quiz` or
-> `infopage` **will print double-sided**, which is exactly what the
-> fixed-gutter layout cannot survive: its punch margin sits on the left of
-> every page, so on a verso it lands on the wrong physical edge and punching
-> the stack destroys content. Multi-page fixed-gutter documents should be
-> printed single-sided by changing the device default, or the affected
-> archetypes should be given alternating gutters so duplex is safe for them
-> too. Single-page quizzes are unaffected.
+> `infopage` prints double-sided with its gutter fixed to the left of every
+> page. **This is a comfort loss, not a correctness problem** — see
+> *Punch clearance* below before treating it as a defect.
 
-The layout rule itself is unchanged and remains correct: a `worksheet` is built
-for double-sided binding, and `quiz` / `infopage` are not.
+**Punch clearance: the base margin already covers it.** These documents are
+loose-leaf; three-hole punching is an archival afterthought, not the primary
+use. And the gutter is not what keeps holes out of content:
 
-Adding an archetype to `DUPLEX_ARCHETYPES` changes page layout, not just a
-printer setting — it needs its own visual verification.
+| | points | inches |
+|---|---|---|
+| `page.marginPt` — applied to **both** edges | 54 | 0.75″ |
+| `furniture.gutterPt` — added to **one** edge | 18 | 0.25″ |
+| Outer edge of a standard ¼″ hole centred ½″ in | ~45 | ~0.625″ |
+
+`contentBox` builds `contentLeftPt = page.marginPt + leftPt` and
+`contentRightPt = pageWidth - page.marginPt - rightPt`, so the 54pt base margin
+is present on the gutter-less side too. A punch reaching ~45pt from the edge
+still clears content by ~9pt. What the gutter buys on the bound edge is
+breathing room from the rings, not hole clearance.
+
+So a fixed-gutter document printed double-sided loses 18pt of binding-edge
+comfort on its versos and nothing else. Do not "fix" it by reverting the device
+to single-sided; that costs twice the paper on every worksheet to buy comfort on
+archived quizzes.
+
+The layout rule itself is unchanged: a `worksheet` is built for double-sided
+binding, `quiz` / `infopage` are not. If perfect archival binding is ever wanted
+for them, adding an archetype to `DUPLEX_ARCHETYPES` is cheaper than it sounds —
+`contentBox` returns an identical `widthPt` either way (recto reserves left,
+verso reserves right, both give up the same room), so mirroring reflows nothing
+and repaginates nothing; only `xPt` changes. The care needed is in OMR: bubble
+coordinates shift on verso pages and `formMap` drives grading, so the
+zero-tolerance coordinate assertions in
+`tests/isolated/rendering/school/golden/golden.test.mjs` must be re-verified,
+not regenerated.
 
 Two **varieties** exist at the request level:
 
