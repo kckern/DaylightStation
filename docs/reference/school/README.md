@@ -1992,18 +1992,18 @@ No code exists for anything in this section. Each links its spec.
   9100 clears on the printer's own TCP idle timeout. `printPdf` resolves on
   flush, not on the printer closing the socket, precisely so a fire-and-forget
   job doesn't hang on that.
-- **Duplex rides on a PJL envelope, and is not hardware-confirmed.** Every job
-  is now wrapped in `@PJL SET COPIES` / `SET DUPLEX=ON` / `BINDING=LONGEDGE`
-  around `@PJL ENTER LANGUAGE=PDF`. That envelope is standard and the PDF inside
-  is untouched, but no one has yet held a double-sided sheet from this printer
-  to prove the firmware honors it. If a job prints single-sided — or worse,
-  prints the PJL text as garbage — suspect `@PJL ENTER LANGUAGE=PDF` first (PDF
-  is a vendor personality, not a PJL-spec language) and see Printing → Duplex.
-  **Run the first physical test with a short stack of paper in the tray.** If
-  the firmware rejects `ENTER LANGUAGE=PDF` and falls back to a *text*
-  personality, "garbage" is not one wasted sheet: it would render a ~200KB
-  binary PDF as printable characters, which is **dozens to hundreds of pages**.
-  A near-empty tray is the cheapest abort switch there is.
+- **Duplex is the printer's setting, and the job cannot override it either
+  way.** The adapter sends no IPP `sides` attribute, because this firmware
+  rejects one at any value (see Printing → Duplex for the Validate-Job
+  measurements). So sidedness is whatever the device default is, applied
+  uniformly: a job cannot request duplex, and — the sharper edge — cannot
+  request single-sided. With the device on `two-sided-long-edge`, fixed-gutter
+  archetypes (`quiz`, `infopage`) print double-sided despite rendering
+  `duplex: false`, and their left-only punch margin lands on the wrong physical
+  edge on every verso. The PJL envelope that would carry a per-job override was
+  never measured on this hardware and no longer exists in the adapter; reviving
+  it would mean proving at the printer that it works, on a transport that now
+  sends rasterized `image/urf` rather than PDF.
 - **YAML scalar trap in question banks:** a choice written as a bare number
   (`- 12`) parses as an integer and fails the bank validator's non-empty-string
   check. Quote numeric choices (`'12'`). The error names the field but not the
