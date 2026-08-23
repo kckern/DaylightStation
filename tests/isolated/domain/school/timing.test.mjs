@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { datedModuleState, evaluateTiming, materializeTiming, studyDate } from '#domains/school/timing.mjs';
+import { evaluateDatedModule, evaluateTiming, materializeTiming, studyDate } from '#domains/school/timing.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 
@@ -96,35 +96,81 @@ describe('focus-day agenda allocation', () => {
   });
 });
 
-describe('datedModuleState', () => {
-  const window = { opensOn: '2026-09-14', closesOn: '2026-09-20' };
+describe('evaluateDatedModule', () => {
+  const moduleWindow = { opensOn: '2026-09-14', closesOn: '2026-09-20' };
+  const shift = (day, offset) => new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
 
   it('is upcoming before the window opens', () => {
-    expect(datedModuleState(window, { today: '2026-09-13' }).state).toBe('upcoming');
+    expect(evaluateDatedModule(moduleWindow, { today: '2026-09-13' }))
+      .toMatchObject({ state: 'upcoming', reasons: ['opens_later'] });
   });
 
   it('is available on the first and last day of the window', () => {
-    expect(datedModuleState(window, { today: '2026-09-14' }).state).toBe('available');
-    expect(datedModuleState(window, { today: '2026-09-20' }).state).toBe('available');
+    expect(evaluateDatedModule(moduleWindow, { today: '2026-09-14' }))
+      .toMatchObject({ state: 'available', reasons: ['current_module'] });
+    expect(evaluateDatedModule(moduleWindow, { today: '2026-09-20' }))
+      .toMatchObject({ state: 'available', reasons: ['current_module'] });
   });
 
   it('is catch_up after the window closes, however long ago', () => {
-    expect(datedModuleState(window, { today: '2026-09-21' }).state).toBe('catch_up');
-    expect(datedModuleState(window, { today: '2027-04-01' }).state).toBe('catch_up');
+    expect(evaluateDatedModule(moduleWindow, { today: '2026-09-21' }))
+      .toMatchObject({ state: 'catch_up', reasons: ['window_closed'] });
+    expect(evaluateDatedModule(moduleWindow, { today: '2027-04-01' }))
+      .toMatchObject({ state: 'catch_up', reasons: ['window_closed'] });
   });
 
-  it('never returns dormant — dated backlog does not expire', () => {
-    expect(datedModuleState(window, { today: '2027-04-01' }).state).not.toBe('dormant');
+  it('opens and closes a single-day window on the same day', () => {
+    const oneDay = { opensOn: '2026-09-14', closesOn: '2026-09-14' };
+    expect(evaluateDatedModule(oneDay, { today: '2026-09-13' }).state).toBe('upcoming');
+    expect(evaluateDatedModule(oneDay, { today: '2026-09-14' }).state).toBe('available');
+    expect(evaluateDatedModule(oneDay, { today: '2026-09-15' }).state).toBe('catch_up');
   });
 
-  it('rejects a malformed window rather than guessing', () => {
-    expect(() => datedModuleState({ opensOn: 'nope', closesOn: '2026-09-20' }, { today: '2026-09-15' }))
-      .toThrow(/window/);
-    expect(() => datedModuleState(window, { today: 'nope' })).toThrow(/today/);
+  it('offers one of exactly three states across the whole calendar — dated backlog never expires', () => {
+    // Sweeps opensOn-3 .. closesOn+60. Guards a FUTURE branch sneaking in a
+    // `dormant` or `missed_target`, which is the regression the design fears.
+    const seen = new Set();
+    const last = shift(moduleWindow.closesOn, 60);
+    for (let day = shift(moduleWindow.opensOn, -3); day <= last; day = shift(day, 1)) {
+      const { state } = evaluateDatedModule(moduleWindow, { today: day });
+      expect(['upcoming', 'available', 'catch_up']).toContain(state);
+      seen.add(state);
+    }
+    expect([...seen].sort()).toEqual(['available', 'catch_up', 'upcoming']);
+  });
+
+  it('rejects a malformed or incomplete window rather than guessing', () => {
+    expect(() => evaluateDatedModule({ opensOn: 'nope', closesOn: '2026-09-20' }, { today: '2026-09-15' }))
+      .toThrow(/opensOn and closesOn/);
+    expect(() => evaluateDatedModule({ opensOn: '2026-09-14' }, { today: '2026-09-15' }))
+      .toThrow(/opensOn and closesOn/);
+    expect(() => evaluateDatedModule({ closesOn: '2026-09-20' }, { today: '2026-09-15' }))
+      .toThrow(/opensOn and closesOn/);
+  });
+
+  it('rejects a window that is not a mapping', () => {
+    for (const notAWindow of [null, undefined, ['2026-09-14', '2026-09-20'], '2026-09-14']) {
+      expect(() => evaluateDatedModule(notAWindow, { today: '2026-09-15' })).toThrow(/opensOn and closesOn/);
+    }
+  });
+
+  it('rejects a missing or malformed today', () => {
+    expect(() => evaluateDatedModule(moduleWindow, { today: 'nope' })).toThrow(/today/);
+    expect(() => evaluateDatedModule(moduleWindow)).toThrow(/today/);
   });
 
   it('rejects an inverted window', () => {
-    expect(() => datedModuleState({ opensOn: '2026-09-20', closesOn: '2026-09-14' }, { today: '2026-09-15' }))
+    expect(() => evaluateDatedModule({ opensOn: '2026-09-20', closesOn: '2026-09-14' }, { today: '2026-09-15' }))
       .toThrow(/window closes before it opens/);
+  });
+
+  // KNOWN GAP, pinned deliberately: the shared `isDay` helper validates shape via
+  // Date.parse, which ROLLS OVER an out-of-range day (2026-02-30 -> 2026-03-02)
+  // instead of rejecting it. So a nonsense calendar date is accepted here, and
+  // equally by normalizeTiming/evaluateTiming. If isDay is ever hardened, this
+  // test should flip to expect a throw.
+  it('does not yet reject an out-of-range calendar date (isDay limitation)', () => {
+    expect(evaluateDatedModule({ opensOn: '2026-02-30', closesOn: '2026-09-20' }, { today: '2026-09-15' }).state)
+      .toBe('available');
   });
 });

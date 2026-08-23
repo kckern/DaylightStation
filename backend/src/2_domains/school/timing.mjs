@@ -192,19 +192,25 @@ export function evaluateTiming(raw, { today, inProgress = false } = {}) {
  *
  * Deliberately never returns `dormant`. A closed dated module is `catch_up`:
  * still offerable, just outranked. Backlog in a dated course does not expire
- * and never needs a grown-up to revive it — it sinks by losing the sort
- * (planner.mjs ranks catch_up modules newest-first), not by a rule.
+ * and never needs a grown-up to revive it — it sinks by losing the sort (the
+ * planner will rank catch_up modules newest-first), not by a rule.
+ *
+ * WARNING: the returned object is NOT shape-compatible with `evaluateTiming`.
+ * It carries only `{ state, reasons }` — no `timing`, no `priority`. Do not
+ * feed it to a caller that reads an evaluateTiming decision: planner.mjs falls
+ * back to `decision?.timing ?? rawTiming` and `decision?.priority ?? 3`, so the
+ * substitution throws nothing and yields silently wrong data instead.
  */
-export function datedModuleState(window, { today } = {}) {
-  if (!isDay(today)) throw new Error('datedModuleState requires today YYYY-MM-DD');
-  if (!isObject(window) || !isDay(window.opensOn) || !isDay(window.closesOn)) {
-    throw new Error('datedModuleState requires a window with opensOn and closesOn as YYYY-MM-DD');
+export function evaluateDatedModule(moduleWindow, { today } = {}) {
+  if (!isDay(today)) throw new Error('evaluateDatedModule requires today YYYY-MM-DD');
+  if (!isObject(moduleWindow) || !isDay(moduleWindow.opensOn) || !isDay(moduleWindow.closesOn)) {
+    throw new Error('evaluateDatedModule requires a window with opensOn and closesOn as YYYY-MM-DD');
   }
-  if (compareDay(window.opensOn, window.closesOn) > 0) {
-    throw new Error('datedModuleState window closes before it opens');
+  if (compareDay(moduleWindow.opensOn, moduleWindow.closesOn) > 0) {
+    throw new Error('evaluateDatedModule window closes before it opens');
   }
-  if (compareDay(today, window.opensOn) < 0) return { state: 'upcoming', reasons: ['opens_later'] };
-  if (compareDay(today, window.closesOn) > 0) return { state: 'catch_up', reasons: ['catch_up'] };
+  if (compareDay(today, moduleWindow.opensOn) < 0) return { state: 'upcoming', reasons: ['opens_later'] };
+  if (compareDay(today, moduleWindow.closesOn) > 0) return { state: 'catch_up', reasons: ['window_closed'] };
   return { state: 'available', reasons: ['current_module'] };
 }
 
