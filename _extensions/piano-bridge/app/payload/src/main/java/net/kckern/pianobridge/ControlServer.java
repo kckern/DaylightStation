@@ -79,10 +79,30 @@ public class ControlServer extends NanoWSD {
 
     @Override
     public void stop() {
-        Log.i(TAG, "ControlServer stopping");
+        Log.i(TAG, "ControlServer stopping (" + clients.size() + " ws clients)");
         heartbeatTimer.cancel();
+        // Close every live WebSocket FIRST. NanoHTTPD's listener thread will not
+        // release the port while a connection is open, and the kiosk page always
+        // holds one — so on a hot swap the OLD payload's server kept :8770 and the
+        // NEW payload's bind silently lost (2026-08-23: p5 loaded, its heartbeat
+        // ran, but p4's route table kept answering). Closing the clients is what
+        // lets the port actually go.
+        for (ControlSocket c : clients) {
+            try { c.close(WebSocketFrame.CloseCode.GoingAway, "payload swap", false); }
+            catch (Exception e) { Log.w(TAG, "ws close on stop: " + e.getMessage()); }
+        }
+        clients.clear();
         super.stop();
+        // Belt-and-braces: NanoHTTPD.stop() joins the listener; confirm it is gone so
+        // the next payload's bind is not racing a socket that is still closing.
+        for (int i = 0; i < 20 && isAlive(); i++) {
+            try { Thread.sleep(100L); } catch (InterruptedException ignored) { break; }
+        }
+        Log.i(TAG, "ControlServer stopped, listener alive=" + isAlive());
     }
+
+    /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
+    public static final String BUILT_BY = "p6-ws-close";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -154,6 +174,7 @@ public class ControlServer extends NanoWSD {
                     o.put("speaker", spk != null ? spk.status() : JSONObject.NULL);
                     o.put("engine", service.isEngineRunning() ? "running" : "stopped");
                     o.put("wsClients", clients.size());
+                    o.put("servedBy", BUILT_BY); // the payload whose ControlServer owns :8770
                     // The write path to the piano. Surfaced because "BLE CONNECTED" says
                     // nothing about whether we can SEND — that gap is exactly what let the
                     // 2026-08-22 one-way outage hide behind a healthy-looking status.

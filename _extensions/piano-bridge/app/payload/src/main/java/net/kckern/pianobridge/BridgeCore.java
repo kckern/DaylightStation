@@ -158,19 +158,30 @@ public class BridgeCore {
             // socket can still be closing, so the first bind races it (EADDRINUSE,
             // seen 2026-08-23 on the p4 rollback). Retry briefly rather than leave
             // :8770 dead until the next restart.
-            IOException last = null;
-            for (int attempt = 1; attempt <= 10; attempt++) {
+            // NanoHTTPD.start() does NOT throw on a bind failure — the listener thread
+            // records it and dies, so "no exception" proves nothing. Check wasStarted()
+            // AND that the listener is still alive a moment later; only then is the
+            // port ours. Otherwise rebuild the server and retry (EADDRINUSE from the
+            // previous payload's socket still closing is the common case).
+            boolean bound = false;
+            Exception last = null;
+            for (int attempt = 1; attempt <= 15 && !bound; attempt++) {
                 try {
+                    if (attempt > 1) controlServer = new ControlServer(this); // a failed NanoHTTPD can't be restarted
                     controlServer.start(0, true); // 0 timeout = no socket read timeout; daemon thread.
-                    Log.i(TAG, "ControlServer started on port " + ControlServer.PORT + " (attempt " + attempt + ")");
-                    last = null;
-                    break;
-                } catch (IOException e) {
+                    Thread.sleep(150L);
+                    bound = controlServer.wasStarted() && controlServer.isAlive();
+                    if (bound) Log.i(TAG, "ControlServer BOUND on :" + ControlServer.PORT + " (attempt " + attempt + ") servedBy=" + ControlServer.BUILT_BY);
+                    else { last = new IOException("listener died after start (port busy?)"); Thread.sleep(300L); }
+                } catch (Exception e) {
                     last = e;
                     try { Thread.sleep(300L); } catch (InterruptedException ignored) { break; }
                 }
             }
-            if (last != null) Log.e(TAG, "ControlServer failed to start after retries", last);
+            if (!bound) {
+                Log.e(TAG, "ControlServer FAILED to bind :" + ControlServer.PORT + " after retries", last);
+                CrashLog.note("WS", "ControlServer failed to bind :" + ControlServer.PORT + " — " + (last == null ? "?" : last.getMessage()));
+            }
         }
 
         startBleMidi();
