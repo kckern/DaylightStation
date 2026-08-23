@@ -221,6 +221,7 @@ export function validateUnit(raw, sets = {}) {
   // is exclusive with every other composition kind and with the sequential/
   // scored machinery that assumes an authored artefact underneath it.
   let program;
+  let programInstance;
   let cadence;
   if (isPresent(raw.program)) {
     if (!isNonEmptyString(raw.program)) {
@@ -250,8 +251,17 @@ export function validateUnit(raw, sets = {}) {
     } else {
       cadence = 'once';
     }
-  } else if (isPresent(raw.cadence)) {
-    errors.push('cadence is only meaningful on a program unit');
+    if (isPresent(raw.programInstance)) {
+      if (!isNonEmptyString(raw.programInstance)) errors.push('programInstance must be a non-empty string');
+      else if (!/^[a-z0-9][a-z0-9_-]*$/i.test(raw.programInstance)) {
+        errors.push(`programInstance must match /^[a-z0-9][a-z0-9_-]*$/, got: ${raw.programInstance}`);
+      } else {
+        programInstance = raw.programInstance;
+      }
+    }
+  } else {
+    if (isPresent(raw.programInstance)) errors.push('programInstance is only meaningful on a program unit');
+    if (isPresent(raw.cadence)) errors.push('cadence is only meaningful on a program unit');
   }
 
   // The launch composition kind (spec §6): a fire-and-forget dispatch to
@@ -340,6 +350,7 @@ export function validateUnit(raw, sets = {}) {
       media: references.media,
       review,
       program,
+      programInstance,
       cadence,
       launch,
       ...(schoolcalc ? { schoolcalc } : {}),

@@ -29,7 +29,7 @@ const RUNG_LABELS = {
  * Requires an identified learner. A guest produces no records, so the program
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
-export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', onSignIn }) {
+export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', onSignIn, locked = false }) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);
@@ -128,10 +128,11 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
           ? 'Sign in to have your work saved.'
           : 'That answer was not saved — check the connection and try again.',
       );
-      return;
+      return result;
     }
     languageLog.attempt('saved', { corpus: corpusId, seq, rung });
     await load();
+    return result;
   }, [userId, corpusId, load]);
 
   const onRoll = useCallback(async () => {
@@ -164,7 +165,7 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
         <p className="lang-program__guest-copy">Sign in to study — a guest&apos;s work isn&apos;t saved.</p>
         {onSignIn && (
           <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>
-            Sign in
+            {locked ? 'Type your code again' : 'Sign in'}
           </button>
         )}
       </div>
@@ -183,6 +184,7 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
   const summary = day?.summary || { total: 0, done: 0 };
   const percent = summary.total ? Math.round((100 * summary.done) / summary.total) : 0;
   const allDone = summary.total > 0 && summary.done === summary.total;
+  const blockedByDevice = allDone && (day?.missingCreditRungs?.length ?? 0) > 0;
 
   return (
     <div className="lang-program">
@@ -192,19 +194,24 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
           first. */}
       <header className="lang-program__header">
         <h2 className="lang-program__day">Day {day?.day}</h2>
-        <PacingControl value={day?.dailyLimit} onChange={onPacing} />
-        <DeviceSettings
+        {!locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
+        {!locked && <DeviceSettings
           languages={languages}
           capabilities={capabilities}
           onToggleLanguage={toggleLanguage}
           onToggleMic={toggleMicrophone}
-        />
+        />}
       </header>
 
       <div className="lang-program__progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
         <div className="lang-program__progress-bar" style={{ width: `${percent}%` }} />
         <span className="lang-program__progress-label">{summary.done} / {summary.total}</span>
       </div>
+      {day?.missingCreditRungs?.length > 0 && (
+        <p className="lang-program__notice" role="alert">
+          Finish {day.missingCreditRungs.map((rung) => RUNG_LABELS[rung] || rung).join(' and ')} on a device with the needed input.
+        </p>
+      )}
 
       <nav className="lang-program__tabs">
         {groups.map((g) => {
@@ -235,12 +242,19 @@ export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', 
       <main className="lang-program__body">
         {tab === 'review' && <ReviewPanel userId={userId} corpusId={corpusId} />}
 
-        {tab === 'study' && allDone && (
+      {tab === 'study' && allDone && !blockedByDevice && (
           <div className="lang-program__complete">
-            <p>Today&apos;s set is done.</p>
-            <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>
-              Start the next day
-            </button>
+            <p>Today&apos;s set is done — Day {day?.day}.</p>
+            {locked ? (
+              <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>Done</button>
+            ) : (
+              <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
+      )}
+      {tab === 'study' && blockedByDevice && (
+        <div className="lang-program__complete">
+          <p>Some required rungs need a different device before the day can be credited.</p>
+        </div>
+      )}
           </div>
         )}
 

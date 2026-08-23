@@ -56,6 +56,7 @@ import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
+import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
@@ -668,6 +669,12 @@ export async function createSchoolLifecycle({
     selfService: cfg.selfService,
     clock, rng: draw, logger,
   });
+  const closeLanguageDay = languageStudyService && eventBus
+    ? new CloseLanguageDay({
+      assignments: stores.assignments, curriculum, sessions: stores.sessions,
+      closeSessionOutcome, eventBus, clock, logger,
+    })
+    : null;
   const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
@@ -858,7 +865,7 @@ export async function createSchoolLifecycle({
   const useCases = {
     buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
-    resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments,
+    resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
   };
@@ -963,6 +970,7 @@ export async function createSchoolLifecycle({
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.
     donowSchoolBridge,
+    closeLanguageDay,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without

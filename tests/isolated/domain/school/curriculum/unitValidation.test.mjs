@@ -39,6 +39,16 @@ describe('SUBJECT_IDS', () => {
 });
 
 describe('validateUnit: shape', () => {
+  it('preserves programInstance only on a program unit', () => {
+    const raw = valid({
+      unitId: 'language-daily', title: 'Korean', subject: 'language', document: undefined,
+      program: 'language', programInstance: 'glossika-korean', provenance: { source: 'hand-authored', reviewState: 'approved' },
+    });
+    expect(errs(raw)).toEqual([]);
+    expect(unitOf(raw)).toMatchObject({ program: 'language', programInstance: 'glossika-korean' });
+    expect(errs(valid({ programInstance: 'glossika-korean' }))).toContain('programInstance is only meaningful on a program unit');
+  });
+
   it.each([
     ['null', null],
     ['undefined', undefined],

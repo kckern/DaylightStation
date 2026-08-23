@@ -12,6 +12,7 @@
 import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
   shouldRollDay, chainFor, rungById, resolveRole, accuracy,
+  validateProgramEnrollment,
 } from '#domains/school/language/index.mjs';
 import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
@@ -29,7 +30,7 @@ const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
 
 export class LanguageStudyService {
-  #ds; #logger; #now; #timezone; #boundaryHour; #readGate;
+  #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #eventBus;
   #corpusCache = new Map();
 
   constructor({
@@ -41,6 +42,8 @@ export class LanguageStudyService {
     // Optional: without it the gate is simply open, so an unconfigured
     // household is never locked out by a feature it did not ask for.
     readGate = null,
+    readProgramEnrollment = null,
+    eventBus = null,
   }) {
     this.#ds = datastore;
     this.#logger = logger;
@@ -48,6 +51,8 @@ export class LanguageStudyService {
     this.#timezone = timezone;
     this.#boundaryHour = boundaryHour;
     this.#readGate = readGate;
+    this.#readProgramEnrollment = typeof readProgramEnrollment === 'function' ? readProgramEnrollment : null;
+    this.#eventBus = eventBus;
   }
 
   /** The resolved gate, for diagnosis. */
@@ -136,6 +141,51 @@ export class LanguageStudyService {
     return Math.min(MAX_DAILY_LIMIT, Math.max(MIN_DAILY_LIMIT, Math.round(n)));
   }
 
+  #enrollment(userId, corpus) {
+    if (!this.#readProgramEnrollment) return null;
+    const raw = this.#readProgramEnrollment(userId, corpus.id);
+    if (!raw) return null;
+    const result = validateProgramEnrollment(raw, { corpus });
+    if (result.errors.length) {
+      this.#logger.warn?.('school.language.program-policy-invalid', {
+        learnerId: userId, corpus: corpus.id, errors: result.errors,
+      });
+      return null;
+    }
+    return result.enrollment;
+  }
+
+  #queuePolicy(userId, corpus, progress) {
+    const enrollment = this.#enrollment(userId, corpus);
+    const chain = enrollment?.rungs ?? null;
+    const dailyLimit = enrollment
+      ? Math.max(1, Math.round(enrollment.lessonSize / (chain?.length || RUNG_IDS.length)))
+      : progress.dailyLimit;
+    const admission = enrollment?.scope?.flatMap((item) => {
+      const range = typeof item === 'string'
+        ? corpus.banks?.find((bank) => bank.id === item)?.range
+        : item.range;
+      return range ? Array.from({ length: range[1] - range[0] + 1 }, (_, i) => range[0] + i) : [];
+    }) ?? null;
+    return { enrollment, chain, dailyLimit, admission };
+  }
+
+  #emitDayComplete(userId, corpus, day, policy) {
+    if (!policy.enrollment || !this.#eventBus?.publish) return;
+    const queue = buildDayQueue({
+      log: this.#ds.readAllEvents(userId, corpus.id), day,
+      dailyLimit: policy.dailyLimit, corpusSize: corpus.size,
+      capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
+      languages: corpus.languages, playable: corpus.playable,
+      admission: policy.admission, rungChain: policy.chain,
+    });
+    if (queue.length > 0 && summarizeQueue(queue).done === queue.length) {
+      this.#eventBus.publish('school.language.day-complete', {
+        learnerId: userId, corpusId: corpus.id, day, programId: policy.enrollment.programId,
+      });
+    }
+  }
+
   // -- the day -------------------------------------------------------------
 
   /**
@@ -153,6 +203,7 @@ export class LanguageStudyService {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     const progress = this.#readProgress(userId, corpusId);
+    const policy = this.#queuePolicy(userId, corpus, progress);
     const log = this.#ds.readAllEvents(userId, corpusId);
 
     // The client DECLARES what it can do; the gate KNOWS. A keyboard absent at
@@ -163,11 +214,13 @@ export class LanguageStudyService {
     const queue = buildDayQueue({
       log,
       day: progress.day,
-      dailyLimit: progress.dailyLimit,
+      dailyLimit: policy.dailyLimit,
       corpusSize: corpus.size,
       capabilities: allowed,
       languages: corpus.languages,
       playable: corpus.playable,
+      admission: policy.admission,
+      rungChain: policy.chain,
     });
 
     const now = this.#now();
@@ -178,12 +231,18 @@ export class LanguageStudyService {
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
+    if (roll.roll) this.#emitDayComplete(userId, corpus, progress.day, policy);
 
     return {
       corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
       day: progress.day,
-      dailyLimit: progress.dailyLimit,
-      chain: chainFor(allowed, corpus.languages),
+      dailyLimit: policy.dailyLimit,
+      chain: chainFor(allowed, corpus.languages).filter((rung) => !policy.chain || policy.chain.includes(rung)),
+      creditChain: policy.chain ?? chainFor({ microphone: true, textInput: Object.values(corpus.languages) }, corpus.languages),
+      missingCreditRungs: policy.chain
+        ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
+        : [],
+      enrollment: policy.enrollment ? { lessonSize: policy.enrollment.lessonSize, rungs: policy.enrollment.rungs } : null,
       gate: { level: gate.level, message: gateMessage(gate), missing: gate.missing },
       queue: queue.map((entry) => this.#decorate(entry, corpus)),
       summary: summarizeQueue(queue),
@@ -279,6 +338,8 @@ export class LanguageStudyService {
     }
 
     this.#writeProgress(userId, corpusId, { ...progress, lastActivity: at });
+    const policy = this.#queuePolicy(userId, corpus, progress);
+    this.#emitDayComplete(userId, corpus, progress.day, policy);
     this.#logger.debug?.('school.language.attempt', { learnerId: userId, corpus: corpusId, seq, rung });
     return event;
   }
@@ -305,7 +366,10 @@ export class LanguageStudyService {
 
   setPacing({ userId, corpusId, dailyLimit }) {
     this.#requireUser(userId);
-    this.#requireCorpus(corpusId);
+    const corpus = this.#requireCorpus(corpusId);
+    if (this.#enrollment(userId, corpus)) {
+      throw new ValidationError('daily pacing is governed by the learner program enrollment');
+    }
     const progress = this.#readProgress(userId, corpusId);
     const next = { ...progress, dailyLimit: this.#clampLimit(dailyLimit) };
     this.#writeProgress(userId, corpusId, next);
@@ -324,16 +388,19 @@ export class LanguageStudyService {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     const progress = this.#readProgress(userId, corpusId);
+    const policy = this.#queuePolicy(userId, corpus, progress);
     const log = this.#ds.readAllEvents(userId, corpusId);
 
     const queue = buildDayQueue({
       log,
       day: progress.day,
-      dailyLimit: progress.dailyLimit,
+      dailyLimit: policy.dailyLimit,
       corpusSize: corpus.size,
       capabilities,
       languages: corpus.languages,
       playable: corpus.playable,
+      admission: policy.admission,
+      rungChain: policy.chain,
     });
 
     const now = this.#now();
@@ -344,6 +411,7 @@ export class LanguageStudyService {
       boundaryHour: this.#boundaryHour,
       offsetMinutes: this.#offsetMinutes(now),
     });
+    if (decision.roll) this.#emitDayComplete(userId, corpus, progress.day, policy);
 
     if (!decision.roll) return { rolled: false, day: progress.day, reason: decision.reason };
 
@@ -432,14 +500,17 @@ export class LanguageStudyService {
    * never duplicated.
    */
   #fullDayQueue(userId, corpusId, corpus, log, progress) {
+    const policy = this.#queuePolicy(userId, corpus, progress);
     return buildDayQueue({
       log,
       day: progress.day,
-      dailyLimit: progress.dailyLimit,
+      dailyLimit: policy.dailyLimit,
       corpusSize: corpus.size,
       capabilities: { microphone: true, textInput: Object.values(corpus.languages) },
       languages: corpus.languages,
       playable: corpus.playable,
+      admission: policy.admission,
+      rungChain: policy.chain,
     });
   }
 

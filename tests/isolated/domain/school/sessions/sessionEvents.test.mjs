@@ -21,6 +21,7 @@ const PAYLOADS = {
   media_completed: {},
   media_stalled: {},
   launch_dispatched: { surface: 'screen-1', decision: 'auto', approvalId: 'app_1' },
+  program_dispatched: { programId: 'language', corpusId: 'glossika-korean', day: 3 },
   submitted: { transport: 'paper' },
   graded: { attemptIds: ['att_1'], percent: 90 },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
@@ -49,7 +50,7 @@ describe('EVENT_TYPES', () => {
     expect(EVENT_TYPES).toEqual([
       'created', 'issued', 'reprinted',
       'media_dispatched', 'media_completed', 'media_stalled',
-      'launch_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'launch_dispatched', 'program_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
       'remediation_opened', 'reassigned', 'failed', 'abandoned',
     ]);
   });
@@ -68,13 +69,14 @@ describe('EVENT_TYPES', () => {
 describe('TRANSITIONS', () => {
   it('is the closed table from the spec', () => {
     expect(TRANSITIONS).toEqual({
-      created: ['issued', 'media_dispatched', 'launch_dispatched', 'abandoned'],
+      created: ['issued', 'media_dispatched', 'launch_dispatched', 'program_dispatched', 'abandoned'],
       issued: ['submitted', 'reprinted', 'failed', 'abandoned'],
       reprinted: ['submitted', 'reprinted', 'abandoned'],
       media_dispatched: ['media_completed', 'media_stalled', 'abandoned'],
       media_completed: ['issued', 'submitted'],
       media_stalled: ['media_dispatched', 'abandoned'],
       launch_dispatched: ['outcome_recorded', 'abandoned'],
+      program_dispatched: ['outcome_recorded', 'abandoned'],
       submitted: ['graded'],
       graded: ['outcome_recorded'],
       outcome_recorded: ['rewarded', 'remediation_opened'],

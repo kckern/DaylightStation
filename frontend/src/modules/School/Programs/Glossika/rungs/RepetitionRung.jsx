@@ -28,7 +28,12 @@ export default function RepetitionRung({
     setPhase('done');
     setHighlight(null);
     languageLog.rung('complete', { rung: 'repetition', seq: entry.seq });
-    onComplete({ seq: entry.seq, rung: 'repetition' });
+    Promise.resolve(onComplete({ seq: entry.seq, rung: 'repetition' })).then((result) => {
+      if (result?.ok === false) {
+        setPhase('idle');
+        setHalted(false);
+      }
+    });
   }, [entry.seq, onComplete]);
 
   const { playSequence, preload, stop, step, blocked } = useSentenceAudio({ onSequenceEnd: handleEnd });

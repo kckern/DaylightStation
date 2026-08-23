@@ -18,6 +18,7 @@
  * @typedef {{ learnerId: string,
  *             courses: Array<string|{courseId: string, elective?: boolean}>,
  *             units: Array<string|{unitId: string, elective?: boolean}>,
+ *             programs?: Array<object>,
  *             assignedBy?: string|null,
  *             updatedAt?: string }} AssignmentRecord
  */

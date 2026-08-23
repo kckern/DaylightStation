@@ -151,6 +151,7 @@ export class EnrollLearner {
       learnerId,
       courses,
       units: current?.units ?? [],
+      programs: current?.programs ?? [],
       assignedBy: enrolledBy,
       updatedAt: nowIso,
     });

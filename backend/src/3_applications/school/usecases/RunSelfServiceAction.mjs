@@ -235,6 +235,7 @@ export class RunSelfServiceAction {
       return this.#program({
         programId: offered.target ?? resolution?.programId ?? null,
         unitId: resolution?.unit?.unitId ?? null,
+        corpusId: resolution?.unit?.programInstance ?? null,
         learnerId: card.learner,
       });
     }
@@ -500,7 +501,7 @@ export class RunSelfServiceAction {
    * A program with no launcher registered gets the house wording for an
    * unwired thing rather than a claim that it started.
    */
-  async #program({ programId, unitId, learnerId }) {
+  async #program({ programId, unitId, corpusId = null, learnerId }) {
     const launcher = programId ? this.#launchers.get(programId) : null;
     if (!launcher || typeof launcher.launch !== 'function') {
       this.#logger.warn?.('school.selfservice.program.no-launcher', { programId, unitId });
@@ -527,7 +528,7 @@ export class RunSelfServiceAction {
       return {
         outcome: 'mount',
         sentence: 'Opening it here on the screen.',
-        effect: { kind: 'program', programId, unitId, learnerId },
+        effect: { kind: 'program', programId, corpusId, unitId, learnerId },
       };
     }
 

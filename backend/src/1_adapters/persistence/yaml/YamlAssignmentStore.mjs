@@ -10,6 +10,7 @@
  */
 import path from 'path';
 import { promises as fs } from 'fs';
+import { readFileSync } from 'fs';
 import yaml from 'js-yaml';
 import { IAssignmentStore } from '#apps/school/ports/IAssignmentStore.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
@@ -32,6 +33,7 @@ const toDomainRecord = (raw, learnerId) => ({
   learnerId: typeof raw?.learnerId === 'string' ? raw.learnerId : learnerId,
   courses: (Array.isArray(raw?.enrollments) ? raw.enrollments : raw?.courses ?? []).map(normalizeEnrollment),
   units: Array.isArray(raw?.standaloneWork) ? raw.standaloneWork : raw?.units ?? [],
+  programs: Array.isArray(raw?.programs) ? raw.programs : [],
   updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : null,
   assignedBy: typeof raw?.assignedBy === 'string' ? raw.assignedBy : null,
 });
@@ -165,6 +167,16 @@ export class YamlAssignmentStore extends IAssignmentStore {
     return this.#read(learnerId);
   }
 
+  /** Synchronous read port for the synchronous language-study service. */
+  readProgramEnrollment(learnerId, corpusId) {
+    if (!isSafeLearnerId(learnerId)) return null;
+    try {
+      const raw = yaml.load(readFileSync(this.#fileFor(learnerId), 'utf8'));
+      return (Array.isArray(raw?.programs) ? raw.programs : [])
+        .find((entry) => entry?.corpusId === corpusId) ?? null;
+    } catch { return null; }
+  }
+
   /** @inheritdoc */
   async put(record) {
     if (!record || typeof record !== 'object' || Array.isArray(record)) {
@@ -176,6 +188,7 @@ export class YamlAssignmentStore extends IAssignmentStore {
       learnerId,
       enrollments: (Array.isArray(record.courses) ? record.courses : []).map(normalizeEnrollment),
       standaloneWork: Array.isArray(record.units) ? record.units : [],
+      programs: Array.isArray(record.programs) ? record.programs : [],
       // WHO changed the plan. The write is adult-only (SetAssignments), and the
       // record is the only place that fact survives — a plan that changed with
       // nobody's name on it is a plan nobody can ask about.

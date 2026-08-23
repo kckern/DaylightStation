@@ -25,6 +25,14 @@ const build = (over = {}) => buildDayQueue({
 });
 
 describe('new material', () => {
+  it('uses an injected ordered admission scope for new material', () => {
+    const queue = build({ admission: [9, 4, 2], dailyLimit: 2 });
+    expect(queue).toEqual([
+      { seq: 9, rung: 'repetition', done: false },
+      { seq: 4, rung: 'repetition', done: false },
+    ]);
+  });
+
   it('admits exactly dailyLimit sentences on a fresh start', () => {
     const queue = build();
     expect(queue).toEqual([
