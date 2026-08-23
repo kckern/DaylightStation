@@ -11,9 +11,16 @@
 > cd _extensions/piano-bridge/app
 > ./gradlew :payload:payload -PpayloadVersion=p11-whatever   # -> payload/build/payload/p11-whatever.jar + .sha256
 > #   (payloadVerify gate refuses a jar missing any class — never bypass it)
-> # host it where the tablet can always reach it: prod's dist/payloads/
+> # HOSTING: https://daylightlocal.kckern.net/payloads/* is served by the daylight-station
+> # container's frontend static dir — /usr/src/app/frontend/dist/payloads/ — NOT nginx, NOT
+> # the Dropbox data tree. That filesystem is EPHEMERAL: every container rebuild/redeploy
+> # WIPES the dir (bit us 2026-08-23 mid-deploy; the dir vanished between two swaps).
+> # After any prod deploy, re-copy the current payload jar before the next swap. Also
+> # beware: a missing jar still returns HTTP 200 (the SPA index fallback) — verify with
+> # Content-Length, and trust the swap's sha256 gate to refuse the imposter.
 > scp payload/build/payload/p11-whatever.jar* homeserver.local:/tmp/ && \
->   ssh homeserver.local 'docker cp /tmp/p11-whatever.jar daylight-station:/usr/src/app/frontend/dist/payloads/'
+>   ssh homeserver.local 'sudo docker exec daylight-station mkdir -p /usr/src/app/frontend/dist/payloads && \
+>     sudo docker cp /tmp/p11-whatever.jar daylight-station:/usr/src/app/frontend/dist/payloads/'
 > pbctl payload https://daylightlocal.kckern.net/payloads/p11-whatever.jar $(cat payload/build/payload/p11-whatever.jar.sha256)
 > pbctl payload              # active / previous / available      pbctl payload rollback
 > ```

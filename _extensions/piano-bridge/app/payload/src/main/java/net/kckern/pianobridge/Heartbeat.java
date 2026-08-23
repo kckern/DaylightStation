@@ -131,6 +131,37 @@ public final class Heartbeat {
             o.put("midiWriteOpen", core.isMidiWriteOpen());
             o.put("midiInOpen", core.isMidiPortOpen());
             o.put("a11yBound", A11y.isConnected());
+
+            // OS power/thermal verdicts per beat — the jank episodes are episodic, so
+            // these need HISTORY next to pageRafFps, not just a point read via /info.
+            // thermalStatus: 0=NONE 1=LIGHT 2=MODERATE 3=SEVERE (SSRM may clamp app fps
+            // from MODERATE up) — see DeviceProbe.info for the named mapping.
+            try {
+                android.os.PowerManager pm = (android.os.PowerManager)
+                        core.getContext().getSystemService(android.content.Context.POWER_SERVICE);
+                if (pm != null) {
+                    o.put("powerSaveMode", pm.isPowerSaveMode());
+                    if (android.os.Build.VERSION.SDK_INT >= 29)
+                        o.put("thermalStatus", pm.getCurrentThermalStatus());
+                }
+            } catch (Throwable ignored) { }
+
+            // Samsung's power-saving mode writes Settings.Global restricted_device_performance
+            // = "1,1" (a CPU/GPU clamp) even while the visible power-saving toggles read OFF
+            // (observed 2026-08-23 after an unclean reboot). We hold WRITE_SECURE_SETTINGS,
+            // so pin it back to "0,0" each beat and report when a repair happened.
+            try {
+                android.content.Context cx = core.getContext();
+                String rdp = android.provider.Settings.Global.getString(
+                        cx.getContentResolver(), "restricted_device_performance");
+                if (rdp != null && !"0,0".equals(rdp)) {
+                    boolean fixed = SettingsControl.put(cx, "global", "restricted_device_performance", "0,0")
+                            .optBoolean("ok");
+                    CrashLog.note("PERF", "restricted_device_performance was " + rdp
+                            + " — reset to 0,0 (ok=" + fixed + ")");
+                    o.put("perfClampRepaired", rdp);
+                }
+            } catch (Throwable ignored) { }
             Loopback lb2 = core.getLoopback();
             boolean outVerified = false;
             if (lb2 != null) {
@@ -156,6 +187,9 @@ public final class Heartbeat {
             if (wd != null) {
                 JSONObject s = wd.snapshot();
                 o.put("kiosk", s.optString("verdict", "?"));
+                // pageRafFps: rAF frames/s the kiosk page presented, self-reported in
+                // its beat. `fps` is the deprecated alias (kept for old log queries).
+                o.put("pageRafFps", s.optInt("pageRafFps", s.optInt("lastFps", -1)));
                 o.put("fps", s.optInt("lastFps", -1));
                 o.put("beatAgoMs", s.optLong("lastBeatAgoMs", -1));
             }

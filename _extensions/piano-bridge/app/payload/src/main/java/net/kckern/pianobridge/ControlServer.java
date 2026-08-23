@@ -73,7 +73,25 @@ public class ControlServer extends NanoWSD {
         super.start(timeout, daemon);
         Log.i(TAG, "ControlServer listening on port " + PORT);
         heartbeatTimer.scheduleAtFixedRate(new TimerTask() {
-            @Override public void run() { broadcastStatus(); }
+            private int tick;
+            @Override public void run() {
+                broadcastStatus();
+                // Server-side keepalive PING every 3s. NanoHTTPD's per-connection READ
+                // timeout (~5-8s) only resets on INBOUND bytes; the kiosk sends nothing
+                // while idle, so before p12 every WS died with 1006 every ~8s and the
+                // page reconnected — ~500 churn cycles/hour, for weeks (log store,
+                // context.app:piano _msg:bridge.closed). The browser auto-PONGs a PING,
+                // which feeds the read side and keeps the socket up.
+                if (++tick % 3 == 0) {
+                    for (ControlSocket c : clients) {
+                        try { c.ping(new byte[] { 'k', 'a' }); }
+                        catch (IOException e) {
+                            Log.w(TAG, "keepalive ping failed; dropping client", e);
+                            clients.remove(c);
+                        }
+                    }
+                }
+            }
         }, 1000L, 1000L);
     }
 
@@ -102,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p11-force-reset";
+    public static final String BUILT_BY = "p13-os-verdicts";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {

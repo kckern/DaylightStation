@@ -105,7 +105,8 @@ public final class StatusPage {
         // ── Kiosk ──
         sec(h, "Kiosk");
         row(h, "Fully Kiosk REST", fkbOk ? "reachable" : "UNREACHABLE — " + (fkb == null ? "?" : fkb.optString("error", "")), fkbOk);
-        row(h, "Page", verdict + (webview != null ? " · " + webview.optInt("lastFps", -1) + " fps · beat " + ago(webview.optLong("lastBeatAgoMs", -1)) : ""), pageOk);
+        row(h, "Page", verdict + (webview != null ? " · " + webview.optInt("pageRafFps", webview.optInt("lastFps", -1))
+                + " page-rAF fps (self-reported; 55-60 good, <10 throttled) · beat " + ago(webview.optLong("lastBeatAgoMs", -1)) : ""), pageOk);
         row(h, "Settings guard", s(guard, "verdict"), guard != null && !"UNREACHABLE".equals(guard.optString("verdict")));
         row(h, "Accessibility svc", a11y ? "bound" : "NOT bound", a11y);
         row(h, "Speaker (A2DP)", speaker == null ? "—" : (speaker.optBoolean("connected") ? "connected" : "disconnected") + " · " + speaker.optString("targetName", ""), speaker == null || speaker.optBoolean("connected"));

@@ -379,7 +379,12 @@ public final class KioskWatchdog {
             o.put("recoverEnabled", c.watchdogRecoverEnabled());
             o.put("rebootEnabled", c.watchdogRebootEnabled());
             o.put("verdict", lastVerdict.name());
-            o.put("lastFps", lastFps);
+            // The one number people read as "how janky is the screen": rAF frames the
+            // kiosk PAGE presented in its last ~1s window, self-reported in its beat
+            // (useRenderWatchdog.js). NOT an Android/GPU counter, NOT smoothed by the
+            // bridge. 55-60 healthy · <10 = the SM-T590 WebView frame-throttle floor.
+            o.put("pageRafFps", lastFps);
+            o.put("lastFps", lastFps); // deprecated alias of pageRafFps (kept for old dashboards/queries)
             o.put("lastVisibility", lastVisibility);
             o.put("lastUrl", lastUrl);
             o.put("beatCount", beatCount);
