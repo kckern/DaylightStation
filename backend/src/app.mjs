@@ -3308,12 +3308,30 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
+      // Grading hook (Task 4, spec §grading-hook): fires one HA script per
+      // terminal scan outcome. Guarded on `homeAutomationAdapters.haGateway`
+      // the SAME way `homeApi.mjs`'s `callHomeAssistantService` is — a
+      // household with no Home Assistant configured gets `gradingHook: null`
+      // and boots exactly as it did before this task existed.
+      let gradingHook = null;
+      if (homeAutomationAdapters.haGateway) {
+        const { SchoolGradingHookAdapter } = await import('#adapters/school/SchoolGradingHookAdapter.mjs');
+        gradingHook = new SchoolGradingHookAdapter({
+          gateway: homeAutomationAdapters.haGateway,
+          // Same accessor/call shape `getPrintTeacherPin` above uses for this
+          // same `school.yml` — the household-id arg is accepted for the
+          // adapter's contract but this module always resolves against `null`.
+          loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+          logger: rootLogger.child({ module: 'school-grading-hook' }),
+        });
+      }
       createSchoolPrintScanConsumer({
         eventBus,
         config: omrReadersConfig,
         resolveCardScan,
         recordCardScanOutcome,
         closeSessionOutcome: schoolLifecycle.useCases?.closeSessionOutcome ?? null,
+        gradingHook,
         logger: rootLogger.child({ module: 'school-print-scan' }),
       });
     } catch (err) {
