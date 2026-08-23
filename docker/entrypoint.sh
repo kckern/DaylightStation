@@ -33,6 +33,18 @@ if [ -f "$ADB_KEY_SRC/adbkey" ]; then
     echo "ADB keys provisioned from data/system/config/adb"
 fi
 
+# Provision piano-bridge payload jars from the persistent data volume. The
+# hosted path /payloads/* is served from frontend/dist, which is baked into the
+# image — every rebuild WIPES it (bit us twice on 2026-08-23, mid-deploy). The
+# durable copies live in data/system/payloads/; restore them on every start so
+# the tablet's payload URLs never dangle after a redeploy.
+PAYLOAD_SRC="/usr/src/app/data/system/payloads"
+if [ -d "$PAYLOAD_SRC" ]; then
+    mkdir -p /usr/src/app/frontend/dist/payloads
+    cp "$PAYLOAD_SRC"/*.jar /usr/src/app/frontend/dist/payloads/ 2>/dev/null || true
+    echo "[Entrypoint] Piano-bridge payloads restored: $(ls /usr/src/app/frontend/dist/payloads 2>/dev/null | wc -l) jar(s)"
+fi
+
 # Fix data volume ownership (handles Dropbox drift, manual edits)
 if [ -d "/usr/src/app/data" ]; then
     BAD_FILES=$(find /usr/src/app/data -not -user node 2>/dev/null | head -1)
