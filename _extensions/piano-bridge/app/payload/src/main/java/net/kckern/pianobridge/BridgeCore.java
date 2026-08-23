@@ -108,6 +108,12 @@ public class BridgeCore {
     private KioskSettingsGuard kioskSettingsGuard;
     private Heartbeat heartbeat;
     private Loopback loopback;
+    // Raw MIDI-IN tap: the last chunks the read port delivered, exactly as received.
+    // The only way to see what the parser is actually being handed — added when a
+    // piano echo provably reached the tablet (JamCorder bleOut +1) but never
+    // surfaced in the receiver (2026-08-23).
+    private final java.util.ArrayDeque<String> midiInTap = new java.util.ArrayDeque<>(64);
+    private volatile long midiInChunks = 0, midiInBytes = 0, midiInRunningStatusUses = 0;
 
     /**
      * Wall-clock ms of the last POST /update. The kiosk-settings guard stands down for
@@ -588,6 +594,26 @@ public class BridgeCore {
 
     public Loopback getLoopback() { return loopback; }
 
+    private void tapMidiIn(byte[] data, int offset, int count) {
+        midiInChunks++; midiInBytes += count;
+        StringBuilder sb = new StringBuilder(count * 3 + 16);
+        sb.append(System.currentTimeMillis() % 100000).append(' ');
+        for (int k = 0; k < count; k++) sb.append(String.format("%02X ", data[offset + k] & 0xFF));
+        synchronized (midiInTap) { if (midiInTap.size() >= 64) midiInTap.pollFirst(); midiInTap.addLast(sb.toString().trim()); }
+    }
+
+    /** Last raw chunks from the read port + counters. The ground truth for "what did the parser get". */
+    public org.json.JSONObject midiInTapSnapshot() {
+        org.json.JSONObject o = new org.json.JSONObject();
+        try {
+            o.put("chunks", midiInChunks); o.put("bytes", midiInBytes); o.put("runningStatusUses", midiInRunningStatusUses);
+            org.json.JSONArray a = new org.json.JSONArray();
+            synchronized (midiInTap) { for (String c : midiInTap) a.put(c); }
+            o.put("recent", a);
+        } catch (Exception ignored) { }
+        return o;
+    }
+
     public String getMidiWriteLastError() { return midiWriteLastError; }
 
     /** The port-retry executor, created on first use. Shared by the read and write
@@ -700,25 +726,56 @@ public class BridgeCore {
     /**
      * Parses raw MIDI bytes into note-on/off + CC, forwards to the native engine
      * and fans the notes out to connected WS clients (browser visualizers).
-     * MIDI running-status is not handled here for brevity — most BLE-MIDI
-     * keyboards send full status bytes per message.
+     * MIDI running status IS handled (see runningStatus below). The earlier
+     * note here — "not handled for brevity, most BLE-MIDI keyboards send full
+     * status bytes" — was an assumption the hardware disproved on 2026-08-23:
+     * the piano's echo reached this receiver as a data-first chunk and was
+     * discarded as stray, which is also why some real notes had been vanishing.
      */
     private class PianoMidiReceiver extends MidiReceiver {
+        // MIDI RUNNING STATUS: a sender may omit the status byte when it repeats the
+        // previous one, so a chunk can legitimately START with a data byte. Treating
+        // that as "stray" and skipping it dropped every running-status message on the
+        // floor — which is how a piano echo reached the tablet (JamCorder bleOut +1)
+        // yet never appeared in this receiver. Remember the last status across chunks.
+        private int runningStatus = 0;
+
         @Override
         public void onSend(byte[] data, int offset, int count, long timestamp) {
             int i = offset;
             int end = offset + count;
+            // Tap first, before any parsing decision can hide a byte.
+            tapMidiIn(data, offset, count);
             while (i < end) {
                 int status = data[i] & 0xFF;
-                if (status < 0x80) { i++; continue; } // skip stray data bytes
+                // `d` = index of the FIRST DATA byte of this message. With an explicit
+                // status it is i+1; under running status the byte at i IS data, so d = i.
+                int d;
+                if (status < 0x80) {
+                    // Data byte with no status: running status. If we know the last
+                    // channel status, apply it; else the byte truly is stray.
+                    if (runningStatus >= 0x80 && runningStatus < 0xF0) {
+                        status = runningStatus;
+                        midiInRunningStatusUses++;
+                        d = i;
+                    } else { i++; continue; }
+                } else if (status < 0xF0) {
+                    runningStatus = status; // channel message: becomes the running status
+                    d = i + 1;
+                } else if (status >= 0xF8) {
+                    i++; continue; // realtime (clock/active-sense): never affects running status
+                } else {
+                    runningStatus = 0; // system common / SysEx: clears running status
+                    d = i + 1;
+                }
                 int type = status & 0xF0;
 
-                if (type == 0x90 && i + 2 < end) { // note on
-                    int note = data[i + 1] & 0x7F;
-                    int vel = data[i + 2] & 0x7F;
+                if (type == 0x90 && d + 1 < end) { // note on
+                    int note = data[d] & 0x7F;
+                    int vel = data[d + 1] & 0x7F;
                     // Loopback probe coming back from the piano: record the echo and
                     // swallow it — it must never light a key on screen or wake the display.
-                    if (loopback != null && loopback.onInboundNote(status, note, vel)) { i += 3; continue; }
+                    if (loopback != null && loopback.onInboundNote(status, note, vel)) { i = d + 2; continue; }
                     if (vel == 0) {
                         handleNoteOff(note);
                     } else {
@@ -729,17 +786,17 @@ public class BridgeCore {
                         // Keep the WebView frame clock un-throttled while playing.
                         if (touchPulser != null) touchPulser.poke();
                     }
-                    i += 3;
-                } else if (type == 0x80 && i + 2 < end) { // note off
-                    int note = data[i + 1] & 0x7F;
-                    if (loopback != null && (status & 0x0F) == Loopback.PROBE_CHANNEL && note == Loopback.PROBE_NOTE) { i += 3; continue; }
+                    i = d + 2;
+                } else if (type == 0x80 && d + 1 < end) { // note off
+                    int note = data[d] & 0x7F;
+                    if (loopback != null && (status & 0x0F) == Loopback.PROBE_CHANNEL && note == Loopback.PROBE_NOTE) { i = d + 2; continue; }
                     handleNoteOff(note);
-                    i += 3;
-                } else if (type == 0xB0 && i + 2 < end) { // control change
-                    int cc = data[i + 1] & 0x7F;
-                    int val = data[i + 2] & 0x7F;
+                    i = d + 2;
+                } else if (type == 0xB0 && d + 1 < end) { // control change
+                    int cc = data[d] & 0x7F;
+                    int val = data[d + 1] & 0x7F;
                     if (engine != null) engine.setParam("cc." + cc, val / 127f);
-                    i += 3;
+                    i = d + 2;
                 } else {
                     // Unhandled status (pitch bend, aftertouch, sysex, etc.) — skip 1.
                     i++;

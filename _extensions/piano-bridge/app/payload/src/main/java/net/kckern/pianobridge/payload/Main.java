@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p7-loopback";
+    private static final String VERSION = "p8-running-status";
 
     private BridgeCore core;
 
