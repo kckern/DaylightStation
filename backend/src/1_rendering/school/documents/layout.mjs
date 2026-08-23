@@ -278,7 +278,20 @@ function runPlacement(fragments, { contentTopPt, contentBottomPt, spacing, targe
     // fragment is unshifted, the page ends, and on the now-empty page the
     // check is skipped and the ordinary hard-ceiling logic below decides its
     // fate with the full page available to it.
-    if (targetForPagePt !== null && !pageIsEmpty) {
+    // Keep-with-next OUTRANKS balance. The fragment last placed on this page
+    // may have been let through only because its partner was going to follow
+    // it here (the `stickToNextId` check below verifies exactly that, against
+    // the hard page ceiling). Balance is a soft preference about where a page
+    // reads best; letting it bump that partner to the next page anyway strands
+    // the prompt it was glued to — an essay prompt alone at the foot of page 1
+    // with its ruled write-space at the top of page 2, which is the very thing
+    // the glue exists to prevent. So a partner is never balance-broken: it
+    // stays with the fragment that named it, and the hard-ceiling logic below
+    // remains its only gate.
+    const lastPlaced = pageFragments[pageFragments.length - 1];
+    const isStuckPartner = Boolean(lastPlaced?.stickToNextId) && lastPlaced.stickToNextId === fragment.id;
+
+    if (targetForPagePt !== null && !pageIsEmpty && !isStuckPartner) {
       // `pages.length` is the 0-based index of the page currently being
       // filled — the finished ones are already pushed.
       const targetPerPagePt = targetForPagePt(pages.length);
