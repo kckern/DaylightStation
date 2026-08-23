@@ -125,3 +125,45 @@ describe('rasterizePdf without ghostscript on PATH', () => {
       .rejects.toThrow(/ghostscript rasterize failed/i);
   });
 });
+
+/**
+ * DUPLEX IS A RASTER FACT ON THIS HARDWARE (2026-08-23).
+ *
+ * The Brother rejects the IPP `sides` attribute at every value, so duplex was
+ * left to the printer's own `sides-default`. That was set to
+ * `two-sided-long-edge` and worksheets STILL printed one page per sheet —
+ * because every URF page carries its own duplex byte and ghostscript writes 1
+ * (simplex) unless told otherwise. We were explicitly instructing simplex in
+ * the bytes while asking for duplex in a channel the firmware ignores.
+ *
+ * These specs pin the byte, not the flag: the page header is what the printer
+ * reads, so it is what the test reads.
+ */
+describe.runIf(hasGs)('duplex reaches the URF page header', () => {
+  // URF: 8-byte "UNIRAST\0" magic + 4-byte page count, then 32-byte page
+  // headers. Byte 2 of the first page header is Duplex.
+  const duplexByte = (buf) => buf[14];
+
+  it('writes simplex (1) by default, which is what silently defeated the printer default', async () => {
+    const out = await rasterizePdf(MINIMAL_PDF, { format: 'image/urf', dpi: 300, logger: { info() {} } });
+    expect(out.subarray(0, 8).toString('latin1')).toBe('UNIRAST\0');
+    expect(duplexByte(out)).toBe(1);
+  });
+
+  it('writes long-edge duplex (3) when the caller asks for it', async () => {
+    const out = await rasterizePdf(MINIMAL_PDF, {
+      format: 'image/urf', dpi: 300, duplex: true, logger: { info() {} },
+    });
+    expect(duplexByte(out)).toBe(3);
+  });
+
+  it('treats anything but an explicit true as simplex — no accidental duplexing', async () => {
+    for (const duplex of [undefined, null, false, 'yes', 1]) {
+      // eslint-disable-next-line no-await-in-loop
+      const out = await rasterizePdf(MINIMAL_PDF, {
+        format: 'image/urf', dpi: 300, duplex, logger: { info() {} },
+      });
+      expect(duplexByte(out)).toBe(1);
+    }
+  });
+});

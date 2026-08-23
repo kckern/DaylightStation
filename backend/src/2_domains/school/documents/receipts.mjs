@@ -460,8 +460,19 @@ export function resultDocument({
     ...(isNonEmptyString(time) ? { time } : {}),
     ...(isNonEmptyString(studentNo) ? { studentNo } : {}),
     ...(taxonomy ? { taxonomy } : {}),
-    ...(!passed && Array.isArray(hints) && hints.some(isNonEmptyString)
-      ? { reviewHints: hints.filter(isNonEmptyString) }
+    // HINTS FOLLOW THE MISSES, NOT THE VERDICT. These used to be gated on
+    // `!passed`, so a child who got 9 of 10 was shown a box marking question
+    // 15 wrong and then told nothing whatsoever about it — the sheet named
+    // the miss and withheld the only line that said what to go read. Passing
+    // is not a reason to withhold that; it only changes the urgency, which is
+    // what the heading carries.
+    ...(Array.isArray(hints) && hints.some(isNonEmptyString)
+      ? {
+        reviewHints: hints.filter(isNonEmptyString),
+        // A pass is not a retry. "Before you retry" would be a false
+        // instruction on a sheet whose next action is the NEXT lesson.
+        reviewHeading: passed ? 'WORTH A SECOND LOOK' : 'REVIEW BEFORE YOU RETRY',
+      }
       : {}),
   }];
   if (!passed && !(Array.isArray(hints) && hints.some(isNonEmptyString))
