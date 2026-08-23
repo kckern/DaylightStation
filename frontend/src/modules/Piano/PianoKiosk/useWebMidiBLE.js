@@ -214,13 +214,19 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // handlers as hardware MIDI + the dev-key fallback, so a tapped key flows into
   // activeNotes/noteHistory for every consumer. Also echoes to the MIDI output
   // (if a piano/synth is connected) so the note sounds.
+  // Bridge-first, like every other OUT path (2026-08-23). These two used a bare
+  // `outputRef.current?.send?.()` — no bridge routing and, because of the
+  // optional chaining, a SILENT no-op when the handle was missing or zombie.
+  // That is why on-screen keys stayed mute while sheet-music playback (already
+  // moved to the bridge) sounded fine. emitOut is module-level, so calling it
+  // here does not depend on the later sendNote/sendNoteOff declarations.
   const pressNote = useCallback((note, velocity = 90) => {
     applyNoteOn(note, velocity);
-    outputRef.current?.send?.([0x90, note & 0x7f, velocity & 0x7f]);
+    emitOut(outputRef.current, [0x90, note & 0x7f, velocity & 0x7f], 'midi.out.press', { note, velocity });
   }, [applyNoteOn]);
   const releaseNote = useCallback((note) => {
     applyNoteOff(note);
-    outputRef.current?.send?.([0x80, note & 0x7f, 0]);
+    emitOut(outputRef.current, [0x80, note & 0x7f, 0], 'midi.out.release', { note });
   }, [applyNoteOff]);
 
   const handleRawMidi = useCallback((event) => {
