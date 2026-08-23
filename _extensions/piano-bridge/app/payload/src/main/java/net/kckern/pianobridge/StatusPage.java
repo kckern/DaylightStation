@@ -67,7 +67,7 @@ public final class StatusPage {
         String verdict = s(webview, "verdict");
         boolean pageOk = "HEALTHY".equals(verdict) || "SCREEN_OFF".equals(verdict) || "GRACE".equals(verdict) || "BUILDING".equals(verdict);
         boolean beatOk = beat != null && beat.optLong("lastOkAgoMs", -1) >= 0 && beat.optLong("lastOkAgoMs", -1) < 3 * beat.optLong("intervalMs", 60000);
-        boolean allOk = bleOk && writeOk && inOk && fkbOk && pageOk;
+        boolean allOk = bleOk && writeOk && inOk && fkbOk && pageOk && (core.getLoopback() == null || core.getLoopback().snapshot().optBoolean("outVerified"));
 
         StringBuilder h = new StringBuilder(16000);
         h.append("<!doctype html><html><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>")
@@ -91,6 +91,11 @@ public final class StatusPage {
 
         // ── Link (the thing the piano needs) ──
         sec(h, "MIDI link");
+        Loopback lbp = core.getLoopback();
+        JSONObject lbs = lbp == null ? null : lbp.snapshot();
+        boolean verified = lbs != null && lbs.optBoolean("outVerified");
+        String linkVerdict = !bleOk ? "DOWN" : (verified ? "VERIFIED by piano echo" : "ZOMBIE — connected, no data");
+        row(h, "Link verdict", linkVerdict + (lbs != null ? " · rtt " + lbs.optLong("lastRttMs", -1) + "ms · misses " + lbs.optInt("consecutiveMisses") : ""), bleOk && verified);
         row(h, "BLE piano", bleState + (ble != null ? " · " + ble.optString("connectedName", "") + " · up " + ble.optLong("connectedSeconds", 0) + "s · reconnects " + ble.optInt("reconnects", 0) : ""), bleOk);
         row(h, "MIDI in (piano→screen)", inOk ? "open" : "CLOSED", inOk);
         row(h, "MIDI out (screen→piano)", writeOk ? "open" : "CLOSED — " + n(core.getMidiWriteLastError()), writeOk);
