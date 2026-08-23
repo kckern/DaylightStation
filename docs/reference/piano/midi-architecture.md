@@ -104,12 +104,19 @@ with wake locks.
    the browser can win the BLE race and starve the APK. `usePianoBridgeNotes` holds
    `unavailable` false for `UNAVAILABLE_GRACE_MS` (8s) so the APK reliably wins.
 
-3. **OUT is a direct browser Web MIDI write** — because the **APK cannot write.** Its
-   `BleMidiConnector` opens the device's *output* port (to read) only; there is **no BLE
-   write path**, and its inbound WS commands (`note.on/off`, `preset.load`, `param.set`) drive
-   the internal **synth**, not the real piano. Adding a write path is an APK change, and the
-   APK **cannot be cleanly rebuilt here** (no signing key in the repo → self-update would
-   fail; native NDK/CMake/Oboe/sfizz toolchain not set up). So OUT stays in the browser.
+3. **OUT: notes/voice go direct over browser Web MIDI; SysEx goes through the APK.**
+   *(Rewritten 2026-08-22 — this section used to say "the APK cannot write". It can now.)*
+   The APK opens `openInputPort(0)` alongside its read port and exposes two ways to use it:
+   the `midi.raw` WS command and `GET|POST /midi/send?hex=…&repeat=N` (also `pbctl midi`).
+   `/status` reports `midiWrite:{open,lastError}`.
+
+   This exists because effect SysEx has **no browser route at all**: the FKB WebView is
+   permanently denied Web MIDI SysEx (`requestMIDIAccess({sysex:true})` → `NotAllowedError`,
+   verified on-device against Chrome 151). Mind the asymmetry in the WS API —
+   `note.on`/`note.off`/`preset.load`/`param.set` still drive the APK's INTERNAL synth; only
+   `midi.raw` reaches the real piano. Notes and Program Change still take the browser's
+   direct write, so the dual-claimant setup in §5.1 remains; collapsing those onto the
+   bridge too is the §7 endgame, still open.
 
 4. **`connect()` must be auto-initialized on the kiosk.** `PianoApp` only calls Web MIDI
    `connect()` when `status==='idle'`, but the bridge makes the context `status` read
@@ -179,6 +186,18 @@ Commit `c7fa91b86`. Both are additive and scoped to the browser surface.
    directions, so a silently-dead OUT surfaces (`healthy:false`) even while IN is up —
    directly closing §5.2.
 
+3. **OUT auto-recover (2026-08-22).** Health is now judged with `isPortDelivering()`
+   = `isPortConnected() && connection !== 'pending'`. `state` describes the DEVICE;
+   `connection` describes OUR handle, and the outage lived in the gap between them.
+   The watchdog re-binds on that stronger predicate, re-holds the input whenever the
+   held port stops delivering (not only when the ref is null), and — the new rung —
+   escalates to `resetLink()` after 3 consecutive failing ticks, rate-limited to once
+   per 5 minutes. Re-binding alone could never fix it: `bindOutput` falls back to
+   `outs[0]`, so when every enumerated port is dead it re-binds the same corpse
+   forever. Emits `midi.out-recover-reset` at warn — query that to see how often the
+   link actually needs rescuing. The cooldown is deliberate: unbounded recovery churn
+   is what got `holdInputForOutput` reverted once (`fda53ea6b`).
+
 **Rejected / deferred (with reasons):**
 - **True OUT loopback confirmation** — *infeasible on this stack.* There is no MIDI echo path
   (JamCorder has no `bleToBle`; OUT-sent notes don't re-transmit via IN), and **FKB blocks Web
@@ -199,16 +218,25 @@ BLE. One GATT, one reconnect state machine, zero contention, and a natural place
 delivery. This is ~20 lines of Java (`openInputPort` + a `midi.raw`/`note`/`program` inbound
 command) plus routing browser OUT through the WS.
 
-**It is blocked only by build/deploy, not design:** the APK has **no signing key in the
-repo** (a self-built update won't match the installed signature → forced uninstall/reinstall,
-losing config) and requires an **Android NDK/CMake/Oboe/sfizz** toolchain that isn't set up
-here (the gradle comment itself notes "there is NO NDK/cmake on the authoring machine"). When
-the APK can be built + signed, collapsing to single-owner full-duplex is the target.
+> **This paragraph used to say the APK could not be rebuilt here. That is STALE —
+> re-verified 2026-08-22.** The authoring machine has NDK `26.1.10909125` and CMake
+> `3.22.1` installed (exactly the versions the piano-bridge README calls for), sfizz is
+> vendored at 436 MB, `~/.android/debug.keystore` exists, and
+> `app/app/build/outputs/apk/debug/app-debug.apk` was built **2026-08-20**. The installed
+> build is debug-signed, so the standard debug keystore matches and `pbctl update` can
+> self-update without an uninstall. **The single-owner endgame is not blocked by tooling.**
 
 ---
 
 ## 8. Debugging playbook
 
+- **Start here: `node cli/piano-midi-e2e.cli.mjs`.** One command, both directions, a
+  verdict, and a non-zero exit when unhealthy (so it can be scheduled). It reads the two
+  halves of the path from OPPOSITE ends — the JamCorder's counters and Android's
+  `dumpsys midi` — because no single layer is trustworthy on its own: the browser reported
+  a healthy link through the entire 2026-08-22 outage. `--send` forces traffic (via a kiosk
+  reload) and proves `ble.in` climbs; `--json` for machines. Host comes from
+  `devices.yml` → `midi-recorder.host`.
 - **Is OUT reaching the piano?** Watch the JamCorder counters across a send:
   `GET http://10.0.0.243/api/device-state/get` (gzip; parse `midiMsgCounts`). Browser OUT ⇒
   `ble.in` ↑ **and** forwarded to piano ⇒ `usb.out` ↑ (they move in lockstep). The kiosk's
