@@ -19,9 +19,14 @@ beforeEach(() => {
 });
 
 // Household-scoped school data has no `apps/` segment; see ConfigService
-// .getHouseholdPath (<dataDir>/<household>/school/sessions).
-const sessionsRoot = () => path.join(tmp, 'school', 'sessions');
-const eventsFile = (sessionId, day = DAY) => path.join(sessionsRoot(), day, sessionId, 'events.yml');
+// .getHouseholdPath (<dataDir>/<household>/school/records/sessions). The
+// school data reorg (bfdbe7598) replaced the old day-bucketed
+// {day}/{sessionId}/events.yml + index.yml pair with one append-only record
+// per session, month-bucketed: {YYYY-MM}/{sessionId}.yml holding
+// `{ schema, sessionId, startedAt, events }` — no separate index file at all.
+const MONTH = DAY.slice(0, 7);
+const sessionsRoot = () => path.join(tmp, 'school', 'records', 'sessions');
+const sessionFile = (sessionId, month = MONTH) => path.join(sessionsRoot(), month, `${sessionId}.yml`);
 const created = (over = {}) => ({ type: 'created', at: AT, sessionId: SID, learnerId: 'kid1', unitId: 'u1', ...over });
 const issued = (over = {}) => ({ type: 'issued', at: AT, sessionId: SID, artifactId: 'doc_1', ...over });
 
@@ -37,9 +42,9 @@ describe('construction', () => {
 });
 
 describe('appendEvent', () => {
-  it('writes the spec §5.1 path, bucketed by the first event\'s day', async () => {
+  it('writes the spec §5.1 path, bucketed by the first event\'s month', async () => {
     await ds.appendEvent(SID, created());
-    expect(fs.existsSync(eventsFile(SID))).toBe(true);
+    expect(fs.existsSync(sessionFile(SID))).toBe(true);
   });
 
   it('stamps seq 1 on the first event and increments from there', async () => {
@@ -59,10 +64,10 @@ describe('appendEvent', () => {
     expect(stored.sessionId).toBe(SID);
   });
 
-  it('keeps appending to the original day after midnight — a session is one folder', async () => {
+  it('keeps appending to the origin month after it turns over — a session is one file', async () => {
     await ds.appendEvent(SID, created());
-    await ds.appendEvent(SID, { ...issued(), at: '2026-07-28T01:00:00.000Z' });
-    expect(fs.existsSync(eventsFile(SID, '2026-07-28'))).toBe(false);
+    await ds.appendEvent(SID, { ...issued(), at: '2026-08-01T01:00:00.000Z' });
+    expect(fs.existsSync(sessionFile(SID, '2026-08'))).toBe(false);
     expect(await ds.readEvents(SID)).toHaveLength(2);
   });
 
@@ -127,9 +132,9 @@ describe('readEvents', () => {
   it('returns events in seq order even if the file was re-ordered on disk', async () => {
     await ds.appendEvent(SID, created());
     await ds.appendEvent(SID, issued());
-    const file = eventsFile(SID);
-    const list = JSON.parse(JSON.stringify(await ds.readEvents(SID))).reverse();
-    fs.writeFileSync(file, JSON.stringify(list));
+    const file = sessionFile(SID);
+    const events = JSON.parse(JSON.stringify(await ds.readEvents(SID))).reverse();
+    fs.writeFileSync(file, JSON.stringify({ schema: 'school.work-session/v1', sessionId: SID, startedAt: AT, events }));
     expect((await ds.readEvents(SID)).map((e) => e.seq)).toEqual([1, 2]);
   });
 
@@ -147,28 +152,31 @@ describe('malformed logs isolate to themselves', () => {
   it('a corrupt session reads empty while its neighbours still read', async () => {
     await ds.appendEvent('ses_good', { ...created(), sessionId: 'ses_good' });
     await ds.appendEvent('ses_bad', { ...created(), sessionId: 'ses_bad' });
-    fs.writeFileSync(eventsFile('ses_bad'), 'this: [is: not: valid: yaml\n  - {{{\n');
+    fs.writeFileSync(sessionFile('ses_bad'), 'this: [is: not: valid: yaml\n  - {{{\n');
 
     expect(await ds.readEvents('ses_bad')).toEqual([]);
     expect(await ds.readEvents('ses_good')).toHaveLength(1);
   });
 
-  it('a session file holding a mapping instead of a list reads empty', async () => {
+  it('a session file holding a mapping with no events array reads empty', async () => {
     await ds.appendEvent(SID, created());
-    fs.writeFileSync(eventsFile(SID), 'state: issued\n');
+    fs.writeFileSync(sessionFile(SID), 'state: issued\n');
     expect(await ds.readEvents(SID)).toEqual([]);
   });
 
-  it('a corrupt day index does not hide the other days\' open sessions', async () => {
-    await ds.appendEvent('ses_old', { ...created(), sessionId: 'ses_old', at: '2026-07-20T09:00:00.000Z' });
+  it('a corrupt session file does not hide other months\' open sessions', async () => {
+    // No separate index file exists any more (school data reorg) — a corrupt
+    // RECORD must isolate to its own session the same way a corrupt events
+    // log always has, just one level up (whole record, not just the log).
+    await ds.appendEvent('ses_old', { ...created(), sessionId: 'ses_old', at: '2026-06-20T09:00:00.000Z' });
     await ds.appendEvent('ses_new', { ...created(), sessionId: 'ses_new' });
-    fs.writeFileSync(path.join(sessionsRoot(), '2026-07-20', 'index.yml'), '{{ broken\n');
+    fs.writeFileSync(sessionFile('ses_old', '2026-06'), '{{ broken\n');
 
     const open = await ds.listOpenForLearner('kid1');
     expect(open.map((s) => s.sessionId)).toEqual(['ses_new']);
   });
 
-  it('a stray non-day directory under the sessions root is ignored', async () => {
+  it('a stray non-month directory or file under the sessions root is ignored', async () => {
     await ds.appendEvent(SID, created());
     fs.mkdirSync(path.join(sessionsRoot(), '.DS_Store_dir'), { recursive: true });
     fs.writeFileSync(path.join(sessionsRoot(), 'README.md'), 'notes');
@@ -284,27 +292,28 @@ describe('listForLearner', () => {
     expect(facts[0].gradedPercent).toBe(null);
   });
 
-  it('recomputes gradedPercent for pre-upgrade rows (missing gradedPercent key)', async () => {
-    // Build a complete graded session through the real datastore
-    await ds.appendEvent(SID, created());
-    await ds.appendEvent(SID, issued());
-    await ds.appendEvent(SID, { type: 'submitted', at: AT, sessionId: SID, transport: 'paper' });
-    await ds.appendEvent(SID, { type: 'graded', at: AT, sessionId: SID, attemptIds: ['att_1'], percent: 85 });
-    await ds.appendEvent(SID, { type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: `out:${SID}`, result: 'passed' });
-    await ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 'txn_1' });
+  // The school data reorg (bfdbe7598) deleted the "pre-upgrade index row
+  // missing gradedPercent" recompute fallback outright — not because a bug
+  // was fixed, but because its premise is gone: there is no more standalone
+  // index.yml row to go stale. `gradedPercent` is derived by `reduceSession`
+  // from the record's own `events` on EVERY `listForLearner` call, so a
+  // record written by hand (or by a datastore version that never had a
+  // `gradedPercent`/`schema` field at all) still reads back correctly —
+  // there is no cached value that can ever drift from the log.
+  it('gradedPercent is always derived fresh from events, never a cached/stale field on the record', async () => {
+    const events = [
+      { ...created(), seq: 1 },
+      { ...issued(), seq: 2 },
+      { type: 'submitted', at: AT, sessionId: SID, transport: 'paper', seq: 3 },
+      { type: 'graded', at: AT, sessionId: SID, attemptIds: ['att_1'], percent: 85, seq: 4 },
+      { type: 'outcome_recorded', at: AT, sessionId: SID, outcomeId: `out:${SID}`, result: 'passed', seq: 5 },
+      { type: 'rewarded', at: AT, sessionId: SID, txnId: 'txn_1', seq: 6 },
+    ];
+    fs.mkdirSync(path.join(sessionsRoot(), MONTH), { recursive: true });
+    // Deliberately omit `schema`/`startedAt` — an older or hand-edited record
+    // with only the one field the reducer actually needs.
+    fs.writeFileSync(sessionFile(SID), yaml.dump({ sessionId: SID, events }, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
 
-    // Simulate a pre-upgrade index row by stripping the gradedPercent key
-    const indexPath = path.join(sessionsRoot(), DAY, 'index.yml');
-    const raw = yaml.load(fs.readFileSync(indexPath, 'utf8'));
-    const upgradeRow = { ...raw[SID] };
-    delete upgradeRow.gradedPercent; // Strip the key to simulate pre-upgrade
-    raw[SID] = upgradeRow;
-    fs.writeFileSync(indexPath, yaml.dump(raw, { indent: 2, lineWidth: -1, noRefs: true }), 'utf8');
-
-    // Clear any cache to force a fresh read
-    ds = new YamlWorkSessionDatastore({ configService: { getDataDir: () => tmp, getHouseholdPath: (rel) => `${tmp}/${rel}` } });
-
-    // listForLearner should still report gradedPercent: 85 by recomputing from events
     const facts = await ds.listForLearner('kid1');
     expect(facts).toHaveLength(1);
     expect(facts[0]).toMatchObject({
@@ -322,7 +331,9 @@ describe('nextSeq', () => {
   it('is one past the highest stored seq, not the count', async () => {
     await ds.appendEvent(SID, created());
     const list = await ds.readEvents(SID);
-    fs.writeFileSync(eventsFile(SID), JSON.stringify([{ ...list[0], seq: 12 }]));
+    fs.writeFileSync(sessionFile(SID), JSON.stringify({
+      schema: 'school.work-session/v1', sessionId: SID, startedAt: AT, events: [{ ...list[0], seq: 12 }],
+    }));
     expect(await ds.nextSeq(SID)).toBe(13);
   });
 });
