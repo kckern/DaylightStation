@@ -586,6 +586,25 @@ public class BridgeCore {
         }
     }
 
+    /**
+     * Schedule a MIDI message {@code delayMs} from now on the bridge's own clock.
+     * This is the jank-immune audio plane for score/composer/studio playback: the
+     * kiosk page dispatches events up to ~400ms ahead (its transport lookahead),
+     * and THIS process's timer fires them on time regardless of how badly the
+     * WebView main thread is starving. Replaces Web MIDI's timestamped send()
+     * (out.send(bytes, atMs)) — the handle that fails silently when zombie.
+     * delayMs <= 0 sends immediately.
+     */
+    public boolean scheduleMidi(byte[] bytes, long delayMs) {
+        if (bytes == null || bytes.length == 0) return false;
+        if (delayMs <= 0) return sendMidi(bytes);
+        if (openMidiInPort == null) { midiWriteLastError = "write port not open"; return false; }
+        ensureMidiPortExec().schedule(() -> {
+            if (!sendMidi(bytes)) Log.w(TAG, "scheduled sendMidi failed (delayMs=" + delayMs + ")");
+        }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        return true;
+    }
+
     public boolean isMidiWriteOpen() { return midiWriteOpen; }
 
     public boolean isMidiPortOpen() { return midiPortOpen; }

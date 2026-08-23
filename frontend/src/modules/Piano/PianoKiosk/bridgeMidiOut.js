@@ -68,6 +68,27 @@ export function bridgeOutUp() {
  * is then attested by the bridge's own loopback verdict, not by us); false if
  * the bridge is not up — caller must fall back to Web MIDI.
  */
+/**
+ * Schedule raw MIDI bytes `inMs` from now on the BRIDGE's clock (its own
+ * process timer — immune to WebView main-thread jank, which is the property
+ * score playback needs). Fire-and-forget like bridgeSendMidi; false when the
+ * bridge is not up so callers fall back to Web MIDI's timestamped send().
+ */
+export function bridgeSendMidiAt(bytes, inMs) {
+  if (!bridgeOutUp()) return false;
+  const hexStr = Array.from(bytes, (b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');
+  const delay = Math.max(0, Math.round(inMs || 0));
+  try {
+    fetch(`${BRIDGE}/midi/send?hex=${encodeURIComponent(hexStr)}&inMs=${delay}`, { method: 'POST' })
+      .then((r) => { if (!r.ok) lastOkAt = 0; })
+      .catch(() => { lastOkAt = 0; });
+  } catch {
+    lastOkAt = 0;
+    return false;
+  }
+  return true;
+}
+
 export function bridgeSendMidi(bytes) {
   if (!bridgeOutUp()) return false;
   const hexStr = Array.from(bytes, (b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');

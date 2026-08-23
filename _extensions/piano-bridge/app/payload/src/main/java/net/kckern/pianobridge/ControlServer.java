@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p16-tone";
+    public static final String BUILT_BY = "p17-sched";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -524,14 +524,26 @@ public class ControlServer extends NanoWSD {
                     // (piano/config.yml `effects.resend`). Spaced by more than one BLE
                     // connection interval so each lands in its own packet.
                     int repeat = Math.max(1, Math.min(10, parseIntParam(session, "repeat", 1)));
+                    // inMs: schedule the send this many ms from now on the BRIDGE's clock
+                    // (p17). This is the audio plane for score/composer/studio playback:
+                    // the page dispatches up to its transport lookahead (~400ms) ahead and
+                    // the bridge's timer fires on time however janky the WebView is —
+                    // replacing Web MIDI's timestamped send() whose zombie handle played
+                    // NOTHING while the noteheads lit (2026-08-23 evening).
+                    long inMs = Math.max(0, Math.min(30_000, parseIntParam(session, "inMs", 0)));
                     int sent = 0;
-                    for (int i = 0; i < repeat; i++) {
-                        if (i > 0) { try { Thread.sleep(30L); } catch (InterruptedException ignored) { } }
-                        if (service.sendMidi(bytes)) sent++;
+                    if (inMs > 0) {
+                        if (service.scheduleMidi(bytes, inMs)) sent = repeat = 1;
+                    } else {
+                        for (int i = 0; i < repeat; i++) {
+                            if (i > 0) { try { Thread.sleep(30L); } catch (InterruptedException ignored) { } }
+                            if (service.sendMidi(bytes)) sent++;
+                        }
+                        Diag.log(TAG, "/midi/send " + session.getRemoteIpAddress()
+                                + " bytes=" + bytes.length + " repeat=" + repeat + " sent=" + sent);
                     }
-                    Diag.log(TAG, "/midi/send " + session.getRemoteIpAddress()
-                            + " bytes=" + bytes.length + " repeat=" + repeat + " sent=" + sent);
                     JSONObject o = ok();
+                    if (inMs > 0) o.put("inMs", inMs);
                     o.put("bytes", bytes.length);
                     o.put("repeat", repeat);
                     o.put("sent", sent);
