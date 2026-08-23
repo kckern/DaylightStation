@@ -259,3 +259,4 @@ To restore: `git checkout -b branch-name <commit-hash>`
 | 2026-08-22 | fix/laser-duplex-honesty | 3018a6f7f | Laser adapter reads printer's real sides-default; honest duplex reporting |
 | 2026-08-22 | fix/gate-vitest-failures | 5056a6036 | Fixed all 28 gate-failing test files; baseline 12 -> 0; 2 real production bugs |
 | 2026-08-22 | feat/school-grading-hook | 57898150b | HA grading hook: one script, outcome as variables, all four terminal outcomes |
+| 2026-08-23 | feat/omr-scan-outcome | 24bc38c71 | School OMR scan-outcome broadcast: topic derived from resolveQuizScanTopics, scan-graded fields renamed to correctCount/totalCount, scan ceremony raised above material player, eraser-leniency rule 3 coverage. Fully merged into main; no worktree, no uncommitted work. |
