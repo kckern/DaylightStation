@@ -134,68 +134,11 @@ homebot:
     });
   });
 
-  describe('loadSystemAuth()', () => {
-    test('loads auth files into systemAuth keyed by platform', () => {
-      // Create telegram.yml
-      const telegramContent = `
-nutribot: "telegram_token_123"
-homebot: "telegram_token_456"
-`;
-      fs.writeFileSync(path.join(tempDir, 'system', 'auth', 'telegram.yml'), telegramContent);
-
-      // Create discord.yml
-      const discordContent = `
-mybot: "discord_token_789"
-`;
-      fs.writeFileSync(path.join(tempDir, 'system', 'auth', 'discord.yml'), discordContent);
-
-      const config = loadConfig(tempDir);
-
-      expect(config.systemAuth).toEqual({
-        telegram: {
-          nutribot: 'telegram_token_123',
-          homebot: 'telegram_token_456',
-        },
-        discord: {
-          mybot: 'discord_token_789',
-        },
-      });
-    });
-
-    test('skips example files', () => {
-      // Create example file (should be skipped)
-      const exampleContent = `
-nutribot: "YOUR_TOKEN_HERE"
-`;
-      fs.writeFileSync(path.join(tempDir, 'system', 'auth', 'telegram.example.yml'), exampleContent);
-
-      // Create real file
-      const realContent = `
-nutribot: "real_token_123"
-`;
-      fs.writeFileSync(path.join(tempDir, 'system', 'auth', 'telegram.yml'), realContent);
-
-      const config = loadConfig(tempDir);
-
-      expect(config.systemAuth).toEqual({
-        telegram: {
-          nutribot: 'real_token_123',
-        },
-      });
-    });
-
-    test('returns empty object when auth directory is empty', () => {
-      const config = loadConfig(tempDir);
-
-      expect(config.systemAuth).toEqual({});
-    });
-
-    test('returns empty object when auth directory does not exist', () => {
-      fs.rmSync(path.join(tempDir, 'system', 'auth'), { recursive: true });
-
-      const config = loadConfig(tempDir);
-
-      expect(config.systemAuth).toEqual({});
-    });
-  });
+  // `loadSystemAuth()` is GONE from this layer on purpose: configLoader.mjs
+  // hands auth to SecretsHandler (see its own note, "secrets, auth,
+  // systemAuth removed - now handled by SecretsHandler"), which is covered by
+  // tests/unit/suite/secrets/. The four specs that used to sit here asserted
+  // `config.systemAuth` and had been failing against `undefined` ever since —
+  // unnoticed, because this file uses bare globals and the vitest gate's
+  // population required an explicit `from 'vitest'` import.
 });
