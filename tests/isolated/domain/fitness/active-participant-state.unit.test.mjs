@@ -65,7 +65,11 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
 
   it('returns empty state when not configured', () => {
     const state = roster.getActiveParticipantState();
-    expect(state).toEqual({ participants: [], zoneMap: {}, totalCount: 0, hrInactiveUsers: [] });
+    // `guestIds` was added in 920f61dfe "feat(governance): plumb guestIds
+    // through snapshot + pulse paths" (2026-06-25) — see the "excludes
+    // guests" test below for why the roster now reports guests instead of
+    // silently dropping them.
+    expect(state).toEqual({ participants: [], zoneMap: {}, totalCount: 0, hrInactiveUsers: [], guestIds: [] });
   });
 
   it('returns active participants with their zone IDs', () => {
@@ -168,9 +172,19 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
     expect(state.totalCount).toBe(1);
   });
 
-  it('excludes guests — they are exempt from governance', () => {
-    // Guests neither block nor satisfy unlock requirements. A primary user
-    // must not be able to escape governance by handing the HR strap to a guest.
+  it('includes guests but flags them via guestIds — exemption is enforced by GovernanceEngine, not here', () => {
+    // Guests must still neither block nor satisfy unlock requirements (see
+    // feedback_guests_exempt_from_governance / reference_governance_subject_vs_eligible
+    // memories — this is a standing product rule, not negotiable). But since
+    // 920f61dfe "feat(governance): plumb guestIds through snapshot + pulse
+    // paths" (2026-06-25), the exemption is enforced downstream in
+    // GovernanceEngine's `_buildSubjectFilter`/`_exemptionsApply` (guests are
+    // "eligible" for challenge credit but never "subjects" for blame/unlock),
+    // not by dropping guests out of this roster snapshot. Dropping them here
+    // would also silently break challenge-credit accounting, which needs
+    // guests present. See ParticipantRoster.guestExempt.test.js (asserts the
+    // inclusion) and GovernanceEngine.guestExempt.test.js (asserts the actual
+    // exemption from blame/unlock) for the current, correct-layer coverage.
     configureWithParticipants(
       [
         { id: 'dev-1', type: 'heart_rate', heartRate: 120 },
@@ -187,8 +201,9 @@ describe('ParticipantRoster.getActiveParticipantState()', () => {
     );
 
     const state = roster.getActiveParticipantState();
-    expect(state.participants).toEqual(['alice']);
-    expect(state.zoneMap).toEqual({ alice: 'cool' });
-    expect(state.totalCount).toBe(1); // guest does not count toward denominator
+    expect(state.participants).toEqual(['alice', 'guest']);
+    expect(state.guestIds).toEqual(['guest']);
+    expect(state.zoneMap).toEqual({ alice: 'cool', guest: 'warm' });
+    expect(state.totalCount).toBe(2); // eligible count includes guests; GovernanceEngine excludes them from the subject denominator
   });
 });
