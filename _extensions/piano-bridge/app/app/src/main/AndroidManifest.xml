@@ -50,6 +50,27 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
+    <!-- PRE-DECLARED for the hot-swappable payload (2026-08-23, shell v30). Adding a
+         permission is the one change a payload drop cannot make — it needs a real
+         install and a human tap. So every permission a bridge payload could plausibly
+         want is declared NOW, while one tap is cheap, instead of one at a time later.
+         All are normal-protection on targetSdk 29 (auto-granted). Unused ones cost
+         nothing. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Android 12+ BLE split. Inert on this Android-10 tablet, but declared so a
+         replacement tablet does not need a new shell to scan/connect BLE-MIDI. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- The bridge reads the BLE-MIDI piano directly via Android MidiManager. -->
     <uses-feature
         android:name="android.software.midi"

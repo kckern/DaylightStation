@@ -17,6 +17,7 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs shell [restart|rollback|log]   # the :8771 LIFELINE — works when :8770 is dead (v30+)
 //   node pbctl.mjs payload [url sha256|rollback]  # hot-swap the bridge logic, NO tablet tap (v29+)
 //   node pbctl.mjs reboot            # FKB-independent device restart via a11y (v28+)
 //   node pbctl.mjs midi "<hex>" [n] # raw MIDI/SysEx OUT to the piano (v26+)
@@ -118,6 +119,28 @@ const cmds = {
       const s = await req('GET', '/payload');
       console.log(`  now active: ${s.active ?? '—'} v=${s.activeVersion ?? '?'}${s.lastError ? '  lastError=' + s.lastError : ''}`);
     }
+  },
+  // --- shell lifeline on :8771 (shell v30+) ------------------------------------
+  // The SHELL's own tiny server, up regardless of what the payload does. Use it when
+  // :8770 (the payload's control plane) is dead but the process is alive — the one
+  // case the crash counter can't catch. Same status/swap/rollback, plus /restart.
+  //   pbctl shell                    # shell status incl. payload
+  //   pbctl shell restart            # stop+start the current payload in place
+  //   pbctl shell rollback           # current <- previous, via the lifeline
+  //   pbctl shell log                # tail of shell.log
+  async shell(args) {
+    const base = BASE.replace(/:8770$/, ':8771');
+    const r = async (m, p) => { const res = await fetch(base + p, { method: m, signal: AbortSignal.timeout(15000) }); const t = await res.text(); try { return JSON.parse(t); } catch { return t; } };
+    const a = args[0];
+    if (a === 'restart')  { pretty(await r('POST', '/restart')); return; }
+    if (a === 'rollback') { pretty(await r('POST', '/payload/rollback')); return; }
+    if (a === 'log')      { console.log(await r('GET', '/log')); return; }
+    const s = await r('GET', '/');
+    if (typeof s === 'string') { console.log(s); return; }
+    console.log(`shell v${s.versionCode}  lifeline :${s.port}  a11y ${s.a11yBound ? 'bound' : 'NOT bound'}`);
+    const p = s.payload || {};
+    console.log(`payload   : ${p.active ?? '—'} (v ${p.activeVersion ?? '?'})  prev ${p.previous ?? '—'}  boots ${p.bootsThisPayload ?? '?'}`);
+    if (p.lastError) console.log(`lastError : ${p.lastError}`);
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
