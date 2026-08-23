@@ -67,6 +67,11 @@ Time-sensitive work follows the same boundary: a syllabus may offer defaults,
 but an enrollment or standalone-work plan owns the resolved household dates and
 priority. See [Time-sensitive School planning](./timing-and-priority.md).
 
+A dated course, such as Come Follow Me, follows the calendar rather than a
+learner's oldest unfinished lesson. This week's module comes first; missed
+weeks remain available as catch-up (newest first) and never block a future
+week. Future modules cannot be opened early.
+
 ---
 
 ## 1. What School is

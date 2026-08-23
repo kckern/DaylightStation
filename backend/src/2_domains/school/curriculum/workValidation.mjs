@@ -60,6 +60,7 @@ const SCOPES = ['item', 'module', 'work'];
 const WHENS = ['study', 'checkpoint', 'remediation'];
 const SCANS = ['omr', 'none'];
 const ORDERING = ['fixed', 'shuffle_once'];
+const MODES = ['sequential', 'module_blocks', 'dated_modules'];
 const COURSE_V2_SCHEMA = 'school.course/v2';
 const COURSE_V2_MEDIA = [...MEDIA, 'ebook'];
 
@@ -196,7 +197,11 @@ export function validateWork(raw, ctx = {}) {
     } else {
       // Read straight off `raw`: progression is validated further down, but a
       // string comparison against it is safe at any shape.
-      const isDated = raw.progression?.mode === 'dated_modules';
+      const mode = raw.progression?.mode;
+      const isDated = mode === 'dated_modules';
+      // An unrecognized mode is reported below. Do not also tell its author
+      // that valid windows are stray: the mode is almost certainly the typo.
+      const isUndated = mode === 'sequential' || mode === 'module_blocks';
       const seen = new Set();
       raw.modules.forEach((m, i) => {
         const at = `modules[${i}]`;
@@ -212,7 +217,7 @@ export function validateWork(raw, ctx = {}) {
           if (isDay(m.opensOn) && isDay(m.closesOn) && m.opensOn > m.closesOn) {
             errors.push(`${at}: window closes before it opens`);
           }
-        } else if (isPresent(m.opensOn) || isPresent(m.closesOn)) {
+        } else if (isUndated && (isPresent(m.opensOn) || isPresent(m.closesOn))) {
           errors.push(`${at}: opensOn/closesOn are only meaningful when progression.mode is dated_modules`);
         }
       });
@@ -249,9 +254,7 @@ export function validateWork(raw, ctx = {}) {
       const p = raw.progression;
       oneOf(p.module_order, ORDERING, 'progression.module_order', errors);
       oneOf(p.lesson_order, ORDERING, 'progression.lesson_order', errors);
-      if (!['sequential', 'module_blocks', 'dated_modules'].includes(p.mode)) {
-        errors.push('progression.mode must be sequential|module_blocks|dated_modules');
-      }
+      oneOf(p.mode, MODES, 'progression.mode', errors);
       if (p.mode === 'module_blocks' && p.one_active_module !== true) {
         errors.push('progression.one_active_module must be true for module_blocks');
       }
@@ -317,5 +320,5 @@ export function validateWork(raw, ctx = {}) {
 }
 
 export const WORK_ENUMS = Object.freeze({
-  CATEGORIES, MEDIA, SHAPES, ITEM_SOURCES, ORDERS, GATES, SCOPES, WHENS, SCANS, ORDERING,
+  CATEGORIES, MEDIA, SHAPES, ITEM_SOURCES, ORDERS, GATES, SCOPES, WHENS, SCANS, ORDERING, MODES,
 });

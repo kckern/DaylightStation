@@ -32,7 +32,7 @@ per-learner, per-course record embedded in the assignment entry:
 ```yaml
 # household/school/plans/learners/felix.yml
 learnerId: felix
-courses:
+enrollments:
   - math-fractions                          # bare string: no enrollment
   - courseId: young-peoples-atlas-us
     profile: upper
@@ -46,6 +46,10 @@ courses:
       lessonOrder:
         midwest: [atlas-us-p012-midwest, atlas-us-p100-south-dakota, …]
         …
+      # Present only for progression.mode: dated_modules.
+      moduleSchedule:
+        w35-aug24: { opensOn: '2026-08-24', closesOn: '2026-08-30' }
+        w36-aug31: { opensOn: '2026-08-31', closesOn: '2026-09-06' }
 ```
 
 `planner.mjs` reads it (`readAssignmentList` keeps `profile` and `enrollment`
@@ -57,7 +61,11 @@ off each entry) and uses it throughout gating:
 - `lessonOrder` — the enrollment's frozen order within a module wins over
   `sequence`;
 - alongside the course's own `progression` policy: `required_opening_module`,
-  `one_active_module`, `mode: sequential | module_blocks`.
+  `one_active_module`, or `mode: sequential | module_blocks | dated_modules`.
+
+For `dated_modules`, `moduleSchedule` is frozen at enrollment from the course
+manifest. It prevents later calendar edits from moving a learner's active
+plan; modules already closed when the learner enrolls are omitted entirely.
 
 `profile` reaches the issue path. `issueWorksheet` filters items by
 `item.levels.includes(profile)` and seeds selection on

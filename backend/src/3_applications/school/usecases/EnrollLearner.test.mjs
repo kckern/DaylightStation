@@ -34,6 +34,16 @@ const TIMED_SYLLABUS = {
     normalBlocks: 1, urgentBlocks: 3, urgencyLeadDays: 10,
   },
 };
+const DATED_WORK = {
+  work: 'cfm',
+  progression: { mode: 'dated_modules', module_order: 'fixed', lesson_order: 'shuffle_once' },
+  modules: [{ module: 'w35', title: 'Week 35', opensOn: '2026-08-24', closesOn: '2026-08-30' }],
+};
+const DATED_SYLLABUS = {
+  schema: 'school.syllabus/v1', syllabusId: 'cfm', title: 'Come Follow Me',
+  courseId: 'cfm', profile: 'lower', policy: null, passing: 60, term: null,
+};
+const DATED_UNITS = [{ unitId: 'cfm.w35.d1', courseId: 'cfm', module: 'w35', moduleRole: 'lesson', sequence: 1 }];
 
 // Units ordered so `foundations` is NOT the first module to appear in the
 // array — `createCourseEnrollment` otherwise derives module order from
@@ -115,6 +125,25 @@ describe('EnrollLearner', () => {
       anchor: { anchorId: 'fourth-of-july', resolvedOn: '2027-07-04' },
       availability: { opensOn: '2027-06-13', closesOn: '2027-07-05' },
       agenda: { normalBlocks: 1, urgentBlocks: 3 },
+    });
+  });
+
+  it('materializes a dated course schedule from the catalog work', async () => {
+    const enrollLearner = new EnrollLearner({
+      syllabi: { get: async (id) => (id === 'cfm' ? DATED_SYLLABUS : null) },
+      assignments: { get: async () => null, put: async (record) => record },
+      curriculum: { listUnits: async () => DATED_UNITS, listWorks: async () => [DATED_WORK] },
+      teacherGate: { assert: () => true },
+      clock: () => new Date('2026-08-23T12:00:00.000Z'),
+      rng: () => 0,
+      logger: { info: () => {}, warn: () => {} },
+    });
+    const record = await enrollLearner.execute({
+      learnerId: 'milo', syllabusId: 'cfm', enrolledBy: 'kckern', pin: '0000',
+    });
+    const entry = record.courses.find((course) => course.courseId === 'cfm');
+    expect(entry.enrollment.moduleSchedule).toEqual({
+      w35: { opensOn: '2026-08-24', closesOn: '2026-08-30' },
     });
   });
 
