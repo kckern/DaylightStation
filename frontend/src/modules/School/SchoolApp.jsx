@@ -37,7 +37,9 @@ import { useSchoolLaunch } from './useSchoolLaunch.js';
 import { moduleLaunchAllowed } from './catalog/certification.js';
 import Keypad from './selfService/Keypad.jsx';
 import LaunchCard from './selfService/LaunchCard.jsx';
+import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
+import { useScanCeremony } from './selfService/useScanCeremony.js';
 import './School.scss';
 
 /**
@@ -476,6 +478,12 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
     onLaunch: onPortalLaunch,
   });
 
+  // The scan ceremony (Slice D, omr-grading-integrity design): a scan must
+  // always be acknowledged on screen. Subscribed here — not inside the lock
+  // branch below — because a scan can land while the panel is either locked
+  // or open (KC: "a scan must always be acknowledged on screen").
+  const ceremony = useScanCeremony();
+
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
@@ -656,6 +664,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
       </header>
       )}
       <main className="school-app__body">
+        {/* Scan ceremony (Slice D): a sibling of the lock branch below, NOT
+            inside it — a scan can land whether the panel is locked or open,
+            and this must render either way. */}
+        {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
         {/* LOCKED PANEL (design §3). The keypad IS the resting state; a
             resolved code puts the launch card over it. Runners are rendered
             below, OUTSIDE this branch, so on-screen work mounted from a code —

@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SchoolApp from './SchoolApp.jsx';
 
-// Capture the WS subscriber so these tests can push `school.launch` messages
-// straight through the REAL useSchoolLaunch hook and SchoolApp's real
-// onPortalLaunch routing (pattern: useSchoolLaunch.test.jsx / useKioskLaunchCommand.test.js).
-const h = vi.hoisted(() => ({ handlers: [] }));
+// Capture the WS subscribers, KEYED BY TOPIC, so these tests can push
+// `school.launch` messages straight through the REAL useSchoolLaunch hook and
+// SchoolApp's real onPortalLaunch routing (pattern: useSchoolLaunch.test.jsx /
+// useKioskLaunchCommand.test.js). SchoolApp mounts more than one
+// useWebSocketSubscription now (school.launch AND the Slice D scan ceremony's
+// `omr` topic) — a single flat slot would let the second subscriber silently
+// clobber the first's callback.
+const h = vi.hoisted(() => ({ byTopic: {} }));
 vi.mock('../../hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: (_topic, cb) => { h.handlers[0] = cb; },
+  useWebSocketSubscription: (topic, cb) => { h.byTopic[topic] = cb; },
 }));
 
 // Spy on the schoolLog facade so the not-found/program-unavailable warn paths
@@ -20,6 +24,7 @@ vi.mock('./schoolLog.js', () => ({
     nav: vi.fn(), home: vi.fn(), materials: vi.fn(), materialsError: vi.fn(),
     print: vi.fn(), typing: vi.fn(), player: vi.fn(), surface: vi.fn(),
     feedback: vi.fn(), feedbackError: vi.fn(), standing: vi.fn(), standingError: vi.fn(),
+    scan: vi.fn(),
   },
 }));
 
@@ -77,7 +82,7 @@ const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: 
 
 beforeEach(() => {
   localStorage.clear();
-  h.handlers.length = 0;
+  h.byTopic = {};
   bankLogMock.mockClear();
   banksMock.mockReset().mockResolvedValue({
     ok: true, status: 200,
@@ -98,7 +103,7 @@ beforeEach(() => {
 
 // Deliver a `school.launch` message the way the backend broadcasts it: the
 // full payload the WS layer hands every subscribed filter, `topic` included.
-const deliverLaunch = (learnerId, target) => h.handlers[0]({ topic: 'school', type: 'school.launch', learnerId, target });
+const deliverLaunch = (learnerId, target) => h.byTopic.school({ topic: 'school', type: 'school.launch', learnerId, target });
 
 // `banks` loads via its own un-awaited `schoolApi.banks()` fetch — a separate
 // promise from the materials/courses `Promise.all` that gates the subject
