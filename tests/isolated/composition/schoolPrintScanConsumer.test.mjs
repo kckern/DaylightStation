@@ -107,7 +107,12 @@ describe('resolution outcomes', () => {
     expect(execute.mock.calls[0][0].answers).toMatchObject({ 1: 'A' });
   });
 
-  it('a CARD_ID_UNREADABLE (or any resolver error) logs at debug and never throws', async () => {
+  it('a CARD_ID_UNREADABLE (or any resolver error) logs at WARN (not debug) and never throws', async () => {
+    // 9a5537bb7 (OMR/print integrity slice A, 2026-08-22) raised this from
+    // debug to warn on purpose: production runs at `info`, so at debug this
+    // line — the single best explanation for "I scanned it and nothing
+    // happened" — left an unreadable card with no trace at all. It also
+    // started carrying the candidate/answer counts alongside the code.
     const bus = makeBus();
     const logger = silentLogger();
     createSchoolPrintScanConsumer({
@@ -117,10 +122,10 @@ describe('resolution outcomes', () => {
     });
     bus.broadcast('omr', sheetPayload());
     await flush();
-    expect(logger.debug).toHaveBeenCalledWith('school.print.scan-unresolved', expect.objectContaining({
+    expect(logger.warn).toHaveBeenCalledWith('school.print.scan-unresolved', expect.objectContaining({
       testId: '0123456', code: 'CARD_ID_UNREADABLE',
     }));
-    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).not.toHaveBeenCalled();
     // Only the constructor's own "ready" line — no per-resolution info log
     // for an unreadable card.
     expect(logger.info).toHaveBeenCalledTimes(1);

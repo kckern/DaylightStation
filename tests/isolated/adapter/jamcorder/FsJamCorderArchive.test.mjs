@@ -6,7 +6,7 @@ import path from 'node:path';
 import { FsJamCorderArchive } from '#adapters/jamcorder/FsJamCorderArchive.mjs';
 
 let dir;
-const cfg = () => ({ getHouseholdPath: (rel) => path.join(dir, rel) });
+const cfg = () => ({ getMediaDir: () => dir });
 const silent = { info() {}, warn() {}, error() {}, debug() {} };
 const ref = { listPath: '/JAMC/2026/s1/A.mid' };
 const rel = '2026/2026-01/2026-01-02 18.17.40.mid';
@@ -20,7 +20,7 @@ describe('FsJamCorderArchive', () => {
     expect(a.has(ref)).toBe(false);
     await a.save(rel, Buffer.from('MThd-bytes'));
     await a.markProcessed(ref, rel);
-    const full = path.join(dir, 'history/piano/jamcorder', rel);
+    const full = path.join(dir, 'midi/piano/log/jamcorder', rel);
     expect(existsSync(full)).toBe(true);
     expect(readFileSync(full).toString()).toBe('MThd-bytes');
     expect(a.has(ref)).toBe(true);

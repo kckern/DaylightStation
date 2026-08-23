@@ -6,7 +6,7 @@ import { YamlGamingDefinitionStore } from '../../../backend/src/1_adapters/persi
 import { YamlGamingSessionStore } from '../../../backend/src/1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { GamingSessionService } from '../../../backend/src/3_applications/gaming/GamingSessionService.mjs';
 import { validateDefinition } from '../../../shared/gaming/definition.mjs';
-import { scaleClashDefinition } from '../../../shared/gaming/fixtures/scaleClash.mjs';
+import { scaleClashDefinition } from '../../../shared/gaming/definitions/scaleClash.mjs';
 
 const scratch = [];
 afterEach(() => {
@@ -74,6 +74,8 @@ function addCompletedRun(svc, {
     status: 'complete',
     participants: [{ user_id: userId, display_name: displayName }],
     completed_at: completedAt,
+    created_at: completedAt,
+    updated_at: completedAt,
     state: {
       status: 'complete',
       partner_id: partnerId,
@@ -93,7 +95,7 @@ describe('GamingSessionService', () => {
   it('loads the Pokémon journey from YAML and requests all four semantic piano skills', () => {
     const svc = service();
     const loaded = svc.getDefinition('card-game');
-    expect(loaded.definition.title).toBe('Scale Stadium');
+    expect(loaded.definition.title).toBe('Card Game');
     expect(loaded.definition).toMatchObject({
       ruleset: 'pokemon-practice-journey-v1',
       view_id: 'pokemon-practice-journey-v1',
@@ -113,8 +115,11 @@ describe('GamingSessionService', () => {
       game_id: 'card-game', participants: [{ user_id: 'kid-1' }], seed: 7,
       setup: { partner_id: 'bulbasaur' },
     });
+    // Opening hand deals only the 3 unlocked moves — the signature move
+    // (razor-leaf) stays out of the hand until the first encounter is won
+    // (shared/gaming/pokemonJourney.mjs `.slice(0, 3)`, added by 6defad5c3).
     expect(created.state.zones.hand.map((card) => card.definition_id)).toEqual([
-      'vine-whip', 'growl', 'growth', 'razor-leaf',
+      'vine-whip', 'growl', 'growth',
     ]);
     const scale = created.state.zones.hand[0];
     const chosen = svc.applyCommand(created.session_id, {
@@ -257,7 +262,11 @@ describe('GamingSessionService', () => {
       persistent: true,
       journeys_completed: 3,
       personal_best: { score: 9000, partner_id: 'bulbasaur' },
-      partners: { bulbasaur: { journeys_completed: 3, evolved: true } },
+      // Bond rank 4 ("evolved") requires 12+ encounter wins across 5+ distinct
+      // training days (shared/gaming/campaignProgress.mjs bondRank) — a
+      // deliberately higher bar introduced by 6defad5c3's persistent-campaign
+      // redesign. 3 runs / 3 days only reaches rank 3.
+      partners: { bulbasaur: { journeys_completed: 3, bond_rank: 3, evolved: false } },
     });
     expect(progress.skill_stars.scale.stars).toBe(3);
 

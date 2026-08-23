@@ -42,7 +42,13 @@ beforeEach(() => {
 
 // Household-scoped school data lives at <household>/school/... with no
 // `apps/` segment (that layout is only used under users/{id}/apps/{app}/).
-const under = (...segments) => path.join(tmp, 'school', ...segments);
+// The wave-8 "school data reorg" (bfdbe7598) moved assignments/history/review
+// under the `plans/`, `records/`, and `runtime/` taxonomy — mirror that here
+// so the fixtures line up with what the stores actually read/write.
+const assignmentsUnder = (...segments) => path.join(tmp, 'school', 'plans', 'learners', ...segments);
+const historyUnder = (...segments) => path.join(tmp, 'school', 'records', 'plans', 'learners', ...segments);
+const reviewUnder = (...segments) => path.join(tmp, 'school', 'runtime', 'review', ...segments);
+const formsUnder = (...segments) => path.join(tmp, 'school', 'artifacts', 'print', 'forms', ...segments);
 const write = (file, body) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, body, 'utf8');
@@ -59,11 +65,13 @@ describe('YamlAssignmentStore', () => {
 
   it('round-trips a record through parent-readable YAML', async () => {
     await assignments.put({ learnerId: 'kid1', courses: ['math-fractions'], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT });
+    // Shorthand course ids are normalized to enrollment records at the storage
+    // boundary (school data reorg) — the persistence shape never mixes the two.
     expect(await assignments.get('kid1')).toEqual({
-      learnerId: 'kid1', courses: ['math-fractions'], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT,
+      learnerId: 'kid1', courses: [{ courseId: 'math-fractions' }], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT,
       assignedBy: null,
     });
-    expect(yaml.load(fs.readFileSync(under('assignments', 'kid1.yml'), 'utf8')).courses).toEqual(['math-fractions']);
+    expect(yaml.load(fs.readFileSync(assignmentsUnder('kid1.yml'), 'utf8')).enrollments).toEqual([{ courseId: 'math-fractions' }]);
   });
 
   it('returns null rather than throwing for an unassigned learner', async () => {
@@ -72,7 +80,7 @@ describe('YamlAssignmentStore', () => {
 
   it('isolates a mid-edit broken file to that learner', async () => {
     await assignments.put({ learnerId: 'kid1', courses: ['math-fractions'] });
-    write(under('assignments', 'kid2.yml'), 'courses: [: :\n  broken');
+    write(assignmentsUnder('kid2.yml'), 'courses: [: :\n  broken');
     expect(await assignments.get('kid2')).toBeNull();
     expect(await assignments.get('kid1')).toMatchObject({ learnerId: 'kid1' });
     expect((await assignments.list()).map((r) => r.learnerId)).toEqual(['kid1']);
@@ -99,11 +107,13 @@ describe('YamlAssignmentStore', () => {
 
     const history = await assignments.history('kid1');
     expect(history).toHaveLength(2);
-    expect(history[0]).toMatchObject({ courses: ['math-fractions'], assignedBy: 'mom', recordedAt: AT });
-    expect(history[1]).toMatchObject({ courses: ['math-fractions', 'reading-basics'], assignedBy: 'dad', recordedAt: later });
+    expect(history[0]).toMatchObject({ courses: [{ courseId: 'math-fractions' }], assignedBy: 'mom', recordedAt: AT });
+    expect(history[1]).toMatchObject({
+      courses: [{ courseId: 'math-fractions' }, { courseId: 'reading-basics' }], assignedBy: 'dad', recordedAt: later,
+    });
 
     expect(await assignments.get('kid1')).toMatchObject({
-      courses: ['math-fractions', 'reading-basics'], updatedAt: later,
+      courses: [{ courseId: 'math-fractions' }, { courseId: 'reading-basics' }], updatedAt: later,
       assignedBy: 'dad', // returned on read since wave 8 (advocacy #9) — the UI attribution line lives again
     });
   });
@@ -113,13 +123,13 @@ describe('YamlAssignmentStore', () => {
   });
 
   it('treats a malformed history file as empty rather than throwing', async () => {
-    write(under('history', 'kid9.yml'), '- [unclosed');
+    write(historyUnder('kid9.yml'), '- [unclosed');
     expect(await assignments.history('kid9')).toEqual([]);
   });
 
   describe('corrupt-file refusal', () => {
     it('put() refuses a corrupt current file, leaves its bytes untouched, and get() logs + returns null', async () => {
-      const file = under('assignments', 'kid1.yml');
+      const file = assignmentsUnder('kid1.yml');
       write(file, 'courses: [: :\n  broken');
       const before = fs.readFileSync(file, 'utf8');
 
@@ -133,9 +143,9 @@ describe('YamlAssignmentStore', () => {
 
     it('put() refuses when the HISTORY file is corrupt even though the current file is fine', async () => {
       await assignments.put({ learnerId: 'kid5', courses: ['math-fractions'] });
-      const historyFile = under('history', 'kid5.yml');
+      const historyFile = historyUnder('kid5.yml');
       write(historyFile, '- [unclosed');
-      const beforeCurrent = fs.readFileSync(under('assignments', 'kid5.yml'), 'utf8');
+      const beforeCurrent = fs.readFileSync(assignmentsUnder('kid5.yml'), 'utf8');
       const beforeHistory = fs.readFileSync(historyFile, 'utf8');
 
       await expect(assignments.put({ learnerId: 'kid5', courses: ['reading-basics'] }))
@@ -143,19 +153,19 @@ describe('YamlAssignmentStore', () => {
 
       // Neither file moved — a corrupt history must not be allowed to make the
       // caller believe a fresh append-only history was legitimately started.
-      expect(fs.readFileSync(under('assignments', 'kid5.yml'), 'utf8')).toBe(beforeCurrent);
+      expect(fs.readFileSync(assignmentsUnder('kid5.yml'), 'utf8')).toBe(beforeCurrent);
       expect(fs.readFileSync(historyFile, 'utf8')).toBe(beforeHistory);
       expect(logged().some(([event]) => event === 'school.assignments.history-corrupt')).toBe(true);
     });
 
     it('a fixed file clears the refusal — put() succeeds once the corrupt bytes are gone', async () => {
-      const file = under('assignments', 'kid7.yml');
+      const file = assignmentsUnder('kid7.yml');
       write(file, 'courses: [: :\n  broken');
       await expect(assignments.put({ learnerId: 'kid7', courses: ['x'] })).rejects.toThrow(/corrupt/);
 
       fs.rmSync(file);
       await expect(assignments.put({ learnerId: 'kid7', courses: ['math-fractions'] })).resolves.toMatchObject({ learnerId: 'kid7' });
-      expect(await assignments.get('kid7')).toMatchObject({ courses: ['math-fractions'] });
+      expect(await assignments.get('kid7')).toMatchObject({ courses: [{ courseId: 'math-fractions' }] });
     });
   });
 });
@@ -194,7 +204,7 @@ describe('YamlFormMapStore', () => {
   });
 
   it('treats an unreadable file as absent', async () => {
-    write(under('forms', 'art_bad.yml'), '{ this: is: not: yaml');
+    write(formsUnder('art_bad.yml'), '{ this: is: not: yaml');
     expect(await forms.get('art_bad')).toBeNull();
   });
 });
@@ -289,7 +299,7 @@ describe('YamlReviewQueue', () => {
   });
 
   it('treats a corrupt session file as an empty queue', async () => {
-    write(under('review', 'ses_bad.yml'), '- [unclosed');
+    write(reviewUnder('ses_bad.yml'), '- [unclosed');
     expect(await review.listForSession('ses_bad')).toEqual([]);
   });
 
@@ -297,8 +307,8 @@ describe('YamlReviewQueue', () => {
     it('resolving the last unmarked item renames the live file to .settled.yml', async () => {
       await review.enqueue([item()]);
       await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
-      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(false);
-      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+      expect(fs.existsSync(reviewUnder('ses_a.yml'))).toBe(false);
+      expect(fs.existsSync(reviewUnder('ses_a.settled.yml'))).toBe(true);
     });
 
     it('a fully-resolved session is skipped by listPending but still served by listForSession', async () => {
@@ -315,22 +325,22 @@ describe('YamlReviewQueue', () => {
     it('resolving a second time on an already-settled session finds the item under the settled name', async () => {
       await review.enqueue([item()]);
       await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'incorrect', gradedBy: 'p', at: AT });
-      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+      expect(fs.existsSync(reviewUnder('ses_a.settled.yml'))).toBe(true);
 
       const again = await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
       expect(again).toMatchObject({ verdict: 'correct' });
-      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
-      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(false);
+      expect(fs.existsSync(reviewUnder('ses_a.settled.yml'))).toBe(true);
+      expect(fs.existsSync(reviewUnder('ses_a.yml'))).toBe(false);
     });
 
     it('enqueueing a fresh unresolved item on a settled session reopens it (renames settled back to live)', async () => {
       await review.enqueue([item()]);
       await review.resolve({ sessionId: 'ses_a', itemId: 'q3', verdict: 'correct', gradedBy: 'p', at: AT });
-      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(true);
+      expect(fs.existsSync(reviewUnder('ses_a.settled.yml'))).toBe(true);
 
       await review.enqueue([item({ itemId: 'q9', reason: 'ambiguous' })]);
-      expect(fs.existsSync(under('review', 'ses_a.settled.yml'))).toBe(false);
-      expect(fs.existsSync(under('review', 'ses_a.yml'))).toBe(true);
+      expect(fs.existsSync(reviewUnder('ses_a.settled.yml'))).toBe(false);
+      expect(fs.existsSync(reviewUnder('ses_a.yml'))).toBe(true);
       expect((await review.listPending()).map((i) => `${i.sessionId}/${i.itemId}`)).toEqual(['ses_a/q9']);
       const served = await review.listForSession('ses_a');
       expect(served.map((i) => i.itemId).sort()).toEqual(['q3', 'q9']);

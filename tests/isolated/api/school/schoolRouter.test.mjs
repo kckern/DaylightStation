@@ -38,6 +38,12 @@ beforeAll(async () => {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
+    // The router only maps GuestForbiddenError/SessionGoneError to 403/410
+    // when these CLASSES arrive via DI (composition owns 2_domains imports,
+    // not the router — see school.mjs:100-106); omitting this silently falls
+    // every such error through to a bare 500, which is what this fixture did
+    // before this DI requirement (added in b75fdd431) went unnoticed here.
+    schoolErrors: { GuestForbiddenError, SessionGoneError },
     schoolService: svc,
     getMaterialProgressSummary: {
       execute: async ({ userId, subject }) => (

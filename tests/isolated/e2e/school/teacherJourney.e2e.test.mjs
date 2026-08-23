@@ -40,7 +40,11 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
     const enrolled = await h.useCases.setAssignments.execute({
       learnerId: ASH, courses: [POKEMON_COURSE], units: [], assignedBy: TEACHER,
     });
-    expect(enrolled.courses).toEqual([POKEMON_COURSE]);
+    // Storage boundary normalizes shorthand course-id strings to enrollment
+    // records (bfdbe7598, YamlAssignmentStore#normalizeEnrollment) — every
+    // other assignments test in the suite (lifecycleStores, EnrollLearner,
+    // IssueComposedWorksheet, parentWrites) already asserts the object shape.
+    expect(enrolled.courses).toEqual([{ courseId: POKEMON_COURSE }]);
 
     // --- the student taps their card; the agenda offers the course ----------
     const scan = await h.as(ASH).scanCard();

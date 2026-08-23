@@ -48,7 +48,7 @@ describe('curateAdaptiveStudy', () => {
     expect(source).toEqual(before);
   });
 
-  it('rejects policies that cannot fit the exact 48-byte calculator continuation', () => {
+  it('rejects a card/quiz-item policy outside the allowed bounds', () => {
     const items = bank().items.concat(Array.from({ length: 10 }, (_, index) => ({
       id: `extra-${index}`, type: 'multiple_choice', prompt: 'Pick one',
       choices: ['A', 'B'], answer: 'A',
@@ -59,7 +59,7 @@ describe('curateAdaptiveStudy', () => {
         quiz: { itemCount: 10 },
       } }),
       bank: bank(items),
-    })).toThrow(/48-byte/);
+    })).toThrow(/allowed card\/quiz-item count/);
   });
 
   it('pins valid vector art and rejects malformed or out-of-bounds graphics', () => {

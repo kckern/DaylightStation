@@ -483,8 +483,8 @@ describe('given-number printing (no re-derivation from 1)', () => {
 // Card header strip threading (Phase C, Task 4, spec §5.2): `options.card` is
 // a pure passthrough to `measureDocumentFragments`/`cardHeaderFragment` (the
 // SAME "thread it like totalPoints" posture as every other render option in
-// this file). Structural fragment shape + first-use instruction are covered
-// in workbookCardId.render.test.mjs; this suite proves the option threads
+// this file). Structural fragment shape is covered in
+// workbookCardId.render.test.mjs; this suite proves the option threads
 // through the renderer end to end and is default-preserving.
 describe('card option (options.card, spec §5.2)', () => {
   const sheet = doc([{ type: 'rich_text', md: 'Body content.' }]);
@@ -503,10 +503,10 @@ describe('card option (options.card, spec §5.2)', () => {
     expect(withCard.pageCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('firstUse: true also changes the bytes relative to a non-first-use card render', async () => {
+  it('firstUse: true no longer changes the bytes — 0e1a19ab0 replaced the first-use instruction line with the reuse banner (driven by startRow > 1, not firstUse); workbookCardId.render.test.mjs pins node.instruction as null in both cases', async () => {
     const withoutFirstUse = await workbookRenderer.render(sheet, { card });
     const withFirstUse = await workbookRenderer.render(sheet, { card: { ...card, firstUse: true } });
-    expect(withoutFirstUse.pdf.equals(withFirstUse.pdf)).toBe(false);
+    expect(withoutFirstUse.pdf.equals(withFirstUse.pdf)).toBe(true);
   });
 
   it('is deterministic, like every other draw input', async () => {

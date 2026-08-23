@@ -427,8 +427,11 @@ describe('validateUnit: provenance', () => {
   });
 
   it('requires a source', () => {
+    // bfdbe7598 added `provenance.sources` (a companion-source bibliography
+    // list) as an accepted alternative to the singular `source` string, and
+    // the error message now documents both forms.
     expect(errs(valid({ provenance: { reviewState: 'draft' } })))
-      .toContain('provenance.source must be a non-empty string');
+      .toContain('provenance.source must be a non-empty string (or provenance.sources a non-empty string list)');
   });
 
   it('rejects an unknown review state, naming it', () => {
