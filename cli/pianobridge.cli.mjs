@@ -17,6 +17,7 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs loopback [state]  # CONCLUSIVE MIDI OUT check: the piano must echo a probe (p7+)
 //   node pbctl.mjs shell [restart|rollback|log]   # the :8771 LIFELINE — works when :8770 is dead (v30+)
 //   node pbctl.mjs payload [url sha256|rollback]  # hot-swap the bridge logic, NO tablet tap (v29+)
 //   node pbctl.mjs reboot            # FKB-independent device restart via a11y (v28+)
@@ -141,6 +142,19 @@ const cmds = {
     const p = s.payload || {};
     console.log(`payload   : ${p.active ?? '—'} (v ${p.activeVersion ?? '?'})  prev ${p.previous ?? '—'}  boots ${p.bootsThisPayload ?? '?'}`);
     if (p.lastError) console.log(`lastError : ${p.lastError}`);
+  },
+  // --- the conclusive MIDI OUT assertion (payload p7+) -------------------------
+  // Sends an inaudible probe and waits for the PIANO to echo it back. The piano is
+  // the witness — nothing upstream (Android port state, JamCorder counters) can
+  // fake it. "CONNECTED" with no echo = a ZOMBIE link.
+  //   pbctl loopback            # probe now, blocking verdict
+  //   pbctl loopback state      # rolling: probes/echoes/misses/outVerified
+  async loopback(args) {
+    if (args[0] === 'state') { const s = await req('GET', '/loopback'); pretty(s.loopback ?? s); return; }
+    const r = await req('POST', '/loopback');
+    if (typeof r === 'string' || r.ok === false) { pretty(r); process.exit(1); }
+    console.log(`${r.echoed ? '✓' : '✗'} ${r.verdict}`);
+    if (!r.echoed) process.exit(1);
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
