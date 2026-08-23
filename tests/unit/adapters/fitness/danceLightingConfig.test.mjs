@@ -5,7 +5,8 @@ import { resolveDanceLightingConfig } from '#adapters/fitness/danceLightingConfi
 describe('resolveDanceLightingConfig', () => {
   it('applies all defaults when dance_party is absent', () => {
     expect(resolveDanceLightingConfig({})).toEqual({
-      enabled: true, colorStrips: [], whiteLights: [], baseEffect: 'colorloop', partyModeFlag: null,
+      enabled: true, colorStrips: [], whiteLights: [], plugs: [], baseEffect: 'colorloop', partyModeFlag: null,
+      bpmEntity: null, bpmMinIntervalMs: 2000,
       accent: { mode: 'flash', onTrackChange: true, intervalMs: 20000, minIntervalMs: 4000 }
     });
   });
