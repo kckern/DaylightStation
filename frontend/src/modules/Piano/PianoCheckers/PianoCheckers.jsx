@@ -42,6 +42,22 @@ const HINT_CLUSTER = 7;
 const AXIS = 8;
 
 /**
+ * What to put on screen when the board refuses an address.
+ *
+ * `forced_source` is the one that used to have no wording at all: mid multi-
+ * jump the engine pins the source, so re-selecting is impossible and every
+ * address that is not the jump destination bounces. The player saw a board
+ * that ignored them and answered the only way they could — by playing the
+ * same address over and over.
+ */
+export function selectionMessage(rejection) {
+  if (rejection === 'select_source') return "Play a glowing red piece's file and rank notes together.";
+  if (rejection === 'select_destination') return "Play a glowing destination's file and rank notes together.";
+  if (rejection === 'forced_source') return 'You must keep jumping with the glowing piece — play a glowing destination.';
+  return null;
+}
+
+/**
  * This game's own historical config keys, read forward onto the dimensions.
  *
  * `file_notes`/`rank_notes` are in real players' folders, so a saved axis still
@@ -188,6 +204,18 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
       const next = move ? applyMove(game, move) : game;
       if (!next.error && move) setMoves(next.moves);
+      // Only the PLAYER's moves were ever logged, so a transcript could never
+      // be replayed from the log store — exactly half the game was missing,
+      // and it is the opponent's reply that sets up the forced jump a player
+      // then gets stuck in.
+      logger.info('checkers.opponent-move', {
+        from: move?.from ?? null,
+        to: move?.to ?? null,
+        local: !answer?.move,
+        forcedFrom: next.forcedFrom ?? null,
+        ply: next.moves?.length ?? null,
+        error: next.error ? String(next.error) : null,
+      });
     },
   });
 
@@ -236,11 +264,15 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     reading.record({ ok: true });
     const available = legalMoves(game.board, 1, game.forcedFrom);
     const currentSelection = game.forcedFrom ?? selected;
+    const destinations = available
+      .filter((move) => move.from === currentSelection).map((move) => move.to);
     const resolution = resolveAddressedSelection({
       selected: currentSelection,
       address: square,
       sources: available.map((move) => move.from),
-      destinations: available.filter((move) => move.from === currentSelection).map((move) => move.to),
+      destinations,
+      // The engine, not the player, owns the source during a multi-jump.
+      locked: game.forcedFrom !== null,
     });
     if (resolution.committed) {
       const next = applyMove(game, resolution.committed);
@@ -262,10 +294,19 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       }
     } else {
       setSelected(resolution.selected);
-      setMessage(resolution.rejection === 'select_source' ? "Play a glowing red piece's file and rank notes together."
-        : resolution.rejection === 'select_destination' ? "Play a glowing destination's file and rank notes together." : null);
+      setMessage(selectionMessage(resolution.rejection));
       if (resolution.rejection) {
-        logger.info('checkers.rejected', { square, reason: resolution.rejection });
+        // The address and the reason alone cannot explain a stuck board after
+        // the fact — they say what was refused, never what the board was
+        // holding. Log the selection and the moves that WOULD have been taken.
+        logger.info('checkers.rejected', {
+          square,
+          reason: resolution.rejection,
+          selected: currentSelection,
+          forcedFrom: game.forcedFrom,
+          destinations,
+          ply: game.moves?.length ?? null,
+        });
         // A refused address is still an address that did not land: the ladder
         // counts it, because accuracy is what it is judging.
         reading.record({ ok: false });
