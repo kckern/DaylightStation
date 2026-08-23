@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p15-thermal-units";
+    private static final String VERSION = "p16-tone";
 
     private BridgeCore core;
 

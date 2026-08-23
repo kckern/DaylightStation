@@ -120,7 +120,7 @@ public class ControlServer extends NanoWSD {
     }
 
     /** Which payload built this server — so "who is answering :8770" is never ambiguous. */
-    public static final String BUILT_BY = "p15-thermal-units";
+    public static final String BUILT_BY = "p16-tone";
 
     @Override
     protected WebSocket openWebSocket(IHTTPSession handshake) {
@@ -305,6 +305,37 @@ public class ControlServer extends NanoWSD {
                     if (method == NanoHTTPD.Method.POST) return json(lb.probeAndWait());
                     return json(ok().put("loopback", lb.snapshot()));
                 }
+                case "/tone": {
+                    // ONE-WORD audible smoke test: CC7 volume max on ch1, middle C at full
+                    // velocity for ~700ms, note-off, then a loopback probe so the response
+                    // carries a DELIVERY verdict alongside "did you hear it". Exists because
+                    // hand-rolling the three /midi/send calls was fumbled once (2026-08-23:
+                    // wrong param name, silent miss). `pbctl tone` is the client.
+                    //   POST /tone[?note=60][&velocity=127][&ms=700]
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    int note = Math.max(0, Math.min(127, parseIntParam(session, "note", 60)));
+                    int vel = Math.max(1, Math.min(127, parseIntParam(session, "velocity", 127)));
+                    int ms = Math.max(50, Math.min(5000, parseIntParam(session, "ms", 700)));
+                    boolean vOk = service.sendMidi(new byte[] { (byte) 0xB0, 0x07, 0x7F });
+                    boolean onOk = service.sendMidi(new byte[] { (byte) 0x90, (byte) note, (byte) vel });
+                    try { Thread.sleep(ms); } catch (InterruptedException ignored) { }
+                    boolean offOk = service.sendMidi(new byte[] { (byte) 0x80, (byte) note, 0 });
+                    Diag.log(TAG, "/tone " + session.getRemoteIpAddress()
+                            + " note=" + note + " vel=" + vel + " ms=" + ms
+                            + " sent=" + (vOk && onOk && offOk));
+                    JSONObject o = ok().put("note", note).put("velocity", vel).put("ms", ms)
+                            .put("sent", vOk && onOk && offOk);
+                    Loopback lb2 = service.getLoopback();
+                    if (lb2 != null) {
+                        JSONObject probe = lb2.probeAndWait();
+                        o.put("delivery", probe.optBoolean("echoed")
+                                ? "VERIFIED - piano echoed a follow-up probe in " + probe.optLong("rttMs") + "ms"
+                                : "UNVERIFIED - no echo; the tone may not have reached the piano");
+                        o.put("echoed", probe.optBoolean("echoed"));
+                    }
+                    o.put("audibility", "delivery is proven by the echo; SOUND still depends on the piano's own volume/headphones");
+                    return json(o);
+                }
                 case "/beat": {
                     // Outbound heartbeat: GET = its state, POST = send one NOW and return
                     // the body that went out (so you can see exactly what the store sees).
@@ -481,6 +512,7 @@ public class ControlServer extends NanoWSD {
                     // Web MIDI SysEx (NotAllowedError on {sysex:true}, Chrome 151), so
                     // reverb/chorus have no browser-side route at all.
                     String hex = strParam(session, "hex", null);
+                    if (hex == null) hex = strParam(session, "bytes", null); // alias — ?bytes= was fumbled once
                     if (hex == null && method == NanoHTTPD.Method.POST) hex = readBody(session);
                     if (hex == null || hex.trim().isEmpty()) return json(err("missing hex"));
                     byte[] bytes;

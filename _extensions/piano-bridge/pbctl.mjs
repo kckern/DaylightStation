@@ -189,6 +189,24 @@ const cmds = {
   },
   async panic() { pretty(await req('POST', '/panic')); },
 
+  // --- audible smoke test (p16+) ---------------------------------------------
+  // ONE word: volume-max + middle C for ~700ms + note-off, then a loopback probe
+  // so the verdict carries proof of DELIVERY (the echo) next to "did you hear it".
+  //   pbctl tone                 # middle C, full velocity
+  //   pbctl tone 72 100 1000     # note 72, velocity 100, 1000ms
+  async tone(args) {
+    const q = [];
+    if (args[0]) q.push(`note=${parseInt(args[0], 10)}`);
+    if (args[1]) q.push(`velocity=${parseInt(args[1], 10)}`);
+    if (args[2]) q.push(`ms=${parseInt(args[2], 10)}`);
+    const r = await req('POST', `/tone${q.length ? '?' + q.join('&') : ''}`);
+    if (typeof r === 'string' || r.ok === false) { pretty(r); process.exit(1); }
+    console.log(`${r.echoed ? '✓' : '✗'} sent=${r.sent} note=${r.note} vel=${r.velocity} ${r.ms}ms`);
+    console.log(`  ${r.delivery}`);
+    console.log(`  ${r.audibility}`);
+    if (!r.echoed) process.exit(1);
+  },
+
   // --- raw MIDI OUT to the piano (the APK write path, v26+) -------------------
   // The ONLY route SysEx can take: the FKB WebView is permanently denied Web MIDI
   // SysEx (NotAllowedError on {sysex:true}), so effects can never originate in the
