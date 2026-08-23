@@ -25,6 +25,7 @@ import yaml from 'js-yaml';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
+import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { IssueDocument } from '#apps/school/usecases/IssueDocument.mjs';
@@ -243,6 +244,71 @@ export async function main(argv = process.argv.slice(2)) {
       newSessionId: () => `virtual-sim-${++sessionNumber}`,
       logger: { warn() {}, info() {} },
     });
+    // --tap: the CARD-TAP cooldown, proved without paper or a real child's
+    // print history. Three taps through the REAL use case against this run's
+    // throwaway state and a receipts double that only counts calls:
+    //   1. cold      -> prints
+    //   2. immediate -> suppressed, but still ANSWERS (a tap that gets nothing
+    //                   at all teaches a child to tap harder)
+    //   3. after new work is assigned -> prints again, cooldown notwithstanding,
+    //                   because the agenda fingerprint changed
+    if (ARGV.includes('--tap')) {
+      const cooldownState = new Map();
+      let printCount = 0;
+      let tapClock = new Date('2026-08-13T06:00:00.000Z');
+      const tapCard = new ResolvePersonalCard({
+        buildAgenda: agendaBuilder,
+        receipts: { async print() { printCount += 1; return { printed: true }; } },
+        // The port is `get(learnerId)` + `put(record)`. `put`, not `set`:
+        // a wrong method here fails silently, because `#armCooldown` catches
+        // its own write errors so a cooldown-store hiccup can never stop a
+        // child's agenda printing.
+        cooldown: {
+          async get(id) { return cooldownState.get(id) ?? null; },
+          async put(record) { cooldownState.set(record.learnerId, record); return record; },
+        },
+        cooldownMinutes: 30,
+        clock: () => tapClock,
+        logger: { warn() {}, info() {} },
+      });
+
+      const cold = await tapCard.execute({ learnerId: LOWER_ID });
+      const beforeSecond = printCount;
+      tapClock = new Date('2026-08-13T06:05:00.000Z');
+      const repeat = await tapCard.execute({ learnerId: LOWER_ID });
+      const suppressedPrinted = printCount - beforeSecond;
+
+      // Rule 4: new work bypasses the window entirely. Forge a DIFFERENT prior
+      // fingerprint rather than mutate the curriculum — the property under test
+      // is "content changed", and this is the smallest honest way to say so.
+      cooldownState.set(LOWER_ID, {
+        ...cooldownState.get(LOWER_ID), contentHash: 'a-different-agenda-entirely',
+      });
+      const beforeThird = printCount;
+      const afterNewWork = await tapCard.execute({ learnerId: LOWER_ID });
+      const newWorkPrinted = printCount - beforeThird;
+
+      const report = {
+        coldTap: { status: cold.status, printed: cold.printed },
+        repeatTapInsideCooldown: {
+          status: repeat.status,
+          printed: repeat.printed,
+          paperProduced: suppressedPrinted,
+          message: repeat.message ?? null,
+          sinceMinutes: repeat.sinceMinutes ?? null,
+        },
+        tapAfterNewWork: { status: afterNewWork.status, printed: afterNewWork.printed, paperProduced: newWorkPrinted },
+      };
+      fs.writeFileSync(path.join(output, 'tap-cooldown.yml'), yaml.dump(report, { lineWidth: -1, noRefs: true }));
+      if (repeat.status !== 'agenda_suppressed' || suppressedPrinted !== 0 || !repeat.message) {
+        throw new Error('cooldown did not suppress-with-acknowledgement on the second tap');
+      }
+      if (afterNewWork.status !== 'agenda_printed' || newWorkPrinted !== 1) {
+        throw new Error('new work did not bypass the cooldown');
+      }
+      console.log(JSON.stringify(report, null, 2));
+    }
+
     const [lowerAgenda, upperAgenda] = await Promise.all([
       agendaBuilder.execute({ learnerId: LOWER_ID, learnerName: LOWER_ID }),
       UPPER_ID
