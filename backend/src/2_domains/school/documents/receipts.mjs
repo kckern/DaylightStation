@@ -91,12 +91,12 @@ function panelCodeBlocks(code) {
 }
 
 /**
- * The ONLY place `panelCodeBlocks` is called from — the structural half of
- * Slice H (2026-08-22). Before this, a QR's code was a second, separate
- * push a caller had to remember (`resultReceipt` forgot it entirely: the
- * bug this closes). Now the pairing is owned by `lessonAction` itself, so
- * there is no code path left that can print a QR without this running
- * immediately after it.
+ * Called from exactly two places — `lessonAction` and `plainScanAction`,
+ * below — the structural half of Slice H (2026-08-22). Before this, a QR's
+ * code was a second, separate push a caller had to remember (`resultReceipt`
+ * forgot it entirely: the bug this closes). Now the pairing is owned by the
+ * block-building helper itself, so there is no code path left that can print
+ * a QR without this running immediately after it.
  *
  * `accessCode` is deliberately TRI-STATE:
  *   - `undefined` (the argument omitted): this action makes no claim about
@@ -114,6 +114,32 @@ function codePairingBlocks(accessCode) {
   if (accessCode === undefined) return [];
   const code = panelCodeBlocks(accessCode);
   return code.length ? code : [text('Scanning is the only way in.')];
+}
+
+/**
+ * The plain-QR counterpart to `lessonAction` — no lesson-card chrome
+ * (eyebrow/description/meta), just the bare `scan_action` block a
+ * non-lesson offer prints today, but wired through the SAME
+ * `codePairingBlocks` contract.
+ *
+ * This closes the second half of the gap `lessonAction` closed for the
+ * lesson presentation: `resultDocument`'s non-lesson branch and
+ * `noticeDocument` used to push `{type:'scan_action', ...}` directly, with
+ * no pairing call at all — structurally the same defect, one branch over
+ * (a real receipt, 2026-08-23: a QR under "Scan to print the next
+ * worksheet" with nothing typeable beneath it, on the branch Slice H didn't
+ * touch). Every caller in this module that wants a bare scannable token now
+ * goes through this function instead of constructing the block itself, so
+ * `codePairingBlocks` has exactly two callers and a third unpaired push
+ * would have to bypass both of them on purpose.
+ *
+ * `accessCode` is the same tri-state as `lessonAction`'s: omit it and the
+ * action makes no claim (byte-identical to every receipt printed before
+ * this existed) — no caller passes one today, but the contract is generic
+ * so one can start to without a third code path appearing.
+ */
+function plainScanAction(token, label, accessCode) {
+  return [{ type: 'scan_action', action: token, label }, ...codePairingBlocks(accessCode)];
 }
 
 /**
@@ -380,13 +406,16 @@ export function agendaDocument({
  * @param {number} [args.percent]
  * @param {string[]} [args.objectives] objectives to revisit (printed only on a fail)
  * @param {Array<{token?: string, label: string, presentation?: 'lesson',
- *   accessCode?: string|null}>} [args.actions] a `presentation: 'lesson'`
- *   action's `accessCode` is threaded straight into `lessonAction` (Slice H):
- *   a six-digit string prints the panel code beside the QR, `null` prints an
- *   explicit "Scanning is the only way in." rather than a silent gap, and
- *   omitting the field entirely makes no claim either way. The caller that
- *   mints the token (`CloseSessionOutcome`) is the one place that knows
- *   which of the three applies.
+ *   accessCode?: string|null}>} [args.actions] every tokened action's
+ *   `accessCode` is threaded through `codePairingBlocks` — via `lessonAction`
+ *   when `presentation: 'lesson'`, via `plainScanAction` otherwise (2026-08-23:
+ *   the plain branch used to push a bare `scan_action` with no pairing at
+ *   all, the same defect Slice H closed for the lesson branch). A six-digit
+ *   string prints the panel code beside the QR, `null` prints an explicit
+ *   "Scanning is the only way in." rather than a silent gap, and omitting
+ *   the field entirely makes no claim either way. The caller that mints the
+ *   token (`CloseSessionOutcome`) is the one place that knows which of the
+ *   three applies.
  * @param {{amount: number}|null} [args.reward] coins actually awarded
  * @param {string|null} [args.unlockedTitle] the unit this pass opened up
  * @param {string[]} [args.notes] pre-formatted "Notes for you" lines (spec R7,
@@ -448,8 +477,9 @@ export function resultDocument({
         taxonomy: action.taxonomy,
         accessCode: action.accessCode,
       }));
-    } else if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });
-    else blocks.push(text(action.label));
+    } else if (isNonEmptyString(action.token)) {
+      blocks.push(...plainScanAction(action.token, action.label, action.accessCode));
+    } else blocks.push(text(action.label));
   });
 
   // The invariant §9 exists to protect: nobody is left holding paper with
@@ -470,7 +500,12 @@ export function resultDocument({
  * @param {string} args.id       distinguishes one slip from another; slugged
  * @param {string} args.headline
  * @param {string[]} [args.lines]
- * @param {Array<{token?: string, label: string}>} [args.actions]
+ * @param {Array<{token?: string, label: string, accessCode?: string|null}>}
+ *   [args.actions] a tokened action goes through `plainScanAction`, so
+ *   `accessCode` follows the same tri-state as `resultDocument`'s: omitted
+ *   makes no claim (every notice printed today — no caller here mints one
+ *   yet), a six-digit string pairs the panel code, `null` prints "Scanning
+ *   is the only way in." instead of a silent gap.
  * @returns {object}
  */
 export function noticeDocument({ id = 'notice', headline = 'Hmm', lines = [], actions = [] } = {}) {
@@ -478,8 +513,9 @@ export function noticeDocument({ id = 'notice', headline = 'Hmm', lines = [], ac
   (Array.isArray(lines) ? lines : []).filter(isNonEmptyString).forEach((line) => blocks.push(text(line)));
   (Array.isArray(actions) ? actions : []).forEach((action) => {
     if (!action || !isNonEmptyString(action.label)) return;
-    if (isNonEmptyString(action.token)) blocks.push({ type: 'scan_action', action: action.token, label: action.label });
-    else blocks.push(text(action.label));
+    if (isNonEmptyString(action.token)) {
+      blocks.push(...plainScanAction(action.token, action.label, action.accessCode));
+    } else blocks.push(text(action.label));
   });
   if (blocks.length === 1) blocks.push(text('Scan your card to see what is next.'));
   return receipt(`notice-${slugify(id, 'slip')}`, blocks);

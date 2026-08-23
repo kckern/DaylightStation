@@ -12,9 +12,34 @@
  * These tests assert the INVARIANT — every scannable block carries an
  * explanation of how to act on it — not the exact layout. A wording tweak
  * must not break them; a codeless QR must.
+ *
+ * Slice H follow-up (2026-08-23) — Slice H only wired `lessonAction`
+ * (`presentation: 'lesson'`). `resultDocument`'s plain, non-lesson branch
+ * and `noticeDocument` still pushed `{type:'scan_action', ...}` directly,
+ * with no pairing call at all: the identical defect, one branch over (a
+ * real receipt that morning: a QR under "Scan to print the next worksheet"
+ * with nothing typeable beneath it, because the action never carried
+ * `presentation: 'lesson'`). Both branches now go through `plainScanAction`,
+ * the bare-block counterpart to `lessonAction`, so `codePairingBlocks` has
+ * exactly two callers in the whole module — see the structural test below,
+ * which fails if a THIRD one is ever added.
  */
 import { describe, it, expect } from 'vitest';
-import { agendaDocument, resultDocument } from '#domains/school/documents/receipts.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { agendaDocument, resultDocument, noticeDocument } from '#domains/school/documents/receipts.mjs';
+
+const RECEIPTS_SRC_PATH = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '../../../..',
+  'backend/src/2_domains/school/documents/receipts.mjs',
+);
+
+/** Strips comments so the structural count below only sees real code. */
+function stripComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
 
 const QR_TYPES = /scan_action|lesson_action/g;
 const PANEL_CODE = /PANEL CODE/g;
@@ -165,5 +190,93 @@ describe('QR / panel-code pairing (Slice H, regression: Milo, 2026-08-22)', () =
     const flat = JSON.stringify(agenda.blocks);
     expect(flat).not.toContain('PANEL CODE');
     expect(flat).not.toContain('Scanning is the only way in.');
+  });
+});
+
+describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regression: 2026-08-23', () => {
+  // Slice H only wired `lessonAction`. `resultDocument`'s `else if
+  // (isNonEmptyString(action.token))` branch and `noticeDocument` pushed a
+  // bare `scan_action` with no pairing call at all — a receipt that morning
+  // printed a QR under "Scan to print the next worksheet" with nothing
+  // typeable beneath it because the action never carried
+  // `presentation: 'lesson'`. These tests exercise exactly that shape.
+
+  it('pairs resultDocument\'s plain-branch QR with its own code', () => {
+    const r = resultDocument({
+      sessionId: 'ses_plain', unitTitle: 'Unit', result: 'passed', percent: 100,
+      actions: [{ token: 'sch:FFFFFFFFFFFFFFFF', label: 'Scan to print the next worksheet', accessCode: '654321' }],
+    });
+    assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
+    const flat = JSON.stringify(r.blocks);
+    expect(flat).toContain('PANEL CODE 654321');
+    expect(flat.indexOf('scan_action')).toBeLessThan(flat.indexOf('PANEL CODE 654321'));
+  });
+
+  it('prints "scanning only" on the plain branch when no code could be minted', () => {
+    const r = resultDocument({
+      sessionId: 'ses_plain_null', unitTitle: 'Unit', result: 'passed', percent: 100,
+      actions: [{ token: 'sch:GGGGGGGGGGGGGGGG', label: 'Scan to print the next worksheet', accessCode: null }],
+    });
+    assertEveryQrIsExplained(r.blocks, { expectCount: 1 });
+    const flat = JSON.stringify(r.blocks);
+    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).toContain('Scanning is the only way in.');
+  });
+
+  it('makes no claim on the plain branch when the caller never mentions a code (byte-identical, legacy)', () => {
+    const r = resultDocument({
+      sessionId: 'ses_plain_legacy', unitTitle: 'Unit', result: 'passed', percent: 100,
+      actions: [{ token: 'sch:HHHHHHHHHHHHHHHH', label: 'Scan to print the next worksheet' }],
+    });
+    const flat = JSON.stringify(r.blocks);
+    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('Scanning is the only way in.');
+  });
+
+  it('pairs noticeDocument\'s QR with its own code', () => {
+    const n = noticeDocument({
+      id: 'lost-card', headline: 'New card printed',
+      actions: [{ token: 'sch:IIIIIIIIIIIIIIII', label: 'Replace lost answer sheet', accessCode: '111222' }],
+    });
+    assertEveryQrIsExplained(n.blocks, { expectCount: 1 });
+    const flat = JSON.stringify(n.blocks);
+    expect(flat).toContain('PANEL CODE 111222');
+  });
+
+  it('prints "scanning only" on a notice when no code could be minted', () => {
+    const n = noticeDocument({
+      id: 'lost-card-2', headline: 'New card printed',
+      actions: [{ token: 'sch:JJJJJJJJJJJJJJJJ', label: 'Replace lost answer sheet', accessCode: null }],
+    });
+    assertEveryQrIsExplained(n.blocks, { expectCount: 1 });
+    const flat = JSON.stringify(n.blocks);
+    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).toContain('Scanning is the only way in.');
+  });
+
+  it('makes no claim on a notice when the caller never mentions a code (every real caller today)', () => {
+    // Matches every current `noticeDocument` call site (`CreateLostAnswerSheetTicket`,
+    // `IssueDocument`): none passes `accessCode` yet, so this must stay
+    // byte-identical — no "scanning only" line appearing where none existed.
+    const n = noticeDocument({
+      id: 'lost-card-3', headline: 'New card printed',
+      actions: [{ token: 'sch:KKKKKKKKKKKKKKKK', label: 'Replace lost answer sheet' }],
+    });
+    const flat = JSON.stringify(n.blocks);
+    expect(flat).not.toContain('PANEL CODE');
+    expect(flat).not.toContain('Scanning is the only way in.');
+  });
+
+  it('builds every scan_action block through exactly one of the two designated helpers (structural guard)', () => {
+    // Reads the SOURCE of receipts.mjs, not its behaviour: a future branch
+    // that pushes `{type: 'scan_action', ...}` directly — bypassing both
+    // `lessonAction` and `plainScanAction`, and therefore `codePairingBlocks`
+    // — would be behaviourally invisible until someone's receipt shipped
+    // with a dead QR again. Counting the construction sites makes that
+    // impossible to add silently: this fails the moment a THIRD site
+    // appears, regardless of whether any test happens to exercise it.
+    const src = stripComments(readFileSync(RECEIPTS_SRC_PATH, 'utf8'));
+    const constructions = src.match(/type:\s*'scan_action'/g) || [];
+    expect(constructions).toHaveLength(2); // lessonAction, plainScanAction
   });
 });
