@@ -75,14 +75,18 @@ describe('GET /display/:source/*', () => {
     expect(res.status).toBe(302);
   });
 
-  it('returns 404 when no thumbnail available', async () => {
+  it('returns a placeholder SVG when no thumbnail available', async () => {
+    // 9495fc56b ("Improve talk/readalong playback & placeholders") replaced the
+    // 404 here with a generated placeholder SVG so the frontend always has
+    // something displayable instead of a broken-image icon.
     mockAdapter.getThumbnailUrl.mockResolvedValue(null);
     mockAdapter.getItem.mockResolvedValue({ title: 'No thumbnail' });
 
     const res = await request(createApp()).get('/display/plex/12345');
 
-    expect(res.status).toBe(404);
-    expect(res.body.error).toContain('not found');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('image/svg+xml');
+    expect(res.body.toString()).toContain('<svg');
   });
 
   it('returns 404 for unknown source', async () => {

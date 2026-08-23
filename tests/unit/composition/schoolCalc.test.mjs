@@ -124,7 +124,7 @@ describe('SchoolCalc composition', () => {
     expect(module.actionTokens).toBeTruthy();
 
     const enrolled = await module.container.enrollDevice.execute({
-      platformId: 'ti86', label: 'TI-86 A',
+      platformId: 'ti86', label: 'TI-86 A', catalogId: 'main',
     });
     expect(enrolled.device).toMatchObject({
       deviceId: 'SCA1B2C3D4E5F6', platformId: 'ti86',

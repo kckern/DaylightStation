@@ -130,6 +130,7 @@ describe('StreamChannel', () => {
       channel.setProgram('bedtime');
 
       const json = channel.toJSON();
+      // 9e179d7c4 added `soundboard` (defaults to []) to toJSON's output.
       expect(json).toEqual({
         name: 'yoto',
         status: 'playing',
@@ -142,6 +143,7 @@ describe('StreamChannel', () => {
         activeProgram: 'bedtime',
         waitingForInput: false,
         listenerCount: 0,
+        soundboard: [],
       });
     });
   });
