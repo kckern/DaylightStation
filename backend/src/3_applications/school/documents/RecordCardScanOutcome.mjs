@@ -412,6 +412,17 @@ export class RecordCardScanOutcome {
             gradedAt: at,
             attemptId: attemptIdByItem.get(row.itemId) ?? null,
             ...(row.leniency ? { leniency: row.leniency } : {}),
+            // The eraser-leniency rationale is written for the RECORD, not
+            // the child (Slice H, 2026-08-22): `internalNote` is the field
+            // `reviewNoteLines`/the result receipt's "NOTES FOR YOU" block
+            // structurally cannot read (see `IReviewQueue.mjs`). Before this
+            // field existed the only place to put this explanation at all
+            // was `note` — the child-facing one — which is exactly how
+            // machine-written audit text was one edit away from landing on
+            // a 3rd-grader's receipt.
+            ...(row.leniency === 'eraser' ? {
+              internalNote: `Eraser signature: marks ${JSON.stringify(row.given)}, one correct — credited in full per the bounded eraser-leniency rule (spec §5.4).`,
+            } : {}),
           }));
         const pending = [
           ...card.results.filter((row) => row.status === 'ambiguous').map((row) => ({

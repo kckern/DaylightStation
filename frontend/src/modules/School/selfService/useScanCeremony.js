@@ -13,6 +13,13 @@
  * five events must land as plain, child-readable words, never a blame or a
  * bare code.
  *
+ * `agenda-suppressed` (Slice G, 2026-08-22-omr-grading-integrity) joins the
+ * same five: a repeat NFC card tap inside the agenda print cooldown
+ * (`nfcTapIngress.mjs` broadcasting `ResolvePersonalCard`'s
+ * `agenda_suppressed` outcome) gets NO paper, but this is that tap's only
+ * acknowledgement — the exact rule the original five exist for, just off a
+ * different source event.
+ *
  * Follows the exact `useWebSocketSubscription` pattern `useSchoolLaunch.js`
  * uses for the same bus — no new transport. A message this hook cannot make
  * sense of (wrong event name, or any other traffic on `omr`) is the common
@@ -34,14 +41,15 @@ function logger() {
 
 /**
  * Map one `omr` broadcast payload to a ceremony the panel can render, or
- * `null` if the payload isn't one of the five outcomes this hook knows.
+ * `null` if the payload isn't one of the outcomes this hook knows.
  *
- * Copy table (design brief, Slice D):
- *   scan-graded     → success  "Scored!"                 "{n} of {m} right — your sheet is printing."
- *   scan-review     → warn     "Needs a grown-up"         "{count} had two answers filled in. Ask a grown-up to check it."
- *   scan-unresolved → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
- *   scan-refused    → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
- *   reader-error    → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
+ * Copy table (design brief, Slice D; `agenda-suppressed` added Slice G):
+ *   scan-graded       → success  "Scored!"                 "{n} of {m} right — your sheet is printing."
+ *   scan-review       → warn     "Needs a grown-up"         "{count} had two answers filled in. Ask a grown-up to check it."
+ *   scan-unresolved   → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
+ *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
+ *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
+ *   agenda-suppressed → warn     "Already printed"          "You already have today's agenda — check your desk."
  *
  * `scan-review`'s payload (`schoolPrintScanConsumer.mjs`) carries a COUNT
  * (`pendingReview`) and an `itemId` list (`items`), never a friendly question
@@ -99,6 +107,18 @@ function buildCeremony(payload) {
         tone: 'error',
         title: 'Scanner hiccup',
         detail: "The scanner didn't catch that. Feed the sheet again.",
+        at,
+      };
+    case 'agenda-suppressed':
+      // Not an error — the tap worked and the printer is fine, there is
+      // simply nothing new to say yet. `warn` is the closest existing tone
+      // ("pause — go get someone" per scanCeremonySound.js), which fits: the
+      // next move for a child seeing this is to go look at their desk, not
+      // to retry the tap.
+      return {
+        tone: 'warn',
+        title: 'Already printed',
+        detail: 'You already have today’s agenda — check your desk.',
         at,
       };
     default:

@@ -7,12 +7,15 @@ const CARD_UID = '04669c0fcb2a81';
 
 function makeBus() {
   const subs = new Map();
+  const broadcasts = [];
   return {
+    broadcasts,
     subscribe(topic, fn) {
       if (!subs.has(topic)) subs.set(topic, new Set());
       subs.get(topic).add(fn);
       return () => subs.get(topic).delete(fn);
     },
+    broadcast(topic, payload) { broadcasts.push({ topic, payload }); },
     emit(topic, payload) { for (const fn of subs.get(topic) || []) fn(payload); },
     count(topic) { return (subs.get(topic) || new Set()).size; },
   };
@@ -129,5 +132,54 @@ describe('createNfcTapIngress', () => {
     const { ingress, resolvePersonalCard } = harness();
     expect(await ingress.handleTap({ uid: '' })).toEqual({ status: 'no_uid' });
     expect(resolvePersonalCard.execute).not.toHaveBeenCalled();
+  });
+
+  // Slice G, 2026-08-22-omr-grading-integrity, Rule 3: a cooldown-suppressed
+  // tap prints nothing, but it must still be ACKNOWLEDGED on the panel — a
+  // child who taps and gets nothing at all just taps harder. This broadcasts
+  // on the SAME `omr` topic Slice D's `useScanCeremony.js` already
+  // subscribes to, the identical transport `schoolPrintScanConsumer.mjs`
+  // uses for its own `scan-graded`/`scan-review`/... outcomes.
+  it('broadcasts agenda-suppressed on the omr topic when ResolvePersonalCard suppresses a repeat print', async () => {
+    const bus = makeBus();
+    const resolvePersonalCard = {
+      execute: vi.fn(async () => ({
+        status: 'agenda_suppressed', learnerId: 'test-learner', printed: false,
+        offers: [], sinceMinutes: 2, cooldownMinutes: 15,
+        message: 'You already have today’s agenda — check your desk.',
+      })),
+    };
+    const suppressedIngress = createNfcTapIngress({
+      eventBus: bus, topics: ['omr'], triggerConfig: REGISTRY,
+      resolvePersonalCard, location: 'schoolroom', logger: NOOP,
+    });
+
+    const out = await suppressedIngress.handleTap({ uid: CARD_UID, id: 'study-omr' });
+
+    expect(out).toEqual({ status: 'agenda_suppressed', learnerId: 'test-learner' });
+    expect(bus.broadcasts).toEqual([{
+      topic: 'omr',
+      payload: expect.objectContaining({
+        event: 'agenda-suppressed', learnerId: 'test-learner', sinceMinutes: 2, cooldownMinutes: 15,
+      }),
+    }]);
+  });
+
+  it('does NOT broadcast agenda-suppressed on an ordinary agenda_printed tap', async () => {
+    const { bus, ingress } = harness();
+    await ingress.handleTap({ uid: CARD_UID, id: 'study-omr' });
+    expect(bus.broadcasts).toEqual([]);
+  });
+
+  it('never throws when the bus has no broadcast method at all (older test doubles keep working)', async () => {
+    const bus = makeBus();
+    delete bus.broadcast;
+    const resolvePersonalCard = {
+      execute: vi.fn(async () => ({ status: 'agenda_suppressed', learnerId: 'test-learner', printed: false, offers: [] })),
+    };
+    const ingress = createNfcTapIngress({
+      eventBus: bus, topics: ['omr'], triggerConfig: REGISTRY, resolvePersonalCard, location: 'schoolroom', logger: NOOP,
+    });
+    await expect(ingress.handleTap({ uid: CARD_UID })).resolves.toEqual({ status: 'agenda_suppressed', learnerId: 'test-learner' });
   });
 });
