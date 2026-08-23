@@ -1,0 +1,43 @@
+// payload — the hot-swappable half of piano-bridge. Built as an Android LIBRARY, then
+// dexed into payload-<ver>.jar and loaded at runtime by the shell's DexClassLoader.
+// It must NOT bundle any dependency: NanoHTTPD, org.json and PianoEngine all resolve
+// from the shell's class loader (parent-first).
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'net.kckern.pianobridge.payload'
+    compileSdk 33
+
+    defaultConfig {
+        minSdk 29
+    }
+
+    buildFeatures {
+        buildConfig false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    testOptions {
+        // Stubbed android.jar methods return defaults instead of throwing "Stub!" in
+        // plain JVM unit tests (same as app/build.gradle).
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    compileOnly project(':shell-api')
+    // compileOnly: the SHELL ships NanoHTTPD; the payload must not bundle it.
+    compileOnly 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    // compileOnly deps are NOT on the unit-test classpath; the JVM tests need them.
+    testImplementation project(':shell-api')
+    testImplementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    testImplementation 'junit:junit:4.13.2'
+    // Real org.json for JVM unit tests ONLY (android.jar ships stubs). See app/build.gradle.
+    testImplementation 'org.json:json:20231013'
+}

@@ -52,7 +52,7 @@ public final class KioskWatchdog {
 
     public enum Verdict { DISABLED, GRACE, NO_BEATS_YET, HEALTHY, SCREEN_OFF, BUILDING, DECAYED, DEAD }
 
-    private final PianoBridgeService service;
+    private final BridgeCore service;
     private volatile DeviceConfig cfg;
 
     // --- beat state (updated by onBeat, read by the eval loop) ---
@@ -83,7 +83,7 @@ public final class KioskWatchdog {
     });
     private java.util.Timer timer;
 
-    public KioskWatchdog(PianoBridgeService service, DeviceConfig cfg) {
+    public KioskWatchdog(BridgeCore service, DeviceConfig cfg) {
         this.service = service;
         this.cfg = cfg;
     }
@@ -298,17 +298,17 @@ public final class KioskWatchdog {
         // 2026-08-22: this hole cost two physical trips to the tablet in one evening.
         CrashLog.note("RECOVERY", "L4 could not reach FKB REST (rc=" + rc
                 + ") — L5 a11y power-dialog restart");
-        if (!PianoTouchService.isConnected()) {
+        if (!A11y.isConnected()) {
             finish("UNRECOVERED — FKB REST down AND a11y service not bound; no lever — NEEDS HUMAN");
             return;
         }
-        if (!PianoTouchService.powerDialog()) {
+        if (!A11y.powerDialog()) {
             finish("UNRECOVERED — a11y powerDialog refused — NEEDS HUMAN");
             return;
         }
         sleep(1500); // let the dialog inflate
-        boolean clicked = PianoTouchService.clickText("restart");
-        if (!clicked) clicked = PianoTouchService.clickText("reboot");
+        boolean clicked = A11y.clickText("restart");
+        if (!clicked) clicked = A11y.clickText("reboot");
         finish(clicked ? "issued L5 a11y restart" : "UNRECOVERED — power dialog up but no Restart control found — NEEDS HUMAN");
     }
 

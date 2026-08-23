@@ -144,7 +144,7 @@ public final class KioskSettingsGuard {
     private java.util.Timer timer;
 
     /** Device wiring: config from {@link DeviceConfig}, FKB over REST, log to CrashLog. */
-    public KioskSettingsGuard(PianoBridgeService service, DeviceConfig cfg) {
+    public KioskSettingsGuard(BridgeCore service, DeviceConfig cfg) {
         final DeviceConfig[] held = { cfg };
         this.configHolder = held;
         this.params = () -> {
@@ -176,7 +176,7 @@ public final class KioskSettingsGuard {
         // is read fresh. Without that refresh a write lands on disk while this guard
         // keeps reading the value it loaded at startup — half of the v23 rearm bug.
         this.configWriter = (key, value) -> {
-            DeviceConfig.writeOverride(service, key + ": " + value + "\n");
+            DeviceConfig.writeOverride(service.getContext(), key + ": " + value + "\n");
             service.reloadConfigOnly();
         };
     }
@@ -389,7 +389,7 @@ public final class KioskSettingsGuard {
      *
      * <p>The persisted half is the v22 fix: an APK install STOPS this service, deploy
      * step 7 relaunches it (and says to repeat until it answers), and a hold living
-     * only in a {@link PianoBridgeService} field reset to 0 on each such restart —
+     * only in a {@link BridgeCore} field reset to 0 on each such restart —
      * leaving a retried or second install with no hold at all.
      *
      * <p>We persist the DEADLINE, not the request timestamp, so later reducing
@@ -415,7 +415,7 @@ public final class KioskSettingsGuard {
 
     /**
      * Arm the install hold until {@code untilEpochMs}, persisting it. Called from
-     * {@link PianoBridgeService#markUpdateRequested()} — the same both-halves path as
+     * {@link BridgeCore#markUpdateRequested()} — the same both-halves path as
      * disarm, so the hold can never end up applied to only one of them.
      */
     public JSONObject holdInstallUntil(long untilEpochMs) {

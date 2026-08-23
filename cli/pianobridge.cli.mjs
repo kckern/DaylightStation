@@ -17,6 +17,7 @@
 //   node pbctl.mjs config push <f>   # replace config from a YAML file + reconnect
 //   node pbctl.mjs log               # recent bridge events
 //   node pbctl.mjs panic             # all-notes-off on the synth
+//   node pbctl.mjs payload [url sha256|rollback]  # hot-swap the bridge logic, NO tablet tap (v29+)
 //   node pbctl.mjs reboot            # FKB-independent device restart via a11y (v28+)
 //   node pbctl.mjs midi "<hex>" [n] # raw MIDI/SysEx OUT to the piano (v26+)
 
@@ -84,6 +85,39 @@ const cmds = {
     const r = await req('POST', '/reboot');
     pretty(r);
     if (r && r.ok && r.clickedRestart) console.log('  device is restarting — expect ~3 min before :8770 returns');
+  },
+  // --- hot-swappable payload (shell v29+) -------------------------------------
+  // The installed APK is a thin SHELL; all bridge logic is a payload .jar loaded at
+  // runtime. `pbctl payload <url> <sha256>` swaps it over the LAN with NO tablet
+  // interaction. The shell verifies sha256, keeps the previous payload, and rolls
+  // back on a failed start or a crash loop (3 boots / 10 min).
+  //   pbctl payload                       # status: current / previous / available
+  //   pbctl payload <url> <sha256>        # fetch + verify + activate
+  //   pbctl payload rollback              # current <- previous
+  async payload(args) {
+    const a = args[0];
+    if (!a) {
+      const s = await req('GET', '/payload');
+      if (typeof s === 'string' || s.ok === false) { pretty(s); return; }
+      console.log(`active    : ${s.active ?? '—'}  (v ${s.activeVersion ?? '?'})`);
+      console.log(`current   : ${s.current ?? '—'}`);
+      console.log(`previous  : ${s.previous ?? '—'}`);
+      console.log(`available : ${(s.available || []).join(', ') || '—'}`);
+      console.log(`boots     : ${s.bootsThisPayload} this payload  (rollback at ${s.crashLimit} in ${Math.round(s.crashWindowMs/60000)} min)`);
+      if (s.lastError) console.log(`lastError : ${s.lastError}`);
+      return;
+    }
+    if (a === 'rollback') { pretty(await req('POST', '/payload/rollback')); return; }
+    const sha = args[1];
+    if (!sha) { console.error('usage: payload <url> <sha256>   (sha256 is REQUIRED — unverified drops are refused)'); process.exit(1); }
+    const r = await req('POST', `/payload?url=${encodeURIComponent(a)}&sha256=${encodeURIComponent(sha)}`);
+    pretty(r);
+    if (r && r.ok) {
+      console.log('  swap is async — poll `pbctl payload` until active == the new jar');
+      await sleep(4000);
+      const s = await req('GET', '/payload');
+      console.log(`  now active: ${s.active ?? '—'} v=${s.activeVersion ?? '?'}${s.lastError ? '  lastError=' + s.lastError : ''}`);
+    }
   },
   async panic() { pretty(await req('POST', '/panic')); },
 

@@ -55,7 +55,7 @@ public class ControlServer extends NanoWSD {
     private static final String TAG = "PianoBridge-WS";
     public static final int PORT = 8770;
 
-    private final PianoBridgeService service;
+    private final BridgeCore service;
     private final Set<ControlSocket> clients =
             Collections.newSetFromMap(new ConcurrentHashMap<ControlSocket, Boolean>());
     private final Timer heartbeatTimer = new Timer("PianoBridge-WS-heartbeat", true);
@@ -63,7 +63,7 @@ public class ControlServer extends NanoWSD {
     /** Last loaded preset id, reported in the status heartbeat. */
     private volatile String currentPresetId = null;
 
-    public ControlServer(PianoBridgeService service) {
+    public ControlServer(BridgeCore service) {
         super(PORT);
         this.service = service;
     }
@@ -120,6 +120,9 @@ public class ControlServer extends NanoWSD {
                             .put("POST /kiosk/settings/rearm   (re-arm the drift guard now)")
                             .put("GET /crashlog               (durable death/crash + reboot-cap record)")
                             .put("GET|POST /update?url=<apk-url>  (ADB-free self-update; one-tap confirm)")
+                            .put("GET /payload                (hot-swap payload status: current/previous/available/boots)")
+                            .put("POST /payload?url=<jar-url>&sha256=<hex>  (fetch+verify+activate a new payload; zero-tap)")
+                            .put("POST /payload/rollback      (revert to the previous payload)")
                             .put("GET /speaker · POST /speaker  (A2DP speaker status+guard / force reconnect)")
                             .put("POST /audio-guard/bootstrap   (spend the one-time clamp window: drop→clamp→reconnect)")
                             .put("POST /audio-guard/override?ms=60000  (reopen SYNTH gate only, time-boxed; never unclamps)")
@@ -202,6 +205,21 @@ public class ControlServer extends NanoWSD {
                     JSONObject r = g.disarmForMinutes(minutes);
                     return json(r.put("minutes", minutes).put("disarmUntilMs", g.disarmUntilMs()));
                 }
+                case "/touch": {
+                    // Fire N synthetic swipes via the a11y service — the jank A/B probe.
+                    // Exists to answer the question performance.md left OPEN: does an
+                    // accessibility-INJECTED gesture lift the SM-T590's input-recency frame
+                    // throttle the way a finger does? Read /kiosk lastFps before and after.
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    int count = Math.max(1, Math.min(30, parseIntParam(session, "count", 6)));
+                    boolean bound = A11y.isConnected();
+                    if (bound) TouchPulser.burst(service.getConfig(), count);
+                    JSONObject o = ok();
+                    o.put("a11yBound", bound);
+                    o.put("requested", bound ? count : 0);
+                    if (!bound) o.put("note", "a11y service not bound — nothing dispatched");
+                    return json(o);
+                }
                 case "/reboot": {
                     // FKB-INDEPENDENT device restart (the watchdog's L5 rung, on demand).
                     // Exists because every other reboot path runs through FKB's REST on
@@ -210,16 +228,16 @@ public class ControlServer extends NanoWSD {
                     // if it isn't, rather than pretending.
                     if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
                     Diag.log(TAG, "/reboot (a11y) from " + session.getRemoteIpAddress());
-                    if (!PianoTouchService.isConnected()) {
+                    if (!A11y.isConnected()) {
                         return json(err("a11y service not bound — run: pbctl a11y-enable, then retry"));
                     }
                     CrashLog.recordReboot();
                     CrashLog.note("RECOVERY", "manual /reboot via a11y power dialog");
-                    boolean dlg = PianoTouchService.powerDialog();
+                    boolean dlg = A11y.powerDialog();
                     boolean clicked = false;
                     if (dlg) {
                         try { Thread.sleep(1500L); } catch (InterruptedException ignored) { }
-                        clicked = PianoTouchService.clickText("restart") || PianoTouchService.clickText("reboot");
+                        clicked = A11y.clickText("restart") || A11y.clickText("reboot");
                     }
                     JSONObject o = ok();
                     o.put("powerDialog", dlg);
@@ -289,7 +307,7 @@ public class ControlServer extends NanoWSD {
                     if (method == NanoHTTPD.Method.POST) {
                         String body = readBody(session);
                         if (body == null || body.trim().isEmpty()) return json(err("empty_body"));
-                        DeviceConfig.writeOverride(service, body);
+                        DeviceConfig.writeOverride(service.getContext(), body);
                         service.reloadConfigAndReconnect();
                         return json(ok().put("action", "config_saved"));
                     } else {
@@ -298,8 +316,8 @@ public class ControlServer extends NanoWSD {
                         JSONObject vals = new JSONObject();
                         if (cfg != null) for (Map.Entry<String, String> e : cfg.asMap().entrySet()) vals.put(e.getKey(), e.getValue());
                         o.put("values", vals);
-                        o.put("overridePath", DeviceConfig.overrideFile(service).getAbsolutePath());
-                        o.put("hasOverride", DeviceConfig.overrideFile(service).exists());
+                        o.put("overridePath", DeviceConfig.overrideFile(service.getContext()).getAbsolutePath());
+                        o.put("hasOverride", DeviceConfig.overrideFile(service.getContext()).exists());
                         return json(o);
                     }
                 case "/log":
@@ -323,11 +341,34 @@ public class ControlServer extends NanoWSD {
                     // guard must not "repair" that back to true mid-install and abort it.
                     service.markUpdateRequested();
                     Diag.log(TAG, "/update from " + session.getRemoteIpAddress() + " url=" + url);
-                    File staged = new File(service.getCacheDir(), "update.apk");
+                    File staged = new File(service.getContext().getCacheDir(), "update.apk");
                     long bytes = downloadTo(url, staged);
-                    Updater.install(service, staged);
+                    Updater.install(service.getContext(), staged);
                     return json(ok().put("action", "update").put("bytes", bytes)
                             .put("note", "tap Update on the device to confirm"));
+                }
+
+                case "/payload": {
+                    // Hot-swap control plane. The shell (installed APK) owns fetch/verify/
+                    // activate/rollback; this route only forwards so the payload never has
+                    // to host HTTP in the shell. The swap is asynchronous: GET /payload to
+                    // watch it land (and this very server goes away when the swap runs).
+                    if (method == NanoHTTPD.Method.POST) {
+                        String url = strParam(session, "url", null);
+                        String sha = strParam(session, "sha256", null);
+                        if (url == null || url.trim().isEmpty()) return json(err("missing url"));
+                        if (sha == null || sha.trim().isEmpty()) return json(err("missing sha256"));
+                        Diag.log(TAG, "/payload swap from " + session.getRemoteIpAddress() + " url=" + url.trim());
+                        String result = service.getShell().requestPayloadSwap(url.trim(), sha.trim());
+                        return json(ok().put("action", "payload.swap").put("result", result));
+                    }
+                    return json(new JSONObject(service.getShell().payloadStatusJson()));
+                }
+                case "/payload/rollback": {
+                    if (method != NanoHTTPD.Method.POST) return json(err("POST only"));
+                    Diag.log(TAG, "/payload/rollback from " + session.getRemoteIpAddress());
+                    String result = service.getShell().requestPayloadRollback();
+                    return json(ok().put("action", "payload.rollback").put("result", result));
                 }
 
                 // --- ADB-replacement diagnostics ---------------------------------
@@ -397,11 +438,11 @@ public class ControlServer extends NanoWSD {
                     // Sandbox: shows only our own process tree (hidepid hides the rest).
                     return json(ShellExec.run("ps -A -o PID,TID,USER,%CPU,RSS,NAME 2>/dev/null || ps", 5000));
                 case "/info":
-                    return json(DeviceProbe.info(service));
+                    return json(DeviceProbe.info(service.getContext()));
                 case "/getsetting": {
                     String key = strParam(session, "key", null);
                     if (key == null) return json(err("missing key"));
-                    return json(SettingsControl.get(service, strParam(session, "ns", "secure"), key));
+                    return json(SettingsControl.get(service.getContext(), strParam(session, "ns", "secure"), key));
                 }
                 case "/setsetting": {
                     // ADB-free `settings put` (WRITE_SECURE_SETTINGS). ns=secure|global|system.
@@ -411,7 +452,7 @@ public class ControlServer extends NanoWSD {
                     String ns = strParam(session, "ns", "secure");
                     Diag.log(TAG, "/setsetting " + ns + "." + key + "=" + value
                             + " (from " + session.getRemoteIpAddress() + ")");
-                    return json(SettingsControl.put(service, ns, key, value));
+                    return json(SettingsControl.put(service.getContext(), ns, key, value));
                 }
 
                 default:
@@ -505,7 +546,7 @@ public class ControlServer extends NanoWSD {
         }
     }
 
-    // --- live MIDI fan-out (called by PianoBridgeService's MidiReceiver) ---
+    // --- live MIDI fan-out (called by BridgeCore's MidiReceiver) ---
 
     /** Forward a live note-on from the BLE-MIDI piano to all connected clients. */
     public void fanOutNoteOn(int note, int velocity) {

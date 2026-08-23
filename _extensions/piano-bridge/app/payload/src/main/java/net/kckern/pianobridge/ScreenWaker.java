@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * powered the backlight off, the in-browser screensaver's own MIDI/touch wake
  * can't fire — a backgrounded WebView gets its timers + Web MIDI throttled and
  * touch is not delivered. This service, by contrast, receives every note-on via
- * {@link PianoBridgeService.PianoMidiReceiver} (a foreground service owning the
+ * BridgeCore.PianoMidiReceiver (a foreground service owning the
  * BLE-MIDI device directly), so it can nudge FKB screenOn regardless of display
  * state. The DS backend runs an equivalent WS-driven wake; either revives it.
  *
