@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 
 let _logger;
@@ -142,7 +142,35 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   }, [enabled]);
 
   const unavailable = !everConnected && failCount >= 2 && graceExpired;
-  return useMemo(() => ({ link, unavailable, speakerConnected }), [link, unavailable, speakerConnected]);
+
+  /**
+   * Send raw MIDI (in practice: SysEx) to the piano through the APK's `midi.raw`
+   * command. This is the ONLY route SysEx has — the FKB WebView is permanently
+   * denied Web MIDI SysEx (NotAllowedError on {sysex:true}, verified on Chrome
+   * 151), so effect-type changes cannot originate in the browser's own MIDI
+   * output no matter how healthy that link is.
+   *
+   * Returns false when the socket isn't open, so callers can fall back to CC
+   * rather than assume delivery. Fire-and-forget beyond that: the piano has no
+   * read-back, which is also why `repeat` exists (the JamCorder occasionally
+   * drops a BLE→DIN SysEx; re-sending is the documented mitigation).
+   */
+  const sendSysex = useCallback((bytes, repeat = 1) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== 1 /* OPEN */) return false;
+    if (!Array.isArray(bytes) || bytes.length === 0) return false;
+    try {
+      ws.send(JSON.stringify({ type: 'midi.raw', bytes, repeat }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  return useMemo(
+    () => ({ link, unavailable, speakerConnected, sendSysex }),
+    [link, unavailable, speakerConnected, sendSysex],
+  );
 }
 
 export default usePianoBridgeNotes;

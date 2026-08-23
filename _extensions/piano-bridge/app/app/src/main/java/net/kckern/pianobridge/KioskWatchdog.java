@@ -45,6 +45,11 @@ public final class KioskWatchdog {
 
     private static final String TAG = "PianoBridge-Kiosk";
 
+    /** How long after a /update request the recovery ladder stands down so the
+     *  PackageInstaller confirm dialog can wait for a real human tap. Mirrors the
+     *  kiosk-settings guard's install hold so both guards back off together. */
+    private static final long INSTALL_HOLD_MS = 15 * 60 * 1000L;
+
     public enum Verdict { DISABLED, GRACE, NO_BEATS_YET, HEALTHY, SCREEN_OFF, BUILDING, DECAYED, DEAD }
 
     private final PianoBridgeService service;
@@ -190,6 +195,31 @@ public final class KioskWatchdog {
 
     private void runLadder(Verdict trigger) {
         DeviceConfig c = cfg;
+
+        // INSTALL HOLD — suppress the WHOLE ladder, L1 included, while a self-update
+        // is awaiting its on-device confirmation.
+        //
+        // During an install Android's PackageInstaller dialog sits on top of the
+        // WebView, so the page stops presenting frames and this watchdog reads it as
+        // DEAD — correctly, but for a reason recovery must not act on. On 2026-08-22
+        // it did act: it fired 78 touch-bursts at the confirm dialog, then escalated
+        // through reload → restartApp → reboot, and the update never got confirmed.
+        // L1 is NOT exempt here (unlike the quiet-window gate below, which only holds
+        // back the disruptive rungs) precisely BECAUSE synthetic touches are what
+        // fights a dialog waiting for a real human tap.
+        //
+        // The kiosk-settings guard already honours this same hold; the WebView
+        // watchdog simply never learned about it. Fail-safe: the hold is a bounded
+        // window from the update REQUEST, so a dialog the user ignores cannot wedge
+        // recovery off permanently.
+        long sinceUpdate = System.currentTimeMillis() - service.lastUpdateRequestAtMs();
+        if (service.lastUpdateRequestAtMs() > 0 && sinceUpdate < INSTALL_HOLD_MS) {
+            CrashLog.note("RECOVERY", "LADDER skipped — install confirm pending ("
+                    + (sinceUpdate / 1000) + "s since /update; holding "
+                    + (INSTALL_HOLD_MS / 1000) + "s)");
+            return;
+        }
+
         CrashLog.note("RECOVERY", "LADDER start (trigger=" + trigger + " fps=" + lastFps + ")");
         // Two independent safety gates on the DISRUPTIVE rungs (L2 reload / L3 restart
         // / L4 reboot): the daily quiet window, AND FKB's authoritative screen state.

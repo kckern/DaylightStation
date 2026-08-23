@@ -17,6 +17,29 @@ export function isPortConnected(port) {
   return !!port && port.state !== 'disconnected';
 }
 
+// Stronger than isPortConnected: is the port actually able to DELIVER?
+// `state` describes the DEVICE (is it present on the BLE link); `connection`
+// describes OUR handle to it. The 2026-08-22 one-way outage sat in the gap
+// between them — the JamCorder was present and enumerated, but our handle was
+// stuck at connection:'pending', so every send() vanished (the JamCorder's
+// `ble.in` counter stayed at 0 and Android's `dumpsys midi` read
+// `mInputPortOpen=[false]`) while every health check read healthy.
+// 'closed' is NOT a fault: it is the normal pre-send state, since Web MIDI opens
+// a port implicitly on the first send().
+export function isPortDelivering(port) {
+  return isPortConnected(port) && port.connection !== 'pending';
+}
+
+// OUT auto-recover thresholds. The watchdog ticks every 2s, so this waits ~6s of
+// sustained failure before escalating — long enough to ride out the statechange
+// burst a BLE reconnect emits, short enough that nobody is left playing into a
+// dead link. The cooldown is the important half: a permanently dead port (the
+// JamCorder unplugged, say) must not re-acquire MIDI access every few seconds.
+// Unbounded recovery churn is what got an earlier auto-recovery attempt reverted
+// for flapping the APK's BLE link (fda53ea6b), so the ceiling here is deliberate.
+const OUT_FAIL_TICKS_BEFORE_RESET = 3;
+const OUT_RESET_COOLDOWN_MS = 5 * 60 * 1000;
+
 // Dev keyboard mapping: number row keys → MIDI notes (C4–G5), localhost only.
 const DEV_KEY_MAP = {
   '1': 60, '2': 62, '3': 64, '4': 65, '5': 67,
@@ -122,6 +145,10 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   const accessRef = useRef(null);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
+  // OUT auto-recover bookkeeping: consecutive failing watchdog ticks, and when we
+  // last escalated to a re-acquire (so the cooldown can bound the churn).
+  const outFailTicksRef = useRef(0);
+  const lastOutResetRef = useRef(0);
   // Coalesces the BLE statechange STORM (a reconnect fires ~14 statechange events
   // in one second as the port renegotiates) into a single rebind — see connect().
   const rebindTimerRef = useRef(null);
@@ -398,14 +425,48 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   useEffect(() => {
     if (status !== 'connected') return undefined;
     const t = setInterval(() => {
-      // Re-bind when the output is missing OR present-but-disconnected (a stale
-      // flapped port), so a silently-dead output self-heals instead of swallowing sends.
-      if (!isPortConnected(outputRef.current) && accessRef.current) bindOutput(accessRef.current);
+      // Re-bind when the output is missing OR not delivering (a stale flapped
+      // port, or a handle stuck pending), so a silently-dead output self-heals
+      // instead of swallowing sends.
+      if (!isPortDelivering(outputRef.current)) {
+        if (accessRef.current) bindOutput(accessRef.current);
+        // Escalation rung. Re-binding only ever picks from the CURRENT access
+        // object, and bindOutput falls back to outs[0] — so when every enumerated
+        // port is dead it re-binds the same corpse forever. That is exactly how
+        // 2026-08-22 stayed one-way for hours while the watchdog reported healthy.
+        // Once the failure persists, re-ACQUIRE access via resetLink() — the same
+        // thing the manual OperatorDrawer button does, and the same thing a page
+        // reload did to fix it by hand.
+        outFailTicksRef.current += 1;
+        const now = Date.now();
+        if (outFailTicksRef.current >= OUT_FAIL_TICKS_BEFORE_RESET
+            && now - lastOutResetRef.current >= OUT_RESET_COOLDOWN_MS) {
+          lastOutResetRef.current = now;
+          outFailTicksRef.current = 0;
+          logger().warn('midi.out-recover-reset', {
+            name: outputRef.current?.name ?? null,
+            state: outputRef.current?.state ?? null,
+            conn: outputRef.current?.connection ?? null,
+          });
+          // Fire-and-forget: resetLink re-runs connect(), which re-enters this
+          // effect through `status`. Swallow rejection so a failed re-acquire
+          // just leaves the next tick to try again after the cooldown.
+          Promise.resolve(resetLink()).catch(() => {});
+          return;
+        }
+      } else {
+        outFailTicksRef.current = 0;
+      }
       // Bridge mode (acquireInput:false): we don't LISTEN to the input, but we do
-      // keep it HELD OPEN so MIDI OUTPUT keeps delivering over BLE. Re-hold if the
-      // port dropped (a flap can null inputRef).
+      // keep it HELD OPEN so MIDI OUTPUT keeps delivering over BLE. Re-hold when
+      // the port dropped (a flap can null inputRef) OR when the held port is no
+      // longer delivering — the ref surviving a flap is not proof the hold still
+      // stands, and a null-only guard is the other half of why 2026-08-22 never
+      // self-healed: the stale port object outlived its native open.
       if (!acquireInput) {
-        if (!inputRef.current && accessRef.current) holdInputForOutput(accessRef.current);
+        if (accessRef.current && !isPortDelivering(inputRef.current)) {
+          holdInputForOutput(accessRef.current);
+        }
         return;
       }
       // Input insurance: some BLE stacks null onmidimessage on a flap. If our
@@ -418,7 +479,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [status, bindOutput, armInput, handleRawMidi, acquireInput, holdInputForOutput]);
+  }, [status, bindOutput, armInput, handleRawMidi, acquireInput, holdInputForOutput, resetLink]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
