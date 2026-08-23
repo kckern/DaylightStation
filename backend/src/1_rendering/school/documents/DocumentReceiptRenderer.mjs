@@ -243,7 +243,22 @@ export function createDocumentReceiptRenderer({
     // The human-readable fallback code CHUNKS in fours past the scheme prefix
     // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
     // person may have to type by hand deserves phone-number ergonomics.
-    const codeLines = block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx);
+    // WHAT GOES UNDER THE QR. A `panelCode` is the six-digit alias a child
+    // types when they cannot scan; it belongs directly beneath the QR it
+    // aliases, INSIDE this card, and nowhere else on the receipt. It used to
+    // be emitted as loose text blocks AFTER the card, which put a bare number
+    // and the sentence "Type it on the school screen." adrift below the box —
+    // the exact placement this rule exists to forbid.
+    //
+    // Falls back to the raw scan token (chunked in fours for typing
+    // ergonomics) when there is no panel code and the caller did not
+    // `hideCode` — unchanged behaviour for every non-aliased action.
+    const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
+      ? block.panelCode.trim()
+      : null;
+    const codeLines = panelCode
+      ? [panelCode]
+      : (block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx));
     // Row gaps mirror the draw loop's spacing exactly (rowGap between each
     // populated row-group) so the measured box height never runs short of
     // what actually gets drawn into it.
@@ -272,6 +287,7 @@ export function createDocumentReceiptRenderer({
       metaParts,
       taxonomy,
       codeLines,
+      panelCode,
       heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding
         + (metaLines.length ? 14 : 0),
     };
@@ -328,22 +344,31 @@ export function createDocumentReceiptRenderer({
         const progressRows = Array.isArray(block.progress) ? block.progress : (block.progress ? [block.progress] : []);
         const progressHeight = progressRows.length * 54;
         ctx.font = theme.fonts.code;
+        // Wrapped against the PANEL's inner width, not the page's: these
+        // rows now live inside the result panel's border.
+        const reviewTextWidth = contentWidth - 2 * theme.result.reviewPadX - 40;
         const reviewRows = (block.reviewHints ?? []).map((hint) => {
           const match = /^(\d+):\s*(.+)$/.exec(hint);
           const number = match?.[1] ?? '';
           const text = match?.[2] ?? hint;
-          return { number, lines: wrapTight(ctx, text, contentWidth - 54) };
+          return { number, lines: wrapTight(ctx, text, reviewTextWidth) };
         });
-        const reviewHeight = reviewRows.length
-          ? 48 + reviewRows.reduce((sum, row) => sum + row.lines.length * 26 + 8, 0)
+        // Height the review ADDS TO THE PANEL — the rule, the heading, the
+        // rows, and the padding under the last one.
+        const reviewInsetHeight = reviewRows.length
+          ? theme.result.reviewGap + theme.result.reviewHeadingHeight
+            + reviewRows.reduce((sum, row) => sum + row.lines.length * theme.result.reviewLineHeight
+              + theme.result.reviewRowGap, 0)
+            + theme.result.reviewPadBottom
           : 0;
         ops.push({
-          kind: 'result-summary', ...block, taxonomy, progressRows, reviewRows, boxesWidth, boxSize, scoreMode, displayBoxCount,
+          kind: 'result-summary', ...block, taxonomy, progressRows, reviewRows, reviewInsetHeight,
+          boxesWidth, boxSize, scoreMode, displayBoxCount,
           heightPx: theme.result.padY * 2
             + ((block.learnerName || block.date || block.time || block.studentNo) ? theme.result.identityHeight + 14 : 0)
             + (taxonomy?.heightPx ?? 0) + 16
-            + (hasCounts ? theme.result.scorePanelHeight + 2 * theme.result.scorePanelGap : 42)
-            + progressHeight + reviewHeight,
+            + (hasCounts ? theme.result.scorePanelHeight + reviewInsetHeight + 2 * theme.result.scorePanelGap : 42)
+            + progressHeight,
         });
         break;
       }
@@ -612,7 +637,14 @@ export function createDocumentReceiptRenderer({
         ctx.textAlign = 'left';
         if (Number.isInteger(op.correctCount) && Number.isInteger(op.totalCount)) {
           const panelY = sy + theme.result.scorePanelGap;
-          const panelHeight = theme.result.scorePanelHeight;
+          // The review rides INSIDE the panel, under the pass/fail line.
+          // It used to print below the progress bars, which read as an
+          // afterthought bolted onto the bottom of the receipt — but which
+          // question was missed, and what to go read about it, IS the
+          // substance of a result. It belongs with the verdict, above the
+          // progress context, inside the same border.
+          const scoreBandHeight = theme.result.scorePanelHeight;
+          const panelHeight = scoreBandHeight + op.reviewInsetHeight;
           const panelPad = theme.result.scorePanelPad;
           ctx.lineWidth = 3;
           ctx.strokeRect(x, panelY, contentWidth, panelHeight);
@@ -622,7 +654,7 @@ export function createDocumentReceiptRenderer({
           const markGap = op.displayBoxCount > 1 ? Math.min(theme.result.boxGap, 6) : 0;
           const markSize = Math.min(op.boxSize, (marksWidth - (op.displayBoxCount - 1) * markGap) / op.displayBoxCount);
           const startX = marksX + Math.max(0, (marksWidth - (op.displayBoxCount * markSize + (op.displayBoxCount - 1) * markGap)) / 2);
-          const marksY = panelY + (panelHeight - markSize) / 2;
+          const marksY = panelY + (scoreBandHeight - markSize) / 2;
           const filledBoxes = op.scoreMode === 'aggregate'
             ? Math.round((op.correctCount / op.totalCount) * op.displayBoxCount)
             : op.correctCount;
@@ -687,6 +719,41 @@ export function createDocumentReceiptRenderer({
             ctx.font = theme.fonts.breadcrumb;
             ctx.fillText(`${Math.round(op.passingPercent)}% to pass`, scoreX, scoreTop + 82);
           }
+          if (op.reviewRows.length) {
+            // A hairline across the panel separates verdict from advice
+            // without a second border competing with the panel's own.
+            const ruleY = panelY + scoreBandHeight;
+            ctx.save();
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x + theme.result.reviewPadX, ruleY);
+            ctx.lineTo(x + contentWidth - theme.result.reviewPadX, ruleY);
+            ctx.stroke();
+            ctx.restore();
+
+            let ry = ruleY + theme.result.reviewGap;
+            ctx.textAlign = 'left';
+            ctx.font = theme.fonts.eyebrow;
+            // The heading is the block's, because the same hint list means
+            // two different things: on a fail it is the work to do before
+            // retrying, on a pass it is a note about the one question that
+            // got away. Defaulted so a caller predating `reviewHeading` is
+            // unchanged.
+            ctx.fillText(op.reviewHeading || 'REVIEW BEFORE YOU RETRY', x + theme.result.reviewPadX, ry);
+            ry += theme.result.reviewHeadingHeight;
+            op.reviewRows.forEach((row) => {
+              ctx.font = theme.fonts.label;
+              ctx.textAlign = 'right';
+              ctx.fillText(row.number, x + theme.result.reviewPadX + 26, ry);
+              ctx.font = theme.fonts.code;
+              ctx.textAlign = 'left';
+              row.lines.forEach((line, index) => ctx.fillText(
+                line, x + theme.result.reviewPadX + 40, ry + index * theme.result.reviewLineHeight,
+              ));
+              ry += row.lines.length * theme.result.reviewLineHeight + theme.result.reviewRowGap;
+            });
+            ctx.textAlign = 'left';
+          }
           sy = panelY + panelHeight + theme.result.scorePanelGap;
         } else if (typeof op.percent === 'number') {
           ctx.font = theme.fonts.label;
@@ -742,41 +809,6 @@ export function createDocumentReceiptRenderer({
           ctx.lineTo(x + contentWidth, sy + theme.result.progressHeight + 2);
           ctx.stroke();
           sy += 23;
-        }
-        if (op.reviewRows.length) {
-          sy += 16;
-          // Open-book review mark: bold, monochrome, and readable at 203 dpi.
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(x, sy + 4);
-          ctx.quadraticCurveTo(x + 10, sy, x + 20, sy + 7);
-          ctx.lineTo(x + 20, sy + 24);
-          ctx.quadraticCurveTo(x + 10, sy + 17, x, sy + 21);
-          ctx.closePath();
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(x + 20, sy + 7);
-          ctx.quadraticCurveTo(x + 30, sy, x + 40, sy + 4);
-          ctx.lineTo(x + 40, sy + 21);
-          ctx.quadraticCurveTo(x + 30, sy + 17, x + 20, sy + 24);
-          ctx.stroke();
-          ctx.font = theme.fonts.heading;
-          ctx.textAlign = 'left';
-          // The heading is the block's, because the same hint list means two
-          // different things: on a fail it is the work to do before retrying,
-          // on a pass it is a note about the one question that got away.
-          // Defaulted so any caller predating `reviewHeading` is unchanged.
-          ctx.fillText(op.reviewHeading || 'REVIEW BEFORE YOU RETRY', x + 52, sy);
-          sy += 42;
-          op.reviewRows.forEach((row) => {
-            ctx.font = theme.fonts.label;
-            ctx.textAlign = 'right';
-            ctx.fillText(row.number, x + 34, sy);
-            ctx.font = theme.fonts.code;
-            ctx.textAlign = 'left';
-            row.lines.forEach((line, index) => ctx.fillText(line, x + 48, sy + index * 26));
-            sy += row.lines.length * 26 + 8;
-          });
         }
         ctx.textAlign = 'left';
         continue;
@@ -884,10 +916,17 @@ export function createDocumentReceiptRenderer({
         ctx.restore();
       }
 
-      ctx.font = theme.fonts.code;
+      // A six-digit panel code is something a child reads off the paper and
+      // types on a wall panel — it gets the larger, centred treatment under
+      // its QR, where a chunked fallback token stays small and left-aligned.
+      const centredCode = Boolean(op.panelCode);
+      ctx.font = centredCode ? theme.fonts.panelCode : theme.fonts.code;
+      ctx.textAlign = centredCode ? 'center' : 'left';
+      const codeTextX = centredCode ? codeX + theme.action.codeAreaPx / 2 : codeX;
       op.codeLines.forEach((line, index) => ctx.fillText(
-        line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
+        line, codeTextX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
       ));
+      ctx.textAlign = 'left';
     }
 
     return { canvas, width: theme.canvas.width, height, cutPoints, codes, drawnMath };

@@ -565,11 +565,16 @@ describe('self-service panel codes', () => {
     expect(record.expiresAt).toBe('2026-08-03T09:00:00.000Z');
   });
 
-  it('prints the code beside the lesson it opens', async () => {
+  it('puts the code on the lesson it opens, so it draws under that QR', async () => {
     build({ selfService: { enabled: true } });
     const result = await useCase.execute({ learnerId: 'kid1' });
     const [record] = subjectRecords();
-    expect(transcript(result.document)).toContain(`PANEL CODE ${record.accessCode}`);
+    // It used to be a loose "PANEL CODE …" line after the card, which the
+    // canvas renderer drew adrift below the box; it is now a field on the
+    // scan_action, drawn beneath that action's own QR.
+    const action = result.document.blocks.find((b) => b.type === 'scan_action');
+    expect(action.panelCode).toBe(record.accessCode);
+    expect(transcript(result.document)).not.toContain('PANEL CODE');
     expect(validateDocument(result.document).errors).toEqual([]);
   });
 

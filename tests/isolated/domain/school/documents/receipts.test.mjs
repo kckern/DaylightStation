@@ -191,25 +191,33 @@ describe('agendaDocument', () => {
       next: { title: 'Set 4', schoolcalcHandoff: { eligible: true, displayCode: '001 234' } },
     };
 
-    it('labels a panel code so it cannot be read as a calculator code', () => {
+    it('carries the panel code ON its scan_action, where it can only draw under that QR', () => {
+      // It used to be a loose "PANEL CODE 481920" text block after the card,
+      // which the canvas renderer drew adrift BELOW the box. Position under
+      // the QR is now what identifies it, so the field is the assertion.
       const doc = agendaDocument({ ...args, accessCodesByToken: { 'sch:AAAA': '481920' } });
-      const flat = JSON.stringify(doc.blocks);
-      expect(flat).toContain('PANEL CODE 481920');
-      expect(flat).not.toContain('Enter on calculator');
+      const action = doc.blocks.find((b) => b.type === 'scan_action');
+      expect(action.panelCode).toBe('481920');
+      expect(JSON.stringify(doc.blocks)).not.toContain('Enter on calculator');
     });
 
     it('names a different device from the calculator code printed on the same page', () => {
       const text = textOf(agendaDocument({
         ...args, sections: [...sections, calcSection], accessCodesByToken: { 'sch:AAAA': '481920' },
       }));
-      // Both codes print, each under its own instruction, and the two
-      // instructions name two different machines.
-      expect(text).toContain('PANEL CODE 481920');
-      expect(text).toContain('Type it on the school screen.');
+      // The two codes are told apart by WHERE they sit, not by a label. The
+      // calculator's is body text with its own instruction; the panel's rides
+      // its scan_action and prints under that QR, so it never appears in the
+      // block stream's words at all.
+      const doc = agendaDocument({
+        ...args, sections: [...sections, calcSection], accessCodesByToken: { 'sch:AAAA': '481920' },
+      });
+      expect(doc.blocks.find((b) => b.type === 'scan_action').panelCode).toBe('481920');
       expect(text).toContain('001 234');
       expect(text).toContain('Enter on calculator.');
-      // The calculator's code never wears the panel's label.
-      expect(text).not.toContain('PANEL CODE 001');
+      // No loose panel-code text anywhere to be confused with it.
+      expect(text).not.toContain('PANEL CODE');
+      expect(text).not.toContain('Type it on the school screen.');
     });
 
     it('is still a valid receipt-target document', () => {
@@ -266,9 +274,8 @@ describe('agendaDocument', () => {
         tokensBySubject: { math: 'sch:AAAA', language: 'sch:BBBB' },
         accessCodesByToken: { 'sch:AAAA': '111111', 'sch:BBBB': '222222' },
       });
-      const flat = JSON.stringify(doc.blocks);
-      expect(flat).toContain('PANEL CODE 111111');
-      expect(flat).toContain('PANEL CODE 222222');
+      expect(doc.blocks.filter((b) => b.type === 'scan_action').map((b) => b.panelCode))
+        .toEqual(['111111', '222222']);
     });
   });
 
