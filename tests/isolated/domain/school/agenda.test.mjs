@@ -6,7 +6,9 @@ const TZ = 'America/Los_Angeles';
 const entry = (over) => ({
   unitId: 'u1', title: 'Unit One', subject: 'math', courseId: 'c', sequence: 1,
   elective: false, status: 'available', sessionId: null, state: null,
-  lockReason: null, remedy: null, unlocks: null, program: null, cadence: null, ...over,
+  lockReason: null, remedy: null, unlocks: null, program: null, cadence: null,
+  timing: null, timingState: 'available', timingPriority: 3, timingReasons: ['default_priority'],
+  ...over,
 });
 const plan = (entries) => ({ entries, errors: [] });
 const args = (over = {}) => ({ plan: plan([]), sessions: [], programStatuses: {}, now: NOW, timezone: TZ, ...over });
@@ -72,6 +74,19 @@ describe('planDailyAgenda', () => {
     expect(lang.programUnavailable).toBe(true);
     expect(lang.next).toBeNull();
     expect(sections.find((s) => s.subject === 'math').next.unitId).toBe('m1');
+  });
+
+  it('a launcher error blanks only the erroring program entry, not a live curriculum sibling in the same subject', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        entry({ unitId: 'language-daily', subject: 'language', courseId: null, sequence: null, program: 'language', cadence: 'daily' }),
+        entry({ unitId: 'lang-writing', subject: 'language', courseId: null, sequence: null }),
+      ]),
+      programStatuses: { language: { error: true } },
+    }));
+    const lang = sections.find((s) => s.subject === 'language');
+    expect(lang.programUnavailable).toBe(true);
+    expect(lang.next.unitId).toBe('lang-writing');
   });
 
   it('next = first in_progress, else first available; all-locked yields the remedy line', () => {
@@ -144,5 +159,107 @@ describe('planDailyAgenda', () => {
       ],
     }));
     expect(sections[0].gradePercent).toBe(90);
+  });
+});
+
+describe('obligation', () => {
+  it('rule 1: a non-elective pass today serves, ignoring the focus multi-block term', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'u1', subject: 'math', status: 'completed' })]),
+      sessions: [{ sessionId: 's1', unitId: 'u1', state: 'closed', terminal: true,
+        outcome: { result: 'passed', at: '2026-07-29T15:00:00Z' }, gradedPercent: 90, updatedAt: '2026-07-29T15:00:00Z' }],
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'served', reason: null });
+  });
+
+  it('rule 1: an elective pass today does NOT serve a subject whose required entry is untouched', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        entry({ unitId: 'required', subject: 'math', sequence: 1 }),
+        entry({ unitId: 'elective', subject: 'math', sequence: 2, courseId: null, elective: true, status: 'completed' }),
+      ]),
+      sessions: [{ sessionId: 's1', unitId: 'elective', state: 'closed', terminal: true,
+        outcome: { result: 'passed', at: '2026-07-29T15:00:00Z' }, gradedPercent: 100, updatedAt: '2026-07-29T15:00:00Z' }],
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('rule 2: a section suppressed by a focus day excuses as suppressed_by_focus, not obligated', () => {
+    const urgentTiming = {
+      schema: 'school.timing/v1', availability: {}, target: { dueOn: '2026-07-31', strength: 'firm' },
+      basePriority: 'high', flexibility: 'protected', agenda: { normalBlocks: 1, urgentBlocks: 3 }, urgencyLeadDays: 7,
+    };
+    const flexibleTiming = {
+      schema: 'school.timing/v1', availability: {}, basePriority: 'low', flexibility: 'flexible',
+      agenda: { normalBlocks: 1, urgentBlocks: 1 }, urgencyLeadDays: 7,
+    };
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        entry({ unitId: 'focus1', subject: 'math', timing: urgentTiming, timingState: 'urgent', timingPriority: 1, timingReasons: ['due_on_2026-07-31'] }),
+        entry({ unitId: 'flex1', subject: 'science', timing: flexibleTiming, timingState: 'available', timingPriority: 4 }),
+      ]),
+    }));
+    const science = sections.find((s) => s.subject === 'science');
+    expect(science.suppressed).not.toBeNull();
+    expect(science.obligation).toEqual({ state: 'excused', reason: 'suppressed_by_focus' });
+    const math = sections.find((s) => s.subject === 'math');
+    expect(math.obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('rule 3: elective_only when a subject holds only elective work', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'e1', subject: 'art', courseId: null, elective: true })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'elective_only' });
+  });
+
+  it('rule 3: awaiting_grown_up when the only non-elective entry is dormant', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'd1', subject: 'math', status: 'dormant' })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'awaiting_grown_up' });
+  });
+
+  it('rule 3: opens_later when the only non-elective entry is upcoming', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'u1', subject: 'math', status: 'upcoming' })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'opens_later' });
+  });
+
+  it('rule 3: caught_up when the only non-elective entry is already completed and nothing new is offered', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'done1', subject: 'math', status: 'completed' })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'caught_up' });
+  });
+
+  it('rule 4: optional_backlog when every actionable non-elective entry is catch-up backlog', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'w1', subject: 'scripture', timingState: 'catch_up' })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'optional_backlog' });
+  });
+
+  it('rule 5: not_due_yet when an available entry carries a future target and is not yet urgent', () => {
+    const quietTiming = {
+      schema: 'school.timing/v1', availability: { opensOn: '2026-07-27' }, target: { dueOn: '2026-08-07', strength: 'firm' },
+      basePriority: 'medium', flexibility: 'protected', agenda: { normalBlocks: 1, urgentBlocks: 1 }, urgencyLeadDays: 1,
+    };
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'w1', subject: 'writing', timing: quietTiming, timingState: 'available', timingPriority: 3 })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_due_yet' });
+  });
+
+  it('rule 6: obligated once an urgent entry (inside its lead window) is the only actionable work', () => {
+    const urgentTiming = {
+      schema: 'school.timing/v1', availability: { opensOn: '2026-07-27' }, target: { dueOn: '2026-07-31', strength: 'firm' },
+      basePriority: 'medium', flexibility: 'protected', agenda: { normalBlocks: 1, urgentBlocks: 1 }, urgencyLeadDays: 7,
+    };
+    const { sections } = planDailyAgenda(args({
+      plan: plan([entry({ unitId: 'w1', subject: 'writing', timing: urgentTiming, timingState: 'urgent', timingPriority: 1 })]),
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 });
