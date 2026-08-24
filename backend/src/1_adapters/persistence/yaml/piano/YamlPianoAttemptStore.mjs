@@ -4,6 +4,26 @@ import YAML from 'yaml';
 
 const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+}
+
+function attemptPayload(record) {
+  const { user_id: ignoredUser, created_at: ignoredCreated, ...payload } = record || {};
+  void ignoredUser;
+  void ignoredCreated;
+  return canonical(payload);
+}
+
+function idempotencyConflict(attemptId) {
+  return Object.assign(new Error(`piano attempt idempotency conflict: ${attemptId}`), {
+    code: 'idempotency_conflict',
+    status: 409,
+  });
+}
+
 export class YamlPianoAttemptStore {
   constructor({ usersDir, clock = () => new Date() }) {
     this.usersDir = usersDir;
@@ -15,16 +35,40 @@ export class YamlPianoAttemptStore {
       throw new Error('invalid piano attempt identity');
     }
     const now = this.clock();
+    const existingFile = this.#findAttemptFile(userId, attempt.attempt_id);
+    if (existingFile) return this.#resolveExisting(existingFile, attempt);
     const day = now.toISOString().slice(0, 10);
     const dir = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts', day);
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${attempt.attempt_id}.yml`);
-    if (fs.existsSync(file)) {
-      return YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
-    }
     const record = { ...structuredClone(attempt), user_id: userId, created_at: now.toISOString() };
-    fs.writeFileSync(file, YAML.stringify(record), { flag: 'wx' });
+    try {
+      fs.writeFileSync(file, YAML.stringify(record), { flag: 'wx' });
+    } catch (error) {
+      if (error?.code === 'EEXIST') return this.#resolveExisting(file, attempt);
+      throw error;
+    }
     return record;
+  }
+
+  #findAttemptFile(userId, attemptId) {
+    const root = path.join(this.usersDir, String(userId), 'apps', 'piano', 'attempts');
+    if (!fs.existsSync(root)) return null;
+    const filename = `${attemptId}.yml`;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.name)) continue;
+      const candidate = path.join(root, entry.name, filename);
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return null;
+  }
+
+  #resolveExisting(file, attempt) {
+    const existing = YAML.parse(fs.readFileSync(file, 'utf8'), { uniqueKeys: true });
+    if (JSON.stringify(attemptPayload(existing)) !== JSON.stringify(attemptPayload(attempt))) {
+      throw idempotencyConflict(attempt?.attempt_id);
+    }
+    return existing;
   }
 
   listRecent(userId, { limit = 100 } = {}) {

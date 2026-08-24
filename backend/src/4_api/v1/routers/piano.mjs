@@ -13,6 +13,29 @@ import {
   validateProducerRecord,
 } from '#apps/piano/producerRecords.mjs';
 
+const ATTEMPT_WRITER_ROLES = new Set(['sysadmin', 'parent', 'kiosk', 'piano-instructor', 'gaming-host']);
+const GUEST_ATTEMPT_SURFACES = new Set(['piano-challenge']);
+
+function pianoAttemptAuthority(req, userId) {
+  const roles = new Set([...(req.roles || []), ...(req.user?.roles || [])].map(String));
+  const participantId = req.user?.sub == null ? null : String(req.user.sub);
+  const trustedWriter = [...roles].some((role) => ATTEMPT_WRITER_ROLES.has(role));
+  if (trustedWriter || participantId === String(userId)) return { allowed: true, trustedWriter, participantId };
+  return { allowed: false, status: participantId || roles.size ? 403 : 401 };
+}
+
+function attemptPolicyErrors(userId, body) {
+  const errors = [];
+  if (!['practice', 'challenge'].includes(body?.purpose)) errors.push('purpose-required');
+  if (body?.purpose === 'practice' && !(typeof body.activity_id === 'string' && body.activity_id.trim())) errors.push('practice-activity-required');
+  if (body?.purpose === 'challenge' && !(typeof body.challenge_id === 'string' && body.challenge_id.trim())) errors.push('challenge-identity-required');
+  if (userId === 'guest') {
+    if (body?.purpose !== 'challenge') errors.push('guest-challenge-only');
+    if (!GUEST_ATTEMPT_SURFACES.has(body?.context?.surface)) errors.push('guest-surface-not-authorized');
+  }
+  return errors;
+}
+
 /**
  * Piano kiosk API.
  *
@@ -103,6 +126,37 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     catch { return false; }
   };
 
+  // Keep attempt logs structurally identical across validation, persistence,
+  // and storage failures. Deliberately omit prompt/events and every raw MIDI
+  // field; the numeric summary is enough to operate the pipeline.
+  const attemptTelemetry = (attempt, persistence, extra = {}) => ({
+    attemptId: attempt?.attempt_id ?? null,
+    surface: attempt?.context?.surface ?? null,
+    matcher: attempt?.context?.matcher ?? null,
+    mode: attempt?.context?.mode ?? attempt?.assessment?.mode ?? attempt?.prompt?.mode ?? null,
+    activityId: attempt?.activity_id ?? null,
+    challengeId: attempt?.challenge_id ?? null,
+    purpose: attempt?.purpose ?? null,
+    terminalStatus: attempt?.status ?? null,
+    score: attempt?.score ?? null,
+    passed: attempt?.verdict?.passed ?? null,
+    criteria: attempt?.criteria ?? null,
+    rubricId: attempt?.rubric?.id ?? attempt?.grading_policy_version ?? null,
+    rubricVersion: attempt?.rubric?.version ?? null,
+    providerVersion: attempt?.provider_version ?? null,
+    partWeights: attempt?.rubric?.part_weights ?? null,
+    failedCriteria: attempt?.verdict?.failed_criteria ?? [],
+    failedGates: attempt?.verdict?.failed_gates ?? [],
+    gates: attempt?.gates ?? null,
+    expectedNotes: attempt?.diagnostics?.expected_notes ?? null,
+    matchedNotes: attempt?.diagnostics?.matched_notes ?? null,
+    wrongNotes: attempt?.diagnostics?.wrong_notes ?? null,
+    missedNotes: attempt?.diagnostics?.missed_notes ?? null,
+    responseMedianMs: attempt?.diagnostics?.response_median_ms ?? null,
+    persistence,
+    ...extra,
+  });
+
   // ── Roster ────────────────────────────────────────────────────────────────
   router.get('/users', asyncHandler((req, res) => {
     res.json({ users: ds.getRoster() });
@@ -115,6 +169,8 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
       return res.status(400).json({ error: 'Invalid user' });
     }
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Attempt access denied' });
     if (req.params.userId === 'guest') return res.json({ attempts: [] });
     const limit = Math.min(Math.max(Number(req.query.limit) || 500, 1), 5000);
     const attempts = pianoAttemptStore.list(req.params.userId, {
@@ -127,42 +183,83 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
   }));
 
   router.post('/users/:userId/attempts', asyncHandler((req, res) => {
-    if (!pianoAttemptStore) return res.status(501).json({ error: 'Attempt store unavailable' });
+    const body = req.body || {};
+    if (!pianoAttemptStore) {
+      logger.error?.('piano.attempt.failed', attemptTelemetry(body, 'failed', {
+        userId: req.params.userId,
+        persistenceDurationMs: 0,
+        persistenceError: 'attempt-store-unavailable',
+      }));
+      return res.status(501).json({ error: 'Attempt store unavailable' });
+    }
     if (!ds.isKnownUser(req.params.userId) && req.params.userId !== 'guest') {
+      logger.warn?.('piano.attempt.rejected', attemptTelemetry(body, 'rejected', {
+        userId: req.params.userId,
+        validationErrors: ['invalid-user'],
+      }));
       return res.status(400).json({ error: 'Invalid user' });
     }
-    const body = req.body || {};
+    const authority = pianoAttemptAuthority(req, req.params.userId);
+    if (!authority.allowed) {
+      logger.warn?.('piano.attempt.rejected', attemptTelemetry(body, 'rejected', {
+        userId: req.params.userId,
+        validationErrors: ['authorization-denied'],
+      }));
+      return res.status(authority.status).json({ error: authority.status === 401 ? 'Authentication required' : 'Attempt write denied' });
+    }
     // The record keeps the criterion vector, not just the scalar it projects to:
     // a score cannot be un-projected, so storing only the score makes every
     // later question about a past run unanswerable. Shape lives in shared/ so
     // the writer and the validator cannot drift.
     const assessment = validateAssessment(body);
-    const hasIdentity = typeof body.challenge_id === 'string' || typeof body.activity_id === 'string';
-    if (!assessment.valid || !hasIdentity) {
+    const hasIdentity = (typeof body.challenge_id === 'string' && body.challenge_id.trim())
+      || (typeof body.activity_id === 'string' && body.activity_id.trim());
+    const policyErrors = attemptPolicyErrors(req.params.userId, body);
+    if (!assessment.valid || !hasIdentity || policyErrors.length) {
+      const validationErrors = [
+        ...assessment.errors,
+        ...(!hasIdentity ? ['challenge_id or activity_id is required'] : []),
+        ...policyErrors,
+      ];
+      logger.warn?.('piano.attempt.rejected', attemptTelemetry(body, 'rejected', {
+        validationErrors,
+      }));
       return res.status(400).json({
         error: 'Invalid attempt result',
-        details: assessment.errors.length ? assessment.errors : ['challenge_id or activity_id is required'],
+        details: validationErrors,
       });
     }
-    const attempt = pianoAttemptStore.save(req.params.userId, {
-      ...body,
-      attempt_id: body.attempt_id || shortId(),
-      trust_source: 'client-midi',
-    });
+    const persistenceStartedAt = Date.now();
+    let attempt;
+    try {
+      attempt = pianoAttemptStore.save(req.params.userId, {
+        ...body,
+        attempt_id: body.attempt_id || shortId(),
+        trust_source: 'client-midi',
+      });
+    } catch (error) {
+      const status = Number(error?.status ?? error?.statusCode);
+      if (status >= 400 && status < 500) {
+        logger.warn?.('piano.attempt.rejected', attemptTelemetry(body, 'rejected', {
+          userId: req.params.userId,
+          validationErrors: [error?.code || 'persistence-conflict'],
+          persistenceDurationMs: Math.max(0, Date.now() - persistenceStartedAt),
+        }));
+      } else {
+        logger.error?.('piano.attempt.failed', attemptTelemetry(body, 'failed', {
+          persistenceDurationMs: Math.max(0, Date.now() - persistenceStartedAt),
+          persistenceError: error?.message || String(error),
+        }));
+      }
+      throw error;
+    }
     logger.info?.('piano.attempt.saved', {
       userId: req.params.userId,
-      attemptId: attempt.attempt_id,
       status: attempt.status,
       rubric: attempt.rubric?.id ?? null,
-      surface: attempt.context?.surface ?? null,
-      matcher: attempt.context?.matcher ?? null,
-      mode: attempt.prompt?.mode ?? null,
-      activityId: attempt.activity_id ?? null,
-      criteria: attempt.criteria ?? null,
-      partWeights: attempt.rubric?.part_weights ?? null,
-      failedCriteria: attempt.verdict?.failed_criteria ?? null,
-      failedGates: attempt.verdict?.failed_gates ?? null,
-      persistence: 'saved',
+      ...attemptTelemetry(attempt, 'saved', {
+        persistenceDurationMs: Math.max(0, Date.now() - persistenceStartedAt),
+      }),
     });
     res.status(201).json(attempt);
   }));
