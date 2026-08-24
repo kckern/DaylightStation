@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 // Keep the smoke test hermetic — config + modes fetch on mount.
@@ -25,22 +25,21 @@ beforeEach(() => {
 });
 
 describe('PianoApp', () => {
-  it('shows the connect gate when Web MIDI is unavailable', async () => {
+  it('keeps the app visible when Web MIDI is unavailable', async () => {
     renderApp('/piano');
-    expect(await screen.findByText(/does not support Web MIDI/i)).toBeTruthy();
+    expect(await screen.findByText('Courses')).toBeTruthy();
+    expect(screen.queryByText(/Continue without piano/i)).toBeNull();
   });
 
-  it('reveals the mode menu after continuing without a piano', async () => {
+  it('renders the mode menu immediately without a connection gate', async () => {
     renderApp('/piano');
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
-    for (const label of ['Courses', 'Games', 'Training', 'Studio']) {
-      expect(screen.getByText(label)).toBeTruthy();
+    for (const label of ['Courses', 'Games', 'Exercises', 'Studio']) {
+      expect(await screen.findByText(label)).toBeTruthy();
     }
   });
 
   it('routes directly to a mode (Studio) and mounts it — no /default/ segment', async () => {
     renderApp('/piano/studio');
-    fireEvent.click(await screen.findByText(/Continue without piano/i));
     // Routing lands on the Studio Play tab; assert its tab bar (a
     // Studio-specific control) to confirm the mode mounted. Not the Record
     // button itself: this smoke test never selects a roster player, so
@@ -51,8 +50,8 @@ describe('PianoApp', () => {
 
   it('serves the only piano directly at /piano (no redirect into /piano/default)', async () => {
     renderApp('/piano');
-    // Single (default) piano → served in place → connect gate, no pianoId segment.
-    expect(await screen.findByText(/Continue without piano/i)).toBeTruthy();
+    // Single (default) piano → served in place with its menu, no pianoId segment.
+    expect(await screen.findByText('Courses')).toBeTruthy();
   });
 
   it('shows a picker when the household has multiple pianos', async () => {

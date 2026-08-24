@@ -1,230 +1,102 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
-import { usePianoSoundBundle } from './usePianoSoundBundle.js';
+import { usePianoConnection } from './PianoConnectionContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
-import { useScreenControl, screenOffFailureMessage } from './useScreenControl.js';
+import { usePianoScreenOff } from './usePianoScreenOff.js';
+import { screenOffFailureMessage } from './useScreenControl.js';
 import { useArmedAction } from '../../../lib/identity/useArmedAction.js';
 import { launchAndroidTarget } from '../../../lib/fkb.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import PianoMidiMonitor from './PianoMidiMonitor.jsx';
+import PianoSheet from './PianoSheet.jsx';
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
-import Icon from '../ui/icons/Icon.jsx';
 
-const HW_STATE = {
-  connected: { cls: 'is-on', label: 'Connected' },
-  requesting: { cls: 'is-warn', label: 'Connecting…' },
-  idle: { cls: 'is-warn', label: 'Connecting…' },
-  'no-input': { cls: 'is-off', label: 'No piano found' },
-  denied: { cls: 'is-off', label: 'Access blocked' },
-  unsupported: { cls: 'is-off', label: 'Not supported' },
-};
+const directionCopy = (available) => available ? 'connected' : 'not connected';
 
-/**
- * Operator Drawer — the maintenance console, reached by long-pressing the
- * chrome sound chip (design §7/§8). Everything destructive or operator-only
- * that used to live in the three-tab Settings sheet lives here now, off the
- * player-facing Sound Panel entirely: Hardware (connect/Bluetooth),
- * Diagnostics (live MIDI monitor + PC/Local/Panic test outputs), Display
- * (maintenance screen-off), Recovery (explicitly RANKED — resolves audit
- * T8, which flagged the old sheet's unranked recovery hammers), and Feedback
- * (audit T6 — moved off the player surface).
- */
 export default function OperatorDrawer({ open, onClose }) {
-  const logger = useMemo(() => getLogger().child({ component: 'piano-operator-drawer' }), []);
-  const { connected, inputName, status, connect, outputConnected, outputName, resetLink, sendNote, sendNoteOff } = usePianoMidi();
-  const { currentBundle, applyBundle } = usePianoSoundBundle();
+  const midi = usePianoMidi();
+  const { health, repair, repairConnection } = usePianoConnection();
   const { config, pianoId } = usePianoKioskConfig();
-  const { turnOffScreen } = useScreenControl();
-  const bluetooth = config?.bluetooth || null;
+  const turnOffPianoScreen = usePianoScreenOff();
+  const logger = useMemo(() => getLogger().child({ component: 'piano-maintenance', pianoId }), [pianoId]);
+  const [connectionDetails, setConnectionDetails] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const [action, setAction] = useState({ state: 'idle', message: null, name: null });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  // Transient failure note surfaced when turnOffScreen() reports no-path/reject,
-  // so a dead-looking button isn't silent to the operator.
-  const [screenError, setScreenError] = useState(null);
 
-  // 2-tap confirm for screen-off — avoids an accidental mid-play blackout on a
-  // touch kiosk. First tap arms; a second tap within 3s fires; else it disarms.
-  const { armed: screenArmed, trigger: triggerScreenOff } = useArmedAction(async () => {
-    logger.info('piano.operator.screen-off', {});
-    const res = await turnOffScreen();
-    setScreenError(res?.ok === false ? screenOffFailureMessage(res) : null);
+  const report = useCallback((name, state, message, detail = {}) => {
+    setAction({ name, state, message });
+    const data = { action: name, state, ...detail };
+    if (state === 'failed') logger.warn('piano.maintenance.action', data);
+    else logger.info('piano.maintenance.action', data);
+  }, [logger]);
+
+  const playTestNote = useCallback(() => {
+    report('test-note', 'working', 'Sending test note…');
+    const sent = midi.sendNote(60, 100, 0, 500);
+    report('test-note', sent ? 'success' : 'failed', sent ? 'Test note command sent.' : 'Piano not connected.', { sent });
+  }, [midi, report]);
+
+  const stopStuckNotes = useCallback(() => {
+    report('stop-stuck-notes', 'working', 'Stopping notes…');
+    const sent = midi.sendPanic();
+    report('stop-stuck-notes', sent ? 'success' : 'failed', sent ? 'Stop stuck notes command sent.' : 'Piano not connected.', { sent });
+  }, [midi, report]);
+
+  const { armed: screenArmed, trigger: screenOff } = useArmedAction(async () => {
+    report('screen-off', 'working', 'Turning off display…');
+    const result = await turnOffPianoScreen();
+    report('screen-off', result?.ok ? 'success' : 'failed', result?.ok ? 'Display turned off.' : screenOffFailureMessage(result), result);
   }, { armMs: 3000 });
 
-  // Auto-clear the failure note after a few seconds.
-  useEffect(() => {
-    if (!screenError) return undefined;
-    const t = setTimeout(() => setScreenError(null), 4000);
-    return () => clearTimeout(t);
-  }, [screenError]);
+  const { armed: reloadArmed, trigger: reload } = useArmedAction(() => {
+    report('restart-app', 'working', 'Restarting piano app…');
+    window.location.reload();
+  }, { armMs: 3000 });
 
-  // Restart the audio subsystem in one action: reconnect MIDI, then re-assert
-  // the FULL sound bundle (voice + reverb + chorus + volume) onto the
-  // hardware/voice-bridge via applyBundle — recovers a wedged piano (silent
-  // notes, dropped BLE, lost volume) without the heavier full-app reload below.
-  const restartAudio = useCallback(async () => {
-    logger.info('piano.operator.restart-audio', {});
-    try { await connect(); } catch (err) { logger.warn('piano.operator.restart-audio.midi-failed', { error: err?.message }); }
-    applyBundle(currentBundle);
-  }, [connect, applyBundle, currentBundle, logger]);
-
-  // Reboot the whole tablet (2-tap armed — the most disruptive recovery, ~2-3min
-  // down). Backend does it over ADB. Only offered when we know the device id.
   const deviceId = config?.screensaver?.deviceId || null;
-  const { armed: rebootArmed, trigger: triggerReboot } = useArmedAction(() => {
-    if (!deviceId) return;
-    logger.info('piano.operator.reboot', { deviceId });
-    DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST').catch(() => {});
+  const { armed: rebootArmed, trigger: reboot } = useArmedAction(async () => {
+    report('reboot-tablet', 'working', 'Requesting tablet reboot…');
+    try {
+      const result = await DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST');
+      if (result?.ok === false) throw new Error(result.error || 'request rejected');
+      report('reboot-tablet', 'success', 'Tablet reboot requested.');
+    } catch (error) {
+      report('reboot-tablet', 'failed', `Couldn’t reboot tablet: ${error?.message || 'request failed'}`);
+    }
   }, { armMs: 3000 });
 
-  // Validate the OUT link audibly: play middle C for ~0.5s. If the piano sounds,
-  // the tablet→piano MIDI OUT is live; silence means the link is down.
-  const testTone = useCallback(() => {
-    logger.info('piano.operator.midi-test', { outputConnected });
-    sendNote(60, 100);
-    setTimeout(() => sendNoteOff(60), 500);
-  }, [sendNote, sendNoteOff, outputConnected, logger]);
+  const inputAvailable = health.input.state !== 'down';
+  const outputAvailable = health.output.state === 'up';
+  const showBluetooth = config?.bluetooth && (health.state === 'offline' || repair.state === 'failed' || connectionDetails);
 
-  // The REAL fix. The old "Reset link" only re-acquired the browser's Web MIDI
-  // handle — it never touched the APK's BLE connection, which is the thing that
-  // goes zombie, which is why it never fixed anything. This POSTs to the bridge's
-  // /reset, which forgets+reconnects BLE, escalates to a Bluetooth radio bounce if
-  // needed, and VERIFIES with the piano's own echo — then reports the truth.
-  const [resetState, setResetState] = useState(null); // null | 'working' | 'fixed' | 'still-down' | 'unreachable'
-  const forceReset = useCallback(async () => {
-    logger.info('piano.operator.force-reset', { outputConnected });
-    setResetState('working');
-    resetLink(); // also refresh the browser handle, cheap and harmless
-    try {
-      const res = await fetch('http://localhost:8770/reset', { method: 'POST', signal: AbortSignal.timeout(40000) });
-      const r = await res.json();
-      logger.info('piano.operator.force-reset.result', { fixed: r?.fixed, recoveredAt: r?.recoveredAt, verdict: r?.verdict });
-      setResetState(r?.fixed ? 'fixed' : 'still-down');
-    } catch (err) {
-      logger.warn('piano.operator.force-reset.failed', { error: err?.message });
-      setResetState('unreachable');
-    }
-    setTimeout(() => setResetState(null), 8000);
-  }, [resetLink, outputConnected, logger]);
+  return <PianoSheet open={open} title="Piano maintenance" onClose={onClose} className="piano-operator-drawer">
+    <section>
+      <h3>Connection</h3>
+      <p>Piano keys are {directionCopy(inputAvailable)}. Sound controls are {directionCopy(outputAvailable)}.</p>
+      <button type="button" className="piano-operator-drawer__restart" onClick={repairConnection} disabled={repair.state === 'working'}>{repair.state === 'working' ? 'Repairing connection…' : 'Repair connection'}</button>
+      {repair.message && <p role="status">{repair.message}</p>}
+      {outputAvailable && <button type="button" onClick={playTestNote}>Play test note</button>}
+      <button type="button" aria-expanded={connectionDetails} onClick={() => setConnectionDetails((value) => !value)}>Connection details</button>
+      {connectionDetails && <div className="piano-operator-drawer__details"><p>Input: {health.input.name || 'none'}</p><p>Output: {health.output.name || 'none'}</p><p>Bridge: {health.bridge.state}</p></div>}
+      {showBluetooth && <button type="button" onClick={() => { logger.info('piano.maintenance.bluetooth', {}); launchAndroidTarget(config.bluetooth); }}>Open Bluetooth pairing</button>}
+    </section>
 
-  useEffect(() => { if (open) logger.info('piano.operator.open', {}); }, [open, logger]);
+    <section><h3>Common problems</h3><button type="button" onClick={stopStuckNotes}>Stop stuck notes</button></section>
 
-  if (!open) return null;
-  const hw = HW_STATE[status] || HW_STATE.idle;
+    <section><h3>Display</h3><button type="button" className={screenArmed ? 'is-armed' : ''} onClick={screenOff}>{screenArmed ? 'Tap again to confirm' : 'Turn off display'}</button></section>
 
-  return (
-    <div className="piano-operator-drawer" role="dialog" aria-label="Operator" aria-modal="true">
-      <div className="piano-operator-drawer__scrim" onClick={onClose} />
-      <aside className="piano-operator-drawer__sheet">
-        <header className="piano-operator-drawer__head">
-          <h2>Operator</h2>
-          <button type="button" className="piano-operator-drawer__close" onClick={onClose} aria-label="Close operator drawer"><Icon name="close" /></button>
-        </header>
+    <section><button type="button" aria-expanded={diagnostics} onClick={() => setDiagnostics((value) => !value)}>Diagnostics</button>{diagnostics && <PianoMidiMonitor />}</section>
 
-        {/* ── Hardware ── */}
-        <section className="piano-operator-drawer__section">
-          <h3 className="piano-operator-drawer__eyebrow">Hardware</h3>
-          <div className="piano-operator-drawer__hw">
-            <span className={`piano-operator-drawer__hwdot ${hw.cls}`} aria-hidden />
-            <span className="piano-operator-drawer__hwlabel">{hw.label}</span>
-            <span className="piano-operator-drawer__hwname">{connected ? (inputName || 'Piano') : ''}</span>
-            {!connected && status !== 'unsupported' && (
-              <button type="button" className="piano-operator-drawer__connect" onClick={connect}>Connect</button>
-            )}
-            {bluetooth && (
-              <button
-                type="button"
-                className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost"
-                onClick={() => { logger.info('piano.operator.bluetooth', {}); launchAndroidTarget(bluetooth); }}
-              >
-                Bluetooth settings
-              </button>
-            )}
-          </div>
-          {/* MIDI OUT link — the tablet→piano direction. On BLE the output can
-              enumerate late / drop while the input stays up, so it's shown and
-              recoverable separately: red here = on-screen changes won't reach the
-              piano. Reset re-scans the link; Test tone validates it audibly. */}
-          <div className="piano-operator-drawer__hw piano-operator-drawer__midiout">
-            <span className={`piano-operator-drawer__hwdot ${outputConnected ? 'is-on' : 'is-off'}`} aria-hidden />
-            <span className="piano-operator-drawer__hwlabel">MIDI out</span>
-            <span className="piano-operator-drawer__hwname">
-              {outputConnected ? (outputName || 'linked') : 'not linked — changes won’t reach the piano'}
-            </span>
-            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={forceReset} disabled={resetState === 'working'}>
-              {resetState === 'working' ? 'Resetting…'
-                : resetState === 'fixed' ? '✓ Fixed'
-                : resetState === 'still-down' ? '✗ Still down'
-                : resetState === 'unreachable' ? '✗ No bridge'
-                : 'Force reset MIDI'}
-            </button>
-            <button type="button" className="piano-operator-drawer__connect piano-operator-drawer__connect--ghost" onClick={testTone}>Test tone</button>
-          </div>
-        </section>
+    <section><button type="button" aria-expanded={advanced} onClick={() => setAdvanced((value) => !value)}>Advanced recovery</button>{advanced && <div className="piano-operator-drawer__advanced">
+      <button type="button" className={reloadArmed ? 'is-armed' : ''} onClick={reload}>{reloadArmed ? 'Tap again to restart piano app' : 'Restart piano app'}</button>
+      {deviceId && <button type="button" className={rebootArmed ? 'is-armed' : ''} onClick={reboot}>{rebootArmed ? 'Tap again to reboot tablet' : 'Reboot tablet'}</button>}
+    </div>}</section>
 
-        {/* ── Diagnostics: live MIDI monitor + test outputs (PC / Local / Panic) ── */}
-        <section className="piano-operator-drawer__section piano-operator-drawer__section--grow">
-          <h3 className="piano-operator-drawer__eyebrow">Diagnostics</h3>
-          <PianoMidiMonitor />
-        </section>
+    {action.message && <p className={`piano-operator-drawer__status is-${action.state}`} role="status">{action.message}</p>}
 
-        {/* ── Display (manual screen-off — maintenance / burn-in kill switch) ── */}
-        <section className="piano-operator-drawer__section">
-          <h3 className="piano-operator-drawer__eyebrow">Display</h3>
-          <button
-            type="button"
-            className={`piano-operator-drawer__screen-off${screenArmed ? ' is-armed' : ''}`}
-            aria-live="polite"
-            onClick={triggerScreenOff}
-          >
-            {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
-          </button>
-          {screenError && (
-            <p className="piano-operator-drawer__screen-error" role="status" aria-live="polite">{screenError}</p>
-          )}
-        </section>
-
-        {/* ── Recovery — RANKED (audit T8): restart-audio first ("try this
-             first"), reload de-emphasized as the nuclear option. ── */}
-        <section className="piano-operator-drawer__section piano-operator-drawer__recovery">
-          <h3 className="piano-operator-drawer__eyebrow">Recovery</h3>
-          <button type="button" className="piano-operator-drawer__restart" onClick={restartAudio}>
-            <Icon name="repeat" />
-            <span>Restart audio &amp; MIDI</span>
-            <span className="piano-operator-drawer__hint">Try this first</span>
-          </button>
-          <button
-            type="button"
-            className="piano-operator-drawer__reload"
-            onClick={() => { logger.info('piano.operator.reload', {}); window.location.reload(); }}
-          >
-            Reload app
-          </button>
-          {deviceId && (
-            <button
-              type="button"
-              className={`piano-operator-drawer__reload${rebootArmed ? ' is-armed' : ''}`}
-              aria-live="polite"
-              onClick={triggerReboot}
-            >
-              <Icon name="system-reboot" /> {rebootArmed ? 'Tap again to reboot device' : 'Reboot device'}
-            </button>
-          )}
-        </section>
-
-        {/* ── Feedback (audit T6 — off the player surface) ── */}
-        <section className="piano-operator-drawer__section">
-          <h3 className="piano-operator-drawer__eyebrow">Feedback</h3>
-          <button type="button" className="piano-operator-drawer__feedback-open" onClick={() => setFeedbackOpen(true)}>
-            Record feedback
-          </button>
-          <FeedbackOverlay
-            open={feedbackOpen}
-            app="piano"
-            context={{ pianoId, surface: 'operator-drawer' }}
-            onClose={() => setFeedbackOpen(false)}
-          />
-        </section>
-      </aside>
-    </div>
-  );
+    <section><h3>Feedback</h3><button type="button" onClick={() => setFeedbackOpen(true)}>Record feedback</button><FeedbackOverlay open={feedbackOpen} app="piano" context={{ pianoId, surface: 'piano-maintenance' }} onClose={() => setFeedbackOpen(false)} /></section>
+  </PianoSheet>;
 }

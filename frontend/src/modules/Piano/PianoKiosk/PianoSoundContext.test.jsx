@@ -77,18 +77,8 @@ describe('PianoSoundContext', () => {
     expect(midi.sendControlChange).toHaveBeenCalledWith(device.effects.reverb.levelCC, 64);
   });
 
-  it('the fallback outside a provider stubs the retired rendered-voice members inertly', () => {
-    // usePianoSound() falls back to FALLBACK when there's no provider — assert
-    // the retired rendered-voice bridge surface is inert, not wired to anything.
-    let value;
-    function Probe() { value = usePianoSound(); return null; }
-    render(<Probe />);
-    expect(value.sources).toEqual([]);
-    expect(value.active).toBeNull();
-    expect(value.hasInstruments).toBe(false);
-    expect(value.bridgeLink).toBeNull();
-    expect(typeof value.select).toBe('function');
-    expect(typeof value.setGain).toBe('function');
-    expect(typeof value.setReverb).toBe('function');
+  it('fails loudly outside the canonical provider instead of exposing retired engine stubs', () => {
+    function Probe() { usePianoSound(); return null; }
+    expect(() => render(<Probe />)).toThrow(/PianoSoundProvider/);
   });
 });

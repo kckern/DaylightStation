@@ -1,280 +1,121 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { usePianoSoundBundle } from './usePianoSoundBundle.js';
-import { usePianoPreset } from './usePianoPreset.js';
+import { sameSoundPreset, soundVoiceKey, usePianoPreset } from './usePianoPreset.js';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
+import { usePianoMix } from './PianoMixContext.jsx';
 import { buildFunnel } from './voiceFunnel.js';
 import { instrumentEmoji } from './instrumentIcon.js';
-import Icon from '../ui/icons/Icon.jsx';
+import PianoSheet from './PianoSheet.jsx';
 
-const MAX_FAVORITES_SHOWN = 5;
-const clamp01 = (v) => Math.max(0, Math.min(1, v));
-
-// Tone is set in five discrete steps, not a slider — easier to hit on a touch
-// kiosk and every choice is a named, repeatable amount. "Off" genuinely
-// disables the effect (on:false, level 0); Low…Max ramp the send and force on.
-const FX_STEPS = [
+const EFFECT_STEPS = Object.freeze([
   { label: 'Off', level: 0, on: false },
   { label: 'Low', level: 32, on: true },
-  { label: 'Med', level: 64, on: true },
+  { label: 'Medium', level: 64, on: true },
   { label: 'High', level: 96, on: true },
   { label: 'Max', level: 127, on: true },
-];
-const VOL_STEPS = [
-  { label: 'Off', value: 0 },
-  { label: 'Low', value: 0.25 },
-  { label: 'Med', value: 0.5 },
-  { label: 'High', value: 0.75 },
-  { label: 'Max', value: 1 },
-];
-// Which step is lit for a given current value — the nearest one by amount.
-const nearestStep = (steps, key, val) => {
-  let best = 0;
-  let bestDist = Infinity;
-  steps.forEach((s, i) => {
-    const d = Math.abs(s[key] - val);
-    if (d < bestDist) { bestDist = d; best = i; }
-  });
-  return best;
-};
+]);
+const LEVEL_STEPS = Object.freeze([
+  { label: 'Mute', value: 0 }, { label: '25%', value: 0.25 }, { label: '50%', value: 0.5 },
+  { label: '75%', value: 0.75 }, { label: '100%', value: 1 },
+]);
 
-/**
- * One tone control: an icon + name (+ optional type select) header over a
- * five-button Off/Low/Med/High/Max stepper. Full-bleed so every row's edges
- * line up. `activeIndex` lights the current step; `onPick` gets (step, index).
- */
-function ToneStepper({ icon, name, steps, activeIndex, onPick, typeSelect }) {
-  return (
-    <div className="piano-sound-panel__tonecard">
-      <div className="piano-sound-panel__tonehead">
-        <Icon name={icon} className="piano-sound-panel__toneicon" />
-        <span className="piano-sound-panel__tonename">{name}</span>
-        {typeSelect}
-      </div>
-      <div className="piano-sound-panel__steps" role="group" aria-label={name}>
-        {steps.map((s, i) => (
-          <button
-            key={s.label}
-            type="button"
-            className={`piano-sound-panel__step${i === activeIndex ? ' is-on' : ''}${i === 0 ? ' is-off' : ''}`}
-            aria-pressed={i === activeIndex}
-            onClick={() => onPick(s, i)}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
+function StepChoices({ label, steps, activeIndex, currentCopy, onPick }) {
+  return <div className="piano-sound-panel__tonecard">
+    <div className="piano-sound-panel__tonehead"><strong>{label}</strong>{activeIndex < 0 && <small>{currentCopy}</small>}</div>
+    <div className="piano-sound-panel__steps" role="group" aria-label={label}>
+      {steps.map((step, index) => <button key={step.label} type="button" className={index === activeIndex ? 'is-on' : ''} aria-pressed={index === activeIndex} onClick={() => onPick(step)}>{step.label}</button>)}
     </div>
-  );
+  </div>;
 }
 
-/**
- * Player Sound Panel — the ONLY sound surface a family member sees (tap the
- * chrome sound chip). Three regions: the voice funnel (favorites → house
- * shortlist → browse-all, on demand), Tone (reverb/chorus/volume), and Save
- * (default / favorite). Every change re-asserts the FULL bundle through
- * applyBundle — never a lone CC — per the "full-state MIDI burst" design.
- *
- * Deliberately contains NOTHING destructive or operator-facing (no MIDI
- * monitor, no Panic/Local/PC test, no reload, no Bluetooth/Connect, no
- * screen-off). Those live in the Operator Drawer, reached by long-pressing
- * the same chip — a different surface entirely.
- */
+function EffectControl({ label, value, config, onChange }) {
+  const activeIndex = EFFECT_STEPS.findIndex((step) => step.level === value.level && step.on === !!value.on);
+  const percent = value.on ? Math.round((value.level || 0) / 127 * 100) : 0;
+  return <div className="piano-sound-panel__effect">
+    <StepChoices label={label} steps={EFFECT_STEPS} activeIndex={activeIndex} currentCopy={`Current: ${percent}%`} onPick={onChange} />
+    {config?.types?.length > 0 && <label className="piano-sound-panel__type">{label} type
+      <select value={value.type} onChange={(event) => onChange({ type: Number(event.target.value) })}>
+        {config.types.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+      </select>
+    </label>}
+  </div>;
+}
+
 export default function SoundPanel({ open, onClose }) {
   const { currentBundle, applyBundle } = usePianoSoundBundle();
-  const { preset, saveDefault, addFavorite, canSave } = usePianoPreset();
+  const { preset, saveFavorite, removeFavorite, canSave, persistenceState, retryLastSound, maxFavorites, playerName } = usePianoPreset();
   const { config } = usePianoKioskConfig();
   const { device } = usePianoSound();
+  const { pianoLevel, setPianoLevel } = usePianoMix();
   const [browseOpen, setBrowseOpen] = useState(false);
-  const [family, setFamily] = useState(null);
+  const [moreEffects, setMoreEffects] = useState(false);
+  const [favoriteMessage, setFavoriteMessage] = useState(null);
 
-  const funnel = useMemo(() => buildFunnel({
-    favorites: preset?.favorites || [],
-    shortlistVoices: config?.shortlist?.voices || [],
-    allGroups: device?.voiceGroups || [],
-  }), [preset, config, device]);
+  useEffect(() => {
+    if (!open) return;
+    setBrowseOpen(false);
+    setMoreEffects(!!currentBundle?.chorus?.on);
+    setFavoriteMessage(null);
+  }, [open, currentBundle?.chorus?.on]);
 
-  const favorites = funnel.favorites.slice(0, MAX_FAVORITES_SHOWN);
-  const groups = funnel.groups;
+  const saved = useMemo(() => preset?.favorites || [], [preset?.favorites]);
+  const funnel = useMemo(() => buildFunnel({ favorites: saved, shortlistVoices: config?.shortlist?.voices || [], allGroups: device?.voiceGroups || [] }), [saved, config?.shortlist?.voices, device?.voiceGroups]);
+  const savedInstrument = saved.find((sound) => soundVoiceKey(sound) === soundVoiceKey(currentBundle));
+  const savedExactly = !!savedInstrument && sameSoundPreset(savedInstrument, currentBundle);
+  const levelIndex = LEVEL_STEPS.findIndex((step) => step.value === pianoLevel);
 
-  // Default the browse-all family selector to whichever group holds the
-  // currently-active voice (mirrors PianoKeyboardPanel's activeGroup idiom).
-  const defaultFamily = useMemo(() => groups.find((g) => g.voices.some(
-    (v) => v.pc === currentBundle?.voice?.pc && (v.bank || 0) === (currentBundle?.voice?.bank || 0),
-  ))?.group || groups[0]?.group, [groups, currentBundle]);
-  const activeFamily = family || defaultFamily;
-  const shownGroup = groups.find((g) => g.group === activeFamily) || groups[0];
-
-  if (!open) return null;
-
-  const applyVoice = (v) => {
-    applyBundle({ ...currentBundle, voice: { pc: v.pc, bank: v.bank || 0, name: v.name } });
+  const applyVoice = (voice) => applyBundle({ ...currentBundle, voice: { ...voice, bank: voice.bank || 0 } });
+  const applyEffect = (name, patch) => applyBundle({ ...currentBundle, [name]: { ...currentBundle[name], ...patch } });
+  const save = async () => {
+    setFavoriteMessage('Saving sound…');
+    const result = await saveFavorite(currentBundle);
+    setFavoriteMessage(result.ok ? 'Sound saved.' : result.reason === 'limit' ? 'Remove a saved sound before adding another.' : 'Couldn’t save sound.');
   };
-  const updateReverb = (patch) => {
-    applyBundle({ ...currentBundle, reverb: { ...currentBundle.reverb, ...patch } });
+  const remove = async () => {
+    setFavoriteMessage('Removing sound…');
+    const result = await removeFavorite(savedInstrument);
+    setFavoriteMessage(result.ok ? 'Saved sound removed.' : 'Couldn’t remove saved sound.');
   };
-  const updateChorus = (patch) => {
-    applyBundle({ ...currentBundle, chorus: { ...currentBundle.chorus, ...patch } });
-  };
-  const updateVolume = (v) => {
-    applyBundle({ ...currentBundle, volume: clamp01(v) });
-  };
+  const persistenceCopy = persistenceState === 'saving' ? 'Saving…'
+    : persistenceState === 'remembered' ? `Remembered for ${playerName}`
+      : persistenceState === 'failed' ? 'Couldn’t save — Retry' : null;
 
-  const reverbCfg = device?.effects?.reverb;
-  const chorusCfg = device?.effects?.chorus;
+  return <PianoSheet open={open} title="Sound" onClose={onClose} className="piano-sound-panel">
+    <section>
+      <h3>Current sound</h3>
+      <div className="piano-sound-panel__current"><span aria-hidden>{instrumentEmoji(currentBundle?.voice?.name)}</span><strong>{currentBundle?.voice?.name || 'Keyboard'}</strong></div>
+      {persistenceCopy && <p role="status">{persistenceCopy}</p>}
+      {persistenceState === 'failed' && <button type="button" onClick={retryLastSound}>Retry</button>}
+      {canSave ? <div className="piano-sound-panel__save-actions">
+        <button type="button" onClick={save} disabled={savedExactly || (!savedInstrument && saved.length >= maxFavorites)}>{savedExactly ? 'Saved' : savedInstrument ? 'Update saved sound' : 'Save sound'}</button>
+        {savedInstrument && <button type="button" onClick={remove}>Remove</button>}
+      </div> : <p>Pick a player to save sounds.</p>}
+      {favoriteMessage && <p role="status">{favoriteMessage}</p>}
+    </section>
 
-  return (
-    <div className="piano-sound-panel" role="dialog" aria-label="Sound" aria-modal="true">
-      <div className="piano-sound-panel__scrim" onClick={onClose} />
-      <aside className="piano-sound-panel__sheet">
-        <header className="piano-sound-panel__head">
-          <h2>Sound</h2>
-          <button type="button" className="piano-sound-panel__close" onClick={onClose} aria-label="Close sound panel">
-            <Icon name="close" />
-          </button>
-        </header>
+    {saved.length > 0 && <section><h3>Saved sounds</h3><div className="piano-sound-panel__tiles">
+      {saved.map((sound, index) => <button key={`${soundVoiceKey(sound)}:${index}`} type="button" className="piano-sound-panel__tile" onClick={() => applyBundle(sound)}><span aria-hidden>{instrumentEmoji(sound.voice?.name)}</span>{sound.voice?.name || 'Sound'}</button>)}
+    </div></section>}
 
-        {/* ── Funnel: favorites → house shortlist → browse-all (on demand) ── */}
-        {favorites.length > 0 && (
-          <section className="piano-sound-panel__section">
-            <h3 className="piano-sound-panel__eyebrow">Your Favorites</h3>
-            <ul className="piano-sound-panel__tiles">
-              {favorites.map((fav, i) => (
-                <li key={`${fav.voice?.pc ?? 'x'}:${fav.voice?.bank ?? 0}:${i}`}>
-                  <button type="button" className="piano-sound-panel__tile" onClick={() => applyBundle(fav)}>
-                    <span className="piano-sound-panel__tileicon" aria-hidden="true">{instrumentEmoji(fav.voice?.name)}</span>
-                    <span className="piano-sound-panel__tilename">{fav.voice?.name || 'Sound'}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+    {funnel.shortlist.length > 0 && <section><h3>Recommended</h3><div className="piano-sound-panel__tiles">
+      {funnel.shortlist.map((voice) => <button key={`${voice.pc}:${voice.bank || 0}`} type="button" className="piano-sound-panel__tile" onClick={() => applyVoice(voice)}><span aria-hidden>{instrumentEmoji(voice.name)}</span>{voice.name}</button>)}
+    </div></section>}
 
-        {funnel.shortlist.length > 0 && (
-          <section className="piano-sound-panel__section">
-            <h3 className="piano-sound-panel__eyebrow">House Shortlist</h3>
-            <ul className="piano-sound-panel__tiles">
-              {funnel.shortlist.map((v) => (
-                <li key={`${v.pc}:${v.bank}`}>
-                  <button type="button" className="piano-sound-panel__tile" onClick={() => applyVoice(v)}>
-                    <span className="piano-sound-panel__tileicon" aria-hidden="true">{instrumentEmoji(v.name)}</span>
-                    <span className="piano-sound-panel__tilename">{v.name}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+    {funnel.groups.length > 0 && <section>
+      <button type="button" className="piano-sound-panel__browse-toggle" aria-expanded={browseOpen} onClick={() => setBrowseOpen((value) => !value)}>{browseOpen ? 'Done browsing' : 'Browse instruments'}</button>
+      {browseOpen && <div className="piano-sound-panel__browse">{funnel.groups.map((group) => <details key={group.group} className="piano-sound-panel__family"><summary>{group.group}</summary><div className="piano-sound-panel__voices">{group.voices.map((voice) => <button key={voice.no ?? `${voice.pc}:${voice.bank || 0}`} type="button" className={soundVoiceKey({ voice }) === soundVoiceKey(currentBundle) ? 'piano-sound-panel__voice is-active' : 'piano-sound-panel__voice'} onClick={() => applyVoice(voice)}>{voice.name}</button>)}</div></details>)}</div>}
+    </section>}
 
-        {groups.length > 0 && (
-          <section className="piano-sound-panel__section">
-            <button
-              type="button"
-              className="piano-sound-panel__browse-toggle"
-              aria-expanded={browseOpen}
-              onClick={() => setBrowseOpen((o) => !o)}
-            >
-              {browseOpen ? 'Hide all voices' : 'Browse all voices'}
-            </button>
-            {browseOpen && (
-              <div className="piano-sound-panel__browse">
-                <select
-                  className="piano-sound-panel__family"
-                  value={activeFamily}
-                  onChange={(e) => setFamily(e.target.value)}
-                  aria-label="Voice family"
-                >
-                  {groups.map((g) => <option key={g.group} value={g.group}>{instrumentEmoji(g.group)} {g.group}</option>)}
-                </select>
-                <ul className="piano-sound-panel__voices">
-                  {shownGroup?.voices.map((v) => (
-                    <li key={v.no ?? `${v.pc}:${v.bank}`}>
-                      <button
-                        type="button"
-                        className={`piano-sound-panel__voice${v.pc === currentBundle?.voice?.pc && (v.bank || 0) === (currentBundle?.voice?.bank || 0) ? ' is-active' : ''}`}
-                        onClick={() => applyVoice(v)}
-                      >
-                        {v.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </section>
-        )}
+    {currentBundle?.reverb && <section><h3>Effects</h3>
+      <EffectControl label="Room sound" value={currentBundle.reverb} config={device?.effects?.reverb} onChange={(patch) => applyEffect('reverb', patch)} />
+      <button type="button" aria-expanded={moreEffects} onClick={() => setMoreEffects((value) => !value)}>{moreEffects ? 'Less effects' : 'More effects'}</button>
+      {moreEffects && currentBundle?.chorus && <EffectControl label="Chorus" value={currentBundle.chorus} config={device?.effects?.chorus} onChange={(patch) => applyEffect('chorus', patch)} />}
+    </section>}
 
-        {/* ── Tone: reverb / chorus / volume — every change re-asserts the full bundle ── */}
-        <section className="piano-sound-panel__section">
-          <h3 className="piano-sound-panel__eyebrow">Tone</h3>
-          <div className="piano-sound-panel__tone">
-            {reverbCfg && currentBundle?.reverb && (
-              <ToneStepper
-                icon="reverb"
-                name={reverbCfg.label}
-                steps={FX_STEPS}
-                activeIndex={currentBundle.reverb.on ? nearestStep(FX_STEPS, 'level', currentBundle.reverb.level) : 0}
-                onPick={(s) => updateReverb({ level: s.level, on: s.on })}
-                typeSelect={(
-                  <span className="piano-sound-panel__tonetype">
-                    <select
-                      value={currentBundle.reverb.type}
-                      onChange={(e) => updateReverb({ type: Number(e.target.value) })}
-                      aria-label={`${reverbCfg.label} type`}
-                    >
-                      {reverbCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                  </span>
-                )}
-              />
-            )}
-            {chorusCfg && currentBundle?.chorus && (
-              <ToneStepper
-                icon="chorus"
-                name={chorusCfg.label}
-                steps={FX_STEPS}
-                activeIndex={currentBundle.chorus.on ? nearestStep(FX_STEPS, 'level', currentBundle.chorus.level) : 0}
-                onPick={(s) => updateChorus({ level: s.level, on: s.on })}
-                typeSelect={(
-                  <span className="piano-sound-panel__tonetype">
-                    <select
-                      value={currentBundle.chorus.type}
-                      onChange={(e) => updateChorus({ type: Number(e.target.value) })}
-                      aria-label={`${chorusCfg.label} type`}
-                    >
-                      {chorusCfg.types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                    </select>
-                  </span>
-                )}
-              />
-            )}
-            <ToneStepper
-              icon="volume"
-              name="Volume"
-              steps={VOL_STEPS}
-              activeIndex={nearestStep(VOL_STEPS, 'value', currentBundle?.volume ?? 1)}
-              onPick={(s) => updateVolume(s.value)}
-            />
-          </div>
-        </section>
-
-        {/* ── Save: snapshot the current bundle onto the active user ── */}
-        {canSave ? (
-          <footer className="piano-sound-panel__foot">
-            <button type="button" className="piano-sound-panel__save" onClick={() => saveDefault(currentBundle)}>
-              Save as my default
-            </button>
-            <button type="button" className="piano-sound-panel__favorite" onClick={() => addFavorite(currentBundle)}>
-              Add to favorites
-            </button>
-          </footer>
-        ) : (
-          <footer className="piano-sound-panel__foot piano-sound-panel__foot--guest">
-            <span className="piano-sound-panel__guest-note">Pick a player to save sounds</span>
-          </footer>
-        )}
-      </aside>
-    </div>
-  );
+    <section><h3>Piano level</h3>
+      <StepChoices label="Piano level" steps={LEVEL_STEPS} activeIndex={levelIndex} currentCopy={`Current: ${Math.round(pianoLevel * 100)}%`} onPick={(step) => setPianoLevel(step.value)} />
+      <p>This piano remembers this level.</p>
+    </section>
+  </PianoSheet>;
 }

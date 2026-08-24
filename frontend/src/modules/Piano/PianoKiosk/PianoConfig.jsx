@@ -9,12 +9,6 @@ const RosterContext = createContext(null);
 const ActivePianoContext = createContext(null);
 
 export const PIANO_CONFIG_DEFAULTS = {
-  voices: [
-    { label: 'Grand Piano', program: 0 },
-    { label: 'Electric Piano', program: 4 },
-    { label: 'Harpsichord', program: 6 },
-  ],
-  instruments: [], // rendered-voice definitions (sfizz/dexed/…); [] = onboard-only
   videos: { plexCollection: null },
   // Playalong menu — a video collection (backing tracks) reusing the Courses flow.
   playalong: { plexCollection: null, plexShow: null },
@@ -35,6 +29,7 @@ export const PIANO_CONFIG_DEFAULTS = {
   lessons: { collection: 'hannon' },
   games: null,
   midi: { preferredInputName: null },
+  effects: { dialect: 'gm2', route: 'pianobridge', transport: 'sysex', resend: 3 },
   // Physical key range of this piano. 88 keys = A0(21)..C8(108); a 61-key board
   // would be 36..96, a 49-key 36..84. MIDI note numbers.
   keyboard: { startNote: 21, endNote: 108 },
@@ -137,8 +132,7 @@ export function resolvePianoConfig(raw, pianoId) {
   return {
     label: p.label || (pianoId === 'default' ? (shared.label || 'Piano') : pianoId),
     device: p.device ?? shared.device ?? null,   // hardware profile id, e.g. 'suzuki-mdg-400'
-    voices: p.voices || shared.voices || PIANO_CONFIG_DEFAULTS.voices,
-    instruments: p.instruments || shared.instruments || PIANO_CONFIG_DEFAULTS.instruments,
+    effects: { ...PIANO_CONFIG_DEFAULTS.effects, ...(shared.effects || {}), ...(p.effects || {}) },
     // Whole videos block (per-piano overrides shared), so collection tabs,
     // sequential_labels, thresholds, etc. all reach the frontend — not just
     // plexCollection. Default floor keeps the { plexCollection } shape.
