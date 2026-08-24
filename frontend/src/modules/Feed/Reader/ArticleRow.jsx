@@ -4,6 +4,8 @@ import { colorFromLabel } from '../Scroll/cards/utils.js';
 import FeedPlayer from '../players/FeedPlayer.jsx';
 import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import AnnotationPanel from '../Annotations/AnnotationPanel.jsx';
+import OfflineEditionButton from '../offline/OfflineEditionButton.jsx';
 
 /**
  * Single article row with collapsed/expanded accordion states.
@@ -11,7 +13,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  * @param {Object} props.article - article object from /reader/stream
  * @param {Function} props.onMarkRead - (articleId) => void
  */
-export default function ArticleRow({ article, onMarkRead }) {
+export default function ArticleRow({ article, isNew = false, onMarkRead, onStateAction }) {
   const [expanded, setExpanded] = useState(false);
   const [fullHeight, setFullHeight] = useState(false);
   const contentRef = useRef(null);
@@ -26,7 +28,7 @@ export default function ArticleRow({ article, onMarkRead }) {
   const handleExpand = () => {
     if (!expanded) {
       setExpanded(true);
-      if (!article.isRead) {
+      if (!(article.state?.isRead ?? article.isRead)) {
         onMarkRead(article.id);
       }
     } else {
@@ -60,12 +62,13 @@ export default function ArticleRow({ article, onMarkRead }) {
   const faviconUrl = article.iconUrl || null;
 
   return (
-    <div className={`article-row ${expanded ? 'expanded' : ''} ${article.isRead ? 'read' : 'unread'}`}>
-      <button className="article-row-header" onClick={handleExpand}>
+    <div className={`article-row ${expanded ? 'expanded' : ''} ${(article.state?.isRead ?? article.isRead) ? 'read' : 'unread'}`}>
+      <button className="article-row-header" onClick={handleExpand} aria-expanded={expanded} aria-controls={`article-${encodeURIComponent(article.id)}`}>
         {faviconUrl && (
           <img className="article-favicon" src={faviconUrl} alt="" width="16" height="16" />
         )}
         <span className="article-title">{article.title}</span>
+        {isNew && <span className="article-new-marker">New</span>}
         {!expanded && article.feedTitle && (
           <span className="article-feed-name">&middot; {article.feedTitle} &middot;</span>
         )}
@@ -84,13 +87,19 @@ export default function ArticleRow({ article, onMarkRead }) {
       </button>
 
       {expanded && (
-        <div className="article-expanded">
+        <div className="article-expanded" id={`article-${encodeURIComponent(article.id)}`}>
           <div className="article-meta">
             {article.feedTitle && <span>{article.feedTitle}</span>}
             {article.author && <span> &middot; {article.author}</span>}
             {article.published && (
               <span> &middot; {new Date(article.published).toLocaleString()}</span>
             )}
+          </div>
+          <div className="article-state-actions">
+            <button type="button" aria-pressed={!!article.state?.isSaved} onClick={() => onStateAction?.(article, article.state?.isSaved ? 'unsave' : 'save')}>{article.state?.isSaved ? 'Saved' : 'Save'}</button>
+            <button type="button" onClick={() => onStateAction?.(article, article.state?.isArchived ? 'unarchive' : 'archive')}>{article.state?.isArchived ? 'Restore' : 'Archive'}</button>
+            <button type="button" onClick={() => onStateAction?.(article, (article.state?.isRead ?? article.isRead) ? 'unread' : 'read')}>{(article.state?.isRead ?? article.isRead) ? 'Mark unread' : 'Mark read'}</button>
+            <OfflineEditionButton item={article} />
           </div>
           {article.contentType === 'youtube' && article.meta?.videoId ? (
             <>
@@ -135,6 +144,7 @@ export default function ArticleRow({ article, onMarkRead }) {
               )}
             </>
           )}
+          <AnnotationPanel item={article} />
         </div>
       )}
     </div>
@@ -146,13 +156,16 @@ function ReaderYouTubePlayer({ article }) {
   const [playerData, setPlayerData] = useState(null);
   const [fetchDone, setFetchDone] = useState(false);
   const [useEmbed, setUseEmbed] = useState(false);
+  const articleRef = useRef(article);
+  articleRef.current = article;
 
   // Notify FeedPlayerContext when native playback resolves (preemption system)
   useEffect(() => {
     if (playerData) {
-      play({ ...article, id: `youtube:${article.meta.videoId}` });
+      const current = articleRef.current;
+      play({ ...current, id: `youtube:${current.meta.videoId}` });
     }
-  }, [playerData]);  // Only when playerData changes from null to resolved
+  }, [play, playerData]);
 
   // Fetch detail from API to get Piped stream URL
   useEffect(() => {

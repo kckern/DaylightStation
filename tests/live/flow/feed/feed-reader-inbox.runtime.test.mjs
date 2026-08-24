@@ -136,7 +136,7 @@ test.describe('Feed Reader – inbox UI', () => {
 
     // Intercept the mark-read API call
     const markReadPromise = page.waitForRequest(
-      req => req.url().includes('/reader/items/mark') && req.method() === 'POST',
+      req => req.url().includes('/items/state') && req.method() === 'PATCH',
       { timeout: 5000 }
     );
 

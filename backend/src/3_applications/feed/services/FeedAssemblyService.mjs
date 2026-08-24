@@ -13,7 +13,6 @@
 
 import { ScrollConfigLoader } from './ScrollConfigLoader.mjs';
 import { FeedFilterResolver } from './FeedFilterResolver.mjs';
-import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FeedAssemblyService {
   #feedPoolManager;
@@ -89,6 +88,31 @@ export class FeedAssemblyService {
     }
   }
 
+  hasSession(username, sessionId) {
+    return this.#feedPoolManager.hasSession(username, sessionId);
+  }
+
+  snapshotSession(username, sessionId) {
+    return this.#feedPoolManager.snapshot(username, sessionId);
+  }
+
+  restoreSession(username, sessionId, snapshot) {
+    return this.#feedPoolManager.restore(username, sessionId, snapshot);
+  }
+
+  getSessionItems(username, sessionId) {
+    return this.#feedPoolManager.getSessionItems(username, sessionId);
+  }
+
+  sessionHasMore(username, sessionId) {
+    return this.#feedPoolManager.hasMore(username, sessionId);
+  }
+
+  getSessionMetadata(username, sessionId) {
+    const config = this.#feedPoolManager.getSessionConfig(username, sessionId);
+    return { colors: config ? ScrollConfigLoader.extractColors(config) : {} };
+  }
+
   /**
    * Get next batch of mixed feed items.
    *
@@ -100,7 +124,7 @@ export class FeedAssemblyService {
    * @param {string[]} [options.sources] - Filter to specific source types (e.g. ['komga','reddit'])
    * @returns {Promise<{ items: FeedItem[], hasMore: boolean }>}
    */
-  async getNextBatch(username, { limit, cursor, focus, sources, nocache, filter } = {}) {
+  async getNextBatch(username, { limit, cursor, focus, sources, nocache, filter, sourcePreferences = {}, sessionId = null } = {}) {
     const scrollConfig = this.#scrollConfigLoader?.load(username)
       || { batch_size: 15, spacing: { max_consecutive: 1 }, tiers: {} };
 
@@ -110,26 +134,27 @@ export class FeedAssemblyService {
     if (filter && this.#feedFilterResolver) {
       const resolved = this.#feedFilterResolver.resolve(filter);
       if (resolved) {
-        return this.#getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor);
+        return this.#getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor, sessionId);
       }
     }
 
     // Fresh load: reset pool manager
     if (!cursor) {
-      this.#feedPoolManager.reset(username);
+      this.#feedPoolManager.reset(username, sessionId);
     }
 
     // Get available items from pool
-    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig);
+    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig, { sessionId });
 
     // Post-process: content-type enrichment
     if (this.#contentPluginRegistry) {
       this.#contentPluginRegistry.enrich(freshPool);
     }
+    const availablePool = freshPool.filter(item => sourcePreferences[item.source] !== 'mute');
 
     // Source filter: bypass tier assembly
     if (sources && sources.length > 0) {
-      let filtered = freshPool
+      let filtered = availablePool
         .filter(item => sources.includes(item.source) && !item._seen)
         .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       if (this.#spacingEnforcer) {
@@ -137,10 +162,11 @@ export class FeedAssemblyService {
       }
       const batch = filtered.slice(0, effectiveLimit);
       for (const item of batch) this.#cacheItem(item);
-      this.#feedPoolManager.markSeen(username, batch.map(i => i.id));
+      this.#feedPoolManager.markSeen(username, batch.map(i => i.id), sessionId);
       return {
         items: batch,
-        hasMore: this.#feedPoolManager.hasMore(username),
+        hasMore: this.#feedPoolManager.hasMore(username, sessionId),
+        caughtUp: !this.#feedPoolManager.hasMore(username, sessionId),
         colors: ScrollConfigLoader.extractColors(scrollConfig),
       };
     }
@@ -151,9 +177,9 @@ export class FeedAssemblyService {
       : null;
 
     // Primary pass: tier assembly (with wire decay based on batch number)
-    const batchNumber = this.#feedPoolManager.getBatchNumber(username);
+    const batchNumber = this.#feedPoolManager.getBatchNumber(username, sessionId);
     const { items: primary, feed_assembly } = this.#tierAssemblyService.assemble(
-      freshPool, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber }
+      availablePool, scrollConfig, { effectiveLimit, focus, selectionCounts, sourcePreferences, batchNumber }
     );
 
     let batch = primary.slice(0, effectiveLimit);
@@ -163,7 +189,7 @@ export class FeedAssemblyService {
       const paddingSources = ScrollConfigLoader.getPaddingSources(scrollConfig);
       if (paddingSources.size > 0) {
         const batchIds = new Set(batch.map(i => i.id));
-        const padding = freshPool.filter(i => paddingSources.has(i.source) && !batchIds.has(i.id));
+        const padding = availablePool.filter(i => paddingSources.has(i.source) && !batchIds.has(i.id));
         // Shuffle padding
         for (let i = padding.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -175,12 +201,9 @@ export class FeedAssemblyService {
 
     // A short batch is valid — do not synthesize duplicate items to fill it (F-05).
 
-    // Guardrail: probe dimensions for any items with images but no dims
-    await FeedAssemblyService.#probeMissingDimensions(batch);
-
     // Mark seen + cache
     const batchIds = batch.map(i => i.id);
-    this.#feedPoolManager.markSeen(username, batchIds);
+    this.#feedPoolManager.markSeen(username, batchIds, sessionId);
     for (const item of batch) this.#cacheItem(item);
 
     // Increment selection tracking for headline items
@@ -195,9 +218,11 @@ export class FeedAssemblyService {
 
     this.#logger.info?.('feed.assembly.batch', feed_assembly);
 
+    const hasMore = this.#feedPoolManager.hasMore(username, sessionId);
     return {
       items: batch,
-      hasMore: this.#feedPoolManager.hasMore(username),
+      hasMore,
+      caughtUp: !hasMore,
       colors: ScrollConfigLoader.extractColors(scrollConfig),
       feed_assembly,
     };
@@ -274,12 +299,12 @@ export class FeedAssemblyService {
    * Return a filtered batch — bypasses tier assembly.
    * Items are sorted by timestamp (newest first).
    */
-  async #getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor) {
+  async #getFilteredBatch(username, resolved, scrollConfig, effectiveLimit, cursor, sessionId = null) {
     if (!cursor) {
-      this.#feedPoolManager.reset(username);
+      this.#feedPoolManager.reset(username, sessionId);
     }
 
-    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig, { stripLimits: true });
+    const freshPool = await this.#feedPoolManager.getPool(username, scrollConfig, { stripLimits: true, sessionId });
 
     let filtered;
     switch (resolved.type) {
@@ -315,30 +340,14 @@ export class FeedAssemblyService {
     const batch = filtered.slice(0, effectiveLimit);
 
     for (const item of batch) this.#cacheItem(item);
-    this.#feedPoolManager.markSeen(username, batch.map(i => i.id));
+    this.#feedPoolManager.markSeen(username, batch.map(i => i.id), sessionId);
 
     return {
       items: batch,
-      hasMore: this.#feedPoolManager.hasMore(username),
+      hasMore: this.#feedPoolManager.hasMore(username, sessionId),
+      caughtUp: !this.#feedPoolManager.hasMore(username, sessionId),
       colors: ScrollConfigLoader.extractColors(scrollConfig),
     };
-  }
-
-  /**
-   * Guardrail: probe image dimensions for batch items that have an image URL
-   * but are missing meta.imageWidth / meta.imageHeight.
-   * Runs concurrently with a 3s timeout per probe (default in probeImageDimensions).
-   */
-  static async #probeMissingDimensions(items) {
-    await Promise.all(items.map(async item => {
-      if (!item.image || (item.meta?.imageWidth && item.meta?.imageHeight)) return;
-      const dims = await probeImageDimensions(item.image);
-      if (dims) {
-        if (!item.meta) item.meta = {};
-        item.meta.imageWidth = dims.width;
-        item.meta.imageHeight = dims.height;
-      }
-    }));
   }
 
   #cacheItem(item) {

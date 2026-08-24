@@ -572,32 +572,26 @@ sources:
 
 ### Scroll Request
 
-`Scroll.jsx` calls `GET /api/v1/feed/scroll` with optional query parameters:
+`Scroll.jsx` creates a durable feed session with `POST /api/v1/feed/scroll/sessions`, continues it through `GET /api/v1/feed/scroll/sessions/:id`, and resumes previously served items through the same endpoint with `?resume=1`. The legacy `GET /api/v1/feed/scroll` route remains compatible. Session creation accepts these controls:
 
 | Param | Type | Description |
 |-------|------|-------------|
 | `limit` | number | Override batch size |
-| `cursor` | string | Pagination cursor (item ID of last loaded item) |
 | `focus` | string | Focus on a source key, e.g., `reddit:science` |
-| `source` | string | Comma-separated source filter, e.g., `komga,reddit` — bypasses tier assembly |
+| `sources` | string[] | Source filters, e.g., `["komga", "reddit"]` — bypass tier assembly |
 | `filter` | string | Compound ID expression resolved by `FeedFilterResolver` — see Filter Mode below |
+
+The API also receives the user's account-scoped source preference map internally. Normal assembly excludes `mute` sources and stably prioritizes `more` over normal over `less`. An explicit `filter` remains an intentional override.
 
 ### API Router
 
 ```javascript
 // backend/src/4_api/v1/routers/feed.mjs
-router.get('/scroll', asyncHandler(async (req, res) => {
-  const { cursor, limit, focus, source, filter } = req.query;
-  const result = await feedAssemblyService.getNextBatch(username, {
-    limit: limit ? Number(limit) : undefined,
-    cursor,
-    focus: focus || null,
-    sources: source ? source.split(',').map(s => s.trim()) : null,
-    filter: filter || null,
-  });
-  res.json(result);
-}));
+router.post('/scroll/sessions', createSessionAndFirstBatch);
+router.get('/scroll/sessions/:sessionId', continueOrResumeSession);
 ```
+
+The client stores one session ID per active filter identity in browser `sessionStorage`. This isolates tabs, preserves reload continuity, and prevents one view from resetting another view's source cursors.
 
 ### Response Shape
 
@@ -621,7 +615,8 @@ router.get('/scroll', asyncHandler(async (req, res) => {
       }
     }
   ],
-  "hasMore": true
+  "hasMore": true,
+  "caughtUp": false
 }
 ```
 
@@ -656,8 +651,8 @@ Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content syst
 | File | Purpose |
 |------|---------|
 | `backend/src/app.mjs` | Bootstrap: loads YAML, creates adapters, wires FeedPoolManager + FeedAssemblyService |
-| `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: paginated fetching, age filtering, refill, recycling |
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → cycling → caching |
+| `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Session pool management: paginated fetching, age filtering, proactive refill, snapshots, and exhaustion |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → source preferences → filter/tier assembly → padding → history/cache |
 | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier assembly: flex allocation, selection, shortfall redistribution, interleaving |
 | `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution algorithm |
 | `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization and legacy migration |
@@ -667,5 +662,5 @@ Files like `dailynews.yml` (`type: freshvideo`) are consumed by the content syst
 | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | Per-user scroll config loading, merging with defaults, age threshold resolution |
 | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `sourceType`, `fetchPage()`, `getDetail()` |
 | `backend/src/1_adapters/feed/sources/*.mjs` | 14 source adapter implementations |
-| `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll`, `/detail`, `/scroll/item/:slug` |
-| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | React scroll component: infinite scroll, masonry, detail navigation |
+| `backend/src/4_api/v1/routers/feed.mjs` | Express router: session scroll, detail/history lookup, search, item state, workspace, annotations, and portable data |
+| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | React scroll component: finite-session loading, bounded card rendering, masonry, and detail navigation |

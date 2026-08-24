@@ -193,6 +193,112 @@ describe('Feed Router', () => {
     });
   });
 
+  describe('unified state, search, and scroll sessions', () => {
+    let featureApp;
+    let feedStateService;
+    let feedAssemblyService;
+
+    beforeEach(() => {
+      feedStateService = {
+        enrich: vi.fn((_username, items) => items),
+        mutate: vi.fn().mockResolvedValue([{ id: 'one', state: { isSaved: true } }]),
+        summary: vi.fn().mockReturnValue({ unread: 4, saved: 1, archived: 0, pendingSync: 0 }),
+        retryPending: vi.fn().mockResolvedValue(undefined),
+        ensureHistoryBackfill: vi.fn(),
+        historyBackfillStatus: vi.fn().mockReturnValue({ status: 'complete', indexed: 40 }),
+        search: vi.fn().mockReturnValue({ items: [{ id: 'one' }], total: 1, nextOffset: null }),
+        getWorkspace: vi.fn().mockReturnValue({ preferences: { theme: 'dark' }, checkpoints: {} }),
+        updatePreferences: vi.fn().mockResolvedValue({ theme: 'sepia' }),
+        recordCheckpoint: vi.fn().mockResolvedValue({ itemId: 'one', scrollOffset: 42, visitedAt: '2026-08-24T12:00:00.000Z' }),
+        listAnnotations: vi.fn().mockReturnValue([{ id: 'note-1', itemId: 'one', note: 'Important' }]),
+        createAnnotation: vi.fn().mockResolvedValue({ id: 'note-1', itemId: 'one', note: 'Important' }),
+        updateAnnotation: vi.fn().mockResolvedValue({ id: 'note-1', itemId: 'one', note: 'Revised' }),
+        deleteAnnotation: vi.fn().mockResolvedValue(true),
+        exportData: vi.fn().mockReturnValue({ format: 'daylight.feed-export/v1', states: [] }),
+        importData: vi.fn().mockResolvedValue({ states: 1, annotations: 0, items: 1 }),
+        getSourcePreferences: vi.fn().mockReturnValue({ reddit: 'less' }),
+        updateSourcePreference: vi.fn().mockResolvedValue({ reddit: 'more' }),
+      };
+      feedAssemblyService = {
+        getNextBatch: vi.fn().mockResolvedValue({ items: [{ id: 'one' }], hasMore: true, caughtUp: false }),
+        snapshotSession: vi.fn().mockReturnValue({ pool: [{ id: 'one' }], seenItems: [{ id: 'one' }] }),
+        restoreSession: vi.fn().mockReturnValue(true),
+        getSessionItems: vi.fn().mockReturnValue([{ id: 'one' }]),
+        sessionHasMore: vi.fn().mockReturnValue(true),
+        getSessionMetadata: vi.fn().mockReturnValue({ colors: { wire: '#fff' } }),
+      };
+      featureApp = express();
+      featureApp.use(express.json());
+      featureApp.use('/api/v1/feed', createFeedRouter({
+        freshRSSAdapter: mockFreshRSSAdapter,
+        headlineService: mockHeadlineService,
+        feedAssemblyService,
+        feedStateService,
+        configService: mockConfigService,
+      }));
+    });
+
+    test('mutates and summarizes unified item state', async () => {
+      const mutation = await request(featureApp).patch('/api/v1/feed/items/state').send({ itemIds: ['one'], action: 'save' });
+      const summary = await request(featureApp).get('/api/v1/feed/items/state/summary');
+      expect(mutation.status).toBe(200);
+      expect(summary.body).toMatchObject({ unread: 4, saved: 1 });
+    });
+
+    test('passes indexed search filters and reports coverage', async () => {
+      const res = await request(featureApp).get('/api/v1/feed/search?q=storm&mode=headlines&source=Wire&from=2026-01-01');
+      expect(res.status).toBe(200);
+      expect(feedStateService.search).toHaveBeenCalledWith('user_1', expect.objectContaining({ query: 'storm', mode: 'headlines', source: 'Wire', from: '2026-01-01' }));
+      expect(res.body.coverage.status).toBe('complete');
+    });
+
+    test('creates and resumes a scroll session with served items', async () => {
+      const created = await request(featureApp).post('/api/v1/feed/scroll/sessions').send({ filter: 'wire' });
+      const resumed = await request(featureApp).get(`/api/v1/feed/scroll/sessions/${created.body.sessionId}?resume=1`);
+      expect(created.status).toBe(201);
+      expect(resumed.status).toBe(200);
+      expect(resumed.body).toMatchObject({ resumed: true, hasMore: true, items: [{ id: 'one' }] });
+    });
+
+    test('loads and updates account-scoped workspace settings and checkpoints', async () => {
+      const workspace = await request(featureApp).get('/api/v1/feed/workspace');
+      const preferences = await request(featureApp).patch('/api/v1/feed/workspace/preferences').send({ theme: 'sepia' });
+      const checkpoint = await request(featureApp).put('/api/v1/feed/workspace/checkpoints/reader').send({ itemId: 'one', scrollOffset: 42 });
+
+      expect(workspace.body).toMatchObject({ preferences: { theme: 'dark' } });
+      expect(preferences.body).toEqual({ preferences: { theme: 'sepia' } });
+      expect(checkpoint.body.checkpoint).toMatchObject({ itemId: 'one', scrollOffset: 42 });
+      expect(feedStateService.recordCheckpoint).toHaveBeenCalledWith('user_1', 'reader', { itemId: 'one', scrollOffset: 42 });
+
+      const source = await request(featureApp).put('/api/v1/feed/workspace/sources/reddit').send({ level: 'more' });
+      expect(source.body).toEqual({ sourcePreferences: { reddit: 'more' } });
+      expect(feedStateService.updateSourcePreference).toHaveBeenCalledWith('user_1', 'reddit', 'more');
+    });
+
+    test('provides annotation CRUD with validation and not-found semantics', async () => {
+      const created = await request(featureApp).post('/api/v1/feed/annotations').send({ itemId: 'one', note: 'Important' });
+      const listed = await request(featureApp).get('/api/v1/feed/annotations?itemId=one');
+      const updated = await request(featureApp).patch('/api/v1/feed/annotations/note-1').send({ note: 'Revised' });
+      const removed = await request(featureApp).delete('/api/v1/feed/annotations/note-1');
+
+      expect(created.status).toBe(201);
+      expect(listed.body.annotations).toHaveLength(1);
+      expect(updated.body.annotation.note).toBe('Revised');
+      expect(removed.body).toEqual({ removed: true });
+      expect((await request(featureApp).post('/api/v1/feed/annotations').send({ note: 'Missing item' })).status).toBe(400);
+    });
+
+    test('exports and imports the portable feed format', async () => {
+      const exported = await request(featureApp).get('/api/v1/feed/data/export');
+      const imported = await request(featureApp).post('/api/v1/feed/data/import').send({ format: 'daylight.feed-export/v1' });
+
+      expect(exported.status).toBe(200);
+      expect(exported.headers['content-disposition']).toContain('daylight-feed-');
+      expect(imported.body).toEqual({ imported: { states: 1, annotations: 0, items: 1 } });
+      expect(feedStateService.importData).toHaveBeenCalledWith('user_1', { format: 'daylight.feed-export/v1' });
+    });
+  });
+
   // Content plugin enrichment
   describe('Content plugin enrichment on /reader/stream', () => {
     test('enriches YouTube URLs from FreshRSS with contentType and videoId', async () => {

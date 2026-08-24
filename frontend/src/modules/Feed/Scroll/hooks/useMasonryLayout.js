@@ -43,14 +43,14 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
         // Ignore sub-pixel rendering noise
         if (old != null && Math.abs(old - h) <= HEIGHT_TOLERANCE) return;
 
-        log.info('masonry.measure', { id: id.slice(0, 25), h, prev: old || 0, w: node.offsetWidth });
+        log.debug('masonry.measure', { id: id.slice(0, 25), h, prev: old || 0, w: node.offsetWidth });
         heightMapRef.current.set(id, h);
 
         // If already placed and height changed, defer full relayout
         // DON'T clear posMap here — items stay at current positions to avoid
         // the offscreen→remeasure feedback loop
         if (posMapRef.current.has(id)) {
-          log.warn('masonry.remeasure', { id: id.slice(0, 25), oldH: old, newH: h });
+          log.debug('masonry.remeasure', { id: id.slice(0, 25), oldH: old, newH: h });
           dirtyRef.current = true;
         }
 
@@ -70,17 +70,20 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
 
   // Clear callback cache when isDesktop changes
   useEffect(() => {
+    const callbacks = callbacksRef.current;
     return () => {
-      callbacksRef.current.clear();
+      callbacks.clear();
     };
   }, [isDesktop]);
 
   // Cleanup all card observers on unmount
   useEffect(() => {
+    const observers = cardObserversRef.current;
+    const callbacks = callbacksRef.current;
     return () => {
-      for (const ro of cardObserversRef.current.values()) ro.disconnect();
-      cardObserversRef.current.clear();
-      callbacksRef.current.clear();
+      for (const ro of observers.values()) ro.disconnect();
+      observers.clear();
+      callbacks.clear();
     };
   }, []);
 
@@ -108,7 +111,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     let didFullRecalc = false;
     if (itemsChanged || colCountChanged) {
       // Hard reset — items changed or column count changed: re-measure everything
-      log.info('masonry.reset', { reason: itemsChanged ? 'items' : 'colCount', numCols, cw, items: currIds.length });
+      log.debug('masonry.reset', { reason: itemsChanged ? 'items' : 'colCount', numCols, cw, items: currIds.length });
       posMapRef.current.clear();
       lastPosRef.current.clear();
       heightMapRef.current.clear();
@@ -116,7 +119,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
       dirtyRef.current = false;
     } else if (widthChanged || dirtyRef.current) {
       // Soft reset — width changed (e.g. scrollbar) or height changed: reposition only, keep heights
-      if (widthChanged) log.info('masonry.reposition', { reason: 'width', cw, prev: prevWidthRef.current, numCols });
+      if (widthChanged) log.debug('masonry.reposition', { reason: 'width', cw, prev: prevWidthRef.current, numCols });
       for (const [id, pos] of posMapRef.current) lastPosRef.current.set(id, pos);
       posMapRef.current.clear();
       colHeightsRef.current = new Array(numCols).fill(0);
@@ -177,7 +180,7 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     }
 
     if (placed > 0 || skipped > 0) {
-      log.info('masonry.layout', {
+      log.debug('masonry.layout', {
         pass: layoutPass, placed, skipped, total: items.length,
         positioned: posMapRef.current.size, numCols,
         colW: Math.round(actualColW),
@@ -251,5 +254,11 @@ export function useMasonryLayout(containerRef, items, isDesktop) {
     };
   }, [isDesktop]);
 
-  return { containerStyle, getItemStyle, measureRef };
+  const getItemMetrics = useCallback((id) => {
+    const position = posMapRef.current.get(id);
+    if (!position) return null;
+    return { ...position, height: heightMapRef.current.get(id) || 0 };
+  }, []);
+
+  return { containerStyle, getItemStyle, getItemMetrics, measureRef };
 }

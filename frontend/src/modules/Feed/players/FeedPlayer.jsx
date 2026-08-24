@@ -81,7 +81,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
       url: playerData.url || null,
     });
     return () => log().info('feedPlayer.unmount');
-  }, []);
+  }, [isSplit, playerData.audioUrl, playerData.provider, playerData.url, playerData.videoUrl]);
 
   // Read playback preferences from context
   const {
@@ -169,13 +169,6 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     v.currentTime = t;
     if (audioRef.current) audioRef.current.currentTime = t;
   }, []);
-
-  const handleProgressClick = useCallback((e) => {
-    if (!duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    seek(Math.max(0, Math.min(duration, pct * duration)));
-  }, [duration, seek]);
 
   const handlePlay = useCallback(() => { log().info('feedPlayer.play', { mode: isSplit ? 'split' : 'combined', provider: playerData.provider }); setPlaying(true); }, [isSplit, playerData.provider]);
   const handlePause = useCallback(() => { log().info('feedPlayer.pause', { mode: isSplit ? 'split' : 'combined', currentTime: videoRef.current?.currentTime, duration: videoRef.current?.duration }); setPlaying(false); }, [isSplit]);
@@ -283,11 +276,20 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
         onClick={(e) => e.stopPropagation()}
       >
         {/* Progress bar */}
-        <div
-          style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px', cursor: 'pointer', marginBottom: '4px' }}
-          onClick={handleProgressClick}
-        >
-          <div ref={progressRef} style={{ height: '100%', background: '#fff', borderRadius: '2px', width: '0%' }} />
+        <div style={{ position: 'relative', width: '100%', height: '20px', cursor: 'pointer', marginBottom: '2px' }}>
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '8px', height: '4px', background: 'rgba(255,255,255,0.3)', borderRadius: '2px' }}>
+            <div ref={progressRef} style={{ height: '100%', background: '#fff', borderRadius: '2px', width: '0%' }} />
+          </div>
+          <input
+            type="range"
+            min="0"
+            max={duration || 0}
+            step="1"
+            value={Math.min(currentTime || 0, duration || 0)}
+            onChange={event => seek(Number(event.target.value))}
+            aria-label="Playback position"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '20px', margin: 0, opacity: 0, cursor: 'pointer' }}
+          />
         </div>
 
         {/* Play/Pause */}

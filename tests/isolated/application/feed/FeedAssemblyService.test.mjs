@@ -160,6 +160,22 @@ describe('FeedAssemblyService scroll config integration', () => {
     );
   });
 
+  test('removes muted sources before tier assembly and forwards ranking preferences', async () => {
+    const adapter = {
+      sourceType: 'reddit',
+      fetchItems: vi.fn().mockResolvedValue([makeExternalItem('reddit', 'r1'), makeExternalItem('headlines', 'h1')]),
+    };
+    const service = createService([{ type: 'reddit', feed_type: 'external', _filename: 'reddit.yml' }], [adapter]);
+
+    await service.getNextBatch('user_1', { sourcePreferences: { reddit: 'mute', headlines: 'more' } });
+
+    expect(mockTierAssemblyService.assemble).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: 'h1' })],
+      expect.any(Object),
+      expect.objectContaining({ sourcePreferences: { reddit: 'mute', headlines: 'more' } }),
+    );
+  });
+
   test('uses batch_size from scroll config as default limit', async () => {
     mockScrollConfigLoader.load.mockReturnValue({
       ...defaultScrollConfig,

@@ -42,6 +42,16 @@ describe('TierAssemblyService', () => {
     expect(result.items.length).toBe(1);
   });
 
+  test('orders more and less preferred sources without disturbing their internal order', () => {
+    const items = [
+      makeItem('less-new', 'wire', 'reddit', '2026-02-17T12:00:00Z'),
+      makeItem('normal', 'wire', 'headlines', '2026-02-17T11:00:00Z'),
+      makeItem('more-old', 'wire', 'freshrss', '2026-02-17T10:00:00Z'),
+    ];
+    const result = service.assemble(items, defaultConfig, { effectiveLimit: 50, sourcePreferences: { reddit: 'less', freshrss: 'more' } });
+    expect(result.items.filter(item => item.tier === 'wire').map(item => item.id)).toEqual(['more-old', 'normal', 'less-new']);
+  });
+
   describe('selectionCounts sort bias', () => {
     test('prefers lower selection count within same hour', () => {
       const selectionCounts = new Map([

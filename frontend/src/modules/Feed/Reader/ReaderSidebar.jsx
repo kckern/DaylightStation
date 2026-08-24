@@ -75,14 +75,19 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onTogg
       {grouped.map(([category, catFeeds]) => (
         <div key={category} className="reader-category">
           <div className={`reader-category-header ${isCategoryActive(catFeeds) ? 'active' : ''}`}>
-            <span
+            <button
+              type="button"
               className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}
               onClick={() => toggleCollapse(category, catFeeds)}
-            >&#9662;</span>
-            <span
+              aria-expanded={!collapsed[category]}
+              aria-label={`${collapsed[category] ? 'Expand' : 'Collapse'} ${category}`}
+            >&#9662;</button>
+            <button
+              type="button"
               className="reader-category-label"
               onClick={(e) => handleCategoryClick(catFeeds, e)}
-            >{category}</span>
+              aria-pressed={isCategoryActive(catFeeds)}
+            >{category}</button>
           </div>
           {!collapsed[category] && catFeeds.map(feed => (
             <button

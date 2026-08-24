@@ -18,7 +18,6 @@
  */
 
 import { IFeedSourceAdapter, CONTENT_TYPES } from '#apps/feed/ports/IFeedSourceAdapter.mjs';
-import { probeImageDimensions } from '#system/utils/probeImageDimensions.mjs';
 
 export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   #freshRSSAdapter;
@@ -39,6 +38,11 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   get sourceType() { return 'freshrss'; }
   get provides() { return [CONTENT_TYPES.FEEDS]; }
   get supportsMarkRead() { return true; }
+
+  async getHistoryPage(username, options = {}) {
+    if (!this.#freshRSSAdapter) return { items: [], continuation: null };
+    return this.#freshRSSAdapter.getItems('user/-/state/com.google/reading-list', username, options);
+  }
 
   #getReaderConfig() {
     if (!this.#configService) {
@@ -83,7 +87,6 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     // If unread fills the limit, skip pass 2
     if (unreadItems.length >= totalLimit) {
       const page = unreadItems.slice(0, totalLimit);
-      await this.#probeDimensions(page);
       return { items: page, cursor: continuation || null };
     }
 
@@ -108,7 +111,6 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     }
 
     const merged = [...unreadItems, ...readItems].slice(0, totalLimit);
-    await this.#probeDimensions(merged);
     return { items: merged, cursor: continuation || null };
   }
 
@@ -143,6 +145,7 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
       link: item.link,
       timestamp: item.published?.toISOString?.() || item.published || new Date().toISOString(),
       priority: query.priority || 0,
+      isRead,
       meta: {
         feedTitle: item.feedTitle,
         author: item.author,
@@ -154,20 +157,6 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
   }
 
   /**
-   * Probe dimensions for items that have images but no dims.
-   */
-  async #probeDimensions(items) {
-    await Promise.all(items.map(async item => {
-      if (!item.image || item.meta?.imageWidth) return;
-      const dims = await probeImageDimensions(item.image);
-      if (dims) {
-        item.meta.imageWidth = dims.width;
-        item.meta.imageHeight = dims.height;
-      }
-    }));
-  }
-
-  /**
    * Mark items as read via FreshRSS GReader API.
    * @param {string[]} feedItemIds - Prefixed IDs ("freshrss:xxx") or raw IDs
    * @param {string} username
@@ -176,6 +165,12 @@ export class FreshRSSSourceAdapter extends IFeedSourceAdapter {
     if (!this.#freshRSSAdapter) return;
     const stripped = feedItemIds.map(id => id.startsWith('freshrss:') ? id.slice('freshrss:'.length) : id);
     await this.#freshRSSAdapter.markRead(stripped, username);
+  }
+
+  async markUnread(feedItemIds, username) {
+    if (!this.#freshRSSAdapter) return;
+    const stripped = feedItemIds.map(id => id.startsWith('freshrss:') ? id.slice('freshrss:'.length) : id);
+    await this.#freshRSSAdapter.markUnread(stripped, username);
   }
 
   #extractImage(html) {

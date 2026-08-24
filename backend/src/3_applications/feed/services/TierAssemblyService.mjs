@@ -65,7 +65,7 @@ export class TierAssemblyService {
    * @param {string} [options.focus] - Focus source key (wire-only filtering)
    * @returns {{ items: Object[], hasMore: boolean }}
    */
-  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, batchNumber = 1 } = {}) {
+  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, sourcePreferences = {}, batchNumber = 1 } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
     const halfLife = scrollConfig.wire_decay_half_life ?? 4;
 
@@ -84,13 +84,13 @@ export class TierAssemblyService {
       const candidates = buckets[tier] || [];
       const config = tierConfig[tier] || TIER_DEFAULTS[tier];
       const slots = tierSlots.get(tier);
-      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots: slots });
+      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences, tierSlots: slots });
     }
 
     // Post-selection redistribution: if a tier selected fewer items than
     // allocated (pool exhausted after dedup/filters), give the shortfall
     // to non-wire tiers that have spare capacity, then re-select.
-    tierSlots = this.#redistributeShortfall(tierSlots, selected, buckets, tierConfig, { focus, selectionCounts });
+    tierSlots = this.#redistributeShortfall(tierSlots, selected, buckets, tierConfig, { focus, selectionCounts, sourcePreferences });
 
     // Cross-tier interleave
     const interleaved = this.#interleave(selected, tierConfig, effectiveLimit);
@@ -315,7 +315,7 @@ export class TierAssemblyService {
    * @param {number} [options.tierSlots] - Flex-allocated slot count for this tier
    * @returns {Object[]} Selected items for this tier
    */
-  #selectForTier(tier, candidates, config, { focus, selectionCounts, tierSlots } = {}) {
+  #selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences = {}, tierSlots } = {}) {
     if (!candidates.length) return [];
 
     let items = [...candidates];
@@ -328,6 +328,10 @@ export class TierAssemblyService {
     // Apply tier selection strategy
     items = this.#applyTierFilters(items, config.selection);
     items = this.#applyTierSort(items, config.selection, selectionCounts);
+    items = items
+      .map((item, index) => ({ item, index, rank: sourcePreferences[item.source] === 'more' ? 1 : sourcePreferences[item.source] === 'less' ? -1 : 0 }))
+      .sort((a, b) => b.rank - a.rank || a.index - b.index)
+      .map(entry => entry.item);
 
     // Partition into primary and filler sources, select primary first
     const fillerSources = this.#getFillerSources(config.sources);

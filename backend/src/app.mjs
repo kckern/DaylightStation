@@ -1608,11 +1608,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       contentPluginRegistry,
       logger: rootLogger.child({ module: 'feed-assembly' }),
     });
+    const { YamlFeedItemStateStore } = await import('./1_adapters/persistence/yaml/YamlFeedItemStateStore.mjs');
+    const { JsonlFeedHistoryStore } = await import('./1_adapters/persistence/feed/JsonlFeedHistoryStore.mjs');
+    const { YamlFeedSessionStore } = await import('./1_adapters/persistence/yaml/YamlFeedSessionStore.mjs');
+    const { FeedStateService } = await import('./3_applications/feed/services/FeedStateService.mjs');
+    const feedItemStateStore = new YamlFeedItemStateStore({
+      dataService,
+      logger: rootLogger.child({ module: 'feed-item-state-store' }),
+    });
+    const feedHistoryStore = new JsonlFeedHistoryStore({
+      dataService,
+      logger: rootLogger.child({ module: 'feed-history-store' }),
+    });
+    const feedSessionStore = new YamlFeedSessionStore({ dataService });
+    const feedStateService = new FeedStateService({
+      store: feedItemStateStore,
+      historyStore: feedHistoryStore,
+      sourceAdapters: feedSourceAdapters,
+      legacyDismissedStore: dismissedItemsStore,
+      logger: rootLogger.child({ module: 'feed-state' }),
+    });
     v1Routers.feed = createFeedRouter({
       freshRSSAdapter: feedServices.freshRSSAdapter,
       headlineService: feedServices.headlineService,
       feedAssemblyService,
       feedContentService,
+      feedStateService,
+      feedSessionStore,
       dismissedItemsStore,
       sourceAdapters: feedSourceAdapters,
       contentPluginRegistry,

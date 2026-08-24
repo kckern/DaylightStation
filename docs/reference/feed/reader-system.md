@@ -1,6 +1,6 @@
 # Reader System
 
-The Reader is a 2-column Google Reader-style inbox for browsing FreshRSS feed subscriptions. It provides category/feed filtering, adaptive time grouping, infinite scroll pagination, and mark-as-read — backed by the FreshRSS Google Reader (GReader) API.
+The Reader is a 2-column Google Reader-style inbox for browsing FreshRSS feed subscriptions. It provides category/feed filtering, adaptive time grouping, progressive pagination, mark-as-read, saved/archive views, and downloaded offline editions — backed by the FreshRSS Google Reader (GReader) API plus the unified feed workspace.
 
 ---
 
@@ -113,7 +113,7 @@ The unfiltered stream fetches 200 items from the reading-list, then trims to the
 3. Stop at the first item from a new day beyond the limit
 4. If trimmed: generate synthetic continuation from oldest included item, set `exhausted = false`
 
-This means the initial load shows a manageable window (e.g., 3 days) while infinite scroll loads deeper pages.
+This means the initial load shows a manageable window (e.g., 3 days) while progressive pagination loads deeper pages.
 
 ---
 
@@ -127,7 +127,8 @@ This means the initial load shows a manageable window (e.g., 3 days) while infin
 | `articles` | Array | Current article list (appended on scroll) |
 | `continuation` | string/null | Next-page cursor |
 | `exhausted` | boolean | True when no more content exists |
-| `activeFeeds` | Set | Feed IDs currently filtered (empty = show all) |
+| `activeFeeds` | Set | Feed IDs decoded from the shareable `?feeds=` URL parameter |
+| `activeView` | string | `all`, `unread`, `saved`, `archived`, or device-local `offline` from `?view=` |
 | `collapsedGroups` | Set | Group keys that are collapsed |
 | `drawerOpen` | boolean | Mobile sidebar drawer visibility |
 | `loading` / `loadingMore` | boolean | Loading states for initial/append |
@@ -140,11 +141,15 @@ This means the initial load shows a manageable window (e.g., 3 days) while infin
 - **Filtered** (`activeFeeds` has entries): `?count=50&feeds=id1,id2,...`
 - **Pagination**: passes `?continuation=...` when appending
 
-Changing `activeFeeds` triggers a fresh fetch (via `useCallback` dependency → `useEffect`).
+Changing `activeFeeds` aborts the obsolete request and starts a fresh fetch. Reader keeps independent subscription-list and inbox errors so partial failures do not blank useful content.
 
 ### Infinite Scroll
 
 An `IntersectionObserver` watches a sentinel div at the bottom of the article list. When visible (with 200px root margin), it calls `fetchStream(continuation, true)` to append the next page. The sentinel is only rendered when `continuation` is non-null.
+
+The rendered list is measured and windowed to at most 60 mounted group/article rows. Top and bottom spacers preserve the full scroll range, and measured row heights correct the estimate without discarding the current anchor. The route-level workspace snapshot retains loaded articles, filters, collapsed groups, and the scroll offset when switching modes.
+
+The shell's `Aa` menu persists theme, text size, line spacing, reading width, density, and the optional Scroll session boundary in the account workspace. Existing browser-local preferences migrate to the account when no server preference exists. Reading typography applies to expanded Reader articles and extracted Scroll articles. Reader and Scroll persist account-scoped item/offset checkpoints; Reader, Headlines, and Scroll also record visits used to label newer material.
 
 ### Filtering
 
@@ -158,8 +163,16 @@ An `IntersectionObserver` watches a sentinel div at the bottom of the article li
 
 ### Mark as Read
 
-- **Single article**: Expanding an unread article fires `POST /reader/items/mark` with `action: "read"` and optimistically sets `isRead: true`
-- **Group batch**: "Mark all read" button on group headers collects all unread IDs in the group and fires a single batch mark-read call
+- **Single article**: Expanding an unread article sends `PATCH /items/state` with `action: "read"`.
+- **Group batch**: "Mark all read" sends one mutation for the unread IDs.
+- **Save/archive**: Expanded articles expose independent, reversible actions.
+- Failed optimistic mutations roll back; successful mutations offer Undo. FreshRSS synchronization may report `pending` while local state remains authoritative.
+
+### Notes, highlights, and offline editions
+
+Expanded articles expose notes and quoted highlights. Capturing a selection stores a portable `TextQuoteSelector` locator containing exact text plus short prefix/suffix context. Notes are account-scoped and included in Feed export/import.
+
+The Download action stores the normalized item and currently available detail in user-scoped IndexedDB. The `?view=offline` Reader view lists up to 100 device-local editions, and Scroll detail can fall back to a downloaded edition when its API request fails. Cached annotations remain readable; note creation/edit/delete and read/save/archive actions queue in user-scoped local storage and replay in order when connectivity returns. Remote media availability still depends on the original resource.
 
 ---
 
@@ -309,7 +322,7 @@ Direct item fetch for a single feed. Requires `?feed=<feedId>`.
 
 ### `POST /api/v1/feed/reader/items/mark`
 
-Mark items as read or unread.
+Legacy compatibility endpoint for marking Reader items read or unread. Current clients use `PATCH /api/v1/feed/items/state`, which also handles save and archive state consistently across Reader, Headlines, Scroll, and Search.
 
 **Body:**
 ```json
@@ -318,6 +331,8 @@ Mark items as read or unread.
   "action": "read"
 }
 ```
+
+New clients use the unified `PATCH /api/v1/feed/items/state` endpoint for read, unread, save, unsave, archive, and unarchive. The legacy Reader mark endpoint remains for compatibility. Local mutations roll back on request failure; an accepted local mutation whose FreshRSS write fails remains visible with `syncStatus: "pending"` and is retried durably.
 
 ---
 

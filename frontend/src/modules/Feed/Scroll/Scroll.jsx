@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { renderFeedCard } from './cards/index.jsx';
 import DetailView from './detail/DetailView.jsx';
 import DetailModal from './detail/DetailModal.jsx';
@@ -7,10 +7,14 @@ import { useFeedPlayer } from '../players/FeedPlayerContext.jsx';
 import { usePlaybackObserver } from './hooks/usePlaybackObserver.js';
 import { useMasonryLayout } from './hooks/useMasonryLayout.js';
 import { usePerfMonitor } from './hooks/usePerfMonitor.js';
+import { useMasonryVirtualWindow, useVirtualFeedWindow } from './hooks/useVirtualFeedWindow.js';
+import { applySessionBudget, buildScrollFilterSearch, getScrollSourceOptions } from './scrollProductControls.js';
 import FeedAssemblyOverlay from './FeedAssemblyOverlay.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { feedLog } from './feedLog.js';
 import getLogger from '../../../lib/logging/Logger.js';
+import { useFeedWorkspace } from '../FeedWorkspaceContext.jsx';
+import { getOfflineEdition } from '../offline/feedOfflineStore.js';
 import './Scroll.scss';
 
 /** Base64url-encode an item ID for use in the URL path (UTF-8 safe). */
@@ -32,7 +36,7 @@ function decodeFeedItemId(slug) {
   } catch { return null; }
 }
 
-function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, viewportObserver }) {
+function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter, onSourcePreference, sourcePreference, style, itemRef, viewportObserver }) {
   const wrapperRef = useRef(null);
   const touchRef = useRef(null);
 
@@ -106,16 +110,7 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Keyboard-accessible open affordance: role/tabindex + Enter/Space. (F-14) */}
-      <div
-        onClick={onClick}
-        role="button"
-        tabIndex={0}
-        aria-label={item.title ? `Open: ${item.title}` : 'Open item'}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(e); }
-        }}
-      >
+      <div className="scroll-card-surface" onClick={onClick}>
         {renderFeedCard(item, colors, {
           // Only wire a dismiss handler through when this card actually
           // supports dismissal — otherwise the button/callback is omitted
@@ -123,6 +118,22 @@ function ScrollCard({ item, colors, onDismiss, onPlay, onClick, style, itemRef, 
           onDismiss: onDismiss ? (cardItem) => onDismiss(cardItem, wrapperRef.current) : undefined,
           onPlay,
         })}
+      </div>
+      <div className="scroll-card-context">
+        {isNew && <span className="scroll-card-new">New</span>}
+        <details onClick={event => event.stopPropagation()}>
+          <summary>Why shown</summary>
+          <p>
+            <strong>{item.sourceInfo?.label || item.meta?.sourceName || item.source}</strong> is part of your <strong>{item.tier || 'personalized'}</strong> mix.
+          </p>
+          {item.source && <button type="button" onClick={() => onFilter?.(item.source)}>Show only this source</button>}
+          {item.source && <div className="scroll-source-tuning" role="group" aria-label={`Tune ${item.sourceInfo?.label || item.source}`}>
+            <button type="button" className={sourcePreference === 'more' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'more' ? 'normal' : 'more')}>More</button>
+            <button type="button" className={sourcePreference === 'less' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'less' ? 'normal' : 'less')}>Less</button>
+            <button type="button" className={sourcePreference === 'mute' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'mute' ? 'normal' : 'mute')}>Mute</button>
+          </div>}
+        </details>
+        <button type="button" className="scroll-card-open" onClick={onClick} aria-label={item.title ? `Open: ${item.title}` : 'Open item'}>Open</button>
       </div>
     </div>
   );
@@ -135,14 +146,27 @@ export default function Scroll() {
   const { feedItemId: urlSlug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference } = useFeedWorkspace();
+  const initialSnapshot = useRef(getSnapshot('scroll'));
+  const initialCheckpoint = useRef(checkpoints.scroll);
+  const previousVisit = useRef(getLastVisit('scroll'));
+  const visitStarted = useRef(new Date().toISOString());
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState(() => applyPendingMutations(initialSnapshot.current?.items || []));
+  const [loading, setLoading] = useState(!initialSnapshot.current?.items?.length);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(initialSnapshot.current?.hasMore ?? true);
+  const [caughtUp, setCaughtUp] = useState(initialSnapshot.current?.caughtUp || false);
+  const [budgetReached, setBudgetReached] = useState(initialSnapshot.current?.budgetReached || false);
+  const [serverHasMore, setServerHasMore] = useState(initialSnapshot.current?.serverHasMore ?? true);
+  const [budgetOverride, setBudgetOverride] = useState(null);
+  const [sessionId, setSessionId] = useState(initialSnapshot.current?.sessionId || null);
   const [error, setError] = useState(null);
   // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
-  const [focusSource] = useState(null);
+  const focusSource = searchParams.get('focus');
+  const filterParam = searchParams.get('filter') || '';
+  const sessionStorageKey = `feed:scroll:session:${focusSource || 'all'}:${filterParam || 'all'}`;
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
@@ -155,6 +179,18 @@ export default function Scroll() {
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
   const savedScrollRef = useRef(0);
+  const listAbortRef = useRef(null);
+  const appendLockRef = useRef(false);
+  const detailAbortRef = useRef(null);
+  const snapshotRef = useRef(null);
+  const checkpointRestoredRef = useRef(false);
+  const effectiveBudget = budgetOverride ?? readingPreferences.sessionBudget;
+  snapshotRef.current = { items, hasMore, caughtUp, budgetReached, serverHasMore, sessionId };
+
+  useEffect(() => {
+    setBudgetOverride(null);
+    setBudgetReached(false);
+  }, [sessionStorageKey]);
 
   const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
 
@@ -183,7 +219,7 @@ export default function Scroll() {
   }, []);
 
   // Performance monitoring — active when scroll list is visible (not detail view)
-  usePerfMonitor(!loading && !(urlSlug && !isDesktop));
+  usePerfMonitor(searchParams.get('debug') === '1' && !loading && !(urlSlug && !isDesktop));
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
@@ -193,7 +229,12 @@ export default function Scroll() {
     ? (items.find(i => i.id === fullId) || (deepLinkedItem?.id === fullId ? deepLinkedItem : null))
     : null;
 
-  const fetchItems = useCallback(async (append = false) => {
+  const fetchItems = useCallback(async (append = false, requestedSession = sessionId) => {
+    if (append && appendLockRef.current) return;
+    if (append) appendLockRef.current = true;
+    if (!append) listAbortRef.current?.abort();
+    const controller = new AbortController();
+    if (!append) listAbortRef.current = controller;
     if (append) setLoadingMore(true);
     else setLoading(true);
     setError(null);
@@ -203,18 +244,48 @@ export default function Scroll() {
       const cursor = append && cur.length > 0 ? cur[cur.length - 1].id : undefined;
       const params = new URLSearchParams();
       if (cursor) params.set('cursor', cursor);
+      if (effectiveBudget > 0) params.set('limit', String(Math.max(1, effectiveBudget - cur.length)));
       if (focusSource) params.set('focus', focusSource);
-      const filterParam = searchParams.get('filter');
       if (filterParam) params.set('filter', filterParam);
       if (searchParams.get('debug') === '1') params.set('debug', '1');
 
       feedLog.scroll(append ? 'fetchMore' : 'fetchInitial', { cursor, focus: focusSource, filter: filterParam, currentCount: cur.length });
 
       const fetchStart = performance.now();
-      const result = await DaylightAPI(`/api/v1/feed/scroll?${params}`);
+      let result;
+      if (append) {
+        if (!requestedSession) throw new Error('Scroll session is unavailable');
+        result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${params}`, {}, 'GET', { signal: controller.signal });
+      } else if (requestedSession) {
+        const resumeParams = new URLSearchParams(params);
+        resumeParams.set('resume', '1');
+        try {
+          result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${resumeParams}`, {}, 'GET', { signal: controller.signal });
+        } catch (resumeError) {
+          if (controller.signal.aborted) throw resumeError;
+          if (!String(resumeError.message).startsWith('HTTP 404:')) throw resumeError;
+          sessionStorage.removeItem(sessionStorageKey);
+          result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+            focus: focusSource || null,
+            filter: filterParam || null,
+            limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
+          }, 'POST', { signal: controller.signal });
+        }
+      } else {
+        result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+          focus: focusSource || null,
+          filter: filterParam || null,
+          limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
+        }, 'POST', { signal: controller.signal });
+      }
+      if (result.sessionId) {
+        setSessionId(result.sessionId);
+        sessionStorage.setItem(sessionStorageKey, result.sessionId);
+      }
       feedLog.timing('scroll-fetch', { durationMs: Math.round(performance.now() - fetchStart), append, cursor, count: (result.items || []).length });
 
-      const incoming = result.items || [];
+      const incoming = applyPendingMutations(result.items || []);
+      setServerHasMore(!!result.hasMore);
       if (result.colors) setColors(result.colors);
 
       // Collect feed_assembly stats per batch
@@ -231,21 +302,30 @@ export default function Scroll() {
         const knownIds = new Set(itemsRef.current.map(i => i.id));
         const newCount = incoming.filter(i => !knownIds.has(i.id)).length;
         const allDupes = incoming.length > 0 && newCount === 0;
+        const nextCount = itemsRef.current.length + newCount;
+        const hitBudget = effectiveBudget > 0 && nextCount >= effectiveBudget;
         feedLog.scroll('appendResult', { incoming: incoming.length, new: newCount, allDupes, hasMore: allDupes ? false : result.hasMore });
 
         setItems(prev => {
           const existingIds = new Set(prev.map(i => i.id));
           const newItems = incoming.filter(i => !existingIds.has(i.id));
           if (newItems.length === 0) return prev;
-          return [...prev, ...newItems];
+          const merged = [...prev, ...newItems];
+          return applySessionBudget(merged, hitBudget ? effectiveBudget : 0).items;
         });
-        setHasMore(allDupes ? false : result.hasMore);
+        setHasMore(hitBudget ? false : (allDupes ? false : result.hasMore));
+        setBudgetReached(hitBudget && !!result.hasMore);
+        setCaughtUp(!!result.caughtUp || allDupes);
       } else {
+        const hitBudget = effectiveBudget > 0 && incoming.length >= effectiveBudget;
         feedLog.scroll('initialResult', { count: incoming.length, hasMore: result.hasMore });
-        setItems(incoming);
-        setHasMore(result.hasMore);
+        setItems(applySessionBudget(incoming, hitBudget ? effectiveBudget : 0).items);
+        setHasMore(hitBudget ? false : result.hasMore);
+        setBudgetReached(hitBudget && !!result.hasMore);
+        setCaughtUp(!!result.caughtUp);
       }
     } catch (err) {
+      if (err.name === 'AbortError') return;
       feedLog.scroll('fetchError', err.message);
       // Surface an error state and stop the infinite sentinel from retrying
       // an outage in a tight loop. (F-11)
@@ -254,18 +334,47 @@ export default function Scroll() {
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      appendLockRef.current = false;
     }
-  }, [focusSource, searchParams]);
+  }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, sessionStorageKey]);
+
+  useEffect(() => () => listAbortRef.current?.abort(), []);
+  useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
+
+  useEffect(() => {
+    const scrollEl = getScrollEl();
+    const initialOffset = initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset;
+    if (scrollEl && initialOffset) requestAnimationFrame(() => { scrollEl.scrollTop = initialOffset; });
+    return () => {
+      const scrollOffset = getScrollEl()?.scrollTop || 0;
+      const scrollEl = getScrollEl();
+      const itemId = [...(scrollEl?.querySelectorAll('[data-feed-item-id]') || [])]
+        .find(node => node.getBoundingClientRect().bottom > scrollEl.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
+      setSnapshot('scroll', { ...snapshotRef.current, scrollTop: scrollOffset });
+      markVisited('scroll', new Date().toISOString(), { itemId, scrollOffset });
+    };
+  }, [markVisited, setSnapshot]);
+
+  useEffect(() => {
+    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || !initialCheckpoint.current?.itemId || !items.length) return;
+    const target = [...(getScrollEl()?.querySelectorAll('[data-feed-item-id]') || [])]
+      .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
+    if (target) {
+      checkpointRestoredRef.current = true;
+      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+    }
+  }, [items.length]);
 
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
-  const filterParam = searchParams.get('filter');
   useEffect(() => {
+    const storedSession = sessionStorage.getItem(sessionStorageKey);
+    setSessionId(storedSession);
     setItems([]);
     setHasMore(true);
     setError(null);
-    fetchItems(false);
+    fetchItems(false, storedSession);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterParam]);
+  }, [sessionStorageKey]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -274,7 +383,7 @@ export default function Scroll() {
     observerRef.current = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !loadingMore) {
-          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: window.scrollY, itemCount: itemsRef.current.length });
+          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: getScrollEl()?.scrollTop || 0, itemCount: itemsRef.current.length });
           fetchItems(true);
         }
       },
@@ -328,11 +437,11 @@ export default function Scroll() {
           if (!id) continue;
           if (entry.isIntersecting) {
             enterTimesRef.current.set(id, performance.now());
-            feedLog.viewport('enter', { id, scrollY: Math.round(window.scrollY) });
+            feedLog.viewport('enter', { id, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
           } else if (enterTimesRef.current.has(id)) {
             const dwellMs = Math.round(performance.now() - enterTimesRef.current.get(id));
             enterTimesRef.current.delete(id);
-            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(window.scrollY) });
+            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
           }
         }
       },
@@ -340,27 +449,6 @@ export default function Scroll() {
     );
     return () => viewportObserverRef.current?.disconnect();
   }, []);
-
-  /** Queue of item IDs to batch-dismiss via API. */
-  const dismissQueueRef = useRef([]);
-  const dismissTimerRef = useRef(null);
-
-  const flushDismissQueue = useCallback(() => {
-    const ids = dismissQueueRef.current.splice(0);
-    if (ids.length === 0) return;
-    feedLog.dismiss('flush batch', { count: ids.length, ids });
-    DaylightAPI('/api/v1/feed/scroll/dismiss', { itemIds: ids }, 'POST').catch(err => {
-      console.error('Dismiss failed:', err);
-      feedLog.dismiss('flush error', err.message);
-    });
-  }, []);
-
-  const queueDismiss = useCallback((feedItemId) => {
-    feedLog.dismiss('queue', { feedItemId, queueSize: dismissQueueRef.current.length + 1 });
-    dismissQueueRef.current.push(feedItemId);
-    clearTimeout(dismissTimerRef.current);
-    dismissTimerRef.current = setTimeout(flushDismissQueue, 500);
-  }, [flushDismissQueue]);
 
   // Fetch detail when URL slug changes (route-driven)
   const prevSlugRef = useRef(null);
@@ -376,12 +464,16 @@ export default function Scroll() {
     const gen = ++detailGenRef.current;
     const isCurrent = () => gen === detailGenRef.current;
 
-    // Auto-dismiss: mark item as read when detail opens (wire tier only)
-    const matchedItem = items.find(i => i.id === fullId);
-    if ((matchedItem?.tier || 'wire') === 'wire') queueDismiss(fullId);
+    // Opening an item marks it read, but never archives it.
+    const matchedItem = itemsRef.current.find(i => i.id === fullId);
+    if (matchedItem && !(matchedItem.state?.isRead ?? matchedItem.isRead)) {
+      mutateItems([matchedItem], 'read', {
+        onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)),
+      }).catch(() => {});
+    }
 
     // Check if item is already in the loaded list
-    const item = items.find(i => i.id === fullId);
+    const item = itemsRef.current.find(i => i.id === fullId);
 
     if (item) {
       // Item is in the scroll batch — fetch detail the normal way
@@ -404,17 +496,26 @@ export default function Scroll() {
       }
 
       const detailStart = performance.now();
-      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
+      detailAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailAbortRef.current = controller;
+      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal: controller.signal })
         .then(result => {
           if (!isCurrent()) return; // a newer selection superseded this request
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
           setDetailData(result);
         })
-        .catch(err => {
-          if (!isCurrent()) return;
+        .catch(async err => {
+          if (!isCurrent() || err.name === 'AbortError') return;
           feedLog.detail('fetchError', { id: fullId, error: err.message });
-          setDetailData(null);
+          try {
+            const offline = await getOfflineEdition(item.id);
+            if (!isCurrent()) return;
+            setDetailData(offline?.item ? (offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null }) : null);
+          } catch {
+            if (isCurrent()) setDetailData(null);
+          }
         })
         .finally(() => { if (isCurrent()) setDetailLoading(false); });
     } else {
@@ -426,7 +527,10 @@ export default function Scroll() {
       if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
       const detailStart = performance.now();
-      DaylightAPI(`/api/v1/feed/scroll/item/${urlSlug}`)
+      detailAbortRef.current?.abort();
+      const controller = new AbortController();
+      detailAbortRef.current = controller;
+      DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal: controller.signal })
         .then(result => {
           if (!isCurrent()) return; // superseded by a newer selection
           feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
@@ -438,15 +542,27 @@ export default function Scroll() {
             ogDescription: result.ogDescription || null,
           });
         })
-        .catch(err => {
-          if (!isCurrent()) return;
+        .catch(async err => {
+          if (!isCurrent() || err.name === 'AbortError') return;
+          try {
+            const offline = await getOfflineEdition(fullId);
+            if (!isCurrent()) return;
+            if (offline?.item) {
+              feedLog.detail('deep link loaded from offline edition', { slug: urlSlug });
+              setDeepLinkedItem(applyPendingMutations([offline.item])[0]);
+              setDetailData(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null });
+              return;
+            }
+          } catch (offlineError) {
+            feedLog.detail('offline edition unavailable', { slug: urlSlug, error: offlineError.message });
+          }
           feedLog.detail('deep link error — redirecting to list', { slug: urlSlug, error: err.message });
-          // Item not in server cache — redirect to scroll list
-          navigate('/feed/scroll', { replace: true });
+          navigate(`/feed/scroll${location.search}`, { replace: true });
         })
         .finally(() => { if (isCurrent()) setDetailLoading(false); });
     }
-  }, [urlSlug, items, fullId, navigate, queueDismiss]);
+    return () => detailAbortRef.current?.abort();
+  }, [applyPendingMutations, urlSlug, fullId, navigate, location.search, mutateItems, isDesktop]);
 
   // Restore scroll position when navigating back to list
   const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
@@ -475,34 +591,63 @@ export default function Scroll() {
       };
       requestAnimationFrame(tryRestore);
     }
-  }, [urlSlug]);
+  }, [items.length, scrollLog, urlSlug]);
 
-  // Prevent body scroll when modal is open on desktop
+  // Lock the actual Feed scroller while the desktop modal is open.
   useEffect(() => {
     if (urlSlug && isDesktop) {
-      document.body.style.overflow = 'hidden';
-      return () => { document.body.style.overflow = ''; };
+      const scrollEl = getScrollEl();
+      if (!scrollEl) return undefined;
+      const previous = scrollEl.style.overflow;
+      scrollEl.style.overflow = 'hidden';
+      return () => { scrollEl.style.overflow = previous; };
     }
+    return undefined;
   }, [urlSlug, isDesktop]);
 
   const handleBack = useCallback(() => {
-    navigate('/feed/scroll');
-  }, [navigate]);
+    if (location.state?.feedModal) navigate(-1);
+    else navigate(`/feed/scroll${location.search}`, { replace: true });
+  }, [location.search, location.state, navigate]);
 
   // Apply assembly debug filter (tier/source toggles)
   const visibleItems = (() => {
+    const activeItems = items.filter(item => !item.state?.isArchived && sourcePreferences[item.source] !== 'mute');
     const { tiers, sources } = assemblyFilter;
-    if (tiers.length === 0 && sources.length === 0) return items;
+    if (tiers.length === 0 && sources.length === 0) return activeItems;
     const tierSet = new Set(tiers);
     const sourceSet = new Set(sources);
-    return items.filter(item => {
+    return activeItems.filter(item => {
       const tierMatch = tierSet.size === 0 || tierSet.has(item.tier);
       const sourceMatch = sourceSet.size === 0 || sourceSet.has(item.source);
       return tierMatch && sourceMatch;
     });
   })();
+  useEffect(() => {
+    if (urlSlug) return undefined;
+    const onKeyDown = event => {
+      if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
+      const cards = [...document.querySelectorAll('.scroll-item-wrapper .scroll-card-open')];
+      if (!cards.length) return;
+      const activeIndex = cards.findIndex(card => card === document.activeElement);
+      const nextIndex = event.key === 'j' ? Math.min(cards.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
+      event.preventDefault();
+      cards[nextIndex].focus({ preventScroll: true });
+      cards[nextIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [urlSlug]);
 
-  const { containerStyle, getItemStyle, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
+  const { containerStyle, getItemStyle, getItemMetrics, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
+  const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop);
+  const desktopWindow = useMasonryVirtualWindow(containerRef, visibleItems, isDesktop, getItemMetrics);
+  const renderedItems = isDesktop ? desktopWindow : mobileWindow.items;
+  const renderedContainerStyle = isDesktop ? containerStyle : {
+    paddingTop: `${mobileWindow.paddingTop}px`,
+    paddingBottom: `${mobileWindow.paddingBottom}px`,
+  };
 
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
@@ -515,8 +660,8 @@ export default function Scroll() {
       id: item.id,
     });
     feedLog.nav('card click', { scrollY: Math.round(scrollY), id: item.id, title: item.title, source: item.source, tier: item.tier });
-    navigate(`/feed/scroll/${encodeFeedItemId(item.id)}`);
-  }, [navigate]);
+    navigate({ pathname: `/feed/scroll/${encodeFeedItemId(item.id)}`, search: location.search }, { state: { feedModal: true } });
+  }, [location.search, navigate]);
 
   const handleNav = useCallback((direction) => {
     if (!selectedItem) return;
@@ -524,8 +669,8 @@ export default function Scroll() {
     if (idx === -1) return;
     const nextIdx = idx + direction;
     if (nextIdx < 0 || nextIdx >= visibleItems.length) return;
-    navigate(`/feed/scroll/${encodeFeedItemId(visibleItems[nextIdx].id)}`, { replace: true });
-  }, [selectedItem, visibleItems, navigate]);
+    navigate({ pathname: `/feed/scroll/${encodeFeedItemId(visibleItems[nextIdx].id)}`, search: location.search }, { replace: true, state: location.state });
+  }, [selectedItem, visibleItems, navigate, location.search, location.state]);
 
   const handleGalleryNav = useCallback((galleryItem) => {
     // Add synthetic item to list so URL-driven detail fetch finds it
@@ -533,44 +678,20 @@ export default function Scroll() {
       if (prev.find(i => i.id === galleryItem.id)) return prev;
       return [...prev, galleryItem];
     });
-    navigate(`/feed/scroll/${encodeFeedItemId(galleryItem.id)}`, { replace: true });
-  }, [navigate]);
+    navigate({ pathname: `/feed/scroll/${encodeFeedItemId(galleryItem.id)}`, search: location.search }, { replace: true, state: location.state });
+  }, [navigate, location.search, location.state]);
 
-  const handleDismiss = useCallback((item, wrapperEl) => {
-    feedLog.dismiss('handleDismiss', { id: item.id, title: item.title, hasWrapper: !!wrapperEl, isDesktop });
-    queueDismiss(item.id);
+  const handleDismiss = useCallback((item) => {
+    feedLog.dismiss('archive', { id: item.id, title: item.title });
+    mutateItems([item], 'archive', {
+      onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)),
+    }).catch(() => {});
+  }, [mutateItems]);
 
-    if (wrapperEl) {
-      // Disable interaction immediately so the exiting card is never a
-      // stale pointer target during its animation. (F-08)
-      wrapperEl.style.pointerEvents = 'none';
-      if (isDesktop) {
-        // Desktop: fade out, then remove so masonry reflows (no empty hole).
-        wrapperEl.animate(
-          [{ opacity: 1 }, { opacity: 0 }],
-          { duration: 250, easing: 'ease-in', fill: 'forwards' }
-        ).onfinish = () => {
-          setItems(prev => prev.filter(i => i.id !== item.id));
-        };
-      } else {
-        // Mobile: slide left + collapse
-        const slideAnim = wrapperEl.animate(
-          [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-100%)', opacity: 0 }],
-          { duration: 250, easing: 'ease-in', fill: 'forwards' }
-        );
-        slideAnim.onfinish = () => {
-          wrapperEl.animate(
-            [{ height: wrapperEl.offsetHeight + 'px', marginBottom: '12px' }, { height: '0px', marginBottom: '0px' }],
-            { duration: 200, easing: 'ease-out', fill: 'forwards' }
-          ).onfinish = () => {
-            setItems(prev => prev.filter(i => i.id !== item.id));
-          };
-        };
-      }
-    } else {
-      setItems(prev => prev.filter(i => i.id !== item.id));
-    }
-  }, [queueDismiss, isDesktop]);
+  const setProductFilter = useCallback((filter) => {
+    const next = buildScrollFilterSearch(searchParams, filter);
+    navigate(`/feed/scroll${next ? `?${next}` : ''}`);
+  }, [navigate, searchParams]);
 
   if (loading) {
     return (
@@ -587,21 +708,37 @@ export default function Scroll() {
   }
 
   const currentIdx = selectedItem ? visibleItems.findIndex(i => i.id === selectedItem.id) : -1;
+  const sourceOptions = getScrollSourceOptions(items);
 
   return (
     <div className="scroll-layout">
       <div className="scroll-view" style={{ display: (urlSlug && !isDesktop) ? 'none' : undefined }}>
-        <div ref={containerRef} className="scroll-items" style={containerStyle}>
-          {visibleItems.map((item, i) => (
+        <div className="scroll-controls" aria-label="Scroll filters">
+          {[['', 'For you'], ['wire', 'News'], ['library', 'Library'], ['scrapbook', 'Personal']].map(([filter, label]) => (
+            <button key={label} className={(searchParams.get('filter') || '') === filter ? 'active' : ''} onClick={() => setProductFilter(filter)}>{label}</button>
+          ))}
+          {!!sourceOptions.length && <details className="scroll-source-filter">
+            <summary>Sources</summary>
+            <div>
+              {sourceOptions.map(([source, label]) => <button type="button" key={source} className={filterParam === source ? 'active' : ''} onClick={() => setProductFilter(source)}>{label}</button>)}
+            </div>
+          </details>}
+        </div>
+        <div ref={containerRef} className="scroll-items" style={renderedContainerStyle}>
+          {renderedItems.map((item, i) => (
             <ScrollCard
               key={item.id || i}
               item={item}
+              isNew={!!previousVisit.current && new Date(item.publishedAt || item.timestamp || 0).getTime() > new Date(previousVisit.current).getTime()}
               colors={colors}
-              onDismiss={(item.tier || 'wire') === 'wire' ? handleDismiss : undefined}
+              onDismiss={handleDismiss}
               onPlay={handlePlay}
               onClick={(e) => handleCardClick(e, item)}
+              onFilter={setProductFilter}
+              onSourcePreference={setSourcePreference}
+              sourcePreference={sourcePreferences[item.source] || 'normal'}
               style={getItemStyle(item.id)}
-              itemRef={measureRef(item.id)}
+              itemRef={isDesktop ? measureRef(item.id) : mobileWindow.measureRef(item.id)}
               viewportObserver={viewportObserverRef.current}
             />
           ))}
@@ -617,15 +754,32 @@ export default function Scroll() {
             )}
           </div>
         )}
-        {!hasMore && items.length > 0 && (
+        {!hasMore && items.length > 0 && caughtUp && (
           <div className="scroll-end">
-            <button
-              className="scroll-load-more"
-              disabled={loadingMore}
-              onClick={() => fetchItems(true)}
-            >
-              {loadingMore ? 'Loading…' : 'Load More…'}
-            </button>
+            <h2>You’re caught up</h2>
+            <p>You’ve reached the end of the current source pool.</p>
+            <div className="scroll-end__actions">
+              <button className="scroll-load-more" onClick={() => {
+                sessionStorage.removeItem(sessionStorageKey);
+                setSessionId(null);
+                fetchItems(false, null);
+              }}>Refresh sources</button>
+              <button className="scroll-load-more" onClick={() => navigate('/feed/search')}>Browse history</button>
+            </div>
+          </div>
+        )}
+        {!hasMore && items.length > 0 && budgetReached && !caughtUp && (
+          <div className="scroll-end" role="status">
+            <h2>Session complete</h2>
+            <p>You reached your {effectiveBudget}-item reading boundary.</p>
+            <div className="scroll-end__actions">
+              <button className="scroll-load-more" disabled={!serverHasMore} onClick={() => {
+                setBudgetOverride(items.length + 30);
+                setBudgetReached(false);
+                setHasMore(serverHasMore);
+              }}>Continue 30 more</button>
+              <button className="scroll-load-more" onClick={() => navigate('/feed/search?state=saved')}>Review saved</button>
+            </div>
           </div>
         )}
         {error && (
@@ -657,6 +811,7 @@ export default function Scroll() {
           activeMedia={activeMedia}
           playback={playback}
           onNavigateToItem={handleGalleryNav}
+          onStateAction={(action) => mutateItems([selectedItem], action, { onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)) }).then(() => { if (action === 'archive') handleBack(); }).catch(() => {})}
         />
       )}
       {selectedItem && !isDesktop && (
@@ -673,6 +828,7 @@ export default function Scroll() {
           activeMedia={activeMedia}
           playback={playback}
           onNavigateToItem={handleGalleryNav}
+          onStateAction={(action) => mutateItems([selectedItem], action, { onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)) }).then(() => { if (action === 'archive') handleBack(); }).catch(() => {})}
         />
       )}
       {searchParams.get('debug') === '1' && (

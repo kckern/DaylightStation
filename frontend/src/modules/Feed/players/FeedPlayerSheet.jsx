@@ -21,6 +21,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
 
   // --- Swipe-to-dismiss gesture ---
   const sheetRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const dragRef = useRef({ startY: 0, currentY: 0, dragging: false });
   const [dragging, setDragging] = useState(false);
 
@@ -51,12 +52,23 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
     }
   }, [onClose]);
 
-  // --- Escape key (desktop) ---
+  // --- Dialog focus lifecycle and keyboard close ---
   useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    if (!open) return undefined;
+    previousFocusRef.current = document.activeElement;
+    sheetRef.current?.focus();
+    const handler = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Tab' || !sheetRef.current) return;
+      const focusable = [...sheetRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) { e.preventDefault(); sheetRef.current.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === sheetRef.current)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
     document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    return () => { document.removeEventListener('keydown', handler); previousFocusRef.current?.focus?.(); };
   }, [open, onClose]);
 
   // --- Seek scrubber ---
@@ -139,10 +151,16 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
       <div
         className={`feed-player-sheet-scrim${open ? ' open' : ''}`}
         onClick={onClose}
+        aria-hidden="true"
       />
       <div
         ref={sheetRef}
         className={`feed-player-sheet${open ? ' open' : ''}${dragging ? ' dragging' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-hidden={!open}
+        aria-labelledby="feed-player-sheet-title"
+        tabIndex={-1}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -164,8 +182,9 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
           </div>
         )}
 
+        <button type="button" className="sheet-close" onClick={onClose} aria-label="Close player">×</button>
         <div className="sheet-title">
-          <div className="sheet-title-text">{item.title}</div>
+          <div className="sheet-title-text" id="feed-player-sheet-title">{item.title}</div>
         </div>
         <div className="sheet-source">{item.meta?.sourceName || item.source}</div>
 
@@ -177,6 +196,18 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
           onTouchStart={(e) => startScrub(e.touches[0].clientX)}
           onTouchMove={(e) => moveScrub(e.touches[0].clientX)}
           onTouchEnd={endScrub}
+          role="slider"
+          tabIndex={0}
+          aria-label="Playback position"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(duration || 0)}
+          aria-valuenow={Math.round(displayTime || 0)}
+          onKeyDown={(e) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            e.preventDefault();
+            const next = e.key === 'Home' ? 0 : e.key === 'End' ? duration : Math.max(0, Math.min(duration || 0, (currentTime || 0) + (e.key === 'ArrowLeft' ? -5 : 5)));
+            seek?.(next);
+          }}
         >
           <div className="sheet-scrubber-track">
             <div ref={scrubFillRef} className="sheet-scrubber-fill">
@@ -232,6 +263,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
               key={s}
               className={`sheet-speed-pill${(speed ?? 1) === s ? ' active' : ''}`}
               onClick={() => { feedLog.player('sheet speed', { rate: s }); setSpeed(s); }}
+              aria-pressed={(speed ?? 1) === s}
             >
               {s}x
             </button>
@@ -240,14 +272,14 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
 
         {/* Volume (desktop only) */}
         <div className="sheet-volume-row">
-          <div className="sheet-volume-icon" onClick={toggleMute}>
+          <button type="button" className="sheet-volume-icon" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               {muted || volume === 0
                 ? <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
                 : <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
               }
             </svg>
-          </div>
+          </button>
           <input
             type="range"
             className="sheet-volume-slider"
@@ -256,6 +288,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
             step="0.05"
             value={muted ? 0 : volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
+            aria-label="Volume"
           />
         </div>
 

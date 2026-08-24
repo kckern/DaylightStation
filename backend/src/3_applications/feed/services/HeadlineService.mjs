@@ -1,4 +1,7 @@
 // backend/src/3_applications/feed/services/HeadlineService.mjs
+import stringSimilarity from 'string-similarity';
+import { canonicalizeFeedUrl } from '#domains/feed/feedItem.mjs';
+
 /**
  * HeadlineService
  *
@@ -185,14 +188,26 @@ export class HeadlineService {
 
     const paywallConfig = config.paywall_proxy || {};
     const paywallSources = new Set(paywallConfig.sources || []);
+    const rowCount = page.grid?.rows?.length || 0;
+    const colCount = page.grid?.cols?.length || 0;
+    const placements = new Set();
+    const configWarnings = [];
 
     // Merge row/col/url from config into cached data, then filter
     const sources = {};
     for (const src of configSources) {
+      const placement = `${src.row}:${src.col}`;
+      if (!Number.isInteger(src.row) || !Number.isInteger(src.col) || src.row < 0 || src.col < 0 || src.row >= rowCount || src.col >= colCount) {
+        configWarnings.push({ source: src.id, code: 'OUT_OF_RANGE', row: src.row, col: src.col });
+      } else if (placements.has(placement)) {
+        configWarnings.push({ source: src.id, code: 'DUPLICATE_PLACEMENT', row: src.row, col: src.col });
+      }
+      placements.add(placement);
       const data = cached[src.id] || { label: src.label, items: [], lastHarvest: null };
       const filtered = this.#filterItems(data.items || [], excludePatterns, dedupeWordCount, maxPerSource);
       sources[src.id] = {
         ...data,
+        label: src.label || data.label || src.id,
         items: filtered,
         row: src.row,
         col: src.col,
@@ -215,7 +230,94 @@ export class HeadlineService {
       sources,
       lastHarvest,
       paywallProxy: paywallConfig.url_prefix || null,
+      briefing: this.#buildBriefing(sources),
+      configWarnings,
     };
+  }
+
+  #buildBriefing(sources) {
+    const candidates = Object.entries(sources).flatMap(([sourceId, source]) =>
+      (source.items || []).map(item => ({
+        ...item,
+        sourceId,
+        sourceLabel: source.label || sourceId,
+        canonicalUrl: canonicalizeFeedUrl(item.link || item.url),
+        publishedAt: item.publishedAt || item.timestamp || item.published || null,
+      })),
+    ).sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+
+    const clusters = [];
+    const windowMs = 36 * 60 * 60 * 1000;
+    for (const item of candidates) {
+      const normalizedTitle = this.#normalizeClusterTitle(item.title);
+      const match = clusters.find(cluster => {
+        if (item.canonicalUrl && cluster.canonicalUrls.has(item.canonicalUrl)) return true;
+        if (cluster.sourceIds.has(item.sourceId)) return false;
+        const age = Math.abs(new Date(cluster.publishedAt || 0) - new Date(item.publishedAt || 0));
+        return age <= windowMs
+          && normalizedTitle.split(' ').length >= 5
+          && stringSimilarity.compareTwoStrings(cluster.normalizedTitle, normalizedTitle) >= 0.72;
+      });
+      if (match) {
+        match.coverage.push(item);
+        match.sourceIds.add(item.sourceId);
+        if (item.canonicalUrl) match.canonicalUrls.add(item.canonicalUrl);
+      } else {
+        clusters.push({
+          id: item.canonicalUrl || `${item.sourceId}:${item.id || normalizedTitle}`,
+          title: item.title,
+          excerpt: item.desc || item.summary || '',
+          publishedAt: item.publishedAt,
+          leadSource: item.sourceLabel,
+          normalizedTitle,
+          canonicalUrls: new Set(item.canonicalUrl ? [item.canonicalUrl] : []),
+          sourceIds: new Set([item.sourceId]),
+          coverage: [item],
+        });
+      }
+    }
+    return clusters
+      .sort((a, b) => b.sourceIds.size - a.sourceIds.size || new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0))
+      .slice(0, 40)
+      .map(cluster => {
+        const coverage = cluster.coverage.map(item => ({
+          id: item.id,
+          title: item.title,
+          url: item.link || item.url,
+          sourceId: item.sourceId,
+          sourceLabel: item.sourceLabel,
+          publishedAt: item.publishedAt,
+        }));
+        const timeline = [...coverage]
+          .filter(item => item.publishedAt)
+          .sort((a, b) => new Date(a.publishedAt) - new Date(b.publishedAt))
+          .map(item => ({
+            ...item,
+            kind: /\b(correction|corrected)\b/i.test(item.title) ? 'correction'
+              : /\b(update|updated|developing|live)\b/i.test(item.title) ? 'update'
+                : 'report',
+          }));
+        return {
+          id: cluster.id,
+          title: cluster.title,
+          excerpt: cluster.excerpt,
+          publishedAt: cluster.publishedAt,
+          leadSource: cluster.leadSource,
+          sourceCount: cluster.sourceIds.size,
+          coverage,
+          timeline,
+        };
+      });
+  }
+
+  #normalizeClusterTitle(value) {
+    const stop = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'with', 'at', 'from']);
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 1 && !stop.has(word))
+      .join(' ');
   }
 
   /**

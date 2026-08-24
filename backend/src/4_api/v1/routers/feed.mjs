@@ -11,6 +11,7 @@
  */
 
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
@@ -24,7 +25,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @returns {express.Router}
  */
 export function createFeedRouter(config) {
-  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, dismissedItemsStore, sourceAdapters = [], contentPluginRegistry = null, configService, logger = console } = config;
+  const { freshRSSAdapter, headlineService, feedAssemblyService, feedContentService, feedStateService = null, feedSessionStore = null, dismissedItemsStore, sourceAdapters = [], contentPluginRegistry = null, configService, logger = console } = config;
 
   // Build adapter lookup map by sourceType for dismiss routing.
   // Only register adapters that genuinely persist read-state — the base class
@@ -37,6 +38,8 @@ export function createFeedRouter(config) {
     }
   }
   const router = express.Router();
+  const scrollSessions = new Map();
+  const sessionTtlMs = 24 * 60 * 60 * 1000;
 
   // Clamp a query-param integer into [min, max]; returns `def` when absent/invalid.
   const toBoundedInt = (val, { min, max, def }) => {
@@ -110,6 +113,7 @@ export function createFeedRouter(config) {
   router.get('/reader/stream', asyncHandler(async (req, res) => {
     const { days: daysParam, count, continuation, excludeRead, feeds } = req.query;
     const username = getUsername(req);
+    feedStateService?.ensureHistoryBackfill(username);
     const isFiltered = !!feeds;
     const feedIds = isFiltered ? feeds.split(',') : [];
 
@@ -209,7 +213,10 @@ export function createFeedRouter(config) {
       contentPluginRegistry.enrich(result);
     }
 
-    res.json({ items: result, continuation: nextContinuation, exhausted });
+    const responseItems = feedStateService
+      ? feedStateService.enrich(username, result, 'reader')
+      : result;
+    res.json({ items: responseItems, continuation: nextContinuation, nextCursor: nextContinuation, exhausted });
   }));
 
   // =========================================================================
@@ -245,9 +252,190 @@ export function createFeedRouter(config) {
 
     if (!pageId) return res.json({ grid: null, sources: {}, lastHarvest: null });
 
-    const result = await headlineService.getAllHeadlines(username, pageId);
+    let result = await headlineService.getAllHeadlines(username, pageId);
     if (!result) return res.status(404).json({ error: 'Page not found', page: pageId });
+    if (feedStateService) {
+      const sources = {};
+      for (const [sourceId, source] of Object.entries(result.sources || {})) {
+        sources[sourceId] = {
+          ...source,
+          items: feedStateService.enrich(username, (source.items || []).map(item => ({
+            ...item,
+            sourceType: 'headlines',
+            sourceId,
+            sourceLabel: source.label || sourceId,
+          })), 'headlines'),
+        };
+      }
+      const itemsById = new Map(Object.values(sources).flatMap(source => source.items || []).map(item => [item.id, item]));
+      const briefing = (result.briefing || []).map(story => {
+        const coverage = (story.coverage || []).map(item => ({ ...item, ...(itemsById.get(item.id) || {}) }));
+        return { ...story, coverage, state: coverage[0]?.state || null };
+      });
+      result = { ...result, sources, briefing };
+    }
     res.json(result);
+  }));
+
+  // =========================================================================
+  // Unified item state and history
+  // =========================================================================
+
+  router.patch('/items/state', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed state service unavailable' });
+    const { itemIds, action } = req.body || {};
+    if (!Array.isArray(itemIds) || itemIds.length === 0 || itemIds.length > 200) {
+      return res.status(400).json({ error: 'itemIds must be a non-empty array (max 200)' });
+    }
+    if (!itemIds.every(isValidItemId)) {
+      return res.status(400).json({ error: 'itemIds must be strings of at most 512 chars' });
+    }
+    const allowed = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
+    if (!allowed.has(action)) return res.status(400).json({ error: 'invalid state action' });
+    const items = await feedStateService.mutate(getUsername(req), itemIds, action);
+    res.json({ items, failed: [] });
+  }));
+
+  router.get('/items/state/summary', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed state service unavailable' });
+    res.json(feedStateService.summary(getUsername(req)));
+  }));
+
+  router.post('/items/state/retry', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed state service unavailable' });
+    const username = getUsername(req);
+    await feedStateService.retryPending(username, { force: true });
+    res.json(feedStateService.summary(username));
+  }));
+
+  router.get('/workspace', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed workspace unavailable' });
+    res.json(feedStateService.getWorkspace(getUsername(req)));
+  }));
+
+  router.patch('/workspace/preferences', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed workspace unavailable' });
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Preference object required' });
+    }
+    const preferences = await feedStateService.updatePreferences(getUsername(req), req.body);
+    res.json({ preferences });
+  }));
+
+  router.put('/workspace/checkpoints/:mode', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed workspace unavailable' });
+    if (!['reader', 'headlines', 'scroll', 'search'].includes(req.params.mode)) {
+      return res.status(400).json({ error: 'Invalid feed mode' });
+    }
+    const checkpoint = await feedStateService.recordCheckpoint(getUsername(req), req.params.mode, req.body || {});
+    res.json({ checkpoint });
+  }));
+
+  router.put('/workspace/sources/:sourceKey', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed workspace unavailable' });
+    const sourceKey = String(req.params.sourceKey || '');
+    if (!sourceKey || sourceKey.length > 256) return res.status(400).json({ error: 'Invalid source key' });
+    if (!['more', 'less', 'mute', 'normal'].includes(req.body?.level)) return res.status(400).json({ error: 'Invalid source preference' });
+    const sourcePreferences = await feedStateService.updateSourcePreference(getUsername(req), sourceKey, req.body.level);
+    res.json({ sourcePreferences });
+  }));
+
+  router.get('/annotations', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed annotations unavailable' });
+    const itemId = req.query.itemId === undefined ? null : String(req.query.itemId);
+    if (itemId !== null && !isValidItemId(itemId)) return res.status(400).json({ error: 'Invalid itemId' });
+    res.json({ annotations: feedStateService.listAnnotations(getUsername(req), itemId) });
+  }));
+
+  router.post('/annotations', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed annotations unavailable' });
+    if (!isValidItemId(req.body?.itemId)) return res.status(400).json({ error: 'Valid itemId required' });
+    try {
+      const annotation = await feedStateService.createAnnotation(getUsername(req), req.body);
+      res.status(201).json({ annotation });
+    } catch (error) {
+      if (error.message === 'Feed item not found') return res.status(404).json({ error: error.message });
+      if (error.message === 'Annotation requires a note or quote') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  router.patch('/annotations/:annotationId', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed annotations unavailable' });
+    if (!req.params.annotationId || req.params.annotationId.length > 128) return res.status(400).json({ error: 'Invalid annotation id' });
+    try {
+      const annotation = await feedStateService.updateAnnotation(getUsername(req), req.params.annotationId, req.body || {});
+      res.json({ annotation });
+    } catch (error) {
+      if (error.message === 'Annotation not found') return res.status(404).json({ error: error.message });
+      if (error.message === 'Annotation requires a note or quote') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  router.delete('/annotations/:annotationId', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed annotations unavailable' });
+    if (!req.params.annotationId || req.params.annotationId.length > 128) return res.status(400).json({ error: 'Invalid annotation id' });
+    const removed = await feedStateService.deleteAnnotation(getUsername(req), req.params.annotationId);
+    if (!removed) return res.status(404).json({ error: 'Annotation not found' });
+    res.json({ removed: true });
+  }));
+
+  router.get('/data/export', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed export unavailable' });
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename="daylight-feed-${date}.json"`);
+    res.json(feedStateService.exportData(getUsername(req)));
+  }));
+
+  router.post('/data/import', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed import unavailable' });
+    try {
+      const imported = await feedStateService.importData(getUsername(req), req.body);
+      res.json({ imported });
+    } catch (error) {
+      if (error.message === 'Unsupported feed export format') return res.status(400).json({ error: error.message });
+      throw error;
+    }
+  }));
+
+  router.get('/search', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed search unavailable' });
+    const limit = toBoundedInt(req.query.limit, { min: 1, max: 100, def: 30 });
+    const offset = req.query.cursor
+      ? toBoundedInt(Buffer.from(String(req.query.cursor), 'base64url').toString('utf8'), { min: 0, max: 1_000_000, def: 0 })
+      : 0;
+    const username = getUsername(req);
+    feedStateService.ensureHistoryBackfill(username);
+    const result = feedStateService.search(username, {
+      query: String(req.query.q || '').slice(0, 200),
+      state: req.query.state || null,
+      mode: req.query.mode || null,
+      source: req.query.source || null,
+      from: req.query.from || null,
+      to: req.query.to || null,
+      limit,
+      offset,
+    });
+    res.json({
+      items: result.items,
+      total: result.total,
+      nextCursor: result.nextOffset === null ? null : Buffer.from(String(result.nextOffset)).toString('base64url'),
+      coverage: { retentionMonths: 12, ...feedStateService.historyBackfillStatus(username) },
+    });
+  }));
+
+  router.get('/items/:slug', asyncHandler(async (req, res) => {
+    if (!feedStateService) return res.status(503).json({ error: 'Feed history unavailable' });
+    let id;
+    try { id = Buffer.from(req.params.slug, 'base64url').toString('utf8'); }
+    catch { return res.status(400).json({ error: 'Invalid slug' }); }
+    const item = feedStateService.find(getUsername(req), id);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    const detail = feedAssemblyService
+      ? await feedAssemblyService.getDetail(item.id, item.meta || {}, getUsername(req))
+      : null;
+    res.json({ item, sections: detail?.sections || [], ogImage: detail?.ogImage || null, ogDescription: detail?.ogDescription || null });
   }));
 
   // Get headlines for a single source
@@ -267,20 +455,94 @@ export function createFeedRouter(config) {
   // Scroll (merged feed -- skeleton)
   // =========================================================================
 
+  router.post('/scroll/sessions', asyncHandler(async (req, res) => {
+    const username = getUsername(req);
+    const sessionId = randomUUID();
+    const { limit, focus, sources, filter } = req.body || {};
+    const result = await feedAssemblyService.getNextBatch(username, {
+      limit: limit === undefined ? undefined : toBoundedInt(limit, { min: 1, max: 100, def: 15 }),
+      focus: focus || null,
+      sources: Array.isArray(sources) ? sources : null,
+      filter: filter || null,
+      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
+      sessionId,
+    });
+    scrollSessions.set(sessionId, { username, createdAt: Date.now(), lastAccess: Date.now() });
+    feedSessionStore?.save(username, sessionId, feedAssemblyService.snapshotSession(username, sessionId));
+    const items = feedStateService ? feedStateService.enrich(username, result.items || [], 'scroll') : result.items;
+    res.status(201).json({ ...result, items, sessionId, nextCursor: items?.at(-1)?.id || null });
+  }));
+
+  router.get('/scroll/sessions/:sessionId', asyncHandler(async (req, res) => {
+    const username = getUsername(req);
+    let session = scrollSessions.get(req.params.sessionId);
+    if (!session && feedSessionStore) {
+      const persisted = feedSessionStore.load(username, req.params.sessionId);
+      if (persisted && feedAssemblyService.restoreSession(username, req.params.sessionId, persisted.snapshot)) {
+        session = { username, createdAt: new Date(persisted.createdAt).getTime(), lastAccess: Date.now() };
+        scrollSessions.set(req.params.sessionId, session);
+      }
+    }
+    if (!session || session.username !== username || Date.now() - session.lastAccess > sessionTtlMs) {
+      scrollSessions.delete(req.params.sessionId);
+      return res.status(404).json({ error: 'Scroll session expired' });
+    }
+    session.lastAccess = Date.now();
+    if (req.query.resume === '1') {
+      const resumed = feedAssemblyService.getSessionItems(username, req.params.sessionId);
+      const items = feedStateService ? feedStateService.enrich(username, resumed, 'scroll') : resumed;
+      const hasMore = feedAssemblyService.sessionHasMore(username, req.params.sessionId);
+      const metadata = feedAssemblyService.getSessionMetadata(username, req.params.sessionId);
+      return res.json({
+        ...metadata,
+        items,
+        hasMore,
+        caughtUp: !hasMore,
+        sessionId: req.params.sessionId,
+        nextCursor: items.at(-1)?.id || null,
+        resumed: true,
+      });
+    }
+    const result = await feedAssemblyService.getNextBatch(username, {
+      limit: req.query.limit === undefined ? undefined : toBoundedInt(req.query.limit, { min: 1, max: 100, def: 15 }),
+      cursor: req.query.cursor || 'continue',
+      filter: req.query.filter || null,
+      focus: req.query.focus || null,
+      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
+      sessionId: req.params.sessionId,
+    });
+    const items = feedStateService ? feedStateService.enrich(username, result.items || [], 'scroll') : result.items;
+    feedSessionStore?.save(username, req.params.sessionId, feedAssemblyService.snapshotSession(username, req.params.sessionId));
+    res.json({ ...result, items, sessionId: req.params.sessionId, nextCursor: items?.at(-1)?.id || null });
+  }));
+
   router.get('/scroll', asyncHandler(async (req, res) => {
     const start = Date.now();
     const username = getUsername(req);
-    const { cursor, limit, focus, source, nocache, filter } = req.query;
+    const { cursor, limit, focus, source, nocache, filter, session } = req.query;
     const parsedLimit = limit === undefined ? undefined : toBoundedInt(limit, { min: 1, max: 100, def: 15 });
 
-    const result = await feedAssemblyService.getNextBatch(username, {
+    if (session && !feedAssemblyService.hasSession(username, session) && feedSessionStore) {
+      const persisted = feedSessionStore.load(username, session);
+      if (persisted) feedAssemblyService.restoreSession(username, session, persisted.snapshot);
+    }
+
+    let result = await feedAssemblyService.getNextBatch(username, {
       limit: parsedLimit,
       cursor,
       focus: focus || null,
       sources: source ? source.split(',').map(s => s.trim()) : null,
       nocache: nocache === '1',
       filter: filter || null,
+      sourcePreferences: feedStateService?.getSourcePreferences(username) || {},
+      sessionId: session || null,
     });
+
+    if (feedStateService) {
+      result = { ...result, items: feedStateService.enrich(username, result.items || [], 'scroll') };
+    }
+
+    if (session) feedSessionStore?.save(username, session, feedAssemblyService.snapshotSession(username, session));
 
     logger.info?.('feed.scroll.served', {
       durationMs: Date.now() - start,
