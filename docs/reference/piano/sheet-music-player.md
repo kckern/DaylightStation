@@ -231,10 +231,10 @@ tells you which one you're in:
 | State | Play button | Cursor driver | Kiosk audio | Gate / ink |
 |---|---|---|---|---|
 | **No range** | Enabled | Transport, same as Listen | Performs active hands | No gate; wet ink is neutral, never red |
-| **Range + loop ON** | Disabled — "Learn advances as you play" | You (the follow tracker) | Silent | Gate active: wrong notes shake + red ink |
+| **Range + loop ON** | Disabled — "Learn advances as you play" | You (canonical cursor attempt) | Silent | Gate active: wrong notes shake + red ink |
 | **Range + loop OFF** | Enabled | Transport, whole piece | Performs active hands | No gate; neutral wet ink |
 
-Play is enabled exactly when the loop is off — the follow tracker and the
+Play is enabled exactly when the loop is off — the assessment projection and the
 machine transport are never driving the cursor at the same time. Moving
 between any two matrix states (toggling the loop, setting or clearing a
 range) always stops whatever was driving the cursor and silences the kiosk;
@@ -459,12 +459,13 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `piano.score-open-failed` | warn | `id, error` — the score's XML fetch failed. Emitted from `SheetMusic.jsx` (`NotationScore`), not this hook: a failed fetch renders `PianoEmpty` and never mounts `ScorePlayer`. It carries `app: 'piano-sheetmusic', sessionLog: true` on its own context so it still lands in the run's session file without creating a second one. |
 | `score.playback.stall` | debug | `step, driftMs, gapMs, effectiveBpm, stallMs` (drift past a tempo-scaled budget, or a tick gap that skipped whole ticks) |
 | `score.playback.stats` | info | `mode, events, meanDriftMs, p95DriftMs, maxDriftMs, stalls, maxFrameGapMs` (at pause/stop/done/unmount) |
-| `score.follow.timing` | sampled | `step, note, sinceAdvanceMs` (how long the player took to answer the cursor — no verdict) |
+| `score.follow.timing` | sampled | `step, sinceAdvanceMs` (how long the player took to answer the cursor — no pitch and no verdict) |
 | `score.follow.stats` | info | `hits, wrongs, count, medianStepMs, p95StepMs` (on leaving Learn) |
 | `score.learn.auto-range` | info | `inMeasure, outMeasure, reason` — the landing heuristic's pick and which rule produced it |
-| `score.learn.cycle` | info | a completed or voided gate cycle, feeding the practice record |
+| `score.learn.cycle` | info | `in, out` — a canonical range lap completed; its finalized span results feed the practice frontier |
+| `score.learn.assessment` | info on saved/skipped; warn on rejected/failed | common terminal evidence summary: identity, matcher/mode, criteria and rubric, part weights, failure reasons and gate evidence, terminal status, score/pass, note-count/response diagnostics, persistence outcome/status/duration; never prompts or raw MIDI |
 | `score.learn.stuck-prompt` / `-resolved` / `-dismissed` | info | the 3-wrong reveal-keys assist arming and clearing |
-| `score.learn.complete` | info | a clean gated pass covered the whole piece — the completion card is offered (Learn handing off to Polish) |
+| `score.learn.complete` | info | the wait-for-correct cursor covered the whole piece — the completion card is offered (Learn handing off to Polish) |
 | `score.loop.arm` / `score.loop.arm-expire` | info | an endpoint armed for the next tap, or the arm expiring unused |
 | `score.loop.set` | info | `edge, measure, via, snapped` — an endpoint committed, by tap or drag |
 | `score.loop.on` | info | the loop toggled on/off |
@@ -507,6 +508,16 @@ drift, stalls, and the summary — to one ordered, wall-clock-stamped
 attempt. Level is dialable via `config/logging.yml` (`loggers: { piano-sheetmusic }`,
 gitignored/deployment-managed) or `LOG_LEVEL_*`.
 
+**Full-fidelity input diagnostics are a separate, explicit channel.** The
+zero-allocation input recorder keeps a bounded in-memory ring for latency work,
+but ships nothing unless `inputTelemetry.enabled` or
+`sheetmusic.inputTelemetry.enabled` is set, or an operator explicitly invokes
+`window.__INPUT_REC__.start()`. Its `input.header`/`input.batch` records go to
+`channel: input`, not the practice session or assessment events. Stop it with
+`window.__INPUT_REC__.stop()`. This opt-in diagnostic stream is the only place
+raw MIDI input is intentionally retained; ordinary telemetry logs counts,
+timings, classifications, and persistence evidence without pitches.
+
 ## Config (`piano.yml` → `sheetmusic:`)
 
 Resolved (with defaults) by `sheetMusicConfig.resolveSheetMusicConfig`:
@@ -534,7 +545,11 @@ silent, undeadlockable staff.
 score:
 
 ```yaml
-fingerprint: { measureCount: 24, xmlBytes: 48213 }   # invalidation: mismatch → discard record
+fingerprint:                                # invalidation: content mismatch → discard record
+  version: 2
+  measureCount: 24
+  xmlBytes: 48213
+  contentSha256: "…"                       # SHA-256 of the exact MusicXML
 measures:            # keys are measure INDICES (0-based) — never XML numbers
   "4": { rh: {attempts: 3, passes: 2}, lh: {attempts: 1, passes: 0}, both: {attempts: 0, passes: 0} }
 polish:               # tier bests keyed by hands bucket — an RH-only run never overwrites a both-hands best
@@ -582,6 +597,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `Piano/performance/assessmentSession.js` | Public canonical expectation, immutable attempt lifecycle, runtime, criteria, verdict, part, and span API |
 | `Piano/performance/assessmentAttempt.js` | Pure cursor/timed/held implementation used by Learn and Polish |
 | `Piano/performance/assessmentRuntime.js` | MIDI/clock external-store binding; never renders or persists |
+| `Piano/performance/attemptEvidence.js` | Shared evidence builder, attempt client, and persistence telemetry projection used by Learn, Exercises, and Gaming |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
@@ -612,7 +628,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
-| `useFollowTracker.js` | Learn presentation advancement (range-aware); the canonical cursor attempt is evidence authority |
+| `useLearnAssessmentProjection.js` | Binds Learn MIDI to the canonical runtime and projects classified events into range-aware cursor movement; owns no matcher state |
 | `useScoreEvaluator.js` | Polish timed-attempt lifecycle and canonical measure-span closure |
 | `assessmentProjections.js` | Sheet-only Polish tally and worst-range projections |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |

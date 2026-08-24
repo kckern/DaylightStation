@@ -16,10 +16,11 @@ The migration described here now supplies that first-class runtime and moves
 the first-party consumers onto canonical expectations. This document retains
 the original problem analysis, followed by the implemented target contract.
 
-This leaves Daylight with shared primitives but not one shared performance
-model. A feature can import matching or grading functions, but it cannot yet
-take a score range or exercise-bank instance and run a canonical self-paced or
-paced attempt from start through final result.
+Before this migration, Daylight had shared primitives but not one shared
+performance model: a feature could import matching or grading functions, but
+could not take a score range or exercise-bank instance through one canonical
+self-paced or paced lifecycle. The implemented façade, runtime, and portable
+result close that gap, including aggregate, per-part, and per-span evidence.
 
 The target is a pure, event-based assessment runtime with small surface
 adapters. It must support self-paced wait-for-correct reading, paced play-along,
@@ -117,7 +118,11 @@ The first consolidation correctly established several important ideas:
 
 Those decisions remain the foundation of the target system.
 
-## Where we are: the current intermediate state
+## Where we were: the pre-migration intermediate state
+
+This section is the retained 2026-08-24 audit snapshot. Its present-tense
+statements describe the code before the implementation documented below; they
+are problem evidence, not the current contract.
 
 ### The public file is both façade and compatibility toolbox
 
@@ -616,20 +621,21 @@ are true:
 8. **Public API cleanup.** Deprecate compatibility exports once all first-party
    assessment surfaces use complete attempts.
 
-## Open design decisions
+## Resolved design decisions
 
-- Whether the self-paced matcher is named `cursor`, `cursor-set`, or represented
-  as `cursor` plus an onset-order policy.
-- Whether a complete session object remains immutable return-by-replacement or
-  is wrapped by a mutable runtime while retaining a pure reducer underneath.
-- Whether Learn writes full attempt records in addition to its compact per-score
-  frontier. It must not become curriculum-eligible merely because its evidence
-  becomes richer.
-- How score ranges receive stable identity if they are later used as explicit
-  game or curriculum challenges.
-- Whether a failed game requirement retries the move, produces a weak effect,
-  or consumes the turn. The assessment service supplies the verdict; the game
-  definition owns that consequence.
+- The self-paced matcher is `cursor`; each cursor position is an order-free
+  onset set while events remain sequential.
+- Attempts remain immutable return-by-replacement values. The mutable runtime is
+  only an external-store binding around those pure transitions.
+- Learn writes both its compact frontier and a full `purpose: practice` attempt.
+  Practice evidence is never curriculum-eligible.
+- Score range activity identity contains the score key, content SHA-256,
+  measure range, and active-part set.
+- Pass-gated game failure consumes the move and turn with no effect; the result
+  retains its failed criteria and gates.
+- Per-part assessment is implemented. Score staves and authored exercise hands
+  produce logical parts, normalized part weights are persisted, and ambiguous
+  wrong-note attribution remains absent from per-part diagnostics.
 
 ## Outcome
 

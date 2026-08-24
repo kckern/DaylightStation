@@ -148,6 +148,23 @@ the current instrument, effects, and Piano level. Non-kiosk browsers skip only t
 bridge reset. The app remains usable while disconnected; the banner is the sole
 player-facing interruption.
 
+## Performance assessment and evidence
+
+Learn, Polish, Exercises, Flashcards, Piano Hero, and timed game challenges use
+the shared immutable [performance assessment](./performance-assessment.md)
+lifecycle. Score ranges, bank instances, and charts compile to canonical onset
+events with stable logical note and part identities. Free and metronome runs are
+wait-for-correct and never report placement; only explicitly cued material uses
+tempo-aware matching.
+
+Learn and exercise practice write `purpose: practice` evidence without gaining
+curricular authority. Pass challenges use the same result schema but may satisfy
+their stored requirement. `performance/attemptEvidence.js` is the common client
+and evidence builder for Learn, Exercises, and Gaming, so activity identity,
+provider/rubric versions, interrupted-attempt policy, and persistence telemetry
+do not vary by surface. Native arcade collision and piano-as-controller commands
+remain outside musical assessment.
+
 ---
 
 ## The modes
@@ -291,5 +308,5 @@ logging, so a backend outage degrades gracefully rather than breaking the surfac
 | Sheet music player | [sheet-music-player.md](./sheet-music-player.md) |
 | Composer (notation editor — spec, not yet built) | [composer.md](./composer.md) |
 | Performance + jank | [performance.md](./performance.md) |
-| Performance assessment (shared grading, matching, gates, spans) | `frontend/src/modules/Piano/performance/assessmentSession.js` · [performance-assessment.md](./performance-assessment.md) |
+| Performance assessment and evidence | `frontend/src/modules/Piano/performance/{assessmentSession,attemptEvidence}.js` · [performance-assessment.md](./performance-assessment.md) |
 | Exercise bank (performable items, seeds and instances) | [exercise-bank.md](./exercise-bank.md) |
