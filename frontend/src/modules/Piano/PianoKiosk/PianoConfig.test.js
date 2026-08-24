@@ -18,7 +18,7 @@ describe('derivePianos', () => {
 describe('resolvePianoConfig', () => {
   it('overlays per-piano values over shared defaults', () => {
     const raw = {
-      voices: [{ label: 'Grand', program: 0 }],
+      effects: { dialect: 'gs', resend: 5 },
       videos: { plexCollection: '111' },
       inactivityMinutes: 5,
       pianos: {
@@ -30,7 +30,7 @@ describe('resolvePianoConfig', () => {
     expect(cfg.midi.preferredInputName).toBe('Roland');
     expect(cfg.videos.plexCollection).toBe('222'); // per-piano overrides shared
     expect(cfg.inactivityMinutes).toBe(5);          // inherited from shared
-    expect(cfg.voices).toEqual([{ label: 'Grand', program: 0 }]);
+    expect(cfg.effects).toEqual({ dialect: 'gs', route: 'pianobridge', transport: 'sysex', resend: 5 });
   });
   it('the synthesized default piano inherits straight from shared top-level', () => {
     const raw = { videos: { plexCollection: '999' } };
@@ -40,7 +40,7 @@ describe('resolvePianoConfig', () => {
   });
   it('falls back to defaults for an unknown piano', () => {
     const cfg = resolvePianoConfig({}, 'ghost');
-    expect(cfg.voices).toEqual(PIANO_CONFIG_DEFAULTS.voices);
+    expect(cfg.effects).toEqual(PIANO_CONFIG_DEFAULTS.effects);
     expect(cfg.videos.plexCollection).toBeNull();
   });
   it('passes the whole videos block through (collections + thresholds, not just plexCollection)', () => {
@@ -143,26 +143,20 @@ describe('resolvePianoConfig', () => {
   });
 });
 
-describe('instruments config', () => {
-  it('defaults instruments to an empty list when unset', () => {
-    const cfg = resolvePianoConfig({}, 'default');
-    expect(cfg.instruments).toEqual([]);
+describe('effects config', () => {
+  it('resolves every field per-piano over shared over defaults', () => {
+    const raw = {
+      effects: { dialect: 'gs', route: 'pianobridge', transport: 'cc', resend: 2 },
+      pianos: { upstairs: { effects: { transport: 'sysex', resend: 4 } } },
+    };
+    expect(resolvePianoConfig(raw, 'upstairs').effects).toEqual({ dialect: 'gs', route: 'pianobridge', transport: 'sysex', resend: 4 });
+    expect(resolvePianoConfig({}, 'default').effects).toEqual({ dialect: 'gm2', route: 'pianobridge', transport: 'sysex', resend: 3 });
   });
 
-  it('passes through per-piano instruments over shared', () => {
-    const raw = {
-      instruments: [{ id: 'shared_grand', name: 'Shared', engine: 'sfizz', asset: 'a.sfz' }],
-      pianos: {
-        upstairs: {
-          instruments: [{ id: 'dx7', name: 'DX7', engine: 'dexed', asset: 'b.syx', patch: 3 }],
-        },
-      },
-    };
-    expect(resolvePianoConfig(raw, 'upstairs').instruments[0].id).toBe('dx7');
-    // 'default' inherits straight from shared top-level instruments.
-    expect(resolvePianoConfig(raw, 'default').instruments).toEqual([
-      { id: 'shared_grand', name: 'Shared', engine: 'sfizz', asset: 'a.sfz' },
-    ]);
+  it('does not expose retired rendered voice catalogs', () => {
+    const config = resolvePianoConfig({ voices: [{ program: 1 }], instruments: [{ id: 'old' }] }, 'default');
+    expect(config).not.toHaveProperty('voices');
+    expect(config).not.toHaveProperty('instruments');
   });
 });
 

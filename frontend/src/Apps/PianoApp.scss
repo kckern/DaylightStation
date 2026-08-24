@@ -108,8 +108,7 @@
   flex: 0 0 auto;
   overflow: hidden;
 
-  .piano-app,
-  .piano-connect-gate {
+  .piano-app {
     width: 100%;
     height: 100%;
   }
@@ -147,6 +146,26 @@
 .piano-app input,
 .piano-app textarea,
 .piano-app [contenteditable] { user-select: text; -webkit-user-select: text; }
+
+// Shared player/adult sheet. Fixed chrome keeps a large close target visible
+// while the body independently scrolls on the 1280×800 kiosk canvas.
+.piano-sheet {
+  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
+  &__scrim { position: absolute; inset: 0; border: 0; background: rgb(0 0 0 / .5); cursor: default; }
+  &__panel { position: relative; width: min(30rem, 92vw); height: 100%; display: flex; flex-direction: column; background: var(--piano-surface); border-left: 1px solid var(--piano-border); box-shadow: -1.5rem 0 3rem rgb(0 0 0 / .4); }
+  &__head, &__foot { flex: 0 0 auto; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--piano-border); }
+  &__head { display: flex; align-items: center; justify-content: space-between; h2 { margin: 0; font-size: var(--t-title); } }
+  &__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--sp-3) var(--sp-4); }
+  &__foot { border-top: 1px solid var(--piano-border); border-bottom: 0; }
+  &__close, button, select, summary { min-height: 48px; }
+  &__close { min-width: 48px; border-radius: var(--r-pill); border: 1px solid var(--piano-border); background: var(--piano-surface-2); color: inherit; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--piano-border); border-radius: var(--r-sm); background: var(--piano-surface-2); color: inherit; padding: .45rem .7rem; &:active { background: var(--piano-border); } &:disabled { opacity: .55; cursor: not-allowed; } }
+  button:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid var(--piano-accent); outline-offset: 2px; }
+  summary { display: flex; align-items: center; cursor: pointer; }
+  section { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) 0; border-bottom: 1px solid var(--piano-border); }
+  h3 { margin: 0; font-size: .78rem; text-transform: uppercase; letter-spacing: .1em; color: var(--piano-muted); }
+  p { margin: 0; }
+}
 
 .piano-chrome {
   flex: 0 0 auto;
@@ -265,6 +284,7 @@
     &:active { background: var(--piano-border); }
   }
   &__chiplabel { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; }
+  &__chevron { color: var(--piano-muted); font-size: 1.25rem; transform: rotate(90deg); }
 
   &__dot {
     width: 0.6rem;
@@ -495,117 +515,6 @@
     min-height: 12rem; background: #fff; border: 1px solid var(--piano-border); border-radius: var(--r-md);
     display: flex; align-items: center; justify-content: center; overflow: hidden;
     .current-chord-staff-wrapper { width: 100%; padding: 1rem 0; }
-  }
-}
-
-.piano-connect-gate {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-  box-sizing: border-box;
-  background: var(--piano-bg);
-  color: var(--piano-fg);
-  font-family: 'Roboto Condensed', system-ui, sans-serif;
-  overscroll-behavior: none;
-  touch-action: manipulation;
-
-  // Contained card — clear hierarchy instead of a bare full-viewport stack.
-  &__card {
-    width: 100%;
-    max-width: 26rem;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    text-align: center;
-    padding: 2.25rem 2rem 1.5rem;
-    background: var(--piano-surface);
-    border: 1px solid var(--piano-border);
-    border-radius: var(--r-lg);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  }
-
-  // Piano glyph crowning the card (sizes to its own font-size via .piano-icon 1em).
-  &__mark {
-    display: block;
-    font-size: 3.5rem;
-    line-height: 1;
-    margin-bottom: 0.5rem;
-    color: var(--piano-fg);
-    opacity: 0.9;
-  }
-
-  &__title {
-    margin: 0;
-    font-size: 2.25rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-  }
-
-  &__status {
-    margin: 0.5rem 0 1.75rem;
-    min-height: 2.75em; // reserve space so the card doesn't jump as status changes
-    color: var(--piano-muted);
-    font-size: 1.05rem;
-    line-height: 1.35;
-  }
-
-  &__actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: stretch;
-  }
-
-  &__btn {
-    min-height: 48px;
-    font-size: 1.25rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: var(--r-pill);
-    border: none;
-    font-weight: 700;
-    cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
-
-    // Secondary (Bluetooth settings, Continue without piano) — outline tiles.
-    &--ghost {
-      background: var(--piano-surface-2);
-      color: var(--piano-fg);
-      border: 1px solid var(--piano-border);
-      font-weight: 600;
-    }
-  }
-
-  // Device actions — visually separated below a divider (not connect actions).
-  // Two side-by-side buttons (turn-off / reboot) that wrap on a narrow card.
-  &__device {
-    margin-top: 1.25rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--piano-border);
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-3);
-  }
-
-  &__devbtn {
-    flex: 1 1 8rem;
-    min-height: 48px;
-    padding: 0.5rem 1rem;
-    border-radius: var(--r-pill);
-    background: transparent;
-    border: 1px solid var(--piano-border);
-    color: var(--piano-muted);
-    font-family: inherit;
-    font-size: 0.95rem;
-    cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
-
-    &:active { background: var(--piano-surface-2); color: var(--piano-fg); }
-
-    // Armed (awaiting confirm) — warn colour signals it's live.
-    &.is-armed { border-color: var(--piano-warn); color: var(--piano-warn); font-weight: 700; }
   }
 }
 
@@ -2471,35 +2380,6 @@
    Tap the chrome sound chip to open; long-press opens the separate Operator
    Drawer. NOTHING destructive lives here — see SoundPanel.jsx. ---- */
 .piano-sound-panel {
-  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
-
-  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
-
-  &__sheet {
-    position: relative; width: min(30rem, 92vw); height: 100%;
-    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
-    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
-    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
-  }
-
-  &__head {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
-  }
-  &__close {
-    display: flex; align-items: center; justify-content: center;
-    width: 2rem; height: 2rem; border-radius: var(--r-pill);
-    background: var(--piano-surface-2); border: 1px solid var(--piano-border);
-    color: var(--piano-muted); cursor: pointer; font-size: 1rem; line-height: 1;
-    &:active { background: var(--piano-border); }
-  }
-
-  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
-  &__eyebrow {
-    font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
-    color: var(--piano-muted); margin: 0;
-  }
-
   // Favorites / house-shortlist tiles — big, touch-friendly, the funnel's front door.
   &__tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
   &__tile {
@@ -2562,6 +2442,12 @@
   }
 
   &__steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.3rem; }
+  &__steps button.is-on { background: var(--piano-accent); color: var(--piano-accent-ink); border-color: var(--piano-accent); }
+  &__tonehead { justify-content: space-between; }
+  &__type { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+  &__type select { min-width: 11rem; background: var(--piano-surface-2); color: inherit; border: 1px solid var(--piano-border); border-radius: var(--r-sm); padding: 0 var(--sp-2); }
+  &__save-actions { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-2); }
+  &__current { display: flex; align-items: center; gap: var(--sp-2); font-size: 1.15rem; }
   &__step {
     min-height: 46px; display: flex; align-items: center; justify-content: center;
     background: var(--piano-surface-2); color: var(--piano-muted);
@@ -2591,38 +2477,8 @@
   &__save { border-color: var(--piano-accent); color: var(--piano-accent-text); }
 }
 
-/* ---- Operator Drawer (maintenance console, behind long-press — design §7) ----
-   Hardware / Diagnostics / Display / Recovery(ranked) / Feedback. Mirrors the
-   Sound Panel's slide-over shell but is the operator-only twin: destructive
-   and diagnostic controls live ONLY here, never on the player-facing panel. ---- */
+/* Adult-only Maintenance additions. PianoSheet owns all shared shell chrome. */
 .piano-operator-drawer {
-  position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end;
-
-  &__scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.5); }
-
-  &__sheet {
-    position: relative; width: min(30rem, 92vw); height: 100%;
-    background: var(--piano-surface); border-left: 1px solid var(--piano-border);
-    display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.25rem;
-    overflow-y: auto; box-shadow: -1.5rem 0 3rem rgba(0, 0, 0, 0.4);
-  }
-
-  &__head {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
-    h2 { font-size: var(--t-title); font-weight: 700; margin: 0; }
-  }
-  &__close {
-    background: none; border: none; color: var(--piano-muted); cursor: pointer;
-    font-size: 1.4rem; padding: 0.25rem 0.5rem; line-height: 1;
-  }
-
-  &__section { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.6rem; padding: 0.5rem 0; }
-  &__section--grow { flex: 1 1 auto; min-height: 0; }
-  &__eyebrow {
-    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--piano-muted); margin: 0;
-  }
-
   // Hardware — connection dot + Connect / Bluetooth launcher.
   &__hw { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
   &__hwdot {
@@ -2674,6 +2530,9 @@
     padding: 0.6rem 1rem; font: inherit; font-weight: 700; cursor: pointer;
     &:active { background: var(--piano-border); }
   }
+  &__details, &__advanced { display: flex; flex-direction: column; gap: var(--sp-2); }
+  &__status { padding: var(--sp-2); border-radius: var(--r-sm); background: var(--piano-surface-2); }
+  &__status.is-failed { color: var(--piano-danger); }
 }
 
 /* ---- Task 30: Reduced motion — disable all transitions/animations on request ---- */
