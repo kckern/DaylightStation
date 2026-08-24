@@ -14,10 +14,12 @@ const CONFIG = {
 };
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-function appWith({ engine, configService, recordStore, analyst, logger = silentLogger }) {
+function appWith({ engine, configService, recordStore, analyst, commentaryService, logger = silentLogger }) {
   const app = express();
   app.use(express.json());
-  app.use('/api/v1/chess', createChessRouter({ engine, configService, recordStore, analyst, logger }));
+  app.use('/api/v1/chess', createChessRouter({
+    engine, configService, recordStore, analyst, commentaryService, logger,
+  }));
   return app;
 }
 
@@ -26,6 +28,31 @@ const stubConfig = (overrides = {}) => ({
   writeUserLayer: vi.fn(async () => {}),
   resolveRung: (config, id) => config.rungs.find((r) => r.id === id) || config.rungs[1],
   ...overrides,
+});
+
+describe('POST /api/v1/chess/quip', () => {
+  it('passes only the validated user and serializable game request to the service', async () => {
+    const commentaryService = {
+      react: vi.fn(async () => ({ eventId: 'g1:1:e4', quip: 'A bold first step.', source: 'ai' })),
+    };
+    const body = {
+      gameId: 'g1', ply: 1, level: 0, playerColor: 'w',
+      game: { initial_fen: START, fen: START, moves: ['e4'] },
+    };
+    const res = await request(appWith({ engine: {}, configService: stubConfig(), commentaryService }))
+      .post('/api/v1/chess/quip?user=felix').send(body);
+    expect(res.status).toBe(200);
+    expect(res.body.quip).toBe('A bold first step.');
+    expect(commentaryService.react).toHaveBeenCalledWith({ userId: 'felix', ...body });
+  });
+
+  it('maps an invalid replay to 400', async () => {
+    const invalid = Object.assign(new Error('invalid_game'), { code: 'invalid_game' });
+    const commentaryService = { react: vi.fn(async () => { throw invalid; }) };
+    const res = await request(appWith({ engine: {}, configService: stubConfig(), commentaryService }))
+      .post('/api/v1/chess/quip').send({ gameId: 'bad' });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('POST /api/v1/chess/move', () => {

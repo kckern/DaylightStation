@@ -106,6 +106,32 @@ The renderer remains game-specific. Chess therefore keeps its specialized piece 
 
 **Chess does not use `InstrumentBoardStage`.** It hand-rolls the identical three-column equal-rail grid in `.piano-chess__stage`, because it also needs `container-type: size` (its board sizes itself in `cq` units) and a rank-axis centring compensation the stage has no hook for. It does use the chrome kit, and its `--pc-rail` reads `--pg-rail-w`, so the two layouts cannot drift apart on the one measurement that matters. Migrating it onto the stage is worthwhile only if those two hooks land cleanly; until then this paragraph is the reason, not an oversight.
 
+### Chess frontend boundaries
+
+`PianoChessGame.jsx` is the presentation composition root, not the owner of every chess use case.
+It renders the board and rails, owns immediate interaction state, and wires these focused units:
+
+- `useChessSessionIdentity` latches the player for one game and relatches both id and display name on restart.
+- `useChessPersistenceLifecycle` owns completion records, page-exit/unmount archives, and restart bookkeeping. It consumes an injected persistence gateway; it does not import HTTP itself.
+- `useChessOpponentTurn` owns request timing, stale-game cancellation, local fallback, and committing the served move. The HTTP request function is injected at the composition root.
+- `useChessAddressingProgress` records the separate skill of turning staff/chord input into a valid square address.
+- `chessRailViewModel` and `opponentViewModel` are pure derivation modules for rail copy, opponent state, onboarding, turn labels, and safe board theming.
+
+The dependency direction is presentation composition root → focused presentation controllers →
+pure chess rules and injected API clients. These React hooks are presentation controllers, not the
+DDD application layer. New persistence, opponent, identity, or rail-copy behavior belongs in the
+corresponding unit rather than growing `PianoChessGame.jsx` again.
+
+Opponent speech follows a separate fail-open path: `OpponentPortrait` → `chessApi` →
+`ChessOpponentCommentaryService` (application layer) → `IAIGateway` (port) → configured AI adapter.
+The application service replays the submitted game and resolves the ladder opponent on the server;
+the browser cannot invent a persona or feed unverified move facts to the prompt. Commentary is
+cosmetic: a short deadline and deterministic fallback ensure it never gates move input, opponent
+play, persistence, or ranking. Optional chess config lives under `personality` (`enabled`, `model`,
+`timeout_ms`, and `max_chars`); safe defaults require no user-layer migration. The model is currently
+allowlisted to the cost-capped Luna model, and timeout/length overrides are clamped server-side so a
+crafted user preference cannot turn decorative copy into an expensive request.
+
 ## Opponent pacing
 
 Chess, Connect Four, and Checkers all share one pacing capability rather than three ad hoc delays. `game-platform/opponent/opponentPacing.js` exports:

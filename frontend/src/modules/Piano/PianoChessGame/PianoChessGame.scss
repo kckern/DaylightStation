@@ -659,11 +659,27 @@
 }
 
 .piano-chess__identity-player {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
   font-size: var(--t-h);
   color: var(--pc-ivory);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.piano-chess__identity-player .piano-avatar {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.72rem;
+}
+
+.piano-chess__identity-player > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* State in form as well as in words: whether it is your move should be

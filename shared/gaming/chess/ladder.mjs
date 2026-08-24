@@ -154,6 +154,9 @@ export function resolveRoster(config) {
       theme: typeof entry.theme === 'string' && entry.theme ? entry.theme : fallback.theme,
       // Optional per-opponent piece set — a named style the board resolves.
       pieces: entry.pieces ?? null,
+      // A short voice note for cosmetic opponent dialogue. It never affects
+      // engine strength or promotion and stays server-resolved with the roster.
+      personality: typeof entry.personality === 'string' ? entry.personality.trim() : null,
     });
   }));
 }

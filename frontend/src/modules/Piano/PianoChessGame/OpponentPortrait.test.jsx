@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as sass from 'sass';
 import { fileURLToPath } from 'url';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
 import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/chess/ladder.mjs';
 
@@ -61,6 +61,49 @@ describe('the portrait', () => {
   it('never renders a blank where a name should be', () => {
     render(<OpponentPortrait opponent={null} level={5} />);
     expect(screen.getByText('Level 5')).toBeTruthy();
+  });
+
+  it('types speech visually while announcing the whole sentence only once', async () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <OpponentPortrait
+          opponent={DEFAULT_ROSTER[0]}
+          level={0}
+          speech={{ eventId: 'g1:1:e4', quip: 'A bold first step.' }}
+        />,
+      );
+      const typed = container.querySelector('.chess-opponent__speech-typed');
+      const live = container.querySelector('.chess-opponent__speech-live');
+      expect(typed.textContent).toBe('');
+      expect(live.textContent).toBe('A bold first step.');
+      expect(typed.getAttribute('aria-hidden')).toBe('true');
+      await act(async () => vi.advanceTimersByTimeAsync(500));
+      expect(typed.textContent).toBe('A bold first step.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the whole line immediately when reduced motion is requested', () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'matchMedia');
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ matches: true })),
+    });
+    try {
+      const { container } = render(
+        <OpponentPortrait
+          opponent={DEFAULT_ROSTER[0]}
+          level={0}
+          speech={{ eventId: 'g1:1:e4', quip: 'A bold first step.' }}
+        />,
+      );
+      expect(container.querySelector('.chess-opponent__speech-typed').textContent).toBe('A bold first step.');
+    } finally {
+      if (original) Object.defineProperty(window, 'matchMedia', original);
+      else delete window.matchMedia;
+    }
   });
 });
 

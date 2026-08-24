@@ -3,7 +3,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { fetchChessConfig, requestOpponentMove, saveChessConfig, saveGameRecord } from './chessApi.js';
+import {
+  fetchChessConfig, requestOpponentMove, requestOpponentQuip, saveChessConfig, saveGameRecord,
+} from './chessApi.js';
 
 beforeEach(() => { vi.clearAllMocks(); });
 
@@ -56,6 +58,27 @@ describe('fetchChessConfig', () => {
   it('returns null on failure rather than throwing into render', async () => {
     DaylightAPI.mockRejectedValue(new Error('boom'));
     expect(await fetchChessConfig('felix')).toBeNull();
+  });
+});
+
+describe('requestOpponentQuip', () => {
+  it('posts only the serializable game facts and returns the reaction', async () => {
+    DaylightAPI.mockResolvedValue({ eventId: 'g1:1:e4', quip: 'A bold first step.', source: 'ai' });
+    const game = { initial_fen: 'start', fen: 'after', moves: ['e4'] };
+    const result = await requestOpponentQuip({
+      gameId: 'g1', ply: 1, level: 0, playerColor: 'w', game, userId: 'felix',
+    });
+    expect(result.quip).toBe('A bold first step.');
+    expect(DaylightAPI).toHaveBeenCalledWith(
+      'api/v1/piano-games/chess/quip?user=felix',
+      { gameId: 'g1', ply: 1, level: 0, playerColor: 'w', game },
+      'POST',
+    );
+  });
+
+  it('fails open when commentary is offline', async () => {
+    DaylightAPI.mockRejectedValue(new Error('offline'));
+    expect(await requestOpponentQuip({ gameId: 'g1', ply: 1, game: {} })).toBeNull();
   });
 });
 

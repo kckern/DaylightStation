@@ -6,7 +6,7 @@
  * what anyone means.
  */
 
-const MERGE_BLOCKS = ['feedback'];
+const MERGE_BLOCKS = ['feedback', 'personality'];
 
 export function mergeChessConfig(household, user) {
   const base = household || {};

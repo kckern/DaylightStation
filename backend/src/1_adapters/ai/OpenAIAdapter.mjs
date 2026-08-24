@@ -298,6 +298,10 @@ export class OpenAIAdapter extends IAIGateway {
       data.temperature = options.temperature;
     }
 
+    if (options.reasoningEffort !== undefined) {
+      data.reasoning_effort = options.reasoningEffort;
+    }
+
     if (options.jsonMode) {
       data.response_format = { type: 'json_object' };
     }

@@ -16,6 +16,7 @@
  * @property {string} [model] - Model to use (overrides default)
  * @property {number} [maxTokens] - Maximum tokens in response
  * @property {number} [temperature] - Sampling temperature (0-2)
+ * @property {'none'|'minimal'|'low'|'medium'|'high'} [reasoningEffort] - Model reasoning budget
  * @property {boolean} [jsonMode=false] - Request JSON response format
  * @property {number} [timeout] - Request timeout in ms
  */
