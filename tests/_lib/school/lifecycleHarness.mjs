@@ -68,6 +68,7 @@ import { YamlEconomyDatastore } from '#adapters/persistence/yaml/YamlEconomyData
 import { SchoolService } from '#apps/school/SchoolService.mjs';
 import { EconomyService } from '#apps/economy/EconomyService.mjs';
 import { createDocumentReceiptRenderer } from '#rendering/school/documents/DocumentReceiptRenderer.mjs';
+import { HmacSchoolStudyGrantIssuer } from '#adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
@@ -236,6 +237,9 @@ export async function createLifecycleHarness({
 
   const clock = harnessClock(startIso);
   const rng = seededRng();
+  const studyGrants = new HmacSchoolStudyGrantIssuer({
+    key: Buffer.alloc(32, 7), clock: () => clock.now().getTime(), nonce: () => 'lifecycle-harness',
+  });
 
   // --- what school.yml would say in a house running the console -------------
   const schoolConfig = {
@@ -385,6 +389,7 @@ export async function createLifecycleHarness({
     userService,
     eventBus,
     languageStudyService,
+    studyGrants,
     donow: donow.service,
     donowSurfaces: donow.surfaces,
     donowDatastore: donow.datastore,

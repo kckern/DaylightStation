@@ -545,9 +545,11 @@ describe('OpenRemediation', () => {
 
   it('opens a LINKED session with the next variant', async () => {
     await failed();
-    const result = await remediate.execute({ sessionId: SID });
+    const result = await remediate.execute({ sessionId: SID, openedBy: 'parent' });
     expect(result).toMatchObject({ status: 'opened', newSessionId: 'ses_r1', variant: 1 });
     expect(sessions.derive('ses_r1')).toMatchObject({ unitId: WORKSHEET_UNIT, remediationOf: SID, variant: 1, state: 'created' });
+    expect((await sessions.readEvents('ses_r1'))[0]).toMatchObject({ type: 'created', openedBy: 'parent' });
+    expect((await sessions.readEvents(SID)).at(-1)).toMatchObject({ type: 'remediation_opened', openedBy: 'parent' });
   });
 
   it('carries only missed item ids into the linked retry session', async () => {

@@ -146,7 +146,10 @@ describe('the v2 agenda — math and language together, one card', () => {
     expect(schoolEvents[0].payload).toEqual({
       type: 'school.launch',
       learnerId: DEFAULT_LEARNER,
-      target: { kind: 'program', program: 'language' },
+      target: {
+        kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean',
+        studyGrant: expect.any(String),
+      },
     });
     // No work session was ever opened for the program unit (spec §4.4).
     expect((await h.sessionRows()).some((r) => r.unitId === LANGUAGE_UNIT)).toBe(false);

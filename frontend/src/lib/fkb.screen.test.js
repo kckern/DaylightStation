@@ -32,4 +32,15 @@ describe('fkb screenOff/screenOn', () => {
     expect(screenOff()).toBe(false);
     expect(screenOn()).toBe(false);
   });
+
+  it('contains bridge failures and reports that the action was not handled', () => {
+    global.fully = {
+      turnScreenOff: vi.fn(() => { throw new Error('bridge down'); }),
+      turnScreenOn: vi.fn(() => { throw new Error('bridge down'); }),
+    };
+    expect(() => screenOff()).not.toThrow();
+    expect(() => screenOn()).not.toThrow();
+    expect(screenOff()).toBe(false);
+    expect(screenOn()).toBe(false);
+  });
 });
