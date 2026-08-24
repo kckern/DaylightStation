@@ -74,6 +74,20 @@ function makeService(ds, now = AT) {
   });
 }
 
+function makeDue(ds, rung, seq = 1) {
+  const chain = ['repetition', 'dictation', 'recording', 'interpretation'];
+  const index = chain.indexOf(rung);
+  for (let i = 0; i < index; i += 1) {
+    ds.appendEvent('kckern', 'test-korean', {
+      at: new Date(AT - (index - i) * 86_400_000).toISOString(),
+      day: i + 1, seq, rung: chain[i], attributedTo: 'kckern',
+    });
+  }
+  ds.writeProgress('kckern', 'test-korean', {
+    corpus: 'test-korean', day: index + 1, daily_limit: 5, last_activity: null,
+  });
+}
+
 describe('courses', () => {
   it('lists a valid corpus with its role binding', () => {
     const svc = makeService(new FakeDatastore());
@@ -162,9 +176,11 @@ describe('logAttempt', () => {
   });
 
   it('scores a dictation against the TARGET language', () => {
+    makeDue(ds, 'dictation');
     const event = svc.logAttempt({
       userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation',
       given: '오늘 날씨가 좋아요.',
+      capabilities: EQUIPPED,
     });
     expect(event.language).toBe('KR');
     expect(event.expected).toBe('오늘 날씨가 좋아요.');
@@ -172,22 +188,26 @@ describe('logAttempt', () => {
   });
 
   it('scores an interpretation against the SOURCE language', () => {
+    makeDue(ds, 'interpretation');
     const event = svc.logAttempt({
       userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'interpretation',
       given: "The weather's nice today.",
+      capabilities: EQUIPPED,
     });
     expect(event.language).toBe('EN');
     expect(event.accuracy).toBe(1);
   });
 
   it('records a wrong answer WITHOUT blocking graduation', () => {
+    makeDue(ds, 'dictation');
     // Accuracy is informational. A wrong dictation still clears the rung.
     svc.logAttempt({
-      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '전혀 다른 문장',
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '전혀 다른 문장', capabilities: EQUIPPED,
     });
     const events = ds.readAllEvents('kckern', 'test-korean');
-    expect(events[0].accuracy).toBeLessThan(0.5);
-    expect(events[0].rung).toBe('dictation');
+    const event = events.at(-1);
+    expect(event.accuracy).toBeLessThan(0.5);
+    expect(event.rung).toBe('dictation');
   });
 
   it('rejects a text rung with no response', () => {
@@ -210,17 +230,32 @@ describe('logAttempt', () => {
     expect(ds.readProgress('kckern', 'test-korean').last_activity)
       .toBe(new Date(AT).toISOString());
   });
+
+  it('rejects out-of-queue, duplicate, and generic recording evidence', () => {
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 2, rung: 'repetition', capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED });
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition', capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    expect(() => svc.logAttempt({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'recording', capabilities: EQUIPPED,
+    })).toThrow(/audio upload/);
+  });
 });
 
 describe('saveRecording', () => {
   it('writes the file BEFORE logging, so a crash orphans a file not an event', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
+    makeDue(ds, 'recording', 2);
     svc.saveRecording({
-      userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.from('audio'),
+      userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.from('audio'), capabilities: EQUIPPED,
     });
     expect(ds.written).toHaveLength(1);
-    expect(ds.readAllEvents('kckern', 'test-korean')[0].rung).toBe('recording');
+    expect(ds.readAllEvents('kckern', 'test-korean').at(-1).rung).toBe('recording');
   });
 
   it('rejects an empty recording', () => {
@@ -228,6 +263,16 @@ describe('saveRecording', () => {
     expect(() => svc.saveRecording({
       userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.alloc(0),
     })).toThrow(ValidationError);
+  });
+
+  it('does not write audio for a recording that is not currently due', () => {
+    const ds = new FakeDatastore();
+    const svc = makeService(ds);
+    expect(() => svc.saveRecording({
+      userId: 'kckern', corpusId: 'test-korean', seq: 1,
+      buffer: Buffer.from('audio'), capabilities: EQUIPPED,
+    })).toThrow(/outstanding/);
+    expect(ds.written).toEqual([]);
   });
 });
 
@@ -312,9 +357,12 @@ describe('history', () => {
   it('only offers playback when the recording file actually exists', () => {
     const ds = new FakeDatastore();
     const svc = makeService(ds);
-    svc.saveRecording({ userId: 'kckern', corpusId: 'test-korean', seq: 1, buffer: Buffer.from('a') });
+    makeDue(ds, 'recording', 1);
+    svc.saveRecording({ userId: 'kckern', corpusId: 'test-korean', seq: 1, buffer: Buffer.from('a'), capabilities: EQUIPPED });
     // An event whose file has since vanished stands as evidence but offers no audio.
-    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 3, rung: 'recording' });
+    ds.appendEvent('kckern', 'test-korean', {
+      at: new Date(AT).toISOString(), day: 3, seq: 3, rung: 'recording', attributedTo: 'kckern',
+    });
 
     const items = svc.getHistory({ userId: 'kckern', corpusId: 'test-korean' }).days[0].items;
     expect(items.find((i) => i.seq === 1).hasAudio).toBe(true);

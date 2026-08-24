@@ -118,38 +118,50 @@ async function openLibraryAndWaitForBanks() {
 }
 
 describe('SchoolApp — Portal launch subscription (school.launch)', () => {
-  it('program:language with a loaded course navigates into the language runner', async () => {
+  it('a learner-scoped Sentence Ladder launch mounts the assigned corpus', async () => {
     coursesMock.mockResolvedValue({
       ok: true, status: 200,
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
     render(<SchoolApp clear={() => {}} mode="open" />);
-    // Wait for the courses fetch to actually resolve (the shelf tile enabling
-    // is the same signal the existing "language courses" tests use) before
-    // firing the launch — otherwise the handler can see a stale empty list.
-    const language = (await screen.findByText('Language & Culture')).closest('button');
-    await waitFor(() => expect(language).not.toBeDisabled());
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
 
-    deliverLaunch('kid1', { kind: 'program', program: 'language' });
+    deliverLaunch('kid1', {
+      kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean', studyGrant: 'signed-grant',
+    });
 
     // The SentenceLadderProgram runner mounted for the learner's one loaded course
     // and fetched today's day (Day 1 is its own rendered header, not a stub).
     expect(await screen.findByText('Day 1')).toBeInTheDocument();
-    await waitFor(() => expect(dayMock).toHaveBeenCalledWith('kid1', 'glossika-korean', expect.anything()));
+    await waitFor(() => expect(dayMock).toHaveBeenCalledWith(
+      'kid1', 'glossika-korean', expect.anything(), 'signed-grant', expect.anything(),
+    ));
     // Claimed via the launch, not the picker: no dialog ever appeared.
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('program:language with no course loaded yet does nothing (no crash, no navigation)', async () => {
+  it('a launch for an unavailable corpus does nothing (no crash, no navigation)', async () => {
     render(<SchoolApp clear={() => {}} mode="open" />); // coursesMock default: []
     await screen.findByText('Civilization');
 
-    deliverLaunch('kid1', { kind: 'program', program: 'language' });
+    deliverLaunch('kid1', { kind: 'program', program: 'sentence-ladder', corpusId: 'missing', studyGrant: 'signed-grant' });
 
-    await waitFor(() => expect(bankLogMock).toHaveBeenCalledWith('program-unavailable', { program: 'language' }));
+    await waitFor(() => expect(bankLogMock).toHaveBeenCalledWith('program-unavailable', { program: 'sentence-ladder' }));
     expect(dayMock).not.toHaveBeenCalled();
     // Still home: the subject wall, not a runner.
     expect(screen.getByText('Civilization')).toBeInTheDocument();
+  });
+
+  it('does not mount Sentence Ladder when a broadcast has no scoped grant', async () => {
+    coursesMock.mockResolvedValue({
+      ok: true, status: 200,
+      data: [{ id: 'glossika-korean', label: 'Korean', languages: { source: 'EN', target: 'KR' }, size: 10 }],
+    });
+    render(<SchoolApp clear={() => {}} mode="open" />);
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    deliverLaunch('kid1', { kind: 'program', program: 'sentence-ladder', corpusId: 'glossika-korean' });
+    await waitFor(() => expect(bankLogMock).toHaveBeenCalledWith('program-unavailable', { program: 'sentence-ladder' }));
+    expect(dayMock).not.toHaveBeenCalled();
   });
 
   it('bank launch for a known bank opens the quiz runner directly, bypassing the picker', async () => {

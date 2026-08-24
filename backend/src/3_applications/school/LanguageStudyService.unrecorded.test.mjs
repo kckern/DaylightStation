@@ -21,13 +21,16 @@ const CORPUS = {
 
 /** Refuses every write the way the YAML datastore does: by returning null. */
 class RefusingDatastore {
-  constructor() { this.progressWrites = 0; }
+  constructor() { this.progressWrites = 0; this.recordingReady = false; }
   listCorpusIds() { return ['test-korean']; }
   readCorpus() { return CORPUS; }
-  readProgress() { return null; }
+  readProgress() { return { day: this.recordingReady ? 3 : 1, daily_limit: 1, last_activity: null }; }
   writeProgress() { this.progressWrites += 1; return null; }
   appendEvent() { return null; }        // <- the refusal
-  readAllEvents() { return []; }
+  readAllEvents() { return this.recordingReady ? [
+    { at: '2026-07-19T10:00:00Z', day: 1, seq: 1, rung: 'repetition', attributedTo: 'ghost' },
+    { at: '2026-07-20T10:00:00Z', day: 2, seq: 1, rung: 'dictation', attributedTo: 'ghost' },
+  ] : []; }
   writeRecording() { return '/tmp/x.webm'; }
   listRecordingKeys() { return new Set(); }
   resolveAudioPath() { return null; }
@@ -63,9 +66,12 @@ describe('a refused write', () => {
   });
 
   it('propagates through saveRecording too, so a stored file cannot fake a done rung', () => {
-    const svc = makeService(new RefusingDatastore());
+    const ds = new RefusingDatastore();
+    ds.recordingReady = true;
+    const svc = makeService(ds);
     expect(() => svc.saveRecording({
       userId: 'ghost', corpusId: 'test-korean', seq: 1, buffer: Buffer.from('a'),
+      capabilities: { microphone: true, textInput: ['EN', 'KR'] },
     })).toThrow(EntityNotFoundError);
   });
 });

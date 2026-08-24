@@ -3,7 +3,7 @@
 > **Status:** Built and deployed — identity + quizzes/flashcards, the subject
 > wall home (nine paired subjects, 3×3), the materials framework (video/audio
 > courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
-> the program report interface, language study (sentence ladder),
+> the program report interface, Sentence Ladder study,
 > **printing** (worksheets on the kitchen laser printer), **print documents**
 > (authored worksheet/quiz PDFs with OMR bubble-card grading — see
 > [`print-documents.md`](./print-documents.md)), and interactive
@@ -17,7 +17,7 @@
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
 > **Enrollment and syllabi (whole-course path built, wave 1):**
-> [`enrollment.md`](./enrollment.md) — `school.course-enrollment/v1` exists and
+> [`enrollment.md`](./enrollment.md) — `school.course-enrollment/v2` exists and
 > the planner and issue path honor it fully. `EnrollLearner`/`UnenrollLearner`
 > now materialize/remove enrollments from a saved *syllabus* — a reusable set
 > of arguments to `createCourseEnrollment` — through the whole-school matrix
@@ -42,6 +42,11 @@
 >
 > This is the durable map of the School subsystem: what runs today, what is
 > designed but unbuilt, and the decisions behind both.
+
+Focused references: [completion and rewards](./completion-and-rewards.md),
+[program integration](./programs.md), and
+[Sentence Ladder](./sentence-ladder.md). Operational commands are documented
+in [program integration](./programs.md#operations-cli).
 
 ---
 
@@ -544,7 +549,7 @@ maps its resolved hierarchy back into the generic Catalog runtime.
 | TI-86 offline codebook adapter | `backend/src/1_adapters/schoolcalc/ti86/Ti86ContinuationCodebook.mjs` |
 | TI-86 `CODE` interface | `_extensions/ti86-app/src/schoolcalc.asm` |
 
-### Language study (the sentence ladder)
+### Sentence Ladder
 
 A revival of KC's 2016–2017 `korean.kckern.info` drill app, rebuilt as a School
 program. Each sentence climbs a **four-rung ladder, one rung per day**:
@@ -613,8 +618,8 @@ supplier is an adapter.
 |---|---|
 | Domain (pure) | `backend/src/2_domains/school/language/` |
 | Persistence | `backend/src/1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs` |
-| Application | `backend/src/3_applications/school/LanguageStudyService.mjs` |
-| API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` |
+| Application | `backend/src/3_applications/school/SentenceLadderService.mjs` (legacy module remains an import alias) |
+| API | `backend/src/4_api/v1/routers/sentenceLadder.mjs` → `/api/v1/school/sentence-ladder` (`/language` is deprecated) |
 | Frontend (sentence-ladder pedagogy) | `frontend/src/modules/School/Programs/SentenceLadder/` |
 | Legacy dump reader | `backend/src/1_adapters/glossika/LegacyDumpReader.mjs` |
 | Ingest CLI | `cli/glossika.cli.mjs` (`import-db` is authoritative) |
@@ -1364,14 +1369,17 @@ and question banks at `…/{work}/quizzes/` — a bank id is the subject/work pa
 with `quizzes/` elided. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
 
-**Learner-day completion is a three-state read model**, derived from this same
+**Learner-day completion is a four-state read model**, derived from this same
 agenda plan rather than persisted separately. Consumers read
 `GET /api/v1/school/lifecycle/learners/:learnerId/completion`, which returns
-`incomplete`, `complete`, or `no_work_today` plus any excused-section reasons.
+`incomplete`, `complete`, `no_work_today`, or `indeterminate`, plus excused
+reasons and faults. A broken plan or unavailable required program is
+`indeterminate`; it never masquerades as a no-work day.
 The endpoint is side-effect free and `Cache-Control: no-store`; it never opens
 a session or mints a ticket. Consumers must choose their own policy for
 `no_work_today`: the piano Games gate treats it as unlocked, while an economy
-reward must require actual `complete` work.
+reward must require actual `complete` work. Guest and failed reads remain
+locked.
 
 **The printed agenda is sectioned by subject, not listed by unit.** It opens
 with the standard header — the learner's display name (resolved from the
@@ -1410,7 +1418,8 @@ program: the day queue's own "everything cleared" is what "done today" means
 for it.
 
 **Program ids are addresses, not a fixed enum.** A `program:` value resolves
-to either a code-registered launcher (`language`) or a `school.yml`
+to either a code-registered launcher (`sentence-ladder`; legacy `language`
+assignments normalize at the boundary) or a `school.yml`
 `programs:` entry backed by the generic `SurfaceProgramLauncher` — config
 selecting from DoNow's closed *surface* vocabulary (`garage-fitness`,
 `piano-kiosk`, `portal`, ...), the household "start this, there, now" dispatch
@@ -1447,7 +1456,7 @@ the one caller that opts into QR.
 | Application | `backend/src/3_applications/donow/DoNowService.mjs` — the household dispatch facade every program launcher (and every `launch:` unit) now calls through; composed in `backend/src/5_composition/modules/donow.mjs`, independent of this lifecycle's own `enabled` gate |
 | Application | `backend/src/3_applications/school/SurfaceProgramLauncher.mjs` — the generic `IProgramLauncher` for a `school.yml` `programs:` entry — one class, config-driven, zero new code per surface program |
 | Application | `backend/src/3_applications/school/DoNowSchoolBridge.mjs` — closes a `launch:` unit's session when a PENDING DoNow dispatch is later approved out of band |
-| Application | `backend/src/3_applications/school/LanguageProgramLauncher.mjs` — the `IProgramLauncher` face of language study, dispatching through the `portal` DoNow surface |
+| Application | `backend/src/3_applications/school/SentenceLadderProgramLauncher.mjs` — the `IProgramLauncher` face of Sentence Ladder, dispatching through the `portal` DoNow surface |
 | Frontend | `frontend/src/modules/School/useSchoolLaunch.js` — the Portal-launch subscription hook |
 | API | `GET /api/v1/school/lifecycle/learners/:learnerId/agenda/preview` — dry-run twin of the printed agenda (no session/token side effects), PNG with a real scannable QR |
 

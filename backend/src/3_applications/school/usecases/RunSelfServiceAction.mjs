@@ -524,17 +524,28 @@ export class RunSelfServiceAction {
     }
 
     if (surface === 'portal') {
+      let target;
+      try {
+        target = typeof launcher.issueLaunchTarget === 'function'
+          ? launcher.issueLaunchTarget({ userId: learnerId, corpusId })
+          : { kind: 'program', program: programId, corpusId };
+      } catch (error) {
+        this.#logger.warn?.('school.selfservice.program.grant-failed', {
+          programId, learnerId, corpusId, error: error?.message ?? String(error),
+        });
+        return { outcome: 'failed', sentence: 'Ask a grown-up to set this up.', effect: null };
+      }
       this.#logger.info?.('school.selfservice.program.mounted', { programId, unitId });
       return {
         outcome: 'mount',
         sentence: 'Opening it here on the screen.',
-        effect: { kind: 'program', programId, corpusId, unitId, learnerId },
+        effect: { ...target, programId: target.program, unitId, learnerId },
       };
     }
 
     let result;
     try {
-      result = await launcher.launch({ userId: learnerId });
+      result = await launcher.launch({ userId: learnerId, corpusId });
     } catch (error) {
       this.#logger.warn?.('school.selfservice.program.launch-threw', {
         programId, surface, error: error?.message ?? String(error),

@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe('identity', () => {
   it('refuses to drill a guest rather than discarding their work', async () => {
-    render(<SentenceLadderProgram userId={null} corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId={null} corpusId="glossika-korean" />);
     expect(await screen.findByText(/Sign in to study/i)).toBeTruthy();
     expect(dayMock).not.toHaveBeenCalled();
   });
@@ -74,7 +74,7 @@ describe('identity', () => {
 describe('the day', () => {
   it('shows the day number and pacing', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], day: 7, dailyLimit: 10 }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(await screen.findByText(/Day 7/)).toBeTruthy();
     expect(screen.getByText(/10 \/ day/)).toBeTruthy();
   });
@@ -83,7 +83,7 @@ describe('the day', () => {
     dayMock.mockResolvedValue(dayPayload({
       queue: [entry(1, 'repetition', true), entry(2, 'repetition')],
     }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(await screen.findByText('1 / 2')).toBeTruthy();
   });
 
@@ -92,7 +92,7 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation'), entry(3, 'dictation')],
     }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.getByText('Dictation')).toBeTruthy();
     expect(screen.getByText('2')).toBeTruthy();
@@ -106,7 +106,7 @@ describe('the day', () => {
       chain: ['repetition', 'interpretation'],
       queue: [entry(1, 'repetition'), entry(2, 'recording')],
     }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('Repetition');
     expect(screen.queryByText('Recording')).toBeNull();
   });
@@ -116,14 +116,14 @@ describe('the day', () => {
       chain: ['repetition', 'dictation'],
       queue: [entry(1, 'repetition', true), entry(2, 'dictation')],
     }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     // Dictation's input, not repetition's Play button.
     expect(await screen.findByLabelText(/Type what you hear/i)).toBeTruthy();
   });
 
   it('surfaces a load failure with a retry instead of an empty screen', async () => {
     dayMock.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(await screen.findByText(/Could not load/i)).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
   });
@@ -132,7 +132,7 @@ describe('the day', () => {
 describe('repetition', () => {
   it('shows both languages and plays on demand', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(await screen.findByText('English 1')).toBeTruthy();
     expect(screen.getByText('한국어 1')).toBeTruthy();
     fireEvent.click(screen.getByText('Play'));
@@ -146,7 +146,7 @@ describe('repetition auto-advance', () => {
     // must not be is a tap per sentence, twenty times a sitting.
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
     logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Play'));
     // Armed now: a later sentence shows the hands-free state, not a Play button.
@@ -155,7 +155,7 @@ describe('repetition auto-advance', () => {
 
   it('Stop actually stops — it does not immediately re-arm', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('Play'));
     fireEvent.click(await screen.findByText('Stop'));
     // Back to a deliberate Play, not the auto-advance countdown.
@@ -167,14 +167,14 @@ describe('repetition auto-advance', () => {
 describe('typed rungs', () => {
   it('hides the sentence during dictation — recalling it IS the task', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByText('한국어 1')).toBeNull();
   });
 
   it('SHOWS the sentence during interpretation — rendering meaning is the task', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['interpretation'], queue: [entry(1, 'interpretation')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what it means/i);
     expect(screen.getByText('한국어 1')).toBeTruthy();
   });
@@ -182,7 +182,7 @@ describe('typed rungs', () => {
   it('submits the typed answer and re-fetches the day', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
     logMock.mockResolvedValue({ ok: true, status: 200, data: {} });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     const input = await screen.findByLabelText(/Type what you hear/i);
     fireEvent.change(input, { target: { value: '한국어 1' } });
@@ -190,14 +190,14 @@ describe('typed rungs', () => {
 
     await waitFor(() => expect(logMock).toHaveBeenCalledWith('kckern', {
       corpus: 'glossika-korean', seq: 1, rung: 'dictation', given: '한국어 1',
-    }));
+    }, expect.anything(), 'test-grant'));
     // Re-fetched rather than mutating a local copy of the queue.
     await waitFor(() => expect(dayMock.mock.calls.length).toBeGreaterThan(1));
   });
 
   it('will not submit an empty answer', async () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     fireEvent.click(screen.getByText('Submit'));
     expect(logMock).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe('typed rungs', () => {
     // Silence here is how a learner loses a session without knowing.
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
     logMock.mockResolvedValue({ ok: false, status: 500, data: null });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     const input = await screen.findByLabelText(/Type what you hear/i);
     fireEvent.change(input, { target: { value: 'x' } });
@@ -220,14 +220,14 @@ describe('typed rungs', () => {
 describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     expect(await screen.findByText(/Today's set is done/)).toBeTruthy();
   });
 
   it('refuses an early roll and says why, rather than silently doing nothing', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
     rollMock.mockResolvedValue({ ok: true, status: 200, data: { rolled: false, day: 1, reason: 'before-boundary' } });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('Start the next day'));
     expect(await screen.findByText(/Come back tomorrow/i)).toBeTruthy();
@@ -237,7 +237,7 @@ describe('day rollover', () => {
 describe('dismissal and dead ends', () => {
   it('closes the pacing menu when tapped away — the only escape on a touch panel', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     fireEvent.click(await screen.findByText('5 / day'));
     expect(screen.getByRole('menuitemradio', { name: '20' })).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Close menu'));
@@ -246,14 +246,14 @@ describe('dismissal and dead ends', () => {
 
   it('gives a guest a way forward instead of a sentence of text', async () => {
     const onSignIn = vi.fn();
-    render(<SentenceLadderProgram userId={null} corpusId="glossika-korean" onSignIn={onSignIn} />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId={null} corpusId="glossika-korean" onSignIn={onSignIn} />);
     fireEvent.click(await screen.findByText('Sign in'));
     expect(onSignIn).toHaveBeenCalled();
   });
 
   it('does not render its own back control — the School shell already has one', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('English 1');
     expect(screen.queryByLabelText('Back')).toBeNull();
   });
@@ -271,14 +271,14 @@ describe('dismissal and dead ends', () => {
     dayMock.mockResolvedValue(dayPayload({ chain: ['dictation'], queue: [entry(1, 'dictation')] }));
 
     setPointer(false);
-    const touch = render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    const touch = render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.queryByText(/Tab replays/)).toBeNull();
     touch.unmount();
 
     setPointer(true);
     window.localStorage.clear();
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByLabelText(/Type what you hear/i);
     expect(screen.getByText(/Tab replays/)).toBeTruthy();
   });
@@ -287,7 +287,7 @@ describe('dismissal and dead ends', () => {
     // They used to sit as 34px chips on the bottom edge — inside the Portal's
     // swipe-up zone. They now live behind a deliberate affordance.
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
     await screen.findByText('English 1');
     expect(screen.queryByText('This device can type:')).toBeNull();
     fireEvent.click(screen.getByText('Device'));
@@ -300,10 +300,10 @@ describe('pacing', () => {
   it('changes the daily intake', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')], dailyLimit: 5 }));
     pacingMock.mockResolvedValue({ ok: true, status: 200, data: { dailyLimit: 20 } });
-    render(<SentenceLadderProgram userId="kckern" corpusId="glossika-korean" />);
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
 
     fireEvent.click(await screen.findByText('5 / day'));
     fireEvent.click(screen.getByRole('menuitemradio', { name: '20' }));
-    await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('kckern', 'glossika-korean', 20));
+    await waitFor(() => expect(pacingMock).toHaveBeenCalledWith('kckern', 'glossika-korean', 20, 'test-grant'));
   });
 });

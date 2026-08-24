@@ -102,6 +102,15 @@ export function programStatusKey(entry) {
   return instance ? `${program}::${instance}` : program;
 }
 
+/** Structured lookup; object keys remain a read-only compatibility input. */
+export function programStatusFor(programStatuses, entry) {
+  if (Array.isArray(programStatuses)) {
+    return programStatuses.find((row) => row?.programId === entry?.program
+      && (row?.programInstance ?? null) === (entry?.programInstance ?? null))?.status ?? null;
+  }
+  return programStatuses?.[programStatusKey(entry)] ?? null;
+}
+
 /**
  * @param {object} args
  * @param {object} args.plan              `planLearnerWork()` result — reads `.entries`
@@ -144,8 +153,8 @@ export function planDailyAgenda({
   const sections = order.filter((subject) => bySubject.has(subject)).map((subject, subjectPosition) => {
     const list = bySubject.get(subject);
     const programs = list.filter((e) => e.program);
-    const statuses = [...new Set(programs.map(programStatusKey))]
-      .map((key) => programStatuses[key])
+    const statuses = programs
+      .map((entry) => programStatusFor(programStatuses, entry))
       .filter(Boolean);
     const programUnavailable = statuses.some((s) => s.error === true);
     const programDone = statuses.some((s) => !s.error && s.doneToday === true);
@@ -155,7 +164,7 @@ export function planDailyAgenda({
     // live curriculum sibling whenever ANY program in the subject errored,
     // and was order-dependent besides (whichever entry won priority).
     const unavailableProgramKeys = new Set(
-      programs.filter((e) => programStatuses[programStatusKey(e)]?.error === true).map(programStatusKey),
+      programs.filter((e) => programStatusFor(programStatuses, e)?.error === true).map(programStatusKey),
     );
     const eligible = list.filter((e) => !(e.program && unavailableProgramKeys.has(programStatusKey(e))));
     const candidate = [...eligible.filter((e) => e.status === 'in_progress'), ...eligible.filter((e) => e.status === 'available')]
@@ -193,8 +202,8 @@ export function planDailyAgenda({
     const nonElectiveList = list.filter((e) => !e.elective);
     const actionable = eligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
-      e.program && programStatuses[programStatusKey(e)]?.error !== true
-      && programStatuses[programStatusKey(e)]?.doneToday === true
+      e.program && programStatusFor(programStatuses, e)?.error !== true
+      && programStatusFor(programStatuses, e)?.doneToday === true
     ));
     const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || nonElectiveProgramDone;
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
@@ -210,7 +219,9 @@ export function planDailyAgenda({
       else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
       else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';
       else reason = 'caught_up';
-      obligation = { state: 'excused', reason };
+      obligation = reason === 'program_unavailable'
+        ? { state: 'faulted', reason }
+        : { state: 'excused', reason };
     } else if (actionable.every(isBacklog)) {
       obligation = { state: 'excused', reason: 'optional_backlog' };
     } else if (actionable.every((e) => e.timingState === 'available' && e.timing?.target?.dueOn)) {

@@ -24,7 +24,22 @@ function DiffLine({ expected, given }) {
   );
 }
 
-function Item({ item, userId, corpusId, languages }) {
+function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    let objectUrl = null;
+    languageApi.recordingBlob(userId, corpusId, seq, studyGrant).then(({ ok, data }) => {
+      if (!alive || !ok || !data) return;
+      objectUrl = URL.createObjectURL(data);
+      setSrc(objectUrl);
+    });
+    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [userId, corpusId, seq, studyGrant]);
+  return src ? <audio controls preload="none" src={src} /> : <span className="lang-review__missing">audio unavailable</span>;
+}
+
+function Item({ item, userId, corpusId, languages, studyGrant }) {
   const sourceText = item.text?.[languages?.source];
 
   if (item.rung === 'recording') {
@@ -33,7 +48,7 @@ function Item({ item, userId, corpusId, languages }) {
         <span className="lang-review__rung">Recording</span>
         <span className="lang-review__sentence">{item.text?.[languages?.target]}</span>
         {item.hasAudio
-          ? <audio controls preload="none" src={languageApi.recordingUrl(userId, corpusId, item.seq)} />
+          ? <RecordingPlayback userId={userId} corpusId={corpusId} seq={item.seq} studyGrant={studyGrant} />
           : <span className="lang-review__missing">audio unavailable</span>}
       </li>
     );
@@ -62,14 +77,14 @@ function Item({ item, userId, corpusId, languages }) {
   );
 }
 
-export default function ReviewPanel({ userId, corpusId }) {
+export default function ReviewPanel({ userId, corpusId, studyGrant }) {
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState('loading');
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { ok, data } = await languageApi.history(userId, corpusId);
+      const { ok, data } = await languageApi.history(userId, corpusId, studyGrant);
       if (!alive) return;
       if (!ok) {
         languageLog.programError('history-failed', { corpus: corpusId });
@@ -80,7 +95,7 @@ export default function ReviewPanel({ userId, corpusId }) {
       setStatus(data.days.length ? 'ready' : 'empty');
     })();
     return () => { alive = false; };
-  }, [userId, corpusId]);
+  }, [userId, corpusId, studyGrant]);
 
   if (status === 'loading') return <p className="lang-review__status">Loading history…</p>;
   if (status === 'error') return <p className="lang-review__status">Could not load history.</p>;
@@ -101,6 +116,7 @@ export default function ReviewPanel({ userId, corpusId }) {
                 userId={userId}
                 corpusId={corpusId}
                 languages={languages}
+                studyGrant={studyGrant}
               />
             ))}
           </ul>

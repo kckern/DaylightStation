@@ -15,7 +15,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 import { assertNotStale } from './staleSaveGuard.mjs';
 
 export class SetAssignments {
-  #assignments; #grownUps; #teacherGate; #curriculum; #roster; #clock; #logger;
+  #assignments; #grownUps; #teacherGate; #curriculum; #roster; #programValidators; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -30,7 +30,7 @@ export class SetAssignments {
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
-  constructor({ assignments, grownUps, teacherGate = null, curriculum = null, roster = null, clock = () => new Date(), logger = console } = {}) {
+  constructor({ assignments, grownUps, teacherGate = null, curriculum = null, roster = null, programValidators = new Map(), clock = () => new Date(), logger = console } = {}) {
     if (!assignments) throw new Error('SetAssignments requires an assignments store');
     if (!grownUps) throw new Error('SetAssignments requires grownUps (a GrownUpGate)');
     this.#assignments = assignments;
@@ -38,6 +38,7 @@ export class SetAssignments {
     this.#teacherGate = teacherGate;
     this.#curriculum = curriculum;
     this.#roster = typeof roster === 'function' ? roster : null;
+    this.#programValidators = programValidators instanceof Map ? programValidators : new Map();
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -64,6 +65,24 @@ export class SetAssignments {
     }
     if (!Array.isArray(courses) || !Array.isArray(units) || !Array.isArray(programs)) {
       throw new ValidationError('courses, units, and programs must be arrays');
+    }
+    const normalizedPrograms = [];
+    const programKeys = new Set();
+    for (const raw of programs) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        throw new ValidationError('program assignments must be mappings');
+      }
+      const requestedId = raw.programId === 'language' ? 'sentence-ladder' : raw.programId;
+      const validator = this.#programValidators.get(requestedId);
+      if (!validator) throw new ValidationError(`unknown program: ${requestedId ?? '(missing)'}`);
+      const result = await validator({ ...raw, programId: requestedId });
+      if (result?.errors?.length || !result?.enrollment) {
+        throw new ValidationError(`invalid ${requestedId} policy: ${(result?.errors ?? ['validation failed']).join('; ')}`);
+      }
+      const key = `${requestedId}\0${result.enrollment.corpusId ?? ''}`;
+      if (programKeys.has(key)) throw new ValidationError(`duplicate program assignment: ${requestedId}/${result.enrollment.corpusId}`);
+      programKeys.add(key);
+      normalizedPrograms.push(result.enrollment);
     }
     // Referential honesty (admin advocacy A4). Both checks are advisory in
     // posture — they DEGRADE to accepting when the reference source itself
@@ -97,7 +116,7 @@ export class SetAssignments {
     }
 
     const record = await this.#assignments.put({
-      learnerId, courses, units, programs, assignedBy, updatedAt: this.#clock().toISOString(),
+      learnerId, courses, units, programs: normalizedPrograms, assignedBy, updatedAt: this.#clock().toISOString(),
     });
     this.#logger.info?.('school.assignments.updated', {
       learnerId, assignedBy, courses: courses.length, units: units.length,

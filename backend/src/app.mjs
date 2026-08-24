@@ -286,10 +286,11 @@ import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/ga
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
-import { createLanguageRouter } from './4_api/v1/routers/language.mjs';
-import { LanguageStudyService } from './3_applications/school/LanguageStudyService.mjs';
+import { createSentenceLadderRouter } from './4_api/v1/routers/sentenceLadder.mjs';
+import { SentenceLadderService } from './3_applications/school/SentenceLadderService.mjs';
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
+import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
@@ -2775,8 +2776,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
-  // Language study (the sentence ladder) mounts UNDER school as
-  // /api/v1/school/language. Corpora live in data/content/language/, per-user
+  // Sentence Ladder mounts under School at /api/v1/school/sentence-ladder.
+  // /language remains a deprecated compatibility alias. Corpora live in
+  // data/content/language/, per-user
   // progress + append-only log under data/users/{id}/apps/school/language/,
   // audio + recordings on the media mount. The timezone is passed rather than
   // a fixed offset so the 4am study-day boundary survives DST.
@@ -2810,7 +2812,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // sometimes be wrong. `gate.force: open|closed|auto` is the parent's lever.
   const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')?.gate || null;
   const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
-  const languageStudyService = new LanguageStudyService({
+  let schoolStudyGrants = null;
+  try {
+    schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
+  } catch (error) {
+    rootLogger.error('school.sentence-ladder.study-grants-unavailable', { error: error.message });
+  }
+  const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
     eventBus,
@@ -3255,6 +3263,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       eventBus,
       thermalPrinterRegistry: printerRegistry,
       languageStudyService,
+      studyGrants: schoolStudyGrants,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -3692,10 +3701,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-api' })
   });
 
-  v1Routers.school.use('/language', createLanguageRouter({ schoolErrors,
+  const sentenceLadderRouter = createSentenceLadderRouter({ schoolErrors,
     languageStudyService,
+    studyGrants: schoolStudyGrants,
     logger: rootLogger.child({ module: 'school-language-api' })
-  }));
+  });
+  v1Routers.school.use('/sentence-ladder', sentenceLadderRouter);
+  // Compatibility alias for deployed clients and bookmarks. No removal in
+  // this migration; legacy traffic is logged by the shared router.
+  v1Routers.school.use('/language', sentenceLadderRouter);
 
   if (schoolLifecycle.router) {
     v1Routers.school.use('/lifecycle', schoolLifecycle.router);

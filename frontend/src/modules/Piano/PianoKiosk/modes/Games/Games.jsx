@@ -48,6 +48,10 @@ export function Games() {
   if (!gameAccess.unlocked) {
     const message = gameAccess.status === 'error'
       ? 'School status is unavailable. Games stay locked until it can be checked.'
+      : gameAccess.state === 'indeterminate'
+        ? 'School could not determine today’s plan. Ask a grown-up for help.'
+        : gameAccess.status === 'locked'
+          ? 'Choose your own profile, then finish today’s schoolwork to unlock Games.'
       : gameAccess.status === 'loading'
         ? 'Checking today’s schoolwork…'
         : 'Finish today’s schoolwork to unlock Games.';

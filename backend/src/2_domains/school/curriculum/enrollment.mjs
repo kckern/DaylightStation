@@ -56,13 +56,16 @@ export function createCourseEnrollment({
     ].map((u) => u.unitId);
   }
   return {
-    schema: 'school.course-enrollment/v1',
+    schema: 'school.course-enrollment/v2',
     ...(enrollmentId ? { enrollmentId } : {}),
     courseId,
     profile: profile ?? null,
     moduleOrder,
     optionalModules,
     lessonOrder,
+    // Effective policy snapshot: progression must not change under a learner
+    // because the catalog or syllabus was edited after enrollment.
+    progression: structuredClone(policy),
     ...(dated ? {
       moduleSchedule: Object.fromEntries(
         windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),

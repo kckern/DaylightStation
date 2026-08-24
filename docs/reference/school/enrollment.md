@@ -165,8 +165,8 @@ changes.
 ```js
 createCourseEnrollment({ courseId, profile, units, policy })
 //                        └──────── this is a syllabus ────────┘
-//   → { schema, enrollmentId, courseId, profile,
-//       moduleOrder, optionalModules, lessonOrder }
+//   → { schema: 'school.course-enrollment/v2', enrollmentId, courseId,
+//       profile, progression, moduleOrder, optionalModules, lessonOrder }
 ```
 
 ```yaml
@@ -193,15 +193,17 @@ courses:
     profile: lower
     syllabusId: elements.periods-1-2          # new: provenance
     enrolledAt: 2026-09-08T…                  # new
-    enrollment: { schema: school.course-enrollment/v1, … }
+    enrollment: { schema: school.course-enrollment/v2, … }
 ```
 
 ### Materialization is a snapshot, by construction
 
-`createCourseEnrollment` persists `lessonOrder` precisely so a `shuffle_once`
-order cannot move under a learner. An enrollment is therefore a snapshot of the
-syllabus at the moment of enrolling, and editing a syllabus does **not** reach
-existing enrollments.
+`createCourseEnrollment` persists the effective `progression` policy and
+`lessonOrder`, so neither a later catalog mode change nor a `shuffle_once`
+order can move under a learner. An enrollment is therefore a snapshot of the
+syllabus and course progression at enrollment time. Legacy v1 enrollments with
+a `moduleSchedule` are interpreted as `dated_modules`, preserving the calendar
+contract across the migration.
 
 Re-materializing is an explicit per-enrollment action. It must warn: a re-shuffle
 changes the order of lessons a learner has not yet reached, and re-materializing

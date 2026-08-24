@@ -4,6 +4,7 @@ import { resolveDayCompletion } from '#domains/school/completion.mjs';
 const served = (subject) => ({ subject, obligation: { state: 'served', reason: null } });
 const obligated = (subject) => ({ subject, obligation: { state: 'obligated', reason: null } });
 const excused = (subject, reason) => ({ subject, obligation: { state: 'excused', reason } });
+const faulted = (subject, reason) => ({ subject, obligation: { state: 'faulted', reason } });
 
 describe('resolveDayCompletion', () => {
   it('any obligated section -> incomplete, even alongside served and excused ones', () => {
@@ -39,13 +40,21 @@ describe('resolveDayCompletion', () => {
     expect(result.excused).toEqual([{ subject: 'science', reason: 'awaiting_grown_up' }]);
   });
 
-  it('a non-empty planErrors list adds a plan_error pseudo-section to excused, and does not by itself force incomplete', () => {
+  it('a non-empty planErrors list makes completion indeterminate', () => {
     const result = resolveDayCompletion({
       sections: [served('math')],
       planErrors: ['orphan-course: assigned but no published units belong to it'],
     });
-    expect(result.state).toBe('complete');
-    expect(result.excused).toContainEqual({ subject: null, reason: 'plan_error' });
+    expect(result.state).toBe('indeterminate');
+    expect(result.faults).toContainEqual({ subject: null, reason: 'plan_error' });
+  });
+
+  it('a faulted required program outranks otherwise obligated or served work', () => {
+    const result = resolveDayCompletion({
+      sections: [served('math'), obligated('writing'), faulted('languages', 'program_unavailable')],
+    });
+    expect(result.state).toBe('indeterminate');
+    expect(result.faults).toEqual([{ subject: 'languages', reason: 'program_unavailable' }]);
   });
 
   it('the cram-day case: an obligated urgent focus section plus a suppressed sibling still yields incomplete overall', () => {

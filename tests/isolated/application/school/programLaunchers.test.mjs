@@ -17,18 +17,20 @@ import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mj
 import { LanguageStudyService } from '#apps/school/LanguageStudyService.mjs';
 
 describe('LanguageProgramLauncher', () => {
-  it('has the id "language"', () => {
+  const studyGrants = { issue: vi.fn(() => 'signed-study-grant') };
+
+  it('has the canonical id "sentence-ladder"', () => {
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() },
+      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() }, studyGrants,
     });
-    expect(launcher.id).toBe('language');
+    expect(launcher.id).toBe('sentence-ladder');
   });
 
   // The one program this wording is actually true for — the ladder always
   // dispatches to the `portal` surface (see the `launch()` test below).
   it('reports locationHint "on the Portal"', () => {
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() },
+      languageStudyService: { todayStatus: vi.fn() }, donow: { dispatch: vi.fn() }, studyGrants,
     });
     expect(launcher.locationHint).toBe('on the Portal');
   });
@@ -36,7 +38,7 @@ describe('LanguageProgramLauncher', () => {
   it('status() passes through LanguageStudyService.todayStatus verbatim', async () => {
     const canned = { doneToday: true, progressLabel: 'Day 3', score: null };
     const languageStudyService = { todayStatus: vi.fn().mockReturnValue(canned) };
-    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() } });
+    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() }, studyGrants });
 
     const status = await launcher.status({ userId: 'kid1' });
 
@@ -46,7 +48,7 @@ describe('LanguageProgramLauncher', () => {
 
   it('status() scopes the read to the configured program instance', async () => {
     const languageStudyService = { todayStatus: vi.fn().mockReturnValue({ doneToday: false }) };
-    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() } });
+    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() }, studyGrants });
 
     await launcher.status({ userId: 'kid1', programInstance: 'test-spanish' });
 
@@ -59,19 +61,20 @@ describe('LanguageProgramLauncher', () => {
     const canned = { decision: 'dispatched', message: 'Starting the Portal now.' };
     const donow = { dispatch: vi.fn().mockResolvedValue(canned) };
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, donow,
+      languageStudyService: { todayStatus: vi.fn() }, donow, studyGrants,
     });
 
-    const result = await launcher.launch({ userId: 'kid1' });
+    const result = await launcher.launch({ userId: 'kid1', corpusId: 'test-korean' });
 
     expect(result).toEqual(canned);
     expect(donow.dispatch).toHaveBeenCalledWith({
       surface: 'portal',
-      action: { target: { kind: 'program', program: 'language' } },
+      action: { target: { kind: 'program', program: 'sentence-ladder', corpusId: 'test-korean', studyGrant: 'signed-study-grant' } },
       learnerId: 'kid1',
       requestedBy: 'school-program',
-      ref: 'language',
-      programId: 'language',
+      ref: 'sentence-ladder',
+      programId: 'sentence-ladder',
+      force: 'never_ask',
     });
   });
 
@@ -86,10 +89,10 @@ describe('LanguageProgramLauncher', () => {
       }),
     };
     const launcher = new LanguageProgramLauncher({
-      languageStudyService: { todayStatus: vi.fn() }, donow,
+      languageStudyService: { todayStatus: vi.fn() }, donow, studyGrants,
     });
 
-    const result = await launcher.launch({ userId: 'kid1' });
+    const result = await launcher.launch({ userId: 'kid1', corpusId: 'test-korean' });
 
     expect(result.decision).toBe('pending_approval');
     expect(result.decision).not.toBe('dispatched');

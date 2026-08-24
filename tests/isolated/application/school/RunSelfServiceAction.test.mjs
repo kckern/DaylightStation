@@ -561,7 +561,7 @@ describe('screen and program', () => {
 
     const result = await useCase.execute({ code: CODE, action: 'program' });
 
-    expect(spies.launcher.launch.calls).toEqual([{ userId: 'kid1' }]);
+    expect(spies.launcher.launch.calls).toEqual([{ userId: 'kid1', corpusId: null }]);
     expect(result.outcome).not.toBe('mount');
     expect(result.outcome).toBe('done');
     // DoNow's own wording, verbatim — it names the real surface.

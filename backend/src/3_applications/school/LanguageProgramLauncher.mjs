@@ -14,8 +14,8 @@
  * the DoNow dispatch log — a language dispatch's `programId` on that log row
  * is audit trail, never the source of truth for `doneToday`.
  */
-export class LanguageProgramLauncher {
-  #languageStudyService; #donow; #logger;
+export class SentenceLadderProgramLauncher {
+  #languageStudyService; #donow; #logger; #studyGrants;
 
   /**
    * @param {object} deps
@@ -23,14 +23,15 @@ export class LanguageProgramLauncher {
    * @param {import('../donow/DoNowService.mjs').DoNowService} deps.donow
    * @param {object} [deps.logger]
    */
-  constructor({ languageStudyService, donow, logger = console }) {
+  constructor({ languageStudyService, donow, studyGrants = null, logger = console }) {
     this.#languageStudyService = languageStudyService;
     this.#donow = donow;
+    this.#studyGrants = studyGrants;
     this.#logger = logger;
   }
 
   /** Stable id, matches the `IProgramReporter` for the same program. */
-  get id() { return 'language'; }
+  get id() { return 'sentence-ladder'; }
 
   /**
    * The language ladder always dispatches to the `portal` surface (see
@@ -65,15 +66,32 @@ export class LanguageProgramLauncher {
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */
   async launch({ userId, corpusId = null }) {
+    const target = this.issueLaunchTarget({ userId, corpusId });
     return this.#donow.dispatch({
       surface: 'portal',
-      action: { target: { kind: 'program', program: 'language', ...(corpusId ? { corpusId } : {}) } },
+      action: { target },
       learnerId: userId,
       requestedBy: 'school-program',
-      ref: 'language',
-      programId: 'language',
+      ref: 'sentence-ladder',
+      programId: 'sentence-ladder',
+      // A study grant is intentionally memory-only. A pending DoNow request
+      // persists its action, so a grant-bearing launch must dispatch now or
+      // refuse; it must never enter the approval queue.
+      force: 'never_ask',
     });
+  }
+
+  issueLaunchTarget({ userId, corpusId }) {
+    if (!this.#studyGrants) throw new Error('Sentence Ladder study grants are unavailable');
+    if (!userId || !corpusId) throw new Error('Sentence Ladder launch requires learner and corpus');
+    return {
+      kind: 'program', program: 'sentence-ladder', corpusId,
+      studyGrant: this.#studyGrants.issue({ learnerId: userId, corpusId }),
+    };
   }
 }
 
-export default LanguageProgramLauncher;
+// Compatibility export for imports that have not yet crossed the canonical
+// naming boundary. The runtime identity is still sentence-ladder.
+export const LanguageProgramLauncher = SentenceLadderProgramLauncher;
+export default SentenceLadderProgramLauncher;
