@@ -1,4 +1,4 @@
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // --- mocks -----------------------------------------------------------------
@@ -6,8 +6,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // heavy screen-framework deps. Stub them so we can assert the theory panel swap
 // in isolation (no MIDI, no timers, no overlay context).
 const activeNotes = new Map();
+let midiSessionInfo = null;
 vi.mock('./useMidiSubscription', () => ({
-  useMidiSubscription: () => ({ activeNotes, sustainPedal: false, sessionInfo: null, noteHistory: [] }),
+  useMidiSubscription: () => ({ activeNotes, sustainPedal: false, sessionInfo: midiSessionInfo, noteHistory: [] }),
 }));
 
 let gamesConfig = {};
@@ -22,6 +23,11 @@ vi.mock('./game-platform/launcher/useNoteLauncher.js', () => ({
     launcherArgs = args;
     return launcherState;
   },
+}));
+
+let launcherUserState = null;
+vi.mock('./game-platform/launcher/useLauncherUser.js', () => ({
+  useLauncherUser: () => launcherUserState,
 }));
 
 let inactivityArgs = null;
@@ -105,15 +111,48 @@ const freePlay = () => ({
 
 beforeEach(() => {
   launcherState = freePlay();
+  launcherUserState = {
+    users: [], currentUser: null, pickerOpen: false,
+    openPicker: vi.fn(), closePicker: vi.fn(), pickUser: vi.fn(),
+  };
   launcherArgs = null;
   inactivityArgs = null;
   gameProps = null;
   gameShouldThrow = false;
   extraGames = [];
   gamesConfig = {};
+  midiSessionInfo = null;
   registerEscapeInterceptor.mockClear();
   unregisterEscapeInterceptor.mockClear();
   stubLogger.warn.mockClear();
+});
+
+describe('PianoVisualizer MIDI session end', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('dismisses ambient free play after showing its summary', () => {
+    vi.useFakeTimers();
+    midiSessionInfo = { event: 'session_end', noteCount: 24, duration: 30 };
+    const onSessionEnd = vi.fn();
+    const { container } = render(<PianoVisualizer onSessionEnd={onSessionEnd} />);
+
+    expect(container.querySelector('.session-summary')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(2000));
+    expect(onSessionEnd).toHaveBeenCalledWith(midiSessionInfo);
+  });
+
+  it('never lets an ambient session timeout unmount a live game', () => {
+    vi.useFakeTimers();
+    midiSessionInfo = { event: 'session_end', noteCount: 24, duration: 30 };
+    launcherState = { ...launcherState, activeGameId: 'chess' };
+    const onSessionEnd = vi.fn();
+    const { container } = render(<PianoVisualizer onSessionEnd={onSessionEnd} />);
+
+    expect(container.querySelector('[data-testid="game-stub"]')).toBeTruthy();
+    expect(container.querySelector('.session-summary')).toBeNull();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(onSessionEnd).not.toHaveBeenCalled();
+  });
 });
 
 describe('PianoVisualizer ambient view', () => {
@@ -362,6 +401,19 @@ describe('PianoVisualizer game crash containment', () => {
 // The office screen has no breadcrumb rail and no user chip, so a game opened
 // into a board that named neither itself nor whose it was.
 describe('office game chrome', () => {
+  it('passes the roster-resolved player name into the game, never just the id', () => {
+    launcherUserState = {
+      ...launcherUserState,
+      users: [{ id: 'felix-kern', group_label: 'Felix', name: 'Felix Kern' }],
+      currentUser: 'felix-kern',
+    };
+    launcherState = { ...launcherState, activeGameId: 'chess' };
+    render(<PianoVisualizer />);
+
+    expect(gameProps.currentUser).toBe('felix-kern');
+    expect(gameProps.playerName).toBe('Felix');
+  });
+
   it('names the game and the player while one is running', () => {
     launcherState = { ...launcherState, activeGameId: 'tetris' };
     const { container } = render(<PianoVisualizer />);

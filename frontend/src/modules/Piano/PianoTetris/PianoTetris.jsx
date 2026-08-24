@@ -8,6 +8,7 @@ import { ActionStaff } from '../components/ActionStaff.jsx';
 import { TetrisOverlay } from './components/TetrisOverlay.jsx';
 import { ACTIONS } from './useStaffMatching.js';
 import { computeKeyboardRange } from '../noteUtils.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import './PianoTetris.scss';
 
 /**
@@ -24,6 +25,7 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
 
   const game = useTetrisGame(activeNotes, gameConfig);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
+  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
 
   // Keyboard range follows the progression's active note range (widens when
   // bass clef unlocks); falls back to the level's note_range, then C4–C5.

@@ -12,8 +12,19 @@ test('composition registers both native addressed-board server games', async (co
     logger: null,
   });
   context.after(() => module.container.dispose());
-  assert.equal((await module.container.ladder('connect-four', null)).opponents.length, 7);
-  assert.equal((await module.container.ladder('checkers', null)).opponents.length, 7);
+  const connectFour = await module.container.ladder('connect-four', null);
+  const checkers = await module.container.ladder('checkers', null);
+  assert.equal(connectFour.opponents.length, 7);
+  assert.equal(checkers.opponents.length, 7);
+  assert.equal(connectFour.current.name, 'Diglett');
+  assert.equal(checkers.current.name, 'Nidoran♀');
+  assert.match(connectFour.current.art, /0050-diglett-gen1\.svg/);
+  assert.match(checkers.current.art, /0029-nidoran-f-gen1\.svg/);
+  assert.deepEqual(
+    connectFour.opponents.map(({ name }) => name).filter((name) => checkers.opponents.some((entry) => entry.name === name)),
+    [],
+    'each game owns a distinct character ladder',
+  );
 });
 
 // A stand-in dataService backed by an in-memory store keyed on path, so a

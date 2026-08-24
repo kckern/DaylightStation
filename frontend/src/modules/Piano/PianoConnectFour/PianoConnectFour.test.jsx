@@ -84,6 +84,30 @@ describe('PianoConnectFour address rail', () => {
     // The board now says it — the old "1: C  2: D ..." panel legend is gone.
     expect(container.querySelector('.connect-four-key')).toBeFalsy();
   });
+
+  it('prints chord names instead of feeding them to the staff engraver', async () => {
+    connectFourClient.readConfig.mockResolvedValueOnce({
+      addressing: { ladder: { unlocked_through: 13 } },
+    });
+    const { container } = render(<PianoConnectFour currentUser="alan" activeNotes={new Map()} />);
+
+    await act(async () => { await Promise.resolve(); });
+
+    const topRail = container.querySelector('.instrument-board-stage__top-rail .address-rail');
+    expect(topRail.textContent).toMatch(/C/);
+    expect(topRail.querySelectorAll('.chess-staff-label')).toHaveLength(0);
+  });
+
+  it('shows its Pokémon opponent without a permanent help paragraph', () => {
+    const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
+    const rails = container.querySelectorAll('.instrument-board-stage__rail');
+    const railText = [...rails].map((rail) => rail.textContent).join(' ');
+
+    expect(railText).toContain('Diglett');
+    expect(container.querySelector('.pg-ladder__portrait').getAttribute('src')).toMatch(/0050-diglett-gen1\.svg/);
+    expect(railText).not.toContain('Play seven notes together');
+    expect(container.querySelector('.pg-status__text').textContent).toContain('play a key to drop a disc');
+  });
 });
 
 describe('PianoConnectFour gravity', () => {

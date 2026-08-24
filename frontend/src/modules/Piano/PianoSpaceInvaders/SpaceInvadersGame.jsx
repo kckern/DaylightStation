@@ -7,6 +7,7 @@ import { useSpaceInvadersGame } from './useSpaceInvadersGame.js';
 import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { SpaceInvadersOverlay } from './components/SpaceInvadersOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import './SpaceInvadersGame.scss';
 
 /**
@@ -24,6 +25,9 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
   const logger = useMemo(() => getChildLogger({ component: 'space-invaders-game' }), []);
   const game = useSpaceInvadersGame(activeNotes, noteHistory, gameConfig);
   useAutoGameLifecycle(game.gameState, game.startGame, onDeactivate, logger, 'space-invaders');
+  const terminal = game.gameState === 'VICTORY'
+    || (game.gameState === 'LEVEL_FAILED' && game.failReason === 'health');
+  useAnyKeyToContinue({ enabled: terminal, activeNotes, onContinue: game.startGame });
 
   const [screenFlash, setScreenFlash] = useState(false);
 
@@ -76,8 +80,11 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
       }}
       overlay={(
         <>
-          <SpaceInvadersOverlay gameState={game.gameState} countdown={game.countdown}
-            score={game.score} currentLevel={game.currentLevel} levelProgress={game.levelProgress}
+          <SpaceInvadersOverlay
+            gameState={game.gameState}
+            countdown={game.countdown}
+            score={game.score}
+            terminal={terminal}
           />
           {screenFlash && <div className="space-invaders-game__wrong-flash" />}
         </>

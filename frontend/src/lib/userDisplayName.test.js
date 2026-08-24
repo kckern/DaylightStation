@@ -25,6 +25,10 @@ describe('resolveUserDisplayName — abstract family context', () => {
   it('defaults to the full name with no context', () => {
     expect(resolveUserDisplayName(dad).displayName).toBe('User_1');
   });
+  it('resolves API-shaped snake_case names instead of falling through to an id', () => {
+    expect(resolveUserDisplayName({ id: 'alan', display_name: 'Alan' }).displayName).toBe('Alan');
+    expect(resolveUserDisplayName({ id: 'felix', first_name: 'Felix' }).displayName).toBe('Felix');
+  });
 });
 
 describe('hasFamilyContext — are the kids in the scene?', () => {

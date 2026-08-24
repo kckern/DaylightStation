@@ -25,6 +25,7 @@ import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { usePianoMidiOptional, usePianoMidiNotesOptional } from '../PianoKiosk/PianoMidiContext.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { keyFallbackNeeded } from '../game-platform/input/touchCapability.js';
+import { resolvePianoPlayerName } from '../game-platform/identity/playerName.js';
 import { usePlayerLock } from '../PianoKiosk/PianoPlaybackContext.jsx';
 import {
   archiveGame, beaconArchive, fetchChessConfig, fetchLadder, requestBestMove, requestOpponentMove,
@@ -36,7 +37,7 @@ import { OpponentRosterModal } from './OpponentRoster.jsx';
 import { cuesFromConfig } from './chessCues.js';
 import ChessSettingsPanel from './ChessSettingsPanel.jsx';
 import { CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, squareToChord } from './chordAddress.js';
-import { DEFAULT_STAFF_SCHEME, isStaffScheme } from './staffAddress.js';
+import { isStaffScheme } from './staffAddress.js';
 import StaffNoteLabel from './StaffNoteLabel.jsx';
 import { candidateSquares } from './chordCandidates.js';
 import { destinationBadges } from './chessBadges.js';
@@ -192,13 +193,13 @@ export function promptFor(state, rejection, hoveredChord = null, reading = false
 }
 
 export function PianoChessGame({
-  onDeactivate = null,
   gameConfig = null,
   // Supplied by the game platform (PianoVisualizer). Absent only for kiosk
   // callers that rely on PianoMidiProvider being above them.
   activeNotes: activeNotesProp = null,
   connected: connectedProp = null,
   currentUser = null,
+  playerName = null,
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
@@ -221,6 +222,7 @@ export function PianoChessGame({
   // per-user writes" downstream — the lock preserves that, it doesn't bypass it.
   const lockedUserRef = useRef(userId);
   const lockedUser = lockedUserRef.current;
+  const lockedPlayerNameRef = useRef(resolvePianoPlayerName(currentUser, playerName));
   // The archive is written from a mount-once cleanup, which sees whatever the
   // refs hold at that moment — so everything it needs lives in a ref, not in a
   // closed-over render value.
@@ -503,7 +505,6 @@ export function PianoChessGame({
   }, [game.history.length, lockedUser, chessConfig?.seen_intro]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
-  const heldKey = heldNotes.join(',');
   // The cursor clock reads these rather than closing over them — see the effect
   // below for why. `anyNotesHeld` is its only reactive input: a boolean changes
   // twice per chord instead of once per note.
@@ -1351,9 +1352,7 @@ export function PianoChessGame({
   const pickupDeadline = pickupChord && armed?.square === cursor ? armed.at : null;
   const turnColour = game.status?.turn === 'w' ? 'White' : 'Black';
   const turnLabel = game.status?.turn === playerColor ? `Yours (${turnColour})` : `Theirs (${turnColour})`;
-  const displayName = (typeof currentUser === 'object' && currentUser?.id === lockedUser && currentUser.name)
-    ? currentUser.name
-    : (lockedUser || 'Guest');
+  const displayName = lockedPlayerNameRef.current;
 
   return (
     <PianoGameHost

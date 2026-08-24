@@ -1,13 +1,17 @@
 import { applyMove, legalMoves } from './engine.mjs';
 
+const pokemonArt = (file) => `/api/v1/proxy/media/stream/${encodeURIComponent(`games/pokemon/svg/${file}`)}`;
+
+// Agile and fighting characters for the jumping/crowning game. This pack is
+// intentionally different from both Chess and Connect Four.
 export const CHECKERS_OPPONENTS = Object.freeze([
-  { id: 'button', name: 'Button', depth: 1 },
-  { id: 'skipper', name: 'Skipper', depth: 2 },
-  { id: 'copper', name: 'Copper', depth: 3 },
-  { id: 'flicker', name: 'Flicker', depth: 4 },
-  { id: 'captain', name: 'Captain', depth: 5 },
-  { id: 'regent', name: 'Regent', depth: 6 },
-  { id: 'crown', name: 'Crown', depth: 7 },
+  { id: 'nidoran-f', name: 'Nidoran♀', art: pokemonArt('0029-nidoran-f-gen1.svg'), depth: 1 },
+  { id: 'sandshrew', name: 'Sandshrew', art: pokemonArt('0027-sandshrew-gen1.svg'), depth: 2 },
+  { id: 'mankey', name: 'Mankey', art: pokemonArt('0056-mankey-gen1.svg'), depth: 3 },
+  { id: 'hitmonlee', name: 'Hitmonlee', art: pokemonArt('0106-hitmonlee-gen1.svg'), depth: 4 },
+  { id: 'kangaskhan', name: 'Kangaskhan', art: pokemonArt('0115-kangaskhan-gen1.svg'), depth: 5 },
+  { id: 'pinsir', name: 'Pinsir', art: pokemonArt('0127-pinsir-gen1.svg'), depth: 6 },
+  { id: 'articuno', name: 'Articuno', art: pokemonArt('0144-articuno-gen1.svg'), depth: 7 },
 ]);
 
 function evaluate(game, player) {

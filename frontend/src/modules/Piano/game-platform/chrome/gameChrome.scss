@@ -188,6 +188,12 @@
   color: var(--pg-ivory-dim);
 }
 
+.pg-slot__label .piano-icon {
+  margin-inline-end: 0.3rem;
+  color: var(--pg-brass);
+  vertical-align: -0.12em;
+}
+
 .pg-slot__body {
   display: flex;
   flex-direction: column;
@@ -416,6 +422,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pg-ladder__portrait {
+  width: 5.25rem;
+  height: 5.25rem;
+  align-self: center;
+  object-fit: contain;
+}
+
+/* A compact gesture legend. The status line carries the explanatory sentence
+   when the gesture is used; the rail keeps only the trigger and outcome. */
+.pg-rail-cue {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--pg-ivory-dim);
+}
+
+.pg-rail-cue strong {
+  color: var(--pg-ivory);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Rungs climbed are brass and full height; rungs above are hairline stubs. */
@@ -670,10 +698,12 @@
 }
 
 /* ── DEAL NOTICE ───────────────────────────────────────────────────────────
-   A re-deal is the one change a player cannot see coming. Loud for a beat, then
-   a standing reminder — a notice that only flashes is missed by a player looking
-   at their hands, and one that only sits there stops being read by turn two. */
+   A re-deal is the one change a player cannot see coming. Keep the rail cue
+   scannable; its status role carries the full explanation. */
 .pg-deal-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   margin: 0;
   font-size: var(--t-cap, 0.85rem);
   color: var(--pg-ivory-dim);

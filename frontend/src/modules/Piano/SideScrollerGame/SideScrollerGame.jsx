@@ -9,6 +9,7 @@ import { RunnerCanvas } from './components/RunnerCanvas.jsx';
 import { SideScrollerOverlay } from './components/SideScrollerOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { PLAYER_X } from './sideScrollerEngine.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import './SideScrollerGame.scss';
 
 export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
@@ -16,6 +17,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
 
   const game = useSideScrollerGame(activeNotes, gameConfig);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'side-scroller');
+  useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
 
   // Keyboard range from current level
   const levels = gameConfig?.levels ?? [];
@@ -80,7 +82,7 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
       phaseMapping={{ GAME_OVER: 'result', COMPLETE: 'result' }}
       className="side-scroller"
       instrumentClassName="side-scroller__keyboard"
-      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: null, onNoteOn, onNoteOff }}
+      instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
       overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level} levelName={game.levelName} />}
     >
       {/* Play area */}

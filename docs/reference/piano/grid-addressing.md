@@ -86,6 +86,10 @@ The first fork, and the only one that changes what skill is being drilled.
 | `chords` | **Spell** a chord from a symbol (`Am7`) | `chordAddress.js` — `DEFAULT_CHORD_SCHEME` |
 | `names` | Read a letter name (`C4`) — the pre-literate rung | `AddressRail` supports it; no game selects it yet |
 
+An address rail must render the resolved vocabulary, not merely the axis material. In particular,
+Connect Four prints chord roots in `chords` mode and engraves pitches only in `staff` mode; chord
+strings are never valid input to the MIDI staff renderer.
+
 These are **not** difficulty levels of each other. A child who reads both clefs but cannot spell a
 seventh chord is locked out of `chords` for years, and a child who has learned chord shapes by hand
 may not read at all. They are two vocabularies for the same 64 squares, and the rest of the game —

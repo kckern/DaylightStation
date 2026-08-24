@@ -315,26 +315,26 @@
 
 /* ---- refusal toast ------------------------------------------------------ */
 
-/* Sits over the board rather than in a rail: a refusal has to appear where the
-   player is already looking, or it may as well not have been said. */
+/* A refusal is already repeated in the "What the game is thinking" rail.
+   Keep the brief extra cue beside the board, not on top of it: a chord error
+   should not hide the position the player needs to correct. */
 .piano-chess__toast {
   position: absolute;
-  inset-inline: 0;
-  inset-block-start: 22%;
+  inset-inline-start: 1rem;
+  inset-inline-end: auto;
+  inset-block-start: 1rem;
   z-index: 5;
-  justify-self: center;
   width: fit-content;
-  max-width: min(28rem, 70cqw);
-  margin-inline: auto;
-  padding: 0.6rem 1.4rem;
+  max-width: min(20rem, calc(var(--pg-rail-w) - 2rem));
+  padding: 0.45rem 0.7rem;
   border: 1px solid color-mix(in srgb, var(--piano-danger) 55%, transparent);
   border-radius: var(--r-md, 12px);
   background: var(--piano-surface);
-  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 55%);
+  box-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 45%);
   color: var(--pc-ivory);
-  font-size: 1.1rem;
-  letter-spacing: 0.04em;
-  text-align: center;
+  font-size: var(--t-cap, 0.85rem);
+  line-height: 1.3;
+  pointer-events: none;
   animation: piano-chess-toast 220ms ease-out;
 }
 

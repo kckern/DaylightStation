@@ -278,28 +278,19 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     }
 
     if (gameState.phase === 'LEVEL_FAILED') {
+      // Running out of health is a terminal result, not a five-second ad. Keep
+      // it visible until the player deliberately restarts or leaves.
+      if (gameState.failReason === 'health') return undefined;
       bannerTimeoutRef.current = setTimeout(() => {
-        if (gameState.failReason === 'health') {
-          // Health depleted — exit game mode entirely
-          logger.info('space-invaders.health-exit', { level: gameState.levelIndex, score: gameState.score.points });
-          cleanup();
-          setGameState(createInitialState());
-        } else {
-          // Miss limit exceeded — retry same level
-          logger.info('space-invaders.retry-level', { level: gameState.levelIndex });
-          startCountdown();
-        }
+        // Miss limit exceeded — retry same level after the short teaching beat.
+        logger.info('space-invaders.retry-level', { level: gameState.levelIndex });
+        startCountdown();
       }, BANNER_DISPLAY_MS);
       return () => clearTimeout(bannerTimeoutRef.current);
     }
 
     if (gameState.phase === 'VICTORY') {
-      bannerTimeoutRef.current = setTimeout(() => {
-        logger.info('space-invaders.victory-dismiss', { finalScore: gameState.score.points });
-        cleanup();
-        setGameState(createInitialState());
-      }, 8000);
-      return () => clearTimeout(bannerTimeoutRef.current);
+      return undefined;
     }
   }, [gameState.phase, gameState.levelIndex, gameState.score.points, cleanup, startCountdown, logger]);
 
@@ -327,8 +318,11 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
 
   const startGame = useCallback(() => {
     logger.info('space-invaders.activated', {});
+    cleanup();
+    setWrongNotes(new Map());
+    setGameState(createInitialState());
     startCountdown();
-  }, [startCountdown, logger]);
+  }, [cleanup, startCountdown, logger]);
 
   // ─── Derived state for rendering ────────────────────────────
 

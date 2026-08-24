@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { applyMove, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
-import { chooseMove } from '@shared-gaming/checkers/opponent.mjs';
+import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
@@ -17,6 +17,7 @@ import {
 } from '../game-platform/chrome/index.js';
 import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
 import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 import {
   DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
   fileRailAddresses, rankRailAddresses, squareForAddress,
@@ -332,7 +333,9 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   // player has to see who won first.
   useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
-  const opponentName = ladder?.current?.name ?? 'Button';
+  const opponent = ladder?.current
+    ?? CHECKERS_OPPONENTS[Math.max(0, Math.min(CHECKERS_OPPONENTS.length - 1, level - 1))];
+  const opponentName = opponent.name;
   const status = game.status.gameOver
     ? game.status.draw ? 'Draw game' : game.status.winner === 1 ? 'You won the board!' : `${opponentName} wins`
     : thinking ? `${opponentName} is thinking…`
@@ -389,24 +392,25 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         )}
         leftRail={(
           <GameRail label="Opponent">
-            <GameSlot label="Playing against">
+            <GameSlot>
               <LadderBadge
                 name={opponentName}
                 level={level}
                 levels={LADDER_LEVELS}
                 wins={ladder?.wins ?? 0}
                 needed={ladder?.needed ?? 3}
+                portrait={opponent.art ? <img className="pg-ladder__portrait" src={opponent.art} alt="" /> : null}
               />
             </GameSlot>
             {/* A tally, so "am I ahead?" is answerable at a glance rather than by
                 counting discs across the board. */}
-            <GameSlot label="Pieces left">
+            <GameSlot label={<><Icon name="game-checkers" /> Pieces</>}>
               <p className="checkers-tally">
                 <span className="checkers-tally__side checkers-tally__side--player">
-                  <span className="checkers-tally__count">{red}</span> yours
+                  <span className="checkers-tally__count">{red}</span> You
                 </span>
                 <span className="checkers-tally__side checkers-tally__side--opponent">
-                  <span className="checkers-tally__count">{blue}</span> theirs
+                  <span className="checkers-tally__count">{blue}</span> {opponentName}
                 </span>
               </p>
             </GameSlot>
@@ -414,7 +418,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         )}
         rightRail={(
           <GameRail
-            label="How to play"
+            label="Controls"
             foot={(
               <GameButton
                 variant="icon"
@@ -427,27 +431,20 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
               </GameButton>
             )}
           >
-            <GameSlot label="Addressing a square">
-              Every dark square is a file note (above the board) plus a rank note
-              (beside it). Play both together, then the destination the same way.
-            </GameSlot>
-            <GameSlot label="Captures">
-              Captures glow and are required. Multiple jumps keep the piece selected.
-            </GameSlot>
-            <GameSlot label="Setup">
+            <GameSlot label={<><Icon name="shuffle" /> Board map</>}>
               <GameToggle
-                label="Re-deal file &amp; rank notes each game"
+                label="Shuffle each game"
                 checked={addressing.shuffle !== 'never'}
                 onChange={(value) => updateConfig({
                   addressing: { shuffle: value ? 'each_game' : 'never' },
                 })}
               />
-            </GameSlot>
-            <GameSlot label="Stuck?" variant="plain">
-              Play seven notes together and a good move starts glowing.
-              {/* Without this a re-deal is invisible: the player spells
-                  yesterday's square, it is refused, and nothing explains why. */}
               <DealNotice cadence={addressing.shuffle} dealKey={`${seed}-${moves.length}`} />
+            </GameSlot>
+            <GameSlot label={<><Icon name="hand-right" /> Hint</>} variant="plain">
+              <div className="pg-rail-cue" aria-label="Play seven keys together for a hint">
+                <strong>7 keys</strong><span>Best move</span>
+              </div>
             </GameSlot>
           </GameRail>
         )}

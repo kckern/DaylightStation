@@ -10,6 +10,7 @@ import PianoTile from '../../PianoTile.jsx';
 import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
+import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -95,6 +96,7 @@ function GameHost() {
   // when mounted outside the kiosk's PianoUserProvider.
   const pianoUser = useContext(PianoUserContext);
   const currentUser = pianoUser?.currentProfile ?? pianoUser?.currentUser ?? null;
+  const playerName = resolvePianoPlayerName(currentUser);
   const entry = getGameEntry(gameId);
 
   // Current location in the header breadcrumb (Games › this game). The breadcrumb
@@ -135,6 +137,7 @@ function GameHost() {
             subRoute={subRoute ?? null}
             onSubRoute={goSubRoute}
             currentUser={currentUser}
+            playerName={playerName}
             onDeactivate={exit}
             onNoteOn={pressNote}
             onNoteOff={releaseNote}

@@ -3,7 +3,7 @@ import './SideScrollerOverlay.scss';
 export function SideScrollerOverlay({ phase, countdown, score, level, levelName }) {
   if (phase === 'STARTING' && countdown != null) {
     return (
-      <div className="scroller-overlay">
+      <div className="scroller-overlay" role="status" aria-live="polite">
         <div className="scroller-overlay__countdown">
           {countdown === 0 ? 'GO!' : countdown}
         </div>
@@ -37,6 +37,7 @@ export function SideScrollerOverlay({ phase, countdown, score, level, levelName 
               <span className="scroller-overlay__stat-label">Level</span>
             </div>
           </div>
+          <p className="scroller-overlay__continue">Press any key to play again</p>
         </div>
       </div>
     );

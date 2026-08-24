@@ -1,19 +1,15 @@
-import { useMemo } from 'react';
-import { getChildLogger } from '../../../../lib/logging/singleton.js';
 import './SpaceInvadersOverlay.scss';
 
 /**
  * Game mode overlay — countdown, banners, victory screen.
  * Score HUD is in the SpaceInvadersGame header, not here.
  */
-export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel, levelProgress }) {
-  const logger = useMemo(() => getChildLogger({ component: 'space-invaders-overlay' }), []);
-
+export function SpaceInvadersOverlay({ gameState, countdown, score, terminal = false }) {
   // Countdown: 3, 2, 1, GO
   if (gameState === 'STARTING') {
     const label = countdown === 0 ? 'GO!' : countdown;
     return (
-      <div className="game-overlay">
+      <div className="game-overlay" role="status" aria-live="polite">
         <div className="countdown">
           <span className="countdown-number" key={countdown}>{label}</span>
         </div>
@@ -41,6 +37,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel
               <span className="stat-label">Perfects</span>
             </div>
           </div>
+          {terminal && <p className="game-overlay__continue">Press any key to play again</p>}
         </div>
       </div>
     );
@@ -49,7 +46,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel
   // Level failed banner
   if (gameState === 'LEVEL_FAILED') {
     return (
-      <div className="game-overlay">
+      <div className="game-overlay" role="status" aria-live="polite">
         <div className="banner banner--fail">
           <h2>Try Again!</h2>
           <div className="banner-stats">
@@ -62,6 +59,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, currentLevel
               <span className="stat-label">Misses</span>
             </div>
           </div>
+          <p className="game-overlay__continue">Press any key to play again</p>
         </div>
       </div>
     );

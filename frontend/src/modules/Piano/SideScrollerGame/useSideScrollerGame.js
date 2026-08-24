@@ -30,7 +30,6 @@ const OUTCOME_ADVANCE = 'advance';
 // ─── Constants ──────────────────────────────────────────────────
 const COUNTDOWN_STEPS = [3, 2, 1, 0];
 const COUNTDOWN_STEP_MS = 800;
-const GAME_OVER_DISPLAY_MS = 5000;
 
 // ─── Target Generation (2 actions only) ─────────────────────────
 
@@ -114,7 +113,6 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // Timer refs
   const rafRef = useRef(null);
   const countdownRef = useRef(null);
-  const gameOverRef = useRef(null);
   const lastFrameRef = useRef(0);
   const lastSpawnRef = useRef(0);
   const prevDodgeCountRef = useRef(0);
@@ -125,7 +123,6 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   const clearAllTimers = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-    if (gameOverRef.current) { clearTimeout(gameOverRef.current); gameOverRef.current = null; }
   }, []);
 
   // ─── Target Regeneration ────────────────────────────────────
@@ -295,7 +292,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   // ─── Start Game (Countdown) ─────────────────────────────────
 
   const startGame = useCallback(() => {
-    if (phaseRef.current !== 'IDLE') return;
+    if (!['IDLE', 'GAME_OVER'].includes(phaseRef.current)) return;
     clearAllTimers();
 
     // Reset all timing refs here (NOT in the rAF effect)
@@ -331,22 +328,6 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
       }
     }, COUNTDOWN_STEP_MS);
   }, [clearAllTimers, levels, config, logger, regenerateTargets, sfx]);
-
-  // ─── Game Over Auto-Dismiss ─────────────────────────────────
-
-  useEffect(() => {
-    if (phase !== 'GAME_OVER') return;
-    gameOverRef.current = setTimeout(() => {
-      gameOverRef.current = null;
-      logger.info('side-scroller.game-dismissed', { score: worldRef.current.score });
-      setPhase('IDLE');
-      setWorld(createInitialWorld(config));
-      setTargets(null);
-    }, GAME_OVER_DISPLAY_MS);
-    return () => {
-      if (gameOverRef.current) { clearTimeout(gameOverRef.current); gameOverRef.current = null; }
-    };
-  }, [phase, config, logger]);
 
   // ─── Cleanup on Unmount ─────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { chooseColumn } from '@shared-gaming/connect-four/opponent.mjs';
+import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/connect-four/opponent.mjs';
 import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
@@ -15,6 +15,7 @@ import {
 } from '../game-platform/chrome/index.js';
 import AddressingSettings from '../game-platform/addressing/AddressingSettings.jsx';
 import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 import { materialFor } from '../game-platform/addressing/resolveAddressing.js';
 import { noteName } from '../PianoChessGame/staffAddress.js';
 import connectFourClient from './connectFourApi.js';
@@ -73,9 +74,16 @@ export function scaleRoots(roots, size = COLUMNS) {
 
 const ROOTS = [0, 2, 4, 5, 7, 9, 11];
 const INPUT_MODES = [
-  { value: 'notes', label: 'Single notes' },
-  { value: 'chords', label: 'Major chords' },
+  { value: 'notes', label: 'Notes' },
+  { value: 'chords', label: 'Chords' },
 ];
+
+/** The column legend must speak the same vocabulary as the input resolver. */
+function railNotation(vocabulary) {
+  if (vocabulary === 'chords') return 'chords';
+  if (vocabulary === 'names') return 'names';
+  return 'staff';
+}
 /** Search depth for a HINT — competent, and deliberately not the opponent's. */
 const HINT_SEARCH_LEVEL = 5;
 
@@ -354,7 +362,9 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   // player has to see who won first.
   useAnyKeyToContinue({ enabled: game.status.gameOver, activeNotes, onContinue: restart });
 
-  const opponentName = ladder?.current?.name ?? 'Pebble';
+  const opponent = ladder?.current
+    ?? CONNECT_FOUR_OPPONENTS[Math.max(0, Math.min(CONNECT_FOUR_OPPONENTS.length - 1, level - 1))];
+  const opponentName = opponent.name;
   // Who won, in the terms the player can check against the board: a colour and
   // the four lit discs. "You connected four!" and a bare "Pebble wins" left the
   // player hunting for the line that ended the game.
@@ -364,7 +374,8 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
       : game.status.winner === 1
         ? 'You win! Your four yellow discs are lit up'
         : `${opponentName} wins — the four red discs are lit up`
-    : thinking ? `${opponentName} is thinking…` : 'Your turn — play a key to drop a disc';
+    : thinking ? `${opponentName} is thinking…`
+      : hint !== null ? 'Suggested column is glowing.' : 'Your turn — play a key to drop a disc';
 
   // The rail's own cards, one per column, already inverted through the deal —
   // see columnAddresses. The active card follows whatever the held keys
@@ -383,25 +394,31 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
       <InstrumentBoardStage
         layout={BOARD_LAYOUTS.SINGLE}
         topRail={(
-          <AddressRail addresses={railAddresses} orientation="horizontal" active={hoveredColumn} />
+          <AddressRail
+            addresses={railAddresses}
+            notation={railNotation(addressing.vocabulary)}
+            orientation="horizontal"
+            active={hoveredColumn}
+          />
         )}
         primary={<Board game={game} hint={hint} drop={drop} />}
         leftRail={(
           <GameRail label="Opponent">
-            <GameSlot label="Playing against">
+            <GameSlot>
               <LadderBadge
                 name={opponentName}
                 level={level}
                 levels={LADDER_LEVELS}
                 wins={ladder?.wins ?? 0}
                 needed={ladder?.needed ?? 3}
+                portrait={opponent.art ? <img className="pg-ladder__portrait" src={opponent.art} alt="" /> : null}
               />
             </GameSlot>
           </GameRail>
         )}
         rightRail={(
           <GameRail
-            label="Setup"
+            label="Controls"
             foot={(
               <GameButton
                 variant="icon"
@@ -414,7 +431,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
               </GameButton>
             )}
           >
-            <GameSlot label="How you play a column">
+            <GameSlot label={<><Icon name="piano" /> Play with</>}>
               <GameChoice
                 value={addressing.vocabulary === 'chords' ? 'chords' : 'notes'}
                 options={INPUT_MODES}
@@ -423,23 +440,23 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
                 })}
               />
               <GameToggle
-                label="Re-deal columns each game"
+                label="Shuffle columns"
                 checked={addressing.shuffle !== 'never'}
                 onChange={(value) => updateConfig({
                   addressing: { shuffle: value ? 'each_game' : 'never' },
                 })}
               />
+              <DealNotice cadence={addressing.shuffle} dealKey={`${seed}-${moves.length}`} />
             </GameSlot>
             {/* The text legend used to live here ("1: C  2: D  ..."), tucked in
                 a settings panel the player has to open and read while their
                 hands are off the keys. The rail above the board says the same
                 thing where it actually helps — over each column, all the time,
                 in the vocabulary the player is learning. */}
-            <GameSlot label="Stuck?" variant="plain">
-              Play seven notes together and the best column lights up.
-              {/* Without this a re-deal is invisible: the player plays
-                  yesterday's key and a disc lands in the wrong column. */}
-              <DealNotice cadence={addressing.shuffle} dealKey={`${seed}-${moves.length}`} />
+            <GameSlot label={<><Icon name="hand-right" /> Hint</>} variant="plain">
+              <div className="pg-rail-cue" aria-label="Play seven keys together for a hint">
+                <strong>7 keys</strong><span>Best column</span>
+              </div>
             </GameSlot>
           </GameRail>
         )}

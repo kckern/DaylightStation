@@ -48,6 +48,11 @@ A game overrides **the board's colours and nothing else**. The board carries the
 | `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
 | `CountdownOverlay` / `LifeMeter` / `ProgressMeter` | the HUD. These existed unstyled for a year — `.piano-game-life__notch` drew nothing at all. |
 
+Checkers and Connect Four each carry their own seven-character Pokémon roster; neither reuses the
+Chess pack or each other's characters. Rail copy is limited to labels, counts, and controls. A
+sentence that explains a move, refusal, hint, or map change belongs in `GameStatusBar` or a toast,
+not in permanently mounted rail furniture.
+
 ### The reservation rule
 
 A slot holds its size whether or not it has anything to say. The rails size the stage, so a read-out that grows a line as fingers land moves the **board** — during the exact half-second the player is looking at it.
