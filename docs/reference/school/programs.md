@@ -15,6 +15,9 @@ Sentence Ladder is the first code-registered program. Its canonical id is
 
 ## Operations CLI
 
+The complete operational contract is in [School operations](./operations.md).
+The examples below are the program-facing subset.
+
 `node cli/school.mjs ops` supports testing and household operations:
 
 ```bash

@@ -1,5 +1,8 @@
 # Completion and rewards
 
+For the full planner-to-agenda flow and obligation vocabulary, see
+[Agenda and daily completion](./agenda-and-completion.md).
+
 Learner-day completion is a derived, side-effect-free projection over the same
 plan and agenda rules that issue work. It is never a mutable “done” flag.
 

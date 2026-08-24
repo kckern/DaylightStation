@@ -179,4 +179,4 @@ school-catalog CLI before mounting new works.
   media); the bank index resolves from there rather than from any list.
 - Per-student progress: `data/users/{id}/apps/school/`
 - Household-scoped school data: `data/household/school/` (see the taxonomy in the School reference).
-- Policy and enrolment: `data/household/config/school.yml`, `config/works/`
+- Policy and enrollment: `data/household/school/school.yml`, `plans/`
