@@ -7,7 +7,25 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const PRIORITY = Object.freeze({ low: 4, medium: 3, high: 2, urgent: 1, in_progress: 0 });
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-const isDay = (value) => typeof value === 'string' && DAY.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+/**
+ * A household-local study date, `YYYY-MM-DD`. Exported because workValidation
+ * polices hand-authored course windows and must agree with this file on what a
+ * date even is — a second copy of this predicate would drift from this one.
+ *
+ * Round-trip rather than Date.parse: V8 rolls an out-of-range DAY over
+ * ('2026-11-31' parses fine, as Dec 1) instead of rejecting it, which would let
+ * a typo'd course window silently shift a week. Comparing the formatted result
+ * back to the input is what actually rejects a date that never existed. The
+ * NaN guard is not redundant: an out-of-range MONTH gives an Invalid Date,
+ * whose toISOString() THROWS, and every caller here treats isDay as a
+ * predicate that reports rather than raises.
+ */
+export const isStudyDay = (value) => {
+  if (typeof value !== 'string' || !DAY.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
+const isDay = isStudyDay;
 const dayMs = 86_400_000;
 const addDays = (day, offset) => new Date(Date.parse(`${day}T00:00:00Z`) + offset * dayMs).toISOString().slice(0, 10);
 const compareDay = (left, right) => left.localeCompare(right);
@@ -185,6 +203,33 @@ export function evaluateTiming(raw, { today, inProgress = false } = {}) {
     return { timing, state: 'urgent', priority: PRIORITY.urgent, reasons: [`due_on_${target.dueOn}`] };
   }
   return { timing, state: 'available', priority: PRIORITY[timing.basePriority], reasons: [`${timing.basePriority}_base_priority`] };
+}
+
+/**
+ * Where today sits relative to ONE dated module's window.
+ *
+ * Deliberately never returns `dormant`. A closed dated module is `catch_up`:
+ * still offerable, just outranked. Backlog in a dated course does not expire
+ * and never needs a grown-up to revive it — it sinks by losing the sort (the
+ * planner will rank catch_up modules newest-first), not by a rule.
+ *
+ * WARNING: the returned object is NOT shape-compatible with `evaluateTiming`.
+ * It carries only `{ state, reasons }` — no `timing`, no `priority`. Do not
+ * feed it to a caller that reads an evaluateTiming decision: planner.mjs falls
+ * back to `decision?.timing ?? rawTiming` and `decision?.priority ?? 3`, so the
+ * substitution throws nothing and yields silently wrong data instead.
+ */
+export function evaluateDatedModule(moduleWindow, { today } = {}) {
+  if (!isDay(today)) throw new Error('evaluateDatedModule requires today YYYY-MM-DD');
+  if (!isObject(moduleWindow) || !isDay(moduleWindow.opensOn) || !isDay(moduleWindow.closesOn)) {
+    throw new Error('evaluateDatedModule requires a window with opensOn and closesOn as YYYY-MM-DD');
+  }
+  if (compareDay(moduleWindow.opensOn, moduleWindow.closesOn) > 0) {
+    throw new Error('evaluateDatedModule window closes before it opens');
+  }
+  if (compareDay(today, moduleWindow.opensOn) < 0) return { state: 'upcoming', reasons: ['opens_later'] };
+  if (compareDay(today, moduleWindow.closesOn) > 0) return { state: 'catch_up', reasons: ['window_closed'] };
+  return { state: 'available', reasons: ['current_module'] };
 }
 
 export const TIMING_PRIORITY = PRIORITY;

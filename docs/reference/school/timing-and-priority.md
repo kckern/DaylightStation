@@ -31,11 +31,13 @@ due-date engine. A deadline never unlocks a prerequisite, changes an answer
 key, revises an issued worksheet, or converts an unattempted lesson into a
 failing grade.
 
-Timing attaches only to an **enrollment** or **standalone work** in the first
-version. It does not attach to individual modules or lessons. A smaller
-time-sensitive activity should be represented by a scoped syllabus when scope
-subsetting exists, or by standalone work. This preserves the enrollment's
-frozen lesson order.
+Timing normally attaches to an **enrollment** or **standalone work**: use that
+course-level timing for an occasion-shaped course such as Advent or the Fourth
+of July. A calendar-shaped `dated_modules` course, such as Come Follow Me,
+instead snapshots one `moduleSchedule` window per module onto the enrollment.
+The clock makes the current module available, unfinished closed modules remain
+offerable as newest-first catch-up, and future modules stay unavailable. Days
+inside each module still use the enrollment's frozen lesson order.
 
 ## 2. Authority and materialization
 
@@ -154,6 +156,7 @@ day has passed.
 | `urgent` | Incomplete, eligible, and `target.dueOn` is within `urgencyLeadDays` | Eligible with an automatic priority promotion. |
 | `dormant` | After `closesOn`, or after an incomplete firm target | Not offered until a grown-up continues, retargets, retires, or archives it. |
 | `missed_target` | After an incomplete aspirational target but still in its window | Still eligible at base priority; explain the missed target to the parent. |
+| `catch_up` | A closed dated-module window with unfinished lessons | Still eligible at medium priority; ordered newest closed module first. |
 
 An open session or issued worksheet always remains resumable. Timing may not
 strand a child holding paper: `in_progress` outranks a later dormant state until
@@ -169,6 +172,10 @@ in_progress or retry
   > low base priority
   > authored plan order (stable tie-breaker)
 ```
+
+For dated modules, calendar rank resolves ties inside the subject: current
+module first, then closed unfinished modules by `closesOn` descending. This is
+not deadline urgency and never claims additional cross-subject focus blocks.
 
 The selector should return its reasons, such as `in_progress`,
 `due_in_3_days`, or `high_base_priority`. Those reasons let a parent preview

@@ -12,20 +12,38 @@ const shuffle = (items, rng) => {
   return out;
 };
 
-export function createCourseEnrollment({ enrollmentId = null, courseId, profile, units, policy = {}, rng = Math.random } = {}) {
+export function createCourseEnrollment({
+  enrollmentId = null, courseId, profile, units, modules = [], policy = {}, today = null, rng = Math.random,
+} = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
     throw new Error('enrollmentId must be a non-empty string when provided');
   }
   const members = (units ?? []).filter((u) => u?.courseId === courseId);
-  const modules = [...new Set(members.map((u) => u.module).filter(Boolean))];
+  const publishedModules = [...new Set(members.map((u) => u.module).filter(Boolean))];
   const opening = policy.required_opening_module ?? null;
-  const optionalModules = modules.filter((id) => members.some((u) => u.module === id && u.moduleRole === 'optional'));
-  const otherModules = modules.filter((id) => id !== opening && !optionalModules.includes(id));
-  const moduleOrder = [
-    ...(opening ? [opening] : []),
-    ...(policy.module_order === 'shuffle_once' ? shuffle(otherModules, rng) : otherModules),
-  ];
+  const optionalModules = publishedModules.filter((id) => members.some((u) => u.module === id && u.moduleRole === 'optional'));
+  const otherModules = publishedModules.filter((id) => id !== opening && !optionalModules.includes(id));
+  // A dated course's calendar IS its order, so it never shuffles and never
+  // takes an opening module. Windows are copied onto the enrollment for the
+  // same reason lessonOrder is: later course edits must not move a plan a
+  // learner is already living in.
+  const dated = policy.mode === 'dated_modules';
+  const published = new Set(publishedModules);
+  const windowed = dated
+    ? (Array.isArray(modules) ? modules : [])
+      // A module without published units cannot be assigned. A week that
+      // closed before enrollment was never assigned, so it is not backlog.
+      .filter((module) => module?.module && published.has(module.module) && module.opensOn && module.closesOn)
+      .filter((module) => !today || module.closesOn >= today)
+      .sort((left, right) => left.opensOn.localeCompare(right.opensOn))
+    : [];
+  const moduleOrder = dated
+    ? windowed.map((module) => module.module)
+    : [
+      ...(opening ? [opening] : []),
+      ...(policy.module_order === 'shuffle_once' ? shuffle(otherModules, rng) : otherModules),
+    ];
   const lessonOrder = {};
   for (const module of [...moduleOrder, ...optionalModules]) {
     const lessons = members.filter((u) => u.module === module)
@@ -45,6 +63,11 @@ export function createCourseEnrollment({ enrollmentId = null, courseId, profile,
     moduleOrder,
     optionalModules,
     lessonOrder,
+    ...(dated ? {
+      moduleSchedule: Object.fromEntries(
+        windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),
+      ),
+    } : {}),
   };
 }
 

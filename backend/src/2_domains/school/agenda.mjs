@@ -84,7 +84,8 @@ function gradeFor(list, latestBySessionUnit, statuses) {
 }
 
 const timingScope = (entry) => entry?.courseId ? `course:${entry.courseId}` : `unit:${entry?.unitId ?? ''}`;
-const byEntryPriority = (left, right) => (left.timingPriority ?? 3) - (right.timingPriority ?? 3);
+const byEntryPriority = (left, right) => (left.timingPriority ?? 3) - (right.timingPriority ?? 3)
+  || (left.timingRank ?? 0) - (right.timingRank ?? 0);
 const focusBudget = (entry) => entry?.timingState === 'urgent'
   ? (entry.timing?.agenda?.urgentBlocks ?? 1)
   : 1;

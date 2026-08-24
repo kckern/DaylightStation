@@ -24,7 +24,7 @@
  * the shape `reduceSession` produces) and returns plain data.
  */
 
-import { evaluateTiming, studyDate } from './timing.mjs';
+import { evaluateDatedModule, evaluateTiming, studyDate, TIMING_PRIORITY } from './timing.mjs';
 
 /** Closed set — a status a caller cannot render is a status that cannot exist. */
 export const PLAN_STATUSES = Object.freeze(['completed', 'in_progress', 'locked', 'available', 'upcoming', 'dormant']);
@@ -93,11 +93,30 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   const enrollmentByCourse = new Map();
   assignedCourses.forEach(({ id, elective, profile, enrollment, timing }) => {
     enrollmentByCourse.set(id, { profile, enrollment, timing });
-    const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
-    if (!members.length) {
+    const publishedMembers = catalog.filter((u) => u.courseId === id).sort(bySequence);
+    if (!publishedMembers.length) {
       errors.push(`${id}: assigned but no published units belong to it`);
       return;
     }
+    // An enrollment is a frozen curriculum statement, not merely an ordering
+    // hint. In particular, a learner joining a dated course mid-stream omits
+    // already-closed modules from lessonOrder; pulling membership back from
+    // the whole catalog would resurrect those deliberately unassigned weeks.
+    const hasFrozenMembership = isPlainObject(enrollment?.lessonOrder);
+    const frozenIds = new Set(
+      hasFrozenMembership
+        ? Object.values(enrollment.lessonOrder).flatMap((ids) => (Array.isArray(ids) ? ids : []))
+          .filter(isNonEmptyString)
+        : [],
+    );
+    if (hasFrozenMembership && Array.isArray(enrollment.optionalModules)) {
+      publishedMembers
+        .filter((unit) => enrollment.optionalModules.includes(unit.module))
+        .forEach((unit) => frozenIds.add(unit.unitId));
+    }
+    const members = hasFrozenMembership
+      ? publishedMembers.filter((unit) => frozenIds.has(unit.unitId))
+      : publishedMembers;
     members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
   });
   const timingByStandaloneUnit = new Map();
@@ -140,6 +159,14 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     const siblings = courseMembers.get(unit.courseId) || [];
     const policy = coursePolicies?.[unit.courseId];
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    if (policy?.mode === 'dated_modules' && unit.module) {
+      const ordered = enrollment?.lessonOrder?.[unit.module]
+        ? enrollment.lessonOrder[unit.module].map((id) => byUnitId.get(id)).filter(Boolean)
+        : siblings.filter((entry) => entry.module === unit.module).sort(bySequence);
+      const at = ordered.findIndex((entry) => entry.unitId === unit.unitId);
+      for (let i = at - 1; i >= 0; i -= 1) if (!passedUnits.has(ordered[i].unitId)) return ordered[i];
+      return null;
+    }
     if (policy?.mode === 'module_blocks' && unit.module) {
       const opening = policy.required_opening_module;
       const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
@@ -190,6 +217,11 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     const siblings = courseMembers.get(unit.courseId) || [];
     const policy = coursePolicies?.[unit.courseId];
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
+    if (policy?.mode === 'dated_modules' && unit.module && enrollment) {
+      const inModule = enrollment.lessonOrder?.[unit.module]?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
+      const at = inModule.findIndex((entry) => entry.unitId === unit.unitId);
+      return at >= 0 && at + 1 < inModule.length ? inModule[at + 1].unitId : null;
+    }
     if (policy?.mode === 'module_blocks' && unit.module && enrollment) {
       const inModule = enrollment.lessonOrder?.[unit.module]
         ?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
@@ -224,6 +256,28 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   });
 
   const today = studyDate(now, timezone) ?? (typeof now === 'string' ? now.slice(0, 10) : null);
+  const datedRankByModule = new Map();
+  const datedStateByModule = new Map();
+  if (today) {
+    enrollmentByCourse.forEach(({ enrollment }, courseId) => {
+      if (coursePolicies?.[courseId]?.mode !== 'dated_modules') return;
+      const schedule = isPlainObject(enrollment?.moduleSchedule) ? enrollment.moduleSchedule : {};
+      const closed = [];
+      Object.entries(schedule).forEach(([moduleId, window]) => {
+        try {
+          const decision = evaluateDatedModule(window, { today });
+          const key = `${courseId}/${moduleId}`;
+          datedStateByModule.set(key, decision.state);
+          if (decision.state === 'available') datedRankByModule.set(key, 0);
+          if (decision.state === 'catch_up') closed.push({ moduleId, closesOn: window.closesOn });
+        } catch {
+          errors.push(`${courseId}: module '${moduleId}' has an unusable window`);
+        }
+      });
+      closed.sort((left, right) => right.closesOn.localeCompare(left.closesOn))
+        .forEach(({ moduleId }, index) => datedRankByModule.set(`${courseId}/${moduleId}`, index + 1));
+    });
+  }
   const entries = ordering.map(({ unitId, elective }) => {
     const unit = byUnitId.get(unitId);
     // Program units may carry the bridge-created same-day session. They still
@@ -234,6 +288,9 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     const rawTiming = unit.courseId
       ? enrollmentByCourse.get(unit.courseId)?.timing ?? null
       : timingByStandaloneUnit.get(unitId) ?? null;
+    const datedKey = unit.courseId && coursePolicies?.[unit.courseId]?.mode === 'dated_modules' && unit.module
+      ? `${unit.courseId}/${unit.module}` : null;
+    const datedState = datedKey ? datedStateByModule.get(datedKey) ?? null : null;
     let timingDecision = null;
     let status = 'available';
     let lockReason = null;
@@ -255,12 +312,14 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
         title: blocker.title,
         action: openByUnit.has(blocker.unitId) ? 'resume' : 'start',
       };
+    } else if (datedKey) {
+      if (datedState === 'upcoming' || datedState === null) status = 'upcoming';
     } else if (today) {
       timingDecision = evaluateTiming(rawTiming, { today });
       if (timingDecision.state === 'upcoming') status = 'upcoming';
       if (timingDecision.state === 'dormant') status = 'dormant';
     }
-    if (open && today) timingDecision = evaluateTiming(rawTiming, { today, inProgress: true });
+    if (open && today && !datedKey) timingDecision = evaluateTiming(rawTiming, { today, inProgress: true });
 
     return {
       unitId,
@@ -272,9 +331,12 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       module: unit.module ?? null,
       profile: enrollmentByCourse.get(unit.courseId)?.profile ?? null,
       timing: timingDecision?.timing ?? rawTiming,
-      timingState: timingDecision?.state ?? 'available',
-      timingPriority: timingDecision?.priority ?? 3,
-      timingReasons: timingDecision?.reasons ?? ['default_priority'],
+      timingState: datedKey ? (datedState ?? 'upcoming') : (timingDecision?.state ?? 'available'),
+      // A worksheet already in a child's hands always resumes before a newer
+      // calendar candidate; its module state remains catch_up for display.
+      timingPriority: datedKey ? (open ? TIMING_PRIORITY.in_progress : TIMING_PRIORITY.medium) : (timingDecision?.priority ?? 3),
+      timingRank: datedKey ? (datedRankByModule.get(datedKey) ?? Number.MAX_SAFE_INTEGER) : 0,
+      timingReasons: datedKey ? [datedState ?? 'not_scheduled'] : (timingDecision?.reasons ?? ['default_priority']),
       elective,
       program: unit.program ?? null,
       programInstance: unit.programInstance ?? null,
@@ -292,6 +354,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   const of = (status) => entries.filter((e) => e.status === status);
   const positionFor = (entry) => ordering.findIndex((item) => item.unitId === entry.unitId);
   const byEffectivePriority = (left, right) => left.timingPriority - right.timingPriority
+    || (left.timingRank ?? 0) - (right.timingRank ?? 0)
     || positionFor(left) - positionFor(right);
   const inProgress = of('in_progress');
   const available = of('available').sort(byEffectivePriority);
