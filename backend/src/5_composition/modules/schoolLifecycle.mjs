@@ -57,6 +57,8 @@ import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mj
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
+import { GetLearnerDayCompletion } from '#apps/school/GetLearnerDayCompletion.mjs';
+import { SchoolCompletionBridge } from '#apps/school/SchoolCompletionBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
@@ -526,6 +528,13 @@ export async function createSchoolLifecycle({
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, newSessionId, logger,
   });
+  // Read-only twin of `buildAgenda`'s planning path (design
+  // 2026-08-23-student-completion-state-machine): "is this learner done for
+  // today?", derived on demand, no session or token side effects.
+  const getLearnerDayCompletion = new GetLearnerDayCompletion({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions,
+    launchers, timezone, clock, logger,
+  });
 
   // --- dry-run agenda preview (DoNow + Agenda Preview plan, Task 2) ---------
   // A parent-facing "what would print right now" view. It runs the exact same
@@ -667,6 +676,11 @@ export async function createSchoolLifecycle({
     // got a panel code even on a household with self-service on — the QR
     // `resultDocument` had no code parameter for at all until this slice.
     selfService: cfg.selfService,
+    // Every settle publishes `school.session.outcome-recorded` (design
+    // 2026-08-23-student-completion-state-machine) for `schoolCompletionBridge`
+    // below — optional, so an install with no eventBus settles exactly as
+    // it did before that feature existed.
+    eventBus,
     clock, rng: draw, logger,
   });
   const closeLanguageDay = languageStudyService && eventBus
@@ -743,6 +757,21 @@ export async function createSchoolLifecycle({
     donowSchoolBridge.start();
   } else {
     logger.warn?.('school.lifecycle.donow-bridge-unwired', { reason: 'no eventBus' });
+  }
+
+  // Pushes `school.completion.changed` on an actual learner-day-completion
+  // transition (design 2026-08-23-student-completion-state-machine) — other
+  // subsystems (piano-kiosk unlocks, coins) subscribe rather than poll.
+  // Absent an eventBus, completion is still readable directly via
+  // `getLearnerDayCompletion`; only the push notification is unavailable.
+  let schoolCompletionBridge = null;
+  if (eventBus && typeof eventBus.subscribe === 'function') {
+    schoolCompletionBridge = new SchoolCompletionBridge({
+      eventBus, getLearnerDayCompletion, clock, logger,
+    });
+    schoolCompletionBridge.start();
+  } else {
+    logger.warn?.('school.lifecycle.completion-bridge-unwired', { reason: 'no eventBus' });
   }
 
   // The two parent-only writes. They are use cases rather than raw store calls
@@ -971,6 +1000,11 @@ export async function createSchoolLifecycle({
     // conditional-on-existence pattern as its other graceful-shutdown hooks.
     donowSchoolBridge,
     closeLanguageDay,
+    // Read-only completion status ("is this learner done for today?") and
+    // its push-on-transition bridge — same null-when-unwired,
+    // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
+    getLearnerDayCompletion,
+    schoolCompletionBridge,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without
