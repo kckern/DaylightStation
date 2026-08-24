@@ -22,7 +22,7 @@ let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 
 const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
-  passOverrides = null, teacherGate = null,
+  passOverrides = null, teacherGate = null, eventBus = null,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -45,6 +45,7 @@ const build = ({
     teacherGate,
     reviewQueue: wireReviewQueue ? reviewQueue : null,
     passOverrides,
+    eventBus,
     clock: clock.now, rng: seededRng(5), logger: silentLogger,
   });
   remediate = new OpenRemediation({
@@ -222,6 +223,24 @@ describe('the honor-close door', () => {
     await graded();
     const result = await close.execute({ sessionId: SID });
     expect(result).toMatchObject({ status: 'settled', result: 'passed', outcomeId: `out:${SID}`, percent: 90 });
+  });
+});
+
+describe('school.session.outcome-recorded publish', () => {
+  it('publishes on a passing honor-close, with learnerId/sessionId/unitId/result/at', async () => {
+    const published = [];
+    build({ eventBus: { publish: (topic, payload) => published.push({ topic, payload }) } });
+    await launched();
+    await close.execute({ sessionId: SID, honorClose: true });
+    expect(published).toHaveLength(1);
+    expect(published[0].topic).toBe('school.session.outcome-recorded');
+    expect(published[0].payload).toMatchObject({ sessionId: SID, unitId: WORKSHEET_UNIT, result: 'passed', learnerId: 'kid1' });
+    expect(typeof published[0].payload.at).toBe('string');
+  });
+
+  it('does not throw when no eventBus is supplied (the default)', async () => {
+    await launched();
+    await expect(close.execute({ sessionId: SID, honorClose: true })).resolves.toMatchObject({ status: 'settled' });
   });
 });
 
