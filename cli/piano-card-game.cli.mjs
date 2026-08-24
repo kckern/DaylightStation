@@ -140,14 +140,27 @@ async function verifyCorpusAssets(origin, combatants, timeoutMs) {
 
 function installMidiBridge() {
   const NativeWebSocket = window.WebSocket;
-  let bridgeSocket = null;
+  const bridgeSockets = new Set();
+  let bridgeEnabled = true;
+  let emittedFrames = 0;
+  const devKeyByMidi = new Map([
+    [60, '1'], [62, '2'], [64, '3'], [65, '4'], [67, '5'], [69, '6'],
+    [71, '7'], [72, '8'], [74, '9'], [76, '0'], [77, '-'], [79, '='],
+  ]);
 
   class ReadinessBridgeSocket {
     constructor(url) {
       this.url = String(url);
       this.readyState = 0;
-      bridgeSocket = this;
+      bridgeSockets.add(this);
       window.setTimeout(() => {
+        if (!bridgeEnabled) {
+          bridgeSockets.delete(this);
+          this.readyState = 3;
+          this.onerror?.(new Event('error'));
+          this.onclose?.({ code: 1006, reason: 'local readiness virtual input' });
+          return;
+        }
         this.readyState = 1;
         this.onopen?.(new Event('open'));
       }, 0);
@@ -158,12 +171,14 @@ function installMidiBridge() {
     close() {
       if (this.readyState === 3) return;
       this.readyState = 3;
+      bridgeSockets.delete(this);
       this.onclose?.({ code: 1000, reason: 'readiness verification complete' });
     }
 
     emit(frame) {
       if (this.readyState !== 1) throw new Error('Piano bridge is not connected');
-      this.onmessage?.({ data: JSON.stringify(frame) });
+      emittedFrames += 1;
+      this.onmessage?.call(this, new MessageEvent('message', { data: JSON.stringify(frame) }));
     }
   }
 
@@ -180,30 +195,91 @@ function installMidiBridge() {
 
   const pause = (duration) => new Promise((resolve) => window.setTimeout(resolve, duration));
   window.__scaleStadiumReadiness = {
-    async playPrompt(kind, prompt) {
-      if (!bridgeSocket) throw new Error('Piano bridge socket was not created');
-      const notes = prompt.expected_midi;
+    disableBridge() {
+      bridgeEnabled = false;
+      for (const socket of [...bridgeSockets]) socket.close();
+    },
+    bridgeStatus() {
+      const active = [...bridgeSockets].filter((socket) => socket.readyState === 1);
+      return { emittedFrames, activeSockets: active.length, messageHandlers: active.filter((socket) => socket.onmessage).length };
+    },
+    async playPrompt(kind, prompt, assessmentStartedAt = null) {
+      const emit = (frame) => {
+        const active = [...bridgeSockets].filter((socket) => socket.readyState === 1);
+        if (active.length === 0) throw new Error('Piano bridge socket was not created');
+        for (const socket of active) socket.emit(frame);
+      };
+      const noteOn = (midi) => {
+        const key = window.location.hostname === 'localhost' ? devKeyByMidi.get(midi) : null;
+        if (key) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        else emit({ type: 'note.on', note: midi, velocity: 96 });
+      };
+      const noteOff = (midi) => {
+        const key = window.location.hostname === 'localhost' ? devKeyByMidi.get(midi) : null;
+        if (key) window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+        else emit({ type: 'note.off', note: midi, velocity: 0 });
+      };
+      const events = prompt.expected_events;
       if (kind === 'chord') {
-        for (const note of notes) {
-          bridgeSocket.emit({ type: 'note.on', note, velocity: 96 });
+        for (const event of events) for (const note of event.notes || []) {
+          noteOn(note.midi);
           await pause(150);
         }
         return;
       }
-      if (prompt.tempo_bpm) await pause(Math.max(0, prompt.lead_in_ms || 0));
       const beatMs = prompt.tempo_bpm ? 60_000 / prompt.tempo_bpm : 35;
-      const offsets = prompt.target_offsets_ms || notes.map((_, index) => index * beatMs);
-      for (let index = 0; index < notes.length; index += 1) {
-        if (index > 0) await pause(Math.max(18, offsets[index] - offsets[index - 1]));
-        bridgeSocket.emit({ type: 'note.on', note: notes[index], velocity: 96 });
+      for (const [index, event] of events.entries()) {
+        const offset = Number.isFinite(event.onsetQuarter) ? event.onsetQuarter * beatMs : index * beatMs;
+        const target = Number.isFinite(assessmentStartedAt)
+          ? assessmentStartedAt + (prompt.lead_in_ms || 0) + offset
+          : Date.now() + (index === 0 ? (prompt.lead_in_ms || 0) : Math.max(18, beatMs));
+        await pause(Math.max(0, target - Date.now()));
+        for (const note of event.notes || []) noteOn(note.midi);
         await pause(18);
-        bridgeSocket.emit({ type: 'note.off', note: notes[index], velocity: 0 });
+        for (const note of event.notes || []) noteOff(note.midi);
       }
     },
     releaseNotes(notes) {
-      for (const note of notes) bridgeSocket.emit({ type: 'note.off', note, velocity: 0 });
+      if (window.location.hostname === 'localhost') {
+        for (const note of notes) {
+          const key = devKeyByMidi.get(note);
+          if (key) window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+        }
+        return;
+      }
+      const active = [...bridgeSockets].filter((socket) => socket.readyState === 1);
+      for (const note of notes) for (const socket of active) socket.emit({ type: 'note.off', note, velocity: 0 });
     },
   };
+}
+
+async function playVirtualPrompt(page, kind, prompt, assessmentStartedAt = null) {
+  const events = prompt.expected_events;
+  const beatMs = prompt.tempo_bpm ? 60_000 / prompt.tempo_bpm : 35;
+  for (const [index, event] of events.entries()) {
+    const offset = Number.isFinite(event.onsetQuarter) ? event.onsetQuarter * beatMs : index * beatMs;
+    const pageNow = await page.evaluate(() => Date.now());
+    const target = Number.isFinite(assessmentStartedAt)
+      ? assessmentStartedAt + (prompt.lead_in_ms || 0) + offset
+      : pageNow + (index === 0 ? (prompt.lead_in_ms || 0) : Math.max(18, beatMs));
+    await page.waitForTimeout(Math.max(0, target - pageNow));
+    for (const note of event.notes || []) {
+      const selector = `.piano-challenge__virtual-input .piano-key[data-note="${note.midi}"]`;
+      const key = await page.$(selector);
+      if (!key) {
+        if (!await page.locator('.journey-practice').isVisible()) return;
+        throw new Error(`virtual piano lacks MIDI ${note.midi}`);
+      }
+      await key.dispatchEvent('pointerdown', { pointerId: 1 });
+    }
+    if (kind !== 'chord') {
+      await page.waitForTimeout(18);
+      for (const note of event.notes || []) {
+        const key = await page.$(`.piano-challenge__virtual-input .piano-key[data-note="${note.midi}"]`);
+        if (key) await key.dispatchEvent('pointerup', { pointerId: 1 });
+      }
+    }
+  }
 }
 
 /** Prefer unseen piano skills, then the strongest available move. */
@@ -211,6 +287,10 @@ export function selectMove(moves, { usedKinds = new Set() } = {}) {
   const unseen = moves.filter((move) => !usedKinds.has(move.kind));
   const candidates = unseen.length > 0 ? unseen : moves;
   return [...candidates].sort((left, right) => right.damage - left.damage || left.title.localeCompare(right.title))[0] || null;
+}
+
+export function isResumeJourneyLabel(label) {
+  return /^(?:Continue journey|Resume campaign)$/i.test(String(label).trim());
 }
 
 async function moveSnapshot(page) {
@@ -267,11 +347,18 @@ async function playMove({ page, root, move, timeoutMs }) {
     throw new Error(`${move.title} preparation returned HTTP ${prepareResponse.status()}: ${body}`);
   }
   const prepared = await prepareResponse.json();
-  if (!Array.isArray(prepared?.prompt?.expected_midi) || prepared.prompt.expected_midi.length < 2) {
-    throw new Error(`${move.title} did not materialize playable MIDI notes`);
+  const expectedEvents = prepared?.prompt?.expected_events;
+  const expectedNotes = expectedEvents?.flatMap((event) => event.notes || []) || [];
+  if (!Array.isArray(expectedEvents) || expectedEvents.length === 0 || expectedNotes.length < 2) {
+    throw new Error(`${move.title} did not materialize playable expected_events`);
   }
   const panel = page.locator('.journey-practice');
   await panel.waitFor({ state: 'visible', timeout: timeoutMs });
+  const localVirtual = ['localhost', '127.0.0.1'].includes(new URL(page.url()).hostname);
+  if (localVirtual) {
+    await page.evaluate(() => window.__scaleStadiumReadiness.disableBridge());
+    await page.locator('.piano-challenge__virtual-input').waitFor({ state: 'visible', timeout: timeoutMs });
+  }
   const challengeTitle = (await page.locator('.piano-scale-challenge__heading strong, .piano-challenge__chord').innerText()).trim();
   if (move.kind === 'chord') {
     // A chord attempt intentionally begins only after the provider has seen an
@@ -280,21 +367,43 @@ async function playMove({ page, root, move, timeoutMs }) {
     await page.locator('.piano-challenge[data-chord-armed="true"]').waitFor({
       state: 'visible', timeout: timeoutMs,
     });
+  } else {
+    await page.locator('.piano-scale-challenge[data-input-ready="true"]').waitFor({
+      state: 'visible', timeout: timeoutMs,
+    });
   }
-  await page.evaluate(({ kind, prompt }) => window.__scaleStadiumReadiness.playPrompt(kind, prompt), {
-    kind: move.kind, prompt: prepared.prompt,
-  });
+  const assessmentStartedAt = Number(await page.locator('.piano-challenge').getAttribute('data-assessment-started-at'));
+  if (localVirtual) await playVirtualPrompt(page, move.kind, prepared.prompt, assessmentStartedAt);
+  else {
+    await page.evaluate(({ kind, prompt, startedAt }) => window.__scaleStadiumReadiness.playPrompt(kind, prompt, startedAt), {
+      kind: move.kind, prompt: prepared.prompt, startedAt: assessmentStartedAt,
+    });
+  }
   try {
     await panel.waitFor({ state: 'hidden', timeout: timeoutMs });
   } catch (error) {
-    const chordSurface = page.locator('.piano-challenge');
-    const diagnostic = move.kind === 'chord' && await chordSurface.count() > 0
-      ? await chordSurface.evaluate((node) => ({ ...node.dataset }))
+    const challengeSurface = page.locator('.piano-challenge');
+    const diagnostic = await challengeSurface.count() > 0
+      ? await challengeSurface.evaluate((node) => ({
+        dataset: { ...node.dataset },
+        feedback: node.querySelector('.piano-scale-challenge__feedback')?.textContent?.trim() || null,
+      }))
       : null;
-    throw new Error(`${error.message}${diagnostic ? `; chord diagnostic ${JSON.stringify(diagnostic)}` : ''}`);
+    const bridgeDiagnostic = await page.evaluate(() => window.__scaleStadiumReadiness.bridgeStatus());
+    throw new Error(`${error.message}${diagnostic ? `; challenge diagnostic ${JSON.stringify(diagnostic)}` : ''}; bridge diagnostic ${JSON.stringify(bridgeDiagnostic)}`);
   } finally {
-    if (move.kind === 'chord') {
-      await page.evaluate((notes) => window.__scaleStadiumReadiness.releaseNotes(notes), prepared.prompt.expected_midi);
+    if (move.kind === 'chord' && localVirtual) {
+      for (const note of prepared.prompt.expected_events.flatMap((event) => event.notes || [])) {
+        const key = page.locator(`.piano-challenge__virtual-input .piano-key[data-note="${note.midi}"]`);
+        if (await key.count() === 1) {
+          await key.evaluate((node) => node.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 })));
+        }
+      }
+    } else if (move.kind === 'chord') {
+      await page.evaluate(
+        (events) => window.__scaleStadiumReadiness.releaseNotes(events.flatMap((event) => (event.notes || []).map((note) => note.midi))),
+        prepared.prompt.expected_events,
+      );
     }
   }
   // The authoritative result hides the panel just before chooseAction's
@@ -372,8 +481,10 @@ async function verifyBrowser(options, progress) {
     if (!viewport.withinViewport || !viewport.noHorizontalOverflow || !viewport.noVerticalOverflow) {
       throw new Error('home dashboard does not fit the 1280×800 PianoKiosk viewport');
     }
-    const launchButton = page.getByRole('button', { name: /Resume campaign|Start chapter|Replay chapter/ });
-    const resuming = /Resume campaign/i.test((await launchButton.innerText()).trim());
+    const launchButton = page.getByRole('button', {
+      name: /Continue journey|Choose a partner|Play again|Resume campaign|Start chapter|Replay chapter/,
+    });
+    const resuming = isResumeJourneyLabel(await launchButton.innerText());
     await launchButton.click();
     if (!resuming) {
       const lobby = page.locator('main.journey-lobby');
@@ -391,6 +502,9 @@ async function verifyBrowser(options, progress) {
 
     const root = page.locator('main.journey-battle');
     await root.waitFor({ state: 'visible', timeout: options.timeoutMs });
+    // A restored session may be refunding an interrupted pending action during
+    // the first render. Let that command settle before selecting a fresh move.
+    await page.waitForTimeout(750);
     while (moves.length < options.maxTurns) {
       const state = await journeySnapshot(root);
       if (state.phase === 'complete') {
@@ -438,7 +552,11 @@ async function verifyBrowser(options, progress) {
         await page.getByRole('button', { name: /^Continue/ }).click();
         continue;
       }
-      if (state.phase === 'defeated') throw new Error(`practice run was defeated by ${state.encounter}`);
+      if (state.phase === 'defeated') {
+        progress(`Defeated by ${state.encounter}; retrying with preserved practice evidence`);
+        await page.getByRole('button', { name: /^Retry / }).click();
+        continue;
+      }
       const available = await moveSnapshot(page);
       const selected = selectMove(available, { usedKinds });
       if (!selected) throw new Error('battle offered no playable piano move');

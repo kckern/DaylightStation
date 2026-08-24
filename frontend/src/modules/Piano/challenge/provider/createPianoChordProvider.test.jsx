@@ -8,6 +8,15 @@ import {
   createPianoChordProvider,
 } from './createPianoChordProvider.jsx';
 
+const sequence = (midis) => midis.map((midi, index) => ({
+  id: `event:${index}`, onsetQuarter: index, durationQuarters: 1,
+  notes: [{ id: `note:${index}`, midi, hand: 'unassigned' }],
+}));
+const chord = (midis) => [{
+  id: 'event:0', onsetQuarter: 0, durationQuarters: 1,
+  notes: midis.map((midi, index) => ({ id: `note:${index}`, midi, hand: 'unassigned' })),
+}];
+
 describe('scale staff feedback', () => {
   it('marks completed notes green and identifies the next engraved note', () => {
     const elements = Array.from({ length: 4 }, () => document.createElementNS('http://www.w3.org/2000/svg', 'path'));
@@ -49,7 +58,7 @@ describe('createPianoChordProvider telemetry', () => {
     const prepared = await runtime.prepare({
       challenge_id: 'compact-heading', kind: 'scale',
       prompt: {
-        label: 'C major scale', key_signature: 'C', expected_midi: [60, 62], tempo_bpm: 80,
+        label: 'C major scale', key_signature: 'C', expected_events: sequence([60, 62]), tempo_bpm: 80,
       },
     });
     const resultPromise = runtime.start(prepared);
@@ -67,7 +76,7 @@ describe('createPianoChordProvider telemetry', () => {
   it('asks the Piano backend to materialize semantic game requirements', async () => {
     const api = {
       preparePianoChallenge: vi.fn(async () => ({
-        prompt: { label: 'F major scale', key_signature: 'F', expected_midi: [65, 67, 69] },
+        prompt: { label: 'F major scale', key_signature: 'F', expected_events: sequence([65, 67, 69]) },
         timeout_ms: 1234,
         pedagogy_policy_version: 'policy-v1',
         selection: { curriculum: 'foundation-major-scales' },
@@ -85,7 +94,7 @@ describe('createPianoChordProvider telemetry', () => {
       challenge_id: 'semantic-1', requirements: { curriculum: 'foundation-major-scales' },
     }));
     expect(prepared).toMatchObject({
-      prompt: { label: 'F major scale', expected_midi: [65, 67, 69] },
+      prompt: { label: 'F major scale', expected_events: sequence([65, 67, 69]) },
       timeout_ms: 1234,
       pedagogy_policy_version: 'policy-v1',
     });
@@ -100,7 +109,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'guest', api, logger });
     const request = {
       challenge_id: 'challenge-1', kind: 'scale',
-      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60, 62, 64] },
+      prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60, 62, 64]) },
     };
     const prepared = await runtime.prepare(request);
     const resultPromise = runtime.start(prepared);
@@ -136,7 +145,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'journey-correction', kind: 'arpeggio',
-      prompt: { exercise_id: 'arp-c', label: 'C arpeggio', expected_midi: [60, 64, 67], key_signature: 'C' },
+      prompt: { exercise_id: 'arp-c', label: 'C arpeggio', expected_events: sequence([60, 64, 67]), key_signature: 'C' },
     });
     const resultPromise = runtime.start(prepared);
     const view = render(<runtime.Surface />);
@@ -165,7 +174,7 @@ describe('createPianoChordProvider telemetry', () => {
       challenge_id: 'journey-chord', kind: 'chord',
       prompt: {
         exercise_id: 'chord-c-major', label: 'C major chord', root: 0,
-        pitch_classes: [0, 4, 7], expected_midi: [60, 64, 67],
+        pitch_classes: [0, 4, 7], expected_events: chord([60, 64, 67]),
       },
     });
     const resultPromise = runtime.start(prepared);
@@ -202,7 +211,7 @@ describe('createPianoChordProvider telemetry', () => {
       challenge_id: 'pre-start', kind: 'timed-pattern',
       prompt: {
         exercise_id: 'pattern-c-step', label: 'C step pattern', key_signature: 'C',
-        expected_midi: [60, 62, 64, 65], tempo_bpm: 60,
+        expected_events: sequence([60, 62, 64, 65]), tempo_bpm: 60,
       },
     });
     await act(async () => view.rerender(<runtime.Surface />));
@@ -245,7 +254,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger });
     const prepared = await runtime.prepare({
       challenge_id: 'abandon-1', kind: 'scale',
-      prompt: { exercise_id: 'scale-c-major', label: 'C major scale', key_signature: 'C', expected_midi: [60, 62, 64] },
+      prompt: { exercise_id: 'scale-c-major', label: 'C major scale', key_signature: 'C', expected_events: sequence([60, 62, 64]) },
     });
     const resultPromise = runtime.start(prepared);
     const view = render(<runtime.Surface />);
@@ -275,7 +284,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn(), info: vi.fn() } });
     await runtime.prepare({
       challenge_id: 'never-started', kind: 'scale',
-      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+      prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
     });
 
     runtime.dispose();
@@ -293,7 +302,7 @@ describe('createPianoChordProvider telemetry', () => {
     const prepared = await runtime.prepare({
       challenge_id: 'challenge-fizzle', kind: 'scale',
       prompt: {
-        label: 'C major', key_signature: 'C', expected_midi: [60, 62, 64], max_mistakes: 3,
+        label: 'C major', key_signature: 'C', expected_events: sequence([60, 62, 64]), max_mistakes: 3,
       },
     });
     const resultPromise = runtime.start(prepared);
@@ -327,7 +336,7 @@ describe('createPianoChordProvider telemetry', () => {
       const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
       const prepared = await runtime.prepare({
         challenge_id: 'timeout-1', kind: 'scale', timeout_ms: 1000,
-        prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+        prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
       });
       const resultPromise = runtime.start(prepared);
       await vi.advanceTimersByTimeAsync(1000);
@@ -350,13 +359,17 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'disconnect-1', kind: 'scale',
-      prompt: { label: 'C major', key_signature: 'C', expected_midi: [60] },
+      prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
     });
-    const resultPromise = runtime.start(prepared);
     const view = render(<runtime.Surface />);
 
     expect(screen.getByRole('group', { name: 'On-screen piano keyboard' })).toBeTruthy();
     expect(screen.getByText('No piano connected — tap the keys below.')).toBeTruthy();
+    expect(view.container.querySelector('.piano-scale-challenge').dataset.inputReady).toBe('false');
+
+    let resultPromise;
+    await act(async () => { resultPromise = runtime.start(prepared); });
+    expect(view.container.querySelector('.piano-scale-challenge').dataset.inputReady).toBe('true');
 
     const c4 = view.container.querySelector('[data-note="60"]');
     await act(async () => fireEvent.pointerDown(c4, { pointerId: 1 }));
@@ -383,7 +396,7 @@ describe('createPianoChordProvider telemetry', () => {
     const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'disconnect-mid-scale', kind: 'scale',
-      prompt: { label: 'C to D', key_signature: 'C', expected_midi: [60, 62] },
+      prompt: { label: 'C to D', key_signature: 'C', expected_events: sequence([60, 62]) },
     });
     const resultPromise = runtime.start(prepared);
     const view = render(<runtime.Surface />);
@@ -415,7 +428,7 @@ describe('createPianoChordProvider telemetry', () => {
       challenge_id: 'virtual-chord', kind: 'chord',
       prompt: {
         exercise_id: 'c-major', label: 'C major chord', root: 0,
-        pitch_classes: [0, 4, 7], expected_midi: [60, 64, 67],
+        pitch_classes: [0, 4, 7], expected_events: chord([60, 64, 67]),
       },
     });
     const resultPromise = runtime.start(prepared);

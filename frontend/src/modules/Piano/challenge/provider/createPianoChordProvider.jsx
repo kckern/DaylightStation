@@ -33,11 +33,9 @@ const SCALE_NOTE_CLASSES = [
 ];
 const VALUE_QUARTERS = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '8th': 0.5, '16th': 0.25, '32nd': 0.125 };
 
-/** Structured bank events are authoritative; flattened fields are wire fallback only. */
+/** Project the authoritative event structure for engraving and held-note display. */
 function promptSequence(prompt = {}) {
-  if (!Array.isArray(prompt.expected_events) || !prompt.expected_events.length) {
-    return { midi: (prompt.expected_midi || []).filter(Number.isFinite), offsets: prompt.target_offsets_ms || [] };
-  }
+  if (!Array.isArray(prompt.expected_events)) return { midi: [], offsets: [] };
   const beatMs = Number(prompt.tempo_bpm) > 0 ? 60_000 / Number(prompt.tempo_bpm) : 0;
   let quarter = 0;
   const midi = [];
@@ -56,17 +54,14 @@ function promptSequence(prompt = {}) {
 
 function assessmentConfig(prepared) {
   const prompt = prepared.prompt || {};
-  const fallbackEvents = (prompt.expected_midi || []).map((midi) => ({ value: 'quarter', notes: [{ midi }] }));
-  const events = Array.isArray(prompt.expected_events) && prompt.expected_events.length
-    ? prompt.expected_events
-    : prepared.kind === 'chord'
-      ? [{ value: 'quarter', notes: (prompt.expected_midi || []).map((midi) => ({ midi })) }]
-      : fallbackEvents;
+  if (!Array.isArray(prompt.expected_events) || prompt.expected_events.length === 0) {
+    throw new Error('Piano challenge prompt requires expected_events');
+  }
   const instance = {
     id: prompt.exercise_id || prepared.challenge_id,
     revision: prompt.revision ?? null,
-    ordering: prepared.kind === 'chord' ? 'any' : 'strict',
-    events,
+    ordering: prompt.ordering || (prepared.kind === 'chord' ? 'any' : 'strict'),
+    events: prompt.expected_events,
     tempo: { start_bpm: prompt.tempo_bpm },
   };
   const mode = prompt.tempo_bpm ? 'cued' : 'free';
@@ -277,6 +272,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         const [virtualActiveNotes, setVirtualActiveNotes] = useState(EMPTY_NOTES);
         const [virtualNoteHistory, setVirtualNoteHistory] = useState(EMPTY_HISTORY);
         const virtualActiveNotesRef = useRef(EMPTY_NOTES);
+        const assessmentRuntimeRef = useRef(assessmentRuntime);
+        assessmentRuntimeRef.current = assessmentRuntime;
         const usingVirtualKeyboard = connection?.connected === false;
         const inputSource = usingVirtualKeyboard ? 'virtual' : 'midi';
         const activeNotes = usingVirtualKeyboard
@@ -289,6 +286,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           ? heldProjection(activeNotes, promptSequence(view.prepared.prompt).midi)
           : 'empty';
         const historyCursor = useRef(null);
+        const [inputReady, setInputReady] = useState(false);
         const staffNotesRef = useRef([]);
         const challengeId = view.prepared?.challenge_id;
         // The staff box as a callback ref rather than a plain one: the ghost
@@ -312,6 +310,15 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             ...history,
             { note, velocity, timestamp, startTime: timestamp },
           ]);
+          if (['scale', 'arpeggio', 'timed-pattern'].includes(snapshot.prepared?.kind)) {
+            recordInput();
+            assessmentRuntimeRef.current?.observe({ midi: note, time: timestamp, clock: 'piano-challenge' });
+            const maxMistakes = snapshot.prepared?.prompt?.max_mistakes;
+            if (maxMistakes && wrongNotes >= maxMistakes && assessmentRuntimeRef.current?.getSnapshot().status === 'running') {
+              terminalMetrics = { failed: true, reason: 'mistake_limit' };
+              assessmentRuntimeRef.current.terminate('completed');
+            }
+          }
         }, []);
 
         const handleVirtualNoteOff = useCallback((note) => {
@@ -360,8 +367,9 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           assessmentRuntime?.observe({ held: activeNotes, time: clock(), clock: 'piano-challenge' });
         }, [activeNotes, liveChordMatch, view.armed, view.prepared, view.status]);
 
-        useEffect(() => {
+        useLayoutEffect(() => {
           historyCursor.current = noteHistory.length;
+          setInputReady(true);
           // Baseline once per challenge or input-source switch. Depending on
           // noteHistory itself would erase every fresh note before the
           // processing effect below can consume it.
@@ -369,7 +377,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         }, [challengeId, inputSource]);
 
         useEffect(() => {
-          if (view.status !== 'running' || !view.prepared) return;
+          if (usingVirtualKeyboard || view.status !== 'running' || !view.prepared) return;
           const { kind, prompt } = view.prepared;
           if (['scale', 'arpeggio', 'timed-pattern'].includes(kind)) {
             if (historyCursor.current === null) historyCursor.current = noteHistory.length;
@@ -407,7 +415,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             return;
           }
 
-        }, [activeNotes, noteHistory, view.status, view.prepared, view.armed]);
+        }, [activeNotes, noteHistory, usingVirtualKeyboard, view.status, view.prepared, view.armed]);
 
         const prompt = view.prepared?.prompt;
         const expectedMidi = promptSequence(prompt).midi;
@@ -440,7 +448,12 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             ? null
             : (staffNotesRef.current?.[0]?.[view.progress]?.els?.[0] ?? null);
           return (
-            <section className={`piano-challenge piano-scale-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}>
+            <section
+              className={`piano-challenge piano-scale-challenge${usingVirtualKeyboard ? ' has-virtual-keyboard' : ''}`}
+              data-challenge-status={view.status}
+              data-input-ready={inputReady && view.status === 'running' ? 'true' : 'false'}
+              data-assessment-started-at={attemptStartedAt ?? ''}
+            >
               <header className="piano-scale-challenge__heading">
                 <span>
                   {headerContext ? `${headerContext}${prompt.tempo_bpm ? ` · ${prompt.tempo_bpm} BPM` : ''}`
@@ -486,6 +499,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             data-chord-armed={view.armed ? 'true' : 'false'}
             data-active-notes={[...activeNotes.keys()].join(',')}
             data-chord-match={liveChordMatch}
+            data-assessment-started-at={attemptStartedAt ?? ''}
           >
             <div>{compact && headerContext ? headerContext : 'Play this chord'}</div>
             <div className="piano-challenge__chord">{prompt?.label || '…'}</div>
@@ -537,7 +551,10 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         },
         async start(prepared) {
           clearDeadline();
-          installAssessment(prepared);
+          // prepare()/restore() own construction; start transitions that same
+          // attempt so already-mounted input callbacks cannot retain a stale
+          // prepared runtime while a replacement is running elsewhere.
+          if (!assessmentRuntime) installAssessment(prepared);
           settled = false;
           attemptStartedAt = clock();
           firstInputAt = null;
@@ -549,13 +566,16 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           staleInputsIgnored = 0;
           lastOnsetSpanMs = null;
           terminalMetrics = {};
-          publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           const promise = new Promise((resolve) => { resolveAttempt = resolve; });
           assessmentRuntime.start({
             time: attemptStartedAt,
             leadInMs: prepared.prompt?.lead_in_ms || 0,
             clock: 'piano-challenge',
           });
+          // The assessment must be running before the surface advertises that
+          // it accepts input. React external-store subscribers may render and
+          // dispatch a fast virtual/MIDI note during publish().
+          publish({ status: 'running', prepared, armed: false, hadWrong: false, progress: 0, lastInput: null });
           const timeoutMs = Number(prepared.timeout_ms);
           if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
             timeoutHandle = globalThis.setTimeout(() => {

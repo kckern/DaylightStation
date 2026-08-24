@@ -24,7 +24,7 @@ describe('PianoScaleChallengePolicy', () => {
       prompt: {
         label: 'C major scale',
         scale: { tonic: 'C', octave: 4, mode: 'major', direction: 'ascending', octaves: 1 },
-        expected_midi: [60, 62, 64, 65, 67, 69, 71, 72],
+        expected_events: expect.any(Array),
       },
     });
   });
@@ -72,7 +72,7 @@ describe('PianoScaleChallengePolicy', () => {
       pedagogy_policy_version: 'adaptive-piano-journey-v1',
       selection: { curriculum: 'pokemon-journey-foundations', paced: false, tempo_bpm: null },
     });
-    expect(result.prompt.expected_midi).toHaveLength(noteCount);
+    expect(result.prompt.expected_events.flatMap((event) => event.notes)).toHaveLength(noteCount);
     expect(result.prompt.max_mistakes).toBeUndefined();
   });
 
@@ -89,7 +89,7 @@ describe('PianoScaleChallengePolicy', () => {
     });
     expect(result.selection).toMatchObject({ paced: true, tempo_bpm: 60 });
     expect(result.prompt).toMatchObject({ tempo_bpm: 60, lead_in_ms: 2000 });
-    expect(result.prompt.target_offsets_ms).toEqual(expect.arrayContaining([0, 1000]));
+    expect(result.prompt.expected_events.map((event) => event.onsetQuarter)).toEqual(expect.arrayContaining([0, 1]));
   });
 
   it('adjusts paced work in five-BPM steps toward the 70–90% practice band', () => {

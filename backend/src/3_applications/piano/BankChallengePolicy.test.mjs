@@ -107,7 +107,7 @@ describe('preparing a challenge from the bank', () => {
 
   it('carries the notes to play and the level it chose', () => {
     const prepared = policy().prepare({ userId: 'u', challengeId: 'c1', kind: 'chord' });
-    expect(prepared.prompt.expected_midi.length).toBe(3);
+    expect(prepared.prompt.expected_events.flatMap((event) => event.notes)).toHaveLength(3);
     expect(prepared.prompt.level).toBeGreaterThan(0);
     expect(prepared.selection.curriculum).toBe('exercise-bank');
     expect(prepared.selection.pool).toBeGreaterThan(1, 'the pool is the bank, not a constant');

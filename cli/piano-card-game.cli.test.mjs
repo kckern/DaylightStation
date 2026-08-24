@@ -4,6 +4,7 @@ import YAML from 'yaml';
 import {
   DEFAULT_URL,
   inspectDefinitionPayload,
+  isResumeJourneyLabel,
   parseArgs,
   selectMove,
 } from './piano-card-game.cli.mjs';
@@ -69,5 +70,12 @@ describe('piano-card-game readiness CLI', () => {
     expect(selectMove(moves, { usedKinds: new Set(['scale', 'chord']) }).title).toBe('Razor Leaf');
     expect(selectMove(moves, { usedKinds: new Set(['scale', 'chord', 'arpeggio', 'timed-pattern']) }).title).toBe('Razor Leaf');
     expect(selectMove([], { usedKinds: new Set() })).toBeNull();
+  });
+
+  it('recognizes current and legacy resume labels without skipping a fresh partner lobby', () => {
+    expect(isResumeJourneyLabel('Continue journey')).toBe(true);
+    expect(isResumeJourneyLabel('Resume campaign')).toBe(true);
+    expect(isResumeJourneyLabel('Choose a partner')).toBe(false);
+    expect(isResumeJourneyLabel('Play again')).toBe(false);
   });
 });

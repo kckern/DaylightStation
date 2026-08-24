@@ -1,7 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { PianoScaleChallengePolicy } from '../../../backend/src/3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { generateScaleAbc, midiToAbc } from '../../../frontend/src/modules/MusicNotation/renderers/abc.js';
-import { advanceScaleProgress } from '../../../frontend/src/modules/Piano/challenge/provider/scaleProgress.js';
+import {
+  createAssessmentAttempt,
+  observeAssessment,
+  prepareExerciseAssessment,
+  startAssessmentAttempt,
+} from '../../../frontend/src/modules/Piano/performance/assessmentSession.js';
+
+function pitchesOf(prompt) {
+  return prompt.expected_events.flatMap((event) => event.notes.map((note) => note.midi));
+}
+
+function attemptFor(prepared) {
+  const configured = prepareExerciseAssessment({
+    instance: {
+      id: prepared.prompt.exercise_id,
+      ordering: prepared.prompt.ordering || 'strict',
+      events: prepared.prompt.expected_events,
+    },
+    mode: 'free',
+    purpose: 'challenge',
+  });
+  return startAssessmentAttempt(createAssessmentAttempt(configured), { time: 0 });
+}
 
 describe('semantic piano challenge contract', () => {
   it('uses the exact same pitches for staff generation and grading', () => {
@@ -12,13 +34,16 @@ describe('semantic piano challenge contract', () => {
         requirements: { curriculum: 'foundation-major-scales' },
         context: { challenge_sequence: challengeSequence },
       });
-      const { expected_midi: pitches, key_signature: key } = prepared.prompt;
+      const pitches = pitchesOf(prepared.prompt);
+      const { key_signature: key } = prepared.prompt;
       const abc = generateScaleAbc(pitches, key);
       expect(abc.split('\n').at(-1)).toBe(`${pitches.map((pitch) => midiToAbc(pitch, key)).join(' ')} |]`);
 
-      let progress = 0;
-      for (const pitch of pitches) progress = advanceScaleProgress(pitches, progress, pitch).progress;
-      expect(progress).toBe(pitches.length);
+      let attempt = attemptFor(prepared);
+      for (const [index, pitch] of pitches.entries()) {
+        attempt = observeAssessment(attempt, { midi: pitch, time: index + 1 }).attempt;
+      }
+      expect(attempt.status).toBe('completed');
     }
   });
 
@@ -30,9 +55,10 @@ describe('semantic piano challenge contract', () => {
     });
     expect(prepared.prompt).toMatchObject({
       scale: { tonic: 'F', octave: 4 },
-      expected_midi: [65, 67, 69, 70, 72, 74, 76, 77],
+      expected_events: expect.any(Array),
     });
-    expect(advanceScaleProgress(prepared.prompt.expected_midi, 0, 65)).toMatchObject({ wrong: false, progress: 1 });
-    expect(advanceScaleProgress(prepared.prompt.expected_midi, 0, 62)).toMatchObject({ wrong: true, progress: 0 });
+    expect(pitchesOf(prepared.prompt)).toEqual([65, 67, 69, 70, 72, 74, 76, 77]);
+    expect(observeAssessment(attemptFor(prepared), { midi: 65, time: 1 }).attempt).toMatchObject({ cursor: 1, wrong: [] });
+    expect(observeAssessment(attemptFor(prepared), { midi: 62, time: 1 }).attempt).toMatchObject({ cursor: 0, wrong: [expect.any(Object)] });
   });
 });

@@ -14,22 +14,22 @@ const LEGACY_SCALES = Object.freeze([
 const JOURNEY_CURRICULUM = Object.freeze({
   scale: LEGACY_SCALES,
   chord: Object.freeze([
-    { id: 'chord-c-major', tonic: 'C', quality: 'major', expected_midi: [60, 64, 67] },
-    { id: 'chord-c-minor', tonic: 'C', quality: 'minor', expected_midi: [60, 63, 67] },
-    { id: 'chord-f-major', tonic: 'F', quality: 'major', expected_midi: [65, 69, 72] },
-    { id: 'chord-f-minor', tonic: 'F', quality: 'minor', expected_midi: [65, 68, 72] },
-    { id: 'chord-g-major', tonic: 'G', quality: 'major', expected_midi: [67, 71, 74] },
-    { id: 'chord-g-minor', tonic: 'G', quality: 'minor', expected_midi: [67, 70, 74] },
+    { id: 'chord-c-major', tonic: 'C', quality: 'major', midi: [60, 64, 67] },
+    { id: 'chord-c-minor', tonic: 'C', quality: 'minor', midi: [60, 63, 67] },
+    { id: 'chord-f-major', tonic: 'F', quality: 'major', midi: [65, 69, 72] },
+    { id: 'chord-f-minor', tonic: 'F', quality: 'minor', midi: [65, 68, 72] },
+    { id: 'chord-g-major', tonic: 'G', quality: 'major', midi: [67, 71, 74] },
+    { id: 'chord-g-minor', tonic: 'G', quality: 'minor', midi: [67, 70, 74] },
   ]),
   arpeggio: Object.freeze([
-    { id: 'arpeggio-c-major', tonic: 'C', quality: 'major', expected_midi: [60, 64, 67, 72] },
-    { id: 'arpeggio-g-major', tonic: 'G', quality: 'major', expected_midi: [55, 59, 62, 67] },
-    { id: 'arpeggio-f-major', tonic: 'F', quality: 'major', expected_midi: [53, 57, 60, 65] },
+    { id: 'arpeggio-c-major', tonic: 'C', quality: 'major', midi: [60, 64, 67, 72] },
+    { id: 'arpeggio-g-major', tonic: 'G', quality: 'major', midi: [55, 59, 62, 67] },
+    { id: 'arpeggio-f-major', tonic: 'F', quality: 'major', midi: [53, 57, 60, 65] },
   ]),
   'timed-pattern': Object.freeze([
-    { id: 'pattern-c-step', label: 'C step pattern', expected_midi: [60, 62, 64, 65], beat_offsets: [0, 1, 2, 3] },
-    { id: 'pattern-g-turn', label: 'G turn pattern', expected_midi: [67, 69, 71, 69, 67], beat_offsets: [0, 1, 2, 3, 4] },
-    { id: 'pattern-f-skip', label: 'F skip pattern', expected_midi: [65, 69, 67, 70, 69, 72], beat_offsets: [0, 1, 2, 3, 4, 5] },
+    { id: 'pattern-c-step', label: 'C step pattern', midi: [60, 62, 64, 65], beat_offsets: [0, 1, 2, 3] },
+    { id: 'pattern-g-turn', label: 'G turn pattern', midi: [67, 69, 71, 69, 67], beat_offsets: [0, 1, 2, 3, 4] },
+    { id: 'pattern-f-skip', label: 'F skip pattern', midi: [65, 69, 67, 70, 69, 72], beat_offsets: [0, 1, 2, 3, 4, 5] },
   ]),
 });
 
@@ -78,19 +78,34 @@ function materialize(candidate, kind, tempoBpm, maxMistakes = null) {
     });
   }
   if (kind === 'chord') {
+    const expectedEvents = [{
+      id: `${candidate.id}:event:0`, onsetQuarter: 0, durationQuarters: 1,
+      notes: candidate.midi.map((midi, index) => ({ id: `${candidate.id}:note:${index}`, midi, hand: 'unassigned' })),
+    }];
     return {
       exercise_id: candidate.id,
       label: `${candidate.tonic} ${candidate.quality} chord`,
       root: PITCH_CLASS[candidate.tonic],
-      pitch_classes: candidate.expected_midi.map((midi) => midi % 12),
-      expected_midi: structuredClone(candidate.expected_midi),
+      pitch_classes: candidate.midi.map((midi) => midi % 12),
+      expected_midi: structuredClone(candidate.midi),
+      expected_events: expectedEvents,
+      ordering: 'any',
       chord: { tonic: candidate.tonic, quality: candidate.quality, inversion: 0 },
     };
   }
   const prompt = {
     exercise_id: candidate.id,
     label: candidate.label || `${candidate.tonic} ${candidate.quality} arpeggio`,
-    expected_midi: structuredClone(candidate.expected_midi),
+    expected_midi: structuredClone(candidate.midi),
+    expected_events: candidate.midi.map((midi, index) => ({
+      id: `${candidate.id}:event:${index}`,
+      onsetQuarter: candidate.beat_offsets?.[index] ?? index,
+      durationQuarters: candidate.beat_offsets?.[index + 1] != null
+        ? candidate.beat_offsets[index + 1] - candidate.beat_offsets[index]
+        : 1,
+      notes: [{ id: `${candidate.id}:note:${index}`, midi, hand: 'unassigned' }],
+    })),
+    ordering: 'strict',
     key_signature: candidate.tonic || 'C',
     ...(tempoBpm ? { tempo_bpm: tempoBpm, lead_in_ms: 2_000 } : {}),
   };

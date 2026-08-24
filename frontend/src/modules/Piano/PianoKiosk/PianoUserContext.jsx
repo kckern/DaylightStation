@@ -50,9 +50,12 @@ export function PianoUserProvider({ pianoId, children }) {
   useEffect(() => {
     if (!users.length) return;
     let saved = null;
+    let requested = null;
     try { saved = localStorage.getItem(storeKey); } catch { /* private mode */ }
+    try { requested = new URLSearchParams(window.location.search).get('user'); } catch { /* no location */ }
     const known = (id) => id === GUEST_PROFILE.id || users.some((u) => u.id === id);
     setCurrent((prev) => {
+      if (requested && known(requested)) return requested;
       if (prev && known(prev)) return prev;
       if (saved && known(saved)) return saved;
       return users[0].id;
