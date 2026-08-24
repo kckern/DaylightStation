@@ -263,7 +263,7 @@ import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/
 import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlPresentationCatalog } from './1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs';
 import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
-import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/gaming/YamlPianoAttemptStore.mjs';
+import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/piano/YamlPianoAttemptStore.mjs';
 import { YamlPianoLearningStore } from './1_adapters/persistence/yaml/piano/YamlPianoLearningStore.mjs';
 import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
