@@ -16,6 +16,7 @@ const ROSTER = { users: [{ id: 'kc', name: 'KC' }, { id: 'alice', name: 'Alice' 
 const wrapper = ({ children }) => createElement(PianoUserProvider, { pianoId: 'test' }, children);
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/');
   localStorage.clear();
   rosterResponses = [ROSTER];
   DaylightAPI.mockClear();
@@ -29,6 +30,13 @@ describe('PianoUserContext restore', () => {
 
   it('restores a saved roster id', async () => {
     localStorage.setItem('piano:user:test', 'alice');
+    const { result } = renderHook(() => usePianoUser(), { wrapper });
+    await waitFor(() => expect(result.current.currentUser).toBe('alice'));
+  });
+
+  it('honors an explicit known query user ahead of the saved kiosk user', async () => {
+    window.history.replaceState({}, '', '/piano/games/card-game?user=alice');
+    localStorage.setItem('piano:user:test', 'kc');
     const { result } = renderHook(() => usePianoUser(), { wrapper });
     await waitFor(() => expect(result.current.currentUser).toBe('alice'));
   });

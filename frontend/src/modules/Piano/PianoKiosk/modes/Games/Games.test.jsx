@@ -2,9 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, resolvePath } from 'react-router-dom';
 
+const schoolAccess = vi.hoisted(() => ({ unlocked: true }));
+
 // Keep the games-config fetch hermetic (no real network).
 vi.mock('../../../../../lib/api.mjs', () => ({
   DaylightAPI: vi.fn(() => Promise.resolve({ parsed: { games: {} } })),
+}));
+vi.mock('../../useSchoolGameAccess.js', () => ({
+  default: () => ({
+    status: 'ready', state: schoolAccess.unlocked ? 'complete' : 'incomplete',
+    unlocked: schoolAccess.unlocked, refresh: vi.fn(),
+  }),
 }));
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
@@ -36,7 +44,10 @@ function renderGames(initialEntry = '/games', currentUser = 'guest') {
   );
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  schoolAccess.unlocked = true;
+});
 
 describe('Games mode', () => {
   it('appends the first game sub-route, then replaces it without duplicating the game id', () => {
@@ -76,6 +87,7 @@ describe('Games mode', () => {
   });
 
   it('blocks a direct game route when the active learner has not completed school', async () => {
+    schoolAccess.unlocked = false;
     renderGames('/games/tetris', 'learner-one');
     expect(await screen.findByText('Games are locked')).toBeTruthy();
     expect(screen.getByText(/Finish today’s schoolwork/)).toBeTruthy();

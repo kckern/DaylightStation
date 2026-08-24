@@ -48,5 +48,11 @@ export function materializePianoScalePrompt(prompt) {
     label: prompt.label || `${spec.tonic} ${mode.label} scale`,
     key_signature: prompt.key_signature || `${spec.tonic}${spec.mode === 'natural-minor' ? 'm' : ''}`,
     expected_midi: expectedMidi,
+    expected_events: expectedMidi.map((midi, index) => ({
+      id: `${prompt.exercise_id || 'scale'}:event:${index}`,
+      onsetQuarter: index,
+      durationQuarters: 1,
+      notes: [{ id: `${prompt.exercise_id || 'scale'}:note:${index}`, midi, hand: 'unassigned' }],
+    })),
   };
 }
