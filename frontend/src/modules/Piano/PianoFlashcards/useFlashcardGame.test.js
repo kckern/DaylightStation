@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+
+const { testLogger } = vi.hoisted(() => ({
+  testLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../../../lib/logging/singleton.js', () => ({ getChildLogger: () => testLogger }));
+
 import { useFlashcardGame } from './useFlashcardGame.js';
 
 const makeNotes = (...notes) => new Map(notes.map(n => [n, { velocity: 100, timestamp: 0 }]));
@@ -18,7 +24,10 @@ const CHORD_CONFIG = {
 const voicing = (card) => (card.quality === 'major' ? [48, 52, 55] : [48, 51, 55]);
 
 describe('useFlashcardGame — chord levels', () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    for (const method of Object.values(testLogger)) method.mockClear();
+  });
   afterEach(() => vi.useRealTimers());
 
   function start(config = CHORD_CONFIG, user = 'kckern') {
@@ -43,6 +52,19 @@ describe('useFlashcardGame — chord levels', () => {
     expect(hook.result.current.cardStatus).toBe('hit');
     expect(hook.result.current.score).toBe(10);
     expect(hook.result.current.assessment).toBeNull(); // chord theory uses neutral recognition
+  });
+
+  it('logs aggregate card evidence without held or target MIDI arrays', () => {
+    const hook = start(CHORD_CONFIG, null);
+    act(() => hook.rerender({ notes: makeNotes(...hook.result.current.currentCard.pitches) }));
+    for (const [, payload] of testLogger.info.mock.calls) {
+      expect(payload).not.toHaveProperty('held');
+      expect(payload).not.toHaveProperty('pitches');
+      expect(payload).not.toHaveProperty('note');
+    }
+    expect(testLogger.info).toHaveBeenCalledWith('flashcards.card-hit', expect.objectContaining({
+      cardType: 'notes', expectedCount: 1, heldCount: 1, firstTry: true,
+    }));
   });
 
   it('flags a complete chord over the wrong bass as a miss', () => {

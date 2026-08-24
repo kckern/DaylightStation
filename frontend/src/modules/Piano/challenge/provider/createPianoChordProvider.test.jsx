@@ -48,11 +48,36 @@ describe('scale staff feedback', () => {
 });
 
 describe('createPianoChordProvider telemetry', () => {
+  it('rejects contradictory canonical assessment and grading configuration', async () => {
+    const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
+    const runtime = await provider.createRuntime({
+      userId: 'guest',
+      services: { recordAttempt: vi.fn() },
+      logger: { warn: vi.fn() },
+    });
+    const base = {
+      challenge_id: 'contradictory-config', kind: 'timed-pattern',
+      prompt: { label: 'C pattern', expected_events: sequence([60, 62]) },
+    };
+
+    await expect(runtime.prepare({
+      ...base,
+      assessment: { mode: 'free', tempo_bpm: null, lead_in_ms: 0 },
+      requirement: { mode: 'cued' },
+    })).rejects.toThrow('does not match requirement mode');
+
+    await expect(runtime.prepare({
+      ...base,
+      assessment: { mode: 'cued', tempo_bpm: 80, lead_in_ms: 0 },
+      requirement: { mode: 'cued', gates: { pace: { target_bpm: 90 } } },
+    })).rejects.toThrow('does not match requirement tempo');
+  });
+
   it('uses the battle context as the single compact challenge heading', async () => {
     const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
     const runtime = await provider.createRuntime({
       userId: 'guest',
-      api: { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) },
+      services: { recordAttempt: vi.fn(async (_userId, attempt) => attempt) },
       logger: { warn: vi.fn() },
     });
     const prepared = await runtime.prepare({
@@ -60,6 +85,7 @@ describe('createPianoChordProvider telemetry', () => {
       prompt: {
         label: 'C major scale', key_signature: 'C', expected_events: sequence([60, 62]), tempo_bpm: 80,
       },
+      assessment: { mode: 'cued', tempo_bpm: 80, lead_in_ms: 0 },
     });
     const resultPromise = runtime.start(prepared);
     render(<runtime.Surface compact headerContext="Vine Whip · Scales" />);
@@ -75,23 +101,24 @@ describe('createPianoChordProvider telemetry', () => {
 
   it('asks the Piano backend to materialize semantic game requirements', async () => {
     const api = {
-      preparePianoChallenge: vi.fn(async () => ({
+      prepareChallenge: vi.fn(async () => ({
         prompt: { label: 'F major scale', key_signature: 'F', expected_events: sequence([65, 67, 69]) },
+        assessment: { mode: 'free', tempo_bpm: null, lead_in_ms: 0 },
         timeout_ms: 1234,
         pedagogy_policy_version: 'policy-v1',
-        selection: { curriculum: 'foundation-major-scales' },
+        selection: { collection: 'major-scales' },
       })),
     };
     const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'semantic-1', kind: 'scale',
-      requirements: { curriculum: 'foundation-major-scales' },
+      requirements: { collection: 'major-scales' },
       context: { challenge_sequence: 2 },
     });
 
-    expect(api.preparePianoChallenge).toHaveBeenCalledWith('guest', expect.objectContaining({
-      challenge_id: 'semantic-1', requirements: { curriculum: 'foundation-major-scales' },
+    expect(api.prepareChallenge).toHaveBeenCalledWith('guest', expect.objectContaining({
+      challenge_id: 'semantic-1', requirements: { collection: 'major-scales' },
     }));
     expect(prepared).toMatchObject({
       prompt: { label: 'F major scale', expected_events: sequence([65, 67, 69]) },
@@ -104,9 +131,9 @@ describe('createPianoChordProvider telemetry', () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 1000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async () => ({ attempt_id: 'saved-attempt' })) };
+    const api = { recordAttempt: vi.fn(async () => ({ attempt_id: 'saved-attempt' })) };
     const logger = { warn: vi.fn() };
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger });
+    const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger });
     const request = {
       challenge_id: 'challenge-1', kind: 'scale',
       prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60, 62, 64]) },
@@ -134,15 +161,15 @@ describe('createPianoChordProvider telemetry', () => {
     });
     expect(result.metrics.durationMs).toBeGreaterThanOrEqual(300);
     expect(result.metrics.persistenceDurationMs).toBeGreaterThanOrEqual(0);
-    expect(api.recordPianoAttempt).toHaveBeenCalledOnce();
+    expect(api.recordAttempt).toHaveBeenCalledOnce();
   });
 
   it('lets journey players correct a wrong ordered note without restarting the exercise', async () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 3000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
-    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn() } });
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'journey-correction', kind: 'arpeggio',
       prompt: { exercise_id: 'arp-c', label: 'C arpeggio', expected_events: sequence([60, 64, 67]), key_signature: 'C' },
@@ -168,8 +195,8 @@ describe('createPianoChordProvider telemetry', () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 4000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
-    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn() } });
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const runtime = await provider.createRuntime({ userId: 'kid-1', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'journey-chord', kind: 'chord',
       prompt: {
@@ -200,19 +227,23 @@ describe('createPianoChordProvider telemetry', () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 8000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
     const logger = { warn: vi.fn(), info: vi.fn() };
-    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger });
+    const runtime = await provider.createRuntime({ userId: 'kid-1', services: api, logger });
     // The surface stays mounted across a journey's encounters, so the history
     // cursor baselines when the NEXT challenge is prepared — everything the
     // player touches while the card animates is still pending at start().
     const view = render(<runtime.Surface />);
-    const prepared = await runtime.prepare({
-      challenge_id: 'pre-start', kind: 'timed-pattern',
-      prompt: {
-        exercise_id: 'pattern-c-step', label: 'C step pattern', key_signature: 'C',
-        expected_events: sequence([60, 62, 64, 65]), tempo_bpm: 60,
-      },
+    let prepared;
+    await act(async () => {
+      prepared = await runtime.prepare({
+        challenge_id: 'pre-start', kind: 'timed-pattern',
+        prompt: {
+          exercise_id: 'pattern-c-step', label: 'C step pattern', key_signature: 'C',
+          expected_events: sequence([60, 62, 64, 65]), tempo_bpm: 60,
+        },
+        assessment: { mode: 'cued', tempo_bpm: 60, lead_in_ms: 0 },
+      });
     });
     await act(async () => view.rerender(<runtime.Surface />));
 
@@ -223,7 +254,8 @@ describe('createPianoChordProvider telemetry', () => {
     await act(async () => view.rerender(<runtime.Surface />));
 
     now += 500;
-    const resultPromise = runtime.start(prepared);
+    let resultPromise;
+    act(() => { resultPromise = runtime.start(prepared); });
     await act(async () => view.rerender(<runtime.Surface />));
 
     // Nothing was played since the attempt began, so the challenge is still open.
@@ -231,15 +263,17 @@ describe('createPianoChordProvider telemetry', () => {
     expect(progressText()).toBe('0 / 4');
     expect(logger.warn).toHaveBeenCalledWith(
       'piano.challenge.pre-start-input-ignored',
-      expect.objectContaining({ challengeId: 'pre-start', ignored: 4 }),
+      expect.not.objectContaining({ notes: expect.anything() }),
     );
+    expect(logger.warn.mock.calls.at(-1)[1]).toMatchObject({ challengeId: 'pre-start', ignored: 4 });
 
     for (const note of [60, 62, 64, 65]) {
       now += 1000;
       notes = { ...notes, noteHistory: [...notes.noteHistory, { note, startTime: now }] };
       await act(async () => view.rerender(<runtime.Surface />));
     }
-    const result = await resultPromise;
+    let result;
+    await act(async () => { result = await resultPromise; });
 
     expect(result.metrics).toMatchObject({ notesPlayed: 4, staleInputsIgnored: 4 });
     expect(result.metrics.durationMs).toBeGreaterThanOrEqual(4000);
@@ -249,9 +283,9 @@ describe('createPianoChordProvider telemetry', () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 9000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => ({ ...attempt, attempt_id: 'saved-abandon' })) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => ({ ...attempt, attempt_id: 'saved-abandon' })) };
     const logger = { warn: vi.fn(), info: vi.fn() };
-    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger });
+    const runtime = await provider.createRuntime({ userId: 'kid-1', services: api, logger });
     const prepared = await runtime.prepare({
       challenge_id: 'abandon-1', kind: 'scale',
       prompt: { exercise_id: 'scale-c-major', label: 'C major scale', key_signature: 'C', expected_events: sequence([60, 62, 64]) },
@@ -269,19 +303,23 @@ describe('createPianoChordProvider telemetry', () => {
     const abandoned = await resultPromise;
     expect(abandoned).toMatchObject({ status: 'aborted' });
     expect(abandoned).not.toHaveProperty('score');
-    expect(api.recordPianoAttempt).toHaveBeenCalledWith('kid-1', expect.objectContaining({
+    expect(api.recordAttempt).toHaveBeenCalledWith('kid-1', expect.objectContaining({
       status: 'aborted',
       challenge_id: 'abandon-1',
       kind: 'scale',
       prompt: expect.objectContaining({ exercise_id: 'scale-c-major' }),
       metrics: expect.objectContaining({ reason: 'disposed', notesPlayed: 1, durationMs: 500 }),
     }), expect.objectContaining({ keepalive: true }));
+    expect(logger.info).toHaveBeenCalledWith('piano.challenge-assessment', expect.objectContaining({
+      surface: 'piano-challenge', matcher: 'cursor', mode: 'free', challengeId: 'abandon-1',
+      terminalStatus: 'aborted', persistence: 'saved',
+    }));
   });
 
   it('does not record an attempt for a challenge that was disposed before it started', async () => {
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
     const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
-    const runtime = await provider.createRuntime({ userId: 'kid-1', api, logger: { warn: vi.fn(), info: vi.fn() } });
+    const runtime = await provider.createRuntime({ userId: 'kid-1', services: api, logger: { warn: vi.fn(), info: vi.fn() } });
     await runtime.prepare({
       challenge_id: 'never-started', kind: 'scale',
       prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
@@ -290,50 +328,15 @@ describe('createPianoChordProvider telemetry', () => {
     runtime.dispose();
     await Promise.resolve();
 
-    expect(api.recordPianoAttempt).not.toHaveBeenCalled();
-  });
-
-  it('fizzles a scale card after its authored mistake limit', async () => {
-    let notes = { activeNotes: new Map(), noteHistory: [] };
-    let now = 2000;
-    const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
-    const api = { recordPianoAttempt: vi.fn(async () => ({ attempt_id: 'failed-attempt' })) };
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
-    const prepared = await runtime.prepare({
-      challenge_id: 'challenge-fizzle', kind: 'scale',
-      prompt: {
-        label: 'C major', key_signature: 'C', expected_events: sequence([60, 62, 64]), max_mistakes: 3,
-      },
-    });
-    const resultPromise = runtime.start(prepared);
-    const view = render(<runtime.Surface />);
-
-    for (const note of [61, 63, 65]) {
-      now += 100;
-      notes = { ...notes, noteHistory: [...notes.noteHistory, { note, startTime: now }] };
-      await act(async () => view.rerender(<runtime.Surface />));
-    }
-    const result = await resultPromise;
-
-    expect(result).toMatchObject({ status: 'completed', score: 0, attempt_id: 'failed-attempt' });
-    expect(result.metrics).toMatchObject({
-      failed: true,
-      firstTry: false,
-      wrongNotes: 3,
-      wrongInputs: [
-        { played: 61, expected: 60, progress: 0 },
-        { played: 63, expected: 60, progress: 0 },
-        { played: 65, expected: 60, progress: 0 },
-      ],
-    });
+    expect(api.recordAttempt).not.toHaveBeenCalled();
   });
 
   it('terminates without persisting a timeout before musical input', async () => {
     vi.useFakeTimers();
     try {
-      const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+      const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
       const provider = createPianoChordProvider({ useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }) });
-      const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+      const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger: { warn: vi.fn() } });
       const prepared = await runtime.prepare({
         challenge_id: 'timeout-1', kind: 'scale', timeout_ms: 1000,
         prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
@@ -343,7 +346,7 @@ describe('createPianoChordProvider telemetry', () => {
       const result = await resultPromise;
       expect(result).toMatchObject({ status: 'timeout', metrics: { reason: 'challenge_timeout', timeoutMs: 1000 } });
       expect(result).not.toHaveProperty('score');
-      expect(api.recordPianoAttempt).not.toHaveBeenCalled();
+      expect(api.recordAttempt).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -351,12 +354,12 @@ describe('createPianoChordProvider telemetry', () => {
 
   it('keeps a disconnected challenge open and grades input from the on-screen keyboard', async () => {
     const connection = { connected: false, status: 'disconnected' };
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
     const provider = createPianoChordProvider({
       useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }),
       useConnection: () => connection,
     });
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'disconnect-1', kind: 'scale',
       prompt: { label: 'C major', key_signature: 'C', expected_events: sequence([60]) },
@@ -378,7 +381,7 @@ describe('createPianoChordProvider telemetry', () => {
       status: 'completed', score: 1,
       metrics: { firstTry: true, notesPlayed: 1, notesRequired: 1 },
     });
-    expect(api.recordPianoAttempt).toHaveBeenCalledWith(
+    expect(api.recordAttempt).toHaveBeenCalledWith(
       'guest',
       expect.objectContaining({ status: 'completed' }),
       { keepalive: false },
@@ -388,12 +391,12 @@ describe('createPianoChordProvider telemetry', () => {
   it('continues an in-progress scale on the on-screen keyboard after MIDI disconnects', async () => {
     let connection = { connected: true, status: 'connected' };
     let notes = { activeNotes: new Map(), noteHistory: [] };
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
     const provider = createPianoChordProvider({
       useNotes: () => notes,
       useConnection: () => connection,
     });
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'disconnect-mid-scale', kind: 'scale',
       prompt: { label: 'C to D', key_signature: 'C', expected_events: sequence([60, 62]) },
@@ -417,13 +420,13 @@ describe('createPianoChordProvider telemetry', () => {
   });
 
   it('accepts a multi-touch chord from the on-screen keyboard', async () => {
-    const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
+    const api = { recordAttempt: vi.fn(async (_userId, attempt) => attempt) };
     const provider = createPianoChordProvider({
       useNotes: () => ({ activeNotes: new Map(), noteHistory: [] }),
       useConnection: () => ({ connected: false, status: 'no-input' }),
       clock: () => 5000,
     });
-    const runtime = await provider.createRuntime({ userId: 'guest', api, logger: { warn: vi.fn() } });
+    const runtime = await provider.createRuntime({ userId: 'guest', services: api, logger: { warn: vi.fn() } });
     const prepared = await runtime.prepare({
       challenge_id: 'virtual-chord', kind: 'chord',
       prompt: {

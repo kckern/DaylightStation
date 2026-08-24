@@ -14,7 +14,7 @@ import {
   finalizeAssessmentAttempt,
   observeAssessment,
   startAssessmentAttempt,
-} from '../performance/assessmentAttempt.js';
+} from '../performance/assessmentSession.js';
 
 const CARD_ADVANCE_DELAY_MS = 400;
 
@@ -70,7 +70,8 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     lastCardRef.current = card;
     logger.info('flashcards.card-shown', {
       level: levelConfig.name ?? null,
-      ...(card.type === 'chord' ? { chord: card.label } : { pitches: card.pitches }),
+      cardType: card.type === 'chord' ? 'chord' : 'notes',
+      expectedCount: card.type === 'chord' ? card.pitchClasses?.size ?? 0 : card.pitches.length,
     });
     setState(prev => ({
       ...prev,
@@ -133,12 +134,15 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     } else {
       result = evaluateMatch(activeNotes, card.pitches);
     }
-    const cardInfo = card.type === 'chord' ? { chord: card.label } : { pitches: card.pitches };
-    const held = activeNotes ? [...activeNotes.keys()] : [];
+    const cardInfo = {
+      cardType: card.type === 'chord' ? 'chord' : 'notes',
+      expectedCount: card.type === 'chord' ? card.pitchClasses?.size ?? 0 : card.pitches.length,
+      heldCount: activeNotes?.size ?? 0,
+    };
 
     if (result === 'correct' && !state.cardFailed) {
       // First-try correct — award points
-      logger.info('flashcards.card-hit', { ...cardInfo, held, firstTry: true });
+      logger.info('flashcards.card-hit', { ...cardInfo, firstTry: true });
       setState(prev => ({
         ...prev,
         cardStatus: 'hit',
@@ -147,7 +151,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
       }));
     } else if (result === 'correct' && state.cardFailed) {
       // Correct after a miss — no points, but advance
-      logger.info('flashcards.card-hit', { ...cardInfo, held, firstTry: false });
+      logger.info('flashcards.card-hit', { ...cardInfo, firstTry: false });
       setState(prev => ({
         ...prev,
         cardStatus: 'hit',
@@ -155,7 +159,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
       }));
     } else if (result === 'wrong') {
       const reason = card.type === 'chord' ? chordMissReason(activeNotes, card) : 'wrong-note';
-      logger.info('flashcards.card-miss', { ...cardInfo, held, reason });
+      logger.info('flashcards.card-miss', { ...cardInfo, reason });
       setState(prev => ({
         ...prev,
         cardStatus: 'miss',

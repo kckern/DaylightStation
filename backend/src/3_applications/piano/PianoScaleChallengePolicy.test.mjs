@@ -18,6 +18,7 @@ describe('PianoScaleChallengePolicy', () => {
     expect(result).toMatchObject({
       challenge_id: 'challenge-1',
       kind: 'scale',
+      assessment: { mode: 'free', tempo_bpm: null, lead_in_ms: 0 },
       timeout_ms: 90000,
       pedagogy_policy_version: 'foundation-major-scales-v1',
       selection: { curriculum: 'foundation-major-scales', prior_attempts: 0, prior_average: null },
@@ -88,6 +89,7 @@ describe('PianoScaleChallengePolicy', () => {
       requirements: { curriculum: 'pokemon-journey-foundations' },
     });
     expect(result.selection).toMatchObject({ paced: true, tempo_bpm: 60 });
+    expect(result.assessment).toEqual({ mode: 'cued', tempo_bpm: 60, lead_in_ms: 2000 });
     expect(result.prompt).toMatchObject({ tempo_bpm: 60, lead_in_ms: 2000 });
     expect(result.prompt.expected_events.map((event) => event.onsetQuarter)).toEqual(expect.arrayContaining([0, 1]));
   });

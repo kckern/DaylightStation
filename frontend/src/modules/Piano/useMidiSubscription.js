@@ -59,12 +59,11 @@ export function useMidiSubscription() {
 
       if (event === 'note_on' && velocity > 0) {
         const startTime = Date.now();
-        logger.info('note.on', { note, velocity });
         emitNote({ type: 'note_on', note, velocity, time: startTime });
 
         setActiveNotes(prev => {
           if (prev.has(note)) {
-            logger.warn('note.retrigger', { note, heldMs: startTime - prev.get(note).timestamp });
+            logger.warn('note.retrigger', { heldMs: startTime - prev.get(note).timestamp });
           }
           const next = new Map(prev);
           next.set(note, { velocity, timestamp: startTime });
@@ -75,12 +74,11 @@ export function useMidiSubscription() {
       } else {
         // note_off (or note_on with velocity 0)
         const endTime = Date.now();
-        logger.info('note.off', { note });
         emitNote({ type: 'note_off', note, velocity: 0, time: endTime });
 
         setActiveNotes(prev => {
           if (!prev.has(note)) {
-            logger.warn('note.off.orphan', { note });
+            logger.warn('note.off.orphan', {});
           }
           const next = new Map(prev);
           next.delete(note);
@@ -90,7 +88,7 @@ export function useMidiSubscription() {
         setNoteHistory(prev => {
           const idx = findLastActive(prev, note);
           if (idx < 0) {
-            logger.warn('note.off.noHistory', { note });
+            logger.warn('note.off.noHistory', {});
             return prev;
           }
           return closeNote(prev, idx, endTime);
@@ -129,7 +127,7 @@ export function useMidiSubscription() {
           if (now - timestamp > STALE_NOTE_MS) {
             next.delete(note);
             changed = true;
-            logger.warn('note.stale.activeMap', { note, heldMs: now - timestamp });
+            logger.warn('note.stale.activeMap', { heldMs: now - timestamp });
           }
         }
         return changed ? next : prev;
@@ -151,7 +149,10 @@ export function useMidiSubscription() {
         }
 
         if (staleNotes.length > 0) {
-          logger.warn('note.stale.history', { count: staleNotes.length, notes: staleNotes });
+          logger.warn('note.stale.history', {
+            count: staleNotes.length,
+            maxHeldMs: Math.max(...staleNotes.map((entry) => entry.heldMs)),
+          });
         }
 
         // Log active note count every sweep for visibility

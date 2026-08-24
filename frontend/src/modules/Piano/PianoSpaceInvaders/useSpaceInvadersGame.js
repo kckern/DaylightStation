@@ -15,6 +15,7 @@ import {
   advanceLasers,
   checkLaserCollisions,
   processDestroyedKeys,
+  recordHeroWrongObservation,
   TOTAL_HEALTH,
   assessSpaceInvaders,
 } from './spaceInvadersEngine.js';
@@ -116,10 +117,10 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
 
         // 1. Spawn notes
         const prevNoteCount = next.fallingNotes.length;
-        next = maybeSpawnNote(next, level, now);
+        next = maybeSpawnNote(next, level, now, timing);
         if (next.fallingNotes.length > prevNoteCount) {
           const newNote = next.fallingNotes[next.fallingNotes.length - 1];
-          logger.debug('space-invaders.spawn', { pitches: newNote.pitches, noteId: newNote.id });
+          logger.debug('space-invaders.spawn', { pitchCount: newNote.pitches.length, noteId: newNote.id });
         }
 
         // 2. Advance lasers (move upward, deactivate expired)
@@ -135,7 +136,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         for (const hit of hits) {
           const newScore = applyScore(next.score, hit.hitResult, scoring);
           const newHealth = Math.min(TOTAL_HEALTH, next.health + 1);
-          logger.debug('space-invaders.hit', { pitch: hit.pitch, result: hit.hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: levelMode });
+          logger.debug('space-invaders.hit', { result: hit.hitResult, combo: newScore.combo, points: newScore.points, health: newHealth, mode: levelMode });
           next = { ...next, score: newScore, health: newHealth, wrongStreak: 0 };
         }
 
@@ -150,7 +151,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         const { state: afterRebuild, rebuilt } = processDestroyedKeys(next, now);
         next = afterRebuild;
         if (rebuilt.length > 0) {
-          logger.debug('space-invaders.keys-rebuilt', { pitches: rebuilt });
+          logger.debug('space-invaders.keys-rebuilt', { count: rebuilt.length });
         }
 
         // 6. Cleanup old resolved notes
@@ -208,7 +209,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
       // Check if key is destroyed — can't fire
       const prev = gameStateRef.current;
       if (prev.destroyedKeys.has(pitch)) {
-        logger.debug('space-invaders.destroyed-key-press', { pitch });
+        logger.debug('space-invaders.destroyed-key-press', {});
         continue;
       }
 
@@ -236,11 +237,13 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
           if (prevState.phase !== 'PLAYING') return prevState;
           // Spawn visual-only wrong laser (veers off at random angle)
           let next = spawnLaser(prevState, pitch, now, { wrong: true });
+          const mode = levels[prevState.levelIndex]?.mode ?? 'hero';
+          if (mode === 'hero') next = recordHeroWrongObservation(next, pitch, now);
           // Escalating penalty
           const streak = next.wrongStreak + 1;
           const penalty = streak === 1 ? 1 : streak === 2 ? 3 : streak === 3 ? 5 : 7;
           const newHealth = Math.max(0, next.health - penalty);
-          logger.debug('space-invaders.wrong-press', { pitch, health: newHealth, streak, penalty });
+          logger.debug('space-invaders.wrong-press', { health: newHealth, streak, penalty });
           if (newHealth <= TOTAL_HEALTH * 0.25 && newHealth > 0) {
             logger.warn('space-invaders.health-warning', { health: newHealth, totalHealth: TOTAL_HEALTH, threshold: '25%' });
           }
@@ -255,7 +258,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         // Correct column — spawn laser, hit will be resolved by collision in tick loop
         setGameState(prevState => {
           if (prevState.phase !== 'PLAYING') return prevState;
-          logger.debug('space-invaders.laser-fired', { pitch });
+          logger.debug('space-invaders.laser-fired', {});
           return spawnLaser(prevState, pitch, now);
         });
       }
@@ -335,7 +338,31 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         missesAllowed: currentLevel.max_misses,
       }
     : null;
-  const assessment = useMemo(() => assessSpaceInvaders(gameState.score, currentLevel?.mode ?? 'hero'), [currentLevel?.mode, gameState.score]);
+  const {
+    fallingNotes: assessmentFallingNotes,
+    levelIndex: assessmentLevelIndex,
+    resolvedNotes: assessmentResolvedNotes,
+    score: assessmentScore,
+    wrongObservations: assessmentWrongObservations,
+  } = gameState;
+  const assessment = useMemo(
+    () => assessSpaceInvaders({
+      fallingNotes: assessmentFallingNotes,
+      levelIndex: assessmentLevelIndex,
+      resolvedNotes: assessmentResolvedNotes,
+      score: assessmentScore,
+      wrongObservations: assessmentWrongObservations,
+    }, currentLevel?.mode ?? 'hero', timing),
+    [
+      assessmentFallingNotes,
+      assessmentLevelIndex,
+      assessmentResolvedNotes,
+      assessmentScore,
+      assessmentWrongObservations,
+      currentLevel?.mode,
+      timing,
+    ],
+  );
 
   return {
     gameState: gameState.phase,

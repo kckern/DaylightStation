@@ -4,6 +4,8 @@ import {
   resetForLevel,
   generatePitches,
   getFallDuration,
+  maybeSpawnNote,
+  processMisses,
   processHit,
   applyScore,
   evaluateLevel,
@@ -108,6 +110,24 @@ describe('processHit', () => {
   });
 });
 
+describe('live Hero target assessment', () => {
+  it('starts a timed logical attempt when a Hero target spawns and lets the core mark its omission', () => {
+    const spawned = maybeSpawnNote(createInitialState(), {
+      mode: 'hero', notes: [60], simultaneous: 1, spawn_delay_ms: 100, fall_duration_ms: 1000,
+    }, 1000, { perfect_ms: 80, good_ms: 200, miss_threshold_ms: 300 });
+    expect(spawned.fallingNotes[0].assessmentAttempt).toMatchObject({ status: 'running', matcher: 'timed', mode: 'cued' });
+    const missed = processMisses(spawned, 2301, 300);
+    expect(missed.fallingNotes[0].assessmentAttempt.misses).toHaveLength(1);
+  });
+
+  it('does not create an assessment attempt for native collision targets', () => {
+    const spawned = maybeSpawnNote(createInitialState(), {
+      mode: 'invaders', notes: [60], simultaneous: 1, spawn_delay_ms: 100, fall_duration_ms: 1000,
+    }, 1000);
+    expect(spawned.fallingNotes[0].assessmentAttempt).toBeNull();
+  });
+});
+
 // ─── applyScore ─────────────────────────────────────────────────
 
 describe('applyScore', () => {
@@ -156,17 +176,36 @@ describe('evaluateLevel', () => {
 });
 
 describe('common assessment projection', () => {
-  it('keeps points separate from musical completeness, cleanliness, and placement', () => {
+  it('keeps points separate from logical-note completeness, cleanliness, and placement', () => {
     const assessment = assessSpaceInvaders({
-      points: 9999, perfects: 3, goods: 1, misses: 1, wrong: 1,
-    });
+      ...createInitialState(),
+      score: { points: 9999, perfects: 1, goods: 1, misses: 1, wrong: 1 },
+      resolvedNotes: [
+        { id: 1, pitches: [60], targetTime: 1000, state: 'hit', hitEvidence: { 60: { time: 1000, driftMs: 0 } } },
+        { id: 2, pitches: [62], targetTime: 2000, state: 'hit', hitEvidence: { 62: { time: 2120, driftMs: 120 } } },
+        { id: 3, pitches: [64], targetTime: 3000, state: 'missed', hitEvidence: {} },
+      ],
+      wrongObservations: [{ midi: 61, time: 1500, eventId: 'invader-2', spanId: 'level:1' }],
+    }, 'hero', { perfect_ms: 80, good_ms: 200 });
     expect(assessment.rubric.id).toBe('space-invaders-hero-v2');
-    expect(assessment.criteria.completeness).toBe(0.8);
-    expect(assessment.criteria.cleanliness).toBe(0.8);
-    expect(assessment.criteria.placement).toBe(0.9);
+    expect(assessment.criteria.completeness).toBeCloseTo(2 / 3);
+    expect(assessment.criteria.cleanliness).toBeCloseTo(2 / 3);
+    expect(assessment.criteria.placement).toBeCloseTo(5 / 6);
+    expect(assessment.parts.unassigned.diagnostics).toMatchObject({ expected_notes: 3, matched_notes: 2, wrong_notes: 1 });
+    expect(assessment.spans['level:1'].diagnostics.expected_notes).toBe(3);
+  });
+
+  it('counts every logical pitch in a missed chord', () => {
+    const assessment = assessSpaceInvaders({
+      ...createInitialState(),
+      score: { points: 0, perfects: 0, goods: 0, misses: 1, wrong: 0 },
+      resolvedNotes: [{ id: 1, pitches: [60, 64, 67], targetTime: 1000, state: 'missed', hitEvidence: {} }],
+    });
+    expect(assessment.diagnostics).toMatchObject({ expected_notes: 3, matched_notes: 0, missed_notes: 3, missed_targets: 1 });
+    expect(assessment.criteria.completeness).toBe(0);
   });
 
   it('creates no musical evidence for native Invaders collisions', () => {
-    expect(assessSpaceInvaders({ perfects: 3, goods: 0, misses: 0, wrong: 0 }, 'invaders')).toBeNull();
+    expect(assessSpaceInvaders(createInitialState(), 'invaders')).toBeNull();
   });
 });

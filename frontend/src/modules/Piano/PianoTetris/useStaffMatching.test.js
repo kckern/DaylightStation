@@ -6,7 +6,7 @@ import {
   computeProgression,
   assignChordSizes,
   DEFAULT_PROGRESSION,
-} from './useStaffMatching.js';
+} from '../game-platform/families/bound-action/useStaffMatching.js';
 
 // multiset helper: count occurrences of each value
 function counts(arr) {

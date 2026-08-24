@@ -148,9 +148,15 @@ export class PianoScaleChallengePolicy {
     const selected = eligible[((sequence % eligible.length) + eligible.length) % eligible.length];
     const tempoBpm = legacy ? null : adaptiveTempo(kind, recent);
     const prompt = materialize(selected.candidate, kind, tempoBpm, legacy ? this.maxMistakes : null);
+    const mode = tempoBpm ? 'cued' : 'free';
     return {
       challenge_id: challengeId,
       kind,
+      assessment: {
+        mode,
+        tempo_bpm: tempoBpm,
+        lead_in_ms: tempoBpm ? 2_000 : 0,
+      },
       prompt,
       timeout_ms: this.timeoutMs,
       pedagogy_policy_version: legacy ? LEGACY_POLICY_VERSION : JOURNEY_POLICY_VERSION,

@@ -40,7 +40,7 @@ describe('Piano Hero chart', () => {
     expect(chart.targets).toHaveLength(3);
     expect(chart.targets[0]).toMatchObject({ pitches: [60], targetTimeMs: 3000, durationMs: 500 });
     expect(chart.targets[1]).toMatchObject({ pitches: [64, 67], targetTimeMs: 3500 });
-    expect(chart.targets[2]).toMatchObject({ pitches: [72], targetTimeMs: 4000, durationMs: 1000 });
+    expect(chart.targets[2]).toMatchObject({ pitches: [72], targetTimeMs: 4000, durationMs: 2000 });
   });
 
   it('does not turn tie continuations or rests into new attacks', () => {
@@ -56,6 +56,18 @@ describe('Piano Hero chart', () => {
     expect(chart.targets[0].targetTimeMs).toBe(0);
     expect(chart.targets[1].targetTimeMs).toBe(500);
     expect(chart.targets[2].targetTimeMs).toBe(1500);
+  });
+
+  it('builds targets only for active hands so disabled notes cannot block completion', () => {
+    const chart = buildHeroChart({ tempo: 120, parts: [{ notes: [
+      { midi: 60, staff: 0, onsetQuarter: 0, durationQuarters: 1 },
+      { midi: 48, staff: 1, onsetQuarter: 1, durationQuarters: 1 },
+    ] }] }, { leadInMs: 0, activeParts: ['rh'] });
+    expect(chart.targets).toHaveLength(1);
+    expect(chart.targets[0]).toMatchObject({ pitches: [60], staves: [0], assessmentEventId: chart.expectation.events[0].id });
+    const finished = advanceHeroRun(createHeroRun(chart), 1000);
+    expect(finished.targets.every((target) => target.state !== 'pending')).toBe(true);
+    expect(finished.attempt.status).toBe('completed');
   });
 });
 

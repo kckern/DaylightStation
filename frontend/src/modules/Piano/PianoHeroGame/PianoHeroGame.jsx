@@ -23,6 +23,7 @@ import { buildHeroChart, clampHeroTempo, heroAccuracy, retimeHeroChart } from '.
 import { heroMetronomePlan } from './heroMetronome.js';
 import { heroThresholdState } from './heroThreshold.js';
 import { usePianoHeroGame } from './usePianoHeroGame.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './PianoHeroGame.scss';
 
 const NOTATION_RE = /\.(musicxml|mxl)$/i;
@@ -218,6 +219,11 @@ export function HeroGame({
   const [tempoSheetOpen, setTempoSheetOpen] = useState(false);
   const activeChart = useMemo(() => retimeHeroChart(chart, songBpm * tempoRatio), [chart, songBpm, tempoRatio]);
   const game = usePianoHeroGame({ chart: activeChart, subscribe, config: gameConfig });
+  usePianoRunSession({
+    gameId: 'hero', phase: game.phase, initialPhase: 'ready', score: game.run.score,
+    metrics: { chart_id: activeChart.source?.id || song.id, elapsed_ms: Math.round(game.elapsedMs) },
+    activePhases: ['ready', 'playing'], terminalPhases: ['complete'], logger,
+  });
 
   const ctxNotes = usePianoMidiNotesOptional();
   const activeNotes = activeNotesProp ?? ctxNotes.activeNotes;

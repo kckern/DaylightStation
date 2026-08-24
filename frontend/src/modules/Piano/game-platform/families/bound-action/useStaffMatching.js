@@ -275,7 +275,7 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
 
         // If this action wasn't already tracked, fire immediately and start hold timers
         if (!timersRef.current[action]) {
-          logger.info('staff.action-fired', { action, pitches });
+          logger.info('staff.action-fired', { action, pitchCount: pitches.length });
           onActionRef.current(action);
 
           // Hard drop and hold should not repeat on hold

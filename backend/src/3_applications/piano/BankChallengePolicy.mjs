@@ -155,6 +155,11 @@ function preparedChallenge({ challengeId, kind, instance, mode, timeoutMs, selec
   return {
     challenge_id: challengeId,
     kind,
+    assessment: {
+      mode,
+      tempo_bpm: mode === 'cued' ? bpm : null,
+      lead_in_ms: mode === 'cued' ? 2000 : 0,
+    },
     prompt: {
       exercise_id: instance.id,
       label: promptLabel(instance),

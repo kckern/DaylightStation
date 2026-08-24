@@ -20,7 +20,7 @@ import {
   computeProgression,
   assignChordSizes,
   ACTIONS,
-} from './useStaffMatching.js';
+} from '../game-platform/families/bound-action/useStaffMatching.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 

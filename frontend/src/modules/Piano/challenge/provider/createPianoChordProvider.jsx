@@ -7,14 +7,17 @@ import { scaleClefType } from './wrongNoteGhost.js';
 import {
   assessmentProgress,
   createAssessmentAttempt,
+  createAssessmentRuntime,
   prepareExerciseAssessment,
 } from '../../performance/assessmentSession.js';
-import { createAssessmentRuntime } from '../../performance/assessmentRuntime.js';
+import { buildPianoAttemptEvidence, pianoAssessmentTelemetry, pianoPersistenceOutcome } from '../../performance/attemptEvidence.js';
+import { createPianoChallengeApi } from './pianoChallengeApi.js';
+import './PianoChallengeSurface.scss';
 
 const EMPTY_NOTES = new Map();
 const EMPTY_HISTORY = [];
 const useAlwaysConnected = () => ({ connected: true, status: 'connected' });
-const PROVIDER_VERSION = '8-canonical-assessment-runtime';
+const PROVIDER_VERSION = '9-canonical-assessment-evidence';
 // A key struck between prepare() and start() — while the card animates and the
 // authority round-trips — is noodling, not this attempt's performance. The
 // history cursor baselines at prepare, so those note-ons are still pending when
@@ -31,40 +34,38 @@ const SCALE_NOTE_CLASSES = [
   'piano-scale-note--next',
   'piano-scale-note--wrong',
 ];
-const VALUE_QUARTERS = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '8th': 0.5, '16th': 0.25, '32nd': 0.125 };
 
 /** Project the authoritative event structure for engraving and held-note display. */
 function promptSequence(prompt = {}) {
-  if (!Array.isArray(prompt.expected_events)) return { midi: [], offsets: [] };
-  const beatMs = Number(prompt.tempo_bpm) > 0 ? 60_000 / Number(prompt.tempo_bpm) : 0;
-  let quarter = 0;
-  const midi = [];
-  const offsets = [];
-  for (const event of prompt.expected_events) {
-    for (const note of event.notes || []) {
-      if (!Number.isFinite(note.midi)) continue;
-      midi.push(note.midi);
-      offsets.push(quarter * beatMs);
-    }
-    const value = event.durationQuarters ?? VALUE_QUARTERS[event.value];
-    if (Number.isFinite(value)) quarter += value;
-  }
-  return { midi, offsets };
+  if (!Array.isArray(prompt.expected_events)) return [];
+  return prompt.expected_events.flatMap((event) => (
+    (event.notes || []).map((note) => note.midi).filter(Number.isFinite)
+  ));
 }
 
 function assessmentConfig(prepared) {
   const prompt = prepared.prompt || {};
+  const assessment = prepared.assessment || {};
   if (!Array.isArray(prompt.expected_events) || prompt.expected_events.length === 0) {
     throw new Error('Piano challenge prompt requires expected_events');
   }
   const instance = {
     id: prompt.exercise_id || prepared.challenge_id,
     revision: prompt.revision ?? null,
-    ordering: prompt.ordering || (prepared.kind === 'chord' ? 'any' : 'strict'),
+    ordering: prepared.kind === 'chord' ? 'any' : 'strict',
     events: prompt.expected_events,
-    tempo: { start_bpm: prompt.tempo_bpm },
+    tempo: { start_bpm: assessment.tempo_bpm },
   };
-  const mode = prompt.tempo_bpm ? 'cued' : 'free';
+  const mode = assessment.mode;
+  if (!['free', 'metronome', 'cued'].includes(mode)) throw new Error('Piano challenge requires canonical assessment.mode');
+  if (prepared.requirement?.mode && prepared.requirement.mode !== mode) {
+    throw new Error(`Piano challenge assessment mode ${mode} does not match requirement mode ${prepared.requirement.mode}`);
+  }
+  const assessmentBpm = Number(assessment.tempo_bpm);
+  const requiredBpm = Number(prepared.requirement?.gates?.pace?.target_bpm);
+  if (mode === 'cued' && requiredBpm > 0 && assessmentBpm !== requiredBpm) {
+    throw new Error(`Piano challenge assessment tempo ${assessmentBpm || 'missing'} does not match requirement tempo ${requiredBpm}`);
+  }
   const configured = prepareExerciseAssessment({ instance, mode, purpose: 'challenge', requirement: prepared.requirement });
   return createAssessmentAttempt({ ...configured, clock: 'piano-challenge' });
 }
@@ -110,12 +111,17 @@ function makeAttemptId() {
 }
 
 /**
- * Piano challenge adapter for the generic gaming runtime. Authored legacy prompts
- * remain supported, while semantic game requests are materialized by Piano's
- * backend policy. This adapter translates live MIDI into a scored result.
+ * Piano challenge adapter for the generic gaming runtime. Semantic game
+ * requests are materialized by Piano's backend policy into canonical events;
+ * this adapter translates live MIDI into a scored result.
  * The legacy export name remains stable for the existing standalone route.
  */
-export function createPianoChordProvider({ useNotes, useConnection = useAlwaysConnected, clock = () => Date.now() }) {
+export function createPianoChordProvider({
+  useNotes,
+  useConnection = useAlwaysConnected,
+  clock = () => Date.now(),
+  services = createPianoChallengeApi(),
+}) {
   if (typeof useNotes !== 'function') throw new Error('createPianoChordProvider requires a useNotes hook');
   if (typeof useConnection !== 'function') throw new Error('createPianoChordProvider useConnection must be a hook');
   return {
@@ -127,7 +133,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
       { kind: 'arpeggio', modes: ['untimed', 'ordered', 'paced'] },
       { kind: 'timed-pattern', modes: ['untimed', 'ordered', 'paced'] },
     ],
-    async createRuntime({ userId, api, logger }) {
+    async createRuntime({ userId, logger, services: runtimeServices = services }) {
       const listeners = new Set();
       let snapshot = {
         status: 'idle', prepared: null, armed: false, hadWrong: false, progress: 0, lastInput: null,
@@ -188,17 +194,42 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
        */
       const persistAttempt = async (result, prepared, { keepalive = false } = {}) => {
         const persistenceStartedAt = clock();
+        const evidence = buildPianoAttemptEvidence({
+          result,
+          attemptId: result.attempt_id,
+          challengeId: prepared.challenge_id,
+          kind: prepared.kind,
+          purpose: 'challenge',
+          prompt: prepared.prompt,
+          context: {
+            ...(result.context || {}),
+            surface: result.context?.surface ?? 'piano-challenge',
+            matcher: assessmentRuntime?.getSnapshot()?.matcher ?? null,
+            mode: prepared.assessment?.mode ?? null,
+          },
+          gradingPolicyVersion: prepared.grading_policy_version,
+          providerVersion: PROVIDER_VERSION,
+          extra: { assessment: prepared.assessment },
+        });
         try {
-          const saved = await api.recordPianoAttempt(userId, {
-            ...result,
-            challenge_id: prepared.challenge_id,
-            kind: prepared.kind,
-            grading_policy_version: prepared.grading_policy_version,
-            prompt: prepared.prompt,
-          }, { keepalive });
-          result.attempt_id = saved.attempt_id;
+          const savedOutcome = await runtimeServices.recordAttempt(userId, evidence, { keepalive });
+          const saved = savedOutcome?.data ?? savedOutcome;
+          const persistenceStatus = Number.isFinite(Number(savedOutcome?.status))
+            ? Number(savedOutcome.status)
+            : 201;
+          result.attempt_id = saved?.attempt_id ?? result.attempt_id;
+          logger?.info?.('piano.challenge-assessment', pianoAssessmentTelemetry(evidence, {
+            outcome: savedOutcome?.ok === false ? pianoPersistenceOutcome(savedOutcome) : 'saved',
+            status: persistenceStatus,
+            durationMs: Math.max(0, clock() - persistenceStartedAt),
+          }));
         } catch (error) {
-          logger?.warn?.('piano-challenge-attempt-save-failed', { error: error.message });
+          logger?.warn?.('piano.challenge-assessment', pianoAssessmentTelemetry(evidence, {
+            outcome: pianoPersistenceOutcome({ ok: false, status: error?.status ?? 0 }),
+            status: error?.status ?? 0,
+            error: error.message,
+            durationMs: Math.max(0, clock() - persistenceStartedAt),
+          }));
           result.attempt_id = null;
           result.metrics = { ...result.metrics, persistenceError: true };
         }
@@ -221,7 +252,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           pitchSetAccuracy: snapshot.prepared?.kind === 'chord' ? canonicalResult?.criteria?.completeness : undefined,
           timingAccuracy: canonicalResult?.criteria?.placement,
           continuity: canonicalResult?.criteria?.cleanliness,
-          tempoBpm: snapshot.prepared?.prompt?.tempo_bpm || null,
+          tempoBpm: snapshot.prepared?.assessment?.tempo_bpm || null,
           ...(Number.isFinite(lastOnsetSpanMs) ? { onsetSpanMs: lastOnsetSpanMs } : {}),
           ...terminalDetails,
           ...metrics,
@@ -283,7 +314,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           ? virtualNoteHistory
           : notes?.noteHistory || EMPTY_HISTORY;
         const liveChordMatch = view.prepared?.kind === 'chord'
-          ? heldProjection(activeNotes, promptSequence(view.prepared.prompt).midi)
+          ? heldProjection(activeNotes, promptSequence(view.prepared.prompt))
           : 'empty';
         const historyCursor = useRef(null);
         const [inputReady, setInputReady] = useState(false);
@@ -313,11 +344,6 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           if (['scale', 'arpeggio', 'timed-pattern'].includes(snapshot.prepared?.kind)) {
             recordInput();
             assessmentRuntimeRef.current?.observe({ midi: note, time: timestamp, clock: 'piano-challenge' });
-            const maxMistakes = snapshot.prepared?.prompt?.max_mistakes;
-            if (maxMistakes && wrongNotes >= maxMistakes && assessmentRuntimeRef.current?.getSnapshot().status === 'running') {
-              terminalMetrics = { failed: true, reason: 'mistake_limit' };
-              assessmentRuntimeRef.current.terminate('completed');
-            }
           }
         }, []);
 
@@ -394,7 +420,6 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 exerciseId: prompt.exercise_id || null,
                 ignored: ignored.length,
                 oldestAgeMs: Math.round(Math.max(...ignored.map((entry) => attemptStartedAt - entry.startTime))),
-                notes: ignored.map((entry) => entry.note),
                 staleInputsIgnored,
               });
             }
@@ -406,11 +431,6 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 time: Number.isFinite(entry.startTime) ? entry.startTime : clock(),
                 clock: 'piano-challenge',
               });
-              if (prompt.max_mistakes && wrongNotes >= prompt.max_mistakes && assessmentRuntime?.getSnapshot().status === 'running') {
-                terminalMetrics = { failed: true, reason: 'mistake_limit' };
-                assessmentRuntime.terminate('completed');
-                return;
-              }
             }
             return;
           }
@@ -418,7 +438,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         }, [activeNotes, noteHistory, usingVirtualKeyboard, view.status, view.prepared, view.armed]);
 
         const prompt = view.prepared?.prompt;
-        const expectedMidi = promptSequence(prompt).midi;
+        const expectedMidi = promptSequence(prompt);
         const expectedCount = expectedMidi.length;
         const lowestExpected = expectedMidi.length > 0 ? Math.min(...expectedMidi) : 60;
         const highestExpected = expectedMidi.length > 0 ? Math.max(...expectedMidi) : 72;
@@ -456,9 +476,8 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             >
               <header className="piano-scale-challenge__heading">
                 <span>
-                  {headerContext ? `${headerContext}${prompt.tempo_bpm ? ` · ${prompt.tempo_bpm} BPM` : ''}`
-                    : prompt.tempo_bpm ? `Play with the pulse · ${prompt.tempo_bpm} BPM` : 'Play from left to right'}
-                  {prompt.max_mistakes ? ` · ${prompt.max_mistakes} misses ends this legacy challenge` : ''}
+                  {headerContext ? `${headerContext}${view.prepared.assessment?.tempo_bpm ? ` · ${view.prepared.assessment.tempo_bpm} BPM` : ''}`
+                    : view.prepared.assessment?.tempo_bpm ? `Play with the pulse · ${view.prepared.assessment.tempo_bpm} BPM` : 'Play from left to right'}
                 </span>
                 <strong>{prompt.label}</strong>
               </header>
@@ -480,9 +499,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
                 <strong>{view.progress} / {expectedCount}</strong>
                 <span>
                   {view.lastInput?.status === 'wrong'
-                    ? prompt.max_mistakes
-                      ? 'Wrong note — start again at the highlighted note'
-                      : 'Not that one — correct the highlighted note and keep going'
+                    ? 'Not that one — correct the highlighted note and keep going'
                     : view.progress > 0
                       ? 'Correct — keep going'
                       : 'Play the highlighted first note'}
@@ -517,8 +534,13 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
         ready: Promise.resolve(),
         async prepare(request) {
           const selected = request.prompt
-            ? { prompt: structuredClone(request.prompt), timeout_ms: request.timeout_ms ?? null }
-            : await api.preparePianoChallenge(userId, {
+            ? {
+              prompt: structuredClone(request.prompt),
+              assessment: structuredClone(request.assessment || { mode: 'free', tempo_bpm: null, lead_in_ms: 0 }),
+              requirement: request.requirement ? structuredClone(request.requirement) : null,
+              timeout_ms: request.timeout_ms ?? null,
+            }
+            : await runtimeServices.prepareChallenge(userId, {
               challenge_id: request.challenge_id,
               kind: request.kind,
               requirements: request.requirements,
@@ -528,14 +550,17 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
             challenge_id: request.challenge_id,
             kind: request.kind,
             prompt: structuredClone(selected.prompt),
+            assessment: structuredClone(selected.assessment),
             timeout_ms: selected.timeout_ms ?? request.timeout_ms ?? null,
             pedagogy_policy_version: selected.pedagogy_policy_version || null,
             selection: selected.selection ? structuredClone(selected.selection) : null,
-            grading_policy_version: request.kind === 'chord'
-              ? 'pitch-set-simultaneity-v1'
-              : selected.prompt?.tempo_bpm
-                ? 'paced-pitch-timing-continuity-v1'
-                : 'untimed-pitch-continuity-v1',
+            grading_policy_version: selected.grading_policy_version
+              || selected.requirement?.rubric?.id
+              || (request.kind === 'chord'
+                ? 'pitch-set-simultaneity-v1'
+                : selected.assessment?.mode === 'cued'
+                  ? 'paced-pitch-timing-continuity-v1'
+                  : 'untimed-pitch-continuity-v1'),
             provider_version: PROVIDER_VERSION,
             requirement: selected.requirement ? structuredClone(selected.requirement) : null,
             context: request.context ? structuredClone(request.context) : null,
@@ -569,7 +594,7 @@ export function createPianoChordProvider({ useNotes, useConnection = useAlwaysCo
           const promise = new Promise((resolve) => { resolveAttempt = resolve; });
           assessmentRuntime.start({
             time: attemptStartedAt,
-            leadInMs: prepared.prompt?.lead_in_ms || 0,
+            leadInMs: prepared.assessment?.lead_in_ms || 0,
             clock: 'piano-challenge',
           });
           // The assessment must be running before the surface advertises that

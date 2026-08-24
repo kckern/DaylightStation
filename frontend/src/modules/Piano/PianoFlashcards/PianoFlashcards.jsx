@@ -12,6 +12,7 @@ import { computeKeyboardRange } from '../noteUtils.js';
 import { rootPositionVoicing } from './flashcardEngine.js';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './PianoFlashcards.scss';
 
 // Chord-spelling levels have no note_range (any octave counts) — show C3–C6.
@@ -30,6 +31,11 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
   const logger = useMemo(() => getChildLogger({ component: 'piano-flashcards' }), []);
 
   const game = useFlashcardGame(activeNotes, gameConfig, currentUser);
+  usePianoRunSession({
+    gameId: 'flashcards', phase: game.phase, initialPhase: 'IDLE', score: game.score,
+    metrics: { level: game.level, attempts: game.attempts.length },
+    activePhases: ['IDLE', 'PLAYING'], terminalPhases: ['COMPLETE'], logger,
+  });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
   useAnyKeyToContinue({ enabled: game.phase === 'COMPLETE', activeNotes, onContinue: game.startGame });
 

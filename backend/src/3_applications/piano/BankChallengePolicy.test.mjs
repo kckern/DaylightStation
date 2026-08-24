@@ -88,18 +88,22 @@ describe('preparing a challenge from the bank', () => {
   it('serves a chord for the chord kind and a scale for the scale kind', () => {
     const chord = policy().prepare({ userId: 'u', challengeId: 'c1', kind: 'chord' });
     expect(chord.prompt.exercise_id).toMatch(/^triads\//);
-    expect(chord.prompt.ordering).toBe('any');
+    expect(chord.prompt.expected_events[0].notes).toHaveLength(3);
 
     const scale = policy().prepare({ userId: 'u', challengeId: 'c2', kind: 'scale' });
     expect(scale.prompt.exercise_id).toMatch(/^scales\//);
-    expect(scale.prompt.ordering).toBe('strict');
+    expect(scale.prompt.expected_events).toHaveLength(8);
   });
 
   it('makes adaptive rhythm challenges cued with an exact generated requirement', () => {
     const prepared = policy().prepare({ userId: 'u', challengeId: 'rhythm', kind: 'timed-pattern' });
-    expect(prepared.prompt.mode).toBe('cued');
+    expect(prepared.assessment.mode).toBe('cued');
     expect(prepared.prompt.expected_events).toEqual(expect.any(Array));
-    expect(prepared.prompt.tempo_bpm).toBeGreaterThan(0);
+    expect(prepared.assessment).toMatchObject({ mode: 'cued', lead_in_ms: 2000 });
+    expect(prepared.assessment.tempo_bpm).toBeGreaterThan(0);
+    expect(prepared.prompt.expected_events).toHaveLength(8);
+    expect(prepared.prompt.expected_events.map((event) => event.value)).toEqual(Array(8).fill('8th'));
+    expect(prepared.prompt.expected_events.every((event) => event.notes[0]?.hand === 'right')).toBe(true);
     expect(prepared.requirement).toMatchObject({
       mode: 'cued', rubric: { criteria: { completeness: 1, cleanliness: 1, placement: 0.8 } },
     });
