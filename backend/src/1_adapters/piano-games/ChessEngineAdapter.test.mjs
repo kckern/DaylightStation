@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createChessEngine } from './ChessEngineAdapter.mjs';
-import { INITIAL_FEN, legalMoves } from '../../../../shared/gaming/chess/engine.mjs';
+import { INITIAL_FEN, legalMoves } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
 
 test('worker-backed adapter returns a legal move for a fresh game (no transcript)', async (context) => {
   const engine = createChessEngine();
@@ -10,7 +10,7 @@ test('worker-backed adapter returns a legal move for a fresh game (no transcript
   assert.ok(move, 'expected a move for the starting position');
   const legal = legalMoves(INITIAL_FEN).map((m) => `${m.from}${m.to}`);
   assert.ok(legal.includes(`${move.from}${move.to}`), `${move.from}${move.to} should be a legal opening move`);
-  assert.match(move.engine, /stockfish|fallback/);
+  assert.match(move.engine, /homegrown|stockfish|fallback/);
 });
 
 test('replays a SAN transcript into a position before asking the engine for a reply', async (context) => {
@@ -39,15 +39,10 @@ test('a transcript that fails to replay resolves to null rather than throwing', 
   assert.equal(move, null);
 });
 
-test("maps the ladder's 1-based level onto Stockfish's 0-based skill", async () => {
+test("maps the ladder's 1-based level onto the zero-based engine table", async () => {
   // OpponentLadder's first rung is level 1 (see OpponentLadder.mjs's class
-  // comment); Stockfish's Skill Level option — and the shared chess ladder
-  // policy built around it (rungForLevel) — count skill from 0. Missing this
-  // conversion would hand the bottom-rung character (meant to blunder pieces
-  // away) the engine's second-weakest setting instead of its weakest, and
-  // hand the top rung (meant to be unbeatable) one notch short of full
-  // strength — small, silent, and exactly the kind of thing only a test that
-  // inspects the actual rung sent to the engine would catch.
+  // comment); the shared engine table counts from 0. The bottom entry uses the
+  // teaching engine while the top entry uses Stockfish skill 20.
   let received;
   const fakeEngine = {
     chooseMove: async (request) => {
@@ -58,7 +53,8 @@ test("maps the ladder's 1-based level onto Stockfish's 0-based skill", async () 
   };
   const engine = createChessEngine({ engine: fakeEngine });
   await engine.chooseMove({ transcript: undefined, gameSessionId: 'g4', opponent: { level: 1 } });
-  assert.equal(received.rung.skill, 0);
+  assert.equal(received.rung.engine, 'homegrown');
+  assert.equal(received.rung.depth, 1);
   await engine.chooseMove({ transcript: undefined, gameSessionId: 'g4', opponent: { level: 21 } });
   assert.equal(received.rung.skill, 20);
 });

@@ -1,5 +1,5 @@
-import { applyMove, describeGame, undoMove } from '#shared/gaming/chess/engine.mjs';
-import { describeLevel } from '#shared/gaming/chess/ladder.mjs';
+import { applyMove, describeGame, undoMove } from '#shared/gaming/rulesets/chess/engine.mjs';
+import { describeLevel } from '#shared/gaming/rulesets/chess/ladder.mjs';
 
 const DEFAULTS = Object.freeze({
   enabled: true,

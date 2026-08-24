@@ -1,0 +1,121 @@
+@use './tokens' as gp;
+
+.gp-titlecard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+
+  h1 {
+    margin: 0;
+    font-family: var(--gp-font-display);
+    font-size: var(--gp-fs-display);
+    line-height: 1.05;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--gp-paper);
+    text-shadow: var(--gp-shadow-text);
+  }
+  p {
+    margin: 0;
+    font-family: var(--gp-font-serif);
+    font-size: var(--gp-fs-label);
+    color: var(--gp-paper-dim);
+  }
+}
+.gp-reveal {
+  flex: 1 1 auto;
+  min-height: 0; // share the clue column with banner/media/legend instead of claiming 100%
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 0 2rem;
+  text-align: center;
+
+  &__prompt {
+    font-family: var(--gp-font-serif);
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--gp-paper);
+    text-wrap: balance;
+
+    &--lg { font-size: var(--gp-fs-feature); }
+    &--md { font-size: 2.2rem; }
+    &--sm { font-size: 1.8rem; }
+  }
+
+  &__answer {
+    font-family: var(--gp-font-serif);
+    font-weight: 700;
+    font-size: var(--gp-fs-heading);
+    color: var(--gp-brass);
+    border-top: 2px solid var(--gp-surface-border);
+    padding-top: 1.25rem;
+  }
+}
+
+.gp-media {
+  &--image,
+  &--video {
+    max-width: 70%;
+    max-height: 45%; // % of the definite-height clue column — NEVER vh (frame contract)
+    min-height: 0;
+    flex: 0 1 auto;
+    border-radius: 0.4rem;
+    object-fit: contain;
+  }
+}
+.gp-wager {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  align-items: center;
+  justify-content: center;
+
+  &__team {
+    font-family: var(--gp-font-serif);
+    font-weight: 700;
+    font-size: var(--gp-fs-heading);
+  }
+  &__row {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+
+    button { @include gp.gp-button; }
+  }
+  &__amount {
+    font-family: var(--gp-font-display);
+    font-size: 3rem;
+    letter-spacing: 0.03em;
+    min-width: 10rem;
+    text-align: center;
+    color: var(--gp-brass);
+    text-shadow: var(--gp-shadow-text);
+  }
+  &__confirm { @include gp.gp-button-primary; }
+}
+.gp-legend {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  padding: 0.6rem;
+  font-family: var(--gp-font-ui);
+  font-size: var(--gp-fs-caption); // was 1rem @ 0.7 opacity — below the 10-foot floor
+  color: var(--gp-paper-dim);
+
+  kbd {
+    background: var(--gp-surface);
+    border: 1px solid var(--gp-surface-border);
+    border-radius: 0.25rem;
+    padding: 0.1rem 0.5rem;
+    margin-right: 0.3rem;
+    color: var(--gp-paper);
+  }
+}

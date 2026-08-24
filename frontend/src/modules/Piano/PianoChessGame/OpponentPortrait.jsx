@@ -1,4 +1,4 @@
-import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/views/cardIdenticonModel.js';
+import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/experiences/card-battle/cardIdenticonModel.js';
 import OpponentSpeech from './OpponentSpeech.jsx';
 import './OpponentPortrait.scss';
 
@@ -12,7 +12,7 @@ export { opponentLine, opponentMood, opponentStatus } from './opponentViewModel.
  * needs no artwork to be usable — and the same generator the card game uses, so
  * a given name always wears the same face across this house's games.
  *
- * A roster that DOES ship artwork (the Pokémon override) supplies `art`, and it
+ * A roster that DOES ship artwork (the content-provided override) supplies `art`, and it
  * simply replaces the identicon. Nothing else about the ladder changes, which
  * is the point of keeping art out of the promotion arithmetic.
  */

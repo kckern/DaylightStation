@@ -2,6 +2,8 @@
 
 The Piano game platform standardizes the instrument-facing shell without pretending every game has the same gameplay model.
 
+Piano remains the context owner for MIDI, instrument addressing, pedagogy, progression, and its native surfaces. A Piano game may implement the shared Gaming protocol through a checkpointed-local or remote authority, but Gaming does not own those concepts and an embedded scene renderer never becomes the gameplay authority.
+
 ## Ownership
 
 - `game-platform/host` owns the fullscreen container, one keyboard dock, overlay stacking, host lifecycle projection, and the crash boundary (`GameBoundary`).
@@ -48,8 +50,7 @@ A game overrides **the board's colours and nothing else**. The board carries the
 | `LadderBadge` / `WinTally` | who you are playing, drawn as a ladder and a tally rather than spelled as "Level 3 of 7 · 1 / 3 wins". |
 | `CountdownOverlay` / `LifeMeter` / `ProgressMeter` | the HUD. These existed unstyled for a year — `.piano-game-life__notch` drew nothing at all. |
 
-Checkers and Connect Four each carry their own seven-character Pokémon roster; neither reuses the
-Chess pack or each other's characters. Rail copy is limited to labels, counts, and controls. A
+Checkers and Connect Four expose seven neutral difficulty profiles. Display names, portraits, and themes come from mounted environment configuration; no rules engine owns or reuses a character roster. Rail copy is limited to labels, counts, and controls. A
 sentence that explains a move, refusal, hint, or map change belongs in `GameStatusBar` or a toast,
 not in permanently mounted rail furniture.
 
@@ -153,13 +154,13 @@ Pacing and presentation only — this module never touches rules or legality.
 
 The unified HTTP surface is `/api/v1/piano-games/:gameId`. HTTP handlers receive `PianoGamesContainer` and translate transport only. The application container resolves ladder access and orchestrates ports. `OpponentLadder` owns the pure promotion invariants. Engine and persistence implementations live under `1_adapters`; production wiring lives under `5_composition`.
 
-Connect Four and Checkers are complete vertical features on this surface. Their game-specific adapters share `SerializedWorkerOpponent`, which implements the Stockfish adapter's lazy worker, serialized queue, timeout, recovery, and disposal lifecycle. Each adapter retains ownership of transcript validation and its deterministic fallback policy. Chess is also reachable at `/api/v1/piano-games/chess`; `/api/v1/chess` remains its compatibility URI while the mature Chess application service is migrated behind the generic container.
+Connect Four, Checkers, and Chess are complete vertical features on this surface. Their game-specific adapters retain ownership of transcript validation and deterministic fallback policy. Chess is reachable only at `/api/v1/piano-games/chess`.
 
 | Game | Family | Instrument grammar | Server authority |
 |---|---|---|---|
 | Connect Four | addressed-board | one note or major chord addresses a column; seven-note cluster requests a suggestion | transcript validation, seven-opponent ladder, 3-of-5 promotion, worker move |
 | Checkers | addressed-board | one exact note selects a playable square; source then destination; seven-note cluster requests a suggestion | forced-capture replay, seven-opponent ladder, 3-of-5 promotion, worker move |
-| Chess | addressed-board | chord/staff source then destination | existing Chess application and Stockfish adapter through the unified compatibility mount |
+| Chess | addressed-board | chord/staff source then destination | Chess application and Stockfish adapter through the native Piano Games mount |
 
 Both new games persist configuration, ranked records, ladder progress, and household archives through `IPianoGameRepository`. A client-side fallback is labeled local practice and recorded with `ranked: false`, so loss of Wi-Fi never turns offline engine help into ladder advancement.
 

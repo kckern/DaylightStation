@@ -434,7 +434,7 @@ the 1-ply search is already so weak that the second-best move is no worse than t
 
 ### The two tiers, as built
 
-`DEFAULT_LEVEL_RUNGS` in `shared/gaming/chess/ladder.mjs` now maps each level to an engine:
+`DEFAULT_LEVEL_RUNGS` in `shared/gaming/rulesets/chess/ladder.mjs` maps each level to an engine:
 
 | Levels | Engine | Graded by |
 |--------|--------|-----------|
@@ -456,7 +456,7 @@ the mapping changes as the ladder is re-spaced, a bare level number is not a str
 
 ### Hints and analysis are not the opponent
 
-`POST /api/v1/chess/analyze` answers "what is the best move here" at **full strength, always**,
+`POST /api/v1/piano-games/chess/analyze` answers "what is the best move here" at **full strength, always**,
 through a second engine instance that is never handicapped.
 
 This used to be `POST /move` with a hardcoded `rung: 'ruthless'` — the hint borrowed the opponent
@@ -503,7 +503,7 @@ character looks like arriving somewhere new. Both are derived from the level unl
 otherwise, which means twenty-one characters exist without twenty-one entries being maintained.
 
 Replacing the roster in YAML re-themes the whole ladder without touching the promotion arithmetic,
-which is how a Pokémon roster gets in: weakest creature at 0, legendaries at the top, artwork and
+which is how a franchise theme roster gets in: weakest creature at 0, legendaries at the top, artwork and
 board colour per entry.
 
 The character is present while you play. The chord rail shows their face, their name, and what they

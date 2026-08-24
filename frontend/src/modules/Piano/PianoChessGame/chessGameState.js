@@ -1,6 +1,6 @@
 import {
   applyMove, createGame, describeGame, fenToPosition, legalDestinations, playMove, undoMove,
-} from '@shared-gaming/chess/index.mjs';
+} from '@shared-gaming/rulesets/chess/index.mjs';
 import {
   DEFAULT_CHORD_SCHEME, findChordCollisions, shuffleChordScheme, squareToChord, validateChordScheme,
 } from './chordAddress.js';
@@ -98,6 +98,32 @@ export function createChessGameState({
     undoneHistory: [],
   };
   return { ...base, scheme: schemeForPly(base, game.moves.length) };
+}
+
+/** Project authoritative generic chess state into Piano's addressing model. */
+export function projectChessAuthorityState(authorityState, {
+  playerColor = 'w', scheme = DEFAULT_CHORD_SCHEME, seed = 1, shuffleEachTurn = true,
+} = {}) {
+  let projected = createChessGameState({
+    fen: authorityState?.initial_fen,
+    playerColor,
+    scheme,
+    seed,
+    shuffleEachTurn,
+  });
+  for (const entry of authorityState?.history || []) {
+    const committed = commitMove(projected, entry.from, entry.to, entry.promotion || PROMOTION_PIECE, entry.logical_time);
+    if (committed.event.type === 'rejected') throw new Error(`Authoritative chess history is invalid at ${entry.from}-${entry.to}`);
+    projected = committed.state;
+  }
+  return {
+    ...projected,
+    undoneHistory: (authorityState?.undone_history || []).map((entry) => ({
+      ...entry,
+      at: entry.logical_time ?? null,
+      undone_at_revision: entry.undone_at_revision,
+    })),
+  };
 }
 
 export function pieceAt(fen, square) {

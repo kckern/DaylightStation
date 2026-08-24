@@ -1,5 +1,5 @@
-import { shuffle } from '@shared-gaming/rng.mjs';
-import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
+import { shuffle } from '@shared-gaming/mechanics/random.mjs';
+import { FILES, RANKS, isSquare } from '@shared-gaming/rulesets/chess/index.mjs';
 import {
   isStaffScheme, squareToStaffAddress, staffToSquare,
   identifyStaffAddress, validateStaffScheme,

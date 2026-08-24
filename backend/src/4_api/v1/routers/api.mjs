@@ -147,10 +147,8 @@ export function createApiRouter(config) {
     '/economy': 'economy',
     '/automotive': 'automotive',  // Vehicle record system — see _extensions/obd-relay
     '/feedback': 'feedback',
-    '/gameshow': 'gameshow',
     '/gaming': 'gaming',
     '/piano-games': 'piano-games',
-    '/chess': 'chess',
     '/presentation': 'presentation',
     '/school': 'school',
     '/donow': 'donow',

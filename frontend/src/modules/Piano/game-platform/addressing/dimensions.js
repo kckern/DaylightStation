@@ -3,10 +3,8 @@
  *
  * Every one of these was a constant buried in a game's source: chess hard-coded
  * `grand` clefs and one octave of naturals, checkers inherited them, Connect
- * Four picked seven notes of its own, and the only thing any of them exposed was
- * a boolean called `shuffle_each_turn` in chess and `shuffle_each_game` in the
- * other two — the same dimension, spelled twice, with three values collapsed
- * into two booleans.
+ * Four picked seven notes of its own. `addressing.shuffle` gives every game the
+ * same three-value cadence dimension.
  *
  * Naming them is what lets them become configuration: a house default, a rung on
  * a ladder, and a per-player override, for each dimension independently.

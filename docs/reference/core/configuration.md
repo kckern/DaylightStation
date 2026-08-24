@@ -86,7 +86,7 @@ data/
 │   │   └── log/                #   append-only, date-keyed, prunable
 │   ├── school/  piano/  finance/  weather/  automotive/    …one per domain
 │   ├── hardware/               #   scales.yml, barcode/, omr/, pressure-mats/
-│   ├── gaming/                 #   chess.yml, games.yml, gameshow/, retroarch/
+│   ├── gaming/                 #   rules, content, manifests, profiles, assets
 │   ├── media/                  #   config.yml = DOMAIN, app.yml = SURFACE
 │   ├── triggers/               #   sources/responses/endpoints + bindings/ + state/
 │

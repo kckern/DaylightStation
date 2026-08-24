@@ -1,10 +1,8 @@
 # Presentation Framework V2
 
-Presentation V2 is the reusable visual layer for RPG-style worlds and future side-scroller, fixed-grid, and text modes. It is neutral infrastructure under `shared/presentation`; Piano, Fitness, School, and Gaming are hosts, not dependencies of the renderer.
+Presentation V2 is an optional renderer for RPG-style sprite and tile scenes. It is neutral infrastructure under `shared/presentation/scenes`; Piano, Fitness, School, and Gaming are hosts, not dependencies of the renderer. It is not a universal UX or input framework.
 
-The production contract is strict `schema_version: 2`. V1 files are accepted only by the explicit, read-only migration adapter and the legacy CLI renderer. They are not valid production presentation inputs.
-
-Use `scene-legacy` only for regression evidence. The normal `scene` command rejects v1 rather than auto-upgrading or silently retaining old escape hatches.
+The only contract is `schema_version: 2`. The compiler, browser surface, CLI renderer, and QA suite reject every other schema.
 
 ## Architecture
 
@@ -12,7 +10,7 @@ Use `scene-legacy` only for regression evidence. The normal `scene` command reje
 catalog YAML + scene YAML
           |
           v
-shared/presentation compiler
+shared/presentation/scenes compiler
   - validates metadata
   - builds material/elevation grids
   - resolves edge/corner topology
@@ -35,7 +33,7 @@ Every approved asset declares exact source geometry, named frames, `pixel_densit
 
 World metadata also carries structural contracts. `attachment.system: height` with a measured `minimum_overlap_ratio` makes wall-bound art fail closed unless its visible pixels overlap a compiled height band; this is used for doors and arches so they cannot silently render as detached floor decals.
 
-Each style profile also owns reusable `scale_classes` such as `humanoid`, `creature`, `building`, `building-small`, `foliage`, and `terrain`. An asset declares `world.scale_class`; migration measures visible alpha for every isolated frame, and both catalog validation and Node QA reject normalized content outside the class's logical-height range. These are pack-wide semantic ranges, not scene-specific scale exceptions.
+Each style profile also owns reusable `scale_classes` such as `humanoid`, `creature`, `building`, `building-small`, `foliage`, and `terrain`. An asset declares `world.scale_class`; QA measures visible alpha for every isolated frame, and both catalog validation and Node QA reject normalized content outside the class's logical-height range. These are pack-wide semantic ranges, not scene-specific scale exceptions.
 
 Animated sprites add a second scale/position gate: every reachable clip is decoded at its declared `pixel_density`, aligned on one catalog anchor, and rendered as a strip and GIF. Ground-contact frames must keep the measured feet, trunk, hull, or item base on that anchor through every phase. QA therefore sees source-cell padding changes, scale drift, clipping, and foot skating that a valid static frame cannot reveal.
 
@@ -244,18 +242,9 @@ Input is upstream of presentation. Keyboard, touch D-pad, Bluetooth gamepad, pia
 
 Top-down is the implemented adapter. `side-scroller-scene`, `fixed-grid-scene`, and `text-scene` are reserved contracts and fail explicitly until their compilers exist; consumers cannot silently fall through to top-down assumptions.
 
-## Migration and acceptance
+## Acceptance
 
-Create reviewed v2 candidates without modifying v1 inputs:
-
-```bash
-node cli/gaming-assets.cli.mjs migrate-v2 --root /path/to/_common \
-  --catalog /path/to/_common/catalog/showcase/showcase-assets.yml \
-  --scenes /path/to/_common/catalog/showcase/showcase-scenes \
-  --out-dir /tmp/presentation-v2
-```
-
-Migration measures isolated frames against the hash-pinned PNG and emits exact `edge_contact.allowed` sides. Runtime QA decodes the PNG again and rejects any contact not represented by that metadata. Tile sheets and topology systems instead declare `edge_policy: seamless`; standalone sprites remain `isolated`.
+Runtime QA decodes every hash-pinned PNG and rejects edge contact not represented by catalog metadata. Tile sheets and topology systems declare `edge_policy: seamless`; standalone sprites remain `isolated`.
 
 Run the production showcase gate:
 
@@ -300,6 +289,6 @@ Candidate mode still runs every catalog, compilation, composition, clipping, det
 
 Terrain QA counts diagonal concavities only when the compiler actually selects their reviewed inner-corner layers. A cell with four matching cardinal neighbors is not automatically interior: missing diagonals are resolved before the fill fast-path. Connector counts similarly represent unique graph adjacencies, not merely the number of connector tiles drawn.
 
-The current exhaustive topology run covers 67 approved autotile assets, 3,528 polarity/mask/corner cases, and 1,177 compound inner-corner cases. Fallback-only legacy declarations and incomplete negative-polarity maps are stripped during migration instead of being counted as reviewed topology.
+The current exhaustive topology run covers 67 approved autotile assets, 3,528 polarity/mask/corner cases, and 1,177 compound inner-corner cases. Incomplete topology declarations fail validation instead of being counted as reviewed topology.
 
-Canonical catalogs, scenes, migration inputs, recipes, and QA manifests live under `$DAYLIGHT_BASE_PATH/media/games/_common/catalog/`. Git contains framework code and tests, but no duplicate production catalog tree. The mounted v1 showcase remains under `catalog/showcase/`; strict production v2 lives under `catalog/showcase-v2/`.
+Canonical catalogs, scenes, recipes, and QA manifests live under `$DAYLIGHT_BASE_PATH/media/games/_common/catalog/`. Git contains framework code and tests, but no duplicate production catalog tree.

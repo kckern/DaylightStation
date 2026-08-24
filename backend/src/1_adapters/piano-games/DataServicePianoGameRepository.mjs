@@ -2,26 +2,14 @@ import { deepMerge } from '../../0_system/utils/deepMerge.mjs';
 
 const DEFAULT_CONNECT_FOUR_CONFIG = Object.freeze({
   input_mode: 'notes',
-  shuffle_each_game: false,
+  addressing: { vocabulary: 'staff', shuffle: 'never' },
   column_notes: [60, 62, 64, 65, 67, 69, 71],
   column_chords: ['C', 'D', 'E', 'F', 'G', 'A', 'B'],
   default_level: 1,
 });
-/**
- * Task 4 redesigned checkers addressing from one unique note per square (32
- * of them) to a file note + a rank note played together — the same scheme
- * chess already uses. The old scheme couldn't grow a truthful axis rail: a
- * rail card is only honest if a whole row or column shares the note it
- * names, and 32 independent notes share nothing. See the frontend's
- * `checkersAddress.js` for the full addressing logic and `normalizeCheckersNotes`
- * for how a client with an OLD persisted config (still carrying `square_notes`,
- * predating this change) falls back to these same defaults instead of
- * breaking. These two axes are deliberately identical to chess's own
- * `DEFAULT_STAFF_SCHEME` (roots=files, qualities=ranks) — one vocabulary, not
- * a third one invented for this game alone.
- */
+/** Checkers and chess share file/rank instrument axes. */
 const DEFAULT_CHECKERS_CONFIG = Object.freeze({
-  shuffle_each_game: false,
+  addressing: { vocabulary: 'staff', shuffle: 'never' },
   file_notes: [60, 62, 64, 65, 67, 69, 71, 72],
   rank_notes: [47, 48, 50, 52, 53, 55, 57, 59],
   default_level: 1,

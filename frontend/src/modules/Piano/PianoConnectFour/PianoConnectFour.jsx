@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/connect-four/opponent.mjs';
-import { playColumn, replayGame } from '@shared-gaming/connect-four/engine.mjs';
+import { chooseColumn, CONNECT_FOUR_OPPONENTS } from '@shared-gaming/rulesets/connect-four/opponent.mjs';
+import { playColumn, replayGame } from '@shared-gaming/rulesets/connect-four/engine.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import InstrumentBoardStage from '../game-platform/families/addressed-board/InstrumentBoardStage.jsx';
@@ -19,10 +19,11 @@ import Icon from '../ui/icons/Icon.jsx';
 import { materialFor } from '../game-platform/addressing/resolveAddressing.js';
 import { noteName } from '../PianoChessGame/staffAddress.js';
 import connectFourClient from './connectFourApi.js';
+import { useConnectFourAuthority } from './useConnectFourAuthority.js';
 import './PianoConnectFour.scss';
 
 const DEFAULT_CONFIG = {
-  input_mode: 'notes', shuffle_each_game: false,
+  input_mode: 'notes', addressing: { vocabulary: 'staff', shuffle: 'never' },
   column_notes: [60, 62, 64, 65, 67, 69, 71],
   column_chords: ['C', 'D', 'E', 'F', 'G', 'A', 'B'], default_level: 1,
 };
@@ -34,25 +35,21 @@ const OPPONENT_THINK_FALLBACK_MS = 700;
 const COLUMNS = 7;
 
 /**
- * This game's own historical config keys, read forward onto the dimensions.
- *
- * `column_notes` is in real players' folders, so a saved axis still wins over a
- * tier — that is what the explicit-scheme escape hatch is for.
+ * Map this game's explicit column config onto the common dimensions.
  *
  * One axis, not two: gravity picks the row, so Connect Four addresses a COLUMN
  * and nothing else. The scheme's `qualities` is filled with the same values as
  * `roots` because the shape is shared with the two-axis games and a scheme with
  * a missing axis fails validation — nothing ever reads it here.
  */
-export function legacyAddressing(config) {
+export function configuredAddressing(config) {
   const notes = config?.column_notes;
-  const legacy = {};
+  const overrides = {};
   if (Array.isArray(notes) && notes.length === COLUMNS && notes.every(Number.isFinite)
     && notes.join() !== DEFAULT_CONFIG.column_notes.join()) {
-    legacy.scheme = { id: 'connect-four-saved-columns', kind: 'staff', roots: notes, qualities: notes };
+    overrides.scheme = { id: 'connect-four-configured-columns', kind: 'staff', roots: notes, qualities: notes };
   }
-  if (config?.shuffle_each_game !== undefined) legacy.shuffle_each_game = config.shuffle_each_game;
-  return legacy;
+  return overrides;
 }
 
 /**
@@ -222,9 +219,9 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const latchedRef = useRef(false);
 
-  // The transcript IS the game — nothing else is persisted, and a replay from
-  // moves is what the server validates against.
-  const [moves, setMoves] = useState([]);
+  // The checkpointed-local Gaming coordinator owns the transcript. Piano keeps
+  // MIDI addressing, pedagogy, pacing, and presentation composition.
+  const { moves, play: commitColumn, reset: resetAuthority } = useConnectFourAuthority({ userId: currentUser?.id || currentUser?.username || 'household' });
   const game = useMemo(() => replayGame({ moves }), [moves]);
   const result = !game.status.gameOver
     ? null
@@ -245,9 +242,9 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
 
   // Which key drops into which column, resolved from the layers rather than
   // from a constant in this file — see docs/reference/piano/grid-addressing.md.
-  const legacy = useMemo(() => legacyAddressing(config), [config]);
+  const overrides = useMemo(() => configuredAddressing(config), [config]);
   const { x: columnNotes, addressing } = useAddressing({
-    config, axisSize: COLUMNS, seed, ply: moves.length, legacy,
+    config, axisSize: COLUMNS, seed, ply: moves.length, overrides,
   });
 
   // The deal stays this game's own: `deal[address] = column`, so the ADDRESS
@@ -300,7 +297,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
       if (!answer?.move) noteLocalPractice();
       const column = answer?.move?.column ?? chooseColumn(game.board, { player: 2, level });
       const next = playColumn({ moves }, column);
-      if (!next.error) setMoves(next.moves);
+      if (!next.error) commitColumn(column);
     },
   });
 
@@ -339,16 +336,16 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
     if (column === null) return;
     const next = playColumn({ moves }, column);
     if (!next.error) {
-      setMoves(next.moves);
+      commitColumn(column);
       logger.info('connect-four.drop', { column, ply: next.moves.length });
     }
     // A full column is a refused address, not a landed one.
     recordReading({ ok: !next.error });
     latchedRef.current = true;
-  }, [activeNotes, columns, deal, game, level, logger, moves, recordReading, thinking]);
+  }, [activeNotes, columns, commitColumn, deal, game, level, logger, moves, recordReading, thinking]);
 
   const restart = () => {
-    setMoves([]);
+    resetAuthority();
     setHint(null);
     // A key already down when the game restarts must not immediately address a
     // column — the latch opens on the next release, not on this render.

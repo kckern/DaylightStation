@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_FEN } from '../../../../shared/gaming/chess/engine.mjs';
+import { INITIAL_FEN } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
 import {
   coach, criticalMoment, motifFor, parseEval, phaseOf,
 } from './ChessGameCoaching.mjs';

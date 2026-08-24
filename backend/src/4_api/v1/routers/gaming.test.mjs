@@ -1,76 +1,77 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createGamingRouter } from './gaming.mjs';
 
-function invoke(router, method, routePath, req = {}) {
+async function invoke(router, method, routePath, req = {}) {
   const layer = router.stack.find((candidate) => candidate.route?.path === routePath && candidate.route.methods[method]);
   if (!layer) throw new Error(`route missing: ${method} ${routePath}`);
   const response = { statusCode: 200, body: null, headers: {} };
-  const res = {
-    status(code) { response.statusCode = code; return this; },
-    json(body) { response.body = body; return this; },
-    set(headers) { Object.assign(response.headers, headers); return this; },
-    end() { return this; },
-    type() { return this; },
-    sendFile(file) { response.body = { file }; return this; },
-  };
-  layer.route.stack[0].handle({ body: {}, params: {}, query: {}, ...req }, res);
-  return response;
+  const res = { status(code) { response.statusCode = code; return this; }, json(body) { response.body = body; return this; }, set(headers) { Object.assign(response.headers, headers); return this; }, end() { return this; }, type() { return this; }, sendFile(file) { response.body = { file }; return this; } };
+  await layer.route.stack[0].handle({ body: {}, params: {}, query: {}, headers: {}, ...req }, res); return response;
 }
 
 describe('gaming API router', () => {
-  it('exposes definition, progress, leaderboard, create, resume, and command seams', async () => {
-    const service = {
-      getDefinition: vi.fn(() => ({ hash: 'hash', definition: { game_id: 'scale-clash' } })),
-      getProgress: vi.fn(() => ({ user_id: 'kid-1', personal_best: { score: 9000 } })),
-      getActiveSession: vi.fn(() => ({ user_id: 'kid-1', active_session: { session_id: 'game_12345678' } })),
-      getLeaderboard: vi.fn(() => ({ standings: [{ user_id: 'kid-1', score: 9000 }] })),
-      createSession: vi.fn(() => ({ session_id: 'game_12345678', revision: 0 })),
-      getSession: vi.fn(() => ({ session_id: 'game_12345678', revision: 0 })),
-      applyCommand: vi.fn(() => ({ session_id: 'game_12345678', revision: 1 })),
+  it('exposes canonical definition, group-play content, session, and command seams', async () => {
+    const app = {
+      getDefinition: vi.fn(async () => ({ hash: 'hash', definition: { id: 'x' } })), getEnvironmentProfile: vi.fn(() => ({ defaults: {} })),
+      getLaunchDescriptor: vi.fn(async () => ({ definition_id: 'x', presenter_id: 'presenter' })), listGroupPlayCatalog: vi.fn(() => [{ definition_id: 'quiz:night' }]),
+      listContent: vi.fn(() => [{ id: 'night' }]), getContent: vi.fn(() => ({ id: 'night', rounds: [] })),
+      createSession: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 0 } })), resumeSession: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 0 } })),
+      dispatch: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 1 }, state: { phase: 'board', scores: {} } })), closeSession: vi.fn(async () => ({ header: { status: 'complete' } })),
     };
-    const router = createGamingRouter({ gamingService: service });
-    expect(invoke(router, 'get', '/definitions/:gameId', { params: { gameId: 'scale-clash' } }).statusCode).toBe(200);
-    expect(invoke(router, 'get', '/games/:gameId/progress', {
-      params: { gameId: 'card-game' }, query: { user_id: 'kid-1' },
-    }).body).toMatchObject({ user_id: 'kid-1' });
-    expect(invoke(router, 'get', '/games/:gameId/active-session', {
-      params: { gameId: 'card-game' }, query: { user_id: 'kid-1' },
-    }).body).toMatchObject({ active_session: { session_id: 'game_12345678' } });
-    expect(invoke(router, 'get', '/games/:gameId/leaderboard', {
-      params: { gameId: 'card-game' }, query: { user_id: 'kid-1', week: '2026-W33' },
-    }).body).toMatchObject({ standings: [{ user_id: 'kid-1', score: 9000 }] });
-    expect(invoke(router, 'post', '/sessions', { body: { game_id: 'scale-clash', participants: [] } }).statusCode).toBe(201);
-    expect(invoke(router, 'get', '/sessions/:sessionId', { params: { sessionId: 'game_12345678' } }).statusCode).toBe(200);
-    expect(invoke(router, 'put', '/sessions/:sessionId', {
-      params: { sessionId: 'game_12345678' },
-      body: { command: { command_id: 'command-1', session_revision: 0, type: 'choose_action', payload: {} } },
-    }).statusCode).toBe(200);
-    expect(service.applyCommand).toHaveBeenCalledOnce();
-    expect(service.getProgress).toHaveBeenCalledWith('card-game', 'kid-1');
-    expect(service.getActiveSession).toHaveBeenCalledWith('card-game', 'kid-1');
-    expect(service.getLeaderboard).toHaveBeenCalledWith('card-game', 'kid-1', '2026-W33');
+    const router = createGamingRouter({ gamingApplication: app });
+    expect((await invoke(router, 'get', '/definitions/:definitionId', { roles: ['gaming-host'], params: { definitionId: 'x' } })).body.hash).toBe('hash');
+    expect((await invoke(router, 'get', '/launch/:definitionId', { user: { sub: 'player' }, params: { definitionId: 'x' } })).body.presenter_id).toBe('presenter');
+    expect((await invoke(router, 'get', '/environments/group-play/catalog', { roles: ['gaming-host'] })).body.entries).toHaveLength(1);
+    expect((await invoke(router, 'get', '/experiences/:experienceId/content', { roles: ['gaming-host'], params: { experienceId: 'jeopardy' } })).body.content).toHaveLength(1);
+    expect((await invoke(router, 'post', '/sessions', { roles: ['gaming-host'], body: { definition_id: 'jeopardy:night' } })).statusCode).toBe(201);
+    expect(app.createSession).toHaveBeenCalledWith(expect.not.objectContaining({ ruleset: expect.anything(), experience: expect.anything() }));
+    expect((await invoke(router, 'post', '/sessions/:sessionId/commands', { roles: ['gaming-host'], params: { sessionId: 'game:1' }, body: { command_id: 'cmd:1', actor_id: 'host', expected_revision: 0, logical_time: 1, command: { type: 'jeopardy.start.round' } } })).body.header.revision).toBe(1);
+    expect(app.dispatch).toHaveBeenCalledOnce();
   });
 
-  it('exposes only approved art and a separate image endpoint', () => {
-    const service = { getDefinition: vi.fn() };
-    const assetCatalog = {
-      get: vi.fn(() => ({ schema_version: 1, pack: { id: 'default' }, assets: {
-        'npc.farmer-bob': { status: 'approved', source: 'assets/default/farmer.png' },
-        'npc.unreviewed': { status: 'candidate' },
-      } })),
-      getAsset: vi.fn(() => ({ file: '/tmp/farmer.png', source_sha256: 'a'.repeat(64) })),
-    };
-    const router = createGamingRouter({ gamingService: service, assetCatalog });
-    const catalog = invoke(router, 'get', '/assets/:packId', { params: { packId: 'default' } });
-    expect(catalog.body.assets).toEqual({
-      'npc.farmer-bob': expect.objectContaining({ image_url: '/api/v1/gaming/assets/default/npc.farmer-bob/image' }),
+  it('keeps raw artifacts host-only and prevents participants from seating other actors', async () => {
+    const app = { getDefinition: vi.fn(), getLaunchDescriptor: vi.fn(async () => ({ presenter_id: 'safe' })), createSession: vi.fn() };
+    const router = createGamingRouter({ gamingApplication: app });
+    const raw = await invoke(router, 'get', '/definitions/:definitionId', { user: { sub: 'player' }, params: { definitionId: 'x' } });
+    const launch = await invoke(router, 'get', '/launch/:definitionId', { user: { sub: 'player' }, params: { definitionId: 'x' } });
+    const spoof = await invoke(router, 'post', '/sessions', { user: { sub: 'player' }, body: { definition_id: 'x', participants: [{ id: 'player' }], seats: [{ id: 'other' }] } });
+    expect(raw.statusCode).toBe(403);
+    expect(launch).toMatchObject({ statusCode: 200, body: { presenter_id: 'safe' } });
+    expect(spoof).toMatchObject({ statusCode: 403, body: { error: 'authorization_denied' } });
+    expect(app.getDefinition).not.toHaveBeenCalled();
+    expect(app.createSession).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts only an authenticated refetch invalidation after commit', async () => {
+    const broadcastEvent = vi.fn();
+    const app = { dispatch: vi.fn(async () => ({ header: { session_id: 'game:1', revision: 1, ruleset: { id: 'secret-game' } }, state: { secret: 'not-for-broadcast' } })) };
+    const router = createGamingRouter({ gamingApplication: app, broadcastEvent });
+    await invoke(router, 'post', '/sessions/:sessionId/commands', { roles: ['gaming-host'], params: { sessionId: 'game:1' }, body: { command_id: 'cmd:1' } });
+    expect(broadcastEvent).toHaveBeenCalledWith(expect.objectContaining({ kind: 'session-updated', sessionId: 'game:1', revision: 1 }));
+    expect(broadcastEvent.mock.calls[0][0]).not.toHaveProperty('snapshot');
+  });
+
+  it('ignores body and query identity claims and fails closed without server-established identity', async () => {
+    const app = { resumeSession: vi.fn(), dispatch: vi.fn() };
+    const router = createGamingRouter({ gamingApplication: app });
+    const resume = await invoke(router, 'get', '/sessions/:sessionId', { params: { sessionId: 'game:1' }, query: { role: 'host', participant_id: 'host' } });
+    const command = await invoke(router, 'post', '/sessions/:sessionId/commands', {
+      params: { sessionId: 'game:1' },
+      body: { command_id: 'cmd:1', actor_id: 'host', expected_revision: 0, logical_time: 1, viewer_role: 'host', viewer_id: 'host', command: { type: 'session.close' } },
     });
-    expect(catalog.body.assets['npc.farmer-bob']).not.toHaveProperty('source');
-    const image = invoke(router, 'get', '/assets/:packId/:assetId/image', { params: { packId: 'default', assetId: 'npc.farmer-bob' } });
-    expect(image.body).toEqual({ file: '/tmp/farmer.png' });
-    expect(image.headers).toMatchObject({ ETag: `"${'a'.repeat(64)}"`, 'Cache-Control': 'private, max-age=31536000, immutable' });
-    expect(invoke(router, 'get', '/assets/:packId/:assetId/image', {
-      params: { packId: 'default', assetId: 'npc.farmer-bob' }, headers: { 'if-none-match': `"${'a'.repeat(64)}"` },
-    }).statusCode).toBe(304);
+    expect(resume).toMatchObject({ statusCode: 401, body: { error: 'authentication_required' } });
+    expect(command).toMatchObject({ statusCode: 401, body: { error: 'authentication_required' } });
+    expect(app.resumeSession).not.toHaveBeenCalled();
+    expect(app.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('exposes approved art separately from image bytes', async () => {
+    const app = { getDefinition: vi.fn() }; const assetCatalog = {
+      get: vi.fn(() => ({ schema_version: 1, pack: { id: 'default' }, assets: { approved: { status: 'approved', source: 'secret.png' }, candidate: { status: 'candidate' } } })),
+      getAsset: vi.fn(() => ({ file: '/tmp/a.png', source_sha256: 'a'.repeat(64) })),
+    };
+    const router = createGamingRouter({ gamingApplication: app, assetCatalog });
+    const catalog = await invoke(router, 'get', '/assets/:packId', { roles: ['gaming-host'], params: { packId: 'default' } }); expect(Object.keys(catalog.body.assets)).toEqual(['approved']); expect(catalog.body.assets.approved).not.toHaveProperty('source');
+    const image = await invoke(router, 'get', '/assets/:packId/:assetId/image', { roles: ['gaming-host'], params: { packId: 'default', assetId: 'approved' } }); expect(image.body.file).toBe('/tmp/a.png');
   });
 });

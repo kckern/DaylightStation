@@ -224,14 +224,14 @@ export function useNoteLauncher({ activeNotes, slots, initialGame = null, onRequ
         if (userRequestTimerRef.current) clearTimeout(userRequestTimerRef.current);
         userRequestTimerRef.current = setTimeout(() => {
           userRequestTimerRef.current = null;
-          logger.info('launcher.user-requested', { note });
+          logger.info('launcher.user-requested', {});
           onRequestUserRef.current?.();
         }, comboWindowMs);
         return;
       }
       const slot = slotForNote(slots, note);
       if (!slot) continue;
-      setGame(slot.gameId, 'launcher.game-selected', { note });
+      setGame(slot.gameId, 'launcher.game-selected', { slotId: slot.id ?? null });
       closeLauncher('selected');
       return;
     }

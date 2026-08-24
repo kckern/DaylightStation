@@ -1,6 +1,43 @@
 // frontend/src/screen-framework/input/adapters/GamepadAdapter.js
 import getLogger from '../../../lib/logging/Logger.js';
 import { getActiveGamepads } from '../gamepadFiltering.js';
+import { interactionIntent } from '@shared-interaction/index.mjs';
+
+const SEMANTIC_BUTTON_ACTIONS = Object.freeze({
+  0: 'button.a', 1: 'button.b', 2: 'button.x', 3: 'button.y', 4: 'button.lb', 5: 'button.rb',
+  6: 'button.lt', 7: 'button.rt', 8: 'button.select', 9: 'button.start', 10: 'button.ls', 11: 'button.rs',
+  12: 'dpad.up', 13: 'dpad.down', 14: 'dpad.left', 15: 'dpad.right', 16: 'button.home',
+});
+const roleBindings = new Map();
+let pendingRole = null;
+let sharedHost = null;
+let sharedHostConsumers = 0;
+export function bindNextGamepadPress(role) { pendingRole = role; }
+export function gamepadRoleBindings() { return Object.fromEntries(roleBindings); }
+
+/** One browser-tab gamepad poller, shared by screens and direct app routes. */
+export function acquireGamepadInputHost(actionBus, options = {}) {
+  if (!sharedHost) {
+    sharedHost = new GamepadAdapter(actionBus, options);
+    sharedHost.attach();
+  } else if (sharedHost.actionBus !== actionBus) {
+    throw new Error('The shared gamepad host must use the screen-framework ActionBus');
+  }
+  sharedHostConsumers += 1;
+  let released = false;
+  return {
+    adapter: sharedHost,
+    release() {
+      if (released) return;
+      released = true;
+      sharedHostConsumers -= 1;
+      if (sharedHostConsumers === 0) {
+        sharedHost.destroy();
+        sharedHost = null;
+      }
+    },
+  };
+}
 
 let _logger;
 function logger() {
@@ -197,6 +234,7 @@ export class GamepadAdapter {
   _handleDisconnect(e) {
     // Drop state for the disconnected gamepad only — leave others' state intact.
     const idx = e?.gamepad?.index;
+    if (e?.gamepad) roleBindings.delete(`${e.gamepad.index}:${e.gamepad.id}`);
     if (idx != null) {
       delete this._prevButtons[idx];
       delete this._prevStick[idx];
@@ -263,15 +301,20 @@ export class GamepadAdapter {
       const pressed = gp.buttons[idx] && gp.buttons[idx].pressed;
       const wasPressed = !!prev[idx];
       const repeatKey = `${gpIdx}__btn${idx}`;
+      let semanticEdgeAccepted = false;
 
       if (pressed && !wasPressed) {
         if (this._claimFire(gp.id, `btn${idx}`)) {
+          semanticEdgeAccepted = true;
           this._emit(mapping, idx);
           if (mapping.repeats) this._startRepeat(repeatKey, mapping);
         }
       } else if (!pressed && wasPressed) {
         this._stopRepeat(repeatKey);
+        semanticEdgeAccepted = this._claimFire(gp.id, `btn${idx}:release`);
       }
+
+      if (pressed !== wasPressed && semanticEdgeAccepted) this._emitSemantic(gp, idx, pressed ? 'press' : 'release');
 
       prev[idx] = pressed;
     }
@@ -320,8 +363,8 @@ export class GamepadAdapter {
   _claimFire(gamepadId, key) {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const fireKey = `${gamepadId}__${key}`;
-    const lastFire = this._lastFireById[fireKey] || 0;
-    if (now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) return false;
+    const lastFire = this._lastFireById[fireKey];
+    if (lastFire != null && now - lastFire < SAME_ID_DUPLICATE_WINDOW_MS) return false;
     this._lastFireById[fireKey] = now;
     return true;
   }
@@ -344,6 +387,24 @@ export class GamepadAdapter {
     });
     event.__gamepadSynthetic = true;
     window.dispatchEvent(event);
+  }
+
+  _emitSemantic(gamepad, buttonIndex, phase) {
+    const controllerId = `${gamepad.index}:${gamepad.id}`;
+    if (phase === 'press' && pendingRole) { roleBindings.set(controllerId, pendingRole); pendingRole = null; }
+    const button = gamepad.buttons[buttonIndex];
+    const intent = interactionIntent({
+      action: SEMANTIC_BUTTON_ACTIONS[buttonIndex] || `button.${buttonIndex}`,
+      phase,
+      value: button?.value ?? Number(phase === 'press'),
+      source: 'gamepad',
+      deviceType: gamepad.mapping || 'gamepad',
+      controllerId,
+      role: roleBindings.get(controllerId) || null,
+      timestamp: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
+    });
+    window.dispatchEvent(new CustomEvent('gaming:interaction', { detail: intent }));
+    logger().sampled?.('gaming.input.intent', { action: intent.action, phase: intent.phase, controller_id: controllerId, role_binding: intent.role_binding }, { maxPerMinute: 30, aggregate: true });
   }
 
   _startRepeat(id, mapping) {

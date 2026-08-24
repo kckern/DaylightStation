@@ -4,8 +4,8 @@ import { buildScheme } from './buildScheme.js';
 import { evaluateAddressing } from './addressingProgress.js';
 import { DEFAULT_CHORD_SCHEME, identifyChord, squareToChord } from '../../PianoChessGame/chordAddress.js';
 import { DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteName, splitFor } from '../../PianoChessGame/staffAddress.js';
-import { legacyAddressing as checkersLegacy } from '../../PianoCheckers/PianoCheckers.jsx';
-import { legacyAddressing as connectFourLegacy, scaleRoots } from '../../PianoConnectFour/PianoConnectFour.jsx';
+import { configuredAddressing as checkersOverrides } from '../../PianoCheckers/PianoCheckers.jsx';
+import { configuredAddressing as connectFourOverrides, scaleRoots } from '../../PianoConnectFour/PianoConnectFour.jsx';
 import { schemeForAddressing } from '../../PianoChessGame/PianoChessGame.jsx';
 
 /**
@@ -45,9 +45,9 @@ describe('chess: schemeForAddressing through the resolver', () => {
     expect(scheme.roots).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
   });
 
-  it('still honours the shipped `addressing: chords` / `staff` string', () => {
-    expect(schemeForAddressing('staff', DEFAULT_CHORD_SCHEME).kind).toBe('staff');
-    expect(schemeForAddressing('chords', DEFAULT_STAFF_SCHEME).kind).toBeUndefined();
+  it('reads the canonical nested vocabulary', () => {
+    expect(schemeForAddressing({ addressing: { vocabulary: 'staff' } }, DEFAULT_CHORD_SCHEME).kind).toBe('staff');
+    expect(schemeForAddressing({ addressing: { vocabulary: 'chords' } }, DEFAULT_STAFF_SCHEME).kind).toBeUndefined();
   });
 
   it('reads a whole config block, so tiers and order reach the board', () => {
@@ -70,35 +70,29 @@ describe('chess: schemeForAddressing through the resolver', () => {
   });
 });
 
-describe('checkers: legacy keys read forward', () => {
-  it('honours a saved pair of axes over the tier material', () => {
-    const saved = { file_notes: [72, 74, 76, 77, 79, 81, 83, 84], rank_notes: [36, 38, 40, 41, 43, 45, 47, 48] };
-    const legacy = checkersLegacy(saved);
-    expect(legacy.scheme.roots).toEqual(saved.file_notes);
-    expect(legacy.scheme.qualities).toEqual(saved.rank_notes);
+describe('checkers: configured addressing overrides', () => {
+  it('honours a configured pair of axes over the tier material', () => {
+    const configured = { file_notes: [72, 74, 76, 77, 79, 81, 83, 84], rank_notes: [36, 38, 40, 41, 43, 45, 47, 48] };
+    const overrides = checkersOverrides(configured);
+    expect(overrides.scheme.roots).toEqual(configured.file_notes);
+    expect(overrides.scheme.qualities).toEqual(configured.rank_notes);
   });
 
-  it('ignores a config from before the redesign rather than half-trusting it', () => {
-    // `square_notes` and nothing else: reading file_notes[0] against that shape
-    // does not throw, it just makes the game permanently unresponsive.
-    expect(checkersLegacy({ square_notes: Array.from({ length: 32 }, (_, i) => 48 + i) }).scheme).toBeUndefined();
-    expect(checkersLegacy({ file_notes: [60, 62] }).scheme).toBeUndefined();
-    expect(checkersLegacy(null).scheme).toBeUndefined();
+  it('requires a complete valid axis pair', () => {
+    expect(checkersOverrides({ file_notes: [60, 62] }).scheme).toBeUndefined();
+    expect(checkersOverrides(null).scheme).toBeUndefined();
   });
 
-  it('reads the legacy cadence boolean forward', () => {
-    expect(checkersLegacy({ shuffle_each_game: true }).shuffle_each_game).toBe(true);
-  });
 });
 
-describe('connect four: legacy keys and scale ordering', () => {
-  it('honours a saved column axis', () => {
-    const saved = { column_notes: [72, 74, 76, 77, 79, 81, 83] };
-    expect(connectFourLegacy(saved).scheme.roots).toEqual(saved.column_notes);
+describe('connect four: configured columns and scale ordering', () => {
+  it('honours a configured column axis', () => {
+    const configured = { column_notes: [72, 74, 76, 77, 79, 81, 83] };
+    expect(connectFourOverrides(configured).scheme.roots).toEqual(configured.column_notes);
   });
 
-  it('does not claim a saved axis when the config is just the default', () => {
-    expect(connectFourLegacy({ column_notes: [60, 62, 64, 65, 67, 69, 71] }).scheme).toBeUndefined();
+  it('does not claim an override when config equals the default', () => {
+    expect(connectFourOverrides({ column_notes: [60, 62, 64, 65, 67, 69, 71] }).scheme).toBeUndefined();
   });
 
   it('sorts chord roots into scale order — a row of columns is a scale, not an alphabet', () => {

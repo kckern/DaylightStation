@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { chooseMove } from '../../../../../shared/gaming/checkers/opponent.mjs';
-import { legalMoves, applyMove, describeGame } from '../../../../../shared/gaming/checkers/engine.mjs';
+import { chooseMove } from '../../../../../shared/gaming/rulesets/checkers/opponent.mjs';
+import { legalMoves, applyMove, describeGame } from '../../../../../shared/gaming/rulesets/checkers/engine.mjs';
 
 // Reported 2026-08-18: "suggested move was a suicide". The hint was searched at
 // the OPPONENT's level, and the game defaults to Level 1 of 7. In

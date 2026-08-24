@@ -1,4 +1,4 @@
-import { parsePieceCode } from '@shared-gaming/chess/index.mjs';
+import { parsePieceCode } from '@shared-gaming/rulesets/chess/index.mjs';
 
 import bishopDark from './pieces/bishop_dark_none.svg';
 import bishopLight from './pieces/bishop_light_none.svg';

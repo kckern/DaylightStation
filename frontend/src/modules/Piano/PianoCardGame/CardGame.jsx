@@ -1,16 +1,11 @@
 import { useMemo } from 'react';
-import GamingRuntime from '../../Gaming/runtime/GamingRuntime.jsx';
+import GamingRuntime from '../../Gaming/platform/runtime/GamingRuntime.jsx';
 import { createPianoChordProvider } from '../challenge/provider/createPianoChordProvider.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../PianoKiosk/PianoMidiContext.jsx';
 import { resolvePianoPlayerName } from '../game-platform/identity/playerName.js';
+import { resolveCardGameUserId } from './cardGameIdentity.js';
 
-/** Card Game composition adapter; Pokémon content/rules stay in YAML and Piano owns challenge grading. */
-export function resolveCardGameUserId(currentUser, queryUserId = null) {
-  return queryUserId
-    || (typeof currentUser === 'string' ? currentUser : currentUser?.user_id || currentUser?.userId || currentUser?.id)
-    || 'guest';
-}
-
+/** Card Game composition adapter; content-provided content/rules stay in YAML and Piano owns challenge grading. */
 export function CardGame({ currentUser = null, playerName = null, onDeactivate = null }) {
   // The explicit user query mirrors GamingApp, letting readiness checks use
   // the supported guest identity without changing normal kiosk identity.

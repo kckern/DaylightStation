@@ -19,9 +19,8 @@ import { schemeFor } from './buildScheme.js';
  *   each_game  → the game's seed, which changes on restart
  *   each_turn  → the game's seed advanced by the ply
  *
- * `legacy` is where a game maps its own historical config keys onto the
- * dimensions. Those keys are on disk in real players' folders, so they are read
- * forward rather than dropped — see each game's `legacyAddressing`.
+ * `overrides` maps a native game's explicit config fields onto the common
+ * addressing dimensions.
  */
 export function useAddressing({
   config = null,
@@ -29,14 +28,14 @@ export function useAddressing({
   axisSize = 8,
   seed = 0,
   ply = 0,
-  legacy = null,
+  overrides = null,
 } = {}) {
   const resolved = useMemo(() => resolveAddressing({
-    game: { ...(legacy || {}), ...(config || {}) },
+    game: { ...(overrides || {}), ...(config || {}) },
     user,
     ladder: config?.addressing?.ladder ?? null,
     axisSize,
-  }), [config, user, axisSize, legacy]);
+  }), [config, user, axisSize, overrides]);
 
   const dealSeed = resolved.shuffle === 'each_turn'
     ? (((seed >>> 0) + ply) >>> 0)

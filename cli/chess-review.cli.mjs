@@ -21,7 +21,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import dotenv from 'dotenv';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CHESS_ARCHIVE_DIR } from '../shared/gaming/chess/archivePaths.mjs';
+import { CHESS_ARCHIVE_DIR } from '../shared/gaming/rulesets/chess/archivePaths.mjs';
 import { createStockfishAnalyst } from '../backend/src/1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { reviewGame, THRESHOLDS, bandForAcpl } from '../backend/src/3_applications/chess/ChessGameReview.mjs';
 import { coach } from '../backend/src/3_applications/chess/ChessGameCoaching.mjs';

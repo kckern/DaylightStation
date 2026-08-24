@@ -20,6 +20,10 @@ import connectFourClient from './connectFourApi.js';
 
 const requestConnectFourMove = connectFourClient.requestMove;
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 // Note 65 (F) addresses column 3 in the default (unshuffled) deal under the
 // DEFAULT_CONFIG this component falls back to when fetchConnectFourConfig
 // resolves null (mocked below) — see PianoConnectFour.test.js's own config
@@ -98,13 +102,13 @@ describe('PianoConnectFour address rail', () => {
     expect(topRail.querySelectorAll('.chess-staff-label')).toHaveLength(0);
   });
 
-  it('shows its Pokémon opponent without a permanent help paragraph', () => {
+  it('shows its themed opponent without a permanent help paragraph', () => {
     const { container } = render(<PianoConnectFour activeNotes={new Map()} />);
     const rails = container.querySelectorAll('.instrument-board-stage__rail');
     const railText = [...rails].map((rail) => rail.textContent).join(' ');
 
-    expect(railText).toContain('Diglett');
-    expect(container.querySelector('.pg-ladder__portrait').getAttribute('src')).toMatch(/0050-diglett-gen1\.svg/);
+    expect(railText).toContain('Level 1');
+    expect(container.querySelector('.pg-ladder__portrait')).toBeNull();
     expect(railText).not.toContain('Play seven notes together');
     expect(container.querySelector('.pg-status__text').textContent).toContain('play a key to drop a disc');
   });

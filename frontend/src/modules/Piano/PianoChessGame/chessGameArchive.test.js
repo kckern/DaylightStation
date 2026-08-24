@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INITIAL_FEN, createGame, playMove } from '@shared-gaming/chess/engine.mjs';
+import { INITIAL_FEN, createGame, playMove } from '@shared-gaming/rulesets/chess/engine.mjs';
 import { buildGameArchive, localDateStamp } from './chessGameArchive.js';
 import { createChessGameState, commitMove, takeMoveBack } from './chessGameState.js';
 import { DEFAULT_STAFF_SCHEME } from './staffAddress.js';

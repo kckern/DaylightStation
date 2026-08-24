@@ -88,28 +88,13 @@ function rungConfig(ladder, explicit, notes) {
 /**
  * One layer, validated.
  *
- * Accepts the legacy shapes as well as the current one, because they are on disk
- * today and a config that silently stops working is worse than one that never
- * started:
- *   - `addressing: chords`      — chess's shipped string form
- *   - `shuffle_each_turn: true` — chess's boolean
- *   - `shuffle_each_game: true` — checkers' and Connect Four's boolean, the same
- *                                 dimension under a second name
+ * The canonical shape is an object, optionally nested under `addressing`.
  */
 export function normalizeAddressing(input, notes = [], layer = 'config') {
   if (input === null || input === undefined) return {};
-
-  // The whole block given as a bare vocabulary string.
-  if (typeof input === 'string') {
-    return enumValue('vocabulary', input, VOCABULARIES, notes, layer)
-      ? { vocabulary: input }
-      : {};
-  }
   if (typeof input !== 'object') return {};
 
-  const source = input.addressing !== undefined && typeof input.addressing !== 'object'
-    ? { ...input, addressing: undefined, vocabulary: input.addressing }
-    : { ...input, ...(input.addressing || {}) };
+  const source = { ...input, ...(input.addressing && typeof input.addressing === 'object' ? input.addressing : {}) };
 
   const out = {};
 
@@ -129,14 +114,6 @@ export function normalizeAddressing(input, notes = [], layer = 'config') {
     && enumValue('inversions', source.inversions, INVERSIONS, notes, layer)) {
     out.inversions = source.inversions;
   }
-  // Legacy cadence booleans. `each_turn` wins if both are somehow set — it is
-  // the stronger statement, and a config asserting both is already confused.
-  if (out.shuffle === undefined) {
-    if (source.shuffle_each_turn === true) out.shuffle = 'each_turn';
-    else if (source.shuffle_each_game === true) out.shuffle = 'each_game';
-    else if (source.shuffle_each_turn === false || source.shuffle_each_game === false) out.shuffle = 'never';
-  }
-
   for (const axis of ['x', 'y']) {
     const value = source[axis];
     if (!value || typeof value !== 'object') continue;

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Play a real game against the deployed chess engine, over the same HTTP
- * routes the Piano Chess game uses (`POST /api/v1/chess/move`,
- * `GET/PUT /api/v1/chess/config`).
+ * routes the Piano Chess game uses (`POST /api/v1/piano-games/chess/move`,
+ * `GET/PUT /api/v1/piano-games/chess/config`).
  *
  * This exists so a human can feel the difficulty ladder rung to rung instead
  * of inferring it from a log line, and so a broken router shows up as a CLI
@@ -20,8 +20,8 @@ import {
   legalMoves,
   describePosition,
   isValidFen,
-} from '../shared/gaming/chess/engine.mjs';
-import { fenToPosition } from '../shared/gaming/chess/position.mjs';
+} from '../shared/gaming/rulesets/chess/engine.mjs';
+import { fenToPosition } from '../shared/gaming/rulesets/chess/position.mjs';
 
 const DEFAULT_HOST = 'http://localhost:3112';
 const DEFAULT_RUNG = 'learner';
@@ -83,12 +83,12 @@ export function renderBoard(fen, { orientation = 'w' } = {}) {
 }
 
 /**
- * The HTTP call to `/api/v1/chess/move`, isolated so tests inject a fake.
+ * The HTTP call to `/api/v1/piano-games/chess/move`, isolated so tests inject a fake.
  * Throws on a non-2xx response or a network error, naming the host — "the
  * backend isn't running" is the most common failure this surfaces.
  */
 export async function requestMove({ host, fen, rung, gameId, user }) {
-  const url = new URL('/api/v1/chess/move', host);
+  const url = new URL('/api/v1/piano-games/chess/move', host);
   if (user) url.searchParams.set('user', user);
   let response;
   try {
@@ -102,14 +102,14 @@ export async function requestMove({ host, fen, rung, gameId, user }) {
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`${host} POST /api/v1/chess/move returned HTTP ${response.status}: ${body}`);
+    throw new Error(`${host} POST /api/v1/piano-games/chess/move returned HTTP ${response.status}: ${body}`);
   }
   return response.json();
 }
 
-/** The HTTP call to `GET /api/v1/chess/config`, isolated the same way as requestMove. */
+/** The HTTP call to `GET /api/v1/piano-games/chess/config`, isolated the same way as requestMove. */
 export async function requestConfig({ host, user }) {
-  const url = new URL('/api/v1/chess/config', host);
+  const url = new URL('/api/v1/piano-games/chess/config', host);
   if (user) url.searchParams.set('user', user);
   let response;
   try {
@@ -119,7 +119,7 @@ export async function requestConfig({ host, user }) {
   }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`${host} GET /api/v1/chess/config returned HTTP ${response.status}: ${body}`);
+    throw new Error(`${host} GET /api/v1/piano-games/chess/config returned HTTP ${response.status}: ${body}`);
   }
   return response.json();
 }

@@ -10,7 +10,7 @@
 // its cell, so one cell is 100/72 ≈ 138.9% of the piece's own width; the
 // stylesheet does that conversion once.
 
-import { indexToCoord } from '../../../../../shared/gaming/checkers/engine.mjs';
+import { indexToCoord } from '../../../../../shared/gaming/rulesets/checkers/engine.mjs';
 
 /**
  * Cell offset from a move's destination back to its origin — i.e. where the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveCardGameUserId } from './CardGame.jsx';
+import { resolveCardGameUserId } from './cardGameIdentity.js';
 
 describe('Card Game piano identity', () => {
   it('preserves the kiosk selected user when context stores an id string', () => {

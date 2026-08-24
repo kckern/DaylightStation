@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { coordToIndex } from '@shared-gaming/checkers/engine.mjs';
+import { coordToIndex } from '@shared-gaming/rulesets/checkers/engine.mjs';
 import {
   DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, activeFileIndex, activeRankDisplayIndex,
-  fileRailAddresses, normalizeCheckersNotes, rankRailAddresses, shuffleCheckersNotes,
+  fileRailAddresses, rankRailAddresses, shuffleCheckersNotes,
   squareForAddress,
 } from './checkersAddress.js';
 
@@ -82,7 +82,7 @@ describe('Checkers active-card highlighting', () => {
   });
 });
 
-describe('Checkers re-dealing (shuffle_each_game)', () => {
+describe('Checkers each-game re-dealing', () => {
   it('shuffles both axes deterministically from a seed', () => {
     const notes = { file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES };
     const dealt = shuffleCheckersNotes(notes, 7);
@@ -101,24 +101,5 @@ describe('Checkers re-dealing (shuffle_each_game)', () => {
     const filePermutation = dealt.file_notes.map((midi) => DEFAULT_FILE_NOTES.indexOf(midi));
     const rankPermutation = dealt.rank_notes.map((midi) => DEFAULT_RANK_NOTES.indexOf(midi));
     expect(filePermutation).not.toEqual(rankPermutation);
-  });
-});
-
-describe('Checkers config — legacy square_notes must never crash the game', () => {
-  it('falls back to the default file/rank axes when the persisted config only has the old 32-note shape', () => {
-    const legacy = { square_notes: Array.from({ length: 32 }, (_, index) => 48 + index) };
-    expect(normalizeCheckersNotes(legacy)).toEqual({ file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES });
-  });
-
-  it('falls back when file_notes/rank_notes are missing, malformed, or the wrong length', () => {
-    expect(normalizeCheckersNotes(null)).toEqual({ file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES });
-    expect(normalizeCheckersNotes({})).toEqual({ file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES });
-    expect(normalizeCheckersNotes({ file_notes: [60, 62], rank_notes: DEFAULT_RANK_NOTES }))
-      .toEqual({ file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES });
-  });
-
-  it('passes through a valid, already-migrated config unchanged', () => {
-    const shuffled = shuffleCheckersNotes({ file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES }, 3);
-    expect(normalizeCheckersNotes(shuffled)).toEqual(shuffled);
   });
 });

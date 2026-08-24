@@ -1,5 +1,5 @@
 import { parentPort } from 'node:worker_threads';
-import { chooseColumn } from '../../../../shared/gaming/connect-four/opponent.mjs';
+import { chooseColumn } from '../../../../shared/gaming/rulesets/connect-four/opponent.mjs';
 
 parentPort.on('message', ({ type, id, board, level }) => {
   if (type !== 'search') return;

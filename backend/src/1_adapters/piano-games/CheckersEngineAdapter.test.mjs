@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCheckersEngine } from './CheckersEngineAdapter.mjs';
-import { legalMoves, replayGame } from '../../../../shared/gaming/checkers/engine.mjs';
+import { legalMoves, replayGame } from '../../../../shared/gaming/rulesets/checkers/engine.mjs';
 
 test('worker-backed Checkers adapter returns a legal move', async (context) => {
   const engine = createCheckersEngine();

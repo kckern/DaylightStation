@@ -114,7 +114,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     // Use white player on a mate-in-one board to finish quickly and read the record.
     saveGameRecord.mockClear();
     const makeElement = () => (
-      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" playerColor="b" gameConfig={{ shuffle_each_turn: false }} />
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" playerColor="b" gameConfig={{ addressing: { shuffle: 'never' } }} />
     );
     // Black to... FEN says w to move; player is black, so it IS the opponent's turn.
     requestBestMove.mockResolvedValue(null);
@@ -143,7 +143,7 @@ describe('help validity: seams the per-task tests could not see', () => {
     const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
       .pitch_classes.map((pc) => 60 + pc);
     const makeElement = () => (
-      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ shuffle_each_turn: false }} />
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
     );
     const { container, rerender } = render(makeElement());
     const play = async (notes) => {

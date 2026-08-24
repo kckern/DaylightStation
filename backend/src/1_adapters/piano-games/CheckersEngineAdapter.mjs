@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { replayGame } from '../../../../shared/gaming/checkers/engine.mjs';
-import { chooseMove } from '../../../../shared/gaming/checkers/opponent.mjs';
+import { replayGame } from '../../../../shared/gaming/rulesets/checkers/engine.mjs';
+import { chooseMove } from '../../../../shared/gaming/rulesets/checkers/opponent.mjs';
 import { createSerializedWorkerOpponent } from './SerializedWorkerOpponent.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

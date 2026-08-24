@@ -6,65 +6,45 @@ Reference for the DaylightStation piano game system — MIDI-driven games layere
 
 ## Card Game
 
-Card Game is the YAML-defined, Pokémon-themed tactical card battle at
-`/piano/games/card-game`. It is a persistent one-screen campaign with separate Home,
-Pokédex, Trainer, campaign-decision, and focused battle surfaces. A seeded route draws one
-unique opponent from each of five authored difficulty tiers, preferring unseen Pokémon.
-The complete route and four-opponent themed gym are pinned in session state, so resume and
-retry never redraw them; replay starts a new seed.
+Card Game is a mounted-data application of the generic `card-battle` ruleset at
+`/piano/games/card-game`. Repository code knows only participants, combatants,
+decks, moves, effects, turns, challenges, and outcomes. Names, characters,
+artwork, encounters, decks, progression, and presentation copy come from the
+mounted rules and content artifacts selected by the experience manifest.
 
-The player chooses an owned partner, sees the opponent's intent, and commits one of three
-compact piano move cards. A fourth move unlocks after the first route battle and a charged,
-one-use fifth finisher appears in the gym. Performance quality determines a direct,
-partial, or missed effect. Recruitment follows route battles two and four, then a gym-entry
-decision heals the roster before the four-part gym challenge. Future route identities stay
-concealed until their encounters begin.
-
-The presentation is character-first rather than dashboard-first. Home is anchored by the
-current partner and next gym, with daily/weekly progress reduced to compact supporting
-cards. Partner selection uses large Pokémon art. Battle keeps both combatants and health
-visible, represents the route with icons, and limits each move card to its name, skill,
-keyboard shortcut, and numeric effects. Primary labels are sized for the kiosk viewport;
-secondary metadata never carries the action by itself. The battle surface owns move/skill
-context, while the piano provider owns the exercise name and tempo, so an active challenge
-has one two-line heading instead of stacked duplicate instructions.
-
-Minor post-battle rewards are consolidated into one research report. Catch, badge,
-evolution/mastery, and trainer-unlock ceremonies are persisted before presentation and
-queued one at a time. Save & Exit suspends the active session and refunds an in-progress
-piano challenge instead of abandoning campaign progress.
-
-Longitudinal progress is rebuilt from authoritative session history: Pokédex states,
-partner bonds, best scores in four skill families, trainer XP/level, badges, daily research,
-weekly stamps/tickets, streak/rest tokens, and applied milestones. Guest sessions can
-demonstrate the full battle flow but are excluded from durable campaign rewards.
+The Piano surface translates a configured move's semantic musical requirement
+into a Piano-owned exercise-bank query. It presents the prepared exercise and
+returns the committed assessment result to Gaming. MIDI addressing, grading,
+instrument state, and the exercise corpus remain Piano concerns; combat and
+turn resolution remain deterministic `card-battle` concerns.
 
 Timed-pattern moves declare `resolution.effect: score`, `requires_pass: true`,
 and `failure: consume-no-effect`. A failed rubric therefore still consumes and
 records the move, but contributes no damage, block, or focus and does not stop
 the enemy turn. Existing moves without `resolution` retain score-scaled effects.
 
-Musical assessment is reserved for musical expectations. Hero mode uses timed
-assessment; native Space Invaders performs visible-object pitch collision and
+Musical assessment is reserved for musical expectations. Hero mode gives each
+spawned logical target a live timed attempt and aggregates those immutable
+target results into the level result; native Space Invaders performs visible-object pitch collision and
 returns no assessment result. Theory, Tetris, Side Scroller, and staff-command
 input use neutral recognition and cannot create attempt evidence.
 
 The ownership boundary is strict:
 
-- `shared/gaming/definitions/card-game.yml` contains combat content and a semantic
-  curriculum request. It pins tier pools, the gym roster, Pokédex metadata, and
-  media-relative SVG paths; it contains no MIDI numbers or ABC.
-- Pokémon SVGs are loaded through `/api/v1/proxy/media/stream/*`, rooted at the configured
-  media directory, so the game does not copy the 1,025-entry corpus into the frontend.
+- Mounted `rules.yml` contains mechanics and semantic challenge requests;
+  mounted `content.yml` contains product identities and copy. The repository
+  contains neither authored product definitions nor product media.
+- Product assets are resolved from mounted catalogs through configured media
+  adapters. No themed corpus is copied into the frontend or shared ruleset.
 - `BankChallengePolicy` chooses the exercise from the
-  [exercise bank](./exercise-bank.md) and materializes the musical prompt. It
-  replaced `PianoScaleChallengePolicy`, whose whole curriculum was nineteen
-  hardcoded items — four major scales, six chords, three arpeggios, three
-  patterns — which was also the game's ceiling. Selection is now a query: the
+  [exercise bank](./exercise-bank.md) and materializes the musical prompt. Selection is a query: the
   challenge kind maps to bank forms (`chord` to chords, `timed-pattern` to
   figures *and* runs), bounded by a level estimated from attempt history, so a
-  kind draws from hundreds of levelled instances rather than an array index. The
-  old policy remains as the fallback for a kiosk with no content mount.
+  kind draws from mounted, levelled instances rather than an embedded array.
+  When the content mount is unavailable, `PianoScaleChallengePolicy` remains a
+  deliberately small compatibility fallback. It emits the same canonical
+  `expected_events` and `assessment` contract, so fallback operation does not
+  reopen the old flattened-prompt assessment path.
 - The adaptive behaviour is unchanged and deliberate: fewest attempts first, then
   weakest average, rotating through the equally-stale head so a session does not
   serve the same exercise twice running. An empty level band widens rather than
@@ -76,13 +56,14 @@ The ownership boundary is strict:
   ordered sequences, timing observations, and the prepared requirement through
   `performance/assessmentSession.js`. It persists completed/interrupted attempts
   and terminates on timeout or MIDI disconnect.
-- The Gaming authority persists every lifecycle boundary, route/gym draw, health,
-  recruitment choice, finisher use, queued ceremony, suspension, explicit abandonment,
-  and stale-session recovery.
-- `shared/gaming/campaignProgress.mjs` folds completed, abandoned, and active sessions into
-  the public campaign projection without making presentation state authoritative.
-- `journeySfx.js` owns the semantic Web Audio cue catalog. Views emit stable event IDs;
-  sounds never participate in reducer decisions.
+- Prepared challenges keep canonical timing in `assessment.mode`,
+  `assessment.tempo_bpm`, and `assessment.lead_in_ms`; the provider and readiness
+  CLI do not consume deprecated flattened prompt timing fields.
+- The Gaming authority persists generic session, command, and ruleset event
+  state. Any configured progression is expressed by mounted artifacts rather
+  than a product-specific reducer or campaign service.
+- Audio and decorative effects react to committed semantic events and never
+  participate in reducer decisions.
 
 ### Practice evidence
 
@@ -106,24 +87,19 @@ gap is counted in `metrics.staleInputsIgnored` and logged as
 `piano.challenge.pre-start-input-ignored` — a nonzero count means the player was noodling
 over the card animation, not that they played badly.
 
-### Live readiness check
-
-Run the end-to-end verifier against the deployed PianoKiosk route:
+Mounted artifact readiness is verified without encoding any product pack in source:
 
 ```bash
-npm run piano:card-game:verify
+# Local/mounted, read-only: artifact metadata, ownership separation, rule-module
+# validation, and the exact rules/content/definition hashes.
+node cli/gaming-artifacts.cli.mjs verify card-game --json
+
 ```
 
-The verifier in `cli/piano-card-game.cli.mjs` rejects stale definitions, validates all five
-tier pools and four gym assets, opens the route at 1280×800, completes server-selected
-Scale, Chord, Arpeggio, and Rhythm prompts through the kiosk MIDI bridge, and plays the
-campaign through its queued decisions and ceremonies. It also verifies the Home, partner,
-and battle surfaces do not scroll or place controls outside the viewport. Use `--headed`,
-`--json`, or `--screenshot /tmp/card-game.png` when diagnosing a deployment.
-
-The engineering pilot is test-ready, but the product decision remains field-gated. A
-supervised pilot must still determine whether players understand the loop, enjoy it, and
-want to replay before this pattern is generalized to more games.
+The generic artifact verifier defaults to `DAYLIGHT_DATA_PATH`, or to
+`$DAYLIGHT_BASE_PATH/data`; an operator may instead pass `--data-dir DIR`.
+Ruleset tests verify card-battle behavior and Piano provider integration using
+generic fixtures. Product themes, combatants, decks, and media remain mounted.
 
 ---
 
@@ -141,7 +117,7 @@ mechanics:
 | Game | Shared service use | Game-owned behavior | Advancement evidence |
 |---|---|---|---|
 | Piano Hero | timed target matching, misses, timing criteria, portable run result | points, combo, highway effects | in memory by default |
-| Space Invaders | native mode: no assessment; Hero mode: timed canonical chart | lasers, health, points, combo | native mode creates no evidence |
+| Space Invaders | native mode: no assessment; Hero mode: timed logical-note ledger with level spans | lasers, health, points, combo | native mode creates no evidence |
 | Flashcards | held attempts for scored note cards; neutral recognition for theory | card score, level ladder, rolling accuracy | in memory by default |
 | Battle Stadium | held chords or ordered cursor, timing dimensions, rubric and pace gate | move strength, damage, campaign flow | bank-backed challenges persist to the piano ledger |
 | Tetris | exact-MIDI held command recognition | movement, rotations, line score, repeat timing | none |
@@ -317,7 +293,6 @@ PianoTetris
 | `PianoTetris/useTetrisGame.js` | Game state machine, gravity, locking, levels |
 | `PianoTetris/tetrisEngine.js` | Pure functions: board ops, collision, rotation, scoring |
 | `game-platform/families/bound-action/useStaffMatching.js` | shared MIDI → action matching with hold-to-repeat |
-| `PianoTetris/useStaffMatching.js` | compatibility export for existing Tetris callers/tests |
 | `PianoTetris/components/TetrisBoard.jsx` | Grid renderer with piece colors |
 | `PianoTetris/components/TetrisBoard.scss` | Board styles |
 | `PianoTetris/components/TetrisOverlay.jsx` | Countdown and game-over screens |
@@ -671,7 +646,7 @@ instrument is the controller.
 ### Opponent: server engine with a local fallback
 
 The opponent is served by the backend — a Stockfish WASM engine behind
-`POST /api/v1/chess/move` — with the bundled heuristic engine as a local fallback. Every
+`POST /api/v1/piano-games/chess/move` — with the bundled heuristic engine as a local fallback. Every
 request carries the position, the active rung, the ladder level, and a per-game id; on any transport or
 engine failure the client falls back to the bundled engine so the game never blocks on
 the network. The reply is delayed by `opponent_delay_ms` so it reads as a reply, not a
@@ -690,7 +665,7 @@ override:
 | Household defaults | `data/household/config/chess.yml` |
 | Per-user override | `data/users/{userId}/apps/chess/config.yml` |
 
-`GET /api/v1/chess/config?user={id}` serves the merge; `PUT` the same path writes a
+`GET /api/v1/piano-games/chess/config?user={id}` serves the merge; `PUT` the same path writes a
 sparse patch into the user's own layer only. Guests never reach the per-user endpoints —
 their changes apply for the session and evaporate. Scalar keys and the `rungs` ladder
 replace wholesale (a half-merged ladder is never what anyone means); only the `feedback`
@@ -803,7 +778,7 @@ counts moves-with-help, not presses.
 
 ### The game record
 
-Each finished game posts one record to `POST /api/v1/chess/games?user={id}`, stored
+Each finished game posts one record to `POST /api/v1/piano-games/chess/games?user={id}`, stored
 under the player's own data. It holds facts, never a score: result, outcome, move
 count, hints used, best moves used, the rung, and duration. Guests are not recorded —
 they never reach the per-user endpoints.

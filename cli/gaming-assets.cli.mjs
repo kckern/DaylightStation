@@ -19,7 +19,6 @@ import {
   measureFrameGrid,
   renderLayout,
   renderScene,
-  renderLegacyScene,
   renderSceneQa,
   renderSceneQaSet,
   approveSceneQaBaseline,
@@ -32,7 +31,6 @@ import {
   renderComponentQa,
   renderComponentQaSet,
   explainPrefab,
-  renderPrefabPreview,
   deriveAtlas,
   deriveBlobAutotile,
   deriveBlobAutotileSet,
@@ -40,7 +38,6 @@ import {
   deriveFenceConnectorCatalog,
   validateManifest,
   writeYaml,
-  migratePresentationCatalog,
 } from './gaming-assets/lib.mjs';
 
 const HELP = `gaming-assets — audit and preview private game-art catalogs
@@ -65,7 +62,6 @@ Commands:
   animation-qa-set --root <common-dir> --catalog <catalog.yml> --out-dir <directory> [--asset <id-or-prefix>] [--scale 4]
   render     --root <common-dir> --manifest <layout.yml> --out <layout.png>
   scene      --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out <scene.png>
-  scene-legacy --root <common-dir> --catalog <v1-pack.yml> --manifest <v1-scene.yml> --out <scene.png>
   scene-qa   --root <common-dir> --catalog <pack.yml> --manifest <scene.yml> --out-dir <directory>
   scene-qa-set --root <common-dir> --manifest <set.yml> --out-dir <directory> [--candidate true]
   scene-qa-approve --root <common-dir> --manifest <set.yml> --report <report.yml> --artifacts-dir <directory>
@@ -78,13 +74,11 @@ Commands:
   component-qa --root <common-dir> --catalog <pack.yml> --asset <asset-id> --out <matrix.png> [--scale 3]
   component-qa-set --root <common-dir> --catalog <pack.yml> --out-dir <directory> [--scale 3]
   prefab-explain --root <common-dir> --catalog <pack.yml> --id <prefab> [--params size=large,garden=false]
-  prefab-render --root <common-dir> --catalog <pack.yml> --id <prefab> --out <png> [--params size=large] [--viewport 320x240] [--scale 1]
   derive     --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
   derive-blob --root <common-dir> --recipe <recipe.yml> --out <atlas.png>
   derive-blob-set --root <common-dir> --manifest <derivations.yml>
   derive-blob-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
   derive-fence-catalog --root <common-dir> --manifest <derivations.yml> --catalog-out <catalog.yml>
-  migrate-v2 --root <common-dir> --catalog <v1-pack.yml> --scenes <v1-scenes-dir> --out-dir <v2-directory>
 
 All source paths are relative to --root. The commands never alter raw source images.
 Set DAYLIGHT_BASE_PATH to omit --root; it defaults to $DAYLIGHT_BASE_PATH/media/games/_common.
@@ -231,9 +225,6 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
       case 'scene':
         report = await renderScene({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
         break;
-      case 'scene-legacy':
-        report = await renderLegacyScene({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), out: required(parsed.flags, 'out') });
-        break;
       case 'scene-qa':
         report = await renderSceneQa({ root, catalogPath: required(parsed.flags, 'catalog'), manifestPath: required(parsed.flags, 'manifest'), outDir: required(parsed.flags, 'out-dir') });
         break;
@@ -276,12 +267,6 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
       case 'prefab-explain':
         report = await explainPrefab({ catalogPath: required(parsed.flags, 'catalog'), id: required(parsed.flags, 'id'), params: params(parsed.flags.params) });
         break;
-      case 'prefab-render':
-        report = await renderPrefabPreview({
-          root, catalogPath: required(parsed.flags, 'catalog'), id: required(parsed.flags, 'id'), params: params(parsed.flags.params), out: required(parsed.flags, 'out'),
-          viewport: parsePair(parsed.flags.viewport ?? '320x240', '--viewport'), scale: integer(parsed.flags, 'scale', 1), background: parsed.flags.background ?? '#171923',
-        });
-        break;
       case 'derive':
         report = await deriveAtlas({ root, recipePath: required(parsed.flags, 'recipe'), out: required(parsed.flags, 'out') });
         break;
@@ -298,9 +283,6 @@ export async function main(argv = process.argv.slice(2), { env = process.env, st
         break;
       case 'derive-fence-catalog':
         report = await deriveFenceConnectorCatalog({ root, manifestPath: required(parsed.flags, 'manifest'), catalogOut: required(parsed.flags, 'catalog-out') });
-        break;
-      case 'migrate-v2':
-        report = await migratePresentationCatalog({ root, catalogPath: required(parsed.flags, 'catalog'), scenesDir: required(parsed.flags, 'scenes'), outDir: required(parsed.flags, 'out-dir') });
         break;
       default:
         stderr.write(`ERROR: unknown command: ${parsed.command}\n`); stdout.write(HELP); return 2;

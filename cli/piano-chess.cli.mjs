@@ -26,7 +26,7 @@ import { dirname, resolve as resolvePath } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { chromium } from 'playwright';
-import { INITIAL_FEN, legalMoves } from '../shared/gaming/chess/engine.mjs';
+import { INITIAL_FEN, legalMoves } from '../shared/gaming/rulesets/chess/engine.mjs';
 
 export const DEFAULT_URL = 'https://daylightlocal.kckern.net/piano/games/chess';
 const DEFAULT_USER = 'guest';

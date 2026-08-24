@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
-import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
-import { LADDER_SIZE } from '@shared-gaming/chess/ladder.mjs';
-import { describeGame, legalMoves } from '@shared-gaming/chess/engine.mjs';
+import { chooseMove } from '@shared-gaming/rulesets/chess/opponent.mjs';
+import { LADDER_SIZE } from '@shared-gaming/rulesets/chess/ladder.mjs';
+import { describeGame, legalMoves } from '@shared-gaming/rulesets/chess/engine.mjs';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
 import { commitMove } from './chessGameState.js';
 
@@ -23,6 +23,7 @@ export function useChessOpponentTurn({
   announce,
   logger,
   requestMove,
+  commitAuthorityMove = null,
 }) {
   const requestedFenRef = useRef(null);
   const effectiveOpponentRef = useRef(null);
@@ -53,7 +54,7 @@ export function useChessOpponentTurn({
     });
   }, [gameId, gameRef, requestMove, rungId, userId]);
 
-  const onReply = useCallback((served) => {
+  const onReply = useCallback(async (served) => {
     const fen = requestedFenRef.current;
     const current = gameRef.current;
     if (!fen || current.game.fen !== fen) {
@@ -87,9 +88,11 @@ export function useChessOpponentTurn({
         });
         continue;
       }
+      let committedState = committed.state;
+      if (commitAuthorityMove) committedState = await commitAuthorityMove(candidate);
       setOpponentError(null);
-      setGame(committed.state);
-      announce(committed.state);
+      setGame(committedState);
+      announce(committedState);
       logger.info('opponent-replied', {
         san: committed.event.move?.san ?? candidate.san ?? null,
         engine: candidate.source === 'server' ? (served.engine ?? 'server') : candidate.source,
@@ -105,7 +108,7 @@ export function useChessOpponentTurn({
     }
     setOpponentError('Opponent could not make a legal move.');
     logger.error?.('opponent-reply-unrecoverable', { gameId, fen });
-  }, [announce, gameId, gameRef, localFallbackDifficulty, logger, setGame]);
+  }, [announce, commitAuthorityMove, gameId, gameRef, localFallbackDifficulty, logger, setGame]);
 
   const { thinking } = useOpponentReply({
     enabled,

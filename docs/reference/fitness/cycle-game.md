@@ -2,6 +2,8 @@
 
 **Status:** Current as of 2026-06-05.
 
+Fitness remains the context owner for sensors, safety, governance, race language, scoring, and its native surface. Future protocol integration may expose Cycle Race through the thin Gaming `RuleModule`/coordinator contracts, but this delivery does not move Fitness code or policy into Gaming.
+
 > **Not to be confused with the Cycle _Challenge_.** This document covers the
 > **Cycle Game / Cycle Race** — the multi-rider racing widget (`cycle_game`
 > fitness module: lobby → countdown → live race → results, with ghosts and a

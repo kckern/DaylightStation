@@ -10,7 +10,7 @@ const CONFIG = {
     { id: 'steady', label: 'Steady', skill: 8, movetime_ms: 300 },
   ],
   opponent_delay_ms: 700,
-  shuffle_each_turn: true,
+  addressing: { vocabulary: 'chords', shuffle: 'each_turn' },
   feedback: { flash_rejected: true, toast: true },
 };
 
@@ -59,7 +59,7 @@ describe('ChessSettingsPanel', () => {
     const onChange = vi.fn();
     render(<ChessSettingsPanel config={CONFIG} rungId="learner" onChange={onChange} onClose={() => {}} />);
     fireEvent.click(screen.getByRole('switch', { name: /shuffle/i }));
-    expect(onChange).toHaveBeenCalledWith({ shuffle_each_turn: false });
+    expect(onChange).toHaveBeenCalledWith({ addressing: { shuffle: 'never' } });
     fireEvent.click(screen.getByRole('radio', { name: 'Thoughtful' }));
     expect(onChange).toHaveBeenCalledWith({ opponent_delay_ms: 1200 });
   });

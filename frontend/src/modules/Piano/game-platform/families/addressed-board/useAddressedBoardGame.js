@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../lib/logging/Logger.js';
 
+let localSessionSequence = 0;
+
+function createLocalSessionId(gameId) {
+  localSessionSequence = (localSessionSequence + 1) >>> 0;
+  return `${gameId}-${Date.now()}-${localSessionSequence}`;
+}
+
 /**
  * The session a board game keeps around its rules.
  *
@@ -40,7 +47,7 @@ export function useAddressedBoardGame({
   const [ladder, setLadder] = useState(null);
   const [localPractice, setLocalPractice] = useState(false);
   const [seed, setSeed] = useState(() => Date.now() >>> 0);
-  const [gameSessionId, setGameSessionId] = useState(() => `${gameId}-${Date.now()}`);
+  const [gameSessionId, setGameSessionId] = useState(() => createLocalSessionId(gameId));
 
   const rankedRef = useRef(true);
   const savedRef = useRef(false);
@@ -134,7 +141,7 @@ export function useAddressedBoardGame({
     rankedRef.current = true;
     savedRef.current = false;
     setSeed((value) => (value + 1) >>> 0);
-    const next = `${gameId}-${Date.now()}`;
+    const next = createLocalSessionId(gameId);
     setGameSessionId(next);
     logger.info('game.restart', { gameId, gameSessionId: next });
     return next;

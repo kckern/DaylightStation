@@ -1,10 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async ({ page }) => {
+test('Card Game tactical hand and scale challenge fit the 1280x800 piano viewport', async ({ page }) => {
   // Keep the kiosk's bridge-first MIDI input healthy in headless Chromium so
   // the provider does not correctly terminate the challenge as disconnected
   // before there is time to inspect its layout.
   await page.addInitScript(() => {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith('gaming:card-game:')) window.localStorage.removeItem(key);
+    }
     const NativeWebSocket = window.WebSocket;
     class BridgeSocket {
       constructor(url) {
@@ -44,11 +48,9 @@ test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async
   if (await continueWithoutPiano.isVisible()) await continueWithoutPiano.click();
 
   const cards = page.locator('.battle-card');
-  await expect(cards).toHaveCount(4);
-  await expect(page.getByLabel('Pikachu active Pokémon')).toBeVisible();
-  await expect(page.getByLabel('Squirtle active Pokémon')).toBeVisible();
-  await expect(page.getByAltText('Pikachu')).toBeVisible();
-  await expect(page.getByAltText('Squirtle')).toBeVisible();
+  await expect(cards).toHaveCount(3);
+  await expect(page.locator('.combatant-combatant--enemy')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your hand' })).toBeVisible();
   const viewport = page.viewportSize();
   for (let index = 0; index < await cards.count(); index += 1) {
     const box = await cards.nth(index).boundingBox();
@@ -60,10 +62,12 @@ test('Card Game hand and scale challenge fit the 1280x800 piano viewport', async
     expect(box.width).toBeGreaterThanOrEqual(160);
     expect(box.height).toBeGreaterThanOrEqual(120);
   }
-  await expect(cards.first()).toBeEnabled();
+  const scaleCard = cards.filter({ hasText: /scale/i });
+  await expect(scaleCard).toHaveCount(1);
+  await expect(scaleCard).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(viewport.height);
 
-  await cards.first().click();
+  await scaleCard.click();
   const overlay = page.locator('.gaming-challenge-overlay');
   await expect(overlay).toBeVisible();
   await expect(page.getByText('Play from left to right', { exact: false })).toBeVisible({ timeout: 15000 });

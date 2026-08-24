@@ -31,7 +31,8 @@ import FilterPoc from './modules/Player/poc/FilterPoc.jsx';
 import SetupWizard from './modules/Auth/SetupWizard.jsx';
 import InviteAccept from './modules/Auth/InviteAccept.jsx';
 import { ScreenRenderer } from './screen-framework/index.js';
-import GameShowHost from './modules/GameShow/host/GameShowHost.jsx';
+import GroupPlayHost from './modules/Gaming/environments/group-play/surfaces/GroupPlayHost.jsx';
+import GroupPlayVerifier from './modules/Gaming/environments/group-play/surfaces/GroupPlayVerifier.jsx';
 import { configurePlaybackLogger } from './modules/Player/lib/playbackLogger.js';
 import { configureDaylightLogger, getDaylightLogger } from './lib/logging/singleton.js';
 import { setupGlobalErrorHandlers } from './lib/logging/errorHandlers.js';
@@ -218,7 +219,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         {/* Host companion talks to the singleton wsService directly (auto-connects on
             first subscription) — no WebSocketProvider needed. Commands go out via HTTP. */}
-        <Route path="/gameshow/host/:sessionId" element={<GameShowHost />} />
+        <Route path="/group-play/host/:sessionId" element={<GroupPlayHost />} />
+        <Route path="/group-play/verify/:sessionId" element={<GroupPlayVerifier />} />
         <Route path="/setup" element={<SetupWizard onComplete={() => window.location.href = '/'} />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
         <Route path="/filter-poc" element={<FilterPoc />} />

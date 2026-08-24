@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { OpponentRosterModal } from './OpponentRoster.jsx';
 
 const ROSTER = [
-  { level: 0, name: 'Bulbasaur', theme: '#3a6' },
-  { level: 1, name: 'Ivysaur', theme: '#486' },
-  { level: 2, name: 'Venusaur', theme: '#284' },
+  { level: 0, name: 'Sprout', theme: '#3a6' },
+  { level: 1, name: 'Bloom', theme: '#486' },
+  { level: 2, name: 'Canopy', theme: '#284' },
 ];
 
 describe('OpponentRosterModal', () => {

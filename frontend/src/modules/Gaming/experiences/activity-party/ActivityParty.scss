@@ -1,0 +1,12 @@
+.activity-party { min-height: 100%; padding: 2rem; color: #fff; background: radial-gradient(circle at top, #27356c, #080b1c 70%); display: grid; gap: 1.5rem; }
+.activity-party > header { display: flex; align-items: center; justify-content: space-between; text-transform: uppercase; letter-spacing: .08em; }
+.activity-party button { min-height: 3.25rem; padding: .7rem 1.25rem; font: inherit; font-weight: 800; border-radius: .65rem; border: 2px solid #e6b325; background: #121b43; color: #fff; }
+.activity-party__ready, .activity-party__prompt, .activity-party__judge, .activity-party__verify, .activity-party__complete, .activity-party__charades { display: grid; place-items: center; gap: 1.25rem; text-align: center; }
+.activity-party__performing { position: relative; display: grid; gap: 1rem; }
+.activity-party__timer { position: absolute; right: 1rem; top: 1rem; display: grid; place-items: center; z-index: 2; }
+.activity-party__timer > * { grid-area: 1 / 1; }
+.activity-party__aid { display: flex; justify-content: center; gap: 1rem; font-size: 1.5rem; }
+.group-play-drawing canvas { display: block; width: min(100%, 1280px); aspect-ratio: 16 / 9; background: #fff; cursor: crosshair; touch-action: none; border-radius: .75rem; }
+.group-play-drawing nav { display: flex; gap: .75rem; justify-content: center; margin-top: .75rem; }
+.group-play-decoder-text { padding: .55rem 1rem; border-radius: .35rem; font-weight: 900; text-shadow: 0 1px #000; }
+.group-play-decoder-mask { max-height: 12rem; background: #fff; }
