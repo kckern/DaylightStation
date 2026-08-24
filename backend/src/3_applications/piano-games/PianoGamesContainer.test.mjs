@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PianoGamesContainer } from './PianoGamesContainer.mjs';
-import { applyGameToProgress, createLadderProgress, DEFAULT_LADDER_POLICY } from '../../../../shared/gaming/chess/ladder.mjs';
+import { applyGameToProgress, createLadderProgress, DEFAULT_LADDER_POLICY } from '../../../../shared/gaming/rulesets/chess/ladder.mjs';
 
 test('application clamps a move request before invoking its game gateway', async () => {
   let received;
@@ -28,7 +28,7 @@ test('records client-fallback games without advancing ranked progress', async ()
   const container = new PianoGamesContainer({
     repository: {
       saveRecord: async () => true,
-      readProgress: async () => ({ unlockedThrough: 1, series: ['win', 'win'] }),
+      readProgress: async () => ({ unlockedThrough: 1, series: [{ result: 'win', counted: true }, { result: 'win', counted: true }] }),
       writeProgress: async () => { wroteProgress = true; },
     },
     games: {
@@ -56,7 +56,7 @@ test('threads a recorded game\'s help data through to the ladder, so a ceiling b
   const container = new PianoGamesContainer({
     repository: {
       saveRecord: async () => true,
-      readProgress: async () => ({ unlockedThrough: 1, series: ['win', 'win'] }),
+      readProgress: async () => ({ unlockedThrough: 1, series: [{ result: 'win', counted: true }, { result: 'win', counted: true }] }),
       writeProgress: async (gameId, userId, progress) => { writtenProgress = progress; },
     },
     games: {
@@ -76,13 +76,13 @@ test('threads a recorded game\'s help data through to the ladder, so a ceiling b
 
 // --- Chess promotion parity (Task 2: piano-game-platform-integration) ---
 //
-// Chess's own promotion arithmetic (shared/gaming/chess/ladder.mjs,
-// applyGameToProgress/countsTowardPromotion) is still what /api/v1/chess/*
+// Chess's own promotion arithmetic (shared/gaming/rulesets/chess/ladder.mjs,
+// applyGameToProgress/countsTowardPromotion) is still what /api/v1/piano-games/chess/*
 // uses today, unchanged by this task. The container's copy of the same
 // policy (OpponentLadder + this container's chess registration) has to reach
 // the identical counted/promotion decision for the identical game, or a
 // player who happened to be routed through the container would be judged by
-// different rules than the one routed through the legacy path — invisible
+// different rules than the Piano-native path — invisible
 // until a family reports a promotion that "should" have happened, or didn't.
 //
 // The chess domain numbers levels from 0 (rungForLevel/DEFAULT_ROSTER);
@@ -119,7 +119,7 @@ function containerForParity() {
       // Four wins already banked at level 1 — the container's own numbering
       // for the same bottom rung chessProgressWithFourBankedWins() reaches
       // via applyGameToProgress's 0-based level.
-      readProgress: async () => ({ unlockedThrough: 1, series: ['win', 'win', 'win', 'win'] }),
+      readProgress: async () => ({ unlockedThrough: 1, series: Array.from({ length: 4 }, () => ({ result: 'win', counted: true })) }),
       writeProgress: async () => {},
     },
     games: { chess: { opponents: CHESS_OPPONENTS_FIXTURE, promotion: CHESS_PROMOTION, opponentGateway: {} } },

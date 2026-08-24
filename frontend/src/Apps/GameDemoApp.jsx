@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
-import InteractiveSceneSurface from '../modules/Gaming/presentation/InteractiveSceneSurface.jsx';
-import { createCanvasSceneRenderer } from '../modules/Gaming/presentation/canvasRenderer.js';
-import { createPresentationApi } from '../modules/Gaming/presentation/presentationApi.js';
+import InteractiveSceneSurface from './GameDemo/InteractiveSceneSurface.jsx';
+import { createCanvasSceneRenderer } from '../lib/presentation/scenes/CanvasPlanRenderer.js';
+import { createPresentationApi } from '../lib/presentation/scenes/presentationApi.js';
 import {
   DEMO_THEME_TAGS,
   actorChoices,
@@ -10,8 +10,8 @@ import {
   catalogCoverage,
   equipmentForAssembly,
   statesForAssembly,
-} from '../modules/Gaming/presentation/interactiveModel.js';
-import { PRESENTATION_DPAD } from '../modules/Gaming/presentation/usePresentationInput.js';
+} from './GameDemo/interactiveModel.js';
+import { PRESENTATION_DPAD } from './GameDemo/usePresentationInput.js';
 import './GameDemoApp.scss';
 
 const PACK_ID = 'showcase-v2';

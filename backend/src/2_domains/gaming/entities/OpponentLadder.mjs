@@ -3,19 +3,8 @@ function clampLevel(value, maximum) {
   return Number.isFinite(parsed) ? Math.min(maximum, Math.max(1, Math.trunc(parsed))) : 1;
 }
 
-// A series entry used to be a bare 'win'/'loss'/'draw' string — that was the
-// whole shape before help ceilings existed, and Connect Four/Checkers already
-// have real players with that exact shape sitting in their persisted YAML.
-// Coercing it here (rather than requiring the repository to migrate on write)
-// means a legacy file loads with the same wins tally it had the day before
-// this feature shipped: every old entry is treated as counted, because under
-// the old rules every recorded game counted. Only entries written going
-// forward can carry counted: false, and only once a caller actually supplies
-// helpCeilings or ranked: false.
 function normalizeSeriesEntry(entry) {
-  if (typeof entry === 'string') {
-    return { result: entry === 'win' || entry === 'loss' ? entry : 'draw', counted: true };
-  }
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('OpponentLadder: series entries require { result, counted }');
   const result = entry?.result === 'win' || entry?.result === 'loss' ? entry.result : 'draw';
   return { result, counted: entry?.counted !== false };
 }
@@ -24,23 +13,14 @@ function normalizeSeriesEntry(entry) {
  * Does a game at `resolvedLevel`, played with this much help, count toward
  * promotion?
  *
- * Mirrors `countsTowardPromotion` in shared/gaming/chess/ladder.mjs — same two
- * gates (ranked, then help ceilings with the same unrestricted-level carve-out
- * and the same strictly-greater-than breach test), ported so the generic
- * ladder can carry chess's policy once chess migrates onto it (see the
- * piano-game-platform-integration plan). A ceiling of `undefined` in
- * `helpCeilings` means that dimension was never configured for this game and
- * so is unlimited — distinct from chess's own defaults, which are finite
- * (max_best_moves: 0 etc.) because chess always ships a policy. The generic
- * ladder has no opinion of its own; a caller that wants a chess-like ceiling
- * must say so.
+ * Ranked play and configured help ceilings are independent gates. A ceiling
+ * of `undefined` means that dimension is unrestricted. The ladder has no
+ * game-specific defaults; every caller supplies its own policy.
  */
 function withinHelpCeilings(resolvedLevel, help, helpCeilings) {
   if (!helpCeilings) return true;
   const unrestrictedBelowLevel = Number(helpCeilings.unrestricted_below_level || 0);
-  // The bottom of the ladder teaches the game, not the discipline — same
-  // rationale as chess's own carve-out, expressed in this ladder's own
-  // (1-based) level numbering. See OpponentLadder's class comment.
+  // Callers may reserve initial rungs for unrestricted teaching play.
   if (resolvedLevel < unrestrictedBelowLevel) return true;
   const { max_hints: maxHints, max_best_moves: maxBestMoves, max_takebacks: maxTakebacks } = helpCeilings;
   if (maxBestMoves != null && Number(help?.best_moves || 0) > Number(maxBestMoves)) return false;
@@ -53,12 +33,8 @@ function withinHelpCeilings(resolvedLevel, help, helpCeilings) {
  * Pure aggregate that owns unlock and promotion invariants for opponent
  * ladders.
  *
- * Levels here are 1-based (the first opponent is level 1), unlike chess's
- * 0-based engine skill levels in shared/gaming/chess/ladder.mjs. That matters
- * for `helpCeilings.unrestricted_below_level`: this ladder reads it in its own
- * (1-based) numbering, so a caller porting a chess-style policy across the two
- * systems must add 1 to the threshold, not copy it verbatim. This ladder does
- * not do that conversion itself — it only knows its own numbering.
+ * Levels are 1-based: the first opponent is level 1. The
+ * `helpCeilings.unrestricted_below_level` threshold uses that same numbering.
  */
 export class OpponentLadder {
   constructor({ opponents, progress = null, winsRequired = 3, seriesLength = 5, helpCeilings = null }) {
@@ -97,9 +73,7 @@ export class OpponentLadder {
     // Recorded either way — an unranked or help-heavy game is not evidence
     // this rung is beaten, but it is still evidence the player showed up, and
     // dropping it entirely would make the "last N games" window lie about how
-    // many games were actually played. Mirrors `applyGameToProgress` in
-    // shared/gaming/chess/ladder.mjs, which keeps every game and lets
-    // `counted` do the filtering.
+    // many games were actually played.
     const series = [...this.series, { result: resultValue, counted }].slice(-this.seriesLength);
     const wins = series.filter((entry) => entry.counted && entry.result === 'win').length;
     const promoted = resolved.level === this.unlockedThrough

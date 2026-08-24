@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { legalDestinations } from '@shared-gaming/chess/index.mjs';
+import { legalDestinations } from '@shared-gaming/rulesets/chess/index.mjs';
 import { DEFAULT_CHORD_SCHEME, chordBoard, squareToChord } from './chordAddress.js';
 import {
   applySquare, capturedPieces, clearSelection, commitMove, createChessGameState, destinationsFor, isPlayerTurn, pieceAt, playableSources, takeMoveBack, fenBefore,

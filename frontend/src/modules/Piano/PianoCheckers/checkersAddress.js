@@ -1,17 +1,11 @@
-import { coordToIndex } from '@shared-gaming/checkers/engine.mjs';
-import { shuffle } from '@shared-gaming/rng.mjs';
+import { coordToIndex } from '@shared-gaming/rulesets/checkers/engine.mjs';
+import { shuffle } from '@shared-gaming/mechanics/random.mjs';
 import { DEFAULT_STAFF_SCHEME, SPLIT_MIDI, axisIndex, noteLetter, noteName } from '../PianoChessGame/staffAddress.js';
 
 /**
- * Checkers, addressed like chess — a REDESIGN, not a display tweak.
- *
- * The original scheme gave each of the 32 playable squares its own unique
- * note (`config.square_notes`), and that is exactly why it could never grow
- * an axis rail: a rail is only truthful if a whole row shares one note and a
- * whole column shares another, and 32 independent notes share nothing. Chess
- * already solved the real problem — a square is TWO notes, a file note and a
- * rank note, played together — so checkers adopts the identical scheme rather
- * than inventing a third vocabulary: `DEFAULT_STAFF_SCHEME`'s `roots` become
+ * Checkers uses the same two-axis instrument vocabulary as chess: a square is
+ * two notes, a file note and a rank note, played together.
+ * `DEFAULT_STAFF_SCHEME`'s `roots` become
  * the eight file notes, its `qualities` the eight rank notes, same split at
  * middle C, same octave-tolerant matching. A player who has learned to read
  * one board reads both.
@@ -31,30 +25,6 @@ export const DEFAULT_FILE_NOTES = DEFAULT_STAFF_SCHEME.roots;
 export const DEFAULT_RANK_NOTES = DEFAULT_STAFF_SCHEME.qualities;
 
 const AXIS_LENGTH = 8;
-
-function isValidAxis(notes) {
-  return Array.isArray(notes) && notes.length === AXIS_LENGTH && notes.every(Number.isFinite);
-}
-
-/**
- * A persisted config from before this redesign carries `square_notes` (32
- * entries) and nothing else — no `file_notes`/`rank_notes` at all. Reading
- * `config.file_notes[0]` against that shape doesn't throw (it's just
- * `undefined`), but everything built on it silently breaks: `squareForAddress`
- * would compare held notes against `undefined`, match nothing, and the game
- * would look permanently unresponsive with no error to explain why.
- *
- * Normalizing here — once, before anything else reads the config — means the
- * old shape degrades to "this player is on the new default axes" instead of
- * to a silent dead end. It is deliberately permissive: anything that isn't a
- * clean 8-note axis (missing, wrong length, non-numeric) falls back rather
- * than partially trusting it.
- */
-export function normalizeCheckersNotes(config) {
-  const file_notes = isValidAxis(config?.file_notes) ? config.file_notes : DEFAULT_FILE_NOTES;
-  const rank_notes = isValidAxis(config?.rank_notes) ? config.rank_notes : DEFAULT_RANK_NOTES;
-  return { file_notes, rank_notes };
-}
 
 /**
  * Deals a fresh mapping of the same sixteen notes onto the board — the
@@ -134,6 +104,6 @@ export function activeRankDisplayIndex(heldNotes, notes) {
 }
 
 export default {
-  DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, normalizeCheckersNotes, shuffleCheckersNotes,
+  DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, shuffleCheckersNotes,
   squareForAddress, fileRailAddresses, rankRailAddresses, activeFileIndex, activeRankDisplayIndex,
 };

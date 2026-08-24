@@ -7,7 +7,7 @@ import {
   materializePresentationCatalog,
   validatePresentationCatalog,
   validateTopDownScene,
-} from '#shared/presentation/index.mjs';
+} from '#shared/presentation/scenes/index.mjs';
 
 const PACK_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 

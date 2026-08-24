@@ -7,12 +7,14 @@ function safeSegment(value) {
   return text;
 }
 
-export function createPianoGamesRouter({ container, logger = null, compatibilityRouters = {} }) {
+export function createPianoGamesRouter({ container, logger = null, nativeRouters = {} }) {
   const router = express.Router({ mergeParams: true });
   const userFrom = (req) => req.query.user ? safeSegment(req.query.user) : null;
 
-  for (const [gameId, compatibilityRouter] of Object.entries(compatibilityRouters)) {
-    router.use(`/${safeSegment(gameId)}`, compatibilityRouter);
+  // A Piano family may own a richer native API than the generic opponent and
+  // record endpoints. It still lives exclusively under the Piano namespace.
+  for (const [gameId, nativeRouter] of Object.entries(nativeRouters)) {
+    router.use(`/${safeSegment(gameId)}`, nativeRouter);
   }
 
   router.post('/:gameId/move', asyncHandler(async (req, res) => {

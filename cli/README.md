@@ -4,17 +4,6 @@ Single-binary CLI exposing DaylightStation skills and services as composable she
 
 See `docs/superpowers/specs/2026-05-02-dscli-design.md` for the full design.
 
-## Card Game readiness
-
-`piano-card-game.cli.mjs` is the live acceptance harness for the Pokémon piano card game. It
-validates the deployed definition and corpus assets, then plays a complete battle through the
-same MIDI bridge frames used by the PianoKiosk:
-
-```bash
-npm run piano:card-game:verify
-node cli/piano-card-game.cli.mjs --headed --screenshot /tmp/card-game.png
-```
-
 ## Usage
 
 ```bash
@@ -147,6 +136,14 @@ The full `concierge ask` (streaming agent invocation from the shell) is intentio
 4. Add `tests/unit/cli/commands/<name>.test.mjs` following the `system.test.mjs` pattern (in-process, fake deps).
 
 ## Existing CLI tools
+
+### Gaming artifacts
+
+`gaming-artifacts.cli.mjs verify GAME_ID` is the read-only mounted-artifact
+gate. It validates the rules/content ownership split, invokes the declared rule
+module's definition validator, and prints stable rules, content, and composed
+definition hashes. It resolves the data root from `DAYLIGHT_DATA_PATH`, then
+`DAYLIGHT_BASE_PATH/data`, or accepts `--data-dir DIR`.
 
 ### Scripture
 

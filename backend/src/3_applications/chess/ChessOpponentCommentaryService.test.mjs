@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGame, playMove } from '#shared/gaming/chess/engine.mjs';
+import { createGame, playMove } from '#shared/gaming/rulesets/chess/engine.mjs';
 import {
   createChessOpponentCommentaryService,
   normalizeQuip,
@@ -18,7 +18,7 @@ function serviceWith({ response = 'That knight has plans.', enabled = true } = {
       ladderService: {
         rungFor: vi.fn(async () => ({
           level: 0,
-          opponent: { name: 'Pikachu', personality: 'Bright, brave, and a little cheeky' },
+          opponent: { name: 'Tempo', personality: 'Bright, brave, and a little cheeky' },
         })),
       },
       readConfig: async () => ({ personality: { enabled } }),
@@ -35,7 +35,7 @@ describe('ChessOpponentCommentaryService', () => {
     });
     expect(result).toEqual({ eventId: 'g1:2:Nf6', quip: 'That knight has plans.', source: 'ai' });
     expect(chat).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({ role: 'user', content: expect.stringContaining('Pikachu') }),
+      expect.objectContaining({ role: 'user', content: expect.stringContaining('Tempo') }),
     ]), expect.objectContaining({ model: 'gpt-5.6-luna', reasoningEffort: 'none', maxTokens: 40 }));
     expect(chat.mock.calls[0][0][1].content).toContain('"san":"Nf6"');
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { INITIAL_FEN } from '../shared/gaming/chess/engine.mjs';
+import { INITIAL_FEN } from '../shared/gaming/rulesets/chess/engine.mjs';
 import { parseArgs, renderBoard, playTurn } from './chess.cli.mjs';
 
 describe('parseArgs', () => {

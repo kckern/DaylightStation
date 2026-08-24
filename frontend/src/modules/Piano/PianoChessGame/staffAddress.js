@@ -1,4 +1,4 @@
-import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
+import { FILES, RANKS, isSquare } from '@shared-gaming/rulesets/chess/index.mjs';
 
 /**
  * Addressing squares by READING instead of by spelling.
@@ -17,7 +17,7 @@ import { FILES, RANKS, isSquare } from '@shared-gaming/chess/index.mjs';
  * reading method covers and keeps every square inside a comfortable two-hand span.
  *
  * Sequential by default, because a scale is the thing being learnt. The existing
- * `shuffle_each_turn` config re-deals both axes exactly as it does for chords —
+ * `addressing.shuffle: each_turn` re-deals both axes exactly as it does for chords —
  * the scheme is two arrays either way — which turns the board into a sight-
  * reading drill rather than a memorised layout.
  */

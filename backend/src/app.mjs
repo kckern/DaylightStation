@@ -255,35 +255,32 @@ import { PianoContainer } from './3_applications/piano/PianoContainer.mjs';
 import { YamlPianoStudioDatastore } from './1_adapters/piano/YamlPianoStudioDatastore.mjs';
 import { YamlComposerSongStore as ComposerSongStore } from '#adapters/persistence/yaml/YamlComposerSongStore.mjs';
 import { createFeedbackRouter } from './4_api/v1/routers/feedback.mjs';
-import { createGameshowRouter } from './4_api/v1/routers/gameshow.mjs';
 import { createGamingRouter } from './4_api/v1/routers/gaming.mjs';
 import { createPresentationRouter } from './4_api/v1/routers/presentation.mjs';
-import { GamingSessionService } from './3_applications/gaming/GamingSessionService.mjs';
 import { YamlGamingDefinitionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingDefinitionStore.mjs';
 import { YamlGamingAssetCatalog } from './1_adapters/persistence/yaml/gaming/YamlGamingAssetCatalog.mjs';
 import { YamlPresentationCatalog } from './1_adapters/persistence/yaml/presentation/YamlPresentationCatalog.mjs';
-import { YamlGamingSessionStore } from './1_adapters/persistence/yaml/gaming/YamlGamingSessionStore.mjs';
 import { YamlPianoAttemptStore } from './1_adapters/persistence/yaml/piano/YamlPianoAttemptStore.mjs';
 import { YamlPianoLearningStore } from './1_adapters/persistence/yaml/piano/YamlPianoLearningStore.mjs';
 import { YamlExerciseBank } from './1_adapters/piano/YamlExerciseBank.mjs';
 import { PianoScaleChallengePolicy } from './3_applications/piano/PianoScaleChallengePolicy.mjs';
 import { BankChallengePolicy } from './3_applications/piano/BankChallengePolicy.mjs';
 import { PianoLearningService } from './3_applications/piano/PianoLearningService.mjs';
-import { scaleClashDefinition } from '#shared/gaming/definitions/scaleClash.mjs';
+import { YamlGamingExperienceManifestStore } from '#adapters/persistence/yaml/gaming/YamlGamingExperienceManifestStore.mjs';
 import { createWikipediaRouter } from './4_api/v1/routers/wikipedia.mjs';
 import { createChessRouter } from './4_api/v1/routers/chess.mjs';
 import { buildChessArchiveFilename, buildGameRecordFilename } from './4_api/v1/routers/lib/chessGameFilename.mjs';
 import { createStockfishEngine } from './1_adapters/chess/StockfishEngineAdapter.mjs';
 import { createStockfishAnalyst } from './1_adapters/chess/StockfishAnalysisAdapter.mjs';
-import { chessArchiveDayDir } from '#shared/gaming/chess/archivePaths.mjs';
+import { chessArchiveDayDir } from '#shared/gaming/rulesets/chess/archivePaths.mjs';
 import { createChessConfigService } from './3_applications/chess/ChessConfigService.mjs';
 import { createChessLadderService } from './3_applications/chess/ChessLadderService.mjs';
 import { createChessOpponentCommentaryService } from './3_applications/chess/ChessOpponentCommentaryService.mjs';
 import { createPianoGamesModule } from '#composition/modules/pianoGames.mjs';
 import { WikipediaAdapter } from './1_adapters/reference/WikipediaAdapter.mjs';
-import { GameShowService } from './3_applications/gameshow/GameShowService.mjs';
-import { GameShowSessionStore } from './3_applications/gameshow/GameShowSessionStore.mjs';
-import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gameshow/buzzerSelectors.mjs';
+import { GroupPlayCatalog } from './3_applications/gaming/usecases/GroupPlayCatalog.mjs';
+import { buzzersToSelectors, makeBuzzerSelectHandler } from './3_applications/gaming/effects/groupPlayBuzzerInput.mjs';
+import { createGamingApiModule } from './5_composition/modules/gamingApi.mjs';
 import { createSchoolRouter } from './4_api/v1/routers/school.mjs';
 import { SchoolService } from './3_applications/school/SchoolService.mjs';
 import { YamlSchoolDatastore } from './1_adapters/persistence/yaml/YamlSchoolDatastore.mjs';
@@ -705,15 +702,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         topic: message.topic,
         deviceId: message.deviceId
       });
-    }
-  });
-
-  // Game Show state mirror (TV ⇒ mobile host companion). The TV that owns game
-  // state publishes its snapshot on every transition; relay it to `gameshow`
-  // subscribers so the phone host view renders the live phase. Whitelist only.
-  eventBus.onClientMessage((clientId, message) => {
-    if (message?.source === 'gameshow-state' && message.topic === 'gameshow' && message.kind === 'state') {
-      eventBus.broadcast('gameshow', message);
     }
   });
 
@@ -1791,46 +1779,42 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'feedback-api' }),
   });
 
-  // Game Show shell (teams/buzzers/scoreboard) + Jeopardy. Config from
-  // gameshow.yml, content from data/content/games/, sessions checkpointed to
-  // data/household/gaming/gameshow/sessions/, media served from media/games/gameshow/.
-  v1Routers.gameshow = createGameshowRouter({
-    gameShowService: new GameShowService({
-      configService,
-      userService,
-      logger: rootLogger.child({ module: 'gameshow' }),
-    }),
-    sessionStore: new GameShowSessionStore({
-      sessionsDir: configService.getHouseholdPath('gaming/gameshow/sessions'),
-      logger: rootLogger.child({ module: 'gameshow' }),
-    }),
-    broadcastEvent,
-    mediaGameshowDir: join(mediaBasePath, 'games', 'gameshow'),
-    logger: rootLogger.child({ module: 'gameshow-api' }),
-  });
-
-  // Gaming first wave: the backend independently executes every shared-core
-  // command and persists authoritative state. The builtin definition makes the
-  // vertical slice bootable before household-authored YAML exists. Card Game is
-  // itself bundled as YAML; a household games/{gameId}/game.yml overrides either
-  // bundled source without changing composition code.
   const gamingDefinitionStore = new YamlGamingDefinitionStore({
     definitionsDir: configService.getHouseholdPath('gaming/games'),
     archiveDir: configService.getHouseholdPath('gaming/definitions'),
-    builtIns: { 'scale-clash': scaleClashDefinition },
-    builtInFiles: {
-      'card-game': path.resolve(__dirname, '../../shared/gaming/definitions/card-game.yml'),
-    },
     logger: rootLogger.child({ module: 'gaming-definitions' }),
   });
-  const gamingSessionStore = new YamlGamingSessionStore({
-    sessionsDir: configService.getHouseholdPath('gaming/log/sessions'),
+  const gamingManifestStore = new YamlGamingExperienceManifestStore({
+    manifestsDir: configService.getHouseholdPath('gaming/manifests'),
   });
-  const gamingService = new GamingSessionService({
+  const groupPlayCatalog = new GroupPlayCatalog({
+    configService, userService, definitionStore: gamingDefinitionStore, manifestStore: gamingManifestStore, logger: rootLogger.child({ module: 'group-play' }),
+  });
+  const groupPlayProfile = groupPlayCatalog.getConfig();
+  const groupPlayPrinterAdapter = groupPlayProfile.printing.host ? new LaserPrinterAdapter({
+    host: groupPlayProfile.printing.host,
+    port: groupPlayProfile.printing.port,
+    logger: rootLogger.child({ module: 'gaming-print' }),
+  }) : null;
+  const groupPlayPrinter = groupPlayPrinterAdapter ? {
+    print: (pdf, { sessionId }) => groupPlayPrinterAdapter.printPdf(pdf, { jobName: `Group Play host packet — ${sessionId}`, user: 'group-play', copies: 1 }),
+  } : null;
+
+  // One Gaming authority serves every experience.
+  const gamingModule = createGamingApiModule({
     definitionStore: gamingDefinitionStore,
-    sessionStore: gamingSessionStore,
-    economyService: economyApi.economyService,
-    logger: rootLogger.child({ module: 'gaming' }),
+    manifestStore: gamingManifestStore,
+    snapshotsDir: configService.getHouseholdPath('gaming/snapshots'),
+    journalsDir: configService.getHouseholdPath('gaming/journals'),
+    effectsDir: configService.getHouseholdPath('gaming/effects'),
+    drawingCheckpointsDir: configService.getHouseholdPath('gaming/drawing-checkpoints'),
+    groupPlayCatalog,
+    aiGateway: groupPlayProfile.ai.commentary || groupPlayProfile.ai.advisory_judgment ? sharedAiGateway : null,
+    aiConfig: groupPlayProfile.ai,
+    printer: groupPlayPrinter,
+    broadcastEvent,
+    logger: rootLogger.child({ module: 'gaming-runtime' }),
+    autoPrint: groupPlayProfile.printing.auto_print_once_per_session,
   });
   const gamingAssetCatalog = new YamlGamingAssetCatalog({
     catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
@@ -1840,15 +1824,14 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     catalogsDir: join(mediaBasePath, 'games/_common/catalog'),
     assetRoot: join(mediaBasePath, 'games/_common'),
   });
-  gamingService.recoverStaleSessions();
-  const gamingRecoveryTimer = setInterval(() => gamingService.recoverStaleSessions(), 30_000);
-  gamingRecoveryTimer.unref?.();
-  server?.once?.('close', () => clearInterval(gamingRecoveryTimer));
-  v1Routers.gaming = createGamingRouter({
-    gamingService,
+  const gamingRouter = createGamingRouter({
+    gamingApplication: gamingModule.gamingApplication,
     assetCatalog: gamingAssetCatalog,
+    mediaGroupPlayDir: join(mediaBasePath, 'games', 'group-play'),
+    broadcastEvent,
     logger: rootLogger.child({ module: 'gaming-api' }),
   });
+  v1Routers.gaming = gamingRouter;
   v1Routers.presentation = createPresentationRouter({
     catalog: presentationCatalog,
     logger: rootLogger.child({ module: 'presentation-api' }),
@@ -1889,7 +1872,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     readConfig: (userId) => chessConfigService.read(userId),
     logger: rootLogger.child({ module: 'chess-commentary' }),
   });
-  v1Routers.chess = createChessRouter({
+  const pianoChessRouter = createChessRouter({
     engine: chessEngine,
     analyst: chessAnalyst,
     configService: chessConfigService,
@@ -1925,7 +1908,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     dataService,
     configService,
     logger: rootLogger.child({ module: 'piano-games' }),
-    compatibilityRouters: { chess: v1Routers.chess },
+    nativeRouters: { chess: pianoChessRouter },
   });
   server?.once?.('close', () => pianoGamesModule.container.dispose());
   v1Routers['piano-games'] = pianoGamesModule.router;
@@ -2082,9 +2065,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     hardwareLogger.warn('thermalPrinter.noneConfigured');
   }
 
-  // Gameshow buzzers ride the same MQTT selector adapter as fitness rider
-  // selectors; this handler fans gameshow-tagged selections out as buzz events.
-  const handleGameshowBuzz = makeBuzzerSelectHandler(broadcastEvent);
+  // Group-play buzzers ride the same MQTT selector adapter as fitness selectors.
+  const handleGroupPlayBuzz = makeBuzzerSelectHandler(broadcastEvent, gamingModule.observability);
 
   const hardwareAdapters = createHardwareAdapters({
     mqtt: {
@@ -2106,11 +2088,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     },
     selectors: [
       ...((configService.getHouseholdAppConfig(householdId, 'fitness') || {}).selectors || []),
-      ...buzzersToSelectors((configService.getHouseholdAppConfig(householdId, 'gameshow') || {}).buzzers),
+      ...buzzersToSelectors((configService.getHouseholdAppConfig(householdId, 'group-play') || {}).buzzers),
     ],
     onSelectorSelect: (selection) => {
-      if (selection?.equipmentId === 'gameshow') {
-        handleGameshowBuzz(selection);
+      if (selection?.equipmentId === 'group-play') {
+        handleGroupPlayBuzz(selection);
         return;
       }
       // selection: { selectorId, equipmentId, userId, action }
@@ -2522,9 +2504,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoContainer,
     pianoAttemptStore,
     pianoLearningService,
-    // Challenges come from the exercise bank when it is installed, and fall back
-    // to the hardcoded curriculum when it is not — a kiosk with no content mount
-    // should still be able to play.
     pianoChallengePolicy: exerciseBank.available()
       ? new BankChallengePolicy({ exerciseBank, attemptStore: pianoAttemptStore })
       : new PianoScaleChallengePolicy({ attemptStore: pianoAttemptStore }),

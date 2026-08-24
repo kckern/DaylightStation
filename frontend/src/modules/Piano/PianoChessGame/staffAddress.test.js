@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SQUARES } from '@shared-gaming/chess/index.mjs';
+import { SQUARES } from '@shared-gaming/rulesets/chess/index.mjs';
 import {
   DEFAULT_STAFF_SCHEME, identifyStaffAddress, noteLetter, noteName,
   squareToStaffAddress, staffCandidateSquares, staffToSquare, validateStaffScheme,

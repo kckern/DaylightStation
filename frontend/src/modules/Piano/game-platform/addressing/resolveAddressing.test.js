@@ -83,28 +83,15 @@ describe('resolveAddressing — bad input', () => {
   });
 });
 
-describe('normalizeAddressing — the shapes already on disk', () => {
-  it("accepts chess's shipped `addressing: chords` string", () => {
-    expect(normalizeAddressing({ addressing: 'chords' })).toMatchObject({ vocabulary: 'chords' });
-    expect(normalizeAddressing('staff')).toMatchObject({ vocabulary: 'staff' });
-  });
-
-  it("folds chess's shuffle_each_turn into the cadence", () => {
-    expect(normalizeAddressing({ shuffle_each_turn: true }).shuffle).toBe('each_turn');
-    expect(normalizeAddressing({ shuffle_each_turn: false }).shuffle).toBe('never');
-  });
-
-  it("folds checkers' and Connect Four's shuffle_each_game into the same cadence", () => {
-    expect(normalizeAddressing({ shuffle_each_game: true }).shuffle).toBe('each_game');
-  });
-
-  it('prefers the explicit cadence over either legacy boolean', () => {
-    expect(normalizeAddressing({ shuffle: 'never', shuffle_each_turn: true }).shuffle).toBe('never');
-  });
-
+describe('normalizeAddressing — canonical config shape', () => {
   it('reads a nested addressing block', () => {
     const out = normalizeAddressing({ addressing: { vocabulary: 'chords', x: { tier: 4 } } });
     expect(out).toMatchObject({ vocabulary: 'chords', x: { tier: 4 } });
+  });
+
+  it('rejects a scalar block instead of guessing', () => {
+    expect(normalizeAddressing('staff')).toEqual({});
+    expect(normalizeAddressing({ addressing: 'chords' })).toEqual({});
   });
 
   it('survives null, undefined and nonsense', () => {

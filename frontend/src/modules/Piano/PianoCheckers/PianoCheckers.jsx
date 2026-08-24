@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { applyMove, legalMoves, replayGame } from '@shared-gaming/checkers/engine.mjs';
-import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/checkers/opponent.mjs';
+import { legalMoves, replayGame } from '@shared-gaming/rulesets/checkers/engine.mjs';
+import { chooseMove, CHECKERS_OPPONENTS } from '@shared-gaming/rulesets/checkers/opponent.mjs';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import { slideOffsetCells, slideDurationMs } from './moveSlide.js';
@@ -23,10 +23,11 @@ import {
   fileRailAddresses, rankRailAddresses, squareForAddress,
 } from './checkersAddress.js';
 import checkersClient from './checkersApi.js';
+import { useCheckersAuthority } from './useCheckersAuthority.js';
 import './PianoCheckers.scss';
 
 const DEFAULT_CONFIG = Object.freeze({
-  shuffle_each_game: false,
+  addressing: { vocabulary: 'staff', shuffle: 'never' },
   file_notes: DEFAULT_FILE_NOTES,
   rank_notes: DEFAULT_RANK_NOTES,
   default_level: 1,
@@ -59,27 +60,20 @@ export function selectionMessage(rejection) {
 }
 
 /**
- * This game's own historical config keys, read forward onto the dimensions.
- *
- * `file_notes`/`rank_notes` are in real players' folders, so a saved axis still
- * wins over a tier — that is what the explicit-scheme escape hatch is for. Only
- * a CLEAN pair is honoured: a config from before the redesign carries
- * `square_notes` and nothing else, and half-trusting that shape is how the game
- * ends up comparing held notes against `undefined` and looking permanently
- * unresponsive with no error to explain why.
+ * Map this game's explicit file/rank config onto the common dimensions. Only a
+ * complete, valid pair can override the selected addressing tier.
  */
-export function legacyAddressing(config) {
+export function configuredAddressing(config) {
   const clean = (axis) => Array.isArray(axis) && axis.length === AXIS && axis.every(Number.isFinite);
-  const legacy = {};
+  const overrides = {};
   if (clean(config?.file_notes) && clean(config?.rank_notes)
     && (config.file_notes !== DEFAULT_FILE_NOTES || config.rank_notes !== DEFAULT_RANK_NOTES)) {
-    legacy.scheme = {
-      id: 'checkers-saved-axes', kind: 'staff',
+    overrides.scheme = {
+      id: 'checkers-configured-axes', kind: 'staff',
       roots: config.file_notes, qualities: config.rank_notes,
     };
   }
-  if (config?.shuffle_each_game !== undefined) legacy.shuffle_each_game = config.shuffle_each_game;
-  return legacy;
+  return overrides;
 }
 
 function CheckersBoard({ game, selected, hint }) {
@@ -135,14 +129,15 @@ function CheckersBoard({ game, selected, hint }) {
 }
 
 export default function PianoCheckers({ activeNotes = new Map(), currentUser = null, onNoteOn, onNoteOff }) {
-  const [moves, setMoves] = useState([]);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState(null);
   const [hint, setHint] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const latchedRef = useRef(false);
 
-  const game = useMemo(() => replayGame({ moves }), [moves]);
+  const authorityUserId = currentUser?.id || currentUser?.username || currentUser?.user_id || 'household';
+  const { state: authorityState, moves, play: commitMove, reset: resetAuthority } = useCheckersAuthority({ userId: authorityUserId });
+  const game = authorityState || replayGame({ moves: [] });
   const result = !game.status.gameOver
     ? null
     : game.status.draw ? 'draw' : game.status.winner === 1 ? 'win' : 'loss';
@@ -165,9 +160,9 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
   // rung → this player. The tier decides the material, the order decides the
   // layout, and the cadence decides when it moves — see
   // docs/reference/piano/grid-addressing.md.
-  const legacy = useMemo(() => legacyAddressing(config), [config]);
+  const overrides = useMemo(() => configuredAddressing(config), [config]);
   const { x: fileNotes, y: rankNotes, addressing } = useAddressing({
-    config, axisSize: AXIS, seed, ply: moves.length, legacy,
+    config, axisSize: AXIS, seed, ply: moves.length, overrides,
   });
   const notes = useMemo(
     () => ({ file_notes: fileNotes, rank_notes: rankNotes }),
@@ -199,12 +194,11 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     // `not-your-turn`. Any opponent multi-jump hung the game.
     resetKey: `${gameSessionId}:${moves.length}:${game.forcedFrom ?? '-'}`,
     request: () => checkersClient.requestMove({ transcript: { moves }, level, gameSessionId, userId }),
-    onReply: (answer) => {
+    onReply: async (answer) => {
       if (!answer?.move) noteLocalPractice();
       // Keep offline practice responsive on the kiosk's older WebView CPU.
       const move = answer?.move ?? chooseMove(game, { level: Math.min(2, level) });
-      const next = move ? applyMove(game, move) : game;
-      if (!next.error && move) setMoves(next.moves);
+      const next = move ? await commitMove(move) : game;
       // Only the PLAYER's moves were ever logged, so a transcript could never
       // be replayed from the log store — exactly half the game was missing,
       // and it is the opponent's reply that sets up the forced jump a player
@@ -215,7 +209,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         local: !answer?.move,
         forcedFrom: next.forcedFrom ?? null,
         ply: next.moves?.length ?? null,
-        error: next.error ? String(next.error) : null,
+        error: null,
       });
     },
   });
@@ -276,23 +270,17 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       locked: game.forcedFrom !== null,
     });
     if (resolution.committed) {
-      const next = applyMove(game, resolution.committed);
-      if (!next.error) {
-        setMoves(next.moves);
+      commitMove(resolution.committed).then((next) => {
+        if (!next) return;
         setSelected(next.turn === 1 ? next.forcedFrom : null);
         setMessage(next.forcedFrom !== null ? 'Keep jumping with the same piece.' : null);
         setHint(null);
         logger.info('checkers.move', {
           from: resolution.committed.from, to: resolution.committed.to, ply: next.moves.length,
         });
-      } else {
-        // applyMove refused a move the resolver had already committed to. This
-        // path dropped the move and said nothing, which is indistinguishable
-        // from a dead keyboard.
-        logger.error('checkers.apply-failed', {
-          from: resolution.committed.from, to: resolution.committed.to, error: String(next.error),
-        });
-      }
+      }).catch((error) => logger.error('checkers.commit-failed', {
+        from: resolution.committed.from, to: resolution.committed.to, error: error.message,
+      }));
     } else {
       setSelected(resolution.selected);
       setMessage(selectionMessage(resolution.rejection));
@@ -314,16 +302,16 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
       }
     }
     latchedRef.current = true;
-  }, [activeNotes, game, level, logger, notes, recordReading, selected, thinking]);
+  }, [activeNotes, commitMove, game, level, logger, notes, recordReading, selected, thinking]);
 
   const restart = () => {
-    setMoves([]);
     setSelected(null);
     setMessage(null);
     setHint(null);
     // A key already down when the game restarts must not immediately address a
     // square — the latch opens on the next release, not on this render.
     latchedRef.current = activeNotes.size > 0;
+    resetAuthority();
     resetSession();
   };
 

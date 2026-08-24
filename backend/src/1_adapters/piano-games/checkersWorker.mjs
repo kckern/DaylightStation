@@ -1,5 +1,5 @@
 import { parentPort } from 'node:worker_threads';
-import { chooseMove } from '../../../../shared/gaming/checkers/opponent.mjs';
+import { chooseMove } from '../../../../shared/gaming/rulesets/checkers/opponent.mjs';
 
 parentPort.on('message', ({ type, id, game, level }) => {
   if (type !== 'search') return;

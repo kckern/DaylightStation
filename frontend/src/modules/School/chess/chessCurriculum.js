@@ -1,4 +1,4 @@
-import { INITIAL_FEN } from '@shared-gaming/chess/index.mjs';
+import { INITIAL_FEN } from '@shared-gaming/rulesets/chess/index.mjs';
 
 /**
  * The chess curriculum — structure now, content later.

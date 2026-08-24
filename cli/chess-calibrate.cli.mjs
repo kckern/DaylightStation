@@ -19,10 +19,10 @@ import path from 'node:path';
 import YAML from 'yaml';
 import dotenv from 'dotenv';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CHESS_ARCHIVE_DIR } from '../shared/gaming/chess/archivePaths.mjs';
+import { CHESS_ARCHIVE_DIR } from '../shared/gaming/rulesets/chess/archivePaths.mjs';
 import { createStockfishAnalyst } from '../backend/src/1_adapters/chess/StockfishAnalysisAdapter.mjs';
 import { createStockfishEngine } from '../backend/src/1_adapters/chess/StockfishEngineAdapter.mjs';
-import { chooseMove as homegrownMove } from '../shared/gaming/chess/opponent.mjs';
+import { chooseMove as homegrownMove } from '../shared/gaming/rulesets/chess/opponent.mjs';
 import {
   computeBaseline, distinctRungs, measureCandidate, samplePositions, saturationWarning,
 } from '../backend/src/3_applications/chess/ChessLadderCalibration.mjs';

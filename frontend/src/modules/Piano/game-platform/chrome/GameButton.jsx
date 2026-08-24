@@ -22,6 +22,5 @@ export default function GameButton({
   const classes = ['pg-btn', variant ? `pg-btn--${variant}` : '', className]
     .filter(Boolean)
     .join(' ');
-  // eslint-disable-next-line react/button-has-type -- `type` is constrained to the button types by the default above.
   return <button type={type} className={classes} {...rest}>{children}</button>;
 }

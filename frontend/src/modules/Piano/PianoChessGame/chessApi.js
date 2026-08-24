@@ -8,13 +8,8 @@ import getLogger from '../../../lib/logging/Logger.js';
  * PianoChessGame) falls back to the bundled engine on any failure, so the game
  * must never block on the network. Errors are logged, then swallowed.
  *
- * Points at `/api/v1/piano-games/chess/*` — the unified piano-games namespace
- * — rather than `/api/v1/chess/*` directly. Both currently resolve to the
- * exact same request handler: `pianoGames.mjs` composition mounts the
- * existing chess router as a `compatibilityRouters` entry under
- * `/piano-games/chess`, so this is not yet a behavioural migration onto
- * PianoGamesContainer, just the client adopting the URL clients are meant to
- * converge on. See `backend/src/4_api/v1/routers/chess.mjs`'s header comment.
+ * Points at the sole canonical Piano-owned namespace:
+ * `/api/v1/piano-games/chess/*`.
  */
 
 let cachedLogger;

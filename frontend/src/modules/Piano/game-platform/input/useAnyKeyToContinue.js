@@ -23,9 +23,13 @@ import { useEffect, useRef } from 'react';
  * @param {Map}     args.activeNotes - live held notes
  * @param {Function} args.onContinue
  */
-export function useAnyKeyToContinue({ enabled, activeNotes, onContinue }) {
-  // Keys down at the moment the game ended — the winning move's own keys.
-  const heldAtEnableRef = useRef(null);
+export function useAnyKeyToContinue({ enabled, activeNotes, onContinue, minimumDelayMs = 0 }) {
+  // A result must observe a completely released keyboard before it can arm.
+  // This is stronger than remembering whichever keys happened to be visible
+  // in the first result render: state and MIDI renders can cross, and an empty
+  // first snapshot would otherwise make the still-held winning chord "fresh".
+  const releasedRef = useRef(false);
+  const readyAtRef = useRef(0);
   const firedRef = useRef(false);
   // Read through a ref so a fresh inline callback each render cannot re-run the
   // effect; games rebuild `restart` on every render.
@@ -34,28 +38,26 @@ export function useAnyKeyToContinue({ enabled, activeNotes, onContinue }) {
 
   useEffect(() => {
     if (!enabled) {
-      heldAtEnableRef.current = null;
+      releasedRef.current = false;
+      readyAtRef.current = 0;
       firedRef.current = false;
+    } else {
+      readyAtRef.current = performance.now() + Math.max(0, Number(minimumDelayMs) || 0);
     }
-  }, [enabled]);
+  }, [enabled, minimumDelayMs]);
 
   useEffect(() => {
     if (!enabled || firedRef.current) return;
     const live = activeNotes instanceof Map ? activeNotes : new Map();
+    if (performance.now() < readyAtRef.current) return;
 
-    if (heldAtEnableRef.current === null) {
-      heldAtEnableRef.current = new Set(live.keys());
+    if (!releasedRef.current) {
+      if (live.size === 0) releasedRef.current = true;
       return;
     }
-    const stale = heldAtEnableRef.current;
-    // Retire each carried-over key as it is lifted, so it can count next time.
-    for (const note of [...stale]) if (!live.has(note)) stale.delete(note);
-
-    for (const note of live.keys()) {
-      if (stale.has(note)) continue;
+    if (live.size > 0) {
       firedRef.current = true;
       onContinueRef.current?.();
-      return;
     }
   }, [enabled, activeNotes]);
 }

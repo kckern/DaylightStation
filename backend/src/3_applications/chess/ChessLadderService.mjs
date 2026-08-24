@@ -1,7 +1,7 @@
 import {
   applyGameToProgress, availableOpponents, createLadderProgress, normalizeProgress,
   promotionStatus, resolvePolicy, resolveRoster, rungForLevel,
-} from '#shared/gaming/chess/ladder.mjs';
+} from '#shared/gaming/rulesets/chess/ladder.mjs';
 
 /**
  * A player's position on the opponent ladder.

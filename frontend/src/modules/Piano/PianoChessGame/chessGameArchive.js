@@ -1,4 +1,4 @@
-import { INITIAL_FEN } from '@shared-gaming/chess/engine.mjs';
+import { INITIAL_FEN } from '@shared-gaming/rulesets/chess/engine.mjs';
 import { elapsedBySide, moveDurations } from './chessClock.js';
 
 /**

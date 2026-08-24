@@ -3,19 +3,7 @@ import { resolveAddressedSelection } from '../game-platform/families/addressed-b
 import { selectionMessage } from './PianoCheckers.jsx';
 import { DEFAULT_FILE_NOTES, DEFAULT_RANK_NOTES, squareForAddress } from './checkersAddress.js';
 
-/**
- * These used to assert against `square_notes`/`squareForNotes` — the 32-
- * unique-note addressing scheme this game shipped with. That scheme is gone
- * (see checkersAddress.js for why: it could never grow a truthful axis rail,
- * because no row or column shared a note to draw a rail card FROM). Checkers
- * now addresses a square the same way chess does — a file note and a rank
- * note, played together — so these tests assert against `checkersAddress.js`
- * instead. Full coverage of that module (octave tolerance, light-square
- * rejection, the legacy-config fallback, the re-deal) lives in
- * `checkersAddress.test.js`; this file just confirms PianoCheckers.jsx's own
- * remaining local contract: the addressed-board selection grammar it shares
- * with the other two games.
- */
+/** Piano Checkers uses the addressed-board selection grammar and file/rank axes. */
 describe('Piano Checkers addressing', () => {
   it('addresses a square by playing its file and rank notes together', () => {
     const notes = { file_notes: DEFAULT_FILE_NOTES, rank_notes: DEFAULT_RANK_NOTES };

@@ -3,7 +3,7 @@ import * as sass from 'sass';
 import { fileURLToPath } from 'url';
 import { act, render, screen } from '@testing-library/react';
 import OpponentPortrait, { opponentMood, opponentStatus } from './OpponentPortrait.jsx';
-import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/chess/ladder.mjs';
+import { DEFAULT_ROSTER, themeForLevel, TOP_LEVEL } from '@shared-gaming/rulesets/chess/ladder.mjs';
 
 describe('the opponent status line', () => {
   it('says what they are doing, from real state only', () => {
@@ -40,7 +40,7 @@ describe('the portrait', () => {
     expect(container.querySelector('.chess-opponent__art')).toBeNull();
   });
 
-  it('uses the roster artwork when there is some — the Pokemon case', () => {
+  it('uses the roster artwork when there is some — the Themed case', () => {
     const { container } = render(
       <OpponentPortrait opponent={{ level: 2, name: 'Magikarp', art: '/magikarp.png' }} level={2} />,
     );

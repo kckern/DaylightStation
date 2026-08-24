@@ -69,6 +69,8 @@ describe('how long the opponent thinks', () => {
     expect(thinkTimeFor({ level: null, levels: 21, config: noJitter })).toBe(null);
     expect(thinkTimeFor({ level: undefined, levels: 21, config: noJitter })).toBe(null);
     expect(thinkTimeFor({ level: 'strong', levels: 21, config: noJitter })).toBe(null);
+    expect(thinkTimeFor({ level: 3, config: noJitter })).toBe(null);
+    expect(thinkTimeFor({ level: 0, levels: 1, config: noJitter })).toBe(null);
   });
 
   it('falls back to the house curve when the config says nothing', () => {

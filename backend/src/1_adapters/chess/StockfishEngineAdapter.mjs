@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { fileURLToPath } from 'node:url';
-import { applyMove, legalMoves } from '../../../../shared/gaming/chess/engine.mjs';
-import { chooseMove as homegrownChooseMove } from '../../../../shared/gaming/chess/opponent.mjs';
+import { applyMove, legalMoves } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
+import { chooseMove as homegrownChooseMove } from '../../../../shared/gaming/rulesets/chess/opponent.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ELO_FLOOR = 1320;

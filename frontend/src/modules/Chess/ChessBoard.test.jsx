@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import * as sass from 'sass';
 import { fileURLToPath } from 'url';
-import { INITIAL_FEN, applyMove, describePosition } from '@shared-gaming/chess/index.mjs';
+import { INITIAL_FEN, applyMove, describePosition } from '@shared-gaming/rulesets/chess/index.mjs';
 import ChessBoard from './ChessBoard.jsx';
 import { pieceSource } from './pieceAssets.js';
 

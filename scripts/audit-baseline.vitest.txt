@@ -8,7 +8,6 @@
 backend/src/1_adapters/chess/StockfishEngineAdapter.test.mjs
 backend/src/1_adapters/fitness/YamlWorkoutRepository.test.mjs
 backend/src/1_adapters/glossika/LegacyDumpReader.test.mjs
-backend/src/3_applications/gameshow/GameShowService.test.mjs
 backend/src/3_applications/school/documents/RenderPrintDocument.test.mjs
 backend/src/4_api/v1/agents/mountAgentHttp.test.mjs
 backend/src/4_api/v1/agents/wireFormats/native.test.mjs

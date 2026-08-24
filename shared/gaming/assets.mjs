@@ -1,6 +1,6 @@
 const ASSET_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/;
 const FRAME_ANCHORS = new Set(['top-left', 'top-center', 'top-right', 'center-left', 'center', 'center-right', 'bottom-left', 'bottom-center', 'bottom-right']);
-const APPROVED_LICENSE_SCOPES = new Set(['core-commercial', 'characters-commercial', 'desert-commercial', 'dungeons-commercial', 'free-noncommercial', 'halloween-commercial', 'ui-commercial', 'volcano-commercial', 'legacy-private-use']);
+const APPROVED_LICENSE_SCOPES = new Set(['core-commercial', 'characters-commercial', 'desert-commercial', 'dungeons-commercial', 'free-noncommercial', 'halloween-commercial', 'ui-commercial', 'volcano-commercial', 'private-use']);
 const AUTOTILE_POLARITIES = ['positive', 'negative'];
 
 function isPair(value, { positive = false } = {}) {

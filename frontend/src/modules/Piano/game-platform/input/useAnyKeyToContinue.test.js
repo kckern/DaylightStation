@@ -54,6 +54,22 @@ describe('useAnyKeyToContinue', () => {
     expect(onContinue).toHaveBeenCalledTimes(1);
   });
 
+  it('can hold the result before arming and still requires a release afterward', () => {
+    vi.useFakeTimers();
+    const onContinue = vi.fn();
+    const hook = renderHook(
+      ({ activeNotes }) => useAnyKeyToContinue({ enabled: true, activeNotes, onContinue, minimumDelayMs: 500 }),
+      { initialProps: { activeNotes: notes() } },
+    );
+    vi.advanceTimersByTime(500);
+    hook.rerender({ activeNotes: notes(72) });
+    expect(onContinue).not.toHaveBeenCalled();
+    hook.rerender({ activeNotes: notes() });
+    hook.rerender({ activeNotes: notes(72) });
+    expect(onContinue).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
   it('re-arms for the next game', () => {
     const { rerender, onContinue } = setup();
     rerender({ enabled: true, activeNotes: notes() });

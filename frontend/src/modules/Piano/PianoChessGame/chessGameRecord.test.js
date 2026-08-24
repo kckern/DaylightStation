@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildGameRecord } from './chessGameRecord.js';
-import { countsTowardPromotion, DEFAULT_LADDER_POLICY } from '@shared-gaming/chess/ladder.mjs';
+import { countsTowardPromotion, DEFAULT_LADDER_POLICY } from '@shared-gaming/rulesets/chess/ladder.mjs';
 
 const finished = (outcome, winner, plies) => ({
   status: { game_over: true, outcome, winner },

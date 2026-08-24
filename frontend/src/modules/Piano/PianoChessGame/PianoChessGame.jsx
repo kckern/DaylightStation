@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { legalDestinations } from '@shared-gaming/chess/engine.mjs';
-import { fenToPosition } from '@shared-gaming/chess/position.mjs';
+import { INITIAL_FEN, legalDestinations } from '@shared-gaming/rulesets/chess/engine.mjs';
+import { fenToPosition } from '@shared-gaming/rulesets/chess/position.mjs';
 import getLogger from '../../../lib/logging/Logger.js';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
@@ -40,8 +40,9 @@ import { recognizeGesture } from './chordGestures.js';
 import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 import {
   REJECTION_MESSAGES, applySquare, capturedPieces,
-  createChessGameState, isPlayerTurn, takeMoveBack,
+  createChessGameState, isPlayerTurn, projectChessAuthorityState, takeMoveBack,
 } from './chessGameState.js';
+import { useChessAuthority } from './useChessAuthority.js';
 import {
   checkTakeback, playerMoveCount, takebackNote, takebackRefusalMessage, willStillCount,
 } from './takebackBudget.js';
@@ -124,9 +125,7 @@ const EMPTY_OBJECT = Object.freeze({});
  * the game changes.
  */
 export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME) {
-  // Two shapes reach here: the shipped `addressing: chords` string, and the
-  // whole loaded config once a caller passes its block. Both are the game layer.
-  const stated = (addressing && typeof addressing === 'object') ? addressing : { addressing };
+  const stated = (addressing && typeof addressing === 'object') ? addressing : {};
   // The fallback carries what this game was already using, so a config that
   // says nothing about vocabulary keeps it rather than dropping to the house
   // default. Chess ships `chords`; the house floor is `staff`.
@@ -173,7 +172,7 @@ export function PianoChessGame({
   playerColor = gameConfig?.player_color ?? 'w',
   difficulty = gameConfig?.difficulty ?? 'learner',
   scheme = DEFAULT_CHORD_SCHEME,
-  shuffleEachTurn: shuffleEachTurnProp = gameConfig?.shuffle_each_turn ?? true,
+  shuffleEachTurn: shuffleEachTurnProp = gameConfig?.addressing?.shuffle !== 'never',
   seed = null,
   feedback = null,
   // Starting position override. A test seam like `seed`: the game-record test
@@ -188,6 +187,15 @@ export function PianoChessGame({
     gameSeed,
     beginNextGame,
   } = useChessSessionIdentity({ currentUser, playerName, initialSeed: seed });
+
+  const authorityUserId = lockedUser || 'household';
+  const {
+    session: chessSession,
+    ready: chessAuthorityReady,
+    move: commitChessMove,
+    takeback: commitChessTakeback,
+    reset: resetChessAuthority,
+  } = useChessAuthority({ userId: authorityUserId, initialFen: fen ?? INITIAL_FEN, seed: gameSeed });
 
   const [game, setGame] = useState(() => createChessGameState({
     fen: fen ?? undefined,
@@ -232,7 +240,9 @@ export function PianoChessGame({
   const timing = useMemo(() => resolveTiming(chessConfig), [chessConfig]);
   // Shuffle takes effect on the NEXT game: createChessGameState captures it at
   // construction, so a mid-game change never re-deals the board mid-read.
-  const shuffleEachTurn = chessConfig?.shuffle_each_turn ?? shuffleEachTurnProp;
+  const shuffleEachTurn = chessConfig?.addressing?.shuffle === 'each_turn'
+    ? true
+    : chessConfig?.addressing?.shuffle === 'never' ? false : shuffleEachTurnProp;
   const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
   // Maps the active rung to a bundled difficulty the same way the server adapter
   // would, so a dropped request doesn't quietly change who the player is facing.
@@ -259,6 +269,19 @@ export function PianoChessGame({
   const reading = isStaffScheme(liveScheme);
   const gameRef = useRef(game);
   gameRef.current = game;
+  const projectAuthority = useCallback((authoritativeSession, nativeState = gameRef.current) => (
+    projectChessAuthorityState(authoritativeSession.state, {
+      playerColor,
+      scheme: nativeState?.baseScheme || scheme,
+      seed: authoritativeSession.header.seed,
+      shuffleEachTurn: nativeState?.shuffleEachTurn ?? shuffleEachTurnProp,
+    })
+  ), [playerColor, scheme, shuffleEachTurnProp]);
+
+  useEffect(() => {
+    if (!chessSession) return;
+    setGame((current) => projectAuthority(chessSession, current));
+  }, [chessSession, projectAuthority]);
   // Where the cooldown counts from — the player's own move count at the last
   // takeback, or null when there has not been one this game.
   const lastTakebackAtRef = useRef(null);
@@ -271,7 +294,7 @@ export function PianoChessGame({
 
   // Below the game state on purpose: this effect may recreate it. The initial
   // game is built in the useState initializer — always before this fetch can
-  // resolve — so it captured the prop fallback for shuffle_each_turn, and
+  // resolve — so it captured the prop fallback for the shuffle cadence, and
   // commitMove re-deals from that CAPTURED value while the rail notice reads
   // the loaded one. If the player has not touched the game yet, re-deal it
   // under the loaded preference so the saved setting is real from the first
@@ -279,7 +302,7 @@ export function PianoChessGame({
   // them, and the captured value stands until the next game.
   useEffect(() => {
       if (!chessConfig) return;
-      const loadedShuffle = chessConfig.shuffle_each_turn;
+      const loadedCadence = chessConfig.addressing?.shuffle;
       // The addressing vocabulary is a per-player setting, so it can only be
       // known once that player's config layer has resolved — after the game was
       // built. Same rule as the shuffle: adopt it while the game is untouched,
@@ -287,7 +310,9 @@ export function PianoChessGame({
       const loadedScheme = schemeForAddressing(chessConfig, scheme);
       setGame((current) => {
         const untouched = current.history.length === 0 && !current.origin;
-        const nextShuffle = typeof loadedShuffle === 'boolean' ? loadedShuffle : current.shuffleEachTurn;
+        const nextShuffle = loadedCadence === 'each_turn'
+          ? true
+          : loadedCadence === 'never' ? false : current.shuffleEachTurn;
         if (!untouched) return current;
         if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
         return createChessGameState({
@@ -374,7 +399,7 @@ export function PianoChessGame({
   useEffect(() => {
     logger().info('mounted', {
       player_color: playerColor, difficulty, scheme: scheme.id,
-      shuffle_each_turn: shuffleEachTurn, seed: gameSeed,
+      shuffle: shuffleEachTurn ? 'each_turn' : 'never', seed: gameSeed,
     });
     if (game.schemeRejected) logger().warn('scheme-rejected', game.schemeRejected);
   }, [difficulty, game.schemeRejected, gameSeed, playerColor, scheme.id, shuffleEachTurn]);
@@ -407,20 +432,32 @@ export function PianoChessGame({
   }, []);
 
   const handleSquare = useCallback((square) => {
+    if (!chessAuthorityReady) return;
     // The clock reads move timestamps rather than running its own counter, so
     // "now" is stamped at the moment the move lands and everything downstream —
     // the clock face, the archived think times, the post-game timing analysis —
     // derives from these.
     const { state, event } = applySquare(gameRef.current, square, Date.now());
-    setGame(state);
     if (event.type === 'rejected') {
+      setGame(state);
       announce(state, 'rejected');
       logger().debug('chord-rejected', { square, reason: event.reason });
     } else if (event.type === 'moved' || event.type === 'game_over') {
-      announce(state);
-      logger().info('move-played', { san: event.move.san, chords: state.history.at(-1)?.chords });
-    } else logger().debug(`chord-${event.type}`, { square });
-  }, [announce]);
+      commitChessMove(event.move).then((authoritativeSession) => {
+        const projected = projectAuthority(authoritativeSession, gameRef.current);
+        setGame(projected);
+        announce(projected);
+        logger().info('move-played', { san: event.move.san, chords: projected.history.at(-1)?.chords });
+      }).catch((error) => {
+        setGame((current) => ({ ...current, origin: null }));
+        setToast({ text: 'That move could not be committed. Try again.', seq: `authority-${Date.now()}` });
+        logger().error('authority-move-failed', { error: error.message, from: event.move.from, to: event.move.to });
+      });
+    } else {
+      setGame(state);
+      logger().debug(`chord-${event.type}`, { square });
+    }
+  }, [announce, chessAuthorityReady, commitChessMove, projectAuthority]);
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -467,6 +504,10 @@ export function PianoChessGame({
     announce,
     logger: logger(),
     requestMove: requestOpponentMove,
+    commitAuthorityMove: async (candidate) => {
+      const authoritativeSession = await commitChessMove(candidate);
+      return projectAuthority(authoritativeSession, gameRef.current);
+    },
   });
 
   const {
@@ -489,28 +530,37 @@ export function PianoChessGame({
     gateway: CHESS_PERSISTENCE_GATEWAY,
   });
 
-  const restart = useCallback(() => {
+  const restart = useCallback(async () => {
     const nextSession = beginNextGame();
-    setGame(createChessGameState({
-      fen: fen ?? undefined,
-      playerColor,
-      scheme,
-      seed: nextSession.seed,
-      shuffleEachTurn: shuffleEachTurnProp,
-    }));
+    const nativeInitial = createChessGameState({
+      fen: fen ?? undefined, playerColor, scheme, seed: nextSession.seed, shuffleEachTurn: shuffleEachTurnProp,
+    });
+    // Clear terminal UI in the same render as the identity changes so the
+    // persistence effect cannot record the finished board under the new id.
+    setGame(nativeInitial);
+    try {
+      const authoritativeSession = await resetChessAuthority(nextSession.seed);
+      setGame(projectAuthority(authoritativeSession, nativeInitial));
+    } catch (error) {
+      logger().error('authority-reset-failed', { error: error.message });
+      setToast({ text: 'A new game could not be started.', seq: `authority-${Date.now()}` });
+      return;
+    }
     setToast(null);
     resetHelp();
     lastTakebackAtRef.current = null;
     resetOpponent();
     logger().info('restarted');
-  }, [beginNextGame, fen, playerColor, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
+  }, [beginNextGame, fen, playerColor, projectAuthority, resetChessAuthority, resetHelp, resetOpponent, scheme, shuffleEachTurnProp]);
 
   // "Play again" is a button, and the office screen has no finger for it. Any
   // fresh key restarts; the keys still down from the mating move do not count,
   // so the result stays on screen long enough to read.
   useAnyKeyToContinue({
     enabled: keyFallbackNeeded(gameConfig) && !!game.status?.game_over,
-    activeNotes, onContinue: restart,
+    // Preserve the result long enough to read and let queued chord-recognition
+    // work from the mating gesture drain before the keyboard can re-arm.
+    activeNotes, onContinue: restart, minimumDelayMs: 1800,
   });
 
 
@@ -521,7 +571,7 @@ export function PianoChessGame({
    * told that rather than being told there is nothing to take back — two very
    * different sentences, and only one of them is true.
    */
-  const attemptTakeback = useCallback(() => {
+  const attemptTakeback = useCallback(async () => {
     const current = gameRef.current;
     const used = helpUsedRef.current.takebacks;
     const since = lastTakebackAtRef.current === null
@@ -545,7 +595,14 @@ export function PianoChessGame({
     }
 
     const willCount = willStillCount({ policy: ladderPolicyRef.current, used });
-    setGame(state);
+    try {
+      const authoritativeSession = await commitChessTakeback(event.plies);
+      setGame(projectAuthority(authoritativeSession, state));
+    } catch (error) {
+      setToast({ text: 'That takeback could not be committed.', seq: `authority-${Date.now()}` });
+      logger().error('authority-takeback-failed', { error: error.message, plies: event.plies });
+      return;
+    }
     addTakeback();
     lastTakebackAtRef.current = playerMoveCount(state.history, state.playerColor);
     setToast({
@@ -558,7 +615,7 @@ export function PianoChessGame({
       remaining: check.remaining === null ? null : check.remaining - 1,
       will_count: willCount,
     });
-  }, [addTakeback]);
+  }, [addTakeback, commitChessTakeback, projectAuthority]);
 
   const { cursor, armed, takebackArmed } = useChessInputController({
     gameId,

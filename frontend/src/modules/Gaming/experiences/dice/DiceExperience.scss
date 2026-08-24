@@ -1,0 +1,5 @@
+.dice-experience { min-height: 100%; display: grid; place-items: center; align-content: center; gap: 1.25rem; padding: 2rem; color: #fff; background: radial-gradient(circle, #293a78, #080b1b 72%); }
+.dice-polyhedra, .dice-fallback { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; min-height: 180px; }
+.dice-3d { width: 180px; height: 180px; position: relative; }.dice-3d > span { position: absolute; inset: 0; display: grid; place-items: center; z-index: 1; color: #111; font-size: 2rem; font-weight: 900; pointer-events: none; }
+.dice-fallback span { width: 7rem; height: 7rem; display: grid; place-items: center; border: .4rem solid #e6b325; border-radius: 1rem; background: #fff; color: #111; font-size: 2.5rem; font-weight: 900; }
+.dice-fallback--percentile-pair span:nth-child(odd) { border-radius: 50%; }.dice-total { font-size: 2rem; font-weight: 900; }.dice-presets { display: flex; flex-wrap: wrap; gap: .5rem; }.dice-experience button, .dice-experience input { min-height: 2.8rem; padding: .55rem .9rem; font: inherit; }.dice-roll { font-size: 1.5rem !important; font-weight: 900; }

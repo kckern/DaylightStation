@@ -29,7 +29,7 @@ const props = (currentGame, overrides = {}) => ({
   rungId: 'learner',
   ladderLevel: 2,
   addressing: 'chords',
-  opponentRef: { current: { id: 'pikachu' } },
+  opponentRef: { current: { id: 'practice-opponent' } },
   helpUsed: { hints: 1, bestMoves: 0, takebacks: 0 },
   timing: { mode: 'off' },
   playerColor: 'w',

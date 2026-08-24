@@ -24,9 +24,8 @@ import AddressingSettings from '../game-platform/addressing/AddressingSettings.j
  * How long the character waits before replying, in words a player can act on.
  *
  * The old control printed "300 ms / 700 ms / 1200 ms". A number in milliseconds
- * is not a unit anyone chooses in — and the key it writes is documented in
- * chess.yml as a legacy fallback, used only when the rung-scaled curve cannot
- * resolve a level, so the honest label is about the feel and not the figure.
+ * is not a unit anyone chooses in, so the label describes the feel rather than
+ * exposing an implementation unit.
  */
 const REPLY_SPEEDS = [
   { value: 300, label: 'Quick' },
@@ -41,11 +40,11 @@ const VOCABULARIES = [
 
 export default function ChessSettingsPanel({ config, rungId, onChange, onClose }) {
   const rungs = Array.isArray(config?.rungs) ? config.rungs : [];
-  const shuffle = config?.shuffle_each_turn !== false;
+  const shuffle = config?.addressing?.shuffle !== 'never';
   const delayMs = config?.opponent_delay_ms ?? 700;
   const labelsOn = config?.feedback?.show_destination_labels !== false;
   const soundOn = config?.feedback?.sound !== false;
-  const addressing = config?.addressing === 'staff' ? 'staff' : 'chords';
+  const addressing = config?.addressing?.vocabulary === 'staff' ? 'staff' : 'chords';
 
   return (
     <GameSheet title="Settings" onClose={onClose} className="chess-settings">
@@ -69,7 +68,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
         <GameChoice
           value={addressing}
           options={VOCABULARIES}
-          onChange={(value) => onChange({ addressing: value })}
+          onChange={(value) => onChange({ addressing: { vocabulary: value } })}
         />
       </GameField>
 
@@ -80,7 +79,7 @@ export default function ChessSettingsPanel({ config, rungId, onChange, onClose }
         <GameToggle
           label="Shuffle chords each turn"
           checked={shuffle}
-          onChange={(next) => onChange({ shuffle_each_turn: next })}
+          onChange={(next) => onChange({ addressing: { shuffle: next ? 'each_turn' : 'never' } })}
         />
       </GameField>
 

@@ -22,17 +22,7 @@ test('does not promote wins recorded against a lower rung', () => {
   assert.equal(ladder.unlockedThrough, 3);
 });
 
-// --- Help ceilings + ranked/unranked (Task 1: piano-game-platform-integration) ---
-//
-// Chess's ladder (shared/gaming/chess/ladder.mjs) refuses to let a help-heavy
-// game promote a player: a game where the engine supplied the best move was
-// partly played by the engine, not the child. That policy is being ported here
-// so the generic container can carry it once Chess migrates onto it (Task 2) —
-// without it, the migration would silently delete the discipline chess already
-// enforces. The second half is the mirror image: Connect Four and Checkers
-// already flag games played against the offline fallback engine `ranked:
-// false` when Wi-Fi drops the real opponent, but the ladder had no way to
-// honour that flag, so a lost connection could be laundered into promotion.
+// Help ceilings and ranked/unranked play are generic ladder policy.
 
 test('a ranked:false game never promotes, whatever the result', () => {
   let ladder = new OpponentLadder({ opponents, winsRequired: 3, seriesLength: 5 });
@@ -44,9 +34,7 @@ test('a ranked:false game never promotes, whatever the result', () => {
 });
 
 test('a game breaching any help ceiling never promotes', () => {
-  // max_hints: 1 means "one hint is a child orienting themselves"; a second
-  // hint on the same game is being carried through it, same rationale as the
-  // chess policy this mirrors.
+  // A caller decides how much assistance still counts toward promotion.
   let ladder = new OpponentLadder({
     opponents, winsRequired: 3, seriesLength: 5,
     helpCeilings: { max_hints: 1 },
@@ -71,13 +59,7 @@ test('a game at or under a help ceiling still counts (breach is strictly greater
 });
 
 test('unrestricted_below_level exempts levels below it from every ceiling', () => {
-  // Convention pin: OpponentLadder levels are 1-based (level 1 is the first
-  // opponent), unlike chess's 0-based engine skill levels. `unrestricted_below_level`
-  // is read in the ladder's own (1-based) numbering, so a value of 2 exempts
-  // only level 1 — the same "teach the game before the discipline" carve-out
-  // chess grants its own level 0, expressed in this ladder's indexing. A
-  // caller migrating a 0-based policy (Chess, Task 2) must add 1 when porting
-  // the number across; this ladder does not do that conversion itself.
+  // A value of 2 exempts only level 1 because ladder levels are 1-based.
   let ladder = new OpponentLadder({
     opponents, winsRequired: 3, seriesLength: 5,
     helpCeilings: { max_hints: 0, unrestricted_below_level: 2 },

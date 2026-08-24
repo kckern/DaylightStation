@@ -1,0 +1,28 @@
+@use './tokens' as gp;
+
+.gp-avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  &__disc {
+    width: var(--ma-size, 40px);
+    height: var(--ma-size, 40px);
+    flex: 0 0 auto;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--team-color, var(--gp-tile-hi));
+    box-shadow: 0 0 0 2px var(--gp-stage), 0 0 0 3px var(--team-color, var(--gp-tile-hi));
+  }
+  &__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  &__initial {
+    font-family: var(--gp-font-display);
+    font-size: calc(var(--ma-size, 40px) * 0.5);
+    line-height: 1;
+    color: var(--team-on, var(--gp-paper));
+  }
+  &__name { font-family: var(--gp-font-ui); color: var(--gp-paper); }
+}

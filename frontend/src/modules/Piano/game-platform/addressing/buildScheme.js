@@ -1,4 +1,4 @@
-import { shuffle } from '@shared-gaming/rng.mjs';
+import { shuffle } from '@shared-gaming/mechanics/random.mjs';
 import { materialFor } from './resolveAddressing.js';
 import { validateChordScheme } from '../../PianoChessGame/chordAddress.js';
 import { validateStaffScheme } from '../../PianoChessGame/staffAddress.js';

@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs
 import path from 'node:path';
 import YAML from 'yaml';
 import { materializeAssetCatalog, resolveConnectorFrame, resolveHeightTransition, resolvePrefabLayers, resolveTerrainFrame, validateAssetCatalog, validatePrefabCatalog } from '../../shared/gaming/assets.mjs';
-import { compileTopDownScene, migratePresentationV1, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, resolveLayeredAssetAnimation, resolveRiggedAssetAnimation, resolveRiggedAnimationState, validatePresentationCatalog, validateTopDownScene } from '../../shared/presentation/index.mjs';
+import { compileTopDownScene, PRESENTATION_CATALOG_MAP_FIELDS, resolveAssetAnimation, resolveLayeredAssetAnimation, resolveRiggedAssetAnimation, resolveRiggedAnimationState, validatePresentationCatalog } from '../../shared/presentation/scenes/index.mjs';
 
 const IMAGE_EXTENSIONS = new Set(['.png']);
 const PNG_SIGNATURE = '89504e470d0a1a0a';
@@ -21,8 +21,8 @@ const LICENSE_SCOPE_BY_PATH = [
   ['assets/ui/', 'ui-commercial'],
   ['assets/halloween/', 'halloween-commercial'],
   ['assets/default/', 'core-commercial'],
-  ['assets/legacy-unclassified/', 'legacy-private-use'],
-  ['assets/side-scroller/', 'legacy-private-use'],
+  ['assets/quarantine/', 'private-use'],
+  ['assets/side-scroller/', 'private-use'],
   ['Cute_Fantasy_Free/', 'free-noncommercial'],
   ['Cute_Fantasy_Dungeons/', 'dungeons-commercial'],
   ['Cute_Fantasy_Volcano/', 'volcano-commercial'],
@@ -38,8 +38,8 @@ const PACK_ROOTS = new Map([
   ['Cute_Fantasy_Desert', 'desert'], ['Cute_Fantasy_Dungeons', 'dungeons'],
   ['Cute_Fantasy_Free', 'free'], ['Cute_Fantasy_Halloween', 'halloween'],
   ['Cute_Fantasy_UI', 'ui'], ['Cute_Fantasy_Volcano', 'volcano'],
-  ['Old_Sprites', 'legacy-unclassified'], ['Cute_Fantasy_MilitaryCamp', 'legacy-unclassified/military-camp'],
-  ['Cute_Fantasy_ShroomLands', 'legacy-unclassified/shroom-lands'], ['Player_Aseprite_Files', 'legacy-unclassified/player-aseprite-files'],
+  ['Old_Sprites', 'quarantine'], ['Cute_Fantasy_MilitaryCamp', 'quarantine/military-camp'],
+  ['Cute_Fantasy_ShroomLands', 'quarantine/shroom-lands'], ['Player_Aseprite_Files', 'quarantine/player-aseprite-files'],
 ]);
 
 function posixRelative(root, file) {
@@ -95,99 +95,6 @@ async function validateCatalogForQa({ root, catalogPath, catalog }) {
   return catalog?.schema_version === 2 ? validatePresentationCatalog(catalog) : validateManifest({ root, manifestPath: catalogPath });
 }
 
-async function annotateMigratedEdgeContacts({ root, catalog }) {
-  if (!root) return [];
-  const { createCanvas, loadImage } = await import('canvas');
-  const measured = [];
-  for (const [assetId, asset] of Object.entries(catalog.assets ?? {})) {
-    if (asset.status !== 'approved' || asset.edge_policy !== 'isolated') continue;
-    const file = resolveUnder(root, asset.source);
-    const facts = await imageFacts(file);
-    if (facts.sha256 !== asset.source_sha256) throw new Error(`asset ${assetId}: source_sha256 does not match ${asset.source}`);
-    const image = await loadImage(file);
-    const logicalHeights = [];
-    for (const [frameId, frame] of Object.entries(asset.frames ?? {})) {
-      const [sx, sy, sw, sh] = frameRect(asset, frame, facts);
-      const sample = createCanvas(sw, sh); const context = sample.getContext('2d');
-      context.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
-      const pixels = context.getImageData(0, 0, sw, sh).data;
-      let minX = sw; let minY = sh; let maxX = -1; let maxY = -1;
-      for (let y = 0; y < sh; y += 1) for (let x = 0; x < sw; x += 1) {
-        if (!pixels[(y * sw + x) * 4 + 3]) continue;
-        minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
-      }
-      if (maxX < 0) continue;
-      const contentBounds = [minX, minY, maxX - minX + 1, maxY - minY + 1];
-      frame.content_bounds ??= contentBounds;
-      logicalHeights.push(contentBounds[3] / asset.pixel_density);
-      const contacts = [
-        ...(minY === 0 ? ['north'] : []),
-        ...(maxX === sw - 1 ? ['east'] : []),
-        ...(maxY === sh - 1 ? ['south'] : []),
-        ...(minX === 0 ? ['west'] : []),
-      ];
-      if (!contacts.length) continue;
-      frame.edge_contact = {
-        allowed: [...new Set([...(frame.edge_contact?.allowed ?? []), ...contacts])],
-        reason: frame.edge_contact?.reason ?? 'exact visible-alpha contact measured during v1 migration',
-      };
-      measured.push({ asset: assetId, frame: frameId, contacts });
-    }
-    if (asset.world.scale_class === 'building' && logicalHeights.length && Math.max(...logicalHeights) < 32) asset.world.scale_class = 'building-small';
-  }
-  return measured;
-}
-
-/** Produce reviewable v2 candidates without mutating the v1 source files. */
-export async function migratePresentationCatalog({ root, catalogPath, scenesDir, outDir }) {
-  const catalog = await loadAssetCatalog(catalogPath);
-  const sceneFiles = (await readdir(scenesDir)).filter((file) => file.endsWith('.yml')).sort();
-  const namedScenes = await Promise.all(sceneFiles.map(async (file) => ({
-    id: path.basename(file, '.yml').replace(/^\d+-/, ''),
-    file,
-    scene: YAML.parse(await readFile(path.join(scenesDir, file), 'utf8'), { uniqueKeys: true }) ?? {},
-  })));
-  const migrated = migratePresentationV1(catalog, namedScenes);
-  const measuredEdgeContacts = await annotateMigratedEdgeContacts({ root, catalog: migrated.catalog });
-  migrated.report.measured_edge_contacts = measuredEdgeContacts;
-  const catalogValidation = validatePresentationCatalog(migrated.catalog);
-  const sceneValidation = migrated.scenes.map((scene) => ({ id: scene.id, ...validateTopDownScene(scene, migrated.catalog) }));
-  const unresolved = [
-    ...catalogValidation.errors.map((message) => ({ scope: 'catalog', message })),
-    ...sceneValidation.flatMap((entry) => entry.errors.map((message) => ({ scope: entry.id, message }))),
-  ];
-  await mkdir(path.join(outDir, 'scenes'), { recursive: true });
-  await writeYaml(path.join(outDir, 'catalog.yml'), migrated.catalog);
-  for (const scene of migrated.scenes) {
-    const sourceName = namedScenes.find((entry) => entry.id === scene.id)?.file ?? `${scene.id}.yml`;
-    await writeYaml(path.join(outDir, 'scenes', sourceName), scene);
-  }
-  let suitePath = null;
-  try {
-    const legacySuite = YAML.parse(await readFile(path.join(path.dirname(catalogPath), 'scenes.yml'), 'utf8'), { uniqueKeys: true }) ?? {};
-    if (legacySuite.schema_version === 1 && legacySuite.kind === 'scene-qa-set' && Array.isArray(legacySuite.scenes)) {
-      const requiredSystems = [...new Set([...(legacySuite.requirements?.required_systems ?? []), 'shadow'])];
-      const suite = {
-        schema_version: 2,
-        kind: 'presentation-scene-qa-set',
-        catalog: 'catalog.yml',
-        requirements: {
-          ...legacySuite.requirements,
-          require_deterministic_plan: true,
-          required_systems: requiredSystems,
-        },
-        scenes: legacySuite.scenes.map((entry) => ({ ...entry, manifest: `scenes/${path.basename(entry.manifest)}` })),
-      };
-      suitePath = path.join(outDir, 'scenes.yml');
-      await writeYaml(suitePath, suite);
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-  }
-  await writeYaml(path.join(outDir, 'migration-report.yml'), { schema_version: 2, kind: 'presentation-migration-report', ...migrated.report, valid: unresolved.length === 0, unresolved });
-  return { out_dir: outDir, catalog: path.join(outDir, 'catalog.yml'), suite: suitePath, scenes: migrated.scenes.length, valid: unresolved.length === 0, unresolved };
-}
-
 function candidateCells(width, height) {
   return COMMON_CELLS
     .filter((size) => width % size === 0 && height % size === 0)
@@ -215,16 +122,16 @@ function normalizedAssetPath(source, sourceDir, targetDir) {
   if (!relative.length && IMAGE_EXTENSIONS.has(path.extname(root).toLowerCase())) {
     const extension = path.extname(root).toLowerCase();
     if (root.toLowerCase() === 'megaman-sprites.png') return [targetDir, 'side-scroller', 'players', 'megaman.png'].join('/');
-    return [targetDir, 'legacy-unclassified', `${kebab(root.slice(0, -extension.length))}${extension}`].join('/');
+    return [targetDir, 'quarantine', `${kebab(root.slice(0, -extension.length))}${extension}`].join('/');
   }
-  const destinationRoot = PACK_ROOTS.get(root) ?? `legacy-unclassified/${kebab(root)}`;
+  const destinationRoot = PACK_ROOTS.get(root) ?? `quarantine/${kebab(root)}`;
   const defaultPrefixes = [
     [['Animals'], ['actors', 'animals']], [['Buildings', 'Buildings'], ['environment', 'buildings']],
     [['Crops'], ['environment', 'crops']], [['Enemies'], ['actors', 'enemies']],
     [['Icons'], ['ui', 'icons']], [['NPCs (Premade)'], ['actors', 'npcs', 'premade']],
     [['Outdoor decoration'], ['environment', 'props']], [['Player'], ['actors', 'player']],
     [['Tiles'], ['environment', 'tiles']], [['Trees'], ['environment', 'foliage']],
-    [['Weather effects'], ['effects', 'weather']], [['Other'], ['legacy-unclassified', 'other']],
+    [['Weather effects'], ['effects', 'weather']], [['Other'], ['quarantine', 'other']],
   ];
   const matchingPrefix = root === 'Cute_Fantasy'
     ? defaultPrefixes.find(([prefix]) => prefix.every((part, index) => relative[index] === part))
@@ -1897,329 +1804,6 @@ function intersectingViewport(bounds, width, height) {
   return bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= width && bounds.y + bounds.height <= height;
 }
 
-/** Render semantic scene YAML using approved catalog asset IDs and prefab layers. */
-export async function renderLegacyScene({ root, catalogPath, manifestPath = null, sceneData = null, out }) {
-  const catalog = await loadAssetCatalog(catalogPath);
-  const scene = sceneData ?? (YAML.parse(await readFile(manifestPath, 'utf8')) ?? {});
-  if (!validPair(scene.viewport)) throw new Error('scene viewport must be [width, height]');
-  const worldScale = scene.world_scale ?? 1;
-  if (!Number.isFinite(worldScale) || worldScale <= 0) throw new Error('scene world_scale must be positive');
-  if (scene.require_explicit_pixel_density !== undefined && typeof scene.require_explicit_pixel_density !== 'boolean') throw new Error('scene require_explicit_pixel_density must be boolean');
-  if (scene.enforce_uniform_pixel_scale !== undefined && typeof scene.enforce_uniform_pixel_scale !== 'boolean') throw new Error('scene enforce_uniform_pixel_scale must be boolean');
-  if (scene.fail_on_frame_edge_contact !== undefined && typeof scene.fail_on_frame_edge_contact !== 'boolean') throw new Error('scene fail_on_frame_edge_contact must be boolean');
-  if (scene.forbid_direct_autotile_frames !== undefined && typeof scene.forbid_direct_autotile_frames !== 'boolean') throw new Error('scene forbid_direct_autotile_frames must be boolean');
-  const { createCanvas, loadImage } = await import('canvas');
-  const [width, height] = scene.viewport; const { canvas, ctx } = await createPixelCanvas(width, height);
-  ctx.fillStyle = scene.background ?? '#000000'; ctx.fillRect(0, 0, width, height);
-  const imageCache = new Map(); const normalizedFrameCache = new Map(); const alphaCache = new Map(); const drawPlan = []; const clipping = []; const frameEdgeContacts = []; const connectionPoints = new Map(); const terrainAudit = []; const connectorAudit = []; const heightAudit = []; const componentAudit = []; const syntheticConnections = []; const resolutionAssets = new Map(); let insideCornersResolved = 0; let groundContactSprites = 0; let normalizedDraws = 0; let nonUniformScaleDraws = 0;
-  const imageFor = async (file) => {
-    if (!imageCache.has(file)) imageCache.set(file, await loadImage(file));
-    return imageCache.get(file);
-  };
-  const alphaBounds = (image, sx, sy, sw, sh, key) => {
-    if (alphaCache.has(key)) return alphaCache.get(key);
-    const sample = createCanvas(sw, sh); const sampleContext = sample.getContext('2d');
-    sampleContext.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
-    const pixels = sampleContext.getImageData(0, 0, sw, sh).data;
-    let minX = sw; let minY = sh; let maxX = -1; let maxY = -1;
-    for (let y = 0; y < sh; y += 1) for (let x = 0; x < sw; x += 1) {
-      if (pixels[(y * sw + x) * 4 + 3] === 0) continue;
-      minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
-    }
-    const bounds = maxX < 0 ? null : { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
-    alphaCache.set(key, bounds); return bounds;
-  };
-  const draw = async (entry) => {
-    assertKnownFields(entry, new Set(['id', 'asset', 'frame', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow', 'order', 'provenance', 'source_cell_offset']), 'scene draw');
-    if (entry.id !== undefined && !validId(entry.id)) throw new Error(`scene draw id is invalid: ${entry.id}`);
-    if (!validCoordinate(entry.at)) throw new Error(`scene draw needs non-negative integer at: ${entry.asset}`);
-    if (entry.offset !== undefined && (!Array.isArray(entry.offset) || entry.offset.length !== 2 || entry.offset.some((value) => !Number.isInteger(value)))) throw new Error(`scene draw offset must be an integer pair: ${entry.asset}`);
-    if (entry.opacity !== undefined && (!Number.isFinite(entry.opacity) || entry.opacity < 0 || entry.opacity > 1)) throw new Error(`scene draw opacity must be between 0 and 1: ${entry.asset}`);
-    if (entry.flip_x !== undefined && typeof entry.flip_x !== 'boolean') throw new Error(`scene draw flip_x must be boolean: ${entry.asset}`);
-    const rotation = entry.rotation ?? 0;
-    if (![0, 90, 180, 270].includes(rotation)) throw new Error(`scene draw rotation must be 0, 90, 180, or 270: ${entry.asset}`);
-    if (rotation && entry.flip_x) throw new Error(`scene draw cannot combine rotation and flip_x: ${entry.asset}`);
-    const { asset, frame, frameName } = resolveCatalogFrame(catalog, entry.asset, entry.frame);
-    if (scene.forbid_direct_autotile_frames && entry.provenance === 'placement' && asset.autotile) {
-      const innerCornerFrames = asset.autotile.inner_corners?.positive || asset.autotile.inner_corners?.negative
-        ? [...Object.values(asset.autotile.inner_corners?.positive ?? {}), ...Object.values(asset.autotile.inner_corners?.negative ?? {})]
-        : Object.values(asset.autotile.inner_corners ?? {});
-      const mappedFrames = new Set([
-        ...Object.values(asset.autotile.positive ?? asset.autotile.frames ?? {}),
-        ...Object.values(asset.autotile.negative ?? {}),
-        ...innerCornerFrames,
-      ]);
-      if (mappedFrames.has(frameName)) throw new Error(`scene placement must author autotile frame through a terrain region: ${entry.asset}`);
-    }
-    if (asset.tags?.includes('ground-contact')) groundContactSprites += 1;
-    const file = resolveUnder(root, asset.source); const facts = await imageFacts(file);
-    const [sx, sy, sw, sh] = frameRect(asset, frame, facts, entry.source_cell_offset ?? [0, 0]);
-    const image = await imageFor(file); const scale = entry.scale ?? worldScale;
-    if (!Number.isFinite(scale) || scale <= 0) throw new Error(`scene draw scale must be positive: ${entry.asset}`);
-    if (scene.enforce_uniform_pixel_scale === true && Math.abs(scale - worldScale) > 0.0001) throw new Error(`scene draw pixel scale must match world_scale: ${entry.asset} uses ${scale}, expected ${worldScale}`);
-    if (Math.abs(scale - worldScale) > 0.0001) nonUniformScaleDraws += 1;
-    if (scene.require_explicit_pixel_density === true && asset.pixel_density === undefined) throw new Error(`scene draw asset needs explicit pixel_density: ${entry.asset}`);
-    const pixelDensity = asset.pixel_density ?? 1;
-    if (!Number.isInteger(pixelDensity) || pixelDensity < 1 || pixelDensity > 8) throw new Error(`scene draw asset has invalid pixel_density: ${entry.asset}`);
-    if (sw % pixelDensity !== 0 || sh % pixelDensity !== 0) throw new Error(`scene draw frame size must be divisible by pixel_density: ${entry.asset}#${frameName}`);
-    const rasterScale = scale / pixelDensity; const logicalWidth = sw / pixelDensity; const logicalHeight = sh / pixelDensity;
-    const [ax, ay] = anchorOffset(frame.anchor ?? asset.defaults?.anchor, logicalWidth * scale, logicalHeight * scale, rasterScale);
-    const [offsetX, offsetY] = entry.offset ?? [0, 0]; const [x, y] = entry.at;
-    const dx = x + offsetX - ax; const dy = y + offsetY - ay; const dw = logicalWidth * scale; const dh = logicalHeight * scale;
-    const resolution = resolutionAssets.get(entry.asset) ?? { pixel_density: pixelDensity, draws: 0 };
-    resolution.draws += 1; resolutionAssets.set(entry.asset, resolution);
-    if (entry.id !== undefined) {
-      if (connectionPoints.has(entry.id)) throw new Error(`scene draw id is duplicated: ${entry.id}`);
-      const ports = new Map();
-      for (const [portName, point] of Object.entries(frame.ports ?? {})) {
-        const localX = (entry.flip_x ? sw - point[0] : point[0]) * rasterScale - ax;
-        const localY = point[1] * rasterScale - ay;
-        const radians = rotation * Math.PI / 180; const cosine = Math.cos(radians); const sine = Math.sin(radians);
-        ports.set(portName, [x + offsetX + localX * cosine - localY * sine, y + offsetY + localX * sine + localY * cosine]);
-      }
-      connectionPoints.set(entry.id, { ports, requiresAll: frame.requires_all_ports ?? asset.requires_all_ports ?? false });
-    }
-    const nativeAlpha = alphaBounds(image, sx, sy, sw, sh, `${file}:${sx},${sy},${sw},${sh}`);
-    if (nativeAlpha && asset.kind !== 'tile-sheet' && asset.requires_all_ports !== true && frame.allow_edge_contact !== true) {
-      if (nativeAlpha.x === 0 || nativeAlpha.y === 0 || nativeAlpha.x + nativeAlpha.width === sw || nativeAlpha.y + nativeAlpha.height === sh) frameEdgeContacts.push({ asset: entry.asset, at: entry.at, alpha_bounds: nativeAlpha, frame: [sw, sh] });
-    }
-    let visibleBounds = null;
-    if (nativeAlpha) {
-      const visibleX = entry.flip_x ? sw - nativeAlpha.x - nativeAlpha.width : nativeAlpha.x;
-      if (rotation) {
-        const radians = rotation * Math.PI / 180; const cosine = Math.cos(radians); const sine = Math.sin(radians);
-        const left = visibleX * rasterScale - ax; const top = nativeAlpha.y * rasterScale - ay;
-        const right = left + nativeAlpha.width * rasterScale; const bottom = top + nativeAlpha.height * rasterScale;
-        const points = [[left, top], [right, top], [right, bottom], [left, bottom]].map(([pointX, pointY]) => [x + offsetX + pointX * cosine - pointY * sine, y + offsetY + pointX * sine + pointY * cosine]);
-        const xs = points.map(([pointX]) => pointX); const ys = points.map(([, pointY]) => pointY);
-        visibleBounds = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
-      } else visibleBounds = { x: dx + visibleX * rasterScale, y: dy + nativeAlpha.y * rasterScale, width: nativeAlpha.width * rasterScale, height: nativeAlpha.height * rasterScale };
-      if (!intersectingViewport(visibleBounds, width, height)) clipping.push({ asset: entry.asset, at: entry.at, visible_bounds: visibleBounds });
-    }
-    if (entry.shadow !== undefined) {
-      const shadow = entry.shadow; const size = shadow?.size ?? [12, 5]; const shadowOffset = shadow?.offset ?? [0, -1];
-      if (!validPair(size) || !Array.isArray(shadowOffset) || shadowOffset.length !== 2 || shadowOffset.some((value) => !Number.isInteger(value))) throw new Error(`scene draw shadow needs positive size and integer offset: ${entry.asset}`);
-      const shadowOpacity = shadow.opacity ?? 0.35;
-      if (!Number.isFinite(shadowOpacity) || shadowOpacity < 0 || shadowOpacity > 1) throw new Error(`scene draw shadow opacity must be between 0 and 1: ${entry.asset}`);
-      ctx.save(); ctx.globalAlpha = shadowOpacity; ctx.fillStyle = shadow.color ?? '#173f2a';
-      ctx.beginPath(); ctx.ellipse(x + shadowOffset[0] * scale, y + shadowOffset[1] * scale - size[1] * scale / 2, size[0] * scale / 2, size[1] * scale / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-    }
-    let drawSource = image; let drawSourceRect = [sx, sy, sw, sh];
-    if (pixelDensity > 1) {
-      const normalizedKey = `${file}:${sx},${sy},${sw},${sh}:density=${pixelDensity}`;
-      if (!normalizedFrameCache.has(normalizedKey)) {
-        const normalized = createCanvas(logicalWidth, logicalHeight); const normalizedContext = normalized.getContext('2d');
-        normalizedContext.imageSmoothingEnabled = false;
-        normalizedContext.drawImage(image, sx, sy, sw, sh, 0, 0, logicalWidth, logicalHeight);
-        normalizedFrameCache.set(normalizedKey, normalized);
-      }
-      drawSource = normalizedFrameCache.get(normalizedKey); drawSourceRect = [0, 0, logicalWidth, logicalHeight]; normalizedDraws += 1;
-    }
-    const [drawSx, drawSy, drawSw, drawSh] = drawSourceRect;
-    ctx.save(); ctx.globalAlpha = entry.opacity ?? 1;
-    if (rotation) { ctx.translate(x + offsetX, y + offsetY); ctx.rotate(rotation * Math.PI / 180); ctx.drawImage(drawSource, drawSx, drawSy, drawSw, drawSh, -ax, -ay, dw, dh); }
-    else if (entry.flip_x) { ctx.translate(dx + dw, dy); ctx.scale(-1, 1); ctx.drawImage(drawSource, drawSx, drawSy, drawSw, drawSh, 0, 0, dw, dh); }
-    else ctx.drawImage(drawSource, drawSx, drawSy, drawSw, drawSh, dx, dy, dw, dh);
-    ctx.restore();
-    drawPlan.push({ id: entry.id ?? null, asset: entry.asset, at: entry.at, z: entry.z ?? 0, source_rect: [sx, sy, sw, sh], pixel_density: pixelDensity, pixel_scale: scale, logical_size: [logicalWidth, logicalHeight], alpha_bounds: nativeAlpha, visible_bounds: visibleBounds, provenance: entry.provenance ?? null });
-  };
-  const terrainEntries = [];
-  const expandCells = (region, prefix) => {
-    const authoredCells = [...(region.cells ?? [])];
-    for (const [index, rect] of (region.rects ?? []).entries()) {
-      if (!Array.isArray(rect) || rect.length !== 4 || rect.some((value) => !Number.isInteger(value)) || rect[0] < 0 || rect[1] < 0 || rect[2] < 1 || rect[3] < 1) throw new Error(`${prefix} rect ${index} must be [x, y, width, height]`);
-      for (let y = rect[1]; y < rect[1] + rect[3]; y += 1) for (let x = rect[0]; x < rect[0] + rect[2]; x += 1) authoredCells.push([x, y]);
-    }
-    if (authoredCells.some((at) => !validCoordinate(at))) throw new Error(`${prefix} cells must contain non-negative integer pairs`);
-    return [...new Map(authoredCells.map((at) => [`${at[0]},${at[1]}`, at])).values()];
-  };
-  if (scene.ground !== undefined) {
-    const ground = typeof scene.ground === 'string' ? { asset: scene.ground } : scene.ground;
-    assertKnownFields(ground, new Set(['asset', 'frame', 'scale', 'z']), 'scene ground');
-    const { asset, frame } = resolveCatalogFrame(catalog, ground.asset, ground.frame);
-    const facts = await imageFacts(resolveUnder(root, asset.source)); const [, , tileWidth, tileHeight] = frameRect(asset, frame, facts);
-    const scale = ground.scale ?? worldScale;
-    if (scene.world_scale !== undefined && scale !== worldScale) throw new Error('scene ground scale must match scene world_scale');
-    for (let y = 0; y < height; y += tileHeight * scale) for (let x = 0; x < width; x += tileWidth * scale) {
-      terrainEntries.push({ asset: ground.asset, frame: ground.frame, at: [x, y], scale, z: ground.z ?? -100, depth_sort: false, provenance: 'ground' });
-    }
-  }
-  for (const region of scene.terrain?.regions ?? []) {
-    assertKnownFields(region, new Set(['terrain', 'asset', 'polarity', 'phase', 'origin', 'cell', 'scale', 'cells', 'rects', 'continues', 'opacity', 'z']), `terrain region ${region.asset ?? ''}`);
-    const uniqueCells = expandCells(region, 'terrain');
-    const cells = new Set(uniqueCells.map(([x, y]) => `${x},${y}`));
-    const asset = catalog.assets?.[region.asset];
-    if (!asset || asset.status !== 'approved') throw new Error(`terrain references unavailable asset: ${region.asset}`);
-    const frames = asset.autotile;
-    if (!frames) throw new Error(`terrain asset has no reviewed autotile mapping: ${region.asset}`);
-    const polarity = region.polarity ?? 'positive';
-    if (!['positive', 'negative'].includes(polarity)) throw new Error(`terrain region polarity must be positive or negative: ${polarity}`);
-    const grid = scene.terrain?.grid ?? {};
-    const cell = region.cell ?? grid.cell;
-    const scale = region.scale ?? grid.scale ?? worldScale;
-    if (scene.world_scale !== undefined && scale !== worldScale) throw new Error(`terrain region scale must match scene world_scale: ${region.asset}`);
-    const origin = region.origin ?? grid.origin ?? [0, 0];
-    if (!validPair(cell) || !Number.isFinite(scale) || scale <= 0 || !validCoordinate(origin)) throw new Error(`terrain region needs valid grid cell, scale, and origin: ${region.asset}`);
-    const continues = region.continues ?? [];
-    if (!Array.isArray(continues) || continues.some((direction) => !['north', 'east', 'south', 'west'].includes(direction))) throw new Error(`terrain region continues must contain north/east/south/west: ${region.asset}`);
-    const touched = new Set();
-    for (const [cellX, cellY] of uniqueCells) {
-      const pixelX = origin[0] + cellX * cell[0] * scale; const pixelY = origin[1] + cellY * cell[1] * scale;
-      if (continues.includes('west') && pixelX === 0) { cells.add(`${cellX - 1},${cellY}`); touched.add('west'); }
-      if (continues.includes('east') && pixelX + cell[0] * scale === width) { cells.add(`${cellX + 1},${cellY}`); touched.add('east'); }
-      if (continues.includes('north') && pixelY === 0) { cells.add(`${cellX},${cellY - 1}`); touched.add('north'); }
-      if (continues.includes('south') && pixelY + cell[1] * scale === height) { cells.add(`${cellX},${cellY + 1}`); touched.add('south'); }
-    }
-    // When material continues through two adjacent viewport edges, the
-    // off-screen diagonal exists too. Without it the last visible cell is
-    // falsely classified as an inside corner.
-    if (continues.includes('north') && continues.includes('west')) cells.add('-1,-1');
-    if (continues.includes('north') && continues.includes('east')) cells.add(`${width / (cell[0] * scale)},-1`);
-    if (continues.includes('south') && continues.includes('west')) cells.add(`-1,${height / (cell[1] * scale)}`);
-    if (continues.includes('south') && continues.includes('east')) cells.add(`${width / (cell[0] * scale)},${height / (cell[1] * scale)}`);
-    const missedContinuations = continues.filter((direction) => !touched.has(direction));
-    if (missedContinuations.length) throw new Error(`terrain region does not touch requested continuation edges ${missedContinuations.join(', ')}: ${region.asset}`);
-    const regionAudit = { region: region.terrain ?? region.asset, asset: region.asset, cells: uniqueCells.length, masks: {}, frames: {}, inside_corners_resolved: 0 };
-    for (const at of uniqueCells) {
-      const resolved = resolveTerrainFrame({ cells, at, frames, polarity, phase: region.phase ?? 0 });
-      insideCornersResolved += resolved.inner_corners?.length ?? 0;
-      regionAudit.inside_corners_resolved += resolved.inner_corners?.length ?? 0;
-      regionAudit.masks[resolved.mask] = (regionAudit.masks[resolved.mask] ?? 0) + 1;
-      for (const frameName of resolved.layers) regionAudit.frames[frameName] = (regionAudit.frames[frameName] ?? 0) + 1;
-      const variants = asset.autotile?.variations?.[resolved.frame];
-      const variantIndex = variants ? Math.abs(at[0] * 73856093 + at[1] * 19349663) % variants.length : 0;
-      const variant = variants?.[variantIndex] ?? {};
-      const entryAt = [origin[0] + at[0] * cell[0] * scale, origin[1] + at[1] * cell[1] * scale];
-      terrainEntries.push({ asset: region.asset, frame: variant.frame ?? resolved.frame, source_cell_offset: resolved.frame_offset, flip_x: variant.flip_x, opacity: region.opacity, at: entryAt, scale, z: region.z ?? 0, depth_sort: false, provenance: `terrain:${region.terrain ?? region.asset}` });
-      for (const overlay of resolved.overlays) terrainEntries.push({ asset: region.asset, frame: overlay, source_cell_offset: resolved.frame_offset, opacity: region.opacity, at: entryAt, scale, z: region.z ?? 0, depth_sort: false, provenance: `terrain-corner:${region.terrain ?? region.asset}` });
-    }
-    terrainAudit.push(regionAudit);
-  }
-
-  const semanticEntries = [];
-  for (const [index, region] of (scene.connectors ?? []).entries()) {
-    assertKnownFields(region, new Set(['id', 'asset', 'origin', 'cell', 'scale', 'cells', 'rects', 'z']), `connector region ${index}`);
-    if (!validId(region.id)) throw new Error(`connector region ${index} needs a valid id`);
-    const asset = catalog.assets?.[region.asset];
-    if (!asset?.connector || asset.status !== 'approved') throw new Error(`connector region references unavailable connector asset: ${region.asset}`);
-    const cells = expandCells(region, `connector region ${region.id}`); const cellSet = new Set(cells.map(([x, y]) => `${x},${y}`));
-    const cell = region.cell ?? asset.geometry?.cell; const scale = region.scale ?? worldScale; const origin = region.origin ?? [0, 0];
-    if (!validPair(cell) || !validCoordinate(origin) || !Number.isFinite(scale) || scale <= 0) throw new Error(`connector region ${region.id} needs valid cell, origin, and scale`);
-    if (scene.world_scale !== undefined && scale !== worldScale) throw new Error(`connector region scale must match scene world_scale: ${region.id}`);
-    const pieces = {};
-    for (const [x, y] of cells) {
-      const neighbours = [['n', x, y - 1], ['e', x + 1, y], ['s', x, y + 1], ['w', x - 1, y]].filter(([, nx, ny]) => cellSet.has(`${nx},${ny}`)).map(([direction]) => direction);
-      const resolved = resolveConnectorFrame(asset, neighbours); const placementId = `${region.id}.${x}-${y}`;
-      semanticEntries.push({ id: placementId, asset: region.asset, frame: resolved.frame, rotation: resolved.rotation, at: [origin[0] + x * cell[0] * scale, origin[1] + y * cell[1] * scale], scale, z: region.z ?? 0, depth_sort: false, provenance: `connector:${region.id}` });
-      pieces[resolved.mask] = (pieces[resolved.mask] ?? 0) + 1;
-      if (cellSet.has(`${x + 1},${y}`)) syntheticConnections.push({ from: [placementId, 'east'], to: [`${region.id}.${x + 1}-${y}`, 'west'] });
-      if (cellSet.has(`${x},${y + 1}`)) syntheticConnections.push({ from: [placementId, 'south'], to: [`${region.id}.${x}-${y + 1}`, 'north'] });
-    }
-    connectorAudit.push({ region: region.id, asset: region.asset, cells: cells.length, pieces });
-  }
-
-  for (const [index, region] of (scene.heights ?? []).entries()) {
-    assertKnownFields(region, new Set(['id', 'asset', 'direction', 'origin', 'width', 'scale', 'z']), `height region ${index}`);
-    if (!validId(region.id)) throw new Error(`height region ${index} needs a valid id`);
-    const asset = catalog.assets?.[region.asset];
-    if (!asset?.height || asset.status !== 'approved') throw new Error(`height region references unavailable height asset: ${region.asset}`);
-    const transition = resolveHeightTransition(asset, region.direction ?? 'north'); const widthCells = region.width; const origin = region.origin ?? [0, 0]; const scale = region.scale ?? worldScale; const cell = asset.geometry?.cell;
-    if (!Number.isInteger(widthCells) || widthCells < 2 || !validCoordinate(origin) || !validPair(cell) || !Number.isFinite(scale) || scale <= 0) throw new Error(`height region ${region.id} needs width >= 2 and valid origin/scale`);
-    if (scene.world_scale !== undefined && scale !== worldScale) throw new Error(`height region scale must match scene world_scale: ${region.id}`);
-    for (const [bandIndex, band] of transition.bands.entries()) for (let column = 0; column < widthCells; column += 1) {
-      const frame = band.frames[column === 0 ? 0 : column === widthCells - 1 ? 2 : 1];
-      semanticEntries.push({ asset: region.asset, frame, at: [origin[0] + column * cell[0] * scale, origin[1] + bandIndex * cell[1] * scale], scale, z: region.z ?? 0, depth_sort: false, provenance: `height:${region.id}` });
-    }
-    heightAudit.push({ region: region.id, asset: region.asset, direction: transition.direction, width: widthCells, bands: transition.bands.map((band) => band.id), draws: widthCells * transition.bands.length });
-  }
-
-  for (const [index, region] of (scene.components ?? []).entries()) {
-    assertKnownFields(region, new Set(['id', 'asset', 'component', 'origin', 'cell', 'scale', 'cells', 'rects', 'z', 'opacity']), `component region ${index}`);
-    if (!validId(region.id)) throw new Error(`component region ${index} needs a valid id`);
-    const asset = catalog.assets?.[region.asset]; const component = asset?.components?.[region.component];
-    if (!component || asset.status !== 'approved') throw new Error(`component region references unavailable component: ${region.asset}.${region.component}`);
-    const cells = expandCells(region, `component region ${region.id}`); const cellSet = new Set(cells.map(([x, y]) => `${x},${y}`)); const cell = region.cell ?? asset.geometry?.cell; const scale = region.scale ?? worldScale; const origin = region.origin ?? [0, 0];
-    if (!validPair(cell) || !validCoordinate(origin) || !Number.isFinite(scale) || scale <= 0) throw new Error(`component region ${region.id} needs valid cell, origin, and scale`);
-    if (scene.world_scale !== undefined && scale !== worldScale) throw new Error(`component region scale must match scene world_scale: ${region.id}`);
-    const frames = {}; let draws = 0;
-    for (const [x, y] of cells) {
-      let frame;
-      if (component.outline) {
-        const missing = { n: !cellSet.has(`${x},${y - 1}`), e: !cellSet.has(`${x + 1},${y}`), s: !cellSet.has(`${x},${y + 1}`), w: !cellSet.has(`${x - 1},${y}`) };
-        if ((missing.n && missing.s) || (missing.e && missing.w)) throw new Error(`component outline ${region.id} contains a one-cell-thick span at ${x},${y}`);
-        const key = missing.n && missing.w ? 'nw' : missing.n && missing.e ? 'ne' : missing.s && missing.w ? 'sw' : missing.s && missing.e ? 'se' : missing.n ? 'n' : missing.s ? 's' : missing.w ? 'w' : missing.e ? 'e' : null;
-        if (!key) continue;
-        frame = component.outline[key];
-      } else frame = component.frames[Math.abs(x * 73856093 + y * 19349663) % component.frames.length];
-      frames[frame] = (frames[frame] ?? 0) + 1;
-      draws += 1;
-      semanticEntries.push({ asset: region.asset, frame, opacity: region.opacity, at: [origin[0] + x * cell[0] * scale, origin[1] + y * cell[1] * scale], scale, z: region.z ?? 0, depth_sort: false, provenance: `component:${region.id}` });
-    }
-    componentAudit.push({ region: region.id, asset: region.asset, component: region.component, role: component.role, cells: cells.length, draws, frames });
-  }
-
-  const concreteEntries = [...terrainEntries, ...semanticEntries, ...(scene.tiles ?? [])];
-  const expandPrefab = (placement, stack = []) => {
-    if (stack.includes(placement.prefab)) throw new Error(`prefab cycle: ${[...stack, placement.prefab].join(' -> ')}`);
-    const { layers } = resolvePrefabLayers(catalog, placement.prefab, placement.params ?? {});
-    const parentScale = placement.scale ?? worldScale; const parentZ = placement.z ?? 0;
-    for (const layer of layers) {
-      const offset = layer.at ?? layer.offset ?? [0, 0];
-      const entry = {
-        ...layer,
-        at: [placement.at[0] + offset[0] * parentScale, placement.at[1] + offset[1] * parentScale],
-        scale: parentScale * (layer.scale ?? 1),
-        z: parentZ + (layer.z ?? 0),
-        depth_sort: placement.depth_sort ?? layer.depth_sort,
-        shadow: layer.shadow ?? placement.shadow,
-        rotation: layer.rotation ?? placement.rotation,
-        provenance: [...stack, placement.prefab].join(' > '),
-      };
-      if (entry.prefab) expandPrefab(entry, [...stack, placement.prefab]);
-      else concreteEntries.push(entry);
-    }
-  };
-  for (const placement of scene.placements ?? []) {
-    assertKnownFields(placement, new Set(['id', 'asset', 'frame', 'prefab', 'params', 'at', 'offset', 'scale', 'z', 'depth_sort', 'flip_x', 'rotation', 'opacity', 'shadow']), 'scene placement');
-    if (placement.prefab) expandPrefab(placement);
-    else concreteEntries.push({ ...placement, provenance: 'placement' });
-  }
-  const ordered = concreteEntries.map((entry, order) => ({ ...entry, order })).sort((a, b) => {
-    const aDepth = a.depth_sort ?? scene.depth_sort === 'y' ? a.at[1] / 10000 : 0;
-    const bDepth = b.depth_sort ?? scene.depth_sort === 'y' ? b.at[1] / 10000 : 0;
-    return (a.z ?? 0) + aDepth - ((b.z ?? 0) + bDepth) || a.order - b.order;
-  });
-  for (const entry of ordered) await draw(entry);
-  if (scene.connections !== undefined && !Array.isArray(scene.connections)) throw new Error('scene connections must be an array');
-  const allConnections = [...(scene.connections ?? []), ...syntheticConnections];
-  const usedConnectionPorts = new Map();
-  for (const [index, connection] of allConnections.entries()) {
-    assertKnownFields(connection, new Set(['from', 'to']), `scene connection ${index}`);
-    const resolveEndpoint = (endpoint, side) => {
-      if (!Array.isArray(endpoint) || endpoint.length !== 2 || endpoint.some((value) => typeof value !== 'string')) throw new Error(`scene connection ${index} ${side} must be [placement-id, port-id]`);
-      const [placementId, portId] = endpoint; const connectionEntry = connectionPoints.get(placementId);
-      if (!connectionEntry) throw new Error(`scene connection ${index} references unknown placement id ${placementId}`);
-      const point = connectionEntry.ports.get(portId);
-      if (!point) throw new Error(`scene connection ${index} references unknown port ${placementId}.${portId}`);
-      const endpointId = `${placementId}.${portId}`;
-      usedConnectionPorts.set(endpointId, (usedConnectionPorts.get(endpointId) ?? 0) + 1);
-      return point;
-    };
-    const from = resolveEndpoint(connection.from, 'from'); const to = resolveEndpoint(connection.to, 'to');
-    if (Math.abs(from[0] - to[0]) > 0.0001 || Math.abs(from[1] - to[1]) > 0.0001) throw new Error(`scene connection ${index} is misaligned: ${connection.from.join('.')} at ${from.join(',')} != ${connection.to.join('.')} at ${to.join(',')}`);
-  }
-  for (const [placementId, connectionEntry] of connectionPoints) if (connectionEntry.requiresAll) {
-    for (const portId of connectionEntry.ports.keys()) {
-      const uses = usedConnectionPorts.get(`${placementId}.${portId}`) ?? 0;
-      if (uses !== 1) throw new Error(`scene required port ${placementId}.${portId} must be connected exactly once; found ${uses}`);
-    }
-  }
-  if (clipping.length && scene.fail_on_clipping !== false) throw new Error(`scene has ${clipping.length} visibly clipped draws: ${clipping.slice(0, 5).map((item) => item.asset).join(', ')}`);
-  if (frameEdgeContacts.length && scene.fail_on_frame_edge_contact === true) throw new Error(`scene has ${frameEdgeContacts.length} non-structural frames touching source edges: ${frameEdgeContacts.slice(0, 5).map((item) => item.asset).join(', ')}`);
-  await ensureParent(out); await writeFile(out, canvas.toBuffer('image/png'));
-  return { out, width, height, tiles: terrainEntries.length + semanticEntries.length + (scene.tiles?.length ?? 0), placements: scene.placements?.length ?? 0, draws: drawPlan.length, inside_corners_resolved: insideCornersResolved, terrain_audit: terrainAudit, connector_audit: connectorAudit, height_audit: heightAudit, component_audit: componentAudit, resolution_audit: { world_scale: worldScale, uniform_pixel_scale_enforced: scene.enforce_uniform_pixel_scale === true, explicit_pixel_density_required: scene.require_explicit_pixel_density === true, non_uniform_scale_draws: nonUniformScaleDraws, normalized_draws: normalizedDraws, assets: Object.fromEntries([...resolutionAssets.entries()].sort(([left], [right]) => left.localeCompare(right))) }, ground_contact_sprites: groundContactSprites, connections: allConnections.length, connected_ports: usedConnectionPorts.size, frame_edge_contacts: frameEdgeContacts, clipping, trace: scene.trace ? drawPlan : undefined };
-}
-
 async function renderPresentationPlan({ root, catalog, plan, out }) {
   const { createCanvas, loadImage } = await import('canvas');
   const [logicalWidth, logicalHeight] = plan.logical_size; const scale = plan.pixel_scale;
@@ -2454,24 +2038,21 @@ export async function auditPresentationMaterialPixels({ root, catalog }) {
   return { valid: errors.length === 0, errors, materials: Object.keys(catalog.materials).length, solid, overlays, transition_bands: transitionBands, interface_seams: interfaceSeams, corner_profiles: cornerProfiles };
 }
 
-/** Render either strict presentation v2 or an explicit legacy v1 scene. */
-export async function renderScene({ root, catalogPath, manifestPath = null, sceneData = null, out, allowLegacy = false }) {
+/** Render a strict Presentation V2 scene. */
+export async function renderScene({ root, catalogPath, manifestPath = null, sceneData = null, out }) {
   const scene = sceneData ?? (YAML.parse(await readFile(manifestPath, 'utf8')) ?? {});
-  if (scene.schema_version === 2 || scene.kind === 'top-down-scene') {
-    const catalog = await loadAssetCatalog(catalogPath);
-    const plan = compileTopDownScene(catalog, scene);
-    return renderPresentationPlan({ root, catalog, plan, out });
-  }
-  if (!allowLegacy) throw new Error('production presentation rendering rejects legacy v1 scenes; use the explicit legacy adapter');
-  return renderLegacyScene({ root, catalogPath, manifestPath, sceneData: scene, out });
+  if (scene.schema_version !== 2 || scene.kind !== 'top-down-scene') throw new Error('scene must use Presentation V2');
+  const catalog = await loadAssetCatalog(catalogPath);
+  const plan = compileTopDownScene(catalog, scene);
+  return renderPresentationPlan({ root, catalog, plan, out });
 }
 
 /** Explain the concrete layers selected by a prefab's typed parameters. */
 /** Render a production-review bundle: full scene, thumbnail, and 2x quadrants. */
-export async function renderSceneQa({ root, catalogPath, manifestPath, outDir, allowLegacy = false }) {
+export async function renderSceneQa({ root, catalogPath, manifestPath, outDir }) {
   await mkdir(outDir, { recursive: true });
   const full = path.join(outDir, 'scene.png');
-  const report = await renderScene({ root, catalogPath, manifestPath, out: full, allowLegacy });
+  const report = await renderScene({ root, catalogPath, manifestPath, out: full });
   const { loadImage } = await import('canvas');
   const source = await loadImage(full);
   const outputs = { full };
@@ -2555,8 +2136,7 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   if (typeof candidate !== 'boolean') throw new Error('scene QA set candidate must be boolean');
   const suitePath = path.resolve(manifestPath);
   const suite = YAML.parse(await readFile(suitePath, 'utf8'), { uniqueKeys: true }) ?? {};
-  const presentationV2 = suite.schema_version === 2 && suite.kind === 'presentation-scene-qa-set';
-  if (!presentationV2 && (suite.schema_version !== 1 || suite.kind !== 'scene-qa-set')) throw new Error('scene QA set requires v1 scene-qa-set or v2 presentation-scene-qa-set');
+  if (suite.schema_version !== 2 || suite.kind !== 'presentation-scene-qa-set') throw new Error('scene QA set requires Presentation V2');
   if (typeof suite.catalog !== 'string' || !suite.catalog.trim() || path.isAbsolute(suite.catalog)) throw new Error('scene QA set catalog must be a relative path');
   if (!Array.isArray(suite.scenes) || !suite.scenes.length) throw new Error('scene QA set scenes must be a non-empty array');
   const suiteDir = path.dirname(suitePath); const catalogPath = path.resolve(suiteDir, suite.catalog);
@@ -2573,12 +2153,10 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   for (const field of ['required_themes', 'required_systems']) if (requirements[field] !== undefined && (!Array.isArray(requirements[field]) || requirements[field].some((entry) => typeof entry !== 'string' || !entry.trim()))) throw new Error(`scene QA set ${field} must be an array of names`);
   for (const field of ['require_review_regions', 'require_no_clipping', 'require_catalog_warning_free', 'require_deterministic_plan', 'require_approved_artifacts']) if (requirements[field] !== undefined && typeof requirements[field] !== 'boolean') throw new Error(`scene QA set ${field} must be boolean`);
   if (requirements.require_approved_artifacts && !suite.baseline) throw new Error('scene QA set requires a baseline path when require_approved_artifacts is true');
-  const presentationCatalog = presentationV2 ? await loadAssetCatalog(catalogPath) : null;
-  const validation = presentationV2
-    ? { ...validatePresentationCatalog(presentationCatalog), warnings: [] }
-    : await validateManifest({ root, manifestPath: catalogPath });
+  const presentationCatalog = await loadAssetCatalog(catalogPath);
+  const validation = { ...validatePresentationCatalog(presentationCatalog), warnings: [] };
   if (!validation.valid) throw new Error(`scene QA set catalog is invalid: ${validation.errors.join('; ')}`);
-  const materialPixelAudit = presentationV2 ? await auditPresentationMaterialPixels({ root, catalog: presentationCatalog }) : null;
+  const materialPixelAudit = await auditPresentationMaterialPixels({ root, catalog: presentationCatalog });
   if (materialPixelAudit && !materialPixelAudit.valid) throw new Error(`scene QA set material pixel audit failed: ${materialPixelAudit.errors.join('; ')}`);
   if (requirements.require_catalog_warning_free && validation.warnings.length) throw new Error(`scene QA set catalog has warnings: ${validation.warnings.join('; ')}`);
   const ids = new Set(); const themes = new Set(); const reports = [];
@@ -2594,7 +2172,7 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
     ids.add(entry.id); themes.add(entry.theme);
     const scenePath = path.resolve(suiteDir, entry.manifest); const scene = YAML.parse(await readFile(scenePath, 'utf8'), { uniqueKeys: true }) ?? {};
     if (minimumReviewRegions && (!Array.isArray(scene.review_regions) || scene.review_regions.length < minimumReviewRegions)) throw new Error(`scene QA set scene ${entry.id} needs at least ${minimumReviewRegions} review_regions`);
-    const report = await renderSceneQa({ root, catalogPath, manifestPath: scenePath, outDir: path.join(outDir, entry.id), allowLegacy: !presentationV2 });
+    const report = await renderSceneQa({ root, catalogPath, manifestPath: scenePath, outDir: path.join(outDir, entry.id) });
     if (requirements.require_no_clipping && report.clipping.length) throw new Error(`scene QA set scene ${entry.id} has ${report.clipping.length} clipped draws`);
     if (requirements.require_deterministic_plan) {
       const secondPlan = compileTopDownScene(await loadAssetCatalog(catalogPath), scene);
@@ -2606,21 +2184,16 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   if (semanticSceneCount < minimumSemanticScenes) throw new Error(`scene QA set requires at least ${minimumSemanticScenes} semantic composition scenes; found ${semanticSceneCount}`);
   const missingThemes = (requirements.required_themes ?? []).filter((theme) => !themes.has(theme));
   if (missingThemes.length) throw new Error(`scene QA set is missing required themes: ${missingThemes.join(', ')}`);
-  const systemCounts = presentationV2 ? {
+  const systemCounts = {
     terrain: reports.reduce((sum, report) => sum + report.diagnostics.systems.terrain, 0),
     connector: reports.reduce((sum, report) => sum + report.diagnostics.systems.connector, 0),
     height: reports.reduce((sum, report) => sum + report.diagnostics.systems.height, 0),
     component: reports.reduce((sum, report) => sum + report.diagnostics.systems.component, 0),
     shadow: reports.reduce((sum, report) => sum + report.diagnostics.systems.shadow, 0),
-  } : {
-    terrain: reports.reduce((sum, report) => sum + report.terrain_audit.length, 0),
-    connector: reports.reduce((sum, report) => sum + report.connector_audit.length, 0),
-    height: reports.reduce((sum, report) => sum + report.height_audit.length, 0),
-    component: reports.reduce((sum, report) => sum + report.component_audit.length, 0),
   };
   const missingSystems = (requirements.required_systems ?? []).filter((system) => !Object.hasOwn(systemCounts, system) || systemCounts[system] < 1);
   if (missingSystems.length) throw new Error(`scene QA set did not exercise required systems: ${missingSystems.join(', ')}`);
-  const boundaryDraws = presentationV2 ? systemCounts.terrain : reports.reduce((sum, report) => sum + report.inside_corners_resolved, 0);
+  const boundaryDraws = systemCounts.terrain;
   if (boundaryDraws < (requirements.minimum_boundary_draws ?? 0)) throw new Error(`scene QA set requires ${requirements.minimum_boundary_draws} boundary draws; found ${boundaryDraws}`);
   const { createCanvas, loadImage } = await import('canvas');
   const cardWidth = 320; const imageHeight = 192; const labelHeight = 24; const columns = 2; const rows = Math.ceil(reports.length / columns);
@@ -2646,12 +2219,12 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
   const summary = {
     valid: true, scenes: reports.length, semantic_scenes: semanticSceneCount, themes: [...themes], systems: systemCounts,
     draws: reports.reduce((sum, report) => sum + report.draws, 0),
-    inside_corners_resolved: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.inside_corners_resolved, 0) : reports.reduce((sum, report) => sum + report.inside_corners_resolved, 0),
-    connections: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.connections, 0) : reports.reduce((sum, report) => sum + report.connections, 0),
-    validated_landings: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.landings.length, 0) : 0,
-    validated_crossings: presentationV2 ? reports.reduce((sum, report) => sum + report.diagnostics.crossings.length, 0) : 0,
+    inside_corners_resolved: reports.reduce((sum, report) => sum + report.diagnostics.inside_corners_resolved, 0),
+    connections: reports.reduce((sum, report) => sum + report.diagnostics.connections, 0),
+    validated_landings: reports.reduce((sum, report) => sum + report.diagnostics.landings.length, 0),
+    validated_crossings: reports.reduce((sum, report) => sum + report.diagnostics.crossings.length, 0),
     clipping: reports.reduce((sum, report) => sum + report.clipping.length, 0),
-    composition: presentationV2 ? {
+    composition: {
       minimum_navigation_connectivity: Math.min(...reports.map((report) => report.diagnostics.composition.navigation_connectivity)),
       minimum_occupied_sectors: Math.min(...reports.map((report) => report.diagnostics.composition.occupied_sectors)),
       visual_coverage: {
@@ -2661,16 +2234,11 @@ export async function renderSceneQaSet({ root, manifestPath, outDir, candidate =
       maximum_repeat_ratio: Math.max(...reports.map((report) => report.diagnostics.composition.repeat_ratio)),
       minimum_role_diversity: Math.min(...reports.map((report) => report.diagnostics.composition.role_diversity)),
       maximum_role_dominance: Math.max(...reports.map((report) => report.diagnostics.composition.role_dominance)),
-    } : undefined,
-    resolution: presentationV2 ? {
+    },
+    resolution: {
       strict_v2_scenes: reports.length,
       non_uniform_scale_draws: 0,
       normalized_draws: reports.reduce((sum, report) => sum + report.draws - report.diagnostics.shadows, 0),
-    } : {
-      uniform_pixel_scale_scenes: reports.filter((report) => report.resolution_audit.uniform_pixel_scale_enforced).length,
-      explicit_pixel_density_scenes: reports.filter((report) => report.resolution_audit.explicit_pixel_density_required).length,
-      non_uniform_scale_draws: reports.reduce((sum, report) => sum + report.resolution_audit.non_uniform_scale_draws, 0),
-      normalized_draws: reports.reduce((sum, report) => sum + report.resolution_audit.normalized_draws, 0),
     },
     material_pixel_audit: materialPixelAudit ?? undefined,
     catalog_warnings: validation.warnings,
@@ -2927,18 +2495,6 @@ export async function explainPrefab({ catalogPath, id, params = {} }) {
   if (validation.length) throw new Error(`invalid prefab catalog: ${validation.join('; ')}`);
   const resolved = resolvePrefabLayers(catalog, id, params);
   return { id, params: resolved.params, layers: resolved.layers };
-}
-
-/** Render one prefab in isolation through the same catalog-aware scene renderer. */
-export async function renderPrefabPreview({ root, catalogPath, id, params = {}, out, viewport = [320, 240], scale = 1, background = '#171923' }) {
-  if (!validPair(viewport) || !Number.isFinite(scale) || scale <= 0) throw new Error('prefab preview needs a valid viewport and scale');
-  await explainPrefab({ catalogPath, id, params });
-  return renderLegacyScene({
-    root, catalogPath, sceneData: {
-      viewport, background,
-      placements: [{ prefab: id, params, at: [Math.floor(viewport[0] / 2), viewport[1] - 16], scale }],
-    }, out,
-  });
 }
 
 /** Build a reproducible derived atlas from explicitly recorded source crops. */

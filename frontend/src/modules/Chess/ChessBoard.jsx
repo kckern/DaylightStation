@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import {
   FILES, RANKS, diffPositions, fenToPosition, orderedSquares, squareColor,
-} from '@shared-gaming/chess/index.mjs';
+} from '@shared-gaming/rulesets/chess/index.mjs';
 import { pieceSource } from './pieceAssets.js';
 import './ChessBoard.scss';
 

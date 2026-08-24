@@ -1,7 +1,7 @@
 import { materializePianoScalePrompt } from '#shared/music/pianoScale.mjs';
 
 const LEGACY_POLICY_VERSION = 'foundation-major-scales-v1';
-const JOURNEY_POLICY_VERSION = 'adaptive-piano-journey-v1';
+const ADAPTIVE_POLICY_VERSION = 'adaptive-piano-foundations-v1';
 const PITCH_CLASS = Object.freeze({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 });
 
 const LEGACY_SCALES = Object.freeze([
@@ -11,7 +11,7 @@ const LEGACY_SCALES = Object.freeze([
   { id: 'scale-d-major', tonic: 'D', octave: 4, mode: 'major', direction: 'ascending', octaves: 1 },
 ]);
 
-const JOURNEY_CURRICULUM = Object.freeze({
+const ADAPTIVE_CURRICULUM = Object.freeze({
   scale: LEGACY_SCALES,
   chord: Object.freeze([
     { id: 'chord-c-major', tonic: 'C', quality: 'major', midi: [60, 64, 67] },
@@ -133,8 +133,8 @@ export class PianoScaleChallengePolicy {
     const curriculumId = requirements?.curriculum || 'foundation-major-scales';
     const legacy = curriculumId === 'foundation-major-scales';
     if (legacy && kind !== 'scale') throw new Error(`Unsupported piano challenge kind: ${kind}`);
-    if (!legacy && curriculumId !== 'pokemon-journey-foundations') throw new Error(`Unknown piano curriculum: ${curriculumId}`);
-    const curriculum = legacy ? LEGACY_SCALES : JOURNEY_CURRICULUM[kind];
+    if (!legacy && curriculumId !== 'piano-foundations-v1') throw new Error(`Unknown piano curriculum: ${curriculumId}`);
+    const curriculum = legacy ? LEGACY_SCALES : ADAPTIVE_CURRICULUM[kind];
     if (!curriculum) throw new Error(`Unsupported piano challenge kind: ${kind}`);
     const recent = this.attemptStore?.listRecent?.(userId, { limit: 200 }) || [];
     const stats = curriculum.map((candidate) => candidateStats(candidate, kind, recent));
@@ -159,7 +159,7 @@ export class PianoScaleChallengePolicy {
       },
       prompt,
       timeout_ms: this.timeoutMs,
-      pedagogy_policy_version: legacy ? LEGACY_POLICY_VERSION : JOURNEY_POLICY_VERSION,
+      pedagogy_policy_version: legacy ? LEGACY_POLICY_VERSION : ADAPTIVE_POLICY_VERSION,
       selection: {
         curriculum: curriculumId,
         prior_attempts: selected.attempts,

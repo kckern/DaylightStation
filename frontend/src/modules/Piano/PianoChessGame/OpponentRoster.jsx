@@ -1,5 +1,5 @@
-import { describeLevel } from '@shared-gaming/chess/ladder.mjs';
-import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/views/cardIdenticonModel.js';
+import { describeLevel } from '@shared-gaming/rulesets/chess/ladder.mjs';
+import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/experiences/card-battle/cardIdenticonModel.js';
 import GameSheet from '../game-platform/chrome/GameSheet.jsx';
 import './OpponentRoster.scss';
 

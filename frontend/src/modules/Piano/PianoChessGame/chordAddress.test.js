@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SQUARES } from '@shared-gaming/chess/index.mjs';
+import { SQUARES } from '@shared-gaming/rulesets/chess/index.mjs';
 import {
   CHORD_QUALITIES, DEFAULT_CHORD_SCHEME, chordBoard, chordPitchClasses, chordToSquare,
   findChordCollisions, identifyChord, moveToChordPair, shuffleChordScheme,

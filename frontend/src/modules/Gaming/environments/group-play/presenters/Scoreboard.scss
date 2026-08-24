@@ -1,0 +1,43 @@
+@use '../ui/tokens' as gp;
+
+.gp-scoreboard {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding: 0.6rem 1rem;
+
+  &__team {
+    min-width: 11rem;
+    padding: 0.4rem 1.25rem;
+    border-radius: 0.5rem;
+    border-top: 0.3rem solid var(--team-color);
+    background: rgba(0, 0, 0, 0.45);
+    text-align: center;
+
+    &.is-active { outline: 2px solid var(--gp-brass-bright); }
+    &.is-locked { animation: gp-pulse 0.9s ease-in-out infinite; }
+  }
+  &__name {
+    display: block;
+    font-family: var(--gp-font-ui);
+    font-size: 1rem;
+    color: var(--gp-paper-dim);
+  }
+  &__members {
+    display: flex;
+    gap: 0.25rem;
+    justify-content: center;
+    margin: 0.3rem 0 0.15rem;
+  }
+  &__score {
+    display: block;
+    font-family: var(--gp-font-display);
+    font-size: var(--gp-fs-heading);
+    letter-spacing: 0.03em;
+    color: var(--gp-paper);
+    text-shadow: var(--gp-shadow-text);
+
+    &.is-negative { color: var(--gp-negative); } // distinct from danger red (audit §3.5)
+  }
+}

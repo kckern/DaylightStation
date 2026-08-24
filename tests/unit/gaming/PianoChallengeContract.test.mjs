@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PianoScaleChallengePolicy } from '../../../backend/src/3_applications/piano/PianoScaleChallengePolicy.mjs';
+import { BankChallengePolicy } from '../../../backend/src/3_applications/piano/BankChallengePolicy.mjs';
 import { generateScaleAbc, midiToAbc } from '../../../frontend/src/modules/MusicNotation/renderers/abc.js';
 import {
   createAssessmentAttempt,
@@ -12,11 +12,36 @@ function pitchesOf(prompt) {
   return prompt.expected_events.flatMap((event) => event.notes.map((note) => note.midi));
 }
 
+const scaleSeed = {
+  id: 'scales/major',
+  title: 'Major scale',
+  key: 'C',
+  ordering: 'strict',
+  supports: ['free', 'metronome', 'cued'],
+  events: [0, 2, 4, 5, 7, 9, 11, 12].map((interval) => ({
+    value: '8th',
+    notes: [{ midi: 60 + interval, hand: 'right' }],
+  })),
+  expansion: { axes: { root: { values: 'all' } } },
+  derived: { form: 'scale' },
+};
+const policy = () => new BankChallengePolicy({
+  exerciseBank: { allSeeds: () => [scaleSeed] },
+  attemptStore: { listRecent: () => [] },
+});
+const preparedScale = (challengeSequence) => policy().prepare({
+  userId: 'guest',
+  challengeId: `challenge-${challengeSequence}`,
+  kind: 'scale',
+  requirements: { curriculum: 'piano-foundations-v1' },
+  context: { challenge_sequence: challengeSequence },
+});
+
 function attemptFor(prepared) {
   const configured = prepareExerciseAssessment({
     instance: {
       id: prepared.prompt.exercise_id,
-      ordering: prepared.prompt.ordering || 'strict',
+      ordering: prepared.kind === 'chord' ? 'any' : 'strict',
       events: prepared.prompt.expected_events,
     },
     mode: 'free',
@@ -27,13 +52,8 @@ function attemptFor(prepared) {
 
 describe('semantic piano challenge contract', () => {
   it('uses the exact same pitches for staff generation and grading', () => {
-    const policy = new PianoScaleChallengePolicy();
     for (let challengeSequence = 0; challengeSequence < 4; challengeSequence += 1) {
-      const prepared = policy.prepare({
-        userId: 'guest', challengeId: `challenge-${challengeSequence}`, kind: 'scale',
-        requirements: { curriculum: 'foundation-major-scales' },
-        context: { challenge_sequence: challengeSequence },
-      });
+      const prepared = preparedScale(challengeSequence);
       const pitches = pitchesOf(prepared.prompt);
       const { key_signature: key } = prepared.prompt;
       const abc = generateScaleAbc(pitches, key);
@@ -48,15 +68,10 @@ describe('semantic piano challenge contract', () => {
   });
 
   it('treats F4 as correct and D4 as wrong for an F-major exercise', () => {
-    const prepared = new PianoScaleChallengePolicy().prepare({
-      userId: 'guest', challengeId: 'challenge-f', kind: 'scale',
-      requirements: { curriculum: 'foundation-major-scales' },
-      context: { challenge_sequence: 2 },
-    });
-    expect(prepared.prompt).toMatchObject({
-      scale: { tonic: 'F', octave: 4 },
-      expected_events: expect.any(Array),
-    });
+    const prepared = Array.from({ length: 12 }, (_, sequence) => preparedScale(sequence))
+      .find((candidate) => pitchesOf(candidate.prompt)[0] === 65);
+    expect(prepared).toBeTruthy();
+    expect(prepared.prompt.expected_events).toEqual(expect.any(Array));
     expect(pitchesOf(prepared.prompt)).toEqual([65, 67, 69, 70, 72, 74, 76, 77]);
     expect(observeAssessment(attemptFor(prepared), { midi: 65, time: 1 }).attempt).toMatchObject({ cursor: 1, wrong: [] });
     expect(observeAssessment(attemptFor(prepared), { midi: 62, time: 1 }).attempt).toMatchObject({ cursor: 0, wrong: [expect.any(Object)] });

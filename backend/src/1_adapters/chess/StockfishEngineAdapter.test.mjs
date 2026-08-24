@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, afterAll } from 'vitest';
-import { legalMoves } from '../../../../shared/gaming/chess/engine.mjs';
+import { legalMoves } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
 import { createStockfishEngine, engineOptionsForRung, fallbackDifficultyFor, isHomegrownRung } from './StockfishEngineAdapter.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

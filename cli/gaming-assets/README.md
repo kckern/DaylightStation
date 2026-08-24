@@ -253,9 +253,6 @@ Inspect and render reusable prefab classes without a frontend:
 ```bash
 npm run gaming:assets -- prefab-explain --root /path/to/_common \
   --catalog /path/to/desert.yml --id settlement.house --params size=large
-npm run gaming:assets -- prefab-render --root /path/to/_common \
-  --catalog /path/to/desert.yml --id settlement.house --params size=large \
-  --viewport 320x240 --scale 2 --out /tmp/desert-house-large.png
 ```
 
 Use `derive` only when a source needs a reproducible, explicitly recorded atlas crop; it never modifies source art. An optional exact `color_map` performs reproducible palette substitution, `texture_fills` replaces selected flat colors with pixels from a measured repeating source rectangle, and `transparent_colors` removes opaque backing colors after all layers are composed. Together they support normalized biome palettes, texture-compatible transition aprons, and overlays that must work over a tinted terrain render:
@@ -283,7 +280,7 @@ npm run gaming:assets -- derive --root /path/to/_common \
   --recipe shoreline-derivation.yml --out /tmp/shoreline-water.png
 ```
 
-## Canonical-tree migration
+## Canonical tree organization
 
 Generate and inspect the plan first. `organize-apply` refuses plans with collisions and copies only PNGs; it is idempotent and preserves every file under `sprites/`.
 
@@ -293,30 +290,23 @@ npm run gaming:assets -- organize-apply --plan /tmp/gaming-organization.yml
 npm run gaming:assets -- organize-verify --plan /tmp/gaming-organization.yml
 ```
 
-The generated hierarchy uses pack roots (`default`, `characters`, `desert`, `dungeons`, `free`, `halloween`, `ui`, `volcano`, `legacy-unclassified`) and normalized kebab-case semantic folders. The plan retains the original source path, byte size, SHA-256, and source-derived license scope for later catalog provenance. `organize-verify` is read-only and proves every destination still matches its reviewed raw source.
+The generated hierarchy uses reviewed pack roots and a `quarantine` root for unclassified art, with normalized kebab-case semantic folders. The plan retains the original source path, byte size, SHA-256, and source-derived license scope for catalog provenance. `organize-verify` is read-only and proves every destination still matches its reviewed raw source.
 
 ## Curated manifest format
 
-Production scene work uses strict Presentation V2. See the [Presentation Framework V2 reference](../../docs/reference/gaming/presentation-framework-v2.md). The v1 format below remains documented for raw-asset audit and mounted migration sources; it is not the production scene contract.
+Production scene work uses strict Presentation V2. See the [Presentation Framework V2 reference](../../docs/reference/gaming/presentation-framework-v2.md).
 
 ```bash
-node cli/gaming-assets.cli.mjs migrate-v2 --root /path/to/_common \
-  --catalog /path/to/_common/catalog/showcase/showcase-assets.yml \
-  --scenes /path/to/_common/catalog/showcase/showcase-scenes \
-  --out-dir /tmp/presentation-v2
-
 node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
   --manifest /path/to/_common/catalog/showcase-v2/scenes.yml \
   --out-dir /tmp/presentation-v2-qa
 ```
 
-Migration is read-only with respect to v1 inputs. Its output includes an unresolved report and is rejected unless the strict catalog and every generated scene validate.
-
-When `--root` is available, migration decodes every isolated approved frame and records its exact visible-alpha edge contacts in v2 metadata. The Node renderer independently remeasures those contacts, so stale hashes, stale bounds, or undeclared edges still fail the visual gate.
+The Node renderer independently measures isolated approved frames and edge contacts, so stale hashes, stale bounds, or undeclared edges fail the visual gate.
 
 The same measurement populates exact `content_bounds` and checks each frame against its style profile's semantic `scale_class`. Production v2 forbids `world.visual_scale`; normalization must come from source geometry plus `pixel_density`, so an asset cannot pass QA by enlarging already-normalized pixels.
 
-Generated v2 style profiles also carry production composition limits. `scene-qa-set` enforces placement-sector use, visible placement coverage, walkable connectivity, and repeated-placement dominance for every scene, then records the suite envelope in `report.yml`. Terrain fills, interface tiles, connectors, heights, and component tiling remain topology evidence and do not inflate subject coverage.
+Style profiles carry production composition limits. `scene-qa-set` enforces placement-sector use, visible placement coverage, walkable connectivity, and repeated-placement dominance for every scene, then records the suite envelope in `report.yml`. Terrain fills, interface tiles, connectors, heights, and component tiling remain topology evidence and do not inflate subject coverage.
 
 V2 scenes may replace long literal cell/coordinate dumps with deterministic `rounded-rect`, `ellipse`, `blob`, and `route` terrain shapes plus seeded semantic placement groups. Blobs accept `edge_step: 1..4` to bound left/right boundary movement between adjacent rows. Terrain regions accept `minimum_thickness: 1..4`; post-clip row/column passes grow undersized runs toward the region center without filling explicit exclusions, preventing opposing edge layers from hiding one-cell liquid fringes. `exclude` performs boolean subtraction for islands, lakes, moats, and clearings; declared `continues` edges may clip a semantic shape at the viewport without hand-authoring its boundary cells. Zones filter materials, surfaces, planes, biomes, boundaries, and adjacent materials; groups choose balanced candidates using `center`, `cluster`, `scatter`, or `grid` layout. The compiler fails closed on clipping, forbidden surfaces, visual/structural overlap, or an unfulfillable count. Routes may terminate at a named placement so roads remain attached when a landmark moves. QA also records role diversity/dominance and can require `minimum_semantic_scenes`.
 
@@ -343,7 +333,7 @@ node cli/gaming-assets.cli.mjs scene-qa-set --root /path/to/_common \
 
 Candidate mode bypasses only comparison with the old approved pixels. It does not bypass validation, deterministic compilation, composition limits, clipping checks, or artifact hashing. Pass its valid `report.yml` to `scene-qa-approve`, then rerun ordinary `scene-qa-set` to prove the new baseline matches.
 
-The validator implements the shared [asset metadata standard](../../docs/reference/gaming/asset-metadata.md):
+The validator implements the shared [Presentation V2 catalog standard](../../docs/reference/gaming/presentation-framework-v2.md):
 
 ```yaml
 schema_version: 1

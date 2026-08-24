@@ -23,8 +23,6 @@ import getLogger from '../../../../lib/logging/Logger.js';
  */
 
 export const DEFAULT_THINK_MS = Object.freeze({ floor: 600, ceiling: 4000, jitter: 0.25 });
-/** Chess's ladder is the historical default (21 rungs, LADDER_SIZE in @shared-gaming/chess/ladder.mjs). */
-const DEFAULT_LEVELS = 21;
 
 let cachedLogger;
 function logger() {
@@ -68,9 +66,8 @@ function jitterFactor(seed, ply, jitter) {
  * ladder. A weak opponent answering almost at once and a strong one brooding
  * says what a difficulty label cannot — read without reading.
  *
- * `levels` generalises the old chess-only TOP_LEVEL constant: pass 21 for
- * chess's ladder, 7 for Connect Four's and Checkers'. `level` is read as a
- * 0-based rung index clamped to `[0, levels - 1]`.
+ * `levels` is supplied by the owning game. `level` is read as a 0-based rung
+ * index clamped to `[0, levels - 1]`.
  *
  * Returns `null` when `level` is not a finite number — a guest, or a ladder
  * that has not resolved yet — so the caller falls back to its own default
@@ -81,12 +78,13 @@ function jitterFactor(seed, ply, jitter) {
  * request goes out.
  */
 export function thinkTimeFor({
-  level, levels = DEFAULT_LEVELS, config = null, seed = 0, ply = 0, pace = 1,
+  level, levels, config = null, seed = 0, ply = 0, pace = 1,
 }) {
   // Number.isFinite (no coercion) on purpose: Number(null) is 0 and
   // Number.isFinite(0) is true, which would silently treat "no ladder" as
   // "rung zero" instead of refusing to guess.
-  if (typeof level !== 'number' || !Number.isFinite(level)) return null;
+  if (typeof level !== 'number' || !Number.isFinite(level)
+    || !Number.isInteger(levels) || levels < 2) return null;
   const { floor, ceiling, jitter } = thinkMsConfig(config);
   // A config with the ends the wrong way round should be dull, not inverted.
   const low = Math.min(floor, ceiling);
@@ -170,7 +168,13 @@ export function useOpponentReply({
       timer = setTimeout(() => {
         if (cancelled) return;
         setThinking(false);
-        onReplyRef.current?.(answer);
+        try {
+          Promise.resolve(onReplyRef.current?.(answer)).catch((error) => {
+            logger().error('opponent-reply-commit-failed', { error: error?.message });
+          });
+        } catch (error) {
+          logger().error('opponent-reply-commit-failed', { error: error?.message });
+        }
       }, waitMs);
     };
 

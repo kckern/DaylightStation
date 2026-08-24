@@ -63,15 +63,15 @@ describe('PianoScaleChallengePolicy', () => {
     ['chord', 3],
     ['arpeggio', 4],
     ['timed-pattern', 4],
-  ])('materializes the journey %s family from the adaptive curriculum', (kind, noteCount) => {
+  ])('materializes the %s family from the adaptive curriculum', (kind, noteCount) => {
     const result = prepare(new PianoScaleChallengePolicy(), {
       kind,
-      requirements: { curriculum: 'pokemon-journey-foundations' },
+      requirements: { curriculum: 'piano-foundations-v1' },
     });
     expect(result).toMatchObject({
       kind,
-      pedagogy_policy_version: 'adaptive-piano-journey-v1',
-      selection: { curriculum: 'pokemon-journey-foundations', paced: false, tempo_bpm: null },
+      pedagogy_policy_version: 'adaptive-piano-foundations-v1',
+      selection: { curriculum: 'piano-foundations-v1', paced: false, tempo_bpm: null },
     });
     expect(result.prompt.expected_events.flatMap((event) => event.notes)).toHaveLength(noteCount);
     expect(result.prompt.max_mistakes).toBeUndefined();
@@ -86,7 +86,7 @@ describe('PianoScaleChallengePolicy', () => {
     };
     const result = prepare(new PianoScaleChallengePolicy({ attemptStore }), {
       kind: 'timed-pattern',
-      requirements: { curriculum: 'pokemon-journey-foundations' },
+      requirements: { curriculum: 'piano-foundations-v1' },
     });
     expect(result.selection).toMatchObject({ paced: true, tempo_bpm: 60 });
     expect(result.assessment).toEqual({ mode: 'cued', tempo_bpm: 60, lead_in_ms: 2000 });
@@ -100,7 +100,7 @@ describe('PianoScaleChallengePolicy', () => {
       { kind: 'scale', status: 'completed', score: 0.94, prompt: { tempo_bpm: 65 } },
     ];
     const faster = prepare(new PianoScaleChallengePolicy({ attemptStore: { listRecent: () => fasterAttempts } }), {
-      kind: 'scale', requirements: { curriculum: 'pokemon-journey-foundations' },
+      kind: 'scale', requirements: { curriculum: 'piano-foundations-v1' },
     });
     expect(faster.selection.tempo_bpm).toBe(75);
 
@@ -111,7 +111,7 @@ describe('PianoScaleChallengePolicy', () => {
       { kind: 'scale', status: 'completed', score: 0.88, prompt: {} },
     ];
     const slower = prepare(new PianoScaleChallengePolicy({ attemptStore: { listRecent: () => slowerAttempts } }), {
-      kind: 'scale', requirements: { curriculum: 'pokemon-journey-foundations' },
+      kind: 'scale', requirements: { curriculum: 'piano-foundations-v1' },
     });
     expect(slower.selection.tempo_bpm).toBe(50);
   });

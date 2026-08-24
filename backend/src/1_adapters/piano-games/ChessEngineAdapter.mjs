@@ -1,5 +1,5 @@
-import { createGame, playMove } from '../../../../shared/gaming/chess/engine.mjs';
-import { DEFAULT_LADDER_POLICY, rungForLevel } from '../../../../shared/gaming/chess/ladder.mjs';
+import { createGame, playMove } from '../../../../shared/gaming/rulesets/chess/engine.mjs';
+import { DEFAULT_LADDER_POLICY, rungForLevel } from '../../../../shared/gaming/rulesets/chess/ladder.mjs';
 import { createStockfishEngine } from '../chess/StockfishEngineAdapter.mjs';
 
 /**
@@ -9,11 +9,10 @@ import { createStockfishEngine } from '../chess/StockfishEngineAdapter.mjs';
  * Connect Four and Checkers already refuse to trust a client's board state —
  * `replayGame(transcript)` reconstructs it from the move list instead — and
  * this keeps chess to the same discipline on the unified container's surface.
- * That is a real change of trust boundary from chess's existing behaviour
- * (`chess.mjs` takes `fen` straight from the request body), but the deployed
- * kiosk still talks to that unchanged compatibility mount; nothing standing
- * between a client and this adapter today sends live traffic through it. A
- * transcript is `{ initial_fen, moves }` — `moves` a list of SAN strings (or
+ * The native Piano endpoint may additionally accept a FEN for its richer
+ * analysis workflow; this opponent gateway accepts only the authoritative
+ * transcript used by the common Piano game container. A transcript is
+ * `{ initial_fen, moves }` — `moves` a list of SAN strings (or
  * `{from,to,promotion}` objects; `playMove` accepts either) — mirroring the
  * `{ initial_fen, fen, moves }` shape `chessGameState.js` already keeps on the
  * client, minus the derived `fen`.
@@ -43,12 +42,9 @@ function fenFromTranscript(transcript) {
  *
  * `opponent` arrives already resolved by `OpponentLadder.resolve()`, whose
  * levels are 1-based (the first rung is level 1 — see `OpponentLadder`'s
- * class comment). Stockfish's own Skill Level option, and `rungForLevel`
- * (the shared chess ladder's existing level -> engine-settings lookup,
- * reused here rather than re-implemented) both count from 0. The `- 1` below
- * is the one and only place this adapter converts between the two systems,
- * so a future numbering change has a single call site to fix rather than a
- * scattered off-by-one hunt.
+ * class comment). `rungForLevel` uses a zero-based table and may select either
+ * the deterministic teaching engine or Stockfish. The `- 1` below is the one
+ * place this adapter converts between those numbering systems.
  *
  * `engine` is accepted for injection (a fake with `chooseMove`/`dispose`)
  * so the level-to-skill mapping and replay-failure paths can be tested

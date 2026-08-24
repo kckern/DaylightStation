@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { describeGame, createGame, legalDestinations, playMove } from '@shared-gaming/chess/index.mjs';
-import { chooseMove } from '@shared-gaming/chess/opponent.mjs';
+import { describeGame, createGame, legalDestinations, playMove } from '@shared-gaming/rulesets/chess/index.mjs';
+import { chooseMove } from '@shared-gaming/rulesets/chess/opponent.mjs';
 import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { CHESS_UNITS, LESSON_KINDS, curriculumProgress, findLesson, lessonStatus } from './chessCurriculum.js';
 import './ChessLessons.scss';

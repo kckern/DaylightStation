@@ -47,6 +47,8 @@ import { DOUBLE_WINDOW_MS } from './chordSelection.js';
 
 const sourceOutlines = (container) => container.querySelectorAll('.chess-board__square--source').length;
 
+beforeEach(() => localStorage.clear());
+
 describe('the takeback prompt', () => {
   const playing = {
     status: { game_over: false, turn: 'w', check: false },
@@ -91,7 +93,7 @@ describe('taking a move back at the keys', () => {
   });
   // A FRESH element per render: reusing one element object makes React bail
   // out on identical props, so the changed note mock would never be re-read.
-  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+  const makeElement = () => <PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />;
 
   const playChord = async (rerender, notes) => {
     holdNotes(notes);
@@ -146,7 +148,7 @@ describe('taking a move back at the keys', () => {
     expect(container.querySelector('.piano-chess__toast').textContent).toMatch(/^Took back /);
     // Not '2 left': the ladder has not loaded (fetchLadder resolves null), so
     // willStillCount falls back to DEFAULT_MAX_TAKEBACKS — mirroring the
-    // server's own DEFAULT_LADDER_POLICY.max_takebacks: 1 (shared/gaming/chess/
+    // server's own DEFAULT_LADDER_POLICY.max_takebacks: 1 (shared/gaming/rulesets/chess/
     // ladder.mjs). One is already spent, so the note about spending ANOTHER has
     // to lead with "won't count" rather than the three-per-game kiosk cap,
     // exactly as takebackBudget.test.js's own
@@ -413,7 +415,7 @@ describe('PianoChessGame settings wiring', () => {
       { id: 'steady', label: 'Steady', skill: 8, movetime_ms: 300 },
     ],
     opponent_delay_ms: 700,
-    shuffle_each_turn: true,
+    addressing: { vocabulary: 'chords', shuffle: 'each_turn' },
     feedback: { flash_rejected: true, toast: true },
   };
   // The strength on the other side of the board is named in the opponent panel
@@ -454,7 +456,7 @@ describe('PianoChessGame settings wiring', () => {
     expect(fetchChessConfig).toHaveBeenCalledWith(null);
   });
 
-  it('honours a saved shuffle_each_turn:false from the first game — the initial deal is not shuffled', async () => {
+  it('honours a configured never cadence from the first game — the initial deal is not shuffled', async () => {
     // The game state is created in a useState initializer, before the config
     // can possibly resolve — so without the config-load re-deal, the first
     // game's state captures the prop fallback (shuffle on) and the board
@@ -462,7 +464,7 @@ describe('PianoChessGame settings wiring', () => {
     // config) hides. The base scheme's ordered roots on the file axis are the
     // observable proof of which value is actually in force: shuffled deals are
     // seed-permuted and do not match.
-    fetchChessConfig.mockResolvedValue({ ...SERVED_CONFIG, shuffle_each_turn: false });
+    fetchChessConfig.mockResolvedValue({ ...SERVED_CONFIG, addressing: { ...SERVED_CONFIG.addressing, shuffle: 'never' } });
     const { container } = render(<PianoChessGame seed={1} />);
     // Wait on the deal itself. The old assertion waited for a rail notice that
     // no longer exists, so it was true before the async config had even loaded.
@@ -541,7 +543,7 @@ describe('narrowing on the board', () => {
     // remains lit while unavailable squares carrying compatible chords do not.
     const notes = squareToChord('e2', DEFAULT_CHORD_SCHEME).pitch_classes.slice(0, 2).map((pc) => 60 + pc);
     mockUsePianoMidiNotes.mockReturnValue({ activeNotes: new Map(notes.map((note) => [note, {}])), noteHistory: [] });
-    const { container } = render(<PianoChessGame gameConfig={{ shuffle_each_turn: false }} />);
+    const { container } = render(<PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />);
     const lit = [...container.querySelectorAll('.chess-board__square--candidate')]
       .map((square) => square.getAttribute('data-square'));
     expect(lit).toContain('e2');
@@ -637,7 +639,7 @@ describe('hint gestures', () => {
 // The square is e2 — a White pawn with legal moves (e3, e4) from the opening
 // position, so a wrongly-committed single chord observably selects it. Its
 // notes come from the board itself via squareToChord, never hard-coded, and
-// shuffle_each_turn is off so DEFAULT_CHORD_SCHEME is the deal actually in
+// addressing shuffle is off so DEFAULT_CHORD_SCHEME is the deal actually in
 // force (a shuffled deal would re-address every square under the test).
 describe('hover before commit', () => {
   const notesFor = (square) => squareToChord(square, DEFAULT_CHORD_SCHEME)
@@ -648,7 +650,7 @@ describe('hover before commit', () => {
   });
   // A FRESH element per render: reusing one element object makes React bail
   // out on identical props, so the changed note mock would never be re-read.
-  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+  const makeElement = () => <PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />;
 
   /** Play one chord: hold past the 140ms settle, then release. */
   const playChord = async (rerender, notes) => {
@@ -748,7 +750,7 @@ describe('hover before commit', () => {
   // chord spellers would be missing from the mode that needs it most.
   it('draws the countdown in the reading vocabulary too', async () => {
     const staffElement = () => (
-      <PianoChessGame gameConfig={{ shuffle_each_turn: false }} scheme={DEFAULT_STAFF_SCHEME} />
+      <PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} scheme={DEFAULT_STAFF_SCHEME} />
     );
     const { container, rerender } = render(staffElement());
     // A staff address is two real MIDI notes, not pitch classes off middle C.
@@ -782,7 +784,7 @@ describe('destination labels answer the pick-up', () => {
     activeNotes: new Map(notes.map((n) => [n, { velocity: 80 }])),
     noteHistory: [],
   });
-  const makeElement = () => <PianoChessGame gameConfig={{ shuffle_each_turn: false }} />;
+  const makeElement = () => <PianoChessGame gameConfig={{ addressing: { shuffle: 'never' } }} />;
   const playChord = async (rerender, notes) => {
     holdNotes(notes);
     rerender(makeElement());
@@ -850,7 +852,7 @@ describe('the game is archived once, on the way out', () => {
   // `difficulty` is one of the mount-effect's dependencies, so changing it
   // reproduces exactly what the config load used to do to that effect.
   const makeElement = (difficulty = 'learner') => (
-    <PianoChessGame currentUser="milo" difficulty={difficulty} gameConfig={{ shuffle_each_turn: false }} />
+    <PianoChessGame currentUser="milo" difficulty={difficulty} gameConfig={{ addressing: { shuffle: 'never' } }} />
   );
   const playChord = async (rerender, notes, difficulty) => {
     holdNotes(notes);
@@ -877,7 +879,7 @@ describe('the game is archived once, on the way out', () => {
 
   it('archives a played game once, and only when the game is left', async () => {
     // The archive used to live in the cleanup of an effect that DEPENDED on
-    // difficulty and shuffle_each_turn. When the config resolved and flipped
+    // difficulty and addressing cadence. When the config resolved and flipped
     // one, that effect tore down and re-ran: the game was archived MID-PLAY and
     // the "already archived" guard then suppressed the real archive at the end.
     // In the logs it read as the component remounting on every entry, which it
@@ -909,7 +911,7 @@ describe('the player is locked for the whole game', () => {
     noteHistory: [],
   });
   const makeElement = (user) => (
-    <PianoChessGame currentUser={user} gameConfig={{ shuffle_each_turn: false }} />
+    <PianoChessGame currentUser={user} gameConfig={{ addressing: { shuffle: 'never' } }} />
   );
   const playChord = async (rerender, user, notes) => {
     holdNotes(notes);
@@ -978,7 +980,7 @@ describe('the game record', () => {
     // A FRESH element per render: reusing one element object makes React bail
     // out on identical props, so the changed note mock would never be re-read.
     const makeElement = () => (
-      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ shuffle_each_turn: false }} />
+      <PianoChessGame fen={MATE_IN_ONE_FEN} currentUser="kckern" gameConfig={{ addressing: { shuffle: 'never' } }} />
     );
     const { rerender } = render(makeElement());
 
