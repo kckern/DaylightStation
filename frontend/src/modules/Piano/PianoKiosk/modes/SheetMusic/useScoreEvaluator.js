@@ -1,176 +1,191 @@
 import { useEffect, useRef, useCallback } from 'react';
 import {
-  applyAssessmentPress,
-  closeAssessmentSpan,
-  createAssessmentSession,
-  gradeAssessmentSpan,
-  replaceAssessmentTargets,
-} from '../../../performance/assessmentSession.js';
-import { POLICY_VERSION } from './scoreEvaluator.js';
+  closeAssessmentAttemptSpan,
+  createAssessmentAttempt,
+  finalizeAssessmentAttempt,
+  observeAssessment,
+  startAssessmentAttempt,
+} from '../../../performance/assessmentAttempt.js';
+export const POLICY_VERSION = 'polish-canonical-span-v2';
 
-const timingPolicy = (cfg = {}) => {
-  const tolerance = Number.isFinite(cfg.timingToleranceMs) ? cfg.timingToleranceMs : 80;
+const gradeName = (score, thresholds = {}) => (
+  score >= (thresholds.green ?? 0.9) ? 'green' : score >= (thresholds.yellow ?? 0.6) ? 'yellow' : 'red'
+);
+
+function polishGrade(measure, span, cfg = {}) {
+  if (!span) return null;
+  const criteria = span.criteria || {};
+  const expected = span.diagnostics?.expected_notes || 0;
+  const matched = span.diagnostics?.matched_notes || 0;
+  const wrong = span.diagnostics?.wrong_notes || 0;
+  const missed = Math.max(0, expected - matched);
+  const noteScore = expected ? matched / (expected + wrong) : (wrong ? 0 : 1);
+  const continuity = expected ? Math.max(0, 1 - (wrong + missed) / expected) : (wrong ? 0 : 1);
+  const timingScore = Number.isFinite(criteria.placement) ? criteria.placement : 0;
+  // Preserve Polish's established tier/best score projection while the canonical
+  // criteria remain available as portable evidence. This is intentionally a
+  // surface projection, not a second assessment lifecycle.
+  const weights = { pitch: 0.55, timing: 0.30, continuity: 0.15, ...(cfg.weights || {}) };
+  const score = Math.max(0, Math.min(1,
+    weights.pitch * noteScore + weights.timing * timingScore + weights.continuity * continuity,
+  ));
   return {
-    perfectWindowMs: tolerance,
-    goodWindowMs: tolerance * 5,
-    matchWindowMs: tolerance * 5,
-    missWindowMs: tolerance * 5,
+    measure,
+    grade: gradeName(score, cfg.thresholds),
+    score,
+    combined: score,
+    rest: expected === 0,
+    noteScore,
+    timingScore,
+    continuity,
+    expectedCount: expected,
+    matchedCount: matched,
+    wrongCount: wrong,
+    silent: matched === 0 && wrong === 0,
+    criteria,
+    parts: span.parts || {},
+    diagnostics: span.diagnostics || {},
+    policyVersion: POLICY_VERSION,
   };
-};
+}
 
-/**
- * At-tempo performance evaluator for Sheet Music "Polish" mode.
- *
- * Incoming MIDI notes are matched against exact onset targets by the shared
- * performance judge. This hook retains the Polish lifecycle: measure-boundary
- * grades, loop boundaries, silent auto-stop, and final-measure closure.
- */
+/** Canonical timed-attempt adapter for Sheet Music Polish presentation. */
 export function useScoreEvaluator({
   enabled,
   cfg,
   subscribe,
   currentMeasure,
   boundary = 0,
-  targets = [],
+  expectation,
   positionForNote,
   onMeasureGrade,
   onSilentStop,
 }) {
-  const enabledRef = useRef(enabled);
-  const cfgRef = useRef(cfg);
+  const attemptRef = useRef(null);
+  const expectationRef = useRef(expectation);
   const currentMeasureRef = useRef(currentMeasure);
-  const positionForNoteRef = useRef(positionForNote);
-  const onMeasureGradeRef = useRef(onMeasureGrade);
-  const onSilentStopRef = useRef(onSilentStop);
-  const runRef = useRef(createAssessmentSession({
-    matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfg),
-  }));
-  const targetIdsRef = useRef(targets.map((target) => target.id).join(','));
-
-  enabledRef.current = enabled;
-  cfgRef.current = cfg;
-  currentMeasureRef.current = currentMeasure;
-  positionForNoteRef.current = positionForNote;
-  onMeasureGradeRef.current = onMeasureGrade;
-  onSilentStopRef.current = onSilentStop;
-
-  const prevMeasureRef = useRef(null);
-  const prevBoundaryRef = useRef(boundary);
+  const positionRef = useRef(positionForNote);
+  const gradeRef = useRef(onMeasureGrade);
+  const silentStopRef = useRef(onSilentStop);
+  const cfgRef = useRef(cfg);
+  const gradedRef = useRef(new Set());
+  const previousMeasureRef = useRef(null);
+  const previousBoundaryRef = useRef(boundary);
   const silentRunRef = useRef(0);
   const stoppedRef = useRef(false);
-  const finalizedRef = useRef(false);
-  const advancedRef = useRef(false);
   const playedRef = useRef(false);
-  const gradedRef = useRef(new Set());
+  const advancedRef = useRef(false);
 
-  // Target timing can change when the tempo control moves. Preserve the resolved
-  // performance state by stable target id while replacing score-derived metadata.
-  useEffect(() => {
-    const nextIds = targets.map((target) => target.id).join(',');
-    runRef.current = replaceAssessmentTargets(runRef.current, targets);
-    if (nextIds !== targetIdsRef.current) gradedRef.current.clear();
-    targetIdsRef.current = nextIds;
-  }, [targets]);
+  currentMeasureRef.current = currentMeasure;
+  positionRef.current = positionForNote;
+  gradeRef.current = onMeasureGrade;
+  silentStopRef.current = onSilentStop;
+  cfgRef.current = cfg;
+  const boundaryRef = useRef(boundary);
+  boundaryRef.current = boundary;
+  expectationRef.current = expectation;
+  const expectationKey = expectation ? JSON.stringify({
+    source: expectation.source,
+    tempoMap: expectation.tempoMap,
+    events: expectation.events.map((event) => [event.id, event.onsetQuarter, event.spanId, event.notes.map((note) => note.id)]),
+  }) : '';
+
+  const createRun = useCallback(() => {
+    const currentExpectation = expectationRef.current;
+    if (!currentExpectation?.tempoMap?.length) return null;
+    return startAssessmentAttempt(createAssessmentAttempt({
+      expectation: currentExpectation,
+      matcher: 'timed',
+      mode: 'cued',
+      purpose: 'practice',
+      clock: 'score-polish',
+      policy: {
+        matchWindowMs: (cfgRef.current?.timingToleranceMs ?? 80) * 5,
+        missWindowMs: (cfgRef.current?.timingToleranceMs ?? 80) * 5,
+        timingToleranceMs: cfgRef.current?.timingToleranceMs ?? 80,
+        timingWindowMs: cfgRef.current?.timingWindowMs ?? 320,
+      },
+    }), { time: 0, clock: 'score-polish' });
+  }, [expectationKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gradeOne = useCallback((measure, atMs) => {
-    if (gradedRef.current.has(measure)) return null;
-    const closed = closeAssessmentSpan(runRef.current, measure, atMs);
-    runRef.current = closed.session;
-    const measureTargets = runRef.current.run.targets.filter((target) => target.measureIndex === measure);
-    const unmatched = (runRef.current.run.unmatched || []).filter((event) => event.measureIndex === measure);
-    if (!measureTargets.length && !unmatched.length) return null;
-    const graded = {
-      measure,
-      ...gradeAssessmentSpan(runRef.current, measure, cfgRef.current || {}),
-      policyVersion: POLICY_VERSION,
-    };
+    if (!attemptRef.current || gradedRef.current.has(measure)) return null;
+    const closed = closeAssessmentAttemptSpan(attemptRef.current, `measure:${measure}`, atMs);
+    attemptRef.current = closed.attempt;
+    const span = closed.events.find((event) => event.type === 'span_complete')?.result;
+    const grade = polishGrade(measure, span, cfgRef.current);
+    if (!grade || (!grade.expectedCount && !grade.wrongCount)) return null;
     gradedRef.current.add(measure);
-    onMeasureGradeRef.current?.(graded);
-    return graded;
+    gradeRef.current?.(grade);
+    return grade;
   }, []);
 
-  const finalize = useCallback((endMeasure) => {
-    if (!enabledRef.current || finalizedRef.current) return [];
-    finalizedRef.current = true;
-    if (!advancedRef.current && !playedRef.current) return [];
-    const cur = currentMeasureRef.current;
-    const measures = Number.isFinite(endMeasure) && endMeasure !== cur ? [cur, endMeasure] : [cur];
-    const atMs = positionForNoteRef.current?.() ?? 0;
-    return measures.map((measure) => gradeOne(measure, atMs)).filter(Boolean);
-  }, [gradeOne]);
+  const reset = useCallback(() => {
+    attemptRef.current = createRun();
+    gradedRef.current.clear();
+    previousMeasureRef.current = null;
+    previousBoundaryRef.current = boundaryRef.current;
+    silentRunRef.current = 0;
+    stoppedRef.current = false;
+    playedRef.current = false;
+    advancedRef.current = false;
+  }, [createRun]);
+
+  useEffect(() => {
+    if (enabled) reset();
+    else attemptRef.current = null;
+  }, [enabled, reset]);
 
   useEffect(() => {
     if (!enabled || !subscribe) return undefined;
-    return subscribe((evt) => {
-      if (!evt || evt.type !== 'note_on' || !evt.velocity) return;
+    return subscribe((event) => {
+      if (!event || event.type !== 'note_on' || !event.velocity || !attemptRef.current) return;
       playedRef.current = true;
-      const atMs = positionForNoteRef.current?.() ?? 0;
-      runRef.current = { ...runRef.current, policy: timingPolicy(cfgRef.current) };
-      const judged = applyAssessmentPress(
-        runRef.current,
-        evt.note,
-        atMs,
-        { measureIndex: currentMeasureRef.current },
-      );
-      runRef.current = judged.session;
+      const judged = observeAssessment(attemptRef.current, {
+        midi: event.note,
+        time: positionRef.current?.() ?? 0,
+        clock: 'score-polish',
+      });
+      attemptRef.current = judged.attempt;
     });
   }, [enabled, subscribe]);
 
   useEffect(() => {
-    if (!enabled) return;
-    const prev = prevMeasureRef.current;
-    const wrapped = boundary !== prevBoundaryRef.current;
-    prevBoundaryRef.current = boundary;
-    const ending = prev != null && currentMeasure !== prev ? prev : (wrapped ? currentMeasure : null);
-
+    if (!enabled || !attemptRef.current) return;
+    const previous = previousMeasureRef.current;
+    const wrapped = boundary !== previousBoundaryRef.current;
+    previousBoundaryRef.current = boundary;
+    const ending = previous != null && currentMeasure !== previous ? previous : (wrapped ? currentMeasure : null);
     if (ending != null) {
       advancedRef.current = true;
-      const atMs = positionForNoteRef.current?.() ?? 0;
-      const graded = gradeOne(ending, atMs);
-      if (graded?.silent) {
+      const grade = gradeOne(ending, positionRef.current?.() ?? 0);
+      if (grade?.silent) {
         silentRunRef.current += 1;
         const limit = cfgRef.current?.silentMeasuresToStop;
         if (Number.isFinite(limit) && silentRunRef.current >= limit && !stoppedRef.current) {
           stoppedRef.current = true;
-          onSilentStopRef.current?.(graded);
+          silentStopRef.current?.(grade);
         }
-      } else if (graded) {
-        silentRunRef.current = 0;
-      }
-
-      // A loop starts a fresh pass over its targets. Normal forward progress keeps
-      // prior target resolutions intact until the run summary is produced.
+      } else if (grade) silentRunRef.current = 0;
       if (wrapped) {
-        runRef.current = createAssessmentSession({
-          matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfgRef.current),
-        });
+        attemptRef.current = createRun();
         gradedRef.current.clear();
       }
     }
-    prevMeasureRef.current = currentMeasure;
-  }, [enabled, currentMeasure, boundary, gradeOne, targets]);
+    previousMeasureRef.current = currentMeasure;
+  }, [boundary, createRun, currentMeasure, enabled, gradeOne]);
 
-  useEffect(() => {
-    if (enabled) return undefined;
-    runRef.current = createAssessmentSession({
-      matcher: 'timed', expectation: { targets }, policy: timingPolicy(cfgRef.current),
-    });
-    prevMeasureRef.current = null;
-    prevBoundaryRef.current = boundary;
-    silentRunRef.current = 0;
-    stoppedRef.current = false;
-    finalizedRef.current = false;
-    advancedRef.current = false;
-    playedRef.current = false;
-    gradedRef.current.clear();
-    return undefined;
-  }, [enabled, boundary, targets]);
+  const finalize = useCallback((endMeasure) => {
+    if (!enabled || !attemptRef.current || (!advancedRef.current && !playedRef.current)) return [];
+    const current = currentMeasureRef.current;
+    const measures = Number.isFinite(endMeasure) && endMeasure !== current ? [current, endMeasure] : [current];
+    const atMs = positionRef.current?.() ?? 0;
+    const grades = measures.map((measure) => gradeOne(measure, atMs)).filter(Boolean);
+    attemptRef.current = finalizeAssessmentAttempt(attemptRef.current, { status: 'completed' });
+    return grades;
+  }, [enabled, gradeOne]);
 
-  useEffect(() => () => {
-    runRef.current = createAssessmentSession({ matcher: 'timed', expectation: { targets: [] } });
-    gradedRef.current.clear();
-  }, []);
-
+  useEffect(() => () => { attemptRef.current = null; }, []);
   return { finalize };
 }
 

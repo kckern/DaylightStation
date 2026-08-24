@@ -113,7 +113,9 @@ export function validateAssessment(body = {}) {
 
   // A vector without the rubric that judged it cannot be re-projected later,
   // which is the whole point of keeping it.
-  if (body.criteria !== undefined && typeof body.rubric?.id !== 'string') {
+  const nestedCriteria = Object.values(body.parts || {}).some((value) => value?.criteria)
+    || Object.values(body.spans || {}).some((value) => value?.criteria || Object.values(value?.parts || {}).some((part) => part?.criteria));
+  if ((body.criteria !== undefined || nestedCriteria) && typeof body.rubric?.id !== 'string') {
     errors.push('rubric.id is required when criteria are recorded');
   }
   if (body.rubric !== undefined) {

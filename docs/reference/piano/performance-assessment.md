@@ -151,71 +151,49 @@ contract.
 
 | File | Role |
 |---|---|
-| `assessmentSession.js` | **Public consumer API.** Creates parameterized timed, cursor, or held sessions; applies observations; evaluates criteria and gates; produces portable results; and exposes span aggregation. Piano surfaces import this module rather than the primitives below. |
-| `performanceTargets.js` | Compiles renderer-independent score notes into millisecond targets (tempo map resolved here; the judge deals only in ms) |
-| `performanceJudge.js` | Internal timed-matcher primitive: match presses to targets, resolve misses, close measures |
-| `drillRun.js` | Internal cursor-run primitive: span-by-span ordered matching with no tempo map |
-| `heldSet.js` | Internal held-set primitive: pitch-class equivalence and bass-root constraint |
-| `grading.js` | Internal dimensional grading and timing primitives |
-| `spans.js` | Internal aggregation primitive: tally span grades and find the worst contiguous trouble block |
+| `assessmentSession.js` | Supported façade. Exports expectation compilers, immutable attempt transitions, runtime bindings, progress, span closure, and finalization. |
+| `assessmentAttempt.js` | Canonical event compiler and pure cursor, held, and timed lifecycle. Produces aggregate, part, and span evidence. |
+| `assessmentRuntime.js` | Thin external-store binding for MIDI subscription, clock ticks, timeout, abort, reset, and low-frequency React snapshots. It never renders or persists. |
+| `heldSet.js` | Neutral held-set recognition for theory and command input that must not create assessment evidence. |
+| `performanceTargets.js` | Legacy visual timing projection used only where a surface needs millisecond drawing coordinates; it is not assessment authority. |
 
-The façade is deliberately parameterized rather than surface-aware. It knows
-nothing about Hero combos, Polish washes, card-game damage, Tetris movement, or
-exercise navigation. A typical timed consumer owns a session and replaces it
-with each pure transition result:
+The façade is deliberately surface-neutral. A typical timed consumer replaces
+its attempt with every pure transition result:
 
 ```js
-let session = createAssessmentSession({
+const expectation = compileAssessmentExpectation({
+  source: { kind: 'chart', id: 'example', revision: null },
+  events,
+  tempoMap: [{ onsetQuarter: 0, bpm: 90 }],
+});
+let attempt = createAssessmentAttempt({
   matcher: 'timed',
-  expectation: { targets },
-  policy: { perfectWindowMs: 90, matchWindowMs: 220, missWindowMs: 420 },
+  mode: 'cued',
+  expectation,
   requirement,
 });
 
-session = applyAssessmentPress(session, midi, atMs).session;
-session = advanceAssessment(session, now).session;
-const result = finalizeAssessment(session, { achievedBpm });
+attempt = startAssessmentAttempt(attempt, { time: 0, leadInMs: 2000 });
+attempt = observeAssessment(attempt, { midi, time: atMs }).attempt;
+attempt = advanceAssessment(attempt, now).attempt;
+const result = finalizeAssessmentAttempt(attempt, { status: 'completed' }).result;
 ```
 
 ### Public consumer contract
 
-Consumers import from `assessmentSession.js`; they do not import the matcher,
-grading, or span primitives directly. The façade groups its API into three
-layers:
-
-- **Session lifecycle:** `createAssessmentSession`,
-  `replaceAssessmentTargets`, `applyAssessmentPress`, `applyAssessmentHeld`,
-  `advanceAssessment`, `closeAssessmentSpan`, `assessmentProgress`, and
-  `finalizeAssessment` own a complete timed, cursor, or held attempt.
-- **Stateless adapters:** `classifyCursorStep`, `advanceOrderedCursor`,
-  `classifyHeldNotes`, `gradeAssessmentObservation`, and
-  `timingQualityForBeat` let an existing hot loop share the same judgement
-  without surrendering its presentation-specific state machine.
-- **Result and span projection:** `criteriaForAssessment`,
-  `evaluateAssessment`, `gradeAssessmentSpan`, `tallyAssessmentGrades`, and
-  `findWorstAssessmentSpan` produce portable criteria, verdicts, and practice
-  recommendations without introducing game scoring or curriculum side effects.
-
-This boundary is what makes the service shared: consumers may choose different
-policies and projections, but they cannot fork the definitions of a hit, miss,
-criterion, gate, or assessment result.
+Consumers import only compilation, lifecycle, and runtime functions from
+`assessmentSession.js`. Surface-only projections such as Polish wash bands and
+worst-range selection live beside their surfaces. Command recognition imports
+from `input/recognition.js` and creates no result, verdict, or attempt evidence.
 
 ## Runners
 
-- **Timed** — matches note attacks against millisecond targets compiled from an
-  engraved score or exercise (tempo map in, perfect/good/miss windows). Used by
-  Sheet Music Polish, Piano Hero, paced Exercises, and Space Invaders.
-- **Cursor** — advances span-by-span through ordered expected pitches with no
-  tempo map. A wrong note within two octaves of the target counts against the
-  current span; anything farther is ignored as an unrelated key. There is no
-  restart on a wrong note — the player flashes and continues. A degenerate
-  (empty) span is ignored rather than blocking the run. The same façade also
-  supplies an order-free chord-step classifier for Sheet Music Learn and a
-  parameterized ordered cursor (`restartOnWrong`) for game challenges.
-- **Held** — evaluates the currently held snapshot. Exact-MIDI mode can allow a
-  target inside a larger held set (staff flashcards and game commands), while
-  pitch-class mode can require the authored root in the bass (chord exercises,
-  chord flashcards, and card-game challenges).
+- **Timed** — cued mode only. It matches attacks to logical note identities,
+  accumulates chords, handles cross-part unisons, and retains per-note drift.
+- **Cursor** — untimed wait-for-correct matching. Events remain sequential while
+  pitches inside one onset are order-free; rests skip automatically.
+- **Held** — untimed exact held-event matching for authored order-free material.
+  Neutral theory/controller recognition uses a separate non-assessment helper.
 
 The matchers differ because their musical questions differ; they share one
 session/result contract and one rubric evaluator.
@@ -230,23 +208,15 @@ per key gesture instead of charging every render snapshot.
 
 ## Grading and spans
 
-Grading is dimensional — pitch accuracy, timing, continuity, simultaneity — with
-weights an exercise may declare to say what it is about; defaults reproduce the
-long-standing constants, and partial weight or threshold objects merge over
-those defaults. Scores band to green/yellow/red on the same 0.9/0.6 thresholds
-through `gradeBand`.
+Completed grading uses completeness and cleanliness for every matcher, plus
+placement only for timed attempts. Aggregate completeness and placement are
+normalized part-weighted means; cleanliness also accounts for ambiguous wrong
+notes without inventing per-part attribution. Rubric criterion weights and
+normalized part weights are persisted with the verdict.
 
-Ordered grading also counts **missed** notes. The untimed runner advances only
-on the correct note, so a drill cannot leave one unplayed and passes none; a
-timed score can be played straight past, and a note never struck has to cost
-something. With none missed the maths reduces exactly to what it was.
-
-Sheet Music polish grades through this service as of
-`polish-shared-grading-v1`. It previously combined the same dimensions
-multiplicatively under its own names, so a polish score and a drill score could
-not be compared even though both claimed to mean "how well did that go".
-Adopting the service moved the numbers, which is why results carry that policy
-version — records written under the old maths stay distinguishable.
+Sheet Music Polish uses canonical span evidence under
+`polish-canonical-span-v2`. Its established tier score remains a local display
+projection so existing tier bests stay comparable.
 
 Assessment aggregates over spans: measures in a score, transposition cells in a
 drill, one span for a bare exercise. A run tallies to an overall grade and
@@ -258,12 +228,12 @@ drill next.
 | Surface | Common matcher/judgement | Surface-owned projection | Durable piano evidence |
 |---|---|---|---|
 | Exercises | cursor for self-paced strict material; held for order-free chords; timed for paced challenges; common rubric + pace gate | notation cursor, wrong-note state, pass screen | Practice and challenge attempts are written; only qualifying challenges advance programs |
-| Sheet Music Learn | order-free cursor-step classifier with a two-octave plausibility policy | follow cursor, wet ink, range completion | Existing per-score practice record; not bank challenge evidence |
-| Sheet Music Polish | timed session, per-measure grading, shared span tally/worst span | measure washes, tier score, tier bests | Existing per-score Polish record; not bank challenge evidence |
-| Piano Hero | timed session and portable run result | points, combo, sparks, Hero accuracy | In memory by default |
-| Battle Stadium card game | held chord or ordered cursor; dimensional grading; common rubric + pace gate | move quality and battle damage | Completed bank-backed challenges are written to the attempt ledger |
-| Flashcards | exact-MIDI or pitch-class held classifier; common session-level result | card score, level, rolling accuracy | In memory by default |
-| Space Invaders | timed target matching and common level result | lasers, health, points, combo | In memory by default |
+| Sheet Music Learn | canonical cursor attempt per whole-piece pass or loop lap | follow cursor, wet ink, range completion | Practice ledger record plus per-score frontier derived from span criteria |
+| Sheet Music Polish | canonical timed attempt and span-close evidence | measure washes, unchanged tier score and tier bests | Existing per-score Polish record; not bank challenge evidence |
+| Piano Hero | canonical timed chart attempt | points, combo, sparks, Hero accuracy | In memory by default |
+| Battle Stadium card game | shared exercise adapter and runtime | score-scaled effects; failed pass-gated moves consume the turn with no effect | Completed bank-backed challenges are written to the attempt ledger |
+| Flashcards | canonical held attempt where a musical score is needed; neutral recognition for theory | card score, level, rolling accuracy | In memory by default |
+| Space Invaders | native mode uses visible-object pitch collision; Hero mode uses timed assessment | lasers, health, points, combo | Native mode creates no musical evidence |
 | Video engagement prompt | held classifier through the flashcard engine | resume-video gate | None; this anti-idle prompt is not a curriculum checkpoint |
 | Tetris and Side Scroller | exact-MIDI held classifier only | MIDI commands, hold-repeat, game score | None; command recognition is not an assessment |
 
@@ -273,16 +243,8 @@ assessment consumers.
 
 Deliberate non-unifications, so they are not "fixed" by accident:
 
-- **Play feel stays per-surface.** The card game restarts selected legacy scale
-  challenges on a wrong note; the lesson drill flashes and continues. Both are
-  policies on the common ordered cursor, not separate judgement algorithms.
 - **The card-game verifier lifecycle** (arm-after-release, commit-path
   hardening against batched MIDI snapshots) is battle-tested and stays its own.
-- **Timing curves differ by intent, and now share an implementation.**
-  `timingQualityFromDrift` takes a free tolerance and a falloff window: polish is
-  gentle (80ms free, zero at 400ms) because a bar being learned should not read
-  red for being slightly late, while beat-relative grading is tight. Different
-  numbers, one formula.
 - **Game scores are projections, not rubrics.** Hero points/combo, Space
   Invaders health/points, Flashcard level points, card-game damage, and Tetris
   line score remain local. Musical criteria and pass/fail judgement do not.
@@ -297,10 +259,11 @@ terminal summaries are ordinary low-frequency React state.
 
 ## Boundaries
 
-Sequence matching is attack-only: ornaments, sustain pedal, and note durations
-are not assessed. An onset group spanning two measures belongs to neither and is
-excluded from per-measure grading. Per-voice (per-hand) attribution is not
-performed — staves merge into one pitch set per onset.
+Sequence matching is attack-only: ornaments, sustain pedal, articulation,
+dynamics, fingering, and performed note durations are not assessed. Authored
+durations and ties remain in the expectation for timing and future criteria.
+Part attribution is limited to authored staff/hand identity; clef never implies
+a hand, and unassigned exercise notes remain `unassigned`.
 
 Piano Chess chord addresses, the note launcher's combo and selection keys, and
 Producer chord detection intentionally remain outside assessment. They interpret MIDI as a
@@ -327,9 +290,9 @@ score-range producer.
 
 ## Persistence and remaining boundaries
 
-- **Only explicit evidence writers persist results.** Exercises writes practice
-  and challenge attempts; the card-game provider writes prepared bank
-  challenges. Completed records carry `purpose`, criterion vector, gates,
+- **Only explicit evidence writers persist results.** Learn, Exercises, and the
+  card-game provider use the shared piano attempt client. Completed records carry
+  `purpose`, criterion vector, parts, spans, gates,
   diagnostics, rubric version, verdict, and stable bank-instance id. Practice
   is visible history but is intentionally ineligible for advancement. Hero,
   Flashcards, and Space Invaders expose common results in memory, but ordinary
@@ -339,8 +302,8 @@ score-range producer.
 - **The learning service re-evaluates evidence.** It checks stored criteria
   against the current named requirement instead of trusting a surface-specific
   “complete” flag.
-- **Abandoned runs are not scored**, though the untimed runner can finalize a
-  partial run — surfacing that is a product decision, not a service gap.
+- **Interrupted runs are persisted only after musical input.** They carry
+  terminal status and numeric diagnostics, but no score, criteria, or verdict.
 - **Sheet Music does not consume bank instances.** Exercises, exact game
   challenges, and video exit checkpoints now do. Sheet Music still produces
   expectations from engraved score ranges, which is a deliberate separate

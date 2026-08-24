@@ -151,11 +151,11 @@ describe('createPianoChordProvider telemetry', () => {
       status: 'completed',
       metrics: { firstTry: false, wrongNotes: 1, restarts: 0, notesRequired: 3 },
     });
-    expect(result.score).toBeGreaterThanOrEqual(0.5);
-    expect(result.score).toBeLessThan(0.75);
+    expect(result.score).toBeCloseTo(0.875);
+    expect(result.criteria).toEqual({ completeness: 1, cleanliness: 0.75 });
   });
 
-  it('grades a journey chord from pitch-set accuracy and onset simultaneity', async () => {
+  it('grades a journey chord as an untimed held attempt', async () => {
     let notes = { activeNotes: new Map(), noteHistory: [] };
     let now = 4000;
     const provider = createPianoChordProvider({ useNotes: () => notes, clock: () => now });
@@ -180,9 +180,10 @@ describe('createPianoChordProvider telemetry', () => {
     };
     await act(async () => view.rerender(<runtime.Surface />));
     const result = await resultPromise;
-    expect(result.score).toBeCloseTo(0.928);
+    expect(result.score).toBe(1);
+    expect(result.criteria).toEqual({ completeness: 1, cleanliness: 1 });
     expect(result.metrics).toMatchObject({
-      firstTry: true, pitchSetAccuracy: 1, onsetSpanMs: 60, simultaneity: 0.76,
+      firstTry: true, pitchSetAccuracy: 1, onsetSpanMs: 60,
     });
   });
 
@@ -256,7 +257,9 @@ describe('createPianoChordProvider telemetry', () => {
     now += 300;
     await act(async () => { runtime.dispose(); });
 
-    await expect(resultPromise).resolves.toMatchObject({ status: 'aborted', score: null });
+    const abandoned = await resultPromise;
+    expect(abandoned).toMatchObject({ status: 'aborted' });
+    expect(abandoned).not.toHaveProperty('score');
     expect(api.recordPianoAttempt).toHaveBeenCalledWith('kid-1', expect.objectContaining({
       status: 'aborted',
       challenge_id: 'abandon-1',
@@ -264,10 +267,6 @@ describe('createPianoChordProvider telemetry', () => {
       prompt: expect.objectContaining({ exercise_id: 'scale-c-major' }),
       metrics: expect.objectContaining({ reason: 'disposed', notesPlayed: 1, durationMs: 500 }),
     }), expect.objectContaining({ keepalive: true }));
-    expect(logger.info).toHaveBeenCalledWith(
-      'piano.challenge.abandoned',
-      expect.objectContaining({ challengeId: 'abandon-1', attemptId: 'saved-abandon', notesPlayed: 1 }),
-    );
   });
 
   it('does not record an attempt for a challenge that was disposed before it started', async () => {
@@ -320,7 +319,7 @@ describe('createPianoChordProvider telemetry', () => {
     });
   });
 
-  it('terminates and records an attempt when the challenge times out', async () => {
+  it('terminates without persisting a timeout before musical input', async () => {
     vi.useFakeTimers();
     try {
       const api = { recordPianoAttempt: vi.fn(async (_userId, attempt) => attempt) };
@@ -333,12 +332,9 @@ describe('createPianoChordProvider telemetry', () => {
       const resultPromise = runtime.start(prepared);
       await vi.advanceTimersByTimeAsync(1000);
       const result = await resultPromise;
-      expect(result).toMatchObject({ status: 'timeout', score: null, metrics: { reason: 'challenge_timeout', timeoutMs: 1000 } });
-      expect(api.recordPianoAttempt).toHaveBeenCalledWith(
-        'guest',
-        expect.objectContaining({ status: 'timeout' }),
-        { keepalive: false },
-      );
+      expect(result).toMatchObject({ status: 'timeout', metrics: { reason: 'challenge_timeout', timeoutMs: 1000 } });
+      expect(result).not.toHaveProperty('score');
+      expect(api.recordPianoAttempt).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -392,7 +388,7 @@ describe('createPianoChordProvider telemetry', () => {
     const resultPromise = runtime.start(prepared);
     const view = render(<runtime.Surface />);
 
-    notes = { ...notes, noteHistory: [{ note: 60, startTime: 100 }] };
+    notes = { ...notes, noteHistory: [{ note: 60 }] };
     await act(async () => view.rerender(<runtime.Surface />));
     expect(screen.getByText('1 / 2')).toBeTruthy();
 

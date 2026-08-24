@@ -167,6 +167,7 @@ function preparedChallenge({ challengeId, kind, instance, mode, timeoutMs, selec
       mode,
       ...(instance.ordering === 'any' ? chordTarget(instance) : {}),
       ...(mode === 'cued' ? { tempo_bpm: bpm } : {}),
+      ...(mode === 'cued' ? { lead_in_ms: 2000 } : {}),
     },
     requirement: effectiveRequirement,
     grading_policy_version: effectiveRequirement.rubric.id,

@@ -16,10 +16,11 @@
  * }
  */
 import {
-  applyAssessmentPress,
-  createAssessmentSession,
-  evaluateAssessment,
-} from '../performance/assessmentSession.js';
+  compileAssessmentExpectation,
+  createAssessmentAttempt,
+  observeAssessment,
+  startAssessmentAttempt,
+} from '../performance/assessmentAttempt.js';
 
 const DEFAULT_FALL_DURATION_MS = 2500; // Default; overridable per level via fall_duration_ms
 export const TOTAL_HEALTH = 28; // Mega Man life meter notch count
@@ -233,32 +234,40 @@ function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = '
       },
     };
   }
-  const targets = candidates.map(({ note }) => ({
-    id: note.id,
-    pitches: note.pitches,
-    targetTimeMs: note.targetTime,
-    state: 'pending',
-    hitPitches: [...note.hitPitches],
-    drifts: [...(note.hitDrifts || [])],
-    resolvedAt: note.resolvedTime ?? null,
-    result: note.hitResult,
-  }));
-  const openWindow = mode === 'invaders' || visibleTarget ? Infinity : timingConfig.good_ms;
-  const session = createAssessmentSession({
-    matcher: 'timed', expectation: { targets }, policy: {
-      perfectWindowMs: mode === 'invaders' ? Infinity : timingConfig.perfect_ms,
-      goodWindowMs: openWindow,
-      matchWindowMs: openWindow,
-      missWindowMs: timingConfig.miss_threshold_ms,
-    },
+  const expectation = compileAssessmentExpectation({
+    source: { kind: 'chart', id: 'space-invaders-hero', revision: null },
+    tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
+    events: candidates.map(({ note }) => ({
+      id: `invader-${note.id}`,
+      onsetQuarter: note.targetTime / 1000,
+      durationQuarters: 0,
+      spanId: 'level:1',
+      notes: note.pitches.map((midi) => ({ midi, part: 'unassigned' })),
+    })),
   });
-  session.run = { targets, unmatched: [] };
-  const judged = applyAssessmentPress(session, pitch, now);
-  if (judged.event.type === 'unmatched_note') return null;
-  const target = judged.session.run.targets.find((entry) => entry.id === judged.event.targetId);
-  const candidate = candidates.find(({ note }) => note.id === judged.event.targetId);
-  if (!target || !candidate) return null;
-  const complete = judged.event.type === 'target_hit';
+  let attempt = startAssessmentAttempt(createAssessmentAttempt({
+    expectation, matcher: 'timed', mode: 'cued', purpose: 'practice', clock: 'space-invaders-hero',
+    policy: {
+      matchWindowMs: visibleTarget ? Number.MAX_SAFE_INTEGER : timingConfig.good_ms,
+      missWindowMs: timingConfig.miss_threshold_ms,
+      timingToleranceMs: timingConfig.perfect_ms,
+      timingWindowMs: Math.max(1, timingConfig.good_ms - timingConfig.perfect_ms),
+    },
+  }), { time: 0, clock: 'space-invaders-hero' });
+  const hits = { ...attempt.hits };
+  for (const { note } of candidates) {
+    const event = expectation.events.find((item) => item.id === `invader-${note.id}`);
+    for (const logical of event?.notes || []) if (note.hitPitches.has(logical.midi)) hits[logical.id] = { time: note.targetTime, driftMs: 0 };
+  }
+  attempt = { ...attempt, hits };
+  const judged = observeAssessment(attempt, { midi: pitch, time: now, clock: 'space-invaders-hero' });
+  if (judged.event?.type === 'wrong' || judged.event?.type === 'ignored') return null;
+  const candidate = candidates.find(({ note }) => `invader-${note.id}` === judged.event?.eventId);
+  if (!candidate) return null;
+  const event = expectation.events.find((item) => item.id === judged.event.eventId);
+  const hitPitches = new Set(event.notes.filter((logical) => judged.attempt.hits[logical.id]).map((logical) => logical.midi));
+  const hitDrifts = event.notes.map((logical) => judged.attempt.hits[logical.id]?.driftMs).filter(Number.isFinite);
+  const complete = judged.event.type === 'onset_complete';
   const projectedResult = complete
     ? mode === 'invaders' || Math.abs(now - candidate.note.targetTime) <= timingConfig.perfect_ms
       ? 'perfect'
@@ -271,8 +280,8 @@ function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = '
     result: projectedResult,
     note: {
       ...candidate.note,
-      hitPitches: new Set(target.hitPitches),
-      hitDrifts: target.drifts,
+      hitPitches,
+      hitDrifts,
       state: complete ? 'hit' : 'falling',
       hitResult: complete ? projectedResult : candidate.note.hitResult,
       resolvedTime: complete ? now : candidate.note.resolvedTime,
@@ -529,16 +538,22 @@ export function assessSpaceInvaders(score, mode = 'hero') {
     cleanliness: hits + (score?.wrong || 0) > 0 ? hits / (hits + (score?.wrong || 0)) : 0,
     placement: hits > 0 ? ((score?.perfects || 0) + 0.6 * (score?.goods || 0)) / hits : 0,
   };
-  return evaluateAssessment({
+  const scoreValue = (criteria.completeness + criteria.cleanliness + criteria.placement) / 3;
+  return {
+    status: 'completed',
+    score: scoreValue,
     criteria,
-    rubric: { id: 'space-invaders-v1', version: '1' },
+    parts: {},
+    spans: {},
+    rubric: { id: 'space-invaders-hero-v2', version: '2', weights: { completeness: 1, cleanliness: 1, placement: 1 }, part_weights: {} },
+    verdict: { score: scoreValue, passed: true, failed_criteria: [], failed_gates: [] },
     diagnostics: {
       perfect_targets: score?.perfects || 0,
       good_targets: score?.goods || 0,
       missed_targets: score?.misses || 0,
       wrong_notes: score?.wrong || 0,
     },
-  });
+  };
 }
 
 // ─── Constants ──────────────────────────────────────────────────

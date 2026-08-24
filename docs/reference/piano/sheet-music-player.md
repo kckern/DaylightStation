@@ -343,29 +343,22 @@ notes-and-timing (the same measure wash used elsewhere) and folded into a
 running score; the transport bar's center readout shows the live tally as the
 run progresses (e.g. `82% · m 12/24`).
 
-Polish grades through the parameterized `assessmentSession.js` service as of
-`polish-shared-grading-v1` (`scoreEvaluator.js` is now a compatibility
-projection). It previously computed the same
-dimensions under its own names and combined them multiplicatively, so a polish
-score and a lesson-drill score could not be compared even though both claimed to
-mean "how well did that go". Adopting the service moved the numbers, which is
-why results carry that policy version — records written under the old maths stay
-distinguishable. Ordered grading also counts *missed* notes now: a drill advances
-only on the correct note and so cannot leave one unplayed, but a timed score can
-be played straight past, and a note never struck has to cost something. Polish's
-forgiving timing curve moved into the service as `timingQualityFromDrift` — 80ms
+Polish compiles the score through the same canonical expectation as Learn and
+closes measure spans on one timed attempt under `polish-canonical-span-v2`.
+Measure washes read canonical completeness, cleanliness, placement, part, and
+diagnostic evidence. The established Polish combined score remains a local
+display projection so existing tempo-tier bests stay comparable. Missed notes
+are explicit omissions in the attempt rather than disappearing when playback
+crosses a measure boundary. Polish keeps its forgiving timing policy: 80ms
 free, falling to zero by 400ms — so polish and beat-relative grading are one
 formula with different numbers rather than two implementations.
 See [performance-assessment.md](./performance-assessment.md).
 
-Polish and Piano Hero now own separate instances of the same parameterized,
-renderer-independent assessment session.
-The score is compiled into exact onset targets after the tempo map, tempo
-multiplier, and active-staff filter are applied. Repeated pitches remain
-separate attacks, simultaneous pitches are judged as a chord, early/late drift
-is measured against the expected onset, and unmatched notes reduce accuracy.
-Polish then aggregates those target results by measure into its existing
-red/yellow/green washes and run summaries; Hero separately adapts them into
+Polish and Piano Hero own separate attempts over the same renderer-independent
+score expectation contract. Repeated pitches remain separate attacks,
+simultaneous pitches accumulate as a chord, early/late drift is retained per
+logical note, and unmatched notes reduce cleanliness. Polish projects measure
+spans into its existing washes and summaries; Hero projects attempt events into
 points and combos.
 
 **Tempo tiers.** A run is bucketed by the tempo it was played at, decided the
@@ -586,9 +579,9 @@ during an active run so the judge and falling highway cannot jump timelines.
 | File | Role |
 |------|------|
 | `SheetMusic.jsx` | routing (grid ↔ viewer), MusicXML fetch + load timing |
-| `Piano/performance/performanceTargets.js` | Shared tempo-resolved target compiler |
-| `Piano/performance/assessmentSession.js` | Public parameterized matching, observation, rubric, verdict, and span-aggregation API shared by Learn, Polish, Hero, Exercises, games, and flashcards |
-| `Piano/performance/performanceJudge.js` | Internal timed note/chord matching primitive used by the assessment session |
+| `Piano/performance/assessmentSession.js` | Public canonical expectation, immutable attempt lifecycle, runtime, criteria, verdict, part, and span API |
+| `Piano/performance/assessmentAttempt.js` | Pure cursor/timed/held implementation used by Learn and Polish |
+| `Piano/performance/assessmentRuntime.js` | MIDI/clock external-store binding; never renders or persists |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `ScoreGrid.jsx` / `scoreGroups.js` | score browser grid + `sheetmusic.collections` → tab strip |
 | `scoreTitle.js` | filename → title fallback shared by the grid and the player |
@@ -599,6 +592,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
+| `assessmentProjections.js` | Sheet-only Polish tally and worst-range display projections |
 | `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |
 | `LiveInputLayer.jsx` | the notes being held right now, drawn in the cursor column |
 | `inputKind.js` | whether a held pitch reads as a match, a ghost, or nothing |
@@ -618,8 +612,9 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `clickScheduler.js` | look-ahead scheduling for the metronome click |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |
 | `activeParts.js` / `focusRange.js` | staff-responsibility model / practice-range math, including the next step the active hands actually play |
-| `useFollowTracker.js` | Learn lifecycle + advancement using the shared cursor-step classifier (range-aware, skips steps the active hands are silent at) |
-| `useScoreEvaluator.js` / `scoreEvaluator.js` | Polish lifecycle and compatibility projection over a shared timed assessment session |
+| `useFollowTracker.js` | Learn presentation advancement (range-aware); the canonical cursor attempt is evidence authority |
+| `useScoreEvaluator.js` | Polish timed-attempt lifecycle and canonical measure-span closure |
+| `assessmentProjections.js` | Sheet-only Polish tally and worst-range projections |
 | `useMetronomeClick.js` / `click.js` | click scheduler / WebAudio blip |
 | `pedalEdge.js` | Perform pedal rising-edge |
 | `sheetMusicConfig.js` | `sheetmusic:` config resolver (modes, pedals, scoring, hand preference) |

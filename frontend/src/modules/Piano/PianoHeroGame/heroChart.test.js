@@ -72,10 +72,10 @@ describe('Piano Hero judging', () => {
   });
 
   it('chooses the nearest repeated-pitch target', () => {
-    const repeated = { targets: [
-      { id: 1, pitches: [60], targetTimeMs: 1000, durationMs: 200 },
-      { id: 2, pitches: [60], targetTimeMs: 1300, durationMs: 200 },
-    ] };
+    const repeated = buildHeroChart({ tempo: 200, parts: [{ notes: [
+      { midi: 60, onsetQuarter: 0, durationQuarters: 0.5 },
+      { midi: 60, onsetQuarter: 1, durationQuarters: 0.5 },
+    ] }] }, { leadInMs: 1000 });
     const run = applyHeroPress(createHeroRun(repeated), 60, 1240);
     expect(run.targets[0].state).toBe('pending');
     expect(run.targets[1].state).toBe('hit');
@@ -108,7 +108,7 @@ describe('Piano Hero judging', () => {
     run = applyHeroPress(run, 60, 0);
     run = advanceHeroRun(run, 2000);
     const assessment = heroAssessment(run, { achievedBpm: 120 });
-    expect(assessment.rubric.id).toBe('piano-hero-v1');
+    expect(assessment.rubric.id).toBe('piano-hero-v2');
     expect(assessment.criteria).toMatchObject({ completeness: 0.25, cleanliness: 1 });
     expect(assessment.criteria.placement).toBe(1);
   });

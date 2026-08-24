@@ -1,5 +1,5 @@
 import React from 'react';
-import { tallyAssessmentGrades } from '../../../performance/assessmentSession.js';
+import { tallyAssessmentGrades } from './assessmentProjections.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
 // The shared tally reports overall: null when nothing was graded. Say so plainly —

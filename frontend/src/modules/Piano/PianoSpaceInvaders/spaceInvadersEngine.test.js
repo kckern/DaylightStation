@@ -160,7 +160,7 @@ describe('common assessment projection', () => {
     const assessment = assessSpaceInvaders({
       points: 9999, perfects: 3, goods: 1, misses: 1, wrong: 1,
     });
-    expect(assessment.rubric.id).toBe('space-invaders-v1');
+    expect(assessment.rubric.id).toBe('space-invaders-hero-v2');
     expect(assessment.criteria.completeness).toBe(0.8);
     expect(assessment.criteria.cleanliness).toBe(0.8);
     expect(assessment.criteria.placement).toBe(0.9);

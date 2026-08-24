@@ -9,7 +9,6 @@ import { usePianoPlayback } from '../../PianoPlaybackContext.jsx';
 import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from '../../../../MusicNotation/scoreTimeline.js';
-import { buildPerformanceTargets } from '../../../performance/performanceTargets.js';
 import { useScoreTransport } from '../../score/useScoreTransport.js';
 import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, buildPlayTimeline } from './playParts.js';
@@ -26,9 +25,10 @@ import { bucketOf } from './practiceKey.js';
 import { pickLearnRange } from './learnRange.js';
 import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import {
-  findWorstAssessmentSpan,
-  tallyAssessmentGrades,
+  compileScoreExpectation,
+  createAssessmentAttempt,
 } from '../../../performance/assessmentSession.js';
+import { createAssessmentRuntime } from '../../../performance/assessmentRuntime.js';
 import { tierOf, runScore, displayScore } from './polishTiers.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
@@ -55,6 +55,7 @@ import StuckPrompt from './StuckPrompt.jsx';
 import { nearestEvent } from './nearestEvent.js';
 import { measureAtPoint } from './measureAtPoint.js';
 import { titleFromScoreId } from './scoreTitle.js';
+import { findWorstAssessmentSpan, tallyAssessmentGrades } from './assessmentProjections.js';
 
 // One source of truth for the transport's tick rate: the telemetry's stall rule
 // is expressed as a MULTIPLE of it, so the two can never drift apart (audit H1).
@@ -108,6 +109,8 @@ export const NOTE_INK = '#23262b';
 // identity on every render, which would re-render FocusRangeLayer (and defeat any
 // future memoisation of it) on every transport tick just to draw no ticks.
 const NO_MARKS = [];
+const staffPartId = (staff) => staff === 0 ? 'rh' : staff === 1 ? 'lh' : `staff-${staff}`;
+const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
 
 /**
  * ScorePlayer — interactive engraved score. Four modes:
@@ -167,7 +170,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     () => ({ measureCount: meta.measures, xmlBytes: scoreMeta.musicXml?.length || 0 }),
     [meta.measures, scoreMeta.musicXml],
   );
-  const { record: practice, loaded: practiceLoaded, persistent: practicePersistent, recordCycle, recordTierBest } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
+  const {
+    record: practice,
+    loaded: practiceLoaded,
+    persistent: practicePersistent,
+    recordCycle,
+    recordTierBest,
+    recordAssessmentAttempt,
+  } = usePracticeRecord({ scoreId: scoreMeta.id, fingerprint });
 
   // Resolved sheetmusic config (defaults filled). Hoisted above the mode state so
   // the initial mode can come from `defaultMode` — the ladder starts at Listen.
@@ -699,18 +709,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // millisecond domain as the transport. Repetitions and chords remain distinct.
   const resolvedScoringCfg = smCfg.scoring;
   const currentMeasure = layout.steps?.[step]?.measure ?? 0;
-  const performanceTargets = useMemo(() => buildPerformanceTargets(
-    (layout.steps || []).flatMap((scoreStep, index) => (scoreStep.notes || []).map((note) => ({
+  const polishExpectation = useMemo(() => compileScoreExpectation({
+    notes: (layout.steps || []).flatMap((scoreStep, index) => (scoreStep.notes || []).map((note) => ({
       ...note,
       onsetQuarter: scoreStep.onsetQuarter ?? events[index]?.onsetQuarter ?? 0,
       measureIndex: scoreStep.measure,
     }))),
-    {
-      tempoMap,
-      timeScale: 1 / tempoMult,
-      isExpected: (note) => !!activeParts[note.staff],
-    },
-  ), [layout.steps, events, tempoMap, tempoMult, activeParts]);
+    source: { id: scoreMeta.id, revision: fingerprint.xmlBytes },
+    tempoMap: tempoMap.map((entry) => ({ ...entry, bpm: entry.bpm * tempoMult })),
+    activeParts: parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)),
+  }), [layout.steps, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.xmlBytes]);
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
@@ -775,7 +783,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     cfg: resolvedScoringCfg,
     subscribe,
     currentMeasure,
-    targets: performanceTargets,
+    expectation: polishExpectation,
     positionForNote: transport.getPosition,
     onMeasureGrade,
     onSilentStop,
@@ -895,6 +903,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // inherited it as a fabricated "100% rushing".
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
+    learnRuntimeRef.current?.observe({ midi: note, time: performance.now(), clock: 'score-learn' });
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
     // Flash the note you just landed, HERE rather than from rendered state. A hit
     // that completes the step advances the cursor in this same task, so by the
@@ -910,7 +919,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     followHitsRef.current += 1;
     if (!lastAdvanceRef.current) return; // no reference point yet — don't invent one
     recordFollowHit({ step: stepRef.current, note, sinceAdvanceMs: performance.now() - lastAdvanceRef.current });
-  }, [recordFollowHit]);
+  }, [flashMatch, recordFollowHit]);
   const onFollowStep = useCallback((next) => {
     setStep(next);
     setStruck(() => new Set());
@@ -927,6 +936,111 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const wrongStreakRef = useRef(0);
   useEffect(() => { setRevealKeys(false); wrongStreakRef.current = 0; }, [step]);
 
+  // One canonical, immutable assessment per Learn lap. The follow tracker still
+  // owns cursor animation and wet ink; this runtime owns musical evidence.
+  const learnRuntimeRef = useRef(null);
+  const beginLearnLapRef = useRef(() => {});
+  const learnNotes = useMemo(() => {
+    const measureByOnset = new Map((layout.steps || []).map((item) => [Number(item.onsetQuarter || 0).toFixed(6), item.measure]));
+    return (layout.notes || []).map((note) => ({
+      ...note,
+      measureIndex: note.measureIndex ?? note.measure ?? measureByOnset.get(Number(note.onsetQuarter || 0).toFixed(6)),
+    }));
+  }, [layout.notes, layout.steps]);
+  const activePartIds = useMemo(
+    () => parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)).sort(),
+    [parts, activeParts],
+  );
+  const beginLearnLap = useCallback(() => {
+    const previous = learnRuntimeRef.current;
+    if (previous?.getSnapshot().status === 'running') previous.abort();
+    previous?.dispose();
+    if (!learnGate || !learnNotes.length || !activePartIds.length) {
+      learnRuntimeRef.current = null;
+      return;
+    }
+    const measureRange = focus && loopOn
+      ? { start: focus.inMeasure, end: focus.outMeasure }
+      : undefined;
+    const firstMeasure = measureRange?.start ?? 0;
+    const lastMeasure = measureRange?.end ?? Math.max(0, fingerprint.measureCount - 1);
+    const activityId = [
+      'sheet-learn', scoreMeta.id,
+      `${fingerprint.measureCount}-${fingerprint.xmlBytes}`,
+      `m${firstMeasure}-${lastMeasure}`,
+      activePartIds.join('+'),
+    ].join(':');
+    const expectation = compileScoreExpectation({
+      notes: learnNotes,
+      source: { id: activityId, revision: fingerprint.xmlBytes },
+      tempoMap,
+      activeParts: activePartIds,
+      range: measureRange,
+    });
+    const bucket = bucketOf(grandStaff, activeParts);
+    const runtime = createAssessmentRuntime({
+      attempt: createAssessmentAttempt({
+        expectation,
+        matcher: 'cursor',
+        mode: learnClick ? 'metronome' : 'free',
+        purpose: 'practice',
+        clock: 'score-learn',
+        requirement: {
+          rubric: { id: 'sheet-learn-practice-v1', version: '1', criteria: { completeness: 1, cleanliness: 1 } },
+        },
+      }),
+      now: () => performance.now(),
+      tickMs: 0,
+      onTerminal(result, state) {
+        if (!result || (result.status !== 'completed' && !state.musicalInput)) return;
+        if (result.status === 'completed') {
+          const measureIndices = [];
+          const wrongMeasures = new Set();
+          for (const [spanId, span] of Object.entries(result.spans || {})) {
+            const match = /^measure:(\d+)$/.exec(spanId);
+            if (!match) continue;
+            const index = Number(match[1]);
+            measureIndices.push(index);
+            if (span.criteria?.completeness !== 1 || span.criteria?.cleanliness !== 1) wrongMeasures.add(index);
+          }
+          if (measureIndices.length) recordCycle({ measureIndices, wrongMeasures, bucket });
+        }
+        const evidence = {
+          attempt_id: attemptId(),
+          activity_id: activityId,
+          kind: 'score',
+          purpose: 'practice',
+          ...result,
+          prompt: { score_id: scoreMeta.id, measure_range: [firstMeasure, lastMeasure], active_parts: activePartIds },
+          context: { surface: 'sheet-music-learn', matcher: 'cursor', mode: learnClick ? 'metronome' : 'free' },
+          grading_policy_version: result.rubric?.id || 'sheet-learn-interrupted-v1',
+          provider_version: 'sheet-learn-runtime-v1',
+        };
+        Promise.resolve(recordAssessmentAttempt?.(evidence, { keepalive: result.status !== 'completed' })).then((saved) => {
+          logger.info('score.learn.assessment', {
+            activityId, status: result.status, score: result.score ?? null,
+            criteria: result.criteria ?? null, partWeights: result.rubric?.part_weights ?? null,
+            failedCriteria: result.verdict?.failed_criteria ?? [], failedGates: result.verdict?.failed_gates ?? [],
+            persisted: Boolean(saved?.ok),
+          });
+        });
+      },
+    });
+    learnRuntimeRef.current = runtime;
+    runtime.start({ time: performance.now(), clock: 'score-learn' });
+  }, [activePartIds, activeParts, fingerprint, focus, grandStaff, learnClick, learnGate, learnNotes, logger, loopOn, recordAssessmentAttempt, recordCycle, scoreMeta.id, tempoMap]);
+  beginLearnLapRef.current = beginLearnLap;
+
+  useEffect(() => {
+    beginLearnLap();
+    return () => {
+      const runtime = learnRuntimeRef.current;
+      if (runtime?.getSnapshot().status === 'running') runtime.abort();
+      runtime?.dispose();
+      if (learnRuntimeRef.current === runtime) learnRuntimeRef.current = null;
+    };
+  }, [beginLearnLap]);
+
   // ── Learn cycle bookkeeping (wave-3 C) ────────────────────────────────────────
   // One completed, non-voided gate loop (in→out→wrap) is an "attempt" for every
   // measure it spans; a measure "passes" the cycle if no wrong note landed in it.
@@ -936,9 +1050,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // instant a wrap fires (onFollowWrap below), or discarded outright on mode exit.
   const cycleWrongsRef = useRef(new Set());
   const cycleVoidRef = useRef(false);
-  const voidCycle = useCallback(() => { cycleVoidRef.current = true; }, []);
+  const voidCycle = useCallback(() => {
+    cycleVoidRef.current = true;
+    beginLearnLapRef.current?.();
+  }, []);
 
   const onFollowWrong = useCallback((midi) => {
+    learnRuntimeRef.current?.observe({ midi, time: performance.now(), clock: 'score-learn' });
     flashWrong();
     pushInk(midi, 'wrong'); // the played pitch, in red, on the staff (wave-3 D)
     followWrongsRef.current += 1;
@@ -957,13 +1075,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const wrongs = cycleWrongsRef.current;
     cycleVoidRef.current = false;
     cycleWrongsRef.current = new Set();
-    if (!voided) {
-      const indices = (layoutRef.current?.measures || []).map((_, index) => index);
-      if (indices.length) recordCycle({ measureIndices: indices, wrongMeasures: wrongs, bucket: bucketOf(grandStaff, activeParts) });
-    }
+    beginLearnLapRef.current?.();
     setLearnDone(true);
     logger.info('score.learn.complete', { wrongs: wrongs.size, voided });
-  }, [activeParts, grandStaff, logger, recordCycle]);
+  }, [logger]);
 
   // Fires the instant the tracker wraps the range's out-point back to its
   // in-point — one full, uninterrupted pass. A voided cycle (any disruption since
@@ -975,10 +1090,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const wrongs = cycleWrongsRef.current;
     cycleVoidRef.current = false;
     cycleWrongsRef.current = new Set();
+    beginLearnLapRef.current?.();
     if (voided || !f) return;
-    const indices = [];
-    for (let m = f.inMeasure; m <= f.outMeasure; m++) indices.push(m);
-    recordCycle({ measureIndices: indices, wrongMeasures: wrongs, bucket: bucketOf(grandStaff, activeParts) });
     logger.info('score.learn.cycle', { in: f.inMeasure, out: f.outMeasure, wrongs: wrongs.size });
     // A pass over a range that spans the WHOLE piece IS the end of the piece, so
     // it earns the completion card here. useFollowTracker's onComplete cannot
@@ -993,7 +1106,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       setLearnDone(true);
       logger.info('score.learn.complete', {});
     }
-  }, [recordCycle, grandStaff, activeParts, logger]);
+  }, [logger]);
 
   useFollowTracker({
     // Every Learn configuration is driven by player input. A null range is the
@@ -1650,6 +1763,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // against it (discard, same as a mode exit).
     cycleVoidRef.current = false;
     cycleWrongsRef.current = new Set();
+    beginLearnLapRef.current?.();
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
     runEligibleRef.current = false; // …and its whole-piece claim; the next Play re-arms from home (§H)
@@ -1709,7 +1823,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const base = runScore(grades);
     if (base == null) return null;
     return `${displayScore(base, runMixedRef.current ? null : runTierRef.current)}%`;
-  }, [mode, grades, tempoMult]);
+  }, [mode, grades, tempoMult]); // eslint-disable-line react-hooks/exhaustive-deps -- tempo changes mutate run refs before render
   // Which hands bucket the run belongs to — the same key the completion path banks
   // under, so the strip always shows the bests the next completion would beat.
   const polishBucket = bucketOf(grandStaff, activeParts);

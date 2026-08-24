@@ -8,7 +8,13 @@ import {
   chordMissReason,
   resolveStartLevel,
 } from './flashcardEngine.js';
-import { evaluateAssessment } from '../performance/assessmentSession.js';
+import {
+  compileAssessmentExpectation,
+  createAssessmentAttempt,
+  finalizeAssessmentAttempt,
+  observeAssessment,
+  startAssessmentAttempt,
+} from '../performance/assessmentAttempt.js';
 
 const CARD_ADVANCE_DELAY_MS = 400;
 
@@ -37,6 +43,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
   const logger = useMemo(() => getChildLogger({ component: 'flashcard-game' }), []);
   const advanceTimerRef = useRef(null);
   const lastCardRef = useRef(null);
+  const cardAttemptRef = useRef(null);
 
   const levels = useMemo(() => flashcardsConfig?.levels ?? [], [flashcardsConfig?.levels]);
   const startLevel = resolveStartLevel(levels, flashcardsConfig?.user_start_levels, currentUser);
@@ -74,6 +81,23 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     }));
   }, [levelConfig, logger]);
 
+  useEffect(() => {
+    const card = state.currentCard;
+    if (state.phase !== 'PLAYING' || !card || card.type === 'chord') {
+      cardAttemptRef.current = null;
+      return;
+    }
+    const expectation = compileAssessmentExpectation({
+      source: { kind: 'chart', id: `flashcard:${state.level}:${card.pitches.join('-')}`, revision: null },
+      events: [{ id: 'card', onsetQuarter: 0, durationQuarters: 0, spanId: 'card:1', notes: card.pitches.map((midi) => ({ midi, part: 'unassigned' })) }],
+    });
+    cardAttemptRef.current = startAssessmentAttempt(createAssessmentAttempt({
+      expectation, matcher: 'held', mode: 'free', purpose: 'practice', clock: 'flashcards',
+      policy: { allowExtras: true },
+      requirement: { rubric: { id: 'flashcards-held-v2', version: '2', criteria: { completeness: 1, cleanliness: 1 } } },
+    }), { time: performance.now(), clock: 'flashcards' });
+  }, [state.currentCard, state.level, state.phase]);
+
   // ─── Arm evaluation once all notes are released ───────────────
   // A new card must not be judged against notes still held from the previous
   // card (holding a correct chord through the 400ms advance would instantly
@@ -92,9 +116,23 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     if (state.cardStatus === 'hit') return; // already matched, waiting for advance
 
     const card = state.currentCard;
-    const result = card.type === 'chord'
-      ? evaluateChordMatch(activeNotes, card)
-      : evaluateMatch(activeNotes, card.pitches);
+    let canonicalResult = null;
+    let result;
+    if (card.type === 'chord') {
+      result = evaluateChordMatch(activeNotes, card);
+    } else if (cardAttemptRef.current) {
+      const judged = observeAssessment(cardAttemptRef.current, { held: activeNotes, time: performance.now(), clock: 'flashcards' });
+      cardAttemptRef.current = judged.attempt;
+      if (judged.attempt.status === 'completed') {
+        cardAttemptRef.current = finalizeAssessmentAttempt(judged.attempt);
+        canonicalResult = cardAttemptRef.current.result;
+        result = 'correct';
+      } else if (judged.event?.type === 'wrong') result = 'wrong';
+      else if (!activeNotes?.size) result = 'idle';
+      else result = 'partial';
+    } else {
+      result = evaluateMatch(activeNotes, card.pitches);
+    }
     const cardInfo = card.type === 'chord' ? { chord: card.label } : { pitches: card.pitches };
     const held = activeNotes ? [...activeNotes.keys()] : [];
 
@@ -105,7 +143,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
         ...prev,
         cardStatus: 'hit',
         score: prev.score + scorePerCard,
-        attempts: [...prev.attempts, { hit: true }],
+        attempts: [...prev.attempts, { hit: true, assessment: canonicalResult }],
       }));
     } else if (result === 'correct' && state.cardFailed) {
       // Correct after a miss — no points, but advance
@@ -113,7 +151,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
       setState(prev => ({
         ...prev,
         cardStatus: 'hit',
-        attempts: [...prev.attempts, { hit: false }],
+        attempts: [...prev.attempts, { hit: false, assessment: canonicalResult }],
       }));
     } else if (result === 'wrong') {
       const reason = card.type === 'chord' ? chordMissReason(activeNotes, card) : 'wrong-note';
@@ -218,19 +256,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     if (recent.length === 0) return 0;
     return Math.round((recent.filter(a => a.hit).length / recent.length) * 100);
   }, [state.attempts]);
-  const assessment = useMemo(() => {
-    const completed = state.attempts.length;
-    const firstTry = state.attempts.filter((attempt) => attempt.hit).length;
-    const criteria = {
-      completeness: completed > 0 ? 1 : 0,
-      cleanliness: completed > 0 ? firstTry / completed : 0,
-    };
-    return evaluateAssessment({
-      criteria,
-      rubric: { id: 'flashcards-v1', version: '1' },
-      diagnostics: { cards_completed: completed, first_try_cards: firstTry },
-    });
-  }, [state.attempts]);
+  const assessment = useMemo(() => state.attempts.findLast((attempt) => attempt.assessment)?.assessment ?? null, [state.attempts]);
 
   return {
     phase: state.phase,

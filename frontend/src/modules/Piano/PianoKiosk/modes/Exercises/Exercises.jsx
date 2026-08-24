@@ -380,7 +380,11 @@ function ExerciseDetail() {
           })}
           <p className="piano-exercises__variant-description">{describeInstance(selected)}</p>
           <div className="piano-exercises__detail-actions">
-            <button type="button" className="piano-exercises__quiet-action" onClick={() => navigate(`${base}/run/${encodeURIComponent(selected.id)}?intent=practice`)}>Practice</button>
+            {(selected.supports ?? state.seed.supports ?? ['free']).map((mode) => (
+              <button key={mode} type="button" className="piano-exercises__quiet-action" onClick={() => navigate(`${base}/run/${encodeURIComponent(selected.id)}?intent=practice&mode=${encodeURIComponent(mode)}`)}>
+                {mode === 'free' ? 'Practice free' : mode === 'metronome' ? 'With metronome' : 'Cued practice'}
+              </button>
+            ))}
             {activeStep && isPersistentUser(currentUser) && <button type="button" onClick={() => navigate(`${base}/run/${encodeURIComponent(selected.id)}?intent=challenge&program=${encodeURIComponent(activeStep.program.id)}&step=${encodeURIComponent(activeStep.step.id)}`)}>Pass challenge</button>}
           </div>
         </aside>
@@ -400,10 +404,12 @@ function ExerciseRunRoute() {
   const requirementOverride = useMemo(() => {
     try { return requirementText ? JSON.parse(requirementText) : null; } catch { return null; }
   }, [requirementText]);
+  const requestedMode = ['free', 'metronome', 'cued'].includes(query.get('mode')) ? query.get('mode') : 'free';
   return (
     <ExerciseRun
       instanceId={instanceId}
       intent={query.get('intent') === 'challenge' ? 'challenge' : 'practice'}
+      practiceMode={requestedMode}
       programId={query.get('program')}
       stepId={query.get('step')}
       requirementOverride={requirementOverride}
