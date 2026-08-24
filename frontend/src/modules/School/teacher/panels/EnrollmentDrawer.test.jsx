@@ -10,14 +10,16 @@ vi.mock('../../schoolApi.js', () => ({
   },
 }));
 
-// A claimed teacher, so useTeacherWrite calls straight through instead of
-// opening the picker/PIN prompt.
+// A claimed, server-authorized teacher, so useTeacherWrite calls straight
+// through without exposing or forwarding a PIN.
 vi.mock('../TeacherProfileContext.jsx', () => ({
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
-    pin: 'test-pin-1234',
+    pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
+    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    invalidateAuthorization: vi.fn(),
     pinPromptOpen: false,
     pickerOpen: false,
   }),
@@ -54,7 +56,7 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
     render(
       <EnrollmentDrawer
         learner={LEARNER}
-        courseId="pokemon-basics"
+        courseId="creature-basics"
         cell={null}
         syllabi={SYLLABI}
         onClose={vi.fn()}
@@ -86,7 +88,7 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
       syllabusId: 'atlas-upper',
       rematerialize: false,
       enrolledBy: 'kckern',
-      pin: 'test-pin-1234',
+      pin: null,
       baseUpdatedAt: '2026-08-01T00:00:00Z',
     });
     await waitFor(() => expect(onChanged).toHaveBeenCalled());

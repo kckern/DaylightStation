@@ -52,7 +52,9 @@ Legacy learners with no assignment history fall back to the current assignment.
 
 Closing a period freezes the exact report-card snapshot. Re-closing is refused
 unless the teacher explicitly supersedes it; supersession archives the prior
-frozen record before writing the replacement.
+frozen record before writing the replacement. An ordinary first close uses the
+active teacher capability. Supersession additionally requires a fresh one-use
+grant scoped to that learner and period.
 
 ## Program reports
 
@@ -82,3 +84,12 @@ The teacher Today digest uses the 4am study day and shows attempts, correct
 answers, touched sessions, reflections, and pending review per learner. Records
 provides live/frozen report cards, progress reports, certificates, enrichment,
 and audit/repair views.
+
+The teacher workspace adds a paginated learner timeline of work sessions. It is
+an operational history, not a second gradebook: session transitions and their
+linked issued artifacts, machine grades, and corrections remain typed and link
+back to the authoritative session record. Enrollment changes, teacher feedback,
+and instructional overrides remain in their own authoritative panels; they are
+not currently interleaved into the session timeline. Session drill-down exposes
+both machine and effective grades so reports never conceal that a teacher
+correction occurred.

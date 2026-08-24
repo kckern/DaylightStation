@@ -1,18 +1,24 @@
 /**
- * Teacher identity container (teacher-console spec §4.1). A soft claim over
- * the server-resolved teachers read — the client never filters or augments
- * the list; whatever `GET /teachers` returns IS the picker. Session-persisted
- * (a parent's own browser tab, not a shared kiosk — hence sessionStorage and
- * no idle lapse). In the skeleton the claim is chrome plus the future
- * mutation stamp (`assignedBy`/`closedBy`/`approver`).
+ * Teacher identity + authorization container.
+ *
+ * The selected teacher is a soft, sessionStorage-backed UI claim. Authority is
+ * a short-lived, server-owned HttpOnly capability cookie. PINs only exist in
+ * the PinPrompt input long enough to unlock or mint a one-use step-up grant;
+ * they are never stored in this context or attached to ordinary writes.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
+import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 import { teacherLog } from './teacherLog.js';
 
 const STORAGE_KEY = 'school-teacher-claim';
-
 const TeacherProfileContext = createContext(null);
+
+const inactiveAuthorization = () => ({ active: false, userId: null, idleExpiresAt: null, absoluteExpiresAt: null });
+const errorMessage = (response, fallback) => (
+  typeof response?.data?.error === 'string' ? response.data.error
+    : response?.data?.error?.message ?? fallback
+);
 
 export function TeacherProfileProvider({ children }) {
   const [status, setStatus] = useState('loading');
@@ -20,72 +26,208 @@ export function TeacherProfileProvider({ children }) {
   const [teachers, setTeachers] = useState([]);
   const [currentId, setCurrentId] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // The console PIN, held IN MEMORY only — never persisted (sessionStorage
-  // would hand it to any kiosk tab that reopens the console). Entered once
-  // per visit via the PinPrompt; the server is the enforcer either way.
-  const [pin, setPinState] = useState(null);
-  const [pinPromptOpen, setPinPromptOpen] = useState(false);
+  const [authorization, setAuthorization] = useState(inactiveAuthorization);
+  const [pinPrompt, setPinPrompt] = useState({ open: false, busy: false, error: null, action: null, resource: null });
+  const pendingAuthorizationRef = useRef(null);
+  const currentIdRef = useRef(null);
+  const authorizationRef = useRef(authorization);
+
+  useEffect(() => { currentIdRef.current = currentId; }, [currentId]);
+  useEffect(() => { authorizationRef.current = authorization; }, [authorization]);
 
   useEffect(() => {
     let alive = true;
-    schoolApi.teachers().then(({ ok, data }) => {
+    Promise.all([schoolApi.teachers(), teacherWorkspaceApi.authStatus()]).then(([teacherResponse, authResponse]) => {
       if (!alive) return;
-      const list = ok && Array.isArray(data?.teachers) ? data.teachers : [];
-      setConfigured(Boolean(ok && data?.configured));
+      const list = teacherResponse.ok && Array.isArray(teacherResponse.data?.teachers)
+        ? teacherResponse.data.teachers : [];
+      setConfigured(Boolean(teacherResponse.ok && teacherResponse.data?.configured));
       setTeachers(list);
+
+      const serverAuth = authResponse.ok && authResponse.data?.active ? authResponse.data : inactiveAuthorization();
+      const authenticatedId = list.some((teacher) => teacher.id === serverAuth.userId) ? serverAuth.userId : null;
       const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored && list.some((t) => t.id === stored)) {
-        setCurrentId(stored);
-        teacherLog.claim('restored', { teacherId: stored });
-      } else if (stored) {
-        // No longer a teacher (config change, roster change): fail to unclaimed.
+      const storedId = list.some((teacher) => teacher.id === stored) ? stored : null;
+      const resolvedId = authenticatedId ?? storedId;
+      if (resolvedId) {
+        // Keep the imperative authorization path in sync before React commits.
+        // A fast click during initial paint must not see a rendered teacher but
+        // a still-null ref and incorrectly refuse the action.
+        currentIdRef.current = resolvedId;
+        setCurrentId(resolvedId);
+        sessionStorage.setItem(STORAGE_KEY, resolvedId);
+        teacherLog.claim(authenticatedId ? 'session-restored' : 'restored', { teacherId: resolvedId });
+      } else {
+        currentIdRef.current = null;
         sessionStorage.removeItem(STORAGE_KEY);
       }
+      const resolvedAuthorization = authenticatedId ? serverAuth : inactiveAuthorization();
+      authorizationRef.current = resolvedAuthorization;
+      setAuthorization(resolvedAuthorization);
+      setStatus('ready');
+    }).catch(() => {
+      if (!alive) return;
+      setConfigured(false);
+      setTeachers([]);
+      const inactive = inactiveAuthorization();
+      authorizationRef.current = inactive;
+      setAuthorization(inactive);
       setStatus('ready');
     });
     return () => { alive = false; };
   }, []);
 
+  const settlePending = useCallback((result) => {
+    const pending = pendingAuthorizationRef.current;
+    pendingAuthorizationRef.current = null;
+    pending?.resolve(result);
+  }, []);
+
+  const invalidateAuthorization = useCallback(() => {
+    const inactive = inactiveAuthorization();
+    authorizationRef.current = inactive;
+    setAuthorization(inactive);
+  }, []);
+
   const claim = useCallback((id) => {
+    const priorAuthorization = authorizationRef.current;
+    if (priorAuthorization.active && priorAuthorization.userId !== id) {
+      teacherWorkspaceApi.lock();
+      setAuthorization(inactiveAuthorization());
+    }
     setCurrentId(id);
+    currentIdRef.current = id;
     sessionStorage.setItem(STORAGE_KEY, id);
     setPickerOpen(false);
     teacherLog.claim('claimed', { teacherId: id });
   }, []);
 
   const release = useCallback(() => {
+    teacherWorkspaceApi.lock();
+    settlePending({ ok: false, cancelled: true });
     setCurrentId(null);
+    currentIdRef.current = null;
+    setAuthorization(inactiveAuthorization());
     sessionStorage.removeItem(STORAGE_KEY);
+    setPinPrompt({ open: false, busy: false, error: null, action: null, resource: null });
     teacherLog.claim('released', {});
+  }, [settlePending]);
+
+  const requestAuthorization = useCallback(({ action = null, resource = null } = {}) => {
+    const teacherId = currentIdRef.current;
+    if (!teacherId) return Promise.resolve({ ok: false, needsTeacher: true });
+    const currentAuthorization = authorizationRef.current;
+    if (!action && currentAuthorization.active && currentAuthorization.userId === teacherId) {
+      return Promise.resolve({ ok: true, grantToken: null });
+    }
+    // Only one user gesture may own the PIN dialog. Superseding it would make
+    // the abandoned caller wait forever, so fail the newer request explicitly.
+    if (pendingAuthorizationRef.current) {
+      return Promise.resolve({ ok: false, busy: true });
+    }
+    return new Promise((resolve) => {
+      pendingAuthorizationRef.current = { resolve, action, resource, teacherId };
+      setPinPrompt({ open: true, busy: false, error: null, action, resource });
+    });
   }, []);
 
-  const setPin = useCallback((value) => {
-    setPinState(typeof value === 'string' && value.length ? value : null);
-    setPinPromptOpen(false);
-  }, []);
+  const submitPin = useCallback(async (pin) => {
+    const pending = pendingAuthorizationRef.current;
+    if (!pending || !pinPrompt.open || pinPrompt.busy) return;
+    const normalizedPin = typeof pin === 'string' ? pin.trim() : '';
+    if (!normalizedPin) {
+      setPinPrompt((value) => ({ ...value, error: 'Enter the teacher PIN.' }));
+      return;
+    }
+    setPinPrompt((value) => ({ ...value, busy: true, error: null }));
+    let active = authorizationRef.current;
+    if (!active.active || active.userId !== pending.teacherId) {
+      const unlocked = await teacherWorkspaceApi.unlock(pending.teacherId, normalizedPin);
+      if (!unlocked.ok) {
+        setAuthorization(inactiveAuthorization());
+        setPinPrompt((value) => ({ ...value, busy: false,
+          error: errorMessage(unlocked, unlocked.status === 0 ? 'Couldn’t reach the teacher service.' : 'The PIN was not accepted.') }));
+        teacherLog.claim('unlock-refused', { teacherId: pending.teacherId, status: unlocked.status });
+        return;
+      }
+      active = { active: true, ...unlocked.data };
+      authorizationRef.current = active;
+      setAuthorization(active);
+      teacherLog.claim('unlocked', { teacherId: pending.teacherId });
+    }
+
+    let grantToken = null;
+    if (pending.action) {
+      let steppedUp = await teacherWorkspaceApi.stepUp({
+        pin: normalizedPin, action: pending.action, resource: pending.resource,
+      });
+      // The local view can be stale when the server's idle window elapsed.
+      // Reuse this same fresh PIN once to replace the expired cookie and mint
+      // the requested grant; never make the teacher type it twice.
+      if (!steppedUp.ok && steppedUp.status === 403) {
+        const unlocked = await teacherWorkspaceApi.unlock(pending.teacherId, normalizedPin);
+        if (unlocked.ok) {
+          active = { active: true, ...unlocked.data };
+          authorizationRef.current = active;
+          setAuthorization(active);
+          steppedUp = await teacherWorkspaceApi.stepUp({
+            pin: normalizedPin, action: pending.action, resource: pending.resource,
+          });
+        }
+      }
+      if (!steppedUp.ok) {
+        if (steppedUp.status === 403) {
+          const checked = await teacherWorkspaceApi.authStatus();
+          const nextAuthorization = checked.ok && checked.data?.active
+            && checked.data.userId === pending.teacherId ? checked.data : inactiveAuthorization();
+          authorizationRef.current = nextAuthorization;
+          setAuthorization(nextAuthorization);
+        }
+        setPinPrompt((value) => ({ ...value, busy: false,
+          error: errorMessage(steppedUp, steppedUp.status === 0 ? 'Couldn’t reach the teacher service.' : 'Fresh confirmation was not accepted.') }));
+        teacherLog.claim('step-up-refused', { teacherId: pending.teacherId, action: pending.action, status: steppedUp.status });
+        return;
+      }
+      grantToken = steppedUp.data?.grantToken ?? null;
+    }
+
+    setPinPrompt({ open: false, busy: false, error: null, action: null, resource: null });
+    settlePending({ ok: true, grantToken });
+  }, [pinPrompt.open, pinPrompt.busy, settlePending]);
+
+  const closePinPrompt = useCallback(() => {
+    setPinPrompt({ open: false, busy: false, error: null, action: null, resource: null });
+    settlePending({ ok: false, cancelled: true });
+  }, [settlePending]);
 
   const value = useMemo(() => ({
     status,
     configured,
     teachers,
-    currentTeacher: teachers.find((t) => t.id === currentId) ?? null,
+    currentTeacher: teachers.find((teacher) => teacher.id === currentId) ?? null,
     claim,
     release,
     pickerOpen,
     openPicker: () => setPickerOpen(true),
     closePicker: () => setPickerOpen(false),
-    pin,
-    setPin,
-    pinPromptOpen,
-    openPinPrompt: () => setPinPromptOpen(true),
-    closePinPrompt: () => setPinPromptOpen(false),
-  }), [status, configured, teachers, currentId, claim, release, pickerOpen, pin, setPin, pinPromptOpen]);
+    authorization,
+    requestAuthorization,
+    invalidateAuthorization,
+    // Compatibility: mutation builders still include `pin`, but it is always
+    // null. The router replaces it with the HttpOnly cookie capability.
+    pin: null,
+    pinPromptOpen: pinPrompt.open,
+    pinPromptBusy: pinPrompt.busy,
+    pinPromptError: pinPrompt.error,
+    pinPromptAction: pinPrompt.action,
+    submitPin,
+    setPin: submitPin,
+    openPinPrompt: () => requestAuthorization(),
+    closePinPrompt,
+  }), [status, configured, teachers, currentId, claim, release, pickerOpen, authorization,
+    requestAuthorization, invalidateAuthorization, pinPrompt, submitPin, closePinPrompt]);
 
-  return (
-    <TeacherProfileContext.Provider value={value}>
-      {children}
-    </TeacherProfileContext.Provider>
-  );
+  return <TeacherProfileContext.Provider value={value}>{children}</TeacherProfileContext.Provider>;
 }
 
 export function useTeacherProfile() {

@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import { runOps } from './ops.mjs';
 
 const response = (body, status = 200) => ({
-  ok: status >= 200 && status < 300, status, statusText: '', json: async () => body,
+  ok: status >= 200 && status < 300, status, statusText: '',
+  headers: { get: () => null }, json: async () => body,
+});
+
+const bytesResponse = (body, contentType = 'application/pdf') => ({
+  ok: true, status: 200, statusText: '', headers: { get: (name) => name === 'content-type' ? contentType : null },
+  arrayBuffer: async () => Buffer.from(body),
+});
+
+const unlockResponse = () => ({
+  ...response({ active: true }),
+  headers: { get: (name) => name === 'set-cookie' ? 'daylight_teacher_session=cap; Path=/; HttpOnly' : null },
 });
 
 describe('school ops', () => {
@@ -28,5 +40,132 @@ describe('school ops', () => {
     expect(output).toContain('"dryRun": true');
     expect(output).not.toContain('7410');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts both school-root and lifecycle base URLs without duplicating lifecycle', async () => {
+    const urls = [];
+    const fetchImpl = vi.fn(async (url) => { urls.push(url); return response({ state: 'complete' }); });
+    await runOps({ argv: ['completion', 'kid', '--base-url', 'http://host/api/v1/school'], fetchImpl, stdout: { write() {} } });
+    await runOps({ argv: ['completion', 'kid', '--base-url', 'http://host/api/v1/school/lifecycle'], fetchImpl, stdout: { write() {} } });
+    expect(urls).toEqual([
+      'http://host/api/v1/school/lifecycle/learners/kid/completion',
+      'http://host/api/v1/school/lifecycle/learners/kid/completion',
+    ]);
+  });
+
+  it('routes teacher timeline and session reads to the school root from a lifecycle base', async () => {
+    const fetchImpl = vi.fn(async (url) => url.endsWith('/auth/unlock') ? unlockResponse() : response({ items: [] }));
+    await runOps({
+      argv: ['timeline', 'kid', '--limit', '20', '--unit', 'math', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://host/school/lifecycle'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write() {} },
+    });
+    await runOps({
+      argv: ['session', 'ses 1', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://host/school/lifecycle'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write() {} },
+    });
+    expect(fetchImpl.mock.calls[1][0]).toBe('http://host/school/teacher/learners/kid/timeline?limit=20&unitId=math');
+    expect(fetchImpl.mock.calls[1][1].headers.Cookie).toBe('daylight_teacher_session=cap');
+    expect(fetchImpl.mock.calls[3][0]).toBe('http://host/school/teacher/sessions/ses%201');
+    expect(fetchImpl.mock.calls[3][1].headers.Cookie).toBe('daylight_teacher_session=cap');
+  });
+
+  it('collects the instructional gate evidence without failing the whole view on an optional source', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.includes('/completion')) return response({ state: 'blocked' });
+      if (url.includes('/assignments/')) return response({ error: 'missing' }, 404);
+      if (url.includes('/milestones')) return response({ milestones: [{ unitId: 'u1', status: 'blocked' }] });
+      return response({ overrides: { u1: 90 } });
+    });
+    let output = '';
+    await runOps({ argv: ['gates', 'kid', '--base-url', 'http://school'], fetchImpl, stdout: { write: (s) => { output += s; } } });
+    const parsed = JSON.parse(output);
+    expect(parsed.schema).toBe('school.instructional-gates/v1');
+    expect(parsed.assignment.error).toMatch(/^404/);
+    expect(parsed.passOverrides.overrides.u1).toBe(90);
+  });
+
+  it('downloads exact artifact bytes and emits a JSON receipt, never binary stdout', async () => {
+    const fetchImpl = vi.fn(async (url) => url.endsWith('/auth/unlock') ? unlockResponse() : bytesResponse('%PDF exact'));
+    const output = `${process.env.TMPDIR ?? '/tmp'}/school-ops-artifact-${Date.now()}.pdf`;
+    let stdout = '';
+    try {
+      await runOps({ argv: ['artifact', 'art 1', '--view', 'original', '--output', output, '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+        fetchImpl, env: { PIN: '7410' }, stdout: { write: (s) => { stdout += s; } } });
+      expect(fs.readFileSync(output, 'utf8')).toBe('%PDF exact');
+      expect(JSON.parse(stdout)).toMatchObject({ schema: 'school.ops-download/v1', kind: 'artifact-original', bytes: 10 });
+      expect(fetchImpl.mock.calls[1][0]).toBe('http://school/teacher/artifacts/art%201/original.pdf');
+      expect(fetchImpl.mock.calls[1][1].headers.Cookie).toBe('daylight_teacher_session=cap');
+    } finally { fs.rmSync(output, { force: true }); }
+  });
+
+  it('performs unlock and scoped step-up before downloading a sensitive postview', async () => {
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/auth/unlock')) return unlockResponse();
+      if (url.endsWith('/auth/step-up')) return response({ grantToken: 'grant' });
+      return bytesResponse('%PDF post');
+    });
+    const output = `${process.env.TMPDIR ?? '/tmp'}/school-ops-postview-${Date.now()}.pdf`;
+    try {
+      await runOps({ argv: ['artifact', 'art1', '--view', 'postview', '--output', output, '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+        fetchImpl, env: { PIN: '7410' }, stdout: { write() {} } });
+      const stepUp = fetchImpl.mock.calls[1][1];
+      expect(JSON.parse(stepUp.body)).toEqual({ pin: '7410', action: 'artifact.postview', resource: 'art1' });
+      expect(fetchImpl.mock.calls[2][1].headers).toMatchObject({ Cookie: 'daylight_teacher_session=cap', 'X-Teacher-Step-Up': 'grant' });
+    } finally { fs.rmSync(output, { force: true }); }
+  });
+
+  it('calls the real no-side-effect agenda preview on dry-run dispatch', async () => {
+    const fetchImpl = vi.fn(async () => response({ schema: 'school.agenda-dispatch-preview/v1', ready: true }));
+    let output = '';
+    await runOps({ argv: ['agenda-dispatch', 'kid', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+      fetchImpl, env: { PIN: 'secret' }, stdout: { write: (s) => { output += s; } } });
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://school/teacher/learners/kid/agenda/dispatch/preview');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('secret');
+    expect(JSON.parse(output)).toMatchObject({ schema: 'school.ops-preview/v1', dryRun: true, preview: { ready: true } });
+  });
+
+  it('requires an idempotency key and forwards it for applied agenda dispatch', async () => {
+    await expect(runOps({ argv: ['agenda-dispatch', 'kid', '--teacher', 'dad', '--pin-env', 'PIN', '--apply'],
+      fetchImpl: vi.fn(), env: { PIN: '7410' }, stdout: { write() {} } })).rejects.toThrow(/idempotency-key/);
+    const fetchImpl = vi.fn(async () => response({ printed: true }));
+    await runOps({ argv: ['agenda-dispatch', 'kid', '--teacher', 'dad', '--pin-env', 'PIN', '--idempotency-key', 'op-1', '--apply', '--base-url', 'http://school'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write() {} } });
+    expect(fetchImpl.mock.calls[0][1].headers['Idempotency-Key']).toBe('op-1');
+  });
+
+  it('previews grade adjustment with base revision and applies only when requested', async () => {
+    const fetchImpl = vi.fn(async (_url, init) => response({ applied: JSON.parse(init.body).apply }));
+    let output = '';
+    await runOps({ argv: ['grade-adjust', 'ses1', '--percent', '100', '--reason', 'eraser', '--base-revision', '7', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write: (s) => { output += s; } } });
+    const previewBody = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(previewBody).toMatchObject({ percent: 100, reason: 'eraser', baseSeq: 7, apply: false });
+    expect(output).not.toContain('7410');
+    await runOps({ argv: ['grade-adjust', 'ses1', '--percent', '100', '--reason', 'eraser', '--teacher', 'dad', '--pin-env', 'PIN', '--apply', '--base-url', 'http://school'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write() {} } });
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).apply).toBe(true);
+  });
+
+  it('keeps completion credit, retraction, and reassignment as redacted local dry-runs', async () => {
+    for (const argv of [
+      ['completion-credit', 'kid', '--unit', 'u1', '--reason', 'bad question'],
+      ['completion-credit-retract', 'att_1'],
+      ['reassign', 'ses1', '--from', 'kid', '--to', 'other', '--day', '2026-08-23'],
+    ]) {
+      let output = '';
+      await runOps({ argv: [...argv, '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+        fetchImpl: vi.fn(), env: { PIN: '7410' }, stdout: { write: (s) => { output += s; } } });
+      expect(JSON.parse(output)).toMatchObject({ schema: 'school.ops-dry-run/v1', dryRun: true });
+      expect(output).not.toContain('7410');
+    }
+  });
+
+  it('uses the backend dry-run engine for systematic regrades', async () => {
+    const fetchImpl = vi.fn(async (_url, init) => response({ changed: 3, applied: JSON.parse(init.body).apply }));
+    let output = '';
+    await runOps({ argv: ['regrade', 'bank1', '--from-day', '2026-08-01', '--reason', 'bad key', '--teacher', 'dad', '--pin-env', 'PIN', '--base-url', 'http://school'],
+      fetchImpl, env: { PIN: '7410' }, stdout: { write: (s) => { output += s; } } });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({ bankId: 'bank1', apply: false });
+    expect(JSON.parse(output).preview.changed).toBe(3);
   });
 });

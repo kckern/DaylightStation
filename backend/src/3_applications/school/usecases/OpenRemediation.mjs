@@ -48,7 +48,7 @@ export class OpenRemediation {
    *                     sessionId: string|null, newSessionId: string|null,
    *                     variant: number|null, document: object|null, message: string }>}
    */
-  async execute({ sessionId } = {}) {
+  async execute({ sessionId, openedBy = null } = {}) {
     const nowIso = this.#clock().toISOString();
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId) return this.#unavailable(sessionId, 'We could not find that work.');
@@ -79,7 +79,7 @@ export class OpenRemediation {
     const opened = createEvent({
       type: 'created', at: nowIso, sessionId: newSessionId,
       learnerId: state.learnerId, unitId: state.unitId, remediationOf: sessionId, variant,
-      remediationItemIds: state.missedItemIds,
+      remediationItemIds: state.missedItemIds, ...(openedBy ? { openedBy } : {}),
     });
     if (opened.errors.length) throw new Error(`OpenRemediation: could not open the retry: ${opened.errors.join('; ')}`);
     await this.#sessions.appendEvent(newSessionId, opened.event);
@@ -87,12 +87,13 @@ export class OpenRemediation {
     // The original closes only AFTER the replacement exists, so a crash between
     // the two leaves a session that can still be retried rather than one that
     // is terminal with nothing behind it.
-    const linked = createEvent({ type: 'remediation_opened', at: nowIso, sessionId, newSessionId, variant });
+    const linked = createEvent({ type: 'remediation_opened', at: nowIso, sessionId, newSessionId, variant,
+      ...(openedBy ? { openedBy } : {}) });
     if (linked.errors.length) throw new Error(`OpenRemediation: could not link the retry: ${linked.errors.join('; ')}`);
     await this.#sessions.appendEvent(sessionId, linked.event);
 
     this.#logger.info?.('school.remediation.opened', {
-      sessionId, newSessionId, unitId: state.unitId, variant, variants,
+      sessionId, newSessionId, unitId: state.unitId, variant, variants, openedBy,
     });
 
     return {

@@ -41,6 +41,9 @@ export function createSchoolRouter({
   issuedArtifactStore = null,
   teacherAgendaDispatch = null,
   renderArtifactPostview = null,
+  teacherCapabilitySessions = null,
+  teacherGate = null,
+  openRemediation = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -112,6 +115,44 @@ export function createSchoolRouter({
   // wiring mistake. Composition always supplies these.
   const { GuestForbiddenError, SessionGoneError } = schoolErrors;
   const router = express.Router();
+  const cookieValue = (req, name) => {
+    const raw = req.get('cookie') ?? '';
+    for (const part of raw.split(';')) {
+      const separator = part.indexOf('=');
+      if (separator < 0 || part.slice(0, separator).trim() !== name) continue;
+      try { return decodeURIComponent(part.slice(separator + 1).trim()); } catch { return null; }
+    }
+    return null;
+  };
+  const capabilityProof = (req) => {
+    const capabilityToken = cookieValue(req, 'daylight_teacher_session');
+    return capabilityToken ? {
+      capabilityToken,
+      stepUpToken: req.get('X-Teacher-Step-Up') ?? null,
+    } : null;
+  };
+  const teacherCookie = (req, value, maxAge) => {
+    const secure = req.secure || String(req.get('X-Forwarded-Proto') ?? '').split(',')[0].trim() === 'https';
+    return `daylight_teacher_session=${value}; Path=/api/v1/school; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+  };
+  const requireTeacherRead = (req, res) => {
+    const status = teacherCapabilitySessions?.status(cookieValue(req, 'daylight_teacher_session'), { touch: true });
+    if (!status?.active) {
+      res.status(403).json({ error: 'Unlock teacher tools to view this student record.' });
+      return null;
+    }
+    return status;
+  };
+  // Cookie capabilities ride the existing `pin` argument into TeacherGate.
+  // A literal body PIN always wins, preserving every deployed client/CLI.
+  router.use((req, _res, next) => {
+    if (!req.path.startsWith('/teacher/auth/')
+        && req.body && typeof req.body === 'object' && req.body.pin == null) {
+      const proof = capabilityProof(req);
+      if (proof) req.body.pin = proof;
+    }
+    next();
+  });
   let warnedMaterialsConfigMissing = false;
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
@@ -143,6 +184,39 @@ export function createSchoolRouter({
         return res.status(500).json({ error: 'internal' });
       });
   };
+
+  // Frontend contract: unlock sets the HttpOnly cookie; ordinary writes then
+  // need no PIN body. Sensitive calls first POST /step-up and send the returned
+  // one-use grant in X-Teacher-Step-Up. Raw PIN bodies remain valid everywhere.
+  router.post('/teacher/auth/unlock', wrap(async (req, res) => {
+    if (!teacherCapabilitySessions) throw new EntityNotFoundError('teacher authorization', 'not configured');
+    const body = req.body || {};
+    const unlocked = teacherCapabilitySessions.unlock({ userId: body.userId ?? body.actorId ?? null, pin: body.pin });
+    res.set('Cache-Control', 'no-store');
+    res.set('Set-Cookie', teacherCookie(req, encodeURIComponent(unlocked.capabilityToken), 1800));
+    const { capabilityToken: _secret, ...status } = unlocked;
+    res.json({ active: true, ...status });
+  }));
+  router.get('/teacher/auth/status', wrap(async (req, res) => {
+    if (!teacherCapabilitySessions) return res.json({ active: false });
+    res.set('Cache-Control', 'no-store').json(teacherCapabilitySessions.status(
+      cookieValue(req, 'daylight_teacher_session'),
+    ));
+  }));
+  router.post('/teacher/auth/step-up', wrap(async (req, res) => {
+    if (!teacherCapabilitySessions) throw new EntityNotFoundError('teacher authorization', 'not configured');
+    const body = req.body || {};
+    res.set('Cache-Control', 'no-store').json(teacherCapabilitySessions.stepUp({
+      capabilityToken: cookieValue(req, 'daylight_teacher_session'),
+      pin: body.pin,
+      action: body.action, resource: body.resource,
+    }));
+  }));
+  router.post('/teacher/auth/lock', wrap(async (req, res) => {
+    const locked = teacherCapabilitySessions?.lock(cookieValue(req, 'daylight_teacher_session')) ?? { locked: false };
+    res.set('Set-Cookie', teacherCookie(req, '', 0));
+    res.json(locked);
+  }));
 
   router.get('/roster', wrap(async (req, res) => res.json(
     learnerDirectory ? await learnerDirectory.listLearners() : schoolService.getRoster(),
@@ -1121,6 +1195,7 @@ export function createSchoolRouter({
   // V2 teacher workspace read models. These are intentionally additive to the
   // older lifecycle routes so rollout/cutback never changes student behavior.
   router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
       learnerId: req.params.learnerId,
@@ -1145,16 +1220,26 @@ export function createSchoolRouter({
     }));
   }));
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
   }));
+  router.post('/teacher/sessions/:sessionId/remediation', wrap(async (req, res) => {
+    if (!openRemediation || !teacherGate) throw new EntityNotFoundError('teacher remediation', 'not configured');
+    const body = req.body || {};
+    teacherGate.assert({ userId: body.openedBy ?? null, pin: body.pin ?? null,
+      action: 'sessions.remediation.open', context: { sessionId: req.params.sessionId } });
+    res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
+  }));
   router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
@@ -1169,6 +1254,14 @@ export function createSchoolRouter({
     }
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const proof = capabilityProof(req);
+    const sessionStatus = teacherCapabilitySessions?.status(proof?.capabilityToken);
+    if (!sessionStatus?.active || !teacherCapabilitySessions.authorize({
+      ...proof, userId: sessionStatus.userId, action: 'artifact.postview',
+      context: { artifactId: req.params.artifactId },
+    })) {
+      return res.status(403).json({ error: 'A fresh teacher confirmation is required to view this postview.' });
+    }
     const session = await getTeacherSession.execute({ sessionId: artifact.manifest.sessionId });
     const rendered = await renderArtifactPostview({ originalPdf: artifact.bytes, session });
     return res.set('Cache-Control', 'private, no-store')

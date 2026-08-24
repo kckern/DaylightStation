@@ -5,11 +5,11 @@
  */
 const BASE = '/api/v1/school';
 
-async function req(path, body, method) {
+async function req(path, body, method, headers = {}) {
   try {
     const opts = body === undefined
-      ? { method: method || 'GET' }
-      : { method: method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+      ? { method: method || 'GET', credentials: 'same-origin', headers }
+      : { method: method || 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) };
     const r = await fetch(BASE + path, opts);
     const data = await r.json().catch(() => null);
     return { ok: r.ok, status: r.status, data };
@@ -113,7 +113,10 @@ export const schoolApi = {
   enrichment: (learnerId = null) => req(`/enrichment${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
   postEnrichment: (body) => req('/enrichment', body),
   // Wave-4 records.
-  closePeriod: (body) => req('/report-card/close', body),
+  closePeriod: (body, grantToken = null) => req('/report-card/close', body, 'POST',
+    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
+  regradeAttempts: (body, grantToken = null) => req('/attempts/regrade', body, 'POST',
+    grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
   // Wave-5 repair.
   attestations: (learnerId) => req(learnerId ? `/attestations?learnerId=${encodeURIComponent(learnerId)}` : '/attestations'),
   postAttestation: (body) => req('/attestations', body),
@@ -129,7 +132,7 @@ export const schoolApi = {
   transcript: (learnerId) => req(`/transcript?learnerId=${encodeURIComponent(learnerId)}`),
   periodsMeta: () => req('/periods-meta'),
   attemptDays: (learnerId) => req(`/attempt-days?learnerId=${encodeURIComponent(learnerId)}`),
-  offerRetake: (sessionId) => req(`/lifecycle/sessions/${encodeURIComponent(sessionId)}/remediation`, {}),
+  offerRetake: (sessionId, body) => req(`/teacher/sessions/${encodeURIComponent(sessionId)}/remediation`, body),
   requestRetake: (body) => req('/retake-requests', body),
   flagConcern: (body) => req('/flags', body),
   // --- Self-service access codes (design §4) -------------------------------

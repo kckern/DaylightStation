@@ -44,9 +44,21 @@ describe('AdjustSessionGrade', () => {
     expect(f.sessions.appendEvent).toHaveBeenCalledTimes(1);
     expect(reduceSession(f.events)).toMatchObject({ gradedPercent: 100, machineGrade: { percent: 50 } });
 
-    const retry = await f.adjust.execute({ ...args, baseSeq: undefined, apply: true });
+    const retry = await f.adjust.execute({ ...args, apply: true });
     expect(retry).toMatchObject({ applied: true, idempotent: true });
     expect(f.sessions.appendEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a retraction receipt before evaluating the now-stale preview revision', async () => {
+    const f = fixture();
+    await f.adjust.execute({ sessionId: 'ses_1', adjustmentId: 'adj_1', percent: 100,
+      reason: 'freebie', adjustedBy: 'parent', baseSeq: 6, apply: true });
+    const args = { sessionId: 'ses_1', adjustmentId: 'adj_1', reason: 'wrong session',
+      retractedBy: 'parent', baseSeq: 7, apply: true };
+    await f.retract.execute(args);
+    const replay = await f.retract.execute(args);
+    expect(replay).toMatchObject({ applied: true, idempotent: true });
+    expect(f.sessions.appendEvent).toHaveBeenCalledTimes(2);
   });
 
   it('refuses a stale preview revision', async () => {

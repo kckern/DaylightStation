@@ -39,13 +39,14 @@ const LEARNER_NAV = [
 
 function TeacherShell() {
   const {
-    status, configured, teachers, currentTeacher, claim,
+    status, configured, teachers, currentTeacher, claim, release, authorization,
     pickerOpen, openPicker, closePicker,
   } = useTeacherProfile();
   const initial = useMemo(() => parseTeacherPath(window.location.pathname), []);
   const [route, setRoute] = useState(initial);
   const [kids, setKids] = useState([]);
   const [backlog, setBacklog] = useState(0);
+  const [shellWarnings, setShellWarnings] = useState({ roster: false, backlog: false });
   const [railOpen, setRailOpen] = useState(false);
 
   const navigate = useCallback((path, replace = false) => {
@@ -59,7 +60,16 @@ function TeacherShell() {
   useEffect(() => {
     teacherLog.nav('mounted', { kind: initial.kind, section: initial.section, learnerId: initial.learnerId });
     let alive = true;
-    schoolApi.roster().then(({ ok, data }) => { if (alive && ok && Array.isArray(data)) setKids(data); });
+    schoolApi.roster().then(({ ok, data }) => {
+      if (!alive) return;
+      if (ok && Array.isArray(data)) {
+        setKids(data);
+        setShellWarnings((value) => ({ ...value, roster: false }));
+      } else {
+        setShellWarnings((value) => ({ ...value, roster: true }));
+        teacherLog.fetch('roster-failed', { status: ok ? 200 : 'unavailable' });
+      }
+    });
     return () => { alive = false; };
   }, [initial]);
 
@@ -69,6 +79,9 @@ function TeacherShell() {
       const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
       if (!alive) return;
       setBacklog((review.ok ? (review.data?.items ?? []).length : 0) + (prints.ok && Array.isArray(prints.data) ? prints.data.length : 0));
+      const failed = !review.ok || !prints.ok;
+      setShellWarnings((value) => ({ ...value, backlog: failed }));
+      if (failed) teacherLog.fetch('backlog-failed', { reviewStatus: review.status, printStatus: prints.status });
     };
     poll();
     const timer = setInterval(poll, 60_000);
@@ -121,9 +134,12 @@ function TeacherShell() {
           {noTeachers ? (
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (
-            <button type="button" className="teacher-console__chip" onClick={openPicker}>
-              {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span></> : <span>Sign in</span>}
-            </button>
+            <div className="teacher-console__identity">
+              <button type="button" className="teacher-console__chip" onClick={openPicker} title={authorization.active ? 'Teacher tools unlocked' : 'Choose teacher'}>
+                {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span><i aria-label={authorization.active ? 'Unlocked' : 'Locked'}>{authorization.active ? '●' : '○'}</i></> : <span>Sign in</span>}
+              </button>
+              {currentTeacher && <button type="button" className="teacher-console__lock" onClick={release}>Lock</button>}
+            </div>
           )}
         </header>
 
@@ -148,6 +164,12 @@ function TeacherShell() {
           {railOpen && <button type="button" className="teacher-workspace__scrim" aria-label="Close navigation" onClick={() => setRailOpen(false)} />}
 
           <div className="teacher-workspace__main">
+            {(shellWarnings.roster || shellWarnings.backlog) && (
+              <div className="teacher-workspace__alerts" role="status">
+                {shellWarnings.roster && <span>Student roster unavailable. Navigation may be incomplete.</span>}
+                {shellWarnings.backlog && <span>Action-queue totals unavailable. Open the queue for item-level status.</span>}
+              </div>
+            )}
             {learner && route.kind !== 'session' && (
               <nav className="teacher-workspace__learner-nav" aria-label={`${learner.name} workspace`}>
                 {LEARNER_NAV.map((item) => <button key={item.id} type="button" aria-current={route.section === item.id ? 'page' : undefined} onClick={() => goLearner(learner.id, item.id)}>{item.label}</button>)}

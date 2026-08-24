@@ -16,3 +16,4 @@ export { ISchoolCalcStudySessionRepository } from './ISchoolCalcStudySessionRepo
 export { ISchoolActionTokenIssuer } from './ISchoolActionTokenIssuer.mjs';
 export { ISchoolLearningActionExecutor } from './ISchoolLearningActionExecutor.mjs';
 export { IRemediationSessionRepository } from './IRemediationSessionRepository.mjs';
+export { ITeacherActionReceiptStore } from './ITeacherActionReceiptStore.mjs';

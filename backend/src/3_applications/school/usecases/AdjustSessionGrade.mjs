@@ -29,13 +29,29 @@ export class AdjustSessionGrade {
     sessionId, percent, correctCount, totalCount, missedItemIds, itemVerdicts,
     reason, adjustedBy = null, pin = null, baseSeq, adjustmentId = null, apply = false,
   } = {}) {
-    this.#teacherGate.assert({ userId: adjustedBy, pin, action: 'sessions.grade-adjust', context: { sessionId } });
+    this.#teacherGate.assert({ userId: adjustedBy, pin,
+      action: apply === true ? 'sessions.grade-adjust' : 'sessions.grade-adjust.preview', context: { sessionId } });
     if (!text(sessionId)) throw new ValidationError('sessionId is required');
     if (!text(reason)) throw new ValidationError('a reason is required for a grade correction');
 
     const events = await this.#sessions.readEvents(sessionId);
     if (!events.length) throw new EntityNotFoundError('session', sessionId);
     const currentSeq = lastSeq(events);
+    const id = text(adjustmentId) ?? stableAdjustmentId({
+      sessionId, baseSeq: baseSeq ?? currentSeq, adjustedBy, reason: reason.trim(), percent, correctCount, totalCount,
+    });
+    const prior = events.find((event) => event?.type === 'grade_adjusted' && event.adjustmentId === id);
+    if (prior) {
+      const sameRequest = prior.adjustedBy === adjustedBy && prior.reason === reason.trim()
+        && prior.percent === percent && prior.correctCount === correctCount && prior.totalCount === totalCount;
+      if (!sameRequest) throw new DomainInvariantError(`adjustment id ${id} was already used for another correction`, {
+        code: 'IDEMPOTENCY_CONFLICT',
+      });
+      const effective = reduceSession(events);
+      return { schema: 'school.grade-adjustment-receipt/v1', applied: true, idempotent: true,
+        sessionId, adjustmentId: id, baseSeq: currentSeq, machineGrade: effective.machineGrade,
+        effectiveGrade: gradeOf(effective), outcome: effective.outcome };
+    }
     if (baseSeq !== undefined && baseSeq !== currentSeq) {
       throw new DomainInvariantError(`session ${sessionId} changed after this preview`, {
         code: 'STALE_SAVE', details: { expected: baseSeq, actual: currentSeq },
@@ -43,17 +59,6 @@ export class AdjustSessionGrade {
     }
     const state = reduceSession(events);
     if (!state.machineGrade) throw new ValidationError(`session ${sessionId} has no machine grade to correct`);
-
-    const id = text(adjustmentId) ?? stableAdjustmentId({
-      sessionId, baseSeq: currentSeq, adjustedBy, reason: reason.trim(), percent, correctCount, totalCount,
-    });
-    const prior = events.find((event) => event?.type === 'grade_adjusted' && event.adjustmentId === id);
-    if (prior) {
-      const effective = reduceSession(events);
-      return { schema: 'school.grade-adjustment-receipt/v1', applied: true, idempotent: true,
-        sessionId, adjustmentId: id, baseSeq: currentSeq, machineGrade: effective.machineGrade,
-        effectiveGrade: gradeOf(effective), outcome: effective.outcome };
-    }
 
     const built = createEvent({
       type: 'grade_adjusted', at: this.#clock().toISOString(), sessionId,
@@ -94,20 +99,22 @@ export class RetractSessionGradeAdjustment {
   }
 
   async execute({ sessionId, adjustmentId, reason, retractedBy = null, pin = null, baseSeq, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: retractedBy, pin, action: 'sessions.grade-adjustment.retract', context: { sessionId, adjustmentId } });
+    this.#teacherGate.assert({ userId: retractedBy, pin,
+      action: apply === true ? 'sessions.grade-adjustment.retract' : 'sessions.grade-adjustment.retract-preview',
+      context: { sessionId, adjustmentId } });
     if (!text(sessionId) || !text(adjustmentId)) throw new ValidationError('sessionId and adjustmentId are required');
     if (!text(reason)) throw new ValidationError('a reason is required to retract a grade correction');
     const events = await this.#sessions.readEvents(sessionId);
     if (!events.length) throw new EntityNotFoundError('session', sessionId);
     const currentSeq = lastSeq(events);
-    if (baseSeq !== undefined && baseSeq !== currentSeq) {
-      throw new DomainInvariantError(`session ${sessionId} changed after this preview`, { code: 'STALE_SAVE' });
-    }
     const state = reduceSession(events);
     const target = state.gradeAdjustments.find((row) => row.adjustmentId === adjustmentId);
     if (!target) throw new EntityNotFoundError('grade adjustment', adjustmentId);
     if (target.retracted) return { schema: 'school.grade-adjustment-retraction-receipt/v1', applied: true,
       idempotent: true, sessionId, adjustmentId, baseSeq: currentSeq, effectiveGrade: gradeOf(state), outcome: state.outcome };
+    if (baseSeq !== undefined && baseSeq !== currentSeq) {
+      throw new DomainInvariantError(`session ${sessionId} changed after this preview`, { code: 'STALE_SAVE' });
+    }
     const built = createEvent({ type: 'grade_adjustment_retracted', at: this.#clock().toISOString(), sessionId,
       adjustmentId, reason: reason.trim(), retractedBy, baseSeq: currentSeq, seq: currentSeq + 1 });
     if (built.errors.length) throw new ValidationError(built.errors.join('; '));

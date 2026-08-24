@@ -60,7 +60,7 @@ const percentIfPresent = (field) => (raw, push) => {
  */
 const SCHEMA = {
   created: {
-    fields: ['learnerId', 'unitId', 'remediationOf', 'variant', 'remediationItemIds'],
+    fields: ['learnerId', 'unitId', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
       // Both optional: only a remediation session carries them.
       if (raw.remediationOf !== undefined && !isNonEmptyString(raw.remediationOf)) {
@@ -72,6 +72,9 @@ const SCHEMA = {
       }
       if (raw.variant !== undefined && !(Number.isInteger(raw.variant) && raw.variant >= 0)) {
         push('variant: must be an integer >= 0');
+      }
+      if (raw.openedBy !== undefined && !isNonEmptyString(raw.openedBy)) {
+        push('openedBy: must be a non-empty string when present');
       }
     }),
   },
@@ -162,9 +165,12 @@ const SCHEMA = {
   },
   rewarded: { fields: ['txnId', 'amount'], validate: stringField('txnId') },
   remediation_opened: {
-    fields: ['newSessionId', 'variant'],
+    fields: ['newSessionId', 'variant', 'openedBy'],
     validate: allOf(stringField('newSessionId'), (raw, push) => {
       if (!(Number.isInteger(raw.variant) && raw.variant >= 0)) push('variant: must be an integer >= 0');
+      if (raw.openedBy !== undefined && !isNonEmptyString(raw.openedBy)) {
+        push('openedBy: must be a non-empty string when present');
+      }
     }),
   },
   reassigned: {

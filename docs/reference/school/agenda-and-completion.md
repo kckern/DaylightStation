@@ -55,6 +55,13 @@ subject, `BuildAgenda` creates or reuses a work session and mints a
 scanning old paper recomputes the honest next action. Program entries launch
 their own surface and do not create curriculum work sessions.
 
+The teacher workspace separates this into preview and dispatch. Preview renders
+the same agenda PNG without state changes. Dispatch requires fresh teacher
+confirmation and a durable idempotency key; the server reserves that key before
+printing and persists the receipt. An identical retry returns the receipt. A
+different payload or an indeterminate prior print returns 409, because a second
+agenda is worse than requiring an operator to inspect the first attempt.
+
 ## The 4am study day
 
 Agenda service, program daily status, teacher-today digest, and daily completion

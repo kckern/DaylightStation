@@ -4,6 +4,16 @@ import PlanningTab from './PlanningTab.jsx';
 import { TeacherProfileProvider } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
 
+vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
+  authStatus: vi.fn(async () => {
+    const userId = sessionStorage.getItem('school-teacher-claim');
+    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
+  }),
+  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
+  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
+  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
+} }));
+
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     teachers: vi.fn(),

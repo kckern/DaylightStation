@@ -48,6 +48,7 @@ import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorks
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
+import { YamlTeacherActionReceiptStore } from '#adapters/persistence/yaml/YamlTeacherActionReceiptStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
@@ -368,6 +369,7 @@ export async function createSchoolLifecycle({
     // printed" record, so a repeat card tap inside `agenda.cooldownMinutes`
     // does not put a second identical slip in the tray.
     agendaCooldown: new YamlAgendaCooldownStore({ configService, logger }),
+    teacherActionReceipts: new YamlTeacherActionReceiptStore({ configService }),
   };
   // Long-expired token files are dead weight (a pruned scan resolves to the
   // "unknown ticket" slip, which is what week-old paper deserves). Swept at
@@ -579,7 +581,7 @@ export async function createSchoolLifecycle({
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
   const teacherAgendaDispatch = new TeacherAgendaDispatch({
-    previewAgenda, buildAgenda, receipts, teacherGate, clock, logger,
+    previewAgenda, buildAgenda, receipts, teacherGate, receiptStore: stores.teacherActionReceipts, clock, logger,
   });
   // `receiptPngRenderer` (the canvas renderer) is already built above,
   // before `receipts` — it backs BOTH the printed receipt (via

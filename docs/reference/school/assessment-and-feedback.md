@@ -32,6 +32,14 @@ Grading records a percentage and the passing threshold that applied at grading
 time. At close, the stamped threshold wins; legacy sessions fall back to a
 household pass override and then the unit's authored `passing.percent`.
 
+Machine grades are immutable evidence. A teacher correction appends a grade
+adjustment with author, reason, timestamp, and base revision; it never edits the
+machine result. The effective grade is the machine grade folded through active
+adjustments in order. Retraction is another append-only event, so both the
+superseded correction and the reason for undoing it remain visible. Previewing
+an adjustment or retraction is side-effect free; applying it requires a
+resource-scoped fresh-confirmation grant and rejects stale revisions.
+
 A pass unlocks progression. A needs-remediation outcome preserves the retry.
 Unattempted work is not a zero. Reward settlement is separate: a result can
 close and unlock correctly even when rewards are disabled, require adult
@@ -64,6 +72,21 @@ Attribution repair moves the underlying attempt evidence to the correct
 learner, preserving provenance, so every derived rollup follows it. Regrading
 uses the same grading engine in dry-run-first operations. Abandoning a ghost
 session is explicit and reasoned; it does not fabricate a pass.
+
+The teacher workspace exposes systematic regrade under Operations. It requires
+a bank id, bounded day range, and reason, shows the checked/corrected/session
+impact before doing anything, and requires a fresh resource-scoped PIN
+confirmation to append the corrections. The original attempts remain intact
+and each corrective row names its source attempt, teacher, and reason.
+
+Teacher session inspection shows machine grade, effective grade, the complete
+correction/retraction ledger, session events, and retained print-artifact
+lineage together. Grade adjustments and retractions are both preview-first.
+Issued PDF opens the exact retained bytes; **Prepare postview PDF** requires a
+fresh artifact-scoped confirmation, renders those bytes against the linked
+session evidence, and exposes only a temporary browser blob URL. This is the
+preferred repair surface because the operator can see the evidence being
+preserved before applying a change.
 
 See [progress and reporting](./progress-and-reporting.md) for how this evidence
 becomes course grades, milestones, and report cards.
