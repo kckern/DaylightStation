@@ -32,6 +32,8 @@ export const ATTEMPT_STATUSES = Object.freeze(['completed', 'aborted', 'timeout'
 export const CRITERIA = Object.freeze(['completeness', 'cleanliness', 'placement']);
 
 const isUnit = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
+const nearlyEqual = (left, right) => Math.abs(left - right) <= 1e-6;
+const COUNT_DIAGNOSTICS = new Set(['expected_notes', 'matched_notes', 'wrong_notes', 'missed_notes']);
 
 function validateCriteria(criteria, label, errors) {
   if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) {
@@ -49,7 +51,14 @@ function validateDiagnostics(diagnostics, label, errors) {
     errors.push(`${label} must be an object`);
     return;
   }
-  for (const [name, value] of Object.entries(diagnostics)) if (!Number.isFinite(value)) errors.push(`diagnostic ${label}.${name} must be a number`);
+  for (const [name, value] of Object.entries(diagnostics)) {
+    if (!Number.isFinite(value)) errors.push(`diagnostic ${label}.${name} must be a number`);
+    else if (COUNT_DIAGNOSTICS.has(name) && (!Number.isInteger(value) || value < 0)) errors.push(`diagnostic ${label}.${name} must be a non-negative integer`);
+  }
+  const { expected_notes: expected, matched_notes: matched, missed_notes: missed } = diagnostics;
+  if ([expected, matched, missed].every((value) => Number.isInteger(value) && value >= 0) && expected !== matched + missed) {
+    errors.push(`diagnostic ${label}.expected_notes must equal matched_notes plus missed_notes`);
+  }
 }
 
 function validateBreakdown(value, label, errors, { allowParts = false } = {}) {
@@ -101,12 +110,15 @@ export function validateAssessment(body = {}) {
   // Gates say why, not just whether. A bare boolean cannot tell a child that
   // they were four beats-per-minute short.
   if (body.gates !== undefined) {
+    if (!completed) errors.push('gates must be absent unless the attempt completed');
     if (!body.gates || typeof body.gates !== 'object' || Array.isArray(body.gates)) {
       errors.push('gates must be an object');
     } else {
       for (const [name, gate] of Object.entries(body.gates)) {
         if (!gate || typeof gate !== 'object') { errors.push(`gate ${name} must be an object`); continue; }
         if (typeof gate.passed !== 'boolean') errors.push(`gate ${name} must say whether it passed`);
+        if (!Number.isFinite(gate.actual)) errors.push(`gate ${name}.actual must be a number`);
+        if (!Number.isFinite(gate.target)) errors.push(`gate ${name}.target must be a number`);
       }
     }
   }
@@ -125,9 +137,14 @@ export function validateAssessment(body = {}) {
     }
     if (body.rubric?.weights !== undefined) {
       if (!body.rubric.weights || typeof body.rubric.weights !== 'object' || Array.isArray(body.rubric.weights)) errors.push('rubric.weights must be an object');
-      else for (const [name, weight] of Object.entries(body.rubric.weights)) {
-        if (!CRITERIA.includes(name)) errors.push(`unknown rubric weight: ${name}`);
-        else if (!Number.isFinite(weight) || weight < 0) errors.push(`rubric weight ${name} must be a non-negative number`);
+      else {
+        let sum = 0;
+        for (const [name, weight] of Object.entries(body.rubric.weights)) {
+          if (!CRITERIA.includes(name)) errors.push(`unknown rubric weight: ${name}`);
+          else if (!Number.isFinite(weight) || weight < 0) errors.push(`rubric weight ${name} must be a non-negative number`);
+          else sum += weight;
+        }
+        if (Object.keys(body.rubric.weights).length && sum === 0) errors.push('rubric.weights must include a positive weight');
       }
     }
     if (body.rubric?.part_weights !== undefined) {
@@ -171,8 +188,56 @@ export function validateAssessment(body = {}) {
           errors.push(`verdict.${field} must be an array of strings`);
         }
       }
+      if (Array.isArray(body.verdict.failed_criteria)) {
+        for (const name of body.verdict.failed_criteria) {
+          if (!CRITERIA.includes(name)) errors.push(`unknown failed criterion: ${name}`);
+          else if (!body.criteria || !Object.hasOwn(body.criteria, name)) errors.push(`failed criterion ${name} requires recorded criterion evidence`);
+        }
+      }
+      if (Array.isArray(body.verdict.failed_gates)) {
+        for (const name of body.verdict.failed_gates) {
+          if (!body.gates || typeof body.gates !== 'object' || !Object.hasOwn(body.gates, name)) errors.push(`unknown failed gate: ${name}`);
+        }
+      }
+      if (body.verdict.passed === true && (body.verdict.failed_criteria?.length || body.verdict.failed_gates?.length)) {
+        errors.push('a passed verdict cannot name failed criteria or gates');
+      }
       if (isUnit(body.score) && isUnit(body.verdict.score) && body.score !== body.verdict.score) {
         errors.push('verdict.score must equal score');
+      }
+    }
+  }
+
+  if (completed && body.criteria && body.rubric?.weights && isUnit(body.score)) {
+    const projected = reproject(body.criteria, body.rubric.weights);
+    if (projected != null && !nearlyEqual(projected, body.score)) errors.push('score must equal the rubric-weighted criteria');
+  }
+
+  const partEntries = body.parts && typeof body.parts === 'object' && !Array.isArray(body.parts)
+    ? Object.entries(body.parts)
+    : [];
+  const partWeights = body.rubric?.part_weights;
+  if (partEntries.length && partWeights && typeof partWeights === 'object' && !Array.isArray(partWeights)) {
+    const partNames = new Set(partEntries.map(([part]) => part));
+    for (const part of Object.keys(partWeights)) if (!partNames.has(part)) errors.push(`rubric.part_weights names unknown part: ${part}`);
+    for (const [part] of partEntries) if (!Object.hasOwn(partWeights, part)) errors.push(`rubric.part_weights is missing active part: ${part}`);
+    for (const criterion of ['completeness', 'placement']) {
+      if (!isUnit(body.criteria?.[criterion])) continue;
+      const values = partEntries.map(([part, value]) => ({ value: value?.criteria?.[criterion], weight: partWeights[part] }));
+      if (values.every(({ value, weight }) => isUnit(value) && Number.isFinite(weight) && weight >= 0)) {
+        const weighted = values.reduce((sum, entry) => sum + entry.value * entry.weight, 0);
+        if (!nearlyEqual(weighted, body.criteria[criterion])) errors.push(`criteria.${criterion} must equal the part-weighted criterion`);
+      }
+    }
+  }
+
+  const aggregateCounts = body.diagnostics;
+  if (partEntries.length && aggregateCounts && typeof aggregateCounts === 'object') {
+    for (const name of ['expected_notes', 'matched_notes', 'missed_notes']) {
+      const values = partEntries.map(([, value]) => value?.diagnostics?.[name]);
+      if (Number.isInteger(aggregateCounts[name]) && values.every((value) => Number.isInteger(value))) {
+        const total = values.reduce((sum, value) => sum + value, 0);
+        if (total !== aggregateCounts[name]) errors.push(`diagnostics.${name} must equal the sum of part diagnostics`);
       }
     }
   }
