@@ -218,27 +218,24 @@ which is why nothing breaks when they are absent.
 
 ---
 
-## 5. Scope subsetting needs two planner changes
+## 5. Scope subsetting and planner membership
 
-This is the part with real work in it, and the previous revision missed it.
+This area originally needed two planner changes. Frozen enrollment membership
+is now honored; lesson-level completion scoping for `module_blocks` remains.
 
-`createCourseEnrollment` **already supports subsetting** — it filters
+`createCourseEnrollment` supports subsetting — it filters
 `units` to the course and derives `moduleOrder`/`lessonOrder` from whatever it
-is given, so passing a module subset produces a subset enrollment. The planner
-then ignores it, in two distinct places.
+is given, so passing a module subset produces a subset enrollment.
 
-**Membership comes from the catalog, not the enrollment** (`planner.mjs:90-95`):
+**Membership now comes from the frozen enrollment.** When `lessonOrder` is
+present, the planner takes the union of its unit ids and the units belonging to
+`optionalModules`. It falls back to catalog membership only for legacy course
+assignments without frozen enrollment data. This is load-bearing for a dated
+mid-course enrollment: weeks omitted because they closed before enrollment do
+not reappear as `upcoming` entries or inflate progress totals.
 
-```js
-const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
-members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
-```
-
-Every published unit of an assigned course is wanted, whatever the enrollment
-says. Fix: when the entry carries an enrollment, membership is the union of its
-`lessonOrder` values plus its optional modules.
-
-**Module completion is computed over the catalog** (`planner.mjs:137-138`):
+**One remaining limitation:** module completion for `module_blocks` is still
+computed over the catalog (`planner.mjs:137-138`):
 
 ```js
 const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
@@ -249,9 +246,10 @@ const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
 lesson the learner is not enrolled in can never be "passed", and the next module
 never opens. Fix: restrict `passedModule` to enrolled lessons.
 
-Consequence for sequencing: **whole-module subsetting is nearly free once
-membership is fixed; lesson-level exclusion within an included module is not
-safe until `passedModule` is fixed too.** They should land together.
+Consequence for sequencing: **whole-module subsetting is now safe; lesson-level
+exclusion within an included `module_blocks` module is not safe until
+`passedModule` is fixed too.** Dated enrollment subsets whole modules, so its
+mid-course membership contract does not depend on that remaining change.
 
 ### The gating invariant
 

@@ -93,6 +93,21 @@ describe('dated module schedules', () => {
     expect(enrollment.moduleOrder).toEqual(['w37']);
   });
 
+  it('keeps omitted pre-enrollment modules out of the planner', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-09-08',
+    });
+    const plan = planLearnerWork({
+      learnerId: 'milo', units: datedUnits,
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] },
+      sessions: [], now: '2026-09-08T09:00:00.000Z',
+      coursePolicies: { cfm: datedPolicy },
+    });
+
+    expect(plan.entries.map((entry) => entry.unitId)).toEqual(['w37.d1']);
+    expect(plan.next.unitId).toBe('w37.d1');
+  });
+
   it('keeps a module whose window closes today', () => {
     const enrollment = createCourseEnrollment({
       courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-08-30',

@@ -93,11 +93,30 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   const enrollmentByCourse = new Map();
   assignedCourses.forEach(({ id, elective, profile, enrollment, timing }) => {
     enrollmentByCourse.set(id, { profile, enrollment, timing });
-    const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
-    if (!members.length) {
+    const publishedMembers = catalog.filter((u) => u.courseId === id).sort(bySequence);
+    if (!publishedMembers.length) {
       errors.push(`${id}: assigned but no published units belong to it`);
       return;
     }
+    // An enrollment is a frozen curriculum statement, not merely an ordering
+    // hint. In particular, a learner joining a dated course mid-stream omits
+    // already-closed modules from lessonOrder; pulling membership back from
+    // the whole catalog would resurrect those deliberately unassigned weeks.
+    const hasFrozenMembership = isPlainObject(enrollment?.lessonOrder);
+    const frozenIds = new Set(
+      hasFrozenMembership
+        ? Object.values(enrollment.lessonOrder).flatMap((ids) => (Array.isArray(ids) ? ids : []))
+          .filter(isNonEmptyString)
+        : [],
+    );
+    if (hasFrozenMembership && Array.isArray(enrollment.optionalModules)) {
+      publishedMembers
+        .filter((unit) => enrollment.optionalModules.includes(unit.module))
+        .forEach((unit) => frozenIds.add(unit.unitId));
+    }
+    const members = hasFrozenMembership
+      ? publishedMembers.filter((unit) => frozenIds.has(unit.unitId))
+      : publishedMembers;
     members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
   });
   const timingByStandaloneUnit = new Map();

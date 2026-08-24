@@ -356,6 +356,25 @@ describe('dated_modules gating', () => {
     expect(datedPlan('2026-09-08T09:00:00.000Z', completed).available).toEqual([]);
   });
 
+  it('does not resurrect modules omitted by a mid-course enrollment', () => {
+    const enrollment = {
+      moduleOrder: ['w3'], optionalModules: [],
+      moduleSchedule: { w3: schedule.w3 },
+      lessonOrder: { w3: [1, 2, 3].map((day) => `cfm.w3.d${day}`) },
+    };
+    const result = planLearnerWork({
+      learnerId: 'milo',
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] },
+      units: datedUnits(), sessions: [], now: '2026-09-08T09:00:00.000Z',
+      coursePolicies: { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } },
+    });
+
+    expect(result.entries.map((entry) => entry.unitId)).toEqual([
+      'cfm.w3.d1', 'cfm.w3.d2', 'cfm.w3.d3',
+    ]);
+    expect(result.entries.some((entry) => entry.timingReasons.includes('not_scheduled'))).toBe(false);
+  });
+
   it('never turns old dated backlog dormant', () => {
     const result = datedPlan('2027-01-05T09:00:00.000Z');
     expect(result.entries.every((entry) => entry.status !== 'dormant')).toBe(true);
