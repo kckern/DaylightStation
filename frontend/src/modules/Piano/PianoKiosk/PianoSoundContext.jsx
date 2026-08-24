@@ -12,21 +12,9 @@ import { getDeviceProfile } from './devices/suzukiMdg400.js';
  * effects are driven over MIDI OUT (Program Change / Bank Select / CC).
  *
  * The chrome status chip reads `activeName`; `usePianoSoundBundle` composes
- * voice + effects + volume into the full Bundle that the Player Sound Panel
- * and Operator Drawer both drive via `selectVoice`/`setEffect`.
- *
- * The rendered-voice bridge (a native APK, out-of-process engine) has been
- * retired. `sources`/`active`/`activeId`/`select`/`gainDb`/`reverbMix`/
- * `setGain`/`setReverb`/`hasInstruments`/`bridgeLink` remain as inert stubs —
- * deferred (design §11), not currently rendered anywhere.
+ * voice + effects into the SoundPreset used by the player surface.
  */
 const SoundContext = createContext(null);
-
-const FALLBACK = {
-  sources: [], active: null, activeId: null, activeName: 'Onboard', select: () => {},
-  gainDb: 0, reverbMix: 0, setGain: () => {}, setReverb: () => {}, resync: () => {}, hasInstruments: false, bridgeLink: null,
-  device: null, deviceVoice: null, selectVoice: () => {}, effects: null, setEffect: () => {},
-};
 
 export function PianoSoundProvider({ children }) {
   const { config, pianoId } = usePianoKioskConfig();
@@ -42,8 +30,10 @@ export function PianoSoundProvider({ children }) {
   // instrument has no read-back — nothing can confirm a message landed.
   const effectsCfg = useMemo(() => ({
     dialect: config?.effects?.dialect === 'gs' ? 'gs' : 'gm2',
+    route: config?.effects?.route || 'pianobridge',
+    transport: config?.effects?.transport === 'cc' ? 'cc' : 'sysex',
     resend: Number(config?.effects?.resend) > 0 ? Number(config.effects.resend) : 3,
-  }), [config?.effects?.dialect, config?.effects?.resend]);
+  }), [config?.effects?.dialect, config?.effects?.route, config?.effects?.transport, config?.effects?.resend]);
 
   // ── Onboard hardware: the configured device's voice + effects ──
   const [deviceVoice, setDeviceVoice] = useState(() => device?.voiceGroups?.[0]?.voices?.[0] || null);
@@ -77,7 +67,13 @@ export function PianoSoundProvider({ children }) {
    * Returns 'sysex' or 'cc' so the log records which route actually carried it.
    */
   const applyEffectToHardware = useCallback((name, eff, fx) => {
-    const ops = sendSysex
+    if (effectsCfg.transport === 'cc') {
+      sendControlChange(fx.typeCC, eff.type);
+      sendControlChange(fx.levelCC, eff.on ? eff.level : 0);
+      return 'cc';
+    }
+    const bridgeRoute = effectsCfg.route === 'pianobridge';
+    const ops = bridgeRoute && sendSysex
       ? planEffectSysex(name, eff, { dialect: effectsCfg.dialect, levelCC: fx.levelCC })
       : [];
     let sentAny = false;
@@ -91,10 +87,11 @@ export function PianoSoundProvider({ children }) {
       }
     }
     if (sentAny) return 'sysex';
+    logger.warn('piano.device.effect-fallback', { pianoId, name, route: effectsCfg.route, transport: effectsCfg.transport });
     sendControlChange(fx.typeCC, eff.type);
     sendControlChange(fx.levelCC, eff.on ? eff.level : 0);
     return 'cc';
-  }, [sendSysex, sendControlChange, effectsCfg.dialect, effectsCfg.resend]);
+  }, [sendSysex, sendControlChange, effectsCfg, logger, pianoId]);
 
   const setEffect = useCallback((name, patch) => {
     setEffects((prev) => {
@@ -108,8 +105,7 @@ export function PianoSoundProvider({ children }) {
   }, [device, applyEffectToHardware, pianoId, logger]);
 
   // Re-assert the current voice + effects onto the hardware. Used by the
-  // Settings "Restart audio & MIDI" control (paired with a MIDI reconnect) to
-  // recover the audio subsystem without a full page reload.
+  // central connection repair after it reacquires MIDI.
   const resync = useCallback(() => {
     if (device && deviceVoice) {
       sendLocalControl(true);
@@ -143,17 +139,16 @@ export function PianoSoundProvider({ children }) {
   const activeName = device ? (deviceVoice?.name || 'Keyboard') : 'Onboard';
 
   const value = useMemo(() => ({
-    sources: [], active: null, activeId: null, activeName, select: () => {},
-    gainDb: 0, reverbMix: 0, setGain: () => {}, setReverb: () => {}, resync,
-    hasInstruments: false, bridgeLink: null,
-    device, deviceVoice, selectVoice, effects, setEffect,
+    activeName, resync, device, deviceVoice, selectVoice, effects, setEffect,
   }), [activeName, resync, device, deviceVoice, selectVoice, effects, setEffect]);
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;
 }
 
 export function usePianoSound() {
-  return useContext(SoundContext) || FALLBACK;
+  const value = useContext(SoundContext);
+  if (!value) throw new Error('usePianoSound must be used within PianoSoundProvider');
+  return value;
 }
 
 export default PianoSoundProvider;

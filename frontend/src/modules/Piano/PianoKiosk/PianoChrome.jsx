@@ -1,6 +1,5 @@
 import { Fragment, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoKioskConfig } from './PianoConfig.jsx';
 import { usePianoSound } from './PianoSoundContext.jsx';
 import { usePianoBreadcrumbBar } from './PianoBreadcrumbContext.jsx';
@@ -10,23 +9,21 @@ import OperatorDrawer from './OperatorDrawer.jsx';
 import PianoLinkBanner from './PianoLinkBanner.jsx';
 import PianoUserChip from './PianoUserChip.jsx';
 import Icon from '../ui/icons/Icon.jsx';
+import { usePianoConnection } from './PianoConnectionContext.jsx';
 
 /**
  * PianoChrome — always-on header. Left: a breadcrumb trail `home › mode › …deeper
  * crumbs` (home returns to the menu, the mode crumb to the mode index, deeper
  * routes publish their own segments; the deepest is the current page). Right: a
- * single status chip showing the connection dot + the active voice name (design
- * §8, audit D1) — **tap** opens the player-facing Sound Panel, **long-press**
- * opens the Operator Drawer (maintenance console). When disconnected, an inline
- * Reconnect affordance surfaces right on the chip (resolves audit T2 — "my piano
- * is silent" no longer buried under a settings tab).
+ * single status chip showing the connection dot + active voice — **tap** opens
+ * Sound and a 550ms hold opens adult-only Piano Maintenance.
  *
  * @param {string} [modeLabel] - current mode name (empty on home)
  * @param {string} [modeKey] - current mode route segment, for the mode crumb link
  */
 export function PianoChrome({ modeLabel, modeKey }) {
   const navigate = useNavigate();
-  const { connected, connect } = usePianoMidi();
+  const { health } = usePianoConnection();
   const { basePath } = usePianoKioskConfig();
   const { activeName } = usePianoSound();
   const { crumbs: extraCrumbs } = usePianoBreadcrumbBar();
@@ -84,33 +81,13 @@ export function PianoChrome({ modeLabel, modeKey }) {
         <PianoUserChip />
         <button
           type="button"
-          className={`piano-chrome__chip piano-chrome__chip--${connected ? 'on' : 'off'}`}
-          aria-label="Sound (tap) — Operator (hold)"
-          title="Tap for Sound, hold for Operator"
+          className={`piano-chrome__chip piano-chrome__chip--${health.state === 'ready' ? 'on' : 'off'}`}
+          aria-label={`Change sound, ${activeName}. Piano ${health.copy}`}
           {...chipPress}
         >
           <span className="piano-chrome__dot" />
           <span className="piano-chrome__chiplabel">{activeName}</span>
-        </button>
-        {!connected && (
-          <button
-            type="button"
-            className="piano-chrome__reconnect"
-            onClick={connect}
-          >
-            Reconnect
-          </button>
-        )}
-        {/* Visible entry to the settings/device console (reboot, restart, Bluetooth,
-            screen-off, …) — so it's discoverable, not only via the chip long-press. */}
-        <button
-          type="button"
-          className="piano-chrome__gear"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() => setOperatorOpen(true)}
-        >
-          <Icon name="settings" />
+          <span className="piano-chrome__chevron" aria-hidden>›</span>
         </button>
       </div>
 

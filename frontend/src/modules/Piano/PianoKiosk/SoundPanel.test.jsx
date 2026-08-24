@@ -1,160 +1,118 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const applyBundle = vi.fn();
-const saveDefault = vi.fn();
-const addFavorite = vi.fn();
-
-const currentBundle = {
-  voice: { pc: 0, bank: 0, name: 'Acoustic Grand' },
-  reverb: { type: 4, level: 64, on: true },
-  chorus: { type: 2, level: 32, on: false },
-  volume: 0.8,
-};
-
-const favoriteBundle = {
-  voice: { pc: 0, bank: 0, name: 'Acoustic Grand' },
-  reverb: { type: 5, level: 90, on: true },
-  chorus: { type: 0, level: 0, on: false },
-  volume: 0.9,
-};
-
-// House shortlist deliberately includes Acoustic Grand (a dup of the favorite,
-// by pc:bank) so the panel's dedup behavior is exercised — buildFunnel is
-// expected to filter it back out.
-const shortlistVoices = [
-  { pc: 0, bank: 0, name: 'Acoustic Grand' },
-  { pc: 40, bank: 0, name: 'Violin' },
-];
-
-const deviceVoiceGroups = [
-  { group: 'Piano', voices: [{ no: 1, name: 'Acoustic Grand', pc: 0, bank: 0 }] },
-  { group: 'Strings', voices: [
-    { no: 41, name: 'Violin', pc: 40, bank: 0 },
-    { no: 43, name: 'Cello', pc: 42, bank: 0 },
-  ] },
-];
-
-const deviceEffects = {
-  reverb: { label: 'Reverb', typeCC: 80, levelCC: 91, defaultType: 4, types: [{ value: 4, label: 'Hall' }, { value: 0, label: 'Room' }] },
-  chorus: { label: 'Chorus', typeCC: 81, levelCC: 93, defaultType: 2, types: [{ value: 2, label: 'Chorus 3' }, { value: 0, label: 'Chorus 1' }] },
-};
-
-vi.mock('./usePianoSoundBundle.js', () => ({
-  usePianoSoundBundle: () => ({ currentBundle, applyBundle }),
-}));
-let canSave = true;
+let currentBundle = { voice: { pc: 0, bank: 0, name: 'Grand' }, reverb: { type: 1, level: 50, on: true }, chorus: { type: 2, level: 64, on: false } };
+vi.mock('./usePianoSoundBundle.js', () => ({ usePianoSoundBundle: () => ({ currentBundle, applyBundle }) }));
+const saveFavorite = vi.fn(async () => ({ ok: true }));
+const removeFavorite = vi.fn(async () => ({ ok: true }));
+let presetState;
 vi.mock('./usePianoPreset.js', () => ({
-  usePianoPreset: () => ({ preset: { favorites: [favoriteBundle] }, saveDefault, addFavorite, canSave }),
+  soundVoiceKey: (value) => `${value?.voice?.pc}:${value?.voice?.bank || 0}`,
+  sameSoundPreset: (a, b) => JSON.stringify({ voice: a?.voice, reverb: a?.reverb, chorus: a?.chorus }) === JSON.stringify({ voice: b?.voice, reverb: b?.reverb, chorus: b?.chorus }),
+  usePianoPreset: () => presetState,
 }));
-vi.mock('./PianoConfig.jsx', () => ({
-  usePianoKioskConfig: () => ({ config: { shortlist: { voices: shortlistVoices } }, pianoId: 'default' }),
-}));
-vi.mock('./PianoSoundContext.jsx', () => ({
-  usePianoSound: () => ({ device: { voiceGroups: deviceVoiceGroups, effects: deviceEffects } }),
-}));
-vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ config: { shortlist: { voices: [{ pc: 0, name: 'Grand' }, { pc: 40, bank: 0, name: 'Violin' }] } } }) }));
+const groups = [{ group: 'Piano', voices: [{ pc: 0, bank: 0, name: 'Grand' }] }, { group: 'Strings', voices: [{ pc: 40, bank: 0, name: 'Violin' }, { pc: 42, bank: 0, name: 'Cello' }] }];
+vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => ({ device: { voiceGroups: groups, effects: { reverb: { types: [{ value: 1, label: 'Hall' }] }, chorus: { types: [{ value: 2, label: 'Wide' }] } } } }) }));
+const setPianoLevel = vi.fn();
+vi.mock('./PianoMixContext.jsx', () => ({ usePianoMix: () => ({ pianoLevel: 0.75, setPianoLevel }) }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => <span /> }));
 
 import SoundPanel from './SoundPanel.jsx';
 
 beforeEach(() => {
-  applyBundle.mockClear();
-  saveDefault.mockClear();
-  addFavorite.mockClear();
-  canSave = true;
+  applyBundle.mockReset(); saveFavorite.mockClear(); removeFavorite.mockClear(); setPianoLevel.mockClear();
+  currentBundle = { voice: { pc: 0, bank: 0, name: 'Grand' }, reverb: { type: 1, level: 50, on: true }, chorus: { type: 2, level: 64, on: false } };
+  presetState = { preset: { favorites: [] }, saveFavorite, removeFavorite, canSave: true, persistenceState: 'idle', retryLastSound: vi.fn(), maxFavorites: 8, playerName: 'Alex' };
 });
 
 describe('SoundPanel', () => {
-  it('renders nothing when closed', () => {
-    const { container } = render(<SoundPanel open={false} onClose={vi.fn()} />);
+  it('renders nothing while closed and exposes no maintenance actions when open', () => {
+    const { container, rerender } = render(<SoundPanel open={false} onClose={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.queryByText(/repair|bluetooth|reboot|stuck notes|program change|local on/i)).toBeNull();
   });
 
-  it('shows Your Favorites and applies the full favorite bundle on tap', () => {
+  it('orders Current, Saved, Recommended, Browse, Effects, then Piano level', () => {
+    presetState.preset.favorites = [{ ...currentBundle }];
     render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Acoustic Grand/ }));
-    expect(applyBundle).toHaveBeenCalledWith(favoriteBundle);
+    expect(screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)).toEqual(['Current sound', 'Saved sounds', 'Recommended', 'Effects', 'Piano level']);
+    expect(screen.getByRole('button', { name: 'Browse instruments' })).toBeInTheDocument();
   });
 
-  it('shows the house shortlist deduped against favorites (no duplicate tile)', () => {
-    render(<SoundPanel open onClose={vi.fn()} />);
-    // Acoustic Grand appears once only (favorites), not again in the shortlist,
-    // and Browse-all is still collapsed so it can't be a second source either.
-    expect(screen.getAllByRole('button', { name: /Acoustic Grand/ })).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /Violin/ })).toBeTruthy();
+  it('uses Saved/Update/Save labels from full sound equality and keeps Remove separate', () => {
+    presetState.preset.favorites = [{ ...currentBundle }];
+    const { rerender } = render(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Saved' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeEnabled();
+    currentBundle = { ...currentBundle, reverb: { ...currentBundle.reverb, level: 64 } };
+    rerender(<SoundPanel open onClose={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Update saved sound' })).toBeEnabled();
   });
 
-  it('applies voice+currentBundle tone on a shortlist tap', () => {
+  it('deduplicates Recommended with missing bank normalized to zero', () => {
+    presetState.preset.favorites = [{ voice: { pc: 0, name: 'Grand' }, reverb: null, chorus: null }];
     render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Violin/ }));
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, voice: { pc: 40, bank: 0, name: 'Violin' } });
+    expect(screen.getAllByRole('button', { name: /Grand/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Violin/ })).toBeInTheDocument();
   });
 
-  it('hides Browse-all behind a toggle', () => {
+  it('recalls saved sounds and changes instruments without touching piano level', () => {
+    const saved = { voice: { pc: 42, bank: 0, name: 'Cello' }, reverb: null, chorus: null };
+    presetState.preset.favorites = [saved];
     render(<SoundPanel open onClose={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /Cello/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /browse all/i }));
-    // Grouped-by-family (per design §4a) — switch to the Strings family to reach Cello.
-    fireEvent.change(screen.getByLabelText('Voice family'), { target: { value: 'Strings' } });
-    expect(screen.getByRole('button', { name: /Cello/ })).toBeTruthy();
-  });
-
-  it('applies a voice picked from Browse-all the same way as the shortlist', () => {
-    render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /browse all/i }));
-    fireEvent.change(screen.getByLabelText('Voice family'), { target: { value: 'Strings' } });
     fireEvent.click(screen.getByRole('button', { name: /Cello/ }));
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, voice: { pc: 42, bank: 0, name: 'Cello' } });
+    expect(applyBundle).toHaveBeenCalledWith(saved);
+    expect(setPianoLevel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Violin/ }));
+    expect(applyBundle).toHaveBeenLastCalledWith(expect.objectContaining({ voice: expect.objectContaining({ pc: 40 }) }));
+    expect(setPianoLevel).not.toHaveBeenCalled();
   });
 
-  it('re-asserts the full bundle when a tone step is picked (reverb Max)', () => {
+  it('keeps Browse instruments collapsed and groups the catalog when expanded', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
-    const reverb = within(screen.getByRole('group', { name: 'Reverb' }));
-    fireEvent.click(reverb.getByRole('button', { name: 'Max' }));
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, reverb: { ...currentBundle.reverb, level: 127, on: true } });
+    expect(screen.queryByText('Cello')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Browse instruments' }));
+    expect(screen.getByRole('button', { name: 'Done browsing' })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Strings'));
+    expect(screen.getByRole('button', { name: 'Cello' })).toBeInTheDocument();
   });
 
-  it('Off disables the effect (on:false, level 0), not just a quiet level', () => {
+  it('does not claim a nearest effect step for a legacy noncanonical value', () => {
     render(<SoundPanel open onClose={vi.fn()} />);
-    const reverb = within(screen.getByRole('group', { name: 'Reverb' }));
-    fireEvent.click(reverb.getByRole('button', { name: 'Off' }));
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, reverb: { ...currentBundle.reverb, level: 0, on: false } });
+    const room = screen.getByRole('group', { name: 'Room sound' });
+    expect(within(room).getAllByRole('button').every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
+    expect(screen.getByText('Current: 39%')).toBeInTheDocument();
   });
 
-  it('volume steps operate on the 0-1 scale, not 0-127', () => {
+  it('opens More effects automatically when chorus is active', () => {
+    currentBundle = { ...currentBundle, chorus: { ...currentBundle.chorus, on: true } };
     render(<SoundPanel open onClose={vi.fn()} />);
-    const volume = within(screen.getByRole('group', { name: 'Volume' }));
-    fireEvent.click(volume.getByRole('button', { name: 'Med' }));
-    expect(applyBundle).toHaveBeenCalledWith({ ...currentBundle, volume: 0.5 });
+    expect(screen.getByRole('group', { name: 'Chorus' })).toBeInTheDocument();
   });
 
-  it('Save as my default calls saveDefault with the current bundle', () => {
+  it('sets exact device-wide levels and reports named-player persistence', () => {
+    presetState.persistenceState = 'remembered';
     render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Save as my default/i }));
-    expect(saveDefault).toHaveBeenCalledWith(currentBundle);
+    expect(screen.getByText('Remembered for Alex')).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('group', { name: 'Piano level' })).getByRole('button', { name: '25%' }));
+    expect(setPianoLevel).toHaveBeenCalledWith(0.25);
   });
 
-  it('Add to favorites calls addFavorite with the current bundle', () => {
+  it('keeps over-limit data visible while blocking only a ninth instrument', () => {
+    presetState.preset.favorites = Array.from({ length: 9 }, (_, pc) => ({ voice: { pc, bank: 0, name: `Saved ${pc}` }, reverb: null, chorus: null }));
+    currentBundle = { ...currentBundle, voice: { pc: 20, bank: 0, name: 'New' } };
     render(<SoundPanel open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Add to favorites/i }));
-    expect(addFavorite).toHaveBeenCalledWith(currentBundle);
+    expect(screen.getAllByText(/Saved \d/)).toHaveLength(9);
+    expect(screen.getByRole('button', { name: 'Save sound' })).toBeDisabled();
   });
 
-  it('guest (canSave=false): save buttons are hidden, note shown (F4)', () => {
-    canSave = false;
+  it('shows Guest guidance instead of save actions', () => {
+    presetState.canSave = false;
     render(<SoundPanel open onClose={vi.fn()} />);
-    expect(screen.queryByText('Save as my default')).toBeNull();
-    expect(screen.queryByText('Add to favorites')).toBeNull();
-    expect(screen.getByText('Pick a player to save sounds')).toBeTruthy();
-  });
-
-  it('has no operator/destructive controls on the player surface', () => {
-    render(<SoundPanel open onClose={vi.fn()} />);
-    expect(screen.queryByText(/Panic/i)).toBeNull();
-    expect(screen.queryByText(/Reload app/i)).toBeNull();
-    expect(screen.queryByText(/MIDI monitor/i)).toBeNull();
-    expect(screen.queryByText(/Bluetooth/i)).toBeNull();
-    expect(screen.queryByText(/Local On|Local Off/i)).toBeNull();
-    expect(screen.queryByText(/Restart audio/i)).toBeNull();
+    expect(screen.getByText('Pick a player to save sounds.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save sound' })).toBeNull();
   });
 });

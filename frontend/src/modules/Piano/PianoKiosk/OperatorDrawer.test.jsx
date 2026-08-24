@@ -1,183 +1,107 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const turnOffScreen = vi.fn();
-const connect = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-const resetLink = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-const sendNote = vi.hoisted(() => vi.fn());
-const sendNoteOff = vi.hoisted(() => vi.fn());
-const applyBundle = vi.hoisted(() => vi.fn());
+const repairConnection = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
+const connection = vi.hoisted(() => ({
+  health: { state: 'offline', input: { state: 'down', name: null }, output: { state: 'down', name: null }, bridge: { state: 'unavailable' } },
+  repair: { state: 'idle', message: null }, repairConnection,
+}));
+const midi = vi.hoisted(() => ({ sendNote: vi.fn(() => true), sendPanic: vi.fn(() => true) }));
+const screenOff = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 const launchAndroidTarget = vi.hoisted(() => vi.fn());
-const daylightAPI = vi.hoisted(() => vi.fn(() => Promise.resolve({})));
-// Mutable MIDI surface so a test can flip the OUT-link state before rendering.
-const midi = vi.hoisted(() => ({ connected: false, inputName: null, status: 'no-input', outputConnected: false, outputName: null }));
+const daylightAPI = vi.hoisted(() => vi.fn(async () => ({ ok: true })));
 
-const currentBundle = {
-  voice: { pc: 0, bank: 0, name: 'Acoustic Grand' },
-  reverb: { type: 4, level: 64, on: true },
-  chorus: null,
-  volume: 0.8,
-};
-
-vi.mock('./PianoMidiContext.jsx', () => ({
-  usePianoMidi: () => ({ ...midi, connect, resetLink, sendNote, sendNoteOff }),
-}));
-vi.mock('./usePianoSoundBundle.js', () => ({
-  usePianoSoundBundle: () => ({ currentBundle, applyBundle }),
-}));
-vi.mock('./PianoConfig.jsx', () => ({
-  usePianoKioskConfig: () => ({ config: { bluetooth: 'com.example/.BtSettings', screensaver: { deviceId: 'yellow-room-tablet' } }, pianoId: 'default' }),
-}));
-vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: daylightAPI }));
-vi.mock('./useScreenControl.js', () => ({
-  useScreenControl: () => ({ turnOffScreen }),
-  screenOffFailureMessage: (res) => (res?.lever === 'none' ? 'No screen control available' : "Couldn't reach the screen"),
-}));
+vi.mock('./PianoConnectionContext.jsx', () => ({ usePianoConnection: () => connection }));
+vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
+vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ pianoId: 'default', config: { bluetooth: 'pkg/.Bluetooth', screensaver: { deviceId: 'tablet-1' } } }) }));
+vi.mock('./usePianoScreenOff.js', () => ({ usePianoScreenOff: () => screenOff }));
+vi.mock('./useScreenControl.js', () => ({ screenOffFailureMessage: () => 'Couldn’t turn off display.' }));
 vi.mock('../../../lib/fkb.js', () => ({ launchAndroidTarget }));
-vi.mock('./PianoMidiMonitor.jsx', () => ({ default: () => <div data-testid="midi-monitor">monitor</div> }));
-vi.mock('@/modules/Feedback/FeedbackOverlay.jsx', () => ({
-  default: ({ open, context }) => (open ? <div data-testid="feedback-overlay">{JSON.stringify(context)}</div> : null),
-}));
-vi.mock('../ui/icons/Icon.jsx', () => ({ default: () => null }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: daylightAPI }));
+vi.mock('./PianoMidiMonitor.jsx', () => ({ default: () => <div data-testid="midi-monitor">MIDI log</div> }));
+vi.mock('@/modules/Feedback/FeedbackOverlay.jsx', () => ({ default: ({ open, context }) => open ? <div data-testid="feedback">{JSON.stringify(context)}</div> : null }));
 
 import OperatorDrawer from './OperatorDrawer.jsx';
 
-beforeEach(() => {
-  turnOffScreen.mockReset();
-  connect.mockClear();
-  resetLink.mockClear();
-  sendNote.mockClear();
-  sendNoteOff.mockClear();
-  applyBundle.mockClear();
-  launchAndroidTarget.mockClear();
-  Object.assign(midi, { connected: false, inputName: null, status: 'no-input', outputConnected: false, outputName: null });
-  vi.useFakeTimers();
-});
-afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+const renderDrawer = (props = {}) => render(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} {...props} /></>);
 
-describe('OperatorDrawer', () => {
-  it('renders nothing when closed', () => {
-    const { container } = render(<OperatorDrawer open={false} onClose={vi.fn()} />);
-    expect(container).toBeEmptyDOMElement();
+describe('Piano maintenance', () => {
+  beforeEach(() => {
+    vi.useFakeTimers(); repairConnection.mockClear(); screenOff.mockClear(); launchAndroidTarget.mockClear(); daylightAPI.mockClear(); midi.sendNote.mockReset().mockReturnValue(true); midi.sendPanic.mockReset().mockReturnValue(true);
+    Object.assign(connection.health, { state: 'offline', input: { state: 'down', name: null }, output: { state: 'down', name: null }, bridge: { state: 'unavailable' } });
+    Object.assign(connection.repair, { state: 'idle', message: null });
+  });
+  afterEach(() => { vi.runOnlyPendingTimers(); vi.useRealTimers(); });
+
+  it('uses a named dialog, a single repair action, and no raw MIDI controls', () => {
+    renderDrawer();
+    expect(screen.getByRole('dialog', { name: 'Piano maintenance' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Repair connection' })).toHaveLength(1);
+    expect(screen.queryByText(/Program Change|Local On|Force reset MIDI|Restart audio & MIDI/)).toBeNull();
   });
 
-  it('renders all sections: Hardware, Diagnostics, Display, Recovery, Feedback', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    expect(screen.getByText('Hardware')).toBeTruthy();
-    expect(screen.getByText('Diagnostics')).toBeTruthy();
+  it('repairs centrally and shows Bluetooth only for unhealthy or detailed connections', () => {
+    const { rerender } = renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Repair connection' }));
+    expect(repairConnection).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Bluetooth pairing' }));
+    expect(launchAndroidTarget).toHaveBeenCalledWith('pkg/.Bluetooth');
+    Object.assign(connection.health, { state: 'ready', input: { state: 'bridge', name: 'Keys' }, output: { state: 'up', name: 'Piano' }, bridge: { state: 'open' } });
+    rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+    expect(screen.queryByRole('button', { name: 'Open Bluetooth pairing' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Connection details' }));
+    expect(screen.getByText('Input: Keys')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open Bluetooth pairing' })).toBeTruthy();
+  });
+
+  it('offers a test note only with output and reports whether it was sent', () => {
+    connection.health.output = { state: 'up', name: 'Piano' };
+    renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Play test note' }));
+    expect(midi.sendNote).toHaveBeenCalledWith(60, 100, 0, 500);
+    expect(screen.getByRole('status')).toHaveTextContent('Test note command sent.');
+  });
+
+  it('reports Stop stuck notes success and disconnected failure', () => {
+    const { rerender } = renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop stuck notes' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Stop stuck notes command sent.');
+    midi.sendPanic.mockReturnValue(false);
+    rerender(<><button type="button">opener</button><OperatorDrawer open onClose={vi.fn()} /></>);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop stuck notes' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Piano not connected.');
+  });
+
+  it('two-tap confirms display off and reports the result', async () => {
+    renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off display' }));
+    expect(screenOff).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tap again to confirm' })); });
+    expect(screenOff).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Display turned off.');
+  });
+
+  it('mounts the read-only MIDI log only when Diagnostics is expanded', () => {
+    renderDrawer();
+    expect(screen.queryByTestId('midi-monitor')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostics' }));
     expect(screen.getByTestId('midi-monitor')).toBeTruthy();
-    expect(screen.getByText('Display')).toBeTruthy();
-    expect(screen.getByText('Recovery')).toBeTruthy();
-    expect(screen.getByText('Feedback')).toBeTruthy();
   });
 
-  it('shows Connect when not connected, and a Bluetooth settings launcher when configured', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Bluetooth settings/i }));
-    expect(launchAndroidTarget).toHaveBeenCalledWith('com.example/.BtSettings');
+  it('hides advanced recovery by default and surfaces reboot API failure', async () => {
+    daylightAPI.mockRejectedValueOnce(new Error('server offline'));
+    renderDrawer();
+    expect(screen.queryByRole('button', { name: 'Reboot tablet' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced recovery' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reboot tablet' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tap again to reboot tablet' })); });
+    expect(daylightAPI).toHaveBeenCalledWith('api/v1/device/tablet-1/reboot', {}, 'POST');
+    expect(screen.getByRole('status')).toHaveTextContent('Couldn’t reboot tablet: server offline');
   });
 
-  it('orders Recovery actions with "Restart audio & MIDI" BEFORE "Reload app" (audit T8)', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    const buttons = screen.getAllByRole('button').map((b) => b.textContent);
-    const restartIdx = buttons.findIndex((t) => /Restart audio/i.test(t));
-    const reloadIdx = buttons.findIndex((t) => /Reload app/i.test(t));
-    expect(restartIdx).toBeGreaterThanOrEqual(0);
-    expect(reloadIdx).toBeGreaterThan(restartIdx);
-  });
-
-  it('"Restart audio & MIDI" reconnects then re-asserts the full sound bundle', async () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Restart audio/i }));
-    await act(async () => {});
-    expect(connect).toHaveBeenCalledTimes(1);
-    expect(applyBundle).toHaveBeenCalledWith(currentBundle);
-  });
-
-  it('still re-asserts the bundle even if the MIDI reconnect rejects', async () => {
-    connect.mockRejectedValueOnce(new Error('no BLE'));
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Restart audio/i }));
-    await act(async () => {});
-    expect(applyBundle).toHaveBeenCalledWith(currentBundle);
-  });
-
-  it('"Reload app" reloads the page', () => {
-    const reloadSpy = vi.fn();
-    const originalLocation = window.location;
-    delete window.location;
-    window.location = { ...originalLocation, reload: reloadSpy };
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Reload app/i }));
-    expect(reloadSpy).toHaveBeenCalled();
-    window.location = originalLocation;
-  });
-
-  it('screen-off is 2-tap armed: first tap arms, second fires', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    const btn = screen.getByRole('button', { name: /Turn off screen/i });
-    fireEvent.click(btn);
-    expect(screen.getByRole('button', { name: /Tap again to confirm/i })).toBeTruthy();
-    expect(turnOffScreen).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: /Tap again to confirm/i }));
-    expect(turnOffScreen).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button', { name: /Turn off screen/i })).toBeTruthy();
-  });
-
-  it('disarms screen-off after 3s without a confirming tap', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: /Turn off screen/i }));
-    act(() => { vi.advanceTimersByTime(3000); });
-    expect(screen.getByRole('button', { name: /Turn off screen/i })).toBeTruthy();
-    expect(turnOffScreen).not.toHaveBeenCalled();
-  });
-
-  it('"Record feedback" opens the overlay scoped to the operator-drawer surface', () => {
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    expect(screen.queryByTestId('feedback-overlay')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Record feedback/i }));
-    const overlay = screen.getByTestId('feedback-overlay');
-    expect(overlay.textContent).toContain('"surface":"operator-drawer"');
-    expect(overlay.textContent).toContain('"pianoId":"default"');
-  });
-
-  it('calls onClose when the scrim or close button is tapped', () => {
-    const onClose = vi.fn();
-    render(<OperatorDrawer open onClose={onClose} />);
-    fireEvent.click(screen.getByRole('button', { name: /Close operator drawer/i }));
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the MIDI OUT link as not-linked, and Force reset / Test tone call through', () => {
-    midi.outputConnected = false; midi.outputName = null;
-    global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ fixed: true }) }));
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    expect(screen.getByText(/won.t reach the piano/i)).toBeTruthy();
-    // Force reset hits the bridge's /reset (the real BLE-layer fix) AND refreshes
-    // the browser handle. The old button only did the latter and never fixed a zombie.
-    fireEvent.click(screen.getByText('Force reset MIDI'));
-    expect(resetLink).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith('http://localhost:8770/reset', expect.objectContaining({ method: 'POST' }));
-    fireEvent.click(screen.getByText('Test tone'));
-    expect(sendNote).toHaveBeenCalledWith(60, 100);
-    act(() => { vi.advanceTimersByTime(500); });
-    expect(sendNoteOff).toHaveBeenCalledWith(60);
-  });
-
-  it('shows the bound output name when the MIDI OUT link is up', () => {
-    midi.outputConnected = true; midi.outputName = 'Jamcorder';
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    expect(screen.getByText('Jamcorder')).toBeTruthy();
-  });
-
-  it('reboots the device with a 2-tap arm/confirm (POSTs the device reboot)', () => {
-    daylightAPI.mockClear();
-    render(<OperatorDrawer open onClose={vi.fn()} />);
-    const btn = screen.getByText('Reboot device');
-    fireEvent.click(btn); // first tap arms
-    expect(daylightAPI).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Tap again to reboot device')); // second tap fires
-    expect(daylightAPI).toHaveBeenCalledWith('api/v1/device/yellow-room-tablet/reboot', {}, 'POST');
+  it('keeps feedback adult-only at the bottom with maintenance context', () => {
+    renderDrawer();
+    fireEvent.click(screen.getByRole('button', { name: 'Record feedback' }));
+    expect(screen.getByTestId('feedback')).toHaveTextContent('piano-maintenance');
   });
 });

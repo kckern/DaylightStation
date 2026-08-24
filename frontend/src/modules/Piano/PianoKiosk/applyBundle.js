@@ -1,5 +1,5 @@
 // Pure planner: turn a sound Bundle into the ordered list of re-assert ops.
-// Order matters — voice (PC/bank) first, then reverb, chorus, volume — so a
+// Order matters — voice (PC/bank) first, then reverb and chorus — so a
 // full re-assert always lands the same way regardless of what triggered it.
 export function planBundleOps(bundle) {
   if (!bundle || typeof bundle !== 'object') return [];
@@ -12,9 +12,6 @@ export function planBundleOps(bundle) {
   }
   if (bundle.chorus && bundle.chorus.type != null) {
     ops.push({ kind: 'chorus', type: bundle.chorus.type, level: bundle.chorus.level || 0, on: !!bundle.chorus.on });
-  }
-  if (bundle.volume != null) {
-    ops.push({ kind: 'volume', value: bundle.volume });
   }
   return ops;
 }

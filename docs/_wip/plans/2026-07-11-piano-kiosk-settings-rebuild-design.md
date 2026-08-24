@@ -1,13 +1,18 @@
-# Piano Kiosk Settings — Rip-and-Replace Design
+# Piano Kiosk Settings — Rip-and-Replace Design (Superseded)
 
 **Date:** 2026-07-11
-**Status:** Design (validated in brainstorming; ready for implementation planning)
+**Status:** Superseded by the player-first Sound / Piano Maintenance model
 **Supersedes:** the current `PianoSettingsSheet.jsx` + `PianoChrome.jsx` settings surface
 **Grounded in:** `docs/_wip/audits/2026-07-11-piano-kiosk-settings-user-story-audit.md`
 
 > This is a **from-scratch rebuild**. We deliberately do not anchor to the current
 > layout, tab organization, or panel structure. The audit named the problem; this
 > design answers it.
+
+> **Historical only:** implementation now follows the player-first Sound sheet and
+> Piano maintenance model documented in the piano reference. In particular, saved
+> sounds no longer contain volume, Piano level is device-wide, and the raw operator
+> MIDI controls described below were retired.
 
 ---
 
