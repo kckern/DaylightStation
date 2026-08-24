@@ -736,8 +736,10 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     // A different fingerprint means the score file changed shape — the old
     // per-measure record describes measures that no longer exist. Replace.
     const fpChanged = body.fingerprint && current.fingerprint
-      && (body.fingerprint.measureCount !== current.fingerprint.measureCount
-        || body.fingerprint.xmlBytes !== current.fingerprint.xmlBytes);
+      && (typeof body.fingerprint.contentSha256 === 'string'
+        ? body.fingerprint.contentSha256 !== current.fingerprint.contentSha256
+        : body.fingerprint.measureCount !== current.fingerprint.measureCount
+          || body.fingerprint.xmlBytes !== current.fingerprint.xmlBytes);
     const merged = fpChanged
       ? { ...body, updatedAt: new Date().toISOString() }
       : {

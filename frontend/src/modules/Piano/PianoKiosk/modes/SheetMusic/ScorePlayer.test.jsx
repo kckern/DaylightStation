@@ -729,10 +729,8 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
   };
   // A range spanning BOTH measures, the wave-3 F way: plant the in-point on the
   // note at x=100 (measure 1), then move the out-point to x=160 (measure 2), then
-  // turn the loop on. Endpoint picking is incremental, so the SECOND endpoint is a
-  // change against an already-active range — which voids the cycle it opened
-  // (wave-3 C). `settleCycle` spends that void on a throwaway pass, so whatever a
-  // test does next is the only disruption in play.
+  // turn the loop on. Every range change replaces the immutable attempt, so the
+  // first pass after this helper is an honest fresh lap.
   const selectFullRange = () => {
     enterLearn();
     armAndTap('in', 100);
@@ -765,6 +763,9 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     renderPlayer();
     enterLearnGate(100);
     play(64);
+    expect(h.recordCycle).toHaveBeenCalledWith({
+      measureIndices: [0], wrongMeasures: new Set(), bucket: 'both',
+    });
     expect(h.recordAssessmentAttempt).toHaveBeenCalledTimes(1);
     const [evidence, options] = h.recordAssessmentAttempt.mock.calls[0];
     expect(evidence).toEqual(expect.objectContaining({
@@ -773,7 +774,7 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
       kind: 'score',
       context: expect.objectContaining({ surface: 'sheet-music-learn', matcher: 'cursor' }),
     }));
-    expect(evidence.activity_id).toMatch(/^sheet-learn:.*:0-8:m0-0:rh$/);
+    expect(evidence.activity_id).toMatch(/^sheet-learn:.*:[a-f0-9]{64}:m0-0:rh$/);
     expect(evidence.criteria).toEqual({ completeness: 1, cleanliness: 1 });
     expect(evidence.criteria).not.toHaveProperty('placement');
     expect(options).toEqual({ keepalive: false });
@@ -892,13 +893,7 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     });
   });
 
-  // ── The completion card rides the WHOLE-PIECE wrap, not the tracker's onComplete ──
-  // useFollowTracker fires onComplete only when it advances past the last step with
-  // NO range (`atEnd = !range && …`), but the tracker only drives the cursor inside
-  // Learn's gate — which by definition has a range. So the card was structurally
-  // unreachable for every gated run: the piece could be played end to end and the
-  // Learn journey just silently looped. A pass over a range that spans the whole
-  // piece IS the end of the piece, so that wrap now fires the completion too.
+  // ── A whole-piece range completion is both a completed lap and piece completion. ──
   const captureLog = () => {
     const root = getLogger();
     const origChild = root.child.bind(root);
@@ -918,9 +913,6 @@ describe('ScorePlayer — Learn cycle instrumentation feeds the practice record 
     const emitted = captureLog();
     renderPlayer();
     selectFullRange(); // m1–m2 of a two-measure piece = the whole piece
-    settleCycle();     // spend the second-endpoint void on a throwaway pass
-    expect(document.querySelector('.piano-score-learn-complete')).toBeNull(); // the voided pass earns nothing
-
     playFullPass();
     expect(document.querySelector('.piano-score-learn-complete')).not.toBeNull();
     // The cycle is unaffected — the card is an additional consequence of the wrap,
@@ -3257,7 +3249,8 @@ describe('ScorePlayer — Learn pacing telemetry (Task 11)', () => {
 
     const timing = pick(emitted, 'score.follow.timing');
     expect(timing.length).toBe(1);
-    expect(timing[0]).toMatchObject({ step: 0, note: 64, sinceAdvanceMs: 750 });
+    expect(timing[0]).toMatchObject({ step: 0, sinceAdvanceMs: 750 });
+    expect(timing[0]).not.toHaveProperty('note');
     // No verdict is passed on a self-paced hit.
     expect(timing[0]).not.toHaveProperty('feel');
     expect(timing[0]).not.toHaveProperty('driftMs');

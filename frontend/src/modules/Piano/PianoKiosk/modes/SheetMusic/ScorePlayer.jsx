@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import sha256 from 'crypto-js/sha256.js';
 import { parseMusicXml } from '../../../../MusicNotation/parseMusicXml.js';
 import { MusicXmlRenderer } from '../../../../MusicNotation/renderers/MusicXmlRenderer.jsx';
 import LiveKeyboard from '../../LiveKeyboard.jsx';
@@ -14,7 +15,7 @@ import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
-import useFollowTracker from './useFollowTracker.js';
+import useLearnAssessmentProjection from './useLearnAssessmentProjection.js';
 import useMetronomeClick from './useMetronomeClick.js';
 import useCountIn from './useCountIn.js';
 import { countInPlan } from './countIn.js';
@@ -27,8 +28,9 @@ import { resolveSheetMusicConfig } from './sheetMusicConfig.js';
 import {
   compileScoreExpectation,
   createAssessmentAttempt,
+  createAssessmentRuntime,
 } from '../../../performance/assessmentSession.js';
-import { createAssessmentRuntime } from '../../../performance/assessmentRuntime.js';
+import { buildPianoAttemptEvidence, pianoAssessmentTelemetry, pianoPersistenceOutcome } from '../../../performance/attemptEvidence.js';
 import { tierOf, runScore, displayScore } from './polishTiers.js';
 import { loadScoreSettings, saveScoreSettings } from './scoreSettings.js';
 import { isRisingEdge } from './pedalEdge.js';
@@ -162,12 +164,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }), [scoreMeta.id, scoreMeta.title, parsed, tempo]);
 
   // ── Practice record (wave-3 C) ────────────────────────────────────────────────
-  // fingerprint identifies THIS engraving (measure count + XML byte length) so a
-  // record from a stale engraving (a re-transcription that moved measures) is
-  // never misapplied against the current one — see usePracticeRecord's fpMatches
-  // guard. Guest/no-user runs history-less (the hook no-ops reads and writes).
+  // Content identity, not shape, separates engraving revisions: different XML
+  // documents can have the same measure count and byte length.
   const fingerprint = useMemo(
-    () => ({ measureCount: meta.measures, xmlBytes: scoreMeta.musicXml?.length || 0 }),
+    () => ({
+      version: 2,
+      measureCount: meta.measures,
+      xmlBytes: scoreMeta.musicXml?.length || 0,
+      contentSha256: sha256(scoreMeta.musicXml || '').toString(),
+    }),
     [meta.measures, scoreMeta.musicXml],
   );
   const {
@@ -341,7 +346,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // ── Focus range (practice a section / custom loop) ────────────────────────────
   // Sections come from rehearsal marks (measure NUMBERS); `layout.measures` maps
   // NUMBERS↔INDICES and INDICES↔step spans. A `focus` resolves to a step span
-  // [lo, hi]; the follow tracker loops within it and taps/seeks clamp into it.
+  // [lo, hi]; the Learn assessment projection loops within it and taps/seeks clamp into it.
   // Loop/focus is LEARN-ONLY state (wave-3 §0): Listen is a jukebox and Polish
   // grades whole-piece runs, so neither keeps a range — entering them clears it.
   // The mode check here is belt and braces for that clear.
@@ -360,14 +365,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
   const sendsAudio = mode === 'listen';
-  // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
-  // tapped note (step index) into a measure index for the custom loop brackets.
-  const measureIndexOfStep = useCallback((i) => {
-    const ms = layout.measures || [];
-    const idx = ms.findIndex((m) => i >= m.firstStep && i <= m.lastStep);
-    return idx < 0 ? 0 : idx;
-  }, [layout.measures]);
-
   // Tempo map (mid-piece changes included) drives the Polish transport; the
   // opening tempo also feeds the metadata popover. Falls back to the parsed
   // opening tempo before layout has reported OSMD's tempo entries.
@@ -427,7 +424,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // override ref after a toggle.
   const AUTO_KB = { learn: true, polish: true, perform: false, listen: false };
   const autoKb = AUTO_KB[mode] ?? true;
-  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
+  const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb;
   void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
 
   // Listen performs the active staves. Learn and Polish retain silent timelines;
@@ -474,7 +471,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Flush playback telemetry only when a transport run actually produced fires:
   // Polish (silent step timeline, still a run) or anything on the audio plane
-  // (Listen + Learn's machine states — wave-3 §B).
+  // (Listen only; Learn is always player-driven).
   // `pendingPlaybackRef` tracks whether a run has emitted fires since the last flush,
   // so the unmount flush doesn't double-emit a summary the pause/stop/done path
   // already flushed (and so an already-empty run doesn't emit an empty stats line).
@@ -484,7 +481,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode, sendsAudio, flushPlayback]);
 
   const transport = useScoreTransport({
-    // Polish runs the silent step timeline; Listen and Learn's machine states run
+    // Polish runs the silent step timeline; Listen runs
     // the note timeline; Learn's gate has no transport at all (the tracker drives).
     timeline: mode === 'polish' || sendsAudio ? playTimeline : [],
     tickMs: TRANSPORT_TICK_MS,
@@ -715,10 +712,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
       onsetQuarter: scoreStep.onsetQuarter ?? events[index]?.onsetQuarter ?? 0,
       measureIndex: scoreStep.measure,
     }))),
-    source: { id: scoreMeta.id, revision: fingerprint.xmlBytes },
+    source: { id: scoreMeta.id, revision: fingerprint.contentSha256 },
     tempoMap: tempoMap.map((entry) => ({ ...entry, bpm: entry.bpm * tempoMult })),
     activeParts: parts.filter((part) => activeParts[part.staff]).map((part) => staffPartId(part.staff)),
-  }), [layout.steps, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.xmlBytes]);
+  }), [layout.steps, events, tempoMap, tempoMult, activeParts, parts, scoreMeta.id, fingerprint.contentSha256]);
 
   const onMeasureGrade = useCallback((g) => {
     setGrades((prev) => ({ ...prev, [g.measure]: g }));
@@ -903,7 +900,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // inherited it as a fabricated "100% rushing".
   useEffect(() => { if (mode === 'learn') lastAdvanceRef.current = performance.now(); }, [mode]);
   const onFollowHit = useCallback((note) => {
-    learnRuntimeRef.current?.observe({ midi: note, time: performance.now(), clock: 'score-learn' });
     setStruck((prev) => { const n = new Set(prev); n.add(note); return n; });
     // Flash the note you just landed, HERE rather than from rendered state. A hit
     // that completes the step advances the cursor in this same task, so by the
@@ -936,8 +932,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const wrongStreakRef = useRef(0);
   useEffect(() => { setRevealKeys(false); wrongStreakRef.current = 0; }, [step]);
 
-  // One canonical, immutable assessment per Learn lap. The follow tracker still
-  // owns cursor animation and wet ink; this runtime owns musical evidence.
+  // One canonical, immutable assessment per Learn lap. The runtime owns musical
+  // classification and evidence; the projection owns cursor animation and ink.
   const learnRuntimeRef = useRef(null);
   const beginLearnLapRef = useRef(() => {});
   const learnNotes = useMemo(() => {
@@ -966,13 +962,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const lastMeasure = measureRange?.end ?? Math.max(0, fingerprint.measureCount - 1);
     const activityId = [
       'sheet-learn', scoreMeta.id,
-      `${fingerprint.measureCount}-${fingerprint.xmlBytes}`,
+      fingerprint.contentSha256,
       `m${firstMeasure}-${lastMeasure}`,
       activePartIds.join('+'),
     ].join(':');
     const expectation = compileScoreExpectation({
       notes: learnNotes,
-      source: { id: activityId, revision: fingerprint.xmlBytes },
+      source: { id: activityId, revision: fingerprint.contentSha256 },
       tempoMap,
       activeParts: activePartIds,
       range: measureRange,
@@ -1005,24 +1001,27 @@ export default function ScorePlayer({ score: scoreMeta }) {
           }
           if (measureIndices.length) recordCycle({ measureIndices, wrongMeasures, bucket });
         }
-        const evidence = {
-          attempt_id: attemptId(),
-          activity_id: activityId,
+        const evidence = buildPianoAttemptEvidence({
+          result,
+          attemptId: attemptId(),
+          activityId,
           kind: 'score',
           purpose: 'practice',
-          ...result,
           prompt: { score_id: scoreMeta.id, measure_range: [firstMeasure, lastMeasure], active_parts: activePartIds },
           context: { surface: 'sheet-music-learn', matcher: 'cursor', mode: learnClick ? 'metronome' : 'free' },
-          grading_policy_version: result.rubric?.id || 'sheet-learn-interrupted-v1',
-          provider_version: 'sheet-learn-runtime-v1',
-        };
+          gradingPolicyVersion: result.rubric?.id || 'sheet-learn-interrupted-v2',
+          providerVersion: 'sheet-learn-runtime-v2',
+        });
         Promise.resolve(recordAssessmentAttempt?.(evidence, { keepalive: result.status !== 'completed' })).then((saved) => {
-          logger.info('score.learn.assessment', {
-            activityId, status: result.status, score: result.score ?? null,
-            criteria: result.criteria ?? null, partWeights: result.rubric?.part_weights ?? null,
-            failedCriteria: result.verdict?.failed_criteria ?? [], failedGates: result.verdict?.failed_gates ?? [],
-            persisted: Boolean(saved?.ok),
+          const outcome = pianoPersistenceOutcome(saved);
+          const log = pianoAssessmentTelemetry(evidence, {
+            outcome,
+            status: saved?.status ?? null,
+            error: saved?.error ?? null,
+            durationMs: saved?.durationMs ?? null,
           });
+          if (outcome === 'failed' || outcome === 'rejected') logger.warn('score.learn.assessment', log);
+          else logger.info('score.learn.assessment', log);
         });
       },
     });
@@ -1041,66 +1040,42 @@ export default function ScorePlayer({ score: scoreMeta }) {
     };
   }, [beginLearnLap]);
 
-  // ── Learn cycle bookkeeping (wave-3 C) ────────────────────────────────────────
-  // One completed, non-voided gate loop (in→out→wrap) is an "attempt" for every
-  // measure it spans; a measure "passes" the cycle if no wrong note landed in it.
-  // cycleWrongsRef accumulates measure indices touched by a wrong note THIS cycle;
-  // cycleVoidRef marks the cycle as unusable (a disruption mid-pass — the loop was
-  // never actually run clean start-to-finish). Both are consumed and reset the
-  // instant a wrap fires (onFollowWrap below), or discarded outright on mode exit.
-  const cycleWrongsRef = useRef(new Set());
-  const cycleVoidRef = useRef(false);
+  // Disruptions replace the active immutable lap. Completed span results are the
+  // sole authority for frontier attempts and passes; no parallel wrong tally lives
+  // in the surface.
   const voidCycle = useCallback(() => {
-    cycleVoidRef.current = true;
     beginLearnLapRef.current?.();
   }, []);
 
   const onFollowWrong = useCallback((midi) => {
-    learnRuntimeRef.current?.observe({ midi, time: performance.now(), clock: 'score-learn' });
     flashWrong();
     pushInk(midi, 'wrong'); // the played pitch, in red, on the staff (wave-3 D)
     followWrongsRef.current += 1;
-    cycleWrongsRef.current.add(measureIndexOfStep(stepRef.current));
     // The reveal is on a budget — see REVEAL_WRONG_STREAK. It never disarms until
     // the step changes: once help has been offered, taking it back mid-struggle
     // would be worse than never offering it.
     wrongStreakRef.current += 1;
     if (wrongStreakRef.current >= REVEAL_WRONG_STREAK) setRevealKeys(true);
-  }, [flashWrong, pushInk, measureIndexOfStep]);
+  }, [flashWrong, pushInk]);
   // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
   // still flush when the user leaves Learn / on unmount, so no flush is needed here.
   const [learnDone, setLearnDone] = useState(false);
   const onFollowComplete = useCallback(() => {
-    const voided = cycleVoidRef.current;
-    const wrongs = cycleWrongsRef.current;
-    cycleVoidRef.current = false;
-    cycleWrongsRef.current = new Set();
     beginLearnLapRef.current?.();
     setLearnDone(true);
-    logger.info('score.learn.complete', { wrongs: wrongs.size, voided });
+    logger.info('score.learn.complete', {});
   }, [logger]);
 
-  // Fires the instant the tracker wraps the range's out-point back to its
-  // in-point — one full, uninterrupted pass. A voided cycle (any disruption since
-  // the last wrap — tap-seek, hand/part change, range change, transpose, or a
-  // mode exit) is discarded, not recorded: it never ran the loop clean.
+  // Fires when the canonical attempt completes the range and the projection wraps
+  // from its out-point to its in-point.
   const onFollowWrap = useCallback(() => {
     const f = focusRef.current;
-    const voided = cycleVoidRef.current;
-    const wrongs = cycleWrongsRef.current;
-    cycleVoidRef.current = false;
-    cycleWrongsRef.current = new Set();
     beginLearnLapRef.current?.();
-    if (voided || !f) return;
-    logger.info('score.learn.cycle', { in: f.inMeasure, out: f.outMeasure, wrongs: wrongs.size });
-    // A pass over a range that spans the WHOLE piece IS the end of the piece, so
-    // it earns the completion card here. useFollowTracker's onComplete cannot
-    // deliver it: `atEnd` is `!range && at the last step`, and the tracker only
-    // drives the cursor at all inside Learn's GATE — which by definition has a
-    // range. So the card was structurally unreachable for every gated run; the
-    // only path that ever fired it was the degenerate no-measures layout (kept
-    // wired below, harmless). A partial range still just records its cycle: it is
-    // a lap of a passage, not the end of anything.
+    if (!f) return;
+    logger.info('score.learn.cycle', { in: f.inMeasure, out: f.outMeasure });
+    // A whole-piece range earns the completion card here. A partial range only
+    // records its cycle: it is a lap of a passage, not the end of the piece.
+    // onComplete remains the corresponding path for a run without a range.
     const nMeasures = layoutRef.current?.measures?.length || 0;
     if (nMeasures && f.inMeasure === 0 && f.outMeasure === nMeasures - 1) {
       setLearnDone(true);
@@ -1108,10 +1083,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }
   }, [logger]);
 
-  useFollowTracker({
+  useLearnAssessmentProjection({
     // Every Learn configuration is driven by player input. A null range is the
     // whole score; a focused loop wraps inside its authored bounds.
     enabled: learnGate,
+    runtimeRef: learnRuntimeRef,
     steps,
     activeParts,
     step,
@@ -1163,7 +1139,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // avoids a vertical micro-scroll on every step within a system.
       if (Math.abs(targetTop - el.scrollTop) > el.clientHeight * 0.18) tweenScrollTo(el, { top: targetTop });
     }
-  }, [step, flow, mode, current, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, flow, mode, current, layoutFresh]);
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
   // Resume a rebuild-pause once the engraving matches the current flow/scale.
@@ -1506,13 +1482,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // sees the PRIOR focus, never the one that just committed.
   const prevFocusRef = useRef(null);
   useEffect(() => {
-    // A range change only VOIDS a cycle it could have disrupted — i.e. one where a
-    // range was already active. Arming a FRESH range (prior focus was null) has no
-    // prior cycle to disrupt: it starts an honest first cycle instead, so reset
-    // (not void) — voiding it would silently raise the pass-count bar on every
-    // range selection (wave-3 C fix round 1).
     if (prevFocusRef.current) voidCycle(); // an existing range was replaced/cleared
-    else { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); } // fresh arm (or bare mount)
     prevFocusRef.current = focus;
     // The no-focus path is BOTH a bare mount and a cleared range, and must not
     // touch the transport or the piano: this effect runs on mount, so stopping
@@ -1637,11 +1607,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setLearnDone(false);         // the Learn completion card belongs to Learn only
     flushPlaybackNow();          // leaving a Polish/Listen run
     if (mode === 'learn') flushFollowNow();
-    // A mode exit mid-cycle DISCARDS it outright (not a void-until-next-wrap):
-    // the gate this cycle belonged to is gone, so there is no "next wrap" to
-    // resolve it against — reset both refs rather than merely marking voided.
-    cycleVoidRef.current = false;
-    cycleWrongsRef.current = new Set();
     const hadSound = soundingRef.current.size > 0;
     const wasPlaying = !!transportRef.current?.playing;
     transport.stop();
@@ -1716,7 +1681,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the geometry extraction is DEFERRED (holdExtraction) — so the sheet would repaint
   // in the new key/size while the audio kept playing the stale one and the cursor
   // vanished (audit H2). Pause + flush first so sound and sheet never diverge.
-  // Same shape for an audio-plane part/hand change (Listen AND Learn's machine states perform the timeline — wave-3 §B), which rebuilds the note timeline. Neither
+  // Same shape for an audio-plane part/hand change in Listen, which rebuilds the note timeline. Neither
   // is a stop request, so both arm the resume (see the resume effect above).
   const pauseForRebuild = useCallback((reason) => {
     if (!transportRef.current?.playing) return;
@@ -1758,11 +1723,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setArming(null);        // Restart means the user is done arming a loop
     countIn.cancel();       // reset aborts a pending count-in
     setLearnDone(false);    // fresh pass — close the completion card
-    // Restart abandons the in-progress pass and returns to the in-point: the next
-    // wrap is a fresh cycle, and wrongs from the abandoned pass must not count
-    // against it (discard, same as a mode exit).
-    cycleVoidRef.current = false;
-    cycleWrongsRef.current = new Set();
+    // Restart abandons the in-progress immutable attempt and returns to the
+    // in-point; the replacement attempt starts with fresh evidence.
     beginLearnLapRef.current?.();
     transport.stop();
     setRunActive(false);    // Restart ends the current run (see runActive)
@@ -1848,28 +1810,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [mode]);
   // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
   // showing) but wrap/clamp/home-step stop treating it as a boundary. In Learn
-  // this MOVES between rows of the state matrix (gate ↔ machine playback), so it
+  // this changes only whether the authored focus wraps, so it
   // stops whatever was running and silences first; turning it ON also parks the
   // cursor on the in-point, because that is where the gated pass begins. Turning
   // it OFF leaves the cursor exactly where it was. Neither direction auto-plays.
   const onToggleLoop = useCallback(() => {
     const next = !loopOnRef.current;
     stopForMatrixChange();
-    // The gate session the current cycle belonged to ends the instant the loop
-    // goes OFF — DISCARD the partial cycle outright (mode-exit semantics, not a
-    // void): stale wrongs would otherwise poison the first wrap of the NEXT
-    // session, and a void would silently raise the pass bar on a session that
-    // never had a prior cycle to disrupt. Gated on the OFF edge only, and that's
-    // enough for cycleWrongsRef specifically: wrongs can only accumulate while
-    // `learnGate` (loopOn) is true, so by the time ON re-enters this OFF edge has
-    // already cleared any it held. cycleVoidRef is a different story — voidCycle()
-    // fires unconditionally (tap-seek, transpose, hand/part toggle) regardless of
-    // loopOn, so a disruption during the OFF window can leave it set with no OFF
-    // edge of ITS OWN to clear it. That's fine: it's the same "any disruption
-    // since the last wrap invalidates the cycle" invariant as always (~899), and
-    // surviving into the next gate session just means the first wrap there
-    // consumes it as a void, same as it would anywhere else.
-    if (!next) { cycleVoidRef.current = false; cycleWrongsRef.current = new Set(); }
     setLoopOn(next);
     if (next && focus && layout.measures) {
       const r = rangeSteps(layout.measures, focus);
@@ -1965,8 +1912,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // Changing the active-part map mid-flight invalidates the NOTE timeline —
       // pause, flush, and silence so a stale schedule doesn't drone, then resume
       // where we were (audit H5: the music dying on the spot read as a broken
-      // button). Learn's machine states perform the same timeline (wave-3 §B), so
-      // they need the same treatment; Learn's gate and Polish are silent.
+      // button). Learn and Polish are silent.
       pauseForRebuild('part');
       silenceScheduled(); // also flush when nothing was playing (a stale schedule may still be queued)
     }
@@ -1988,7 +1934,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (mode === 'polish') runEligibleRef.current = false; // the hands are the bucket — see onCyclePart (§H)
     if (sendsAudio) {
       // A hand change mid-flight invalidates the NOTE timeline (Listen and Learn's
-      // machine states both perform it — wave-3 §B) — pause, flush, and silence so
+      // Listen performs it — pause, flush, and silence so
       // a stale schedule doesn't drone, then resume where we were (audit H5: the
       // music dying on the spot read as a broken button).
       pauseForRebuild('part');

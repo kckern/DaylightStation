@@ -4,13 +4,18 @@ import { DaylightAPI } from '../../../../../lib/api.mjs';
 import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import { practiceKeyOf } from './practiceKey.js';
+import { pianoAttemptClient } from '../../../performance/attemptEvidence.js';
 
-const fpMatches = (a, b) => !!a && !!b && a.measureCount === b.measureCount && a.xmlBytes === b.xmlBytes;
+const fpMatches = (a, b) => !!a && !!b
+  && typeof a.contentSha256 === 'string'
+  && typeof b.contentSha256 === 'string'
+  && a.contentSha256 === b.contentSha256;
 
 /**
  * usePracticeRecord — per-user, per-score practice history (wave-3 C).
  * Guests / no-user: no reads, no writes — the record stays {} and the
- * heuristic runs history-less (the backend 400s guest anyway).
+ * heuristic runs history-less. This is a Learn authorization rule; the shared
+ * endpoint also serves game sessions whose server policy may allow a guest.
  */
 export default function usePracticeRecord({ scoreId, fingerprint }) {
   const { currentUser } = usePianoUser();
@@ -78,17 +83,7 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   /** Persist portable assessment evidence alongside the compact frontier. */
   const recordAssessmentAttempt = useCallback(async (attempt, { keepalive = false } = {}) => {
     if (!isPersistentUser(currentUser)) return { ok: false, skipped: 'guest' };
-    try {
-      const response = await fetch(`/api/v1/piano/users/${encodeURIComponent(currentUser)}/attempts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(attempt),
-        keepalive,
-      });
-      return { ok: response.ok, status: response.status };
-    } catch {
-      return { ok: false, status: 0 };
-    }
+    return pianoAttemptClient.record(currentUser, attempt, { keepalive });
   }, [currentUser]);
 
   // `persistent` is exposed so a CALLER can log why a write was skipped: from

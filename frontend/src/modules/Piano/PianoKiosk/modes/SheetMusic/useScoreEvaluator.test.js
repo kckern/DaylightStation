@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useScoreEvaluator } from './useScoreEvaluator.js';
-import { compileAssessmentExpectation } from '../../../performance/assessmentAttempt.js';
+import { compileAssessmentExpectation } from '../../../performance/assessmentSession.js';
 
 function makeSubscribe() {
   let cb = null;

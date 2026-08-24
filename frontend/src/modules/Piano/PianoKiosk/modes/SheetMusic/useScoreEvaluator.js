@@ -1,11 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import {
-  closeAssessmentAttemptSpan,
+  closeAssessmentSpan,
   createAssessmentAttempt,
   finalizeAssessmentAttempt,
   observeAssessment,
   startAssessmentAttempt,
-} from '../../../performance/assessmentAttempt.js';
+} from '../../../performance/assessmentSession.js';
 export const POLICY_VERSION = 'polish-canonical-span-v2';
 
 const gradeName = (score, thresholds = {}) => (
@@ -110,7 +110,7 @@ export function useScoreEvaluator({
 
   const gradeOne = useCallback((measure, atMs) => {
     if (!attemptRef.current || gradedRef.current.has(measure)) return null;
-    const closed = closeAssessmentAttemptSpan(attemptRef.current, `measure:${measure}`, atMs);
+    const closed = closeAssessmentSpan(attemptRef.current, `measure:${measure}`, atMs);
     attemptRef.current = closed.attempt;
     const span = closed.events.find((event) => event.type === 'span_complete')?.result;
     const grade = polishGrade(measure, span, cfgRef.current);
