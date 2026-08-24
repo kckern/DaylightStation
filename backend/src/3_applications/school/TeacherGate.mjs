@@ -16,7 +16,7 @@ import { isAdult } from '#domains/school/index.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 
 export class TeacherGate {
-  #teachers; #pin; #roster; #clock; #logger;
+  #teachers; #pin; #roster; #clock; #logger; #capabilitySessions = null;
 
   /**
    * @param {object} deps
@@ -35,6 +35,13 @@ export class TeacherGate {
     this.#roster = roster;
     this.#clock = clock;
     this.#logger = logger;
+  }
+
+  bindCapabilitySessions(capabilitySessions) {
+    if (!capabilitySessions || typeof capabilitySessions.authorize !== 'function') {
+      throw new Error('TeacherGate capability sessions must expose authorize()');
+    }
+    this.#capabilitySessions = capabilitySessions;
   }
 
   #refuse(reason, { userId, action, message, context }) {
@@ -67,7 +74,14 @@ export class TeacherGate {
       this.#refuse('not-a-teacher', { userId, action, context, message: 'Only a listed teacher can do this.' });
     }
     const requiredPin = this.#pin();
-    if (typeof requiredPin === 'string' && requiredPin.length > 0 && pin !== requiredPin) {
+    const capabilityAuthorized = pin && typeof pin === 'object' && this.#capabilitySessions?.authorize({
+      capabilityToken: pin.capabilityToken,
+      stepUpToken: pin.stepUpToken,
+      userId,
+      action,
+      context: context ?? {},
+    });
+    if (typeof requiredPin === 'string' && requiredPin.length > 0 && pin !== requiredPin && !capabilityAuthorized) {
       this.#refuse('bad-pin', { userId, action, context, message: 'The teacher PIN is missing or wrong.' });
     }
   }

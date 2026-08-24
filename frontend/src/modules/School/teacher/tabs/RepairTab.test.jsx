@@ -4,6 +4,16 @@ import RepairTab from './RepairTab.jsx';
 import { TeacherProfileProvider } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
 
+vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
+  authStatus: vi.fn(async () => {
+    const userId = sessionStorage.getItem('school-teacher-claim');
+    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
+  }),
+  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
+  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
+  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
+} }));
+
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
@@ -42,7 +52,7 @@ beforeEach(() => {
     { unitId: 'math-fractions.02', title: 'Adding Fractions', courseId: 'math-fractions' },
   ] }));
   schoolApi.attemptsSummary.mockResolvedValue(ok({ assessments: [
-    { assessmentId: 'ses_9', count: 8, bankId: 'pokemon-quiz-1', firstAt: 't' },
+    { assessmentId: 'ses_9', count: 8, bankId: 'creature-quiz-1', firstAt: 't' },
   ] }));
   schoolApi.reassign.mockResolvedValue(ok({ moved: 8 }));
   schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-08-06', '2026-08-05'] }));
@@ -86,7 +96,7 @@ describe('RepairTab (wave 5, all live)', () => {
     await waitFor(() => expect(screen.getByLabelText('Day')).toBeTruthy());
     act(() => { fireEvent.change(screen.getByLabelText('Day'), { target: { value: '2026-08-06' } }); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Load that day' })); });
-    await waitFor(() => expect(screen.getByText('Pokemon Quiz 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Creature Quiz 1')).toBeTruthy());
     const moveBtn = screen.getByRole('button', { name: 'Reassign' });
     expect(moveBtn.disabled).toBe(true); // no target yet
     act(() => { fireEvent.change(screen.getByLabelText('Move to'), { target: { value: 'milo' } }); });

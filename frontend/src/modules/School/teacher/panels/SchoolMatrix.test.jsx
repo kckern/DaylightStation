@@ -5,7 +5,7 @@ const KIDS = [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }];
 const UNITS = [
   { unitId: 'frac.01', courseId: 'math-fractions' },
   { unitId: 'caps.01', courseId: 'history-capitals' },
-  { unitId: 'poke.01', courseId: 'pokemon-basics' },
+  { unitId: 'poke.01', courseId: 'creature-basics' },
 ];
 
 describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
@@ -18,9 +18,9 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
         { learnerId: 'milo', courses: ['math-fractions'] },
       ],
     });
-    expect(m.courseIds).toEqual(['history-capitals', 'math-fractions', 'pokemon-basics']);
+    expect(m.courseIds).toEqual(['creature-basics', 'history-capitals', 'math-fractions']);
     expect([...m.rows[0].assigned].sort()).toEqual(['history-capitals', 'math-fractions']);
-    expect(m.unenrolled).toEqual(['pokemon-basics']); // zero-enrollment flag
+    expect(m.unenrolled).toEqual(['creature-basics']); // zero-enrollment flag
   });
 
   it('flags DEAD references — an assigned course the catalog no longer publishes', () => {
@@ -82,7 +82,7 @@ describe('deriveMatrix — enrollment cells', () => {
         courses: [
           'math-fractions',
           { courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } },
-          { courseId: 'pokemon-basics', profile: 'lower', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } },
+          { courseId: 'creature-basics', profile: 'lower', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } },
         ],
       }],
     });
@@ -93,7 +93,7 @@ describe('deriveMatrix — enrollment cells', () => {
     // hand-authored case the ⚑ flag exists for.
     expect(m.rows[0].cells['history-capitals']).toMatchObject({ hasEnrollment: true, managed: false });
     // Object with both — fully managed, never flagged.
-    expect(m.rows[0].cells['pokemon-basics']).toMatchObject({ hasEnrollment: true, managed: true });
+    expect(m.rows[0].cells['creature-basics']).toMatchObject({ hasEnrollment: true, managed: true });
   });
 
   it('treats a bare-string course as enrolled with no enrollment record', () => {

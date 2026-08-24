@@ -1,6 +1,6 @@
 /**
  * The teacher-console journey (goal addition, plan W5-5): a fake household
- * student enrolls in the Pokemon course through the TEACHER write path,
+ * student enrolls in the household chemistry course through the TEACHER write path,
  * takes the printed quiz through the VIRTUAL OMR reader (real form map,
  * real grading engine — no hardware), and every teacher-side read then
  * tells the truth about it: the today digest, the report card, milestone
@@ -16,19 +16,19 @@ import { GetMilestoneStatuses } from '#apps/school/usecases/GetMilestoneStatuses
 import { YamlMilestoneStore } from '#adapters/persistence/yaml/YamlMilestoneStore.mjs';
 import { YamlSchoolDatastore } from '#adapters/persistence/yaml/YamlSchoolDatastore.mjs';
 
-const POKEMON_COURSE = 'pokemon-basics';
-const POKEMON_UNIT = 'pokemon-basics.01';
-const POKEMON_BANK = 'science/pokemon-basics/01-quiz';
-const ASH = 'ash';
+const CHEMISTRY_COURSE = 'how-chemistry-surrounds-you';
+const CHEMISTRY_UNIT = 'how-chemistry-surrounds-you.01';
+const CHEMISTRY_BANK = 'science/how-chemistry-surrounds-you/01-checkpoint';
+const STUDENT = 'marie';
 const TEACHER = 'grownup1';
 
 const ROSTER = [
-  { id: ASH, name: 'Ash', birthyear: 2015 },
-  { id: 'misty', name: 'Misty', birthyear: 2017 },
-  { id: TEACHER, name: 'Professor Oak', birthyear: 1980 },
+  { id: STUDENT, name: 'Marie', birthyear: 2015 },
+  { id: 'linus', name: 'Linus', birthyear: 2017 },
+  { id: TEACHER, name: 'Teacher', birthyear: 1980 },
 ];
 
-describe('fake student → Pokemon course → virtual OMR → results → teacher view', () => {
+describe('fake student → chemistry course → virtual OMR → results → teacher view', () => {
   let h;
 
   beforeAll(async () => {
@@ -38,31 +38,31 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
   it('runs the lifecycle on the production composition; teacher views on the same classes app.mjs wires', async () => {
     // --- the TEACHER enrolls the student (the console's own write path) -----
     const enrolled = await h.useCases.setAssignments.execute({
-      learnerId: ASH, courses: [POKEMON_COURSE], units: [], assignedBy: TEACHER,
+      learnerId: STUDENT, courses: [CHEMISTRY_COURSE], units: [], assignedBy: TEACHER,
     });
     // Storage boundary normalizes shorthand course-id strings to enrollment
     // records (bfdbe7598, YamlAssignmentStore#normalizeEnrollment) — every
     // other assignments test in the suite (lifecycleStores, EnrollLearner,
     // IssueComposedWorksheet, parentWrites) already asserts the object shape.
-    expect(enrolled.courses).toEqual([{ courseId: POKEMON_COURSE }]);
+    expect(enrolled.courses).toEqual([{ courseId: CHEMISTRY_COURSE }]);
 
     // --- the student taps their card; the agenda offers the course ----------
-    const scan = await h.as(ASH).scanCard();
+    const scan = await h.as(STUDENT).scanCard();
     expect(scan.status).toBe('agenda_printed');
     const tape = h.lastReceiptText();
-    expect(tape).toMatch(/ASH/i); // the header band prints the name uppercased
-    expect(tape).toMatch(/Pokemon Basics/i);
+    expect(tape).toMatch(/MARIE/i); // the header band prints the name uppercased
+    expect(tape).toMatch(/Matter, Atoms, and Molecules/i);
 
     // --- scanning the science ticket prints the OMR quiz sheet --------------
-    const issued = await h.scanTokenMatching(/Pokemon Basics/i);
+    const issued = await h.scanTokenMatching(/Matter, Atoms, and Molecules/i);
     expect(issued.status).toBe('issued');
     const sessionId = issued.sessionId;
     const formMap = await h.formMapFor(sessionId);
-    expect(formMap.documentId).toBe('pokemon-basics-01-omr');
+    expect(formMap.documentId).toBe('how-chemistry-surrounds-you-01-omr');
     expect(formMap.marks).toHaveLength(24); // six questions x four bubbles
 
     // --- the student bubbles 5 of 6 right; the VIRTUAL reader reads the paper
-    const chosen = await h.correctBubbles({ sessionId, bankId: POKEMON_BANK, wrong: ['pk-q4'] });
+    const chosen = await h.correctBubbles({ sessionId, bankId: CHEMISTRY_BANK, wrong: ['chemistry-q4'] });
     const submitted = await h.omrSubmit(chosen, { sessionId, submittedBy: TEACHER });
     expect(submitted.status).toBe('submitted');
     expect(submitted.review).toEqual([]); // machine marks need no human
@@ -76,11 +76,11 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
     expect(closed.result).toBe('passed');
 
     // --- RESULTS: the one grading engine recorded real, attributed evidence -
-    const attempts = h.attemptsFor(ASH).filter((a) => a.bankId === POKEMON_BANK);
+    const attempts = h.attemptsFor(STUDENT).filter((a) => a.bankId === CHEMISTRY_BANK);
     expect(attempts).toHaveLength(6);
-    expect(attempts.every((a) => a.attributedTo === ASH && a.transport === 'paper')).toBe(true);
+    expect(attempts.every((a) => a.attributedTo === STUDENT && a.transport === 'paper')).toBe(true);
     expect(attempts.filter((a) => a.correct).length).toBe(5);
-    const bank = fixtureBank(POKEMON_BANK);
+    const bank = fixtureBank(CHEMISTRY_BANK);
     expect(new Set(attempts.map((a) => a.itemId))).toEqual(new Set(bank.items.map((i) => i.id)));
 
     // --- TEACHER VIEW 1: the today digest (the console's roster strip) ------
@@ -107,11 +107,11 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
       clock: () => h.clock.now(),
     });
     const digest = await teacherToday.execute();
-    const ashRow = digest.find((r) => r.learnerId === ASH);
-    expect(ashRow).toMatchObject({ attemptsToday: 6, correctToday: 5, pendingReview: 0 });
-    expect(ashRow.sessionsToday.some((s) => s.unitId === POKEMON_UNIT)).toBe(true);
+    const studentRow = digest.find((r) => r.learnerId === STUDENT);
+    expect(studentRow).toMatchObject({ attemptsToday: 6, correctToday: 5, pendingReview: 0 });
+    expect(studentRow.sessionsToday.some((s) => s.unitId === CHEMISTRY_UNIT)).toBe(true);
     // The sibling who did nothing shows a quiet zero row, not an absence.
-    expect(digest.find((r) => r.learnerId === 'misty')).toMatchObject({ attemptsToday: 0 });
+    expect(digest.find((r) => r.learnerId === 'linus')).toMatchObject({ attemptsToday: 0 });
 
     // --- TEACHER VIEW 2: the report card (Records tab) ----------------------
     const periods = {
@@ -132,11 +132,11 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
       academicPeriods: periods,
       clock: () => h.clock.now(),
     });
-    const card = await reportCard.execute({ learnerId: ASH, periodId: '2026-fall' });
-    const course = card.courses.find((c) => c.courseId === POKEMON_COURSE);
+    const card = await reportCard.execute({ learnerId: STUDENT, periodId: '2026-fall' });
+    const course = card.courses.find((c) => c.courseId === CHEMISTRY_COURSE);
     expect(course).toBeTruthy();
     expect(course.coursePercent).toBeCloseTo(83.33, 1);
-    expect(course.unitGrades.find((u) => u.unitId === POKEMON_UNIT)).toMatchObject({ passed: true, bestPercent: 83.33 });
+    expect(course.unitGrades.find((u) => u.unitId === CHEMISTRY_UNIT)).toMatchObject({ passed: true, bestPercent: 83.33 });
     expect(card.activeDays.total).toBeGreaterThanOrEqual(1);
 
     // --- TEACHER VIEW 3: milestone pacing — the passed unit reads met -------
@@ -144,12 +144,12 @@ describe('fake student → Pokemon course → virtual OMR → results → teache
       configService: { getHouseholdPath: (rel) => path.join(h.dataDir, 'household', rel) },
     });
     await milestoneStore.replace([
-      { id: 'm-pokemon', learnerId: ASH, courseId: POKEMON_COURSE, unitId: POKEMON_UNIT, dueBy: '2026-09-01' },
+      { id: 'm-chemistry', learnerId: STUDENT, courseId: CHEMISTRY_COURSE, unitId: CHEMISTRY_UNIT, dueBy: '2026-09-01' },
     ], { editedBy: TEACHER });
     const milestoneStatuses = new GetMilestoneStatuses({
       store: milestoneStore, sessions: h.stores.sessions, clock: () => h.clock.now(),
     });
-    const { milestones } = await milestoneStatuses.execute({ learnerId: ASH });
+    const { milestones } = await milestoneStatuses.execute({ learnerId: STUDENT });
     expect(milestones[0].status).toBe('met');
   }, 60_000);
 });

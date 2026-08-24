@@ -51,6 +51,13 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
     expect(appended).toEqual([]);
   });
 
+  it('defaults the through-day to the operation day when the CLI omits it', async () => {
+    const r = await make().execute({
+      bankId: 'caps', fromDay: '2026-08-01', reason: 'answer key fixed', regradedBy: 'kckern',
+    });
+    expect(r).toMatchObject({ fromDay: '2026-08-01', toDay: '2026-08-20', checked: 2 });
+  });
+
   it('--apply appends a corrective attempt with full provenance, never editing the original', async () => {
     const appended = [];
     const uc = make({ appended });

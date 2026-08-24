@@ -323,6 +323,7 @@ import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
 import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
 import { AdjustSessionGrade, RetractSessionGradeAdjustment } from '#apps/school/usecases/AdjustSessionGrade.mjs';
 import { GetTeacherSession, GetLearnerTimeline } from '#apps/school/usecases/GetTeacherSession.mjs';
+import { TeacherCapabilitySessions } from '#apps/school/TeacherCapabilitySessions.mjs';
 import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
@@ -3288,6 +3289,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // rest of School (banks, materials, language) is untouched by its absence.
     schoolLifecycleLogger.error('school.lifecycle.wiring-failed', { error: err.message });
   }
+  const teacherCapabilitySessions = new TeacherCapabilitySessions({ teacherGate: schoolTeacherGate });
+  schoolTeacherGate.bindCapabilitySessions(teacherCapabilitySessions);
+  if (typeof schoolLifecycle.teacherGate?.bindCapabilitySessions === 'function'
+      && schoolLifecycle.teacherGate !== schoolTeacherGate) {
+    schoolLifecycle.teacherGate.bindCapabilitySessions(teacherCapabilitySessions);
+  }
 
   // Print-document scan-back (Task 7, spec §9): ResolveCardScan joins the
   // SAME decoded-scan stream createQuizScanRecorder (wired much earlier,
@@ -3662,6 +3669,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       }) : null,
     issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
     teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
+    teacherCapabilitySessions,
+    teacherGate: schoolTeacherGate,
+    openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
     milestoneStore: schoolMilestoneStore,
     assignmentsStore: schoolLifecycle.stores?.assignments ?? null,

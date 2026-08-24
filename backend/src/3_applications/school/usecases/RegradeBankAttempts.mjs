@@ -38,11 +38,13 @@ export class RegradeBankAttempts {
   }
 
   async execute({ bankId, fromDay, toDay, reason, regradedBy = null, pin = null, apply = false } = {}) {
-    this.#teacherGate.assert({ userId: regradedBy, pin, action: 'attempts.regrade', context: { bankId } });
+    this.#teacherGate.assert({ userId: regradedBy, pin,
+      action: apply === true ? 'attempts.regrade' : 'attempts.regrade.preview', context: { bankId } });
     if (typeof reason !== 'string' || !reason.trim()) {
       throw new ValidationError('a reason is required — a regrade rewrites what recorded history means');
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDay ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(toDay ?? '')) {
+    const throughDay = toDay ?? this.#clock().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDay ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(throughDay)) {
       throw new ValidationError('fromDay and toDay must be YYYY-MM-DD');
     }
     const bank = this.#bankReader.getBank(bankId);
@@ -56,7 +58,7 @@ export class RegradeBankAttempts {
     const today = this.#clock().toISOString().slice(0, 10);
     const learners = await this.#learnerDirectory.listLearners();
     for (const learner of learners) {
-      const attempts = this.#datastore.readAttemptsInRange(learner.id, fromDay, toDay) ?? [];
+      const attempts = this.#datastore.readAttemptsInRange(learner.id, fromDay, throughDay) ?? [];
       // Idempotency (M8 fix 3): corrective rows carry `at` = APPLY time, which
       // lands outside the scanned window — so re-running used to re-append
       // every correction. Scan forward to today for existing corrections and
@@ -101,13 +103,15 @@ export class RegradeBankAttempts {
         });
       }
       this.#logger.info?.('school.attempts.regraded', {
-        bankId, fromDay, toDay, regradedBy, checked, changed: changes.length,
+        bankId, fromDay, toDay: throughDay, regradedBy, checked, changed: changes.length,
       });
     }
 
     const sessionsAffected = [...new Set(changes.map((c) => c.sessionId).filter(Boolean))].sort();
     return {
       bankId,
+      fromDay,
+      toDay: throughDay,
       applied: Boolean(apply),
       checked,
       alreadyCorrected,

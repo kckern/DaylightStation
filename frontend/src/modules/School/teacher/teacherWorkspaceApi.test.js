@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 
-beforeEach(() => { globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) })); });
+beforeEach(() => { globalThis.fetch = vi.fn(async () => ({
+  ok: true, status: 200, json: async () => ({ ok: true }), blob: async () => new Blob(['pdf'], { type: 'application/pdf' }),
+})); });
 
 describe('teacherWorkspaceApi', () => {
   it('encodes timeline filters', async () => {
@@ -21,6 +23,31 @@ describe('teacherWorkspaceApi', () => {
     await teacherWorkspaceApi.adjustGrade('session/1', { percent: 95, reason: 'eraser', apply: false });
     expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/sessions/session%2F1/grade-adjustments', expect.objectContaining({
       body: JSON.stringify({ percent: 95, reason: 'eraser', apply: false }),
+    }));
+  });
+
+  it('uses same-origin credentials for status and unlock without exposing a cookie token', async () => {
+    await teacherWorkspaceApi.authStatus();
+    await teacherWorkspaceApi.unlock('parent', '4321');
+    expect(fetch).toHaveBeenNthCalledWith(1, '/api/v1/school/teacher/auth/status', expect.objectContaining({ credentials: 'same-origin' }));
+    expect(fetch).toHaveBeenNthCalledWith(2, '/api/v1/school/teacher/auth/unlock', expect.objectContaining({
+      credentials: 'same-origin', body: JSON.stringify({ userId: 'parent', pin: '4321' }),
+    }));
+  });
+
+  it('attaches one-use grants only to the sensitive apply request', async () => {
+    await teacherWorkspaceApi.adjustGrade('ses_1', { apply: false });
+    await teacherWorkspaceApi.adjustGrade('ses_1', { apply: true }, 'grant-1');
+    expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('X-Teacher-Step-Up');
+    expect(fetch.mock.calls[1][1].headers).toMatchObject({ 'X-Teacher-Step-Up': 'grant-1' });
+  });
+
+  it('returns a protected postview as a blob with the step-up header', async () => {
+    const result = await teacherWorkspaceApi.artifactPostview('art/1', 'grant-2');
+    expect(result.ok).toBe(true);
+    expect(result.data).toBeInstanceOf(Blob);
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/postview.pdf', expect.objectContaining({
+      credentials: 'same-origin', headers: { 'X-Teacher-Step-Up': 'grant-2' },
     }));
   });
 });

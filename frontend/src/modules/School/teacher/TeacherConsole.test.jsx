@@ -24,16 +24,27 @@ vi.mock('../schoolApi.js', () => {
     attemptDays: vi.fn(async () => ({ ok: true, status: 200, data: { days: [] } })), attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
     passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })), milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
+    regradeAttempts: vi.fn(async () => ({ ok: true, status: 200, data: { applied: false, checked: 0, changed: [], sessionsAffected: [] } })),
   } };
 });
 vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
+  authStatus: vi.fn(async () => {
+    const userId = sessionStorage.getItem('school-teacher-claim');
+    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
+  }),
+  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
+  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
+  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant-1' } })),
   timeline: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
   session: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   agendaDispatchPreview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   agendaDispatch: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   adjustGrade: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  retractGradeAdjustment: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
 } }));
 const { teacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
+const { schoolApi } = await import('../schoolApi.js');
 
 beforeEach(() => { sessionStorage.clear(); window.history.pushState({}, '', '/school/teacher'); });
 afterEach(() => cleanup());
@@ -50,7 +61,16 @@ describe('TeacherConsole workspace', () => {
     expect(screen.getByText('Today at a glance')).toBeTruthy();
   });
 
+  it('surfaces shell read failures instead of silently showing an empty school', async () => {
+    schoolApi.roster.mockResolvedValueOnce({ ok: false, status: 503, data: null });
+    schoolApi.lifecycleReview.mockResolvedValueOnce({ ok: false, status: 503, data: null });
+    await ready();
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('Student roster unavailable'));
+    expect(screen.getByRole('status').textContent).toContain('Action-queue totals unavailable');
+  });
+
   it('opens a persistent learner workspace with deep-linkable sections', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
     await ready();
     act(() => fireEvent.click(screen.getByRole('navigation', { name: 'Students' }).querySelector('button')));
     expect(window.location.pathname).toBe('/school/teacher/students/felix/overview');
@@ -91,5 +111,92 @@ describe('TeacherConsole workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Preview correction' }));
     await waitFor(() => expect(screen.getByText(/Impact preview/)).toBeTruthy());
     expect(teacherWorkspaceApi.adjustGrade).toHaveBeenCalledWith('ses_1', expect.objectContaining({ percent: 90, apply: false, baseSeq: 4 }));
+
+    teacherWorkspaceApi.adjustGrade.mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply correction' }));
+    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(teacherWorkspaceApi.adjustGrade).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'sessions.grade-adjust', resource: 'ses_1' });
+    expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, pin: null }), 'grant-1');
+  });
+
+  it('prepares a protected artifact postview after resource-scoped confirmation', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    const createObjectURL = vi.fn(() => 'blob:postview');
+    const revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v1', sessionId: 'ses_2', revision: 1, artifactIds: ['art_2'],
+      state: { learnerId: 'felix', unitId: 'geometry', state: 'closed', machineGrade: { percent: 80 }, gradedPercent: 80 }, events: [],
+    } });
+    teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: true, status: 200, data: new Blob(['pdf']) });
+    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_2');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare postview PDF…' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Prepare postview PDF…' }));
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Open postview PDF' }).getAttribute('href')).toBe('blob:postview'));
+    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'artifact.postview', resource: 'art_2' });
+    expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalledWith('art_2', 'grant-1');
+  });
+
+  it('previews and protects retraction of an existing grade correction', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v1', sessionId: 'ses_3', revision: 7, artifactIds: [],
+      state: {
+        learnerId: 'felix', unitId: 'geometry', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 90,
+        gradeAdjustments: [{ adjustmentId: 'adj_3', percent: 90, reason: 'Scanner miss', adjustedBy: 'teacher', retracted: false }],
+      },
+      events: [],
+    } });
+    teacherWorkspaceApi.retractGradeAdjustment
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, baseSeq: 7, effectiveGrade: { percent: 70 } } })
+      .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true } });
+    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_3');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Retract…' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Retract…' }));
+    fireEvent.change(screen.getByLabelText('Retraction reason for adj_3'), { target: { value: 'Applied to the wrong session' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview retraction' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply retraction' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Apply retraction' }));
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(teacherWorkspaceApi.retractGradeAdjustment).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
+      pin: '4321', action: 'sessions.grade-adjustment.retract', resource: 'ses_3/adj_3',
+    });
+    expect(teacherWorkspaceApi.retractGradeAdjustment).toHaveBeenLastCalledWith(
+      'ses_3', 'adj_3', expect.objectContaining({ apply: true, pin: null }), 'grant-1',
+    );
+  });
+
+  it('previews a bounded systematic regrade before a protected apply', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    schoolApi.regradeAttempts
+      .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, checked: 12, changed: [{ attemptId: 'att_1' }], sessionsAffected: ['ses_1'] } })
+      .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true, checked: 12, changed: [{ attemptId: 'att_1' }], sessionsAffected: ['ses_1'] } });
+    window.history.pushState({}, '', '/school/teacher/operations');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByText('Systematic regrade')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Bank ID'), { target: { value: 'math/fractions' } });
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Corrected answer key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview regrade' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply 1 corrections' })).toBeTruthy());
+    expect(schoolApi.regradeAttempts).toHaveBeenCalledWith(expect.objectContaining({
+      bankId: 'math/fractions', reason: 'Corrected answer key', apply: false, pin: null,
+    }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Apply 1 corrections' }));
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(schoolApi.regradeAttempts).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'attempts.regrade', resource: 'math/fractions' });
+    expect(schoolApi.regradeAttempts).toHaveBeenLastCalledWith(expect.objectContaining({ apply: true, pin: null }), 'grant-1');
   });
 });

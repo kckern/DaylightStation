@@ -1665,22 +1665,28 @@ did.
 
 ### The teacher console
 
-The grown-up side of the desk: a phone-first browser surface at
-**`/school/teacher`** — never a Portal widget, never in kiosk nav — with four
-tabs (**Today · Planning · Records · Repair**) over the lifecycle, reporting,
-and repair APIs. The URL carries the whole navigation state
-(`/school/teacher/<tab>[/<learnerId>]`). All four tabs expose live
-teacher-gated reads and mutations; the placeholder registry is empty.
+The grown-up side of the desk is the responsive workspace at
+**`/school/teacher`** (with **`/school/teacher-next`** as an additive alias),
+never a Portal widget and never in kiosk navigation. Its URL is the complete
+workspace state: global dashboard/queue/curriculum/operations views and
+learner-scoped overview, courses, history, reports, operations, and session
+inspection can all be deep-linked and survive refresh/back/forward. The older
+Today, Planning, Records, and Repair panels remain reachable inside this
+workspace while their server-authoritative functions are consolidated.
 
 **Teachers are config-declared, not age-derived.** `school.yml` `teachers:`
 lists roster ids; `GET /api/v1/school/teachers` resolves them against the
 live roster per request (shape-only validation at boot; a typo or blank
 birthyear costs a picker entry and a warning, never the container) and
 answers `{configured, teachers: [{id, name}]}` — profile fields never leave
-the server. The console's soft claim (sessionStorage) is attribution only;
-per the settled security posture, every mutation is behind the
-`teacherConsolePin` checked in its owning use case, with role-is-authority (the
-stamped id must be a configured teacher when the key exists).
+the server. The console's soft claim (sessionStorage) is attribution only.
+Authority lives in a server-side capability session represented by an
+HttpOnly, SameSite=Strict cookie: 10-minute idle expiry, 30-minute absolute
+expiry. PINs exist only in the prompt while unlocking or confirming an action;
+they are not stored in React state, sessionStorage, logs, or ordinary mutation
+bodies. High-consequence writes—agenda dispatch, grade correction/retraction,
+bulk regrade, period supersession, and postview artifact rendering—also require
+a two-minute, one-use grant scoped to the exact action and resource.
 
 **Panel isolation, five states.** Every panel fetches independently through
 `usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
@@ -1698,8 +1704,9 @@ once a bank bound to the unit exists, plus explicit dismiss via
 goes through **`TeacherGate`** (`3_applications/school/TeacherGate.mjs`) inside
 the owning use case — adult on the live roster, listed in `teachers:` when the
 key exists (role is authority; absent key falls back to any-adult), and the
-distinct console PIN (`school.yml` → `teacher.pin`) when configured. The PIN is
-held in client memory only; a 403 opens the PIN prompt. The Admin
+distinct console PIN (`school.yml` → `teacher.pin`) when configured. A 403
+invalidates the browser capability and opens the PIN prompt; the blocked action
+is replayed at most once after a successful unlock. The Admin
 `ReviewQueue`/`CurriculumPlanner` sign-off now draws its adults from the
 teachers read (the school roster is learners-only, so the old age filter found
 nobody — sign-off had been dead on live installs) and carries the same PIN.
@@ -1749,7 +1756,8 @@ write. Standalone teacher notes (`household/school/records/teacher-notes.yml`) r
 same delivery surfaces as review notes: merged into `GET /review/learner`
 (kind:'note') and the agenda's "Notes for you" window. The **e2e journey
 test** (`tests/isolated/e2e/school/teacherJourney.e2e.test.mjs`) drives a
-fake student through teacher enrollment → printed Pokemon quiz → the
+fake student through teacher enrollment → the *How Chemistry Surrounds You*
+printed checkpoint → the
 virtual OMR reader → grading → and asserts the today digest, report card,
 and milestone pacing all tell the truth about it.
 
@@ -1766,9 +1774,9 @@ math shared with `GetTeacherToday`.
 |---|---|
 | Domain | `backend/src/2_domains/school/studyDay.mjs` — `studyDayWindow`, `withinStudyWindow` |
 | Application | `backend/src/3_applications/school/usecases/GetTeachers.mjs`, `ListLearnerSessions.mjs` |
-| API | `GET /api/v1/school/teachers`; `?window=today` on the lifecycle sessions read |
-| Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `TeacherProfileContext`, `usePanelFetch`, `todoRegistry`, `tabs/`, `panels/` |
-| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]` + `/app/school/teacher` redirect |
+| API | `/api/v1/school/teacher/auth/*`; teacher timeline/session/artifact/agenda-dispatch/grade-adjustment endpoints; existing lifecycle reads and gated writes |
+| Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `WorkspaceViews`, `TeacherProfileContext`, `useTeacherWrite`, legacy `tabs/` and `panels/` |
+| Routes | `frontend/src/main.jsx` — `/school/teacher[/*]`, `/school/teacher-next[/*]`, and `/app/school/teacher` redirect |
 | Config | `data/household/school/school.yml` → `teachers:` |
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
@@ -2083,3 +2091,8 @@ links its spec.
   restructure `readBankRaw` resolves the `{subject}/{work}/…` path form (the
   `quizzes/` container elided) — the old "top-level only" restriction is gone;
   this bullet previously documented the pre-restructure layout.
+- **Teacher agenda dispatch is durably at-most-once.** The server reserves an
+  idempotency key before contacting the printer and stores the completed receipt
+  under `school/records/teacher-action-receipts/`. Completed requests replay
+  across restarts; conflicting payloads and crash-indeterminate reservations
+  return 409 instead of silently printing twice.

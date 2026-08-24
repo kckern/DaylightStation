@@ -16,9 +16,11 @@ vi.mock('../../schoolApi.js', () => ({
 vi.mock('../TeacherProfileContext.jsx', () => ({
   useTeacherProfile: () => ({
     currentTeacher: { id: 'kckern', name: 'KC' },
-    pin: 'test-pin-1234',
+    pin: null,
     openPicker: vi.fn(),
     openPinPrompt: vi.fn(),
+    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    invalidateAuthorization: vi.fn(),
     pinPromptOpen: false,
     pickerOpen: false,
   }),

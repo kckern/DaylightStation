@@ -27,9 +27,12 @@ export default function ClosePeriodPanel({ learnerId, periodId, periodLabel = nu
   const [armed, setArmed] = useState(false);
 
   const alreadyClosed = frozen.state === 'ok';
-  const close = () => run('close', ({ actorId, pin }) => schoolApi.closePeriod({
+  const close = () => run('close', ({ actorId, pin, stepUpToken }) => schoolApi.closePeriod({
     learnerId, periodId, closedBy: actorId, pin, supersede: alreadyClosed,
-  }), { onSuccess: () => { setArmed(false); frozen.retry(); onClosed?.(); } });
+  }, stepUpToken), {
+    onSuccess: () => { setArmed(false); frozen.retry(); onClosed?.(); },
+    stepUp: alreadyClosed ? { action: 'report-card.close', resource: `${learnerId}/${periodId}` } : null,
+  });
 
   if (frozen.state === 'loading') return null;
   return (

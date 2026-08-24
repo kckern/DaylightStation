@@ -234,12 +234,14 @@ This preview writes only the requested PDF; it does not create an enrollment,
 worksheet instance, published revision, allocation, or OMR card record.
 
 For a real multi-lesson issue, `POST /api/v1/school/lifecycle/worksheets/compose` accepts
-`{ "sessionIds": ["…"], "issuedBy": "teacher-id", "pin": "…" }`. It creates (or reuses) the immutable per-lesson
+`{ "sessionIds": ["…"], "issuedBy": "teacher-id", "pin": null }` from the
+browser, where the router replaces the null proof with its HttpOnly teacher
+capability. Raw-PIN CLI clients remain supported. The operation creates (or reuses) the immutable per-lesson
 instances, publishes one composed document per 50-row card, persists each
 section's row ownership in the allocation, and appends the corresponding
 issue/reprint event to every participating session. This is the production
-entry point for an agenda or teacher-selected subset; its teacher stamp/PIN is
-checked server-side and it does not introduce a second, packet-only grading
+entry point for an agenda or teacher-selected subset; its teacher stamp and
+authorization are checked server-side and it does not introduce a second, packet-only grading
 record.
 
 The teacher console obtains its checklist from
@@ -256,6 +258,27 @@ plain proof render. This matters because a card allocation records the rev it
 rendered, and a scan later resolves that exact rev: a source that drifted
 from its published artifact would otherwise mint a "phantom" rev no scan
 could ever serve.
+
+**Issued bytes are retained, not reconstructed.** Before a tracked PDF is sent
+to the printer, School archives the exact PDF plus a compact manifest containing
+the artifact id, capture kind, exact byte and page counts, SHA-256 digest,
+issuance time, session/learner/unit lineage, and worksheet/card allocation
+identifiers when present. The retained bytes—not a later render—are what the
+teacher downloads as the issued original. Pre-retention legacy sessions may
+have lifecycle metadata without a retained PDF; the UI says so instead of
+implying byte identity. The teacher session inspector exposes:
+
+- the manifest and immutable original PDF;
+- a separately labeled postview PDF that overlays later grades/corrections.
+
+The original-PDF link supports browser/manual reprinting of the retained bytes.
+There is not yet a separate server-side “send this artifact to the printer
+again” teacher operation, so the console does not claim a dispatch receipt for
+that manual reprint.
+
+Postview is a derived view, not the original artifact, and requires a one-use
+teacher grant scoped to `artifact.postview` plus that artifact id. Its presence
+cannot mutate the archived original or the session evidence.
 
 ## 4. Rendering: varieties, keys, variants
 
@@ -509,7 +532,8 @@ answer-sheet-lost`, the replacement card and record ids, the reporting teacher,
 and the timestamp.
 
 Loss recovery is a teacher-console write guarded by the normal teacher role and
-PIN. It is available in two forms:
+active capability (or a raw PIN from a compatible non-browser client). It is
+available in two forms:
 
 - `POST /api/v1/school/lifecycle/answer-sheets/:cardId/lost` performs the
   replacement immediately.

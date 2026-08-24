@@ -1,8 +1,11 @@
 /* Teacher console — phone-first, an adult reading surface: School's palette,
  * denser type, bottom tab bar. Desktop gets the same layout width-capped. */
 .teacher-console-page {
+  box-sizing: border-box;
   min-height: 100vh;
   background: #ece5d6;   // a darkened sibling of the console cream — never raw #000 gutters
+
+  *, *::before, *::after { box-sizing: inherit; }
 }
 .teacher-console {
   display: flex;
@@ -697,6 +700,23 @@
       cursor: pointer;
     }
   }
+}
+
+.teacher-console__identity { display: flex; align-items: center; gap: 6px; }
+.teacher-console__chip i { font-style: normal; color: #7c6b49; font-size: 10px; }
+.teacher-console__lock {
+  border: 0; background: transparent; color: #6d6455; font-size: 12px;
+  text-decoration: underline; cursor: pointer;
+}
+.teacher-form-grid {
+  display: grid; grid-template-columns: minmax(180px, 2fr) repeat(2, minmax(135px, 1fr)); gap: 10px;
+  label { display: flex; flex-direction: column; gap: 4px; color: #6d6455; font-size: 12px; }
+  label:last-child { grid-column: 1 / -1; }
+  input { border: 1px solid #d8cfbf; border-radius: 8px; padding: 8px 10px; font: inherit; color: #2b2620; }
+}
+@media (max-width: 700px) {
+  .teacher-form-grid { grid-template-columns: 1fr; label:last-child { grid-column: auto; } }
+  .teacher-console__lock { display: none; }
 }
 
 .teacher-assignments__pick {

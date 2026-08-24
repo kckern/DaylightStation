@@ -4,6 +4,16 @@ import TodayTab from './TodayTab.jsx';
 import { TeacherProfileProvider, useTeacherProfile } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
 
+vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
+  authStatus: vi.fn(async () => {
+    const userId = sessionStorage.getItem('school-teacher-claim');
+    return { ok: true, status: 200, data: userId ? { active: true, userId } : { active: false } };
+  }),
+  unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
+  lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
+  stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
+} }));
+
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
     teacherToday: vi.fn(),
@@ -23,6 +33,7 @@ vi.mock('../../schoolApi.js', () => ({
   },
 }));
 const { schoolApi } = await import('../../schoolApi.js');
+const { teacherWorkspaceApi } = await import('../teacherWorkspaceApi.js');
 
 const KIDS = [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }];
 const ok = (data) => ({ ok: true, status: 200, data });
@@ -31,8 +42,8 @@ const fail = (status) => ({ ok: false, status, data: null });
 // The shell owns the PinPrompt and the picker; the harness mirrors that
 // composition so tab-level mutation flows exercise the real affordances.
 function ShellProbe() {
-  const { pickerOpen } = useTeacherProfile();
-  return pickerOpen ? <div>Who's teaching?</div> : null;
+  const { pickerOpen, currentTeacher } = useTeacherProfile();
+  return <><span data-testid="claimed-teacher" hidden>{currentTeacher?.id ?? 'none'}</span>{pickerOpen ? <div>Who's teaching?</div> : null}</>;
 }
 const mount = (ui) => render(
   <TeacherProfileProvider>{ui}<PinPrompt /><ShellProbe /></TeacherProfileProvider>,
@@ -61,7 +72,7 @@ beforeEach(() => {
   schoolApi.composeWorksheets.mockResolvedValue(ok({ parts: [{ compositionId: 'composed/milo/ws-123' }] }));
   schoolApi.progress.mockResolvedValue(ok({ recentScores: [] }));
   schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
-    { subject: 'science', servedToday: false, next: { title: 'Pokemon Basics' } },
+    { subject: 'science', servedToday: false, next: { title: 'Creature Basics' } },
   ] }));
   schoolApi.printPending.mockResolvedValue(ok([
     { id: 'pr_1', userId: 'felix', printableId: 'state-capitals', label: 'US State Capitals', pages: 6, copies: 1 },
@@ -136,10 +147,13 @@ describe('wave-2 mutations', () => {
     sessionStorage.setItem('school-teacher-claim', 'kckern');
   };
 
+  const waitForClaim = () => waitFor(() => expect(screen.getByTestId('claimed-teacher').textContent).toBe('kckern'));
+
   it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
     await claim();
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
+    await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledWith('ses_1', 'q3',
       { verdict: 'correct', note: null, gradedBy: 'kckern', pin: null }));
@@ -155,9 +169,10 @@ describe('wave-2 mutations', () => {
     } });
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
+    await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Incorrect' })); });
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Teacher PIN' })).toBeTruthy());
-    expect(screen.getByText(/PIN is missing or wrong/)).toBeTruthy();
+    expect(screen.getByText('Unlock teacher tools')).toBeTruthy();
   });
 
   it('with no claimed teacher, a write opens the picker instead of posting', async () => {
@@ -172,6 +187,7 @@ describe('wave-2 mutations', () => {
     await claim();
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
+    await waitForClaim();
     act(() => {
       fireEvent.change(screen.getByLabelText('Note for q3'), { target: { value: '  Nice work!  ' } });
     });
@@ -184,6 +200,7 @@ describe('wave-2 mutations', () => {
     await claim();
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
+    await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
     await waitFor(() => expect(schoolApi.printApprove).toHaveBeenCalledWith('pr_1',
       { approver: 'kckern', pin: null }));
@@ -197,6 +214,7 @@ describe('wave-2 mutations', () => {
     ]));
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
+    await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' })); });
     // Reason empty -> the confirm stays disabled; the child is never told nothing.
     const confirm = screen.getByRole('button', { name: /Dismiss & tell them/ });
@@ -212,11 +230,11 @@ describe('wave-2 mutations', () => {
   it('a kid-filed retake ask renders with its badge and want-another-try copy', async () => {
     await claim();
     schoolApi.quizRequests.mockResolvedValue(ok([
-      { at: 't', kind: 'retake', userId: 'milo', bankId: 'science/pokemon-basics/01-quiz', title: 'Pokemon Basics Quiz' },
+      { at: 't', kind: 'retake', userId: 'milo', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' },
     ]));
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('retake')).toBeTruthy());
-    expect(screen.getByText('Pokemon Basics Quiz')).toBeTruthy();
+    expect(screen.getByText('Creature Basics Quiz')).toBeTruthy();
     expect(screen.getByText(/wants another try — asked by Milo/)).toBeTruthy();
   });
 });
@@ -228,7 +246,7 @@ describe('advocacy wave 6A', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
     await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledWith('felix'));
-    await waitFor(() => expect(screen.getByText('Pokemon Basics')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Creature Basics')).toBeTruthy());
   });
 
   it('review items show rubric, reason, and wait-age', async () => {
@@ -244,7 +262,7 @@ describe('advocacy wave 6A', () => {
     expect(screen.getByText(/waiting 3h/)).toBeTruthy();
   });
 
-  it('a pin-blocked tap REPLAYS itself once the pin is entered — one tap, one mark', async () => {
+  it('an expired capability REPLAYS once after unlock without retaining the PIN', async () => {
     sessionStorage.setItem('school-teacher-claim', 'kckern');
     schoolApi.resolveReview
       .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
@@ -256,9 +274,10 @@ describe('advocacy wave 6A', () => {
     act(() => {
       fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '7410' } });
     });
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
     await waitFor(() => expect(schoolApi.resolveReview).toHaveBeenCalledTimes(2));
+    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('kckern', '7410');
     expect(schoolApi.resolveReview).toHaveBeenLastCalledWith('ses_1', 'q3',
-      expect.objectContaining({ pin: '7410' }));
+      expect.objectContaining({ pin: null }));
   });
 });
