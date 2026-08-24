@@ -77,12 +77,26 @@ describe('gates', () => {
     assert.equal(validateAssessment(completed({ gates: { pace: { actual: 92 } } })).valid, false);
     assert.equal(validateAssessment(completed({ gates: { pace: true } })).valid, false);
   });
+
+  it('requires numeric evidence and keeps gates off interrupted attempts', () => {
+    assert.equal(validateAssessment(completed({ gates: { pace: { passed: false } } })).valid, false);
+    assert.equal(validateAssessment(completed({ gates: { pace: { passed: true, actual: '100', target: 100 } } })).valid, false);
+    assert.equal(validateAssessment({ status: 'timeout', gates: { pace: { passed: false, actual: 92, target: 100 } } }).valid, false);
+  });
 });
 
 describe('diagnostics', () => {
   it('are a bag of numbers, never prose', () => {
     assert.equal(validateAssessment(completed({ diagnostics: { stalls: 2, onset_spread_ms: 45 } })).valid, true);
     assert.equal(validateAssessment(completed({ diagnostics: { note: 'seemed nervous' } })).valid, false);
+  });
+
+  it('requires note counts to be non-negative integers and internally consistent', () => {
+    const inconsistent = validateAssessment(completed({ diagnostics: {
+      expected_notes: 4, matched_notes: 3, missed_notes: 0, wrong_notes: -1,
+    } }));
+    assert.equal(inconsistent.valid, false);
+    assert.match(inconsistent.errors.join(' '), /non-negative integer|must equal matched_notes plus missed_notes/);
   });
 });
 
@@ -104,13 +118,30 @@ describe('portable advancement evidence', () => {
 describe('part and span evidence', () => {
   it('accepts explainable nested completed evidence', () => {
     const result = validateAssessment(completed({
+      score: 0.9,
       criteria: { completeness: 1, cleanliness: 0.8 },
       parts: { rh: { criteria: { completeness: 1, cleanliness: 0.9 }, diagnostics: { expected_notes: 2, wrong_notes: 0 } } },
       spans: { 'measure:1': { criteria: { completeness: 1, cleanliness: 0.8 }, parts: { rh: { criteria: { completeness: 1 } } }, diagnostics: { expected_notes: 2 } } },
       rubric: { id: 'learn-v2', version: '2', weights: { completeness: 1, cleanliness: 1 }, part_weights: { rh: 1 } },
-      verdict: { score: 0.8, passed: false, failed_criteria: ['cleanliness'], failed_gates: [] },
+      verdict: { score: 0.9, passed: false, failed_criteria: ['cleanliness'], failed_gates: [] },
     }));
     assert.equal(result.valid, true, result.errors.join('; '));
+  });
+
+  it('rejects scalar, aggregate, and per-part evidence that disagree', () => {
+    const result = validateAssessment(completed({
+      score: 0.95,
+      criteria: { completeness: 0.75, cleanliness: 1 },
+      diagnostics: { expected_notes: 4, matched_notes: 4, missed_notes: 0, wrong_notes: 0 },
+      parts: {
+        rh: { criteria: { completeness: 1, cleanliness: 1 }, diagnostics: { expected_notes: 3, matched_notes: 3, missed_notes: 0, wrong_notes: 0 } },
+        lh: { criteria: { completeness: 0, cleanliness: 1 }, diagnostics: { expected_notes: 2, matched_notes: 0, missed_notes: 2, wrong_notes: 0 } },
+      },
+      rubric: { id: 'inconsistent', weights: { completeness: 1, cleanliness: 1 }, part_weights: { rh: 0.5, lh: 0.5 } },
+      verdict: { score: 0.95, passed: false, failed_criteria: [], failed_gates: [] },
+    }));
+    assert.equal(result.valid, false);
+    assert.match(result.errors.join(' '), /score must equal|part-weighted|sum of part diagnostics/);
   });
 
   it('rejects malformed nested evidence and unnormalized part weights', () => {
@@ -121,6 +152,41 @@ describe('part and span evidence', () => {
     }));
     assert.equal(result.valid, false);
     assert.match(result.errors.join(' '), /part_weights|failed_criteria|completeness/);
+  });
+
+  it('rejects unknown failure names when their vocabularies are available', () => {
+    const result = validateAssessment(completed({
+      criteria: { completeness: 1 },
+      gates: { pace: { passed: false, actual: 92, target: 100 } },
+      rubric: { id: 'failure-vocabulary' },
+      verdict: { score: 0.8, passed: false, failed_criteria: ['cleanlines'], failed_gates: ['speed'] },
+    }));
+    assert.equal(result.valid, false);
+    assert.match(result.errors.join(' '), /unknown failed criterion|unknown failed gate/);
+  });
+
+  it('requires failure arrays to point at stored evidence and agree with passed', () => {
+    const missing = validateAssessment(completed({
+      verdict: { score: 0.8, passed: false, failed_criteria: ['cleanliness'], failed_gates: ['pace'] },
+    }));
+    assert.equal(missing.valid, false);
+    assert.match(missing.errors.join(' '), /requires recorded criterion evidence|unknown failed gate/);
+
+    const contradictory = validateAssessment(completed({
+      criteria: { cleanliness: 0.8 }, rubric: { id: 'contradictory' },
+      verdict: { score: 0.8, passed: true, failed_criteria: ['cleanliness'], failed_gates: [] },
+    }));
+    assert.equal(contradictory.valid, false);
+    assert.match(contradictory.errors.join(' '), /passed verdict/);
+  });
+
+  it('rejects a rubric whose effective criterion weight is zero', () => {
+    const result = validateAssessment(completed({
+      criteria: { completeness: 1, cleanliness: 1 },
+      rubric: { id: 'zero', weights: { completeness: 0, cleanliness: 0 } },
+    }));
+    assert.equal(result.valid, false);
+    assert.match(result.errors.join(' '), /positive weight/);
   });
 });
 

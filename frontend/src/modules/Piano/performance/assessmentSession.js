@@ -6,9 +6,9 @@ export {
   createAssessmentAttempt,
   startAssessmentAttempt,
   observeAssessment,
-  advanceAssessmentAttempt as advanceAssessment,
-  closeAssessmentAttemptSpan as closeAssessmentSpan,
+  advanceAssessment,
+  closeAssessmentSpan,
   finalizeAssessmentAttempt,
-  assessmentAttemptProgress as assessmentProgress,
+  assessmentProgress,
 } from './assessmentAttempt.js';
 export { createAssessmentRuntime, useAssessmentRuntime } from './assessmentRuntime.js';
