@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- provider and its required consumer hook form one context module */
 import { createContext, useContext, useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 
@@ -243,8 +244,7 @@ export function FeedPlayerProvider({ children }) {
     registerPlayerEl,
     dispatch,
   }), [
-    state.activeMedia, state.pausedMedia, state.volume,
-    state.speed, state.muted, state.playerVisible,
+    state,
     play, stop, resumePaused, setVolume, toggleMute,
     setSpeed, cycleSpeed, setPlayerVisible, registerPlayerEl,
   ]);

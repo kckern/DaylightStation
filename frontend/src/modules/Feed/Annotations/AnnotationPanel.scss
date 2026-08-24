@@ -1,0 +1,62 @@
+.feed-annotations {
+  width: min(100%, var(--feed-reading-measure, 72ch));
+  margin: 1.5rem auto 0;
+  padding: 1rem;
+  border: 1px solid rgba(128, 128, 128, 0.28);
+  border-radius: 0.65rem;
+  color: inherit;
+}
+
+.feed-annotations__heading,
+.feed-annotations__form-actions,
+.feed-annotation__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.feed-annotations h3 { margin: 0; font-size: 1rem; }
+.feed-annotations button,
+.feed-annotations select {
+  min-height: 36px;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: 0.4rem;
+  background: rgba(128, 128, 128, 0.13);
+  color: inherit;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+.feed-annotations textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: 0.45rem;
+  background: rgba(128, 128, 128, 0.1);
+  color: inherit;
+  padding: 0.65rem;
+  font: inherit;
+  line-height: 1.5;
+}
+.feed-annotations__form { display: grid; gap: 0.7rem; margin-top: 0.8rem; }
+.feed-annotations__form > label { display: grid; gap: 0.35rem; }
+.feed-annotations__form-actions label { display: flex; align-items: center; gap: 0.4rem; }
+.feed-annotation { padding: 0.8rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
+.feed-annotation p { white-space: pre-wrap; }
+.feed-annotation__meta { justify-content: flex-end; font-size: 0.78rem; opacity: 0.8; }
+.feed-annotation__meta time { margin-right: auto; }
+.feed-annotation-quote { position: relative; margin: 0.6rem 0; padding: 0.65rem 2rem 0.65rem 0.8rem; border-left: 4px solid #ffd43b; background: rgba(255, 212, 59, 0.13); }
+.feed-annotation-quote--blue { border-color: #4dabf7; background: rgba(77, 171, 247, 0.13); }
+.feed-annotation-quote--green { border-color: #51cf66; background: rgba(81, 207, 102, 0.13); }
+.feed-annotation-quote--pink { border-color: #f783ac; background: rgba(247, 131, 172, 0.13); }
+.feed-annotation-quote--none { border-color: #868e96; background: transparent; }
+.feed-annotation-quote > button { position: absolute; top: 0.25rem; right: 0.25rem; min-width: 32px; padding: 0; }
+.feed-annotations__status { opacity: 0.7; }
+.feed-annotations__error { color: #ff8787; }
+
+@media (max-width: 600px) {
+  .feed-annotations { padding: 0.8rem; }
+  .feed-annotations__heading { align-items: flex-start; }
+  .feed-annotations__form-actions { align-items: flex-end; }
+  .feed-annotations button { min-height: 44px; }
+}

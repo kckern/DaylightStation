@@ -1,7 +1,27 @@
+import { useEffect, useRef } from 'react';
 import DetailView from './DetailView.jsx';
 import './DetailView.scss';
 
-export default function DetailModal({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
+export default function DetailModal({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+  const panelRef = useRef(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    const panel = panelRef.current;
+    panel?.focus();
+    const onKeyDown = event => {
+      if (event.key === 'Escape') { event.preventDefault(); onBack(); return; }
+      if (event.key !== 'Tab' || !panel) return;
+      const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.(); };
+  }, [onBack]);
+
   return (
     <div className="detail-modal-scrim" onClick={onBack}>
       {onPrev && (
@@ -13,7 +33,7 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
           &#8249;
         </button>
       )}
-      <div className="detail-modal-panel" onClick={(e) => e.stopPropagation()}>
+      <div ref={panelRef} className="detail-modal-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={item?.title || 'Feed item detail'} tabIndex={-1}>
         <DetailView
           item={item}
           sections={sections}
@@ -27,6 +47,7 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
           activeMedia={activeMedia}
           playback={playback}
           onNavigateToItem={onNavigateToItem}
+          onStateAction={onStateAction}
         />
       </div>
       {onNext && (

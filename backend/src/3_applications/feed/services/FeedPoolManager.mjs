@@ -10,7 +10,7 @@
  * - Tracks per-source continuation cursors
  * - Proactively refills when pool runs thin
  * - Enforces per-source max_age_hours thresholds
- * - Silently recycles seen items when all sources exhaust
+ * - Reports exhaustion instead of silently recycling seen content
  *
  * @module applications/feed/services
  */
@@ -94,18 +94,19 @@ export class FeedPoolManager {
    * @param {Object} scrollConfig - Merged scroll config from ScrollConfigLoader
    * @returns {Promise<Object[]>}
    */
-  async getPool(username, scrollConfig, { stripLimits = false } = {}) {
-    this.#scrollConfigs.set(username, scrollConfig);
+  async getPool(username, scrollConfig, { stripLimits = false, sessionId = null } = {}) {
+    const key = this.#stateKey(username, sessionId);
+    this.#scrollConfigs.set(key, scrollConfig);
 
-    if (!this.#pools.has(username)) {
-      await this.#initializePool(username, scrollConfig, { stripLimits });
+    if (!this.#pools.has(key)) {
+      await this.#initializePool(key, username, scrollConfig, { stripLimits });
     }
 
     // Increment batch counter (1-indexed: first getPool call = batch 1)
-    this.#batchCounts.set(username, (this.#batchCounts.get(username) || 0) + 1);
+    this.#batchCounts.set(key, (this.#batchCounts.get(key) || 0) + 1);
 
-    const pool = this.#pools.get(username) || [];
-    const seen = this.#seenIds.get(username) || new Set();
+    const pool = this.#pools.get(key) || [];
+    const seen = this.#seenIds.get(key) || new Set();
     const dismissed = this.#dismissedItemsStore?.load() || new Set();
 
     // Tag items with seen status — seen influences priority, not exclusion.
@@ -118,9 +119,9 @@ export class FeedPoolManager {
     const unseenCount = available.filter(i => !i._seen).length;
 
     // If no unseen items remain but sources can provide more, refill for fresh content.
-    if (unseenCount === 0 && this.#hasRefillableSources(username)) {
-      await this.#proactiveRefill(username, scrollConfig);
-      const refreshed = this.#pools.get(username) || [];
+    if (unseenCount === 0 && this.#hasRefillableSources(key)) {
+      await this.#proactiveRefill(key, username, scrollConfig);
+      const refreshed = this.#pools.get(key) || [];
       for (const item of refreshed) {
         item._seen = seen.has(item.id);
       }
@@ -133,15 +134,15 @@ export class FeedPoolManager {
   /**
    * Mark item IDs as seen (consumed by a batch).
    * Triggers proactive refill if remaining pool is thin.
-   * Triggers silent recycling if pool is empty and all sources exhausted.
    *
    * @param {string} username
    * @param {string[]} feedItemIds
    */
-  markSeen(username, feedItemIds) {
-    const seen = this.#seenIds.get(username) || new Set();
-    const history = this.#seenItems.get(username) || [];
-    const pool = this.#pools.get(username) || [];
+  markSeen(username, feedItemIds, sessionId = null) {
+    const key = this.#stateKey(username, sessionId);
+    const seen = this.#seenIds.get(key) || new Set();
+    const history = this.#seenItems.get(key) || [];
+    const pool = this.#pools.get(key) || [];
 
     for (const id of feedItemIds) {
       seen.add(id);
@@ -149,23 +150,21 @@ export class FeedPoolManager {
       if (item) history.push(item);
     }
 
-    this.#seenIds.set(username, seen);
+    this.#seenIds.set(key, seen);
     // Cap history to prevent unbounded memory growth
     if (history.length > FeedPoolManager.#MAX_SEEN_ITEMS) {
       history.splice(0, history.length - FeedPoolManager.#MAX_SEEN_ITEMS);
     }
-    this.#seenItems.set(username, history);
+    this.#seenItems.set(key, history);
 
     const unseenRemaining = pool.filter(i => !seen.has(i.id)).length;
-    const scrollConfig = this.#scrollConfigs.get(username);
+    const scrollConfig = this.#scrollConfigs.get(key);
     const batchSize = scrollConfig?.batch_size ?? 15;
     const threshold = batchSize * FeedPoolManager.#REFILL_THRESHOLD_MULTIPLIER;
 
     if (unseenRemaining < threshold) {
-      if (this.#hasRefillableSources(username)) {
-        this.#proactiveRefill(username, scrollConfig);
-      } else if (unseenRemaining === 0) {
-        this.#recycle(username);
+      if (this.#hasRefillableSources(key)) {
+        this.#proactiveRefill(key, username, scrollConfig);
       }
     }
   }
@@ -175,26 +174,27 @@ export class FeedPoolManager {
    * @param {string} username
    * @returns {boolean}
    */
-  hasMore(username) {
-    const pool = this.#pools.get(username) || [];
-    const seen = this.#seenIds.get(username) || new Set();
+  hasMore(username, sessionId = null) {
+    const key = this.#stateKey(username, sessionId);
+    const pool = this.#pools.get(key) || [];
+    const seen = this.#seenIds.get(key) || new Set();
     const remaining = pool.filter(i => !seen.has(i.id)).length;
-    return remaining > 0 || this.#hasRefillableSources(username) || (this.#seenItems.get(username)?.length || 0) > 0;
+    return remaining > 0 || this.#hasRefillableSources(key);
   }
 
   /**
    * Reset all state for a user (called on fresh page load, no cursor).
    * @param {string} username
    */
-  reset(username) {
-    this.#pools.delete(username);
-    this.#seenIds.delete(username);
-    this.#seenItems.delete(username);
-    this.#cursors.delete(username);
-    this.#refilling.delete(username);
-    this.#scrollConfigs.delete(username);
-    this.#firstPageCursors.clear();
-    this.#batchCounts.delete(username);
+  reset(username, sessionId = null) {
+    const key = this.#stateKey(username, sessionId);
+    this.#pools.delete(key);
+    this.#seenIds.delete(key);
+    this.#seenItems.delete(key);
+    this.#cursors.delete(key);
+    this.#refilling.delete(key);
+    this.#scrollConfigs.delete(key);
+    this.#batchCounts.delete(key);
     this.#userQueryConfigs.delete(username);
     this.#dismissedItemsStore?.clearCache();
   }
@@ -205,15 +205,52 @@ export class FeedPoolManager {
    * @param {string} username
    * @returns {number}
    */
-  getBatchNumber(username) {
-    return this.#batchCounts.get(username) || 0;
+  getBatchNumber(username, sessionId = null) {
+    return this.#batchCounts.get(this.#stateKey(username, sessionId)) || 0;
+  }
+
+  hasSession(username, sessionId) {
+    return this.#pools.has(this.#stateKey(username, sessionId));
+  }
+
+  snapshot(username, sessionId) {
+    const key = this.#stateKey(username, sessionId);
+    if (!this.#pools.has(key)) return null;
+    return {
+      pool: this.#pools.get(key),
+      seenIds: [...(this.#seenIds.get(key) || [])],
+      seenItems: this.#seenItems.get(key) || [],
+      cursors: [...(this.#cursors.get(key) || new Map()).entries()],
+      batchCount: this.#batchCounts.get(key) || 0,
+      scrollConfig: this.#scrollConfigs.get(key) || null,
+    };
+  }
+
+  restore(username, sessionId, snapshot) {
+    if (!snapshot?.pool || !Array.isArray(snapshot.pool)) return false;
+    const key = this.#stateKey(username, sessionId);
+    this.#pools.set(key, snapshot.pool);
+    this.#seenIds.set(key, new Set(snapshot.seenIds || []));
+    this.#seenItems.set(key, snapshot.seenItems || []);
+    this.#cursors.set(key, new Map(snapshot.cursors || []));
+    this.#batchCounts.set(key, snapshot.batchCount || 0);
+    if (snapshot.scrollConfig) this.#scrollConfigs.set(key, snapshot.scrollConfig);
+    return true;
+  }
+
+  getSessionItems(username, sessionId) {
+    return [...(this.#seenItems.get(this.#stateKey(username, sessionId)) || [])];
+  }
+
+  getSessionConfig(username, sessionId) {
+    return this.#scrollConfigs.get(this.#stateKey(username, sessionId)) || null;
   }
 
   // =========================================================================
   // Internal: Pool Initialization
   // =========================================================================
 
-  async #initializePool(username, scrollConfig, { stripLimits = false } = {}) {
+  async #initializePool(key, username, scrollConfig, { stripLimits = false } = {}) {
     let queries = this.#filterQueries(scrollConfig, username);
     // Drive pool depth from batch_size — don't rely on hardcoded YAML limits.
     // Each query gets batch_size as its limit so the pool can fill any allocation.
@@ -227,7 +264,7 @@ export class FeedPoolManager {
     );
 
     const allItems = [];
-    const cursorMap = this.#cursors.get(username) || new Map();
+    const cursorMap = this.#cursors.get(key) || new Map();
 
     for (let i = 0; i < results.length; i++) {
       if (results[i].status === 'fulfilled') {
@@ -246,10 +283,10 @@ export class FeedPoolManager {
       }
     }
 
-    this.#cursors.set(username, cursorMap);
-    this.#pools.set(username, allItems);
-    this.#seenIds.set(username, new Set());
-    this.#seenItems.set(username, []);
+    this.#cursors.set(key, cursorMap);
+    this.#pools.set(key, allItems);
+    this.#seenIds.set(key, new Set());
+    this.#seenItems.set(key, []);
   }
 
   // =========================================================================
@@ -272,11 +309,11 @@ export class FeedPoolManager {
         // on cache hit, read back the previously stored cursor.
         const cached = await this.#feedCacheService.getItems(sourceKey, async () => {
           const result = await adapter.fetchPage(query, username, { cursor: cursorToken });
-          this.#firstPageCursors.set(sourceKey, result.cursor);
+          this.#firstPageCursors.set(`${username}:${sourceKey}`, result.cursor);
           return result.items;
         }, username);
         items = cached;
-        cursor = this.#firstPageCursors.get(sourceKey) ?? null;
+        cursor = this.#firstPageCursors.get(`${username}:${sourceKey}`) ?? null;
       } else {
         // Subsequent pages or no cache: direct fetch
         const result = await adapter.fetchPage(query, username, { cursor: cursorToken });
@@ -342,14 +379,14 @@ export class FeedPoolManager {
     return false;
   }
 
-  async #proactiveRefill(username, scrollConfig) {
-    if (this.#refilling.get(username)) return;
-    this.#refilling.set(username, true);
+  async #proactiveRefill(key, username, scrollConfig) {
+    if (this.#refilling.get(key)) return;
+    this.#refilling.set(key, true);
 
     try {
-      const cursorMap = this.#cursors.get(username) || new Map();
+      const cursorMap = this.#cursors.get(key) || new Map();
       const queries = this.#filterQueries(scrollConfig, username);
-      const pool = this.#pools.get(username) || [];
+      const pool = this.#pools.get(key) || [];
       const existingIds = new Set(pool.map(i => i.id));
 
       const refillable = queries.filter(q => {
@@ -383,36 +420,13 @@ export class FeedPoolManager {
         }
       }
 
-      this.#pools.set(username, pool);
+      this.#pools.set(key, pool);
       this.#logger.info?.('feed.pool.refill.complete', { username, newItems: newItemCount });
     } catch (err) {
       this.#logger.warn?.('feed.pool.refill.error', { error: err.message });
     } finally {
-      this.#refilling.delete(username);
+      this.#refilling.delete(key);
     }
-  }
-
-  // =========================================================================
-  // Internal: Silent Recycling
-  // =========================================================================
-
-  #recycle(username) {
-    const history = this.#seenItems.get(username) || [];
-    if (history.length === 0) return;
-
-    const dismissed = this.#dismissedItemsStore?.load() || new Set();
-    const eligible = history.filter(item => !dismissed.has(item.id));
-    if (eligible.length === 0) return;
-
-    const shuffled = [...eligible];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-
-    this.#pools.set(username, shuffled);
-    this.#seenIds.set(username, new Set());
-    this.#logger.info?.('feed.pool.recycled', { username, items: shuffled.length });
   }
 
   // =========================================================================
@@ -444,6 +458,10 @@ export class FeedPoolManager {
       const key = query._filename?.replace('.yml', '');
       return key && enabledSources.has(key);
     });
+  }
+
+  #stateKey(username, sessionId) {
+    return sessionId ? `${username}\u0000${sessionId}` : username;
   }
 
   static #withTimeout(promise, ms) {

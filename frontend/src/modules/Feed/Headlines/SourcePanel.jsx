@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import getLogger from '../../../lib/logging/Logger.js';
 import './Headlines.scss';
 
 // Default neutral color palette (used if no col_colors in config)
@@ -10,10 +11,12 @@ const DEFAULT_COL_COLORS = [
   'hsl(220, 15%, 35%)',
   'hsl(220, 15%, 35%)',
 ];
+const log = getLogger().child({ app: 'feed', module: 'headline-source' });
 
-export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, colColors }) {
+export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, onStateAction, colColors }) {
   const [refreshing, setRefreshing] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
+  const [activePreview, setActivePreview] = useState(null);
   const imgRef = useRef(null);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
@@ -21,19 +24,20 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
   const feedUrl = source.url || (source.urls && source.urls[0]) || '';
   const siteUrl = source.siteUrl || ('https://' + extractDomain(feedUrl));
   const faviconUrl = `/api/v1/feed/icon?url=${encodeURIComponent(siteUrl)}`;
-  const items = source.items || [];
+  const items = (source.items || []).filter(item => !item.state?.isArchived);
   const colors = colColors || DEFAULT_COL_COLORS;
   const headerColor = colors[col] || colors[Math.floor(totalCols / 2)];
   const isPaywalled = source.paywall && paywallProxy;
 
   const handleRefresh = async (e) => {
+    e.preventDefault();
     e.stopPropagation();
     setRefreshing(true);
     try {
       await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
       await onRefresh();
     } catch (err) {
-      console.error(`Refresh ${source.id} failed:`, err);
+      log.warn('headline.source.refresh_failed', { sourceId: source.id, error: err.message });
     } finally {
       setRefreshing(false);
     }
@@ -43,7 +47,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
 
   return (
     <div className="source-cell">
-      <a className="source-cell-header" href={siteUrl} target="_blank" rel="noopener noreferrer" style={{ backgroundColor: headerColor }}>
+      <div className="source-cell-header" style={{ backgroundColor: headerColor }}>
         {!faviconError ? (
           <img
             ref={imgRef}
@@ -57,7 +61,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
         ) : (
           <span className="source-favicon-fallback">{source.label.charAt(0)}</span>
         )}
-        <span className="source-label">{source.label}</span>
+        <a className="source-label" href={siteUrl} target="_blank" rel="noopener noreferrer">{source.label}</a>
         <span className="source-meta">
           {source.lastHarvest ? formatTime(source.lastHarvest) : ''}
         </span>
@@ -66,13 +70,15 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
           onClick={handleRefresh}
           disabled={refreshing}
           title="Refresh this source"
+          aria-label={`Refresh ${source.label}`}
         >
           {refreshing ? '...' : '↻'}
         </button>
-      </a>
+      </div>
       {items.length > 0 && (
         <ul className="source-headlines">
           {items.map((item, i) => {
+            const previewId = item.id || i;
             const link = stripTracking((item.link || '').trim());
             const href = isPaywalled ? paywallProxy + link : link;
             const desc = item.desc && item.desc !== item.title ? item.desc : null;
@@ -81,12 +87,23 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
                 onMouseEnter={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   e.currentTarget.classList.toggle('source-headline--tooltip-below', rect.top < 250);
+                  setActivePreview(previewId);
+                }}
+                onMouseLeave={() => setActivePreview(null)}
+                onFocus={() => setActivePreview(previewId)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget)) setActivePreview(null);
                 }}
               >
                 <a href={href} target="_blank" rel="noopener noreferrer">
                   {smartQuotes(item.title)}
                 </a>
-                <div className="headline-tooltip">
+                <div className="headline-quick-actions">
+                  <button type="button" aria-label={`${item.state?.isSaved ? 'Unsave' : 'Save'} ${item.title}`} aria-pressed={!!item.state?.isSaved} onClick={() => onStateAction?.(item, item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? '★' : '☆'}</button>
+                  <button type="button" aria-label={`Archive ${item.title}`} onClick={() => onStateAction?.(item, 'archive')}>×</button>
+                  <button type="button" aria-label={`Mark ${item.state?.isRead ? 'unread' : 'read'}: ${item.title}`} onClick={() => onStateAction?.(item, item.state?.isRead ? 'unread' : 'read')}>{item.state?.isRead ? '○' : '●'}</button>
+                </div>
+                {activePreview === previewId && <div className="headline-tooltip" aria-hidden="true">
                   <div className="headline-tooltip-header">
                     {!faviconError ? (
                       <img className="headline-tooltip-icon" src={faviconUrl} alt="" width={12} height={12} />
@@ -95,10 +112,10 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, c
                     )}
                     <span className="headline-tooltip-source">{source.label}</span>
                   </div>
-                  {item.image && <img className="headline-tooltip-image" src={item.image} alt="" />}
+                  {item.image && <img className="headline-tooltip-image" src={item.image} alt="" loading="lazy" decoding="async" />}
                   <div className="headline-tooltip-title">{smartQuotes(item.title)}</div>
                   {desc && <div className="headline-tooltip-desc">{smartQuotes(desc)}</div>}
-                </div>
+                </div>}
               </li>
             );
           })}

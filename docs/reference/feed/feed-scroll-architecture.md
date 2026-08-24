@@ -115,7 +115,7 @@ Scroll activity logging throttled to ~5/sec (200ms debounce) to reduce main-thre
 - **Scroll smoothness** (jank-during-scroll correlation)
 - **DOM node count**, **heap memory** (Chrome only)
 
-Events emitted at `info` level (not `debug`) so they reach the backend session log:
+The monitor is enabled only by `?debug=1`; normal reading sessions do not run its permanent animation-frame loop or DOM scans. Debug sessions emit:
 - `perf.snapshot` — periodic summary (every 5s)
 - `perf.jank` — individual jank events (>100ms frames)
 - `perf.scroll-session` — per-scroll-gesture smoothness
@@ -130,17 +130,23 @@ Events emitted at `info` level (not `debug`) so they reach the backend session l
 | Worst frame | ~2300ms | During new batch + image decode |
 | Heap | 38-49 MB | Chrome desktop |
 
-## Infinite Scroll
+## Finite Scroll Sessions
 
-Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. Threshold: 0.1. Dependencies: `[hasMore, loadingMore, fetchItems, loading]`.
+Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A fresh view creates a server-owned session with `POST /api/v1/feed/scroll/sessions`; subsequent batches use `GET /api/v1/feed/scroll/sessions/:id`. The browser keeps that ID in `sessionStorage` under the active focus/filter identity. On reload it requests `?resume=1`, restoring the complete served-item sequence as well as pool/cursor state. Snapshots are persisted per user for 24 hours, survive a server restart, and are physically pruned after expiry. When sources exhaust, the sentinel stops and the UI renders a caught-up state.
 
-**Important:** Virtualization attempts that use React state for scroll tracking destabilize the sentinel's IntersectionObserver by triggering effect cleanup/reconnect cycles. The `content-visibility: auto` approach avoids this because it's pure CSS with no React state involvement.
+Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
+
+`content-visibility: auto` applies on both phone and desktop to reduce off-screen layout/paint work. Route-level snapshots preserve the loaded items and scroll position while switching Feed modes. Masonry measurement and placement events are debug-only; normal sessions retain error-level overlap reporting without per-card log traffic.
+
+The sticky product controls expose the four tier moods and source filters through shareable `?filter=` state. Each card includes an explicit keyboard-focusable Open action and a “Why shown” disclosure identifying its source and tier, with `more`, `less`, `mute`, reset, and one-step source-focus actions. Preferences are account-scoped; muted sources are removed immediately in the client and excluded from future assembled batches, while explicit filtered views remain available for inspection/reset. Items newer than the prior visit are marked. The reading settings can optionally stop Scroll after 30, 60, or 100 items; the completion surface can extend the current session by 30 or move directly to saved items.
+
+Scroll detail offers notes/highlights and a device-local Download action. A failed cold detail request checks the user-scoped IndexedDB edition before presenting an error. Downloading stores the normalized item and the current detail response; it does not promise that third-party images or streaming media remain available offline.
 
 ## File Map
 
 | File | Purpose |
 |------|---------|
-| `Scroll.jsx` | Main component — card list, detail routing, infinite scroll |
+| `Scroll.jsx` | Main component — bounded card window, finite-session loading, caught-up state, and detail routing |
 | `Scroll.scss` | Layout styles, mobile/desktop media queries |
 | `hooks/useMasonryLayout.js` | Desktop masonry positioning + ResizeObserver |
 | `hooks/usePerfMonitor.js` | FPS/jank/memory performance tracking |

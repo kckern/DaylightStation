@@ -10,19 +10,25 @@ export default function GallerySection({ data, onNavigateToItem }) {
       overflow: 'hidden',
     }}>
       {data.items.map(item => (
-        <div
+        <button
+          type="button"
           key={item.id}
           onClick={() => onNavigateToItem?.(item)}
+          aria-label={`Open ${item.title || 'gallery item'}`}
           style={{
             aspectRatio: '1',
             cursor: 'pointer',
             overflow: 'hidden',
+            padding: 0,
+            border: 0,
+            background: 'transparent',
           }}
         >
           <img
             src={item.image}
             alt=""
             loading="lazy"
+            decoding="async"
             style={{
               width: '100%',
               height: '100%',
@@ -30,7 +36,7 @@ export default function GallerySection({ data, onNavigateToItem }) {
               display: 'block',
             }}
           />
-        </div>
+        </button>
       ))}
     </div>
   );

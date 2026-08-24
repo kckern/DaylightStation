@@ -40,13 +40,11 @@
   border-radius: 0 !important;
 }
 
-// Hide dismiss buttons on mobile — swipe-left handles dismissal
+// Keep the explicit archive control on every viewport; swipe is only a shortcut.
 .scroll-item-wrapper .feed-card-dismiss {
-  display: none !important;
-
-  @media (min-width: 900px) {
-    display: flex !important;
-  }
+  display: flex !important;
+  min-width: 40px;
+  min-height: 40px;
 }
 
 // Cap portrait images at 9:16 (tallest allowed ratio)
@@ -139,6 +137,117 @@
   justify-content: center;
 }
 
+.scroll-controls {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  background: rgba(17, 18, 20, 0.94);
+  backdrop-filter: blur(8px);
+
+  button {
+    min-height: 40px;
+    border: 1px solid #4b4f54;
+    border-radius: 999px;
+    background: #25272a;
+    color: #d5d7da;
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+  }
+
+  button.active { border-color: #74c0fc; background: #164c72; color: #fff; }
+}
+
+.scroll-source-tuning {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+
+  button {
+    min-height: 36px;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 0.4rem;
+    background: rgba(255, 255, 255, 0.06);
+    color: #ced4da;
+    cursor: pointer;
+  }
+
+  button.active { border-color: #74c0fc; background: rgba(34, 139, 230, 0.22); color: #fff; }
+}
+
+.scroll-source-filter {
+  position: relative;
+
+  > summary {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #4b4f54;
+    border-radius: 999px;
+    background: #25272a;
+    color: #d5d7da;
+    padding: 0.35rem 0.8rem;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  > summary::-webkit-details-marker { display: none; }
+
+  > div {
+    position: absolute;
+    z-index: 15;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    width: min(22rem, calc(100vw - 1rem));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.75rem;
+    border: 1px solid #4b4f54;
+    border-radius: 0.65rem;
+    background: #1d1f22;
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.45);
+  }
+}
+
+.scroll-item-wrapper {
+  content-visibility: auto;
+  contain-intrinsic-size: 320px 240px;
+}
+
+.scroll-card-surface { cursor: pointer; }
+
+.scroll-card-context {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: #17181a;
+  color: #aeb3b8;
+  font-size: 0.75rem;
+
+  summary { min-height: 32px; display: inline-flex; align-items: center; cursor: pointer; }
+  p { max-width: 28ch; margin: 0.25rem 0 0.5rem; line-height: 1.4; }
+  button { min-height: 36px; border: 1px solid #4b4f54; border-radius: 0.4rem; background: #25272a; color: #e9ecef; padding: 0.3rem 0.65rem; cursor: pointer; }
+}
+
+.scroll-card-new {
+  align-self: center;
+  border-radius: 999px;
+  background: #1971c2;
+  color: #fff;
+  padding: 0.15rem 0.45rem;
+  font-weight: 700;
+}
+
+.scroll-card-open { flex: 0 0 auto; }
+
 .scroll-loading {
   padding: 1rem;
 }
@@ -173,6 +282,10 @@
   color: #5c636a;
   font-size: 0.85rem;
 }
+
+.scroll-end h2 { margin: 0 0 0.35rem; color: #dee2e6; font-size: 1.25rem; }
+.scroll-end p { margin: 0 0 1rem; }
+.scroll-end__actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.65rem; }
 
 .scroll-load-more {
   background: none;
@@ -220,6 +333,19 @@
   cursor: pointer;
 }
 
+.feed-mini-bar-open {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
 .feed-mini-bar-info {
   flex: 1;
   overflow: hidden;
@@ -261,6 +387,9 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
 
   &:hover { color: #228be6; }
   &:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
@@ -277,6 +406,8 @@
   padding: 0.15rem 0.35rem;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  min-height: 40px;
 
   &:hover { color: #fff; border-color: #868e96; }
   &:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
@@ -290,6 +421,8 @@
   cursor: pointer;
   padding: 0.25rem 0.5rem;
   flex-shrink: 0;
+  min-width: 40px;
+  min-height: 40px;
 
   &:hover { color: #fff; }
   &:focus-visible { outline: 2px solid #228be6; outline-offset: 2px; }
@@ -303,6 +436,16 @@
   order: 99;
   flex-basis: 100%;
   margin-top: 0.25rem;
+  cursor: pointer;
+  position: relative;
+}
+
+.feed-mini-bar-progress-input {
+  position: absolute;
+  inset: -10px 0;
+  width: 100%;
+  height: 23px;
+  opacity: 0;
   cursor: pointer;
 }
 

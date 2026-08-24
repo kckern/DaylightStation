@@ -48,6 +48,7 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
   const [phase, setPhase] = useState(thumbnail ? 'thumbnail' : 'original');
   const [loaded, setLoaded] = useState(false);
   const loadStartRef = useRef(performance.now());
+  const imageRef = useRef(null);
 
   useEffect(() => {
     setImgSrc(thumbnail || src);
@@ -56,24 +57,47 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
     loadStartRef.current = performance.now();
   }, [src, thumbnail]);
 
-  // Preload full image in background when we have a thumbnail
+  // Upgrade a thumbnail only when the card approaches the viewport. A manual
+  // Image preload at mount bypasses native lazy-loading and multiplies network
+  // and decode pressure during a 60-card window.
   useEffect(() => {
     if (!thumbnail || !src || thumbnail === src) return;
-    const img = new Image();
-    img.onload = () => {
-      const durationMs = Math.round(performance.now() - loadStartRef.current);
-      imgLog().info('preload.done', { phase: 'full', durationMs, src, feedItemId, title });
-      setImgSrc(src);
-      setPhase('original');
-      loadStartRef.current = performance.now();
+    let cancelled = false;
+    let preload = null;
+    const upgrade = () => {
+      if (preload || cancelled) return;
+      preload = new Image();
+      preload.onload = () => {
+        if (cancelled) return;
+        const durationMs = Math.round(performance.now() - loadStartRef.current);
+        imgLog().debug('preload.done', { phase: 'full', durationMs, src, feedItemId, title });
+        setImgSrc(src);
+        setPhase('original');
+        loadStartRef.current = performance.now();
+      };
+      preload.onerror = () => {
+        if (cancelled) return;
+        const durationMs = Math.round(performance.now() - loadStartRef.current);
+        imgLog().warn('preload.failed', { src, thumbnail, durationMs, feedItemId, title });
+      };
+      preload.src = src;
     };
-    img.onerror = () => {
-      const durationMs = Math.round(performance.now() - loadStartRef.current);
-      imgLog().warn('preload.failed', { src, thumbnail, durationMs, feedItemId, title });
+
+    let observer = null;
+    if ('IntersectionObserver' in window && imageRef.current) {
+      observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) { upgrade(); observer?.disconnect(); }
+      }, { rootMargin: '600px' });
+      observer.observe(imageRef.current);
+    } else {
+      upgrade();
+    }
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      if (preload) { preload.onload = null; preload.onerror = null; }
     };
-    img.src = src;
-    return () => { img.onload = null; img.onerror = null; };
-  }, [src, thumbnail]);
+  }, [feedItemId, src, thumbnail, title]);
 
   const handleError = () => {
     const durationMs = Math.round(performance.now() - loadStartRef.current);
@@ -110,11 +134,13 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
         />
       )}
       <img
+        ref={imageRef}
         src={imgSrc}
         alt=""
         className="feed-card-image"
         loading="lazy"
         decoding="async"
+        sizes="(min-width: 900px) 320px, 100vw"
         style={{
           width: '100%',
           height: '100%',
@@ -125,7 +151,7 @@ function HeroImage({ src, thumbnail, feedItemId, title }) {
         }}
         onLoad={() => {
           const durationMs = Math.round(performance.now() - loadStartRef.current);
-          imgLog().info('loaded', { phase, durationMs, src: imgSrc, feedItemId, title });
+          imgLog().debug('loaded', { phase, durationMs, src: imgSrc, feedItemId, title });
           setLoaded(true);
         }}
         onError={handleError}
@@ -424,7 +450,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               {age}
             </span>
           </div>
-          {/* Dismiss button overlay — desktop only (mobile uses swipe-left) */}
+          {/* Archive button overlay — mobile also supports swipe-left. */}
           {onDismiss && (
             <button
               className="feed-card-dismiss"
@@ -449,7 +475,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 lineHeight: 1,
                 zIndex: 2,
               }}
-              aria-label="Dismiss"
+              aria-label="Archive"
             >
               ✕
             </button>
@@ -507,7 +533,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             Overdue
           </span>
         )}
-        {/* Dismiss footer for text-only cards — desktop only (mobile uses swipe-left) */}
+        {/* Archive footer for text-only cards. */}
         {onDismiss && !(item.image && isImageUrl(item.image)) && (
           <div className="feed-card-dismiss" style={{
             display: 'flex',
@@ -530,9 +556,9 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
                 padding: '0.15rem 0.3rem',
                 borderRadius: '4px',
               }}
-              aria-label="Dismiss"
+              aria-label="Archive"
             >
-              ✕ <span>Dismiss</span>
+              ✕ <span>Archive</span>
             </button>
           </div>
         )}
@@ -578,12 +604,12 @@ function CardYouTubePlayer({ item }) {
         feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, title: item.title, error: err.message });
         setFetchDone(true);
       });
-  }, [item.id, item.meta]);
+  }, [item.id, item.meta, item.title]);
 
   const handleStreamError = useCallback(() => {
     feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, title: item.title, reason: 'stream-error' });
     setUseEmbed(true);
-  }, [item.meta?.videoId]);
+  }, [item.meta?.videoId, item.title]);
 
   const ar = (item.meta?.imageWidth && item.meta?.imageHeight)
     ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`

@@ -10,8 +10,8 @@ When a user scrolls the feed, a `GET /api/v1/feed/scroll` request triggers a mul
 
 | Service | Responsibility |
 |---------|---------------|
-| `FeedAssemblyService` | Orchestrator — coordinates the pipeline, owns the LRU item cache |
-| `FeedPoolManager` | Item pool — fetches from sources with pagination, age filtering, recycling |
+| `FeedAssemblyService` | Orchestrator — coordinates the pipeline, records history, and owns the hot-item LRU |
+| `FeedPoolManager` | Session item pool — fetches from sources with pagination, age filtering, proactive refill, and explicit exhaustion |
 | `TierAssemblyService` | Batch composition — flex allocation, within-tier selection, interleaving |
 | `FlexAllocator` | Slot distribution — CSS flexbox-inspired algorithm for dividing batch slots |
 | `FlexConfigParser` | Config normalization — parses YAML flex shorthand into allocator descriptors |
@@ -20,7 +20,8 @@ When a user scrolls the feed, a `GET /api/v1/feed/scroll` request triggers a mul
 ### Request-to-Response Flow
 
 ```
-GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
+POST /api/v1/feed/scroll/sessions, then
+GET /api/v1/feed/scroll/sessions/:sessionId?cursor=...&limit=...&focus=...&filter=...
                 │
                 ▼
      FeedAssemblyService.getNextBatch()
@@ -34,8 +35,8 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
                 │ no
                 ▼
         ┌───────┴───────┐
-        │  Fresh load?  │  (no cursor)
-        │  Reset pool   │
+        │  New session? │  (POST)
+        │  Create pool  │
         └───────┬───────┘
                 │
                 ▼
@@ -71,41 +72,38 @@ GET /api/v1/feed/scroll?cursor=...&limit=...&focus=...&filter=...
      Padding pass (fill short batches from padding sources)
                 │
                 ▼
-     Cycling pass (duplicate items as last resort)
-                │
-                ▼
      Image dimension probe (parallel HEAD requests)
                 │
                 ▼
-     FeedPoolManager.markSeen() → triggers proactive refill or recycle
+     FeedPoolManager.markSeen() → triggers proactive refill
                 │
                 ▼
-     Cache items in LRU (for deep-link resolution)
+     Record normalized history + cache hot items
                 │
                 ▼
-     Return { items, hasMore, colors, feed_assembly }
+     Return { items, hasMore, caughtUp, colors, feed_assembly }
 ```
 
 ---
 
 ## Stage 1: Pool Management (FeedPoolManager)
 
-`FeedPoolManager` maintains a per-user in-memory pool of feed items. It sits between `FeedAssemblyService` and the source adapters, handling pagination, age filtering, and content recycling.
+`FeedPoolManager` maintains a user-and-session-scoped pool of feed items. It sits between `FeedAssemblyService` and the source adapters, handling pagination, age filtering, proactive refill, resumable snapshots, and explicit exhaustion.
 
-### State (per user)
+### State (per user and session)
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `#pools` | `Map<username, Object[]>` | Accumulated item pool (grows as pages are fetched) |
-| `#seenIds` | `Map<username, Set<string>>` | IDs already served in batches |
-| `#seenItems` | `Map<username, Object[]>` | Full item objects for recycling (capped at 500) |
-| `#cursors` | `Map<username, Map<sourceKey, { cursor, exhausted, lastFetch }>>` | Per-source pagination state |
-| `#refilling` | `Map<username, boolean>` | Prevents concurrent refills |
-| `#batchCounts` | `Map<username, number>` | 1-indexed batch counter (reset on fresh load) |
-| `#scrollConfigs` | `Map<username, Object>` | Cached scroll config per user |
+| `#pools` | `Map<stateKey, Object[]>` | Accumulated item pool (grows as pages are fetched) |
+| `#seenIds` | `Map<stateKey, Set<string>>` | IDs already served in this session |
+| `#seenItems` | `Map<stateKey, Object[]>` | Recent served objects retained for snapshot resume (capped at 500) |
+| `#cursors` | `Map<stateKey, Map<sourceKey, { cursor, exhausted, lastFetch }>>` | Per-source pagination state |
+| `#refilling` | `Map<stateKey, boolean>` | Prevents concurrent refills |
+| `#batchCounts` | `Map<stateKey, number>` | 1-indexed batch counter for wire decay |
+| `#scrollConfigs` | `Map<stateKey, Object>` | Configuration captured for the session |
 | `#firstPageCursors` | `Map<sourceKey, cursor>` | Cached first-page cursors for cache-hit pagination |
 
-All state is session-scoped — it resets when the user does a fresh page load (no cursor in the request).
+All pool state is keyed by user and browser-tab session. A deliberately fresh request resets that session; continuation requests reuse its pool and cursors. Named session snapshots are stored per user for 24 hours so process restarts do not silently change an in-progress sequence.
 
 ### Constants
 
@@ -180,11 +178,9 @@ When `markSeen()` detects fewer than `2 × batch_size` unseen items remaining, i
 
 If `getPool()` is called when the pool is empty but sources remain, it **awaits** the refill rather than returning nothing.
 
-### Silent Recycling
+### Explicit Exhaustion
 
-When all sources are exhausted and the pool is empty, seen items are shuffled (Fisher-Yates) back into the pool and the seen-ID set is cleared. This creates an infinite scroll experience — `hasMore` never returns `false` as long as items have been seen.
-
-The seen-items history is capped at 500 items to prevent unbounded memory growth. Recycled items are tagged with `_seen: true` so the tier assembly can deprioritize them.
+When all sources are exhausted and no unseen items remain, `hasMore` becomes `false` and the API returns `caughtUp: true`. Seen content is never silently recycled. The frontend offers explicit **Refresh sources** and **Browse history** actions.
 
 ---
 
@@ -503,7 +499,7 @@ Subsource key is derived from: `item.meta.subreddit || item.meta.sourceId || ite
 
 ---
 
-## Stage 5: Padding, Cycling, and Finalization (FeedAssemblyService)
+## Stage 5: Padding and Finalization (FeedAssemblyService)
 
 After tier assembly and spacing, `FeedAssemblyService` runs three fill passes:
 
@@ -514,28 +510,14 @@ After tier assembly and spacing, `FeedAssemblyService` runs three fill passes:
 3. Fisher-Yates shuffle the padding items
 4. Append to fill remaining slots
 
-### Cycling Pass (last resort)
+Short batches are valid. The application does not duplicate content or block a list response on remote image-dimension probes.
 
-If the batch is still short after padding (batch > 0, batchNumber > 1):
-
-1. Duplicate existing batch items with ID suffix `:dup{n}`
-2. Fill remaining slots with duplicates
-3. Ensures the batch never falls below `effectiveLimit` items
-
-This is a graceful degradation for sessions where sources are exhausted and padding can't fill the gap.
-
-### Image Dimension Probe
-
-For items with an `image` URL but missing `meta.imageWidth` / `meta.imageHeight`:
-
-1. Parallel `probeImageDimensions()` calls with 3-second timeout per image
-2. On success, stores dimensions in `item.meta.imageWidth` and `item.meta.imageHeight`
-3. Enables frontend layout (masonry) to pre-calculate card heights without waiting for image load
+Before ordinary tier selection, account source preferences are applied. `mute` removes a top-level source from the available pool; within a tier, stable ranking moves `more` sources ahead and `less` sources behind while preserving the configured sort within each preference band. Explicit `filter` requests bypass this preference filter so a muted source remains intentionally inspectable and reversible.
 
 ### Mark Seen & Cache
 
-1. **Mark seen** — `FeedPoolManager.markSeen()` records consumed item IDs and triggers proactive refill or recycling
-2. **Cache** — each item is stored in an LRU cache (max 500) for deep-link resolution via `GET /api/v1/feed/scroll/item/:slug`
+1. **Mark seen** — `FeedPoolManager.markSeen()` records consumed item IDs and triggers proactive refill
+2. **History** — normalized items are written to per-user monthly history and resolve durable deep links via `GET /api/v1/feed/items/:slug`
 3. **Selection tracking** — headline items (ID starts with `headline:`) get their selection count incremented for sort-bias in future batches
 
 ### Response Shape
@@ -544,6 +526,7 @@ For items with an `image` URL but missing `meta.imageWidth` / `meta.imageHeight`
 {
   items,           // final batch array
   hasMore,         // feedPoolManager.hasMore()
+  caughtUp,        // true when all configured sources are exhausted
   colors,          // extracted from scroll config tier/source colors
   feed_assembly,   // diagnostic object from tier assembly
 }
@@ -668,8 +651,8 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  1. Fresh page load (no cursor)                                   │
-│     → reset() clears all per-user state + batch counter           │
+│  1. Start or resume a browser-tab session                         │
+│     → POST creates an isolated pool; GET can restore its snapshot │
 │     → initializePool() fetches page 1 from all sources            │
 │     → Pool: ~80-200 items across 15+ sources                     │
 │     → Batch 1 (decay factor=1.0): full wire + non-wire tiers     │
@@ -693,10 +676,9 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 ┌────────────────────────────────▼─────────────────────────────────┐
 │  4. All sources exhausted                                        │
 │     → Pool drains to 0 unseen items                              │
-│     → recycle() shuffles 500 seen items back into pool           │
-│     → Recycled items tagged _seen, deprioritized in selection    │
-│     → Scroll continues with reshuffled content (still decayed)   │
-│     → hasMore stays true — infinite scroll                       │
+│     → No duplicate padding or recycling is synthesized           │
+│     → Response returns hasMore: false and caughtUp: true          │
+│     → UI preserves the session and shows an explicit endpoint    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -706,9 +688,9 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 
 | File | Purpose |
 |------|---------|
-| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → filter/tier assembly → padding → cycling → cache |
+| `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Orchestrator: pool → preferences → filter/tier assembly → padding → history/cache |
 | `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param |
-| `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Pool management: pagination, age filtering, refill, recycling |
+| `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Session pool management: pagination, age filtering, refill, snapshots, exhaustion |
 | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier bucketing, flex allocation, within-tier selection, interleaving |
 | `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution algorithm |
 | `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization and legacy migration |
@@ -716,4 +698,4 @@ When the request includes `?focus=reddit:science`, the wire tier is filtered to 
 | `backend/src/3_applications/feed/services/ScrollConfigLoader.mjs` | User config loading, tier defaults, age threshold resolution |
 | `backend/src/3_applications/feed/services/FeedCacheService.mjs` | Stale-while-revalidate cache with per-source TTLs |
 | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Port interface: `fetchPage()`, `fetchItems()`, `getDetail()` |
-| `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll`, `/detail`, `/scroll/item/:slug` |
+| `backend/src/4_api/v1/routers/feed.mjs` | Express router: `/scroll/sessions`, `/detail/:id`, `/items/:slug`, search, state, workspace, annotations, and portable data |

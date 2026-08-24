@@ -49,19 +49,20 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
       onTouchStart={handleBarTouchStart}
       onTouchEnd={handleBarTouchEnd}
     >
-      {thumb && (
-        <img
-          src={thumb}
-          alt=""
-          className="feed-mini-bar-thumb"
-          onClick={onOpen}
-          onError={(e) => { feedLog.image('minibar thumb failed', { src: thumb }); e.target.style.display = 'none'; }}
-        />
-      )}
-      <div className="feed-mini-bar-info" onClick={onOpen}>
-        <span className="feed-mini-bar-source">{item.meta?.sourceName || item.source}</span>
-        <span className="feed-mini-bar-title">{item.title}</span>
-      </div>
+      <button type="button" className="feed-mini-bar-open" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
+        {thumb && (
+          <img
+            src={thumb}
+            alt=""
+            className="feed-mini-bar-thumb"
+            onError={(e) => { feedLog.image('minibar thumb failed', { src: thumb }); e.target.style.display = 'none'; }}
+          />
+        )}
+        <span className="feed-mini-bar-info">
+          <span className="feed-mini-bar-source">{item.meta?.sourceName || item.source}</span>
+          <span className="feed-mini-bar-title">{item.title}</span>
+        </span>
+      </button>
       {duration > 0 && (
         <span className="feed-mini-bar-time">
           {formatTime(currentTime)} / {formatTime(duration)}
@@ -106,6 +107,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
       )}
       <div className="feed-mini-bar-progress" onClick={handleProgressClick}>
         <div className="feed-mini-bar-progress-fill" ref={progressElRef} />
+        <input className="feed-mini-bar-progress-input" type="range" min="0" max={duration || 0} step="1" value={Math.min(currentTime || 0, duration || 0)} onChange={event => seek?.(Number(event.target.value))} aria-label="Playback position" />
       </div>
     </div>
   );

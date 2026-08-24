@@ -42,15 +42,15 @@ export class FeedCacheService {
   #cachePath;
   #logger;
 
-  /** @type {Map<string, { items: Object[], fetchedAt: string }>} */
-  #cache = new Map();
+  /** @type {Map<string, Map<string, { items: Object[], fetchedAt: string }>>} */
+  #caches = new Map();
 
   /** @type {Map<string, boolean>} tracks in-flight refreshes */
   #refreshing = new Map();
 
-  #hydrated = false;
-  #flushTimer = null;
-  #dirty = false;
+  #hydratedUsers = new Set();
+  #flushTimers = new Map();
+  #dirtyUsers = new Set();
 
   /**
    * @param {Object} config
@@ -76,12 +76,13 @@ export class FeedCacheService {
    */
   async getItems(sourceKey, fetchFn, username, { noCache = false } = {}) {
     this.#hydrateIfNeeded(username);
+    const cache = this.#cacheFor(username);
 
     if (noCache) {
       return this.#fetchAndCache(sourceKey, fetchFn, username);
     }
 
-    const entry = this.#cache.get(sourceKey);
+    const entry = cache.get(sourceKey);
     if (!entry) {
       // Cold start for this source — must await
       return this.#fetchAndCache(sourceKey, fetchFn, username);
@@ -108,23 +109,24 @@ export class FeedCacheService {
    * Hydrate in-memory cache from disk on first access.
    */
   #hydrateIfNeeded(username) {
-    if (this.#hydrated) return;
-    this.#hydrated = true;
+    if (this.#hydratedUsers.has(username)) return;
+    this.#hydratedUsers.add(username);
+    const cache = this.#cacheFor(username);
 
     try {
       const data = this.#dataService.user.read(this.#cachePath, username);
       if (data && typeof data === 'object') {
         for (const [key, entry] of Object.entries(data)) {
           if (entry?.items && entry?.fetchedAt) {
-            this.#cache.set(key, {
+            cache.set(key, {
               items: entry.items,
               fetchedAt: entry.fetchedAt,
             });
           }
         }
         this.#logger.info?.('feed.cache.hydrated', {
-          sources: this.#cache.size,
-          keys: [...this.#cache.keys()],
+          sources: cache.size,
+          keys: [...cache.keys()],
         });
       }
     } catch (err) {
@@ -138,7 +140,8 @@ export class FeedCacheService {
   async #fetchAndCache(sourceKey, fetchFn, username) {
     try {
       const items = await fetchFn();
-      this.#cache.set(sourceKey, {
+      const cache = this.#cacheFor(username);
+      cache.set(sourceKey, {
         items,
         fetchedAt: new Date().toISOString(),
       });
@@ -147,7 +150,7 @@ export class FeedCacheService {
     } catch (err) {
       this.#logger.warn?.('feed.cache.fetch.error', { sourceKey, error: err.message });
       // Return stale cache if available
-      const stale = this.#cache.get(sourceKey);
+      const stale = this.#cacheFor(username).get(sourceKey);
       if (stale) {
         this.#logger.info?.('feed.cache.serving.stale', { sourceKey });
         return stale.items;
@@ -160,26 +163,27 @@ export class FeedCacheService {
    * Background refresh — fire and forget, no await.
    */
   #backgroundRefresh(sourceKey, fetchFn, username) {
-    if (this.#refreshing.get(sourceKey)) return; // already in-flight
-    this.#refreshing.set(sourceKey, true);
+    const refreshKey = `${username}:${sourceKey}`;
+    if (this.#refreshing.get(refreshKey)) return; // already in-flight
+    this.#refreshing.set(refreshKey, true);
 
     this.#fetchAndCache(sourceKey, fetchFn, username)
-      .finally(() => this.#refreshing.delete(sourceKey));
+      .finally(() => this.#refreshing.delete(refreshKey));
   }
 
   /**
    * Debounced disk flush — writes full cache to _cache.yml at most once per 30s.
    */
   #scheduleDiskFlush(username) {
-    this.#dirty = true;
-    if (this.#flushTimer) return; // already scheduled
+    this.#dirtyUsers.add(username);
+    if (this.#flushTimers.has(username)) return; // already scheduled
 
-    this.#flushTimer = setTimeout(() => {
-      this.#flushTimer = null;
-      if (!this.#dirty) return;
-      this.#dirty = false;
+    this.#flushTimers.set(username, setTimeout(() => {
+      this.#flushTimers.delete(username);
+      if (!this.#dirtyUsers.has(username)) return;
+      this.#dirtyUsers.delete(username);
       this.#flushToDisk(username);
-    }, FLUSH_DEBOUNCE_MS);
+    }, FLUSH_DEBOUNCE_MS));
   }
 
   /**
@@ -188,7 +192,7 @@ export class FeedCacheService {
   #flushToDisk(username) {
     try {
       const data = {};
-      for (const [key, entry] of this.#cache.entries()) {
+      for (const [key, entry] of this.#cacheFor(username).entries()) {
         data[key] = {
           fetchedAt: entry.fetchedAt,
           items: entry.items,
@@ -199,6 +203,11 @@ export class FeedCacheService {
     } catch (err) {
       this.#logger.warn?.('feed.cache.flush.error', { error: err.message });
     }
+  }
+
+  #cacheFor(username) {
+    if (!this.#caches.has(username)) this.#caches.set(username, new Map());
+    return this.#caches.get(username);
   }
 }
 

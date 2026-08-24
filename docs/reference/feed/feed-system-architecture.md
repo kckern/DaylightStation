@@ -35,14 +35,14 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │  │  • Paginated source fetching (fetchPage + cursors)     │         │
 │  │  • Per-source age filtering (max_age_hours)            │         │
 │  │  • Proactive refill when pool runs thin                │         │
-│  │  • Silent recycling when all sources exhaust           │         │
+│  │  • Explicit exhaustion with resumable session snapshots│         │
 │  └────────────────────────────┬───────────────────────────┘         │
 │                               │                                      │
 │  ┌────────────────────────────┼───────────────────────────┐         │
 │  │         FeedAssemblyService                            │         │
 │  │  • Four-tier assembly via TierAssemblyService          │         │
 │  │  • Spacing enforcement (SpacingEnforcer)               │         │
-│  │  • LRU item cache for deep-link resolution             │         │
+│  │  • History-backed deep links with a hot-item LRU       │         │
 │  │  • Detail delegation to source adapters                │         │
 │  └────────────────────────────┬───────────────────────────┘         │
 │                               │                                      │
@@ -57,7 +57,7 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 │  │  Feed API Router (/api/v1/feed/*)                      │         │
 │  │  GET  /scroll         GET  /headlines                  │         │
 │  │  GET  /detail/:id     GET  /headlines/pages            │         │
-│  │  GET  /scroll/item/:slug   POST /headlines/harvest     │         │
+│  │  GET  /items/:slug     POST /scroll/sessions           │         │
 │  └────────────────────────────┬───────────────────────────┘         │
 └───────────────────────────────┼──────────────────────────────────────┘
                                 │ HTTP/JSON
@@ -98,9 +98,9 @@ The feed system aggregates content from external services (RSS, Reddit, YouTube,
 | **Adapter** | `backend/src/1_adapters/feed/WebContentAdapter.mjs` | Fetches web pages, extracts readable content + og:image + og:description |
 | **Adapter** | `backend/src/1_adapters/feed/sources/*.mjs` | 12 source adapters (see Source Adapters section) |
 | **Application** | `backend/src/3_applications/feed/ports/IFeedSourceAdapter.mjs` | Base class defining `fetchItems()` and optional `getDetail()` |
-| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → tier assembly → padding → cycling → caching, detail delegation, filter bypass |
+| **Application** | `backend/src/3_applications/feed/services/FeedAssemblyService.mjs` | Scroll orchestration — pool → preference filtering → tier assembly → padding → history, detail delegation, filter bypass |
 | **Application** | `backend/src/3_applications/feed/services/FeedFilterResolver.mjs` | 4-layer resolution chain for `?filter=` param — tier → source type → query name → alias |
-| **Application** | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Item pool management — paginated source fetching, age filtering, proactive refill, silent recycling |
+| **Application** | `backend/src/3_applications/feed/services/FeedPoolManager.mjs` | Session-scoped item pools — paginated fetching, age filtering, proactive refill, snapshots, and explicit exhaustion |
 | **Application** | `backend/src/3_applications/feed/services/TierAssemblyService.mjs` | Four-tier bucketing, flex allocation, within-tier selection, cross-tier interleaving |
 | **Application** | `backend/src/3_applications/feed/services/FlexAllocator.mjs` | CSS flexbox-inspired slot distribution — iterative grow/shrink/basis with min/max clamping |
 | **Application** | `backend/src/3_applications/feed/services/FlexConfigParser.mjs` | YAML flex config normalization — parses shorthand, aliases, and legacy keys into flex descriptors |
@@ -167,6 +167,17 @@ Every source adapter returns items normalized to this shape:
 }
 ```
 
+At the HTTP/application boundary, `normalizeFeedItem()` adds the cross-mode contract:
+
+- `stateKey`: canonical story identity derived from a tracking-free URL, falling back to source identity
+- `publishedAt`, `summary`, `origins`, `sourceInfo`, `imageInfo`, and `capabilities`
+- `state`: independent `isRead`, `isSaved`, and `isArchived` values plus timestamps and source-sync status
+- Legacy `source`, `image`, `link`, `timestamp`, `preview`, and `isRead` aliases remain during frontend migration
+
+State is user-scoped in `feed/item-state.yml`. It is locally authoritative: FreshRSS write failures are persisted as a per-item `pendingSync` queue, retried with bounded exponential backoff, and exposed to the shell for a manual retry. Browser-network failures use a separate `feed:pending-mutations` local queue; the workspace overlays those operations on fetched items and replays them sequentially when connectivity returns. Search documents are retained in monthly `feed/history/YYYY-MM.jsonl` shards for 12 months; expired shards are physically deleted. Saved documents are also snapshotted in `feed/saved-items.yml` and remain addressable indefinitely. An in-memory token index narrows text candidates before ranking, while source, mode, state, and date filters remain composable. Reader/search use triggers a bounded background FreshRSS backfill (up to the 12-month cutoff); its persisted progress survives restarts and is returned as search coverage. Legacy household dismissals are lazily migrated into per-user archived state as their items are encountered.
+
+`FeedStateService` also owns the account workspace: normalized reading preferences, mode checkpoints, top-level source weighting, notes/highlights, and portable import/export. Preferences are server-authoritative after first migration. Checkpoints store a stable item ID, pixel fallback, and visit time. Annotation locators are opaque to the backend; the frontend currently writes W3C-style text-quote selector JSON with exact/prefix/suffix context.
+
 ---
 
 ## Scroll Assembly Algorithm
@@ -176,21 +187,20 @@ Every source adapter returns items normalized to this shape:
 **Summary:**
 
 1. **Reset pool** — on fresh load (no cursor), `FeedPoolManager.reset()` clears per-user state
-2. **Get pool** — `FeedPoolManager.getPool()` returns all unseen items (initializes on first call by fetching page 1 from all sources in parallel, with age filtering). Recycled items tagged `_seen` for deprioritization
+2. **Get pool** — `FeedPoolManager.getPool()` returns available items in a user-and-session-scoped pool, initializing by fetching page 1 from all sources in parallel
 3. **Filter/source bypass** — if `?filter=` or `?source=`, resolve via `FeedFilterResolver` and bypass tier assembly (see `docs/reference/feed/feed-assembly-process.md`)
 4. **Flex slot allocation** — `FlexAllocator` distributes batch slots across tiers using CSS flexbox-inspired grow/shrink/basis/min/max descriptors (two-level: batch→tiers, then tier→sources)
 5. **Wire decay** — exponential decay: `factor = 0.5^((batch-1)/halfLife)`, default halfLife=2. Freed wire slots cascade to non-wire tiers proportionally, with overflow redistribution
 6. **Tier assembly** — `TierAssemblyService.assemble()` runs within-tier selection (sort → cap → filler sources), shortfall redistribution across exhausted tiers, then cross-tier interleaving
 7. **Spacing** — `SpacingEnforcer` enforces max_consecutive (default: 1), max_consecutive_subsource (default: 2), source/subsource min_spacing
 8. **Padding** — fill short batches from sources marked `padding: true`
-9. **Cycling** — last-resort duplication of batch items if still short after padding
-10. **Image probe** — parallel dimension probing for items with images (enables masonry pre-calculation)
-11. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill (when pool thins) or silent recycling (when all sources exhausted)
-12. **Cache** — stores returned items in an LRU cache (max 500) for deep-link resolution
+9. **Mark seen** — `FeedPoolManager.markSeen()` triggers proactive refill when the pool thins
+10. **Finish** — short batches are valid; exhausted sessions return `caughtUp: true` rather than duplicates
+11. **History** — normalized output is indexed for cross-mode search and stable detail lookup
 
 ### Pagination and Pool Management
 
-`FeedPoolManager` accumulates items across paginated source fetches. Adapters that support pagination (`RedditFeedAdapter`, `FreshRSSFeedAdapter`, `GoogleNewsFeedAdapter`) return continuation cursors. When the unseen pool drops below `2 × batch_size`, the pool manager proactively fetches the next page from non-exhausted sources. When all sources exhaust (hit age threshold or have no more content), seen items are Fisher-Yates shuffled back into the pool for infinite scroll.
+`FeedPoolManager` accumulates items across paginated source fetches. Its state key is `{username, sessionId}`, preventing one tab from resetting another. The serializable pool, served-item history, seen IDs, source cursors, and batch count are persisted for 24-hour recovery. The browser stores the session ID in `sessionStorage` by filter identity, then calls the resume form of the session endpoint after reload. Expired persisted session files are deleted during store maintenance. When the unseen pool drops below `2 × batch_size`, it proactively fetches the next page. When every source exhausts, the session ends explicitly.
 
 ---
 
@@ -209,9 +219,9 @@ The detail system provides expanded content when a user taps a scroll card.
 ### Deep-Link Resolution
 
 For direct URL access (shared links):
-1. Frontend calls `GET /api/v1/feed/scroll/item/{base64url-slug}`
-2. Server decodes slug to item ID, looks up in LRU cache
-3. Returns `{ item, sections, ogImage, ogDescription }` or 404 if expired
+1. Frontend calls `GET /api/v1/feed/items/{base64url-slug}`
+2. Server resolves the occurrence from per-user history and attaches current unified state
+3. Returns `{ item, sections, ogImage, ogDescription }`; old items remain linkable after the short-lived assembly cache expires
 
 ### Section Types
 
@@ -245,8 +255,8 @@ headline_pages:
   - id: mainstream
     label: News
     grid:
-      rows: [1, 2, 3]
-      cols: [1, 2, 3, 4, 5]
+      rows: [0, 1, 2]
+      cols: [0, 1, 2, 3, 4]
     col_colors:
       - 'hsl(215, 50%, 40%)'    # left — blue
       - 'hsl(210, 30%, 35%)'    # center-left
@@ -257,16 +267,18 @@ headline_pages:
       - id: nyt
         label: NYT
         url: https://rss.nytimes.com/...
-        row: 1
-        col: 1
+        row: 0
+        col: 0
       - id: bbc
         label: BBC
         urls:                    # Multi-URL sources supported
           - https://feeds.bbci.co.uk/news/rss.xml
           - https://feeds.bbci.co.uk/news/world/rss.xml
-        row: 1
-        col: 3
+        row: 0
+        col: 2
 ```
+
+Grid coordinates are zero-based and must fall within the declared row/column indexes.
 
 ### RSS Harvesting
 
@@ -288,8 +300,10 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/feed/scroll` | Fetch next batch of scroll items |
-| | Query: `limit`, `cursor`, `focus`, `source`, `filter` | |
-| `GET` | `/api/v1/feed/scroll/item/:slug` | Deep-link resolution (base64url item ID) |
+| | Query: `limit`, `cursor`, `focus`, `source`, `filter`, `session` | |
+| `POST` | `/api/v1/feed/scroll/sessions` | Create an isolated scroll session and return its first batch |
+| `GET` | `/api/v1/feed/scroll/sessions/:id` | Continue an existing session; `?resume=1` returns all previously served items after reload |
+| `GET` | `/api/v1/feed/items/:slug` | History-backed detail resolution |
 | `GET` | `/api/v1/feed/detail/:feedItemId` | Fetch detail sections for an item |
 | | Query: `link`, `meta` (JSON) | |
 
@@ -303,12 +317,36 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 | `POST` | `/api/v1/feed/headlines/harvest?page=ID` | Trigger harvest for all sources (or one page) |
 | `POST` | `/api/v1/feed/headlines/harvest/:source` | Harvest a single source by ID |
 
+`GET /headlines` returns both the configured outlet matrix and a deterministic `briefing`. Briefing clusters exact canonical URLs, then similar cross-outlet titles within 36 hours. Its displayed excerpt is always attributed source material; no generated claims are introduced. Each cluster includes chronological harvested coverage; titles containing update/developing/live or correction/corrected language receive an explicit deterministic event label. This is coverage chronology, not publisher-page revision tracking.
+
 ### Reader & Other
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/v1/feed/readable?url=` | Extract readable article content |
 | `GET` | `/api/v1/feed/icon?url=` | Favicon proxy (avoids CORS) |
+| `PATCH` | `/api/v1/feed/items/state` | Idempotent read/save/archive state mutation (max 200 IDs) |
+| `GET` | `/api/v1/feed/items/state/summary` | Unread, saved, archived, and pending source-sync totals |
+| `POST` | `/api/v1/feed/items/state/retry` | Force a retry of pending upstream state synchronization |
+| `GET` | `/api/v1/feed/search` | Weighted search across 12 months of normalized history |
+| `GET` | `/api/v1/feed/workspace` | Account reading preferences, source preferences, and mode checkpoints |
+| `PATCH` | `/api/v1/feed/workspace/preferences` | Merge and normalize reading appearance/session preferences |
+| `PUT` | `/api/v1/feed/workspace/checkpoints/:mode` | Save Reader, Headlines, Scroll, or Search position/visit time |
+| `PUT` | `/api/v1/feed/workspace/sources/:sourceKey` | Set `more`, `less`, `mute`, or `normal` for a Scroll source |
+| `GET` | `/api/v1/feed/annotations?itemId=` | List notes/highlights, optionally for one item |
+| `POST` | `/api/v1/feed/annotations` | Create a note or quoted highlight |
+| `PATCH` | `/api/v1/feed/annotations/:id` | Update note, quote, color, or locator |
+| `DELETE` | `/api/v1/feed/annotations/:id` | Delete an annotation |
+| `GET` | `/api/v1/feed/data/export` | Download `daylight.feed-export/v1` workspace data |
+| `POST` | `/api/v1/feed/data/import` | Safely merge a Feed export into the account |
+
+Search accepts `q`, `state`, `mode`, `source`, `from`, `to`, `limit`, and opaque `cursor` parameters. It can browse recent history without a text query and returns `{ items, total, nextCursor, coverage }`.
+
+### Portable data and device-local editions
+
+`daylight.feed-export/v1` contains normalized preferences, source preferences, checkpoints, canonical state, annotations, and bounded normalized history records. Import is a merge: valid fields are normalized, invalid entries are ignored, imported synchronization state is reset to `synced`, and current unrelated account data is retained. It is not OPML and intentionally does not export a complete copy of publisher article bodies.
+
+Offline editions are a separate device concern. `feedOfflineStore.js` stores at most 100 `{ item, detail }` snapshots in IndexedDB, keyed by authenticated user scope. `annotationOfflineStore.js` keeps a bounded annotation cache and ordered mutation queue under the same scope; client-generated annotation IDs make create→edit→delete replay deterministic. The service worker caches the application shell and same-origin build assets but excludes `/api/` and `/media/`, preventing account responses from entering a shared cache. A downloaded detail may still reference third-party media that requires a network connection.
 
 ---
 
@@ -318,12 +356,17 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 
 | File | Purpose |
 |------|---------|
-| `frontend/src/Apps/FeedApp.jsx` | Root layout — tab navigation, route definitions, headline page tabs |
+| `frontend/src/Apps/FeedApp.jsx` | Root layout — three primary modes, edition selector, search, persistent reading appearance, density, status, and lazy routes |
 | `frontend/src/Apps/FeedApp.scss` | App-level styles (dark background) |
-| `frontend/src/modules/Feed/Headlines/Headlines.jsx` | Headline page — fetches data, renders grid of SourcePanels |
+| `frontend/src/modules/Feed/FeedWorkspaceContext.jsx` | Account workspace hydration, snapshots/checkpoints, canonical mutation UX, and offline mutation replay |
+| `frontend/src/modules/Feed/FeedDataControls.jsx` | Portable JSON export/import controls |
+| `frontend/src/modules/Feed/Annotations/AnnotationPanel.jsx` | Notes, quoted highlights, and text-quote reattachment |
+| `frontend/src/modules/Feed/offline/feedOfflineStore.js` | User-scoped IndexedDB article editions |
+| `frontend/src/modules/Feed/offline/annotationOfflineStore.js` | Bounded note cache plus ordered, coalesced offline mutation replay |
+| `frontend/src/modules/Feed/Headlines/Headlines.jsx` | Briefing/timeline and configured outlet matrix |
 | `frontend/src/modules/Feed/Headlines/SourcePanel.jsx` | Single source column — favicon, headline list, tooltips with images |
 | `frontend/src/modules/Feed/Headlines/Headlines.scss` | Headline styles — grid layout, tooltips, dark theme |
-| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | Scroll feed — infinite scroll, route-driven detail, swipe navigation, persistent player owner |
+| `frontend/src/modules/Feed/Scroll/Scroll.jsx` | Finite-session scroll feed — bounded rendering, caught-up state, route-driven detail, swipe navigation, persistent player owner |
 | `frontend/src/modules/Feed/Scroll/Scroll.scss` | Scroll styles — masonry layout on desktop (>900px), mini player bar |
 | `frontend/src/modules/Feed/Scroll/hooks/useMasonryLayout.js` | JS-driven absolute-positioned masonry layout — greedy shortest-column placement, ResizeObserver measurement |
 | `frontend/src/modules/Feed/Scroll/PersistentPlayer.jsx` | Persistent Player wrapper — keeps `<Player>` alive at Scroll level across navigation |
@@ -343,7 +386,8 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 /feed                    → Redirect to /feed/scroll
 /feed/reader             → FreshRSS Reader
 /feed/headlines           → Redirect to /feed/headlines/{first-page-id}
-/feed/headlines/:pageId   → Headlines page (dynamic tabs from API)
+/feed/headlines/:pageId   → Briefing or outlet matrix (`?view=outlets`)
+/feed/search              → Cross-mode indexed history search
 /feed/scroll             → Scroll feed (card list)
 /feed/scroll/:feedItemId → Detail view (base64url-encoded item ID)
 ```
@@ -351,9 +395,9 @@ Headlines from sources marked with `paywall: true` in config are proxied through
 ### Scroll Navigation
 
 - **Card tap** → navigates to `/feed/scroll/{base64url(item.id)}`, saves scroll position
-- **Back button** → returns to scroll list, restores scroll position
+- **Back button** → traverses browser history when opened in-app; cold links fall back to the query-preserving list URL
 - **Swipe left/right** → navigates to next/previous item in the loaded list
-- **Tabs** are hidden when viewing the scroll (immersive mode)
+- **Primary tabs** remain available in a compact shell
 - **Masonry layout** on desktop (>900px) via `useMasonryLayout` hook — absolute-positioned cards with greedy shortest-column placement, ResizeObserver-based measurement, stable positions on append
 
 ### Persistent Media Player
@@ -394,12 +438,12 @@ Scroll.jsx
 headline_pages:
   - id: mainstream
     label: News
-    grid: { rows: [1,2,3], cols: [1,2,3,4,5] }
+    grid: { rows: [0,1,2], cols: [0,1,2,3,4] }
     col_colors: [...]
     sources: [...]
   - id: tech
     label: Tech
-    grid: { rows: [1,2], cols: [1,2,3] }
+    grid: { rows: [0,1], cols: [0,1,2] }
     sources: [...]
 
 # Headline settings
@@ -477,9 +521,9 @@ params:
 
 ## Key Design Decisions
 
-1. **Pool-based pagination** — `FeedPoolManager` accumulates items across paginated source fetches, enabling infinite scroll beyond initial source limits. Proactive refill fetches next pages when pool runs thin; silent recycling reshuffles seen items when all sources exhaust
+1. **Session-based pagination** — `FeedPoolManager` accumulates items across paginated source fetches inside an isolated, resumable browser-tab session. Proactive refill fetches next pages when the pool runs thin; exhaustion ends with `caughtUp: true` instead of replaying seen items
 2. **Age-filtered pagination** — Per-source `max_age_hours` thresholds prevent pagination from reaching arbitrarily old content. Entire stale pages mark the source as exhausted
-3. **LRU item cache** — 500-item Map-based cache enables deep-link resolution without a database; items expire naturally as new items push old ones out
+3. **Durable history plus hot cache** — normalized items are written to per-user monthly history for stable search and deep-link resolution; a 500-item in-memory LRU keeps recently served lookups fast
 4. **Base64url encoding** — Item IDs (which contain colons) are base64url-encoded for URL-safe routing
 5. **FlexAllocator (CSS flexbox-inspired)** — Slot distribution uses an iterative grow/shrink/basis algorithm with min/max clamping, operating at two levels (batch→tiers and tier→sources). Supports named aliases (`filler`, `dominant`) and legacy config migration
 6. **Four-tier assembly** — Items are bucketed into wire/library/scrapbook/compass tiers with flex-based allocations, sort strategies, and source caps. Non-wire items are interleaved into the wire backbone at even intervals

@@ -3,9 +3,11 @@ import { formatAge, proxyIcon, proxyImage, colorFromLabel } from '../cards/utils
 import { renderSection } from './sections/index.jsx';
 import { feedLog } from '../feedLog.js';
 import FeedPlayer from '../../players/FeedPlayer.jsx';
+import AnnotationPanel from '../../Annotations/AnnotationPanel.jsx';
+import OfflineEditionButton from '../../offline/OfflineEditionButton.jsx';
 import './DetailView.scss';
 
-export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem }) {
+export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
@@ -36,7 +38,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
     setImageLoaded(false);
     setImagePhase('original');
     heroLoadStartRef.current = performance.now();
-  }, [heroImage]);
+  }, [heroImage, item.id]);
 
   // Reset sticky header and scroll position on item change
   useEffect(() => {
@@ -76,7 +78,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
       { duration: 150, easing: 'ease-out', fill: 'forwards' }
     );
     el.style.pointerEvents = stickyVisible ? 'auto' : 'none';
-  }, [stickyVisible]);
+  }, [item.id, stickyVisible]);
 
   // Slide-in animation when item changes (Web Animations API for TV compat)
   useEffect(() => {
@@ -213,6 +215,12 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           <h2 className="detail-title">{item.title}</h2>
           {dateStr && <span className="detail-date">{dateStr}</span>}
           {!hasArticle && subtitle && <p className="detail-subtitle">{subtitle}</p>}
+          <div className="detail-state-actions">
+            <button type="button" aria-pressed={!!item.state?.isSaved} onClick={() => onStateAction?.(item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
+            <button type="button" onClick={() => onStateAction?.(item.state?.isArchived ? 'unarchive' : 'archive')}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
+            <button type="button" onClick={() => onStateAction?.((item.state?.isRead ?? item.isRead) ? 'unread' : 'read')}>{(item.state?.isRead ?? item.isRead) ? 'Mark unread' : 'Mark read'}</button>
+            <OfflineEditionButton item={item} detail={{ sections, ogImage, ogDescription }} />
+          </div>
           {item.link && !showIframe && (
             <a
               href={item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link}
@@ -262,6 +270,8 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
             />
           </div>
         )}
+
+        <AnnotationPanel item={item} />
 
       </div>
       </div>
