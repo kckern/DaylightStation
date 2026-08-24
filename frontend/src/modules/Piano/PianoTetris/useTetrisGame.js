@@ -27,7 +27,6 @@ import {
 export const COUNTDOWN_STEPS = [3, 2, 1, 0];
 export const COUNTDOWN_STEP_MS = 800;
 export const LOCK_DELAY_MS = 500;
-export const GAME_OVER_DISPLAY_MS = 5000;
 
 // ─── Initial State Factory ──────────────────────────────────────
 
@@ -86,7 +85,6 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
   const gravityRef = useRef(null);
   const lockDelayRef = useRef(null);
   const countdownRef = useRef(null);
-  const gameOverRef = useRef(null);
   const targetTimerRef = useRef(null);
 
   // Targets for staff matching
@@ -100,7 +98,6 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     if (gravityRef.current) { clearInterval(gravityRef.current); gravityRef.current = null; }
     if (lockDelayRef.current) { clearTimeout(lockDelayRef.current); lockDelayRef.current = null; }
     if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
-    if (gameOverRef.current) { clearTimeout(gameOverRef.current); gameOverRef.current = null; }
     if (targetTimerRef.current) { clearInterval(targetTimerRef.current); targetTimerRef.current = null; }
   }, []);
 
@@ -436,7 +433,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
   // ─── Start Game (Countdown) ─────────────────────────────────
 
   const startGame = useCallback(() => {
-    if (gameStateRef.current.phase !== 'IDLE') return;
+    if (!['IDLE', 'GAME_OVER'].includes(gameStateRef.current.phase)) return;
 
     clearAllTimers();
 
@@ -501,7 +498,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     prevPhaseRef.current = gameState.phase;
   }, [gameState.phase, gameState.linesCleared, regenerateTargets]);
 
-  // ─── Game Over Auto-Dismiss ─────────────────────────────────
+  // ─── Game Over Freeze ───────────────────────────────────────
 
   useEffect(() => {
     if (gameState.phase !== 'GAME_OVER') return;
@@ -511,20 +508,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     if (lockDelayRef.current) { clearTimeout(lockDelayRef.current); lockDelayRef.current = null; }
     if (targetTimerRef.current) { clearInterval(targetTimerRef.current); targetTimerRef.current = null; }
 
-    gameOverRef.current = setTimeout(() => {
-      gameOverRef.current = null;
-      logger.info('tetris.game-dismissed', { score: gameStateRef.current.score, lines: gameStateRef.current.linesCleared });
-      setGameState(createInitialGameState());
-      setTargets(null);
-      setActiveNoteRange(null);
-      lastProgressionRef.current = null;
-      lastSpawnCountRef.current = 0;
-    }, GAME_OVER_DISPLAY_MS);
-
-    return () => {
-      if (gameOverRef.current) { clearTimeout(gameOverRef.current); gameOverRef.current = null; }
-    };
-  }, [gameState.phase, logger]);
+  }, [gameState.phase]);
 
   // ─── Deactivate (manual exit) ───────────────────────────────
 

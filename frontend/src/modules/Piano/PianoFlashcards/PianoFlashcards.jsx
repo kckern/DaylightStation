@@ -11,6 +11,7 @@ import { LevelPicker } from './components/LevelPicker.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { rootPositionVoicing } from './flashcardEngine.js';
 import { isPersistentUser } from '../PianoKiosk/pianoUser.js';
+import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
 import './PianoFlashcards.scss';
 
 // Chord-spelling levels have no note_range (any octave counts) — show C3–C6.
@@ -30,6 +31,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
 
   const game = useFlashcardGame(activeNotes, gameConfig, currentUser);
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'flashcards');
+  useAnyKeyToContinue({ enabled: game.phase === 'COMPLETE', activeNotes, onContinue: game.startGame });
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const levels = gameConfig?.levels ?? [];
@@ -54,7 +56,8 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
       })
       .catch(() => { prefAppliedRef.current = true; });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps — one-shot pref load
+    // One-shot preference load; game callbacks are intentionally captured at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser]);
 
   const handleLevelSelect = (idx) => {
@@ -174,9 +177,10 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
           )}
 
           {game.phase === 'COMPLETE' && (
-            <div className="piano-flashcards__complete">
+            <div className="piano-flashcards__complete" role="status" aria-live="polite">
               <div className="piano-flashcards__complete-title">Training Complete!</div>
               <div className="piano-flashcards__complete-stat">{game.accuracy}% accuracy</div>
+              <div className="piano-flashcards__complete-continue">Press any key to train again</div>
             </div>
           )}
         </div>

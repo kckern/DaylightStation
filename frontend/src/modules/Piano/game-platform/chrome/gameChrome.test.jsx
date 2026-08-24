@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, LadderBadge } from './index.js';
+import {
+  GameRail, GameSlot, GameButton, GameStatusBar, GameToggle, GameChoice, LadderBadge, DealNotice,
+} from './index.js';
 
 describe('GameSlot', () => {
   it('reserves its height from `reserve`, so the rail cannot reflow as input lands', () => {
@@ -34,6 +36,16 @@ describe('GameSlot', () => {
 
     const { container: many } = render(<GameSlot variant={['well', 'active']}>x</GameSlot>);
     expect(many.querySelector('.pg-slot--well.pg-slot--active')).toBeTruthy();
+  });
+});
+
+describe('DealNotice', () => {
+  it('keeps the rail terse while announcing the complete map change', () => {
+    const { container } = render(<DealNotice cadence="each_game" dealKey="deal-1" freshMs={60_000} />);
+    const notice = container.querySelector('.pg-deal-notice');
+    expect(notice.textContent).toBe('New map');
+    expect(notice.getAttribute('aria-label')).toBe('New map — read the edges');
+    expect(notice.querySelector('.piano-icon')).toBeTruthy();
   });
 });
 

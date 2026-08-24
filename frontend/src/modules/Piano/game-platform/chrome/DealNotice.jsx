@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Icon from '../../ui/icons/Icon.jsx';
 import './gameChrome.scss';
 
 /**
@@ -10,9 +11,8 @@ import './gameChrome.scss';
  * Four re-deal too and said nothing, which is why `each_turn` was not safe to
  * enable for them.
  *
- * Loud for a beat, then a standing reminder. Both halves matter — a notice that
- * only flashes is missed by a player looking at their hands, and one that only
- * sits there stops being read by the second turn.
+ * Loud for a beat, then a compact standing reminder. The rail gets a symbol and
+ * two words; the complete sentence is announced through the status role.
  *
  * `dealKey` is whatever identifies the current deal (a scheme id, a seed). A
  * change to it is what makes the notice fresh again; rendering with the same key
@@ -30,14 +30,19 @@ export default function DealNotice({ dealKey = null, freshMs = 2600, cadence = '
 
   if (cadence === 'never') return null;
 
+  const announcement = fresh
+    ? 'New map — read the edges'
+    : cadence === 'each_turn' ? 'The map moves every turn' : 'The map moves each game';
+  const label = fresh ? 'New map' : cadence === 'each_turn' ? 'Each turn' : 'Each game';
+
   return (
     <p
       className={`pg-deal-notice${fresh ? ' pg-deal-notice--fresh' : ''} ${className}`.trim()}
       role="status"
+      aria-label={announcement}
     >
-      {fresh
-        ? 'New map — read the edges'
-        : cadence === 'each_turn' ? 'The map moves every turn' : 'The map moves each game'}
+      <Icon name="shuffle" />
+      <span>{label}</span>
     </p>
   );
 }

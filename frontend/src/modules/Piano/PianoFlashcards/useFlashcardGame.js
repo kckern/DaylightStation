@@ -11,7 +11,6 @@ import {
 import { evaluateAssessment } from '../performance/assessmentSession.js';
 
 const CARD_ADVANCE_DELAY_MS = 400;
-const COMPLETE_DISPLAY_MS = 5000;
 
 function createInitialState(startLevel = 0) {
   return {
@@ -37,7 +36,6 @@ function createInitialState(startLevel = 0) {
 export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = null) {
   const logger = useMemo(() => getChildLogger({ component: 'flashcard-game' }), []);
   const advanceTimerRef = useRef(null);
-  const completeTimerRef = useRef(null);
   const lastCardRef = useRef(null);
 
   const levels = flashcardsConfig?.levels ?? [];
@@ -170,17 +168,6 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
     }
   }, [state.phase, state.currentCard, nextCard]);
 
-  // ─── Auto-dismiss COMPLETE after delay ────────────────────────
-  useEffect(() => {
-    if (state.phase !== 'COMPLETE') return;
-
-    completeTimerRef.current = setTimeout(() => {
-      setState(createInitialState(startLevel));
-    }, COMPLETE_DISPLAY_MS);
-
-    return () => clearTimeout(completeTimerRef.current);
-  }, [state.phase, startLevel]);
-
   // ─── Log phase transitions ──────────────────────────────────
   useEffect(() => {
     if (state.phase === 'COMPLETE') {
@@ -205,7 +192,6 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
 
   const deactivate = useCallback(() => {
     clearTimeout(advanceTimerRef.current);
-    clearTimeout(completeTimerRef.current);
     logger.info('flashcards.game-deactivated', {});
     setState(createInitialState(startLevel));
   }, [logger, startLevel]);
@@ -213,7 +199,6 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
   // Jump to a chosen level (level picker): fresh score and card, keep playing.
   const selectLevel = useCallback((idx) => {
     if (!Number.isInteger(idx) || idx < 0 || idx >= levels.length) return;
-    clearTimeout(completeTimerRef.current);
     lastCardRef.current = null;
     logger.info('flashcards.level-select', { to: idx, name: levels[idx]?.name ?? null });
     setState(prev => ({

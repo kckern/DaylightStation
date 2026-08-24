@@ -6,7 +6,7 @@ import './TetrisOverlay.scss';
 export function TetrisOverlay({ phase, countdown, score, linesCleared, level }) {
   if (phase === 'STARTING' && countdown != null) {
     return (
-      <div className="tetris-overlay">
+      <div className="tetris-overlay" role="status" aria-live="polite">
         <div className="tetris-overlay__countdown">
           {countdown === 0 ? 'GO!' : countdown}
         </div>
@@ -33,6 +33,7 @@ export function TetrisOverlay({ phase, countdown, score, linesCleared, level }) 
               <span className="tetris-overlay__stat-label">Level</span>
             </div>
           </div>
+          <p className="tetris-overlay__continue">Press any key to play again</p>
         </div>
       </div>
     );

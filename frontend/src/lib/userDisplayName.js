@@ -187,8 +187,8 @@ export function resolveAllDisplayNames(deviceIds, context) {
  * user/profile object. Applies the family-context precedence: relational label
  * (when the scene is a family one) → name → id.
  *
- * Accepts either snake_case (`group_label`, config shape) or camelCase
- * (`groupLabel`, `displayName`).
+ * Accepts either snake_case (`group_label`, `display_name`, config shape) or
+ * camelCase (`groupLabel`, `displayName`).
  *
  * @param {Object} user - { id|profileId, name|displayName, group_label|groupLabel }
  * @param {Object} [context]
@@ -200,7 +200,7 @@ export function resolveUserDisplayName(user, context = {}) {
   // `familyContext` is the abstract flag; `preferGroupLabels` is the legacy name.
   const preferRelational = !!(context.familyContext ?? context.preferGroupLabels ?? false);
   const groupLabel = labelOf(user);
-  const name = (user?.name || user?.displayName || '').toString().trim();
+  const name = (user?.name || user?.displayName || user?.display_name || user?.first_name || '').toString().trim();
   const id = (user?.id || user?.profileId || '').toString().trim();
 
   const tag = (displayName, source) => ({

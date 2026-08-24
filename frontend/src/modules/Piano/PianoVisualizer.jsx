@@ -73,7 +73,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
   // Who is playing. The kiosk knows from its roster context; this screen has to
   // be told, so it remembers the last answer and the top key changes it.
-  const { users, currentUser, pickerOpen, openPicker, closePicker, pickUser } = useLauncherUser();
+  const { users, currentUser, pickerOpen, openPicker, pickUser } = useLauncherUser();
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -189,11 +189,16 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   );
 
   useEffect(() => {
-    if (sessionInfo?.event === 'session_end' && onSessionEnd) {
+    // A MIDI practice session and a board-game session have different
+    // lifetimes. The screen framework maps this callback to overlay dismissal;
+    // firing it while a replace-game is mounted used to erase a live position
+    // simply because the ambient MIDI timer expired underneath it.
+    if (sessionInfo?.event === 'session_end' && onSessionEnd && !isFullscreenGame) {
       const timer = setTimeout(() => { onSessionEnd(sessionInfo); }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [sessionInfo, onSessionEnd]);
+    return undefined;
+  }, [sessionInfo, onSessionEnd, isFullscreenGame]);
 
   if (spamState === 'blackout') {
     const mins = Math.floor(blackoutRemaining / 60000);
@@ -273,7 +278,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {sessionInfo?.event === 'session_end' && (
+      {sessionInfo?.event === 'session_end' && !isFullscreenGame && (
         <div className="session-summary">
           <p>Session Complete</p>
           <p>{sessionInfo.noteCount} notes in {Math.round(sessionInfo.duration)}s</p>
@@ -354,6 +359,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
                 /* Games that keep a record (chess) file it per player. Without
                    this every office-screen game was played by nobody. */
                 currentUser={currentUser}
+                playerName={currentUserName}
                 onDeactivate={quitGame}
               />
             </Suspense>
