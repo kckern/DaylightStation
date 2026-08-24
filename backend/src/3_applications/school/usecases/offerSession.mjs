@@ -9,6 +9,7 @@
  * `nextMove` and mints its per-unit token exactly as it did inline before.
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { studyDayForInstant } from '#domains/school/studyDay.mjs';
 
 /**
  * Make sure this unit has a session: reuse an open one, or open a fresh one.
@@ -24,7 +25,7 @@ import { reduceSession, createEvent } from '#domains/school/sessions/sessionEven
  * @returns {Promise<{sessionId: string, state: object, created: boolean}>}
  *   `state` is the `reduceSession` result for the session as of this call.
  */
-export async function ensureSession({ entry, learnerId, nowIso, sessions, newSessionId }) {
+export async function ensureSession({ entry, learnerId, nowIso, sessions, newSessionId, timezone = null, boundaryHour = 4 }) {
   let sessionId = entry.sessionId;
   let created = false;
   let state;
@@ -35,6 +36,7 @@ export async function ensureSession({ entry, learnerId, nowIso, sessions, newSes
     sessionId = newSessionId();
     const { errors, event } = createEvent({
       type: 'created', at: nowIso, sessionId, learnerId, unitId: entry.unitId,
+      studyDay: studyDayForInstant(Date.parse(nowIso), { timezone, boundaryHour }),
     });
     if (errors.length) throw new Error(`BuildAgenda: could not open a session: ${errors.join('; ')}`);
     await sessions.appendEvent(sessionId, event);

@@ -68,6 +68,7 @@ export const schoolApi = {
   // The teacher's one-glance "today" digest (Task 6, `GetTeacherToday`):
   // a plain array, one row per roster learner — NOT wrapped in `{learners}`.
   teacherToday: () => req('/teacher/today'),
+  teacherDay: (studyDay) => req(`/teacher/day?${new URLSearchParams({ studyDay })}`),
   // Teacher console reads (teacher-console spec §4.3). `teachers` answers
   // `{configured, teachers: [{id, name}]}` — configured:false means the
   // school.yml `teachers:` key is absent entirely.

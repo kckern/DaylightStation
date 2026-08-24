@@ -230,11 +230,71 @@ export function LearnerOverview({ learnerId, learnerName, onOpenSession }) {
   );
 }
 
+function CourseContext({ courseId, lessonId = null, learnerId = null }) {
+  const authorizedRead = useAuthorizedTeacherRead();
+  const context = usePanelFetch(() => authorizedRead(() => (learnerId
+    ? teacherWorkspaceApi.learnerCourse(learnerId, courseId)
+    : lessonId ? teacherWorkspaceApi.lesson(courseId, lessonId) : teacherWorkspaceApi.course(courseId))), {
+    deps: [courseId, lessonId, learnerId], panel: 'course-context', notFoundAs: 'unavailable',
+  });
+  const data = context.data;
+  const course = data?.course ?? data;
+  const units = data?.units ?? [];
+  return <PanelFrame title={course?.courseTitle ?? course?.title ?? labelize(courseId)} state={context.state} retry={context.retry} unavailableCopy="This course context is unavailable."><div className="teacher-course-context">{(course?.posterUrl ?? data?.posterUrl) && <img src={course.posterUrl ?? data.posterUrl} alt={`${course?.courseTitle ?? course?.title ?? labelize(courseId)} cover`} />}<div><p>{[course?.subject, course?.moduleTitle, course?.lessonTitle].filter(Boolean).join(' → ')}</p>{data?.total != null && <p><strong>{data.completed} of {data.total}</strong> lessons complete</p>}<ol>{units.map((unit) => <li key={unit.unitId}><a href={`/school/teacher/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(unit.unitId)}`}>{unit.title}</a><span className={`teacher-status teacher-status--${unit.status ?? 'remaining'}`}>{labelize(unit.status ?? unit.module ?? 'remaining')}</span></li>)}</ol></div></div></PanelFrame>;
+}
+
+function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
+  const authorizedRead = useAuthorizedTeacherRead();
+  const [refresh, setRefresh] = useState(0);
+  const exceptions = usePanelFetch(() => authorizedRead(() => teacherWorkspaceApi.curriculumExceptions()), {
+    deps: [refresh], panel: 'curriculum-exceptions', notFoundAs: 'unavailable',
+  });
+  const [form, setForm] = useState({ kind: 'paused', learnerId: '', targetType: 'lesson',
+    targetId: lessonId, courseId, replacementLessonId: '', reason: 'broken' });
+  const [preview, setPreview] = useState(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'curriculum-exceptions' });
+  const change = (field) => (event) => {
+    const value = event.target.value;
+    setForm((current) => ({ ...current, [field]: value,
+      ...(field === 'kind' && value === 'paused' ? { learnerId: '', reason: 'broken' } : {}) }));
+    setPreview(null);
+  };
+  const valid = form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
+    && (form.kind !== 'replaced' || form.replacementLessonId.trim());
+  const save = (apply) => run(`exception-${apply ? 'apply' : 'preview'}`, (auth) => teacherWorkspaceApi.changeCurriculumException({
+    ...form, learnerId: form.kind === 'paused' ? null : form.learnerId, courseId: form.courseId || null,
+    replacementLessonId: form.kind === 'replaced' ? form.replacementLessonId : null,
+    decidedBy: auth.actorId, pin: auth.pin, apply,
+  }, auth.stepUpToken), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); },
+    stepUp: apply ? () => ({ action: 'curriculum-exception.apply', resource: form.targetId }) : null });
+  const retract = (exception) => {
+    const reason = window.prompt('Why are you retracting this exception?');
+    if (!reason?.trim()) return;
+    run(`retract-${exception.exceptionId}`, (auth) => teacherWorkspaceApi.retractCurriculumException(exception.exceptionId,
+      { reason: reason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }, auth.stepUpToken),
+    { onSuccess: () => setRefresh((n) => n + 1),
+      stepUp: () => ({ action: 'curriculum-exception.retract', resource: exception.exceptionId }) });
+  };
+  return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
+    <label>Decision<select value={form.kind} onChange={change('kind')}><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
+    {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
+    <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
+    <label>Target ID<input value={form.targetId} onChange={change('targetId')} /></label>
+    <label>Course ID<input value={form.courseId} onChange={change('courseId')} /></label>
+    {form.kind === 'replaced' && <label>Replacement lesson ID<input value={form.replacementLessonId} onChange={change('replacementLessonId')} /></label>}
+    <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
+  </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
+  {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
+  {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
+  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType} {exception.targetId} · {exception.reason} <button type="button" disabled={busy} onClick={() => retract(exception)}>Retract</button></li>)}</ul>
+  </div></PanelFrame>;
+}
+
 export function CoursesView({ learnerId, learnerName, courseId, kids }) {
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? labelize(courseId) : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
-      {courseId && <p className="teacher-context-banner">Showing the selected course context. Assignment editing remains learner-wide so prerequisites and sequencing stay visible.</p>}
+      {courseId && <CourseContext courseId={courseId} learnerId={learnerId} />}
       <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
       <PianoProgramsPanel learnerId={learnerId} />
       <MilestonesPanel learnerId={learnerId} />
@@ -270,12 +330,12 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
   );
 }
 
-export function CurriculumView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>Courses, units, and policy</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div><SchoolMatrix kids={kids} /><CurriculumBrowser /><PeriodsTimeline /><EnrichmentPanel kids={kids} /></div>;
+export function CurriculumView({ kids, courseId = null, lessonId = null }) {
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? labelize(courseId) : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>{courseId && <CourseContext courseId={courseId} lessonId={lessonId} />}<CurriculumExceptionPanel kids={kids} courseId={courseId ?? ''} lessonId={lessonId ?? ''} /><SchoolMatrix kids={kids} /><CurriculumBrowser /><PeriodsTimeline /><EnrichmentPanel kids={kids} /></div>;
 }
 
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
 }
 
 function BulkRegradePanel() {
@@ -318,16 +378,20 @@ function BulkRegradePanel() {
   );
 }
 
-function GradeCorrection({ sessionId, revision, currentPercent, onApplied }) {
+function GradeCorrection({ sessionId, revision, currentPercent, items = [], onApplied }) {
   const [open, setOpen] = useState(false);
   const [percent, setPercent] = useState(currentPercent == null ? '' : String(Math.round(currentPercent)));
   const [reason, setReason] = useState('');
+  const [verdicts, setVerdicts] = useState(() => Object.fromEntries(items.map((item) => [item.itemId, 'unchanged'])));
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'grade-adjustment' });
   const key = `grade:${sessionId}`;
-  const valid = Number.isFinite(Number(percent)) && Number(percent) >= 0 && Number(percent) <= 100 && reason.trim();
+  const itemLevel = items.length > 0;
+  const valid = reason.trim() && (itemLevel || (Number.isFinite(Number(percent)) && Number(percent) >= 0 && Number(percent) <= 100));
   const body = ({ actorId, pin }, apply) => ({
-    percent: Number(percent), reason: reason.trim(), adjustedBy: actorId, pin,
+    ...(itemLevel ? { itemVerdicts: items.map((item) => ({ itemId: item.itemId, verdict: verdicts[item.itemId] ?? 'unchanged' })) }
+      : { percent: Number(percent) }),
+    reason: reason.trim(), adjustedBy: actorId, pin,
     baseSeq: preview?.baseSeq ?? revision, adjustmentId: preview?.adjustmentId, apply,
   });
   const previewChange = () => run(key, (auth) => teacherWorkspaceApi.adjustGrade(sessionId, body(auth, false)), { onSuccess: setPreview });
@@ -338,9 +402,10 @@ function GradeCorrection({ sessionId, revision, currentPercent, onApplied }) {
   if (!open) return <button type="button" onClick={() => setOpen(true)}>Correct grade…</button>;
   return (
     <div className="teacher-grade-correction">
-      <label>Effective percent <input aria-label="Effective percent" type="number" min="0" max="100" value={percent} onChange={(event) => { setPercent(event.target.value); setPreview(null); }} /></label>
+      {!itemLevel && <label>Effective percent <input aria-label="Effective percent" type="number" min="0" max="100" value={percent} onChange={(event) => { setPercent(event.target.value); setPreview(null); }} /></label>}
       <label>Reason <input aria-label="Grade correction reason" maxLength="240" placeholder="What did the machine get wrong?" value={reason} onChange={(event) => { setReason(event.target.value); setPreview(null); }} /></label>
-      {preview && <p className="teacher-action-preview"><strong>Impact preview:</strong> {preview.previousEffectiveGrade?.percent ?? 'ungraded'}% → {preview.effectiveGrade?.percent ?? Number(percent)}%; outcome {labelize(preview.outcome?.result ?? preview.outcome ?? 'unchanged')}. Rewards remain unchanged.</p>}
+      {itemLevel && <fieldset className="teacher-item-verdicts"><legend>Printed questions</legend>{items.map((item, index) => <label key={item.itemId}><span>Question {item.questionNumber ?? index + 1}<small>Machine: {labelize(item.verdict ?? 'unresolved')}</small></span><select aria-label={`Verdict for ${item.itemId}`} value={verdicts[item.itemId] ?? 'unchanged'} onChange={(event) => { setVerdicts((current) => ({ ...current, [item.itemId]: event.target.value })); setPreview(null); }}><option value="unchanged">Unchanged</option><option value="correct">Correct</option><option value="incorrect">Incorrect</option></select></label>)}</fieldset>}
+      {preview && <p className="teacher-action-preview"><strong>Impact preview:</strong> {preview.previousEffectiveGrade?.percent ?? 'ungraded'}% → {preview.effectiveGrade?.percent ?? Number(percent)}%; outcome {labelize(preview.outcome?.result ?? preview.outcome ?? 'unchanged')}. {preview.rewardChanged ? 'The reward reconciliation will change.' : 'Rewards remain unchanged.'}</p>}
       <div className="teacher-action-row">
         {!preview && <button type="button" disabled={!valid || busy === key} onClick={previewChange}>Preview correction</button>}
         {preview && <button type="button" disabled={busy === key} onClick={applyChange}>Apply correction</button>}
@@ -434,6 +499,24 @@ function ArtifactOriginal({ artifactId, index = null }) {
   {error && <span className="teacher-panel__error">{error}</span>}</>;
 }
 
+function ArtifactReprint({ artifactId, onPrinted }) {
+  const [preview, setPreview] = useState(null);
+  const [idempotencyKey, setIdempotencyKey] = useState(null);
+  const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-reprint' });
+  const key = `reprint:${artifactId}`;
+  const prepare = () => {
+    const requestKey = newIdempotencyKey(key); setIdempotencyKey(requestKey);
+    run(key, ({ actorId, pin }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+      { reprintedBy: actorId, pin, apply: false }, requestKey), { onSuccess: setPreview });
+  };
+  const print = () => run(key, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.reprintArtifact(artifactId,
+    { reprintedBy: actorId, pin, apply: true }, idempotencyKey, stepUpToken), {
+    stepUp: { action: 'artifact.reprint', resource: artifactId },
+    onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
+  });
+  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Reprint…</button> : <span className="teacher-reprint-confirm"><span>Exact retained PDF · Student No. {preview.cardId ?? 'none'} · {preview.byteLength} bytes</span><button type="button" disabled={busy === key} onClick={print}>Confirm print</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
+}
+
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   const authorizedRead = useAuthorizedTeacherRead();
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
@@ -461,11 +544,11 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   }, [learnerId, sessionId, kids, attempt, authorizedRead]);
 
   const session = result.session;
-  const sessionState = session?.schema === 'school.teacher-session/v1' ? session.state : session;
+  const sessionState = session?.schema?.startsWith('school.teacher-session/') ? session.state : session;
   const artifactIds = session?.artifactIds?.length ? session.artifactIds
     : [sessionState?.artifactId ?? sessionState?.document?.artifactId ?? sessionState?.issued?.artifactId].filter(Boolean);
-  const machineGrade = sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
-  const effectiveGrade = sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
+  const machineGrade = session?.scores?.machine?.percent ?? sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
+  const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
   const canOfferRetake = sessionState?.outcome?.result === 'needs_remediation' && !sessionState?.remediation;
   const { run, busy, errors } = useTeacherWrite({ panel: 'session-retake' });
@@ -493,12 +576,14 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               <div><dt>Effective grade</dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
               <div><dt>Updated</dt><dd>{dateOf(session) ? new Date(dateOf(session)).toLocaleString() : 'Unknown'}</dd></div>
             </dl>
-            <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
+            <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
+          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Rendered results</h3><p className="teacher-muted">Generated from decoded OMR evidence. These images are rendered results, not photographs of the scanned answer card.</p><div className="teacher-result-previews"><figure><img src={session.results.machine} alt="Rendered original machine result" /><figcaption>Original machine result</figcaption></figure><figure><img src={session.results.effective} alt="Rendered current effective result" /><figcaption>Current effective result</figcaption></figure></div></section>}
+          {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
           <section className="teacher-panel">
             <h3 className="teacher-panel__title">Artifact lineage</h3>
-            {artifactIds.length ? artifactIds.map((artifactId, index) => <div className="teacher-artifact-actions" key={artifactId}><ArtifactOriginal artifactId={artifactId} index={artifactIds.length > 1 ? index : null} /><ArtifactPostview artifactId={artifactId} /><span>{artifactId}</span></div>) : <CapabilityNotice>No retained artifact is linked to this session. Legacy issues may only have event metadata.</CapabilityNotice>}
+            {artifactIds.length ? artifactIds.map((artifactId, index) => <div className="teacher-artifact-actions" key={artifactId}><ArtifactOriginal artifactId={artifactId} index={artifactIds.length > 1 ? index : null} /><ArtifactReprint artifactId={artifactId} onPrinted={() => setAttempt((n) => n + 1)} /><ArtifactPostview artifactId={artifactId} /><span>{artifactId}</span></div>) : <CapabilityNotice>No retained artifact is linked to this session. Legacy issues may only have event metadata.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{event.at ? new Date(event.at).toLocaleString() : ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>

@@ -8,7 +8,7 @@ describe('dated_modules progression', () => {
   // work, so a fixture missing them would fail for reasons that have nothing
   // to do with dating.
   const dated = (over = {}) => ({
-    schema: 'school.course/v2', work: 'cfm', title: 'CFM', subject: 'scripture',
+    schema: 'school.course/v2', poster: 'poster.jpg', work: 'cfm', title: 'CFM', subject: 'scripture',
     category: 'course', medium: 'paper',
     structure: { shape: 'modules', module: 'week', items: { from: 'units', order: 'sequence' } },
     grading: { gate: 'review', scope: 'module', pass_percent: 80, exit: 'Study every week.' },

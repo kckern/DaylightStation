@@ -13,6 +13,9 @@ import axios from 'axios';
 import { existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import path, { join } from 'path';
+import { renderSessionResultPng, renderMachineScanResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
+import { renderCoursePosterFallback } from '#rendering/school/documents/CoursePosterFallbackRenderer.mjs';
+import { YamlSessionResultArtifactStore } from '#adapters/persistence/yaml/YamlSessionResultArtifactStore.mjs';
 
 // Infrastructure imports
 import { ConfigValidationError, configService, dataService, userDataService, userService } from './0_system/config/index.mjs';
@@ -2516,6 +2519,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // the materials framework (catalog + per-unit progress/quiz gates).
   const schoolDatastore = new YamlSchoolDatastore({ configService });
   const schoolFullConfig = configService.getHouseholdAppConfig(null, 'school') || {};
+  const schoolSessionResultArtifacts = new YamlSessionResultArtifactStore({ configService });
   const schoolLearnerDirectory = new ConfiguredSchoolLearningDirectory({
     userService,
     config: schoolFullConfig,
@@ -3346,6 +3350,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         datastore: schoolDatastore,
         sessions: schoolLifecycle.stores.sessions ?? null,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        resultArtifacts: schoolSessionResultArtifacts,
+        renderMachineResult: renderMachineScanResultPng,
         logger: rootLogger.child({ module: 'school-print-scan-record' }),
       });
       // Grading hook (Task 4, spec §grading-hook): fires one HA script per
@@ -3459,6 +3465,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         sessions: schoolLifecycle.stores.sessions,
         reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
         evidenceRepository: schoolLearningEvidence ?? null,
+        curriculum: schoolLifecycle.stores.curriculum,
         timezone: configService.getTimezone?.() || null,
         logger: rootLogger.child({ module: 'school-teacher-today' })
       });
@@ -3662,27 +3669,48 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       logger: rootLogger.child({ module: 'school-regrade' }),
     }) : null,
     getTeacherSession: schoolLifecycle.stores?.sessions
-      ? new GetTeacherSession({ sessions: schoolLifecycle.stores.sessions }) : null,
+      ? new GetTeacherSession({
+        sessions: schoolLifecycle.stores.sessions,
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        issuedArtifacts: schoolLifecycle.stores.issuedArtifacts ?? null,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        allocationStore: schoolLifecycle.stores.allocationStore ?? null,
+        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
+        curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
+      }) : null,
     getLearnerTimeline: schoolLifecycle.stores?.sessions
       ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions }) : null,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new AdjustSessionGrade({
         sessions: schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
+        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        economy: economyApi.economyService,
+        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
         logger: rootLogger.child({ module: 'school-grade-adjustment' }),
       }) : null,
     retractSessionGradeAdjustment: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new RetractSessionGradeAdjustment({
         sessions: schoolLifecycle.stores.sessions,
         teacherGate: schoolTeacherGate,
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        economy: economyApi.economyService,
+        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
         logger: rootLogger.child({ module: 'school-grade-adjustment' }),
       }) : null,
     issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
     teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
+    reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,
+    manageCurriculumException: schoolLifecycle.useCases?.manageCurriculumException ?? null,
     teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
+    renderSessionResult: renderSessionResultPng,
+    sessionResultArtifacts: schoolSessionResultArtifacts,
+    renderCoursePosterFallback,
     milestoneStore: schoolMilestoneStore,
     assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
     getLearnerRecord: new GetLearnerRecord({

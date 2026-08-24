@@ -432,6 +432,26 @@ describe('release', () => {
   });
 });
 
+describe('describeCard', () => {
+  it('never reclaims physical rows when reporting contiguous capacity', async () => {
+    const { io } = fakeIo();
+    const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
+    const old = await store.allocate({ cardId: '1234567', request: request({
+      learnerId: 'milo', documentId: 'doc-old', rowRange: { start: 1, end: 20 },
+    }) });
+    await store.updateStatus({ cardId: '1234567', recordId: old.recordId, status: 'satisfied' });
+    const latest = await store.allocate({ cardId: '1234567', request: request({
+      learnerId: 'milo', documentId: 'doc-latest', rowRange: { start: 21, end: 26 },
+    }) });
+    await store.updateStatus({ cardId: '1234567', recordId: latest.recordId, status: 'released' });
+
+    expect(await store.describeCard('1234567', { expectedLearnerId: 'milo' })).toMatchObject({
+      capacity: 50, usedRows: 26, remainingContiguousSlots: 24, nextRow: 27,
+      mappedLearnerId: 'milo', warnings: [],
+    });
+  });
+});
+
 describe('round-trip (real filesystem)', () => {
   it('persists and reloads records through a real save+load cycle', async () => {
     const fs = await import('node:fs');

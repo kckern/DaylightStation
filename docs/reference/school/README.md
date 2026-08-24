@@ -731,6 +731,35 @@ algebraic coordinates; the kiosk passes chord names for the same squares.
 | Board (shared with the kiosk) | `frontend/src/modules/Chess/ChessBoard.jsx` |
 | Rules and opponent | `shared/gaming/chess/` |
 
+## Teacher check-in workspace
+
+The teacher workspace uses the work session's persisted `studyDay`, not the
+time a card happened to be scanned. `GET /api/v1/school/teacher/day?studyDay=YYYY-MM-DD`
+returns `school.teacher-day/v2`; late scans and grade corrections are listed
+once under `processedToday` while scores remain on the original study day.
+`/teacher/today` remains the compatibility array endpoint.
+
+Teacher session reads (`school.teacher-session/v2`) join the immutable
+worksheet, original and effective scores, review/OMR evidence, answer-card
+capacity, generated result images, curriculum taxonomy, progress, and reward
+reconciliation. Result PNGs are deterministic rendered artifacts—not photos
+of a scanned card. Course, lesson, and learner-course context routes back the
+canonical teacher URLs under `/school/teacher/curriculum/` and
+`/school/teacher/students/`.
+
+Published `school.course/v2` packages require `poster: poster.jpg`. The asset
+must be a contained JPEG; runtime never reads the source PDF/EPUB. Use
+`node scripts/school/build-course-posters.mjs` to normalize the published
+catalog to 1200×1800 sRGB artwork.
+
+Curriculum exceptions are append-only `school.curriculum-exception/v1`
+records. `excused` and `replaced` satisfy a learner's planner gate without a
+grade or mastery; `deferred` stays outstanding. Global `paused` is restricted
+to defective, garbled, missing, broken, or inappropriate content and blocks
+new agendas, sessions, printing, remediation, retries, and reprints while
+leaving already printed work scannable and auditable. Retraction resumes the
+content without deleting its history.
+
 **The Geography topic grid** is an app tile on the **History & Geography**
 subject shelf — the same mechanism the Typing tile uses to sit on Writing &
 Typing — not a fixed top-level subject of its own. Opening it fetches the

@@ -33,6 +33,33 @@ export function offsetMinutesFor(timezone, epochMs) {
 }
 
 const DAY_MS = 86_400_000;
+const STUDY_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Calendar key for the study day containing an instant. */
+export function studyDayForInstant(epochMs, { timezone = null, boundaryHour = 4 } = {}) {
+  if (!Number.isFinite(epochMs)) return null;
+  const offsetMinutes = offsetMinutesFor(timezone, epochMs);
+  return new Date(epochMs + offsetMinutes * 60_000 - boundaryHour * 3_600_000)
+    .toISOString().slice(0, 10);
+}
+
+/**
+ * Resolve an explicit local study-day key to its real UTC interval. The offset
+ * is resolved at the boundary itself (and checked once more) so DST changes do
+ * not make a selected historical day borrow an hour from its neighbour.
+ */
+export function studyDayWindowForDate(studyDay, { timezone = null, boundaryHour = 4 } = {}) {
+  const midnight = Date.parse(`${studyDay}T00:00:00.000Z`);
+  if (!STUDY_DAY_RE.test(studyDay ?? '') || !Number.isFinite(midnight)
+      || new Date(midnight).toISOString().slice(0, 10) !== studyDay) return null;
+  const localBoundary = midnight + boundaryHour * 3_600_000;
+  let startAtMs = localBoundary - offsetMinutesFor(timezone, localBoundary) * 60_000;
+  startAtMs = localBoundary - offsetMinutesFor(timezone, startAtMs) * 60_000;
+  const nextLocalBoundary = localBoundary + DAY_MS;
+  let endAtMs = nextLocalBoundary - offsetMinutesFor(timezone, nextLocalBoundary) * 60_000;
+  endAtMs = nextLocalBoundary - offsetMinutesFor(timezone, endAtMs) * 60_000;
+  return { studyDay, startAtMs, endAtMs };
+}
 
 /**
  * The current study day as a window of real UTC instants, `[startAtMs,

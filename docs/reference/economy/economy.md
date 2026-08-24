@@ -96,6 +96,14 @@ balance, existing session), `EntityNotFoundError` → 404 (unknown user).
 
 ## Integration points
 
+- **Grade reconciliation (School):** `EconomyService.adjust(userId,
+  { delta, source, ref, note })` applies an exact signed correction outside
+  earn caps. The reference is derived from the append-only grade adjustment or
+  retraction id, making retries idempotent. The ledger may go negative; the
+  displayed wallet remains floored at zero and later earnings repay the debt.
+  School appends a reconciliation success or failure event so a partial
+  failure can be retried safely without replacing the original machine grade.
+
 - **Earn (piano):** `POST /api/play/log` fires `economyService.earn(...,
   { action: 'piano-lesson-complete', ref: 'plex:{id}' })` fire-and-forget the
   first time `UserVideoProgressStore` stamps `completedAt`. An economy failure

@@ -92,6 +92,7 @@ export function validateWork(raw, ctx = {}) {
   if (raw.schema !== undefined && !courseV2) {
     errors.push(`schema must be ${COURSE_V2_SCHEMA} when present, got: ${raw.schema}`);
   }
+  if (courseV2 && raw.poster !== 'poster.jpg') errors.push('poster must be poster.jpg for school.course/v2');
 
   if (!isStr(raw.work) || !SLUG.test(raw.work)) errors.push(`work must match ${SLUG.source}`);
   else if (ctx.work && raw.work !== ctx.work) errors.push(`work is "${raw.work}" but the directory is "${ctx.work}"`);
@@ -301,6 +302,8 @@ export function validateWork(raw, ctx = {}) {
     errors,
     work: {
       work: raw.work,
+      schema: raw.schema,
+      poster: raw.poster,
       title: raw.title,
       subject: raw.subject,
       category: raw.category,

@@ -28,6 +28,11 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isSeq = (v) => Number.isInteger(v) && v >= 1;
 // Parsed-and-round-trips, so "2026-13-45" and "yesterday" are both rejected.
 const isIsoTimestamp = (v) => isNonEmptyString(v) && !Number.isNaN(Date.parse(v));
+const isStudyDay = (v) => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const at = Date.parse(`${v}T00:00:00.000Z`);
+  return Number.isFinite(at) && new Date(at).toISOString().slice(0, 10) === v;
+};
 
 const stringField = (field) => (raw, push) => {
   if (!isNonEmptyString(raw[field])) push(`${field}: must be a non-empty string`);
@@ -60,8 +65,9 @@ const percentIfPresent = (field) => (raw, push) => {
  */
 const SCHEMA = {
   created: {
-    fields: ['learnerId', 'unitId', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy'],
+    fields: ['learnerId', 'unitId', 'studyDay', 'remediationOf', 'variant', 'remediationItemIds', 'openedBy'],
     validate: allOf(stringField('learnerId'), stringField('unitId'), (raw, push) => {
+      if (raw.studyDay !== undefined && !isStudyDay(raw.studyDay)) push('studyDay: must be YYYY-MM-DD when present');
       // Both optional: only a remediation session carries them.
       if (raw.remediationOf !== undefined && !isNonEmptyString(raw.remediationOf)) {
         push('remediationOf: must be a non-empty string');
@@ -102,7 +108,7 @@ const SCHEMA = {
     validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed')),
   },
   reprinted: {
-    fields: ['artifactId', 'confirmed'],
+    fields: ['artifactId', 'confirmed', 'idempotencyKey', 'reprintedBy'],
     validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed')),
   },
   media_dispatched: {
@@ -164,6 +170,18 @@ const SCHEMA = {
     validate: allOf(stringField('outcomeId'), oneOfField('result', RESULTS)),
   },
   rewarded: { fields: ['txnId', 'amount'], validate: stringField('txnId') },
+  reward_reconciled: {
+    fields: ['reconciliationId', 'delta', 'txnId', 'sourceAdjustmentId'],
+    validate: allOf(stringField('reconciliationId'), stringField('txnId'), (raw, push) => {
+      if (!Number.isInteger(raw.delta) || raw.delta === 0) push('delta: must be a non-zero integer');
+    }),
+  },
+  reward_reconciliation_failed: {
+    fields: ['reconciliationId', 'delta', 'reason', 'sourceAdjustmentId'],
+    validate: allOf(stringField('reconciliationId'), stringField('reason'), (raw, push) => {
+      if (!Number.isInteger(raw.delta) || raw.delta === 0) push('delta: must be a non-zero integer');
+    }),
+  },
   remediation_opened: {
     fields: ['newSessionId', 'variant', 'openedBy'],
     validate: allOf(stringField('newSessionId'), (raw, push) => {
@@ -258,8 +276,11 @@ export const TRANSITIONS = Object.freeze({
  */
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
+  'reward_reconciled', 'reward_reconciliation_failed',
 ]));
-const TERMINAL_ANNOTATIONS = new Set(['grade_adjusted', 'grade_adjustment_retracted']);
+const TERMINAL_ANNOTATIONS = new Set([
+  'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
+]);
 
 /** States the table can reach but never leave. */
 export const TERMINAL_STATES = Object.freeze(new Set(
@@ -317,6 +338,7 @@ const emptyState = () => ({
   sessionId: null,
   learnerId: null,
   unitId: null,
+  studyDay: null,
   state: null,
   terminal: false,
   issuedArtifacts: [],
@@ -354,6 +376,8 @@ const emptyState = () => ({
   outcome: null,
   machineOutcome: null,
   rewardTxn: null,
+  rewardAmount: 0,
+  rewardReconciliations: [],
   remediationOf: null,
   remediationItemIds: [],
   // Which equivalent-problem form of the unit this session was opened with
@@ -372,6 +396,7 @@ const APPLY = {
   created(s, e) {
     s.learnerId = e.learnerId ?? null;
     s.unitId = e.unitId ?? null;
+    s.studyDay = e.studyDay ?? null;
     if (e.remediationOf) s.remediationOf = e.remediationOf;
     if (Array.isArray(e.remediationItemIds)) s.remediationItemIds = [...e.remediationItemIds];
     if (Number.isInteger(e.variant)) s.variant = e.variant;
@@ -459,7 +484,16 @@ const APPLY = {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
     s.machineOutcome = { ...s.outcome };
   },
-  rewarded(s, e) { s.rewardTxn = e.txnId ?? null; },
+  rewarded(s, e) { s.rewardTxn = e.txnId ?? null; s.rewardAmount = Number.isInteger(e.amount) ? e.amount : 0; },
+  reward_reconciled(s, e) {
+    s.rewardAmount += e.delta;
+    s.rewardReconciliations.push({ reconciliationId: e.reconciliationId, delta: e.delta,
+      txnId: e.txnId, sourceAdjustmentId: e.sourceAdjustmentId ?? null, at: e.at, status: 'applied' });
+  },
+  reward_reconciliation_failed(s, e) {
+    s.rewardReconciliations.push({ reconciliationId: e.reconciliationId, delta: e.delta,
+      sourceAdjustmentId: e.sourceAdjustmentId ?? null, at: e.at, status: 'failed', reason: e.reason });
+  },
   remediation_opened(s, e) {
     s.remediation = { newSessionId: e.newSessionId ?? null, variant: e.variant ?? null };
   },

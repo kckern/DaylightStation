@@ -20,9 +20,10 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
+import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 
 export class OpenRemediation {
-  #curriculum; #sessions; #clock; #newSessionId; #logger;
+  #curriculum; #sessions; #clock; #newSessionId; #logger; #curriculumExceptions;
 
   /**
    * @param {object} deps
@@ -32,13 +33,14 @@ export class OpenRemediation {
    * @param {() => string} [deps.newSessionId]
    * @param {object} [deps.logger]
    */
-  constructor({ curriculum, sessions, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
+  constructor({ curriculum, sessions, curriculumExceptions = null, clock = () => new Date(), newSessionId = () => `ses_${shortId(8)}`, logger = console } = {}) {
     if (!curriculum || !sessions) throw new Error('OpenRemediation requires curriculum and sessions');
     this.#curriculum = curriculum;
     this.#sessions = sessions;
     this.#clock = clock;
     this.#newSessionId = newSessionId;
     this.#logger = logger;
+    this.#curriculumExceptions = curriculumExceptions;
   }
 
   /**
@@ -68,6 +70,9 @@ export class OpenRemediation {
     if (state.state !== 'outcome_recorded' || state.outcome?.result !== 'needs_remediation') {
       return this.#unavailable(sessionId, 'There is nothing to try again right now.');
     }
+
+    const paused = pausedExceptionFor(await this.#curriculumExceptions?.active?.() ?? [], state.unitId);
+    if (paused) return this.#unavailable(sessionId, `This lesson is paused: ${paused.reason}.`);
 
     const unit = await this.#curriculum.getUnit(state.unitId);
     const variants = unit?.retry?.variants ?? 1;

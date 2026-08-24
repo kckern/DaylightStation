@@ -56,6 +56,35 @@ export class EconomyService {
   }
 
   /**
+   * Apply an auditable signed reconciliation outside earn caps. The ledger may
+   * go below zero; foldBalance deliberately floors only the displayed wallet,
+   * so later earnings repay that debt before becoming spendable.
+   */
+  async adjust(userId, { delta, source, ref, note = null }) {
+    this.#assertUser(userId);
+    if (!Number.isInteger(delta)) throw new ValidationError('adjust delta must be an integer');
+    if (typeof source !== 'string' || !source.trim()) throw new ValidationError('adjust source is required');
+    if (typeof ref !== 'string' || !ref.trim()) throw new ValidationError('adjust ref is required');
+    const existing = this.#ds.readAllTransactions(userId).find((txn) => txn.kind === 'adjust' && txn.ref === ref);
+    if (existing) {
+      if (existing.delta !== delta || existing.source !== source) {
+        throw new ValidationError(`adjust ref was already used: ${ref}`);
+      }
+      const wallet = this.#snapshot(userId);
+      return { userId, adjusted: 0, duplicate: true, txnId: existing.id, balance: wallet.balance };
+    }
+    if (delta === 0) {
+      const wallet = this.#snapshot(userId);
+      return { userId, adjusted: 0, duplicate: false, txnId: null, balance: wallet.balance };
+    }
+    const txn = createTransaction({ kind: 'adjust', delta, action: 'reward-reconciliation', source, ref, note });
+    this.#ds.appendTransaction(userId, txn);
+    const wallet = this.#snapshot(userId);
+    this.#logger.info('economy-adjust', { userId, delta, source, ref, balance: wallet.balance });
+    return { userId, adjusted: delta, duplicate: false, txnId: txn.id, balance: wallet.balance };
+  }
+
+  /**
    * @param {string} userId
    * @param {object} args
    * @param {string} args.action - an `earn` action from the economy catalog

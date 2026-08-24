@@ -45,6 +45,20 @@ export const teacherWorkspaceApi = {
     return request(`/learners/${encodeURIComponent(learnerId)}/timeline?${query}`);
   },
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
+  course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
+  lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),
+  learnerCourse: (learnerId, courseId) => request(`/learners/${encodeURIComponent(learnerId)}/courses/${encodeURIComponent(courseId)}`),
+  curriculumExceptions: () => request('/curriculum-exceptions'),
+  answerSheet: (cardId) => request(`/answer-sheets/${encodeURIComponent(cardId)}`),
+  learnerAnswerSheets: (learnerId) => request(`/learners/${encodeURIComponent(learnerId)}/answer-sheets`),
+  changeCurriculumException: (body, grantToken = null) => request('/curriculum-exceptions', {
+    method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
+  }),
+  retractCurriculumException: (exceptionId, body, grantToken = null) => request(
+    `/curriculum-exceptions/${encodeURIComponent(exceptionId)}/retract`, {
+      method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {},
+    },
+  ),
   agendaDispatchPreview: (learnerId, learnerName = null) => request(
     `/learners/${encodeURIComponent(learnerId)}/agenda/dispatch/preview`,
     { method: 'POST', body: { learnerName } },
@@ -66,6 +80,11 @@ export const teacherWorkspaceApi = {
   ),
   artifact: (artifactId) => request(`/artifacts/${encodeURIComponent(artifactId)}`),
   artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original.pdf`),
+  reprintArtifact: (artifactId, body, idempotencyKey, grantToken = null) => request(
+    `/artifacts/${encodeURIComponent(artifactId)}/reprint`, { method: 'POST', body: { ...body, idempotencyKey }, headers: {
+      'Idempotency-Key': idempotencyKey, ...(grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
+    } },
+  ),
   artifactPostview: (artifactId, grantToken) => requestBlob(
     `/artifacts/${encodeURIComponent(artifactId)}/postview.pdf`,
     { headers: { 'X-Teacher-Step-Up': grantToken } },

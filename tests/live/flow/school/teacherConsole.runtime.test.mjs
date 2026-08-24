@@ -131,6 +131,29 @@ test.describe('Teacher Console — live smoke', () => {
     }
   });
 
+  test('phone journey expands a learner with an accessible disclosure and keeps panels in one column', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE_URL}/school/teacher/dashboard`);
+    const today = page.locator('.teacher-panel', { has: page.locator('.teacher-panel__title', { hasText: 'Today' }) });
+    await expect(today).toHaveAttribute('data-state', 'ok', { timeout: 30000 });
+
+    const disclosure = page.locator('.teacher-roster__card').first();
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    const controls = await disclosure.getAttribute('aria-controls');
+    expect(controls).toMatch(/^teacher-day-/);
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator(`#${controls}`)).toBeVisible();
+
+    const panels = page.locator('.teacher-view > .teacher-panel');
+    if (await panels.count() > 1) {
+      const first = await panels.nth(0).boundingBox();
+      const second = await panels.nth(1).boundingBox();
+      expect(second.y).toBeGreaterThanOrEqual(first.y + first.height - 1);
+    }
+  });
+
   test('a wrong-PIN pass-override write is refused and surfaces the PIN prompt / error copy', async ({ page }) => {
     await page.goto(`${BASE_URL}/school/teacher`);
     await page.getByRole('button', { name: 'Planning', exact: true }).click();

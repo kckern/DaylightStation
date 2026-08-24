@@ -52,6 +52,8 @@ config.app.yml
 config.secrets.yml
 config.app-local.yml
 /scripts/*
+!scripts/school/
+!scripts/school/build-course-posters.mjs
 !scripts/camera-archive/
 !scripts/port-manager.mjs
 !scripts/dev-server.sh

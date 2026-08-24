@@ -14,7 +14,7 @@ import { normalizeLearningContext } from './progress/learningProgress.mjs';
  * grading engine and produce the same attempt, so the only honest difference is
  * provenance. Nothing scores differently because of it.
  */
-export function createAttempt({ at, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null, bankRev = null }) {
+export function createAttempt({ at, processedAt = null, studyDay = null, sessionId, bankId, itemId, itemType, mode, given, correct, attributedTo, transport = 'screen', provenance = null, learning = null, bankRev = null }) {
   if (!isCanonicalTimestamp(at)) {
     throw new TypeError('Attempt at must be a canonical ISO-8601 timestamp');
   }
@@ -23,6 +23,8 @@ export function createAttempt({ at, sessionId, bankId, itemId, itemType, mode, g
   return {
     id: `att_${shortId(8)}`,
     at,
+    ...(processedAt ? { processedAt } : {}),
+    ...(studyDay ? { studyDay } : {}),
     sessionId, bankId, itemId, itemType, mode,
     given, correct, attributedTo, transport,
     learning: normalized.learning,

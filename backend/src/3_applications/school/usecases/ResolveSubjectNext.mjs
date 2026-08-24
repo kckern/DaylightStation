@@ -31,9 +31,10 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
+import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 
 export class ResolveSubjectNext {
-  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger; #attestations;
+  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger; #attestations; #curriculumExceptions;
 
   /**
    * @param {object} deps
@@ -53,6 +54,7 @@ export class ResolveSubjectNext {
     timezone = null, clock = () => new Date(), newSessionId,
     // Attestation gate-unlock source (spec D2), optional.
     attestations = null,
+    curriculumExceptions = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || typeof newSessionId !== 'function') {
@@ -67,6 +69,7 @@ export class ResolveSubjectNext {
     this.#newSessionId = newSessionId;
     this.#logger = logger;
     this.#attestations = attestations;
+    this.#curriculumExceptions = curriculumExceptions;
   }
 
   /**
@@ -98,7 +101,10 @@ export class ResolveSubjectNext {
       sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
       outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
     }));
-    const history = attested.length ? [...rawHistory, ...attested] : rawHistory;
+    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
+    const history = withCurriculumExceptions(
+      attested.length ? [...rawHistory, ...attested] : rawHistory, activeExceptions, learnerId,
+    );
 
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
@@ -134,8 +140,12 @@ export class ResolveSubjectNext {
     // same rule `BuildAgenda#offerFor` follows for the identical case.
     if (entry.program) return { kind: 'program', programId: entry.program, unit };
 
+    const paused = pausedExceptionFor(activeExceptions, entry.unitId);
+    if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };
+
     const { sessionId, state } = await ensureSession({
       entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+      timezone: this.#timezone,
     });
     const move = nextMove(unit ?? {}, state);
     return {
