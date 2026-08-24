@@ -60,15 +60,20 @@ Until then this rule simply never fires (there is no `dated_modules` course
 live yet), so nothing is currently broken — but please ping before shipping
 so we can add the one integration test named in the design doc's §9.
 
-## Consumer contract (documented, not built)
+## Consumer status
 
-Nobody reads `school.completion.changed` or calls
-`GetLearnerDayCompletion` yet. The intended contract, for whoever builds
-the first consumer:
+The first consumer is now implemented locally: the piano-kiosk Games tile and
+the direct Games route both read `GetLearnerDayCompletion` through
+`GET /api/v1/school/lifecycle/learners/:learnerId/completion`. The gate unlocks
+on `complete` or `no_work_today`, refreshes while mounted, and fails closed when
+the read is unavailable. Direct routes and note-launcher navigation cannot
+bypass it. Guest is handled locally as `no_work_today`.
+
+The remaining consumer contract is:
 
 | Consumer | Honors |
 | --- | --- |
-| Piano-kiosk games unlock | `complete` **or** `no_work_today` |
+| Piano-kiosk games unlock | `complete` **or** `no_work_today` — built locally, not yet committed/deployed |
 | Coins / economy reward | `complete` **only** |
 | Teacher console "today" view | `excused` regardless of state |
 

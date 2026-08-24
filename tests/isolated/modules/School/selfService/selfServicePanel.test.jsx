@@ -78,7 +78,7 @@ vi.mock('#frontend/modules/School/schoolApi.js', () => ({
 
 const coursesMock = vi.fn();
 const dayMock = vi.fn();
-vi.mock('#frontend/modules/School/Programs/Glossika/languageApi.js', () => ({
+vi.mock('#frontend/modules/School/Programs/SentenceLadder/languageApi.js', () => ({
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: (...a) => dayMock(...a),

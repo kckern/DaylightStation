@@ -23,6 +23,7 @@ import { useInactivityTimer } from './useInactivityTimer.js';
 import { useSessionTracking } from './useSessionTracking.js';
 import { useSpamDetection } from './useSpamDetection.js';
 import { useScreenOverlay } from '../../screen-framework/overlays/ScreenOverlayProvider.jsx';
+import useSchoolGameAccess from './PianoKiosk/useSchoolGameAccess.js';
 
 const formatDuration = (seconds) => {
   const mins = Math.floor(seconds / 60);
@@ -74,6 +75,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // Who is playing. The kiosk knows from its roster context; this screen has to
   // be told, so it remembers the last answer and the top key changes it.
   const { users, currentUser, pickerOpen, openPicker, pickUser } = useLauncherUser();
+  const schoolGameAccess = useSchoolGameAccess(currentUser ?? null);
 
   // The roster, laid out as the same row of keys the games use. It was a
   // tap-only modal — dark-on-dark and unselectable on a screen with no touch,
@@ -119,7 +121,11 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   }, [users, currentUser]);
 
   const { isOpen: launcherOpen, activeGameId, isHolding, dismiss, exitGame, timeoutMs, launchNonce } =
-    useNoteLauncher({ activeNotes, slots, initialGame, onRequestUser: openPicker, selectionPaused: rosterNeeded, options: launcherOptions });
+    useNoteLauncher({
+      activeNotes, slots, initialGame, onRequestUser: openPicker,
+      selectionPaused: rosterNeeded || !schoolGameAccess.unlocked,
+      options: launcherOptions,
+    });
 
 
 
@@ -140,7 +146,14 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   });
 
   const activeGameEntry = activeGameId ? getGameEntry(activeGameId) : null;
-  const isFullscreenGame = activeGameEntry?.layout === 'replace';
+  const isFullscreenGame = schoolGameAccess.unlocked && activeGameEntry?.layout === 'replace';
+
+  // A deep link, a note struck just before a status refresh, or a player
+  // switch must not leave a game alive behind the lock. Rendering is gated in
+  // the same commit; this effect also clears the launcher's internal game id.
+  useEffect(() => {
+    if (activeGameId && !schoolGameAccess.unlocked) exitGame('school-locked');
+  }, [activeGameId, schoolGameAccess.unlocked, exitGame]);
 
   // More released games than launcher keys: the extras are silently unreachable,
   // so say so rather than letting the row read as "everything is here".
@@ -285,8 +298,21 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
         </div>
       )}
 
-      {launcherOpen && !rosterVisible && (
+      {launcherOpen && !rosterVisible && schoolGameAccess.unlocked && (
         <NoteLauncher slots={slots} timeoutMs={timeoutMs} playerName={currentUserName} playerId={currentUser} />
+      )}
+
+      {launcherOpen && !rosterVisible && !schoolGameAccess.unlocked && (
+        <div className="note-launcher note-launcher--school-locked" role="status">
+          <h2>Games are locked</h2>
+          <p>
+            {schoolGameAccess.status === 'error'
+              ? 'School status is unavailable. Games stay locked until it can be checked.'
+              : schoolGameAccess.status === 'loading'
+                ? 'Checking today’s schoolwork…'
+                : 'Finish today’s schoolwork to unlock Games.'}
+          </p>
+        </div>
       )}
 
       {/* Second level of the pick: who, then what. Same keyboard, same grammar —
@@ -311,7 +337,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
 
       {confirming && <PlayerConfirm userId={confirming.id} name={confirming.name} />}
 
-      {isFullscreenGame && activeGameEntry?.LazyComponent && (
+      {isFullscreenGame && activeGameEntry?.LazyComponent && schoolGameAccess.unlocked && (
         <div className="tetris-fullscreen">
           {/* This screen has no breadcrumb rail and no user chip, so a game
               opened into a board that named neither itself nor its player. */}

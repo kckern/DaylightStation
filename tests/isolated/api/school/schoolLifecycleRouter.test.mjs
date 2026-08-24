@@ -96,6 +96,13 @@ const buildAgenda = {
     return { learnerId, learnerName, offers: [], document: { id: `agenda-${learnerId}` } };
   },
 };
+const getLearnerDayCompletion = {
+  execute: async ({ learnerId }) => ({
+    learnerId,
+    state: learnerId === 'kid1' ? 'complete' : 'no_work_today',
+    excused: [],
+  }),
+};
 /** Stub of `1_rendering`'s PNG receipt renderer — a fixed, tiny "PNG". */
 const receiptPngRenderer = {
   createCanvas: async (document) => ({ canvas: { toBuffer: () => Buffer.from(`png:${document.id}`) } }),
@@ -110,6 +117,7 @@ beforeAll(async () => {
     resolveScanAction: { execute: async ({ code }) => ({ status: code.replace('sch:', ''), message: 'stubbed', printed: true }) },
     buildAgenda,
     previewAgenda,
+    getLearnerDayCompletion,
     receiptPngRenderer,
     issueDocument: { execute: async ({ sessionId }) => ({ status: sessionId === 'ses_bad' ? 'unavailable' : 'issued', sessionId, artifactId: 'art_1' }) },
     dispatchMedia: {
@@ -186,6 +194,13 @@ describe('outcome → status mapping', () => {
 });
 
 describe('agenda and sessions', () => {
+  it('returns the read-only three-state learner-day completion with no caching', async () => {
+    const r = await fetch(`${base}/learners/kid1/completion`);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('cache-control')).toBe('no-store');
+    expect(await r.json()).toEqual({ learnerId: 'kid1', state: 'complete', excused: [] });
+  });
+
   it('GET /agenda is a dry run: it previews (never mints) and returns a PNG, passing the display name through', async () => {
     const previewBefore = previewCalls.length;
     const buildBefore = buildCalls.length;
@@ -361,6 +376,7 @@ describe('fail closed', () => {
     const url = `http://127.0.0.1:${bare.address().port}/api/v1/school/lifecycle`;
     expect((await fetch(`${url}/review`)).status).toBe(404);
     expect((await fetch(`${url}/learners/kid1/agenda`)).status).toBe(404);
+    expect((await fetch(`${url}/learners/kid1/completion`)).status).toBe(404);
     await new Promise((res) => bare.close(res));
   });
 });

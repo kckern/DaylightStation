@@ -3,7 +3,7 @@
 > **Status:** Built and deployed — identity + quizzes/flashcards, the subject
 > wall home (nine paired subjects, 3×3), the materials framework (video/audio
 > courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
-> the program report interface, language study (Glossika ladder),
+> the program report interface, language study (sentence ladder),
 > **printing** (worksheets on the kitchen laser printer), **print documents**
 > (authored worksheet/quiz PDFs with OMR bubble-card grading — see
 > [`print-documents.md`](./print-documents.md)), and interactive
@@ -213,7 +213,7 @@ affordance; when nobody is claimed it shows the household's **kid faces**
 button.
 
 Subjects are the top level; the second level inside each subject is instances
-of **reusable content frameworks** — a custom program (Glossika), Plex
+of **reusable content frameworks** — a custom sentence-ladder program, Plex
 materials with quiz gates, quiz/flashcard banks — and one framework class can
 appear under any subject. Shelving is config-driven via a `subject:` field on
 materials sources (`school.yml`) and bank YAMLs (distinct from banks'
@@ -568,6 +568,10 @@ pacing knob is new-sentences-per-day.
   (`source: EN, target: KR`) and sentence text is keyed by language code. A
   Spanish course, or a reversed course, is a corpus file plus an adapter — no
   domain change.
+- **Agenda status is scoped to the program instance.** The planner preserves
+  each unit's `programInstance`, status maps key `program + instance`, and the
+  language launcher reads only that corpus. Progress or an outage in one
+  language therefore cannot masquerade as the status of another.
 - **Capability filtering, per language.** `textInput` is a list of language
   codes rather than a boolean, because `dictation` needs a target-script IME
   while `interpretation` needs only the source script; a US keyboard satisfies
@@ -606,7 +610,7 @@ supplier is an adapter.
 | Persistence | `backend/src/1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs` |
 | Application | `backend/src/3_applications/school/LanguageStudyService.mjs` |
 | API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` |
-| Frontend | `frontend/src/modules/School/Programs/Glossika/` |
+| Frontend (sentence-ladder pedagogy) | `frontend/src/modules/School/Programs/SentenceLadder/` |
 | Legacy dump reader | `backend/src/1_adapters/glossika/LegacyDumpReader.mjs` |
 | Ingest CLI | `cli/glossika.cli.mjs` (`import-db` is authoritative) |
 | Corpus | `data/content/language/{corpusId}.yml` |
@@ -1354,6 +1358,15 @@ ids stay flat basenames; see [authoring/content-layout.md](authoring/content-lay
 and question banks at `…/{work}/quizzes/` — a bank id is the subject/work path
 with `quizzes/` elided. A unit whose bank is missing is **rejected at load**
 with `school.curriculum.invalid-units` rather than failing when a child opens it.
+
+**Learner-day completion is a three-state read model**, derived from this same
+agenda plan rather than persisted separately. Consumers read
+`GET /api/v1/school/lifecycle/learners/:learnerId/completion`, which returns
+`incomplete`, `complete`, or `no_work_today` plus any excused-section reasons.
+The endpoint is side-effect free and `Cache-Control: no-store`; it never opens
+a session or mints a ticket. Consumers must choose their own policy for
+`no_work_today`: the piano Games gate treats it as unlocked, while an economy
+reward must require actual `complete` work.
 
 **The printed agenda is sectioned by subject, not listed by unit.** It opens
 with the standard header — the learner's display name (resolved from the

@@ -277,6 +277,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       timingReasons: timingDecision?.reasons ?? ['default_priority'],
       elective,
       program: unit.program ?? null,
+      programInstance: unit.programInstance ?? null,
       cadence: unit.cadence ?? null,
       schoolcalc: unit.schoolcalc ? structuredClone(unit.schoolcalc) : undefined,
       status,

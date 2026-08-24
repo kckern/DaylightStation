@@ -9,6 +9,7 @@ vi.mock('../../../../../lib/api.mjs', () => ({
 
 import { PianoMidiProvider } from '../../PianoMidiContext.jsx';
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
+import PianoUserContext from '../../PianoUserContext.jsx';
 import { Games, gameSubRouteTarget } from './Games.jsx';
 
 const testConfig = {
@@ -19,15 +20,17 @@ const testConfig = {
 // Games renders its own <Routes>, so mount it under a "games/*" route inside a
 // MemoryRouter — mirroring how PianoShell mounts it (path="games/*"). The game
 // id lives in the URL; assertions check the right view per path.
-function renderGames(initialEntry = '/games') {
+function renderGames(initialEntry = '/games', currentUser = 'guest') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <ActivePianoProvider pianoId="test" config={testConfig}>
-        <PianoMidiProvider>
-          <Routes>
-            <Route path="games/*" element={<Games />} />
-          </Routes>
-        </PianoMidiProvider>
+        <PianoUserContext.Provider value={{ currentUser, currentProfile: { id: currentUser, name: currentUser } }}>
+          <PianoMidiProvider>
+            <Routes>
+              <Route path="games/*" element={<Games />} />
+            </Routes>
+          </PianoMidiProvider>
+        </PianoUserContext.Provider>
       </ActivePianoProvider>
     </MemoryRouter>
   );
@@ -70,6 +73,13 @@ describe('Games mode', () => {
     renderGames('/games/card-game');
     expect(screen.queryByText('Battle Stadium')).toBeNull(); // not the picker
     expect(document.querySelector('.piano-game-fullscreen')).not.toBeNull();
+  });
+
+  it('blocks a direct game route when the active learner has not completed school', async () => {
+    renderGames('/games/tetris', 'learner-one');
+    expect(await screen.findByText('Games are locked')).toBeTruthy();
+    expect(screen.getByText(/Finish today’s schoolwork/)).toBeTruthy();
+    expect(document.querySelector('.piano-game-fullscreen')).toBeNull();
   });
 
   it('navigates to the game host on tile click (relative nav)', () => {

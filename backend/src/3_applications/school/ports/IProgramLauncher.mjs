@@ -65,11 +65,14 @@ export class IProgramLauncher {
    * every launcher, and one failing program must not blank the agenda for the
    * rest.
    *
-   * @param {{userId: string}} args
+   * `programInstance` identifies one configured instance (for example a
+   * language corpus); launchers with no instance-specific state may ignore it.
+   *
+   * @param {{userId: string, programInstance?: string|null}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
    */
   // eslint-disable-next-line no-unused-vars
-  status({ userId }) {
+  status({ userId, programInstance = null }) {
     throw new Error('IProgramLauncher.status must be implemented');
   }
 

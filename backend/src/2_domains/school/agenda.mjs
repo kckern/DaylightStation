@@ -51,7 +51,7 @@ function latestGradedPerUnit(sessions) {
 function progressLabelFor(list, statuses) {
   const curriculum = list.filter((e) => !e.program);
   if (!curriculum.length) {
-    return statuses[0]?.progressLabel ?? null;
+    return statuses.find((status) => !status.error && status.progressLabel != null)?.progressLabel ?? null;
   }
   const total = curriculum.length;
   const passed = curriculum.filter((e) => e.status === 'completed').length;
@@ -92,12 +92,21 @@ const focusExtras = (entry) => entry?.timingState === 'urgent'
   ? Math.max(0, (entry.timing?.agenda?.urgentBlocks ?? 1) - (entry.timing?.agenda?.normalBlocks ?? 1))
   : 0;
 
+/** Stable status-map key for one configured program instance. Programs with
+ * no instance retain their historical bare id so existing launchers and
+ * hand-authored units remain compatible. */
+export function programStatusKey(entry) {
+  const program = entry?.program ?? '';
+  const instance = entry?.programInstance;
+  return instance ? `${program}::${instance}` : program;
+}
+
 /**
  * @param {object} args
  * @param {object} args.plan              `planLearnerWork()` result — reads `.entries`
  * @param {Array}  [args.sessions]        derived session facts — same shape the planner consumes,
  *                                         plus `gradedPercent: number|null`
- * @param {object} [args.programStatuses] `{ [programId]: { doneToday, progressLabel, score } | { error: true } }`
+ * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, progressLabel, score } | { error: true } }`
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
@@ -134,8 +143,8 @@ export function planDailyAgenda({
   const sections = order.filter((subject) => bySubject.has(subject)).map((subject, subjectPosition) => {
     const list = bySubject.get(subject);
     const programs = list.filter((e) => e.program);
-    const statuses = programs
-      .map((e) => programStatuses[e.program])
+    const statuses = [...new Set(programs.map(programStatusKey))]
+      .map((key) => programStatuses[key])
       .filter(Boolean);
     const programUnavailable = statuses.some((s) => s.error === true);
     const programDone = statuses.some((s) => !s.error && s.doneToday === true);
@@ -144,10 +153,10 @@ export function planDailyAgenda({
     // subject-level `programUnavailable` flag (the old behaviour) blanked a
     // live curriculum sibling whenever ANY program in the subject errored,
     // and was order-dependent besides (whichever entry won priority).
-    const unavailablePrograms = new Set(
-      programs.filter((e) => programStatuses[e.program]?.error === true).map((e) => e.program),
+    const unavailableProgramKeys = new Set(
+      programs.filter((e) => programStatuses[programStatusKey(e)]?.error === true).map(programStatusKey),
     );
-    const eligible = list.filter((e) => !(e.program && unavailablePrograms.has(e.program)));
+    const eligible = list.filter((e) => !(e.program && unavailableProgramKeys.has(programStatusKey(e))));
     const candidate = [...eligible.filter((e) => e.status === 'in_progress'), ...eligible.filter((e) => e.status === 'available')]
       .sort(byEntryPriority)[0] ?? null;
     const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));
@@ -182,7 +191,11 @@ export function planDailyAgenda({
     // never excuse a required entry sharing its subject).
     const nonElectiveList = list.filter((e) => !e.elective);
     const actionable = eligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
-    const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || programDone;
+    const nonElectiveProgramDone = nonElectiveList.some((e) => (
+      e.program && programStatuses[programStatusKey(e)]?.error !== true
+      && programStatuses[programStatusKey(e)]?.doneToday === true
+    ));
+    const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || nonElectiveProgramDone;
     const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
     const hasNonElective = (pred) => nonElectiveList.some(pred);
     let obligation;
@@ -191,7 +204,7 @@ export function planDailyAgenda({
     } else if (actionable.length === 0) {
       let reason;
       if (nonElectiveList.length === 0) reason = 'elective_only';
-      else if (hasNonElective((e) => e.program && unavailablePrograms.has(e.program))) reason = 'program_unavailable';
+      else if (hasNonElective((e) => e.program && unavailableProgramKeys.has(programStatusKey(e)))) reason = 'program_unavailable';
       else if (hasNonElective((e) => e.status === 'locked')) reason = 'blocked_no_offer';
       else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
       else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';

@@ -36,7 +36,7 @@ vi.mock('./schoolApi.js', () => ({
   },
 }));
 
-vi.mock('./Programs/Glossika/languageApi.js', () => ({
+vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
   languageApi: {
     courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     day: vi.fn(async () => ({ ok: true, status: 200, data: null })),

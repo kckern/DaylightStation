@@ -9,6 +9,7 @@ import PianoMenuActivity from './PianoMenuActivity.jsx';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
+import useSchoolGameAccess from './useSchoolGameAccess.js';
 
 // Order maps to the 4-column grid, row by row (top row → bottom row):
 //   Courses    Music      Sheet Music  Studio
@@ -22,11 +23,6 @@ import usePianoCurfew from './usePianoCurfew.js';
 // PianoApp.jsx), not the touch UI, until it ships. Composer is a placeholder
 // shell for a future tool.
 //
-// Games is `disabled` for the same greyed/non-clickable treatment, but for a
-// household reason rather than an unshipped one: it is turned off at the tile
-// while it is a source of contention over the tablet. Note that this closes the
-// touch-UI door only — the note launcher (game-platform/launcher/) still opens
-// games from PianoVisualizer, so re-enabling here is the whole revert.
 export const PIANO_MODES = [
   { id: 'videos', label: 'Courses', blurb: 'Watch lessons & lectures', icon: 'video' },
   { id: 'music', label: 'Music', blurb: 'Albums & playlists', icon: 'music' },
@@ -36,7 +32,7 @@ export const PIANO_MODES = [
   { id: 'playalong', label: 'Playalong', blurb: 'Backing tracks to play over', icon: 'playalong' },
   { id: 'singalong', label: 'Karaoke', blurb: 'Grab the mic — sing along', icon: 'singalong' },
   { id: 'exercises', label: 'Exercises', blurb: 'Drills, scales & chords', icon: 'metronome' },
-  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game', disabled: true },
+  { id: 'games', label: 'Games', blurb: 'Play note-driven games', icon: 'game' },
   { id: 'producer', label: 'Producer', blurb: 'Coming soon', icon: 'producer', disabled: true },
 ];
 
@@ -53,10 +49,11 @@ export function PianoMenu() {
   const navigate = useNavigate();
   const { pianoId, basePath, config } = usePianoKioskConfig();
   const { pressNote, releaseNote } = usePianoMidi();
-  const { setCurrentUser } = usePianoUser();
+  const { currentUser, setCurrentUser } = usePianoUser();
+  const gameAccess = useSchoolGameAccess(currentUser);
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
-  const cols = balancedColumns(PIANO_MODES.length); // 11 → 4
+  const cols = balancedColumns(PIANO_MODES.length); // 10 → 5
   const curfew = usePianoCurfew(config?.curfew);
 
   const open = (id) => {
@@ -80,17 +77,28 @@ export function PianoMenu() {
           }}
         />
         <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
-          {PIANO_MODES.map((m) => (
-            <li key={m.id}>
-              <PianoTile
-                icon={m.icon}
-                label={m.label}
-                blurb={m.blurb}
-                disabled={m.disabled || curfew}
-                onClick={m.disabled || curfew ? undefined : () => open(m.id)}
-              />
-            </li>
-          ))}
+          {PIANO_MODES.map((m) => {
+            const schoolLocked = m.id === 'games' && !gameAccess.unlocked;
+            const disabled = m.disabled || schoolLocked || curfew;
+            const blurb = m.id !== 'games' || gameAccess.unlocked
+              ? m.blurb
+              : gameAccess.status === 'error'
+                ? 'School status unavailable'
+                : gameAccess.status === 'loading'
+                  ? 'Checking schoolwork…'
+                  : 'Finish school to unlock';
+            return (
+              <li key={m.id}>
+                <PianoTile
+                  icon={m.icon}
+                  label={m.label}
+                  blurb={blurb}
+                  disabled={disabled}
+                  onClick={disabled ? undefined : () => open(m.id)}
+                />
+              </li>
+            );
+          })}
         </ul>
         {curfew && (
           <p className="piano-home__curfew" role="status">

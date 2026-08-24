@@ -11,6 +11,7 @@ import { balancedColumns } from '../../tileGridLayout.js';
 import { SkeletonStage } from '../../Skeleton.jsx';
 import GameBoundary from '../../../game-platform/host/GameBoundary.jsx';
 import { resolvePianoPlayerName } from '../../../game-platform/identity/playerName.js';
+import useSchoolGameAccess from '../../useSchoolGameAccess.js';
 
 /**
  * Relative destination for a game-owned URL segment.
@@ -41,6 +42,23 @@ export function gameSubRouteTarget(currentSubRoute, next) {
  * works under either /piano/* (single piano) or /piano/:pianoId/* (multi).
  */
 export function Games() {
+  const pianoUser = useContext(PianoUserContext);
+  const gameAccess = useSchoolGameAccess(pianoUser?.currentUser ?? null);
+
+  if (!gameAccess.unlocked) {
+    const message = gameAccess.status === 'error'
+      ? 'School status is unavailable. Games stay locked until it can be checked.'
+      : gameAccess.status === 'loading'
+        ? 'Checking today’s schoolwork…'
+        : 'Finish today’s schoolwork to unlock Games.';
+    return (
+      <section className="piano-mode__placeholder piano-games__school-lock" role="status">
+        <h2>Games are locked</h2>
+        <p>{message}</p>
+      </section>
+    );
+  }
+
   return (
     <Routes>
       <Route index element={<GamePicker />} />

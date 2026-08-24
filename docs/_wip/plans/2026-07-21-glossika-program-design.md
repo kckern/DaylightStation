@@ -4,7 +4,7 @@
 > 2016–2020 database dump was recovered (§6).
 > Revives the 2016–2017 `korean.kckern.info` sentence-drill app
 > (see `LifeArchive/Vol 0/projects/0 Software/2016-glossika.yml`) as a School
-> program at `frontend/src/modules/School/Programs/Glossika/`.
+> program at `frontend/src/modules/School/Programs/SentenceLadder/`.
 
 ---
 
@@ -224,7 +224,7 @@ wider than `shadowing` (only rung 1 shadows), narrower than `drill`.
 | Persistence | `backend/src/1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs` | progress + attempt log |
 | Application | `backend/src/3_applications/school/LanguageStudyService.mjs` | orchestration |
 | API | `backend/src/4_api/v1/routers/language.mjs` → `/api/v1/school/language` | HTTP shell |
-| Frontend | `frontend/src/modules/School/Programs/Glossika/` | the Glossika *course* as a School program |
+| Frontend | `frontend/src/modules/School/Programs/SentenceLadder/` | the supplier-neutral sentence-ladder pedagogy as a School program |
 | Corpus | `data/content/language/{corpusId}.yml` | content type, id as filename |
 | Audio | `media/apps/school/language/{corpusId}/` | corpus-scoped, multi-course ready |
 | Ingest CLI | `cli/glossika.cli.mjs` | vendor ingest |
@@ -263,8 +263,8 @@ fail on submit, matching the School convention.
 ## 5. Frontend
 
 ```
-Programs/Glossika/
-  GlossikaProgram.jsx      shell: day header, rung tabs, progress bar
+Programs/SentenceLadder/
+  SentenceLadderProgram.jsx shell: day header, rung tabs, progress bar
   rungs/RepetitionRung.jsx audio-only shadowing loop
   rungs/DictationRung.jsx  Hangul entry + replay
   rungs/RecordingRung.jsx  MediaRecorder capture + playback + accept

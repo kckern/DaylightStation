@@ -10,6 +10,7 @@
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { resolveDayCompletion } from '#domains/school/completion.mjs';
+import { collectProgramStatuses } from './programStatusCollection.mjs';
 
 export class GetLearnerDayCompletion {
   #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #logger;
@@ -56,24 +57,13 @@ export class GetLearnerDayCompletion {
   }
 
   /** Mirrors `BuildAgenda#collectProgramStatuses` exactly: one read-only
-   * `status()` per distinct program id, degrading to `{ error: true }` on
+   * `status()` per distinct program instance, degrading to `{ error: true }` on
    * any failure so a broken launcher never blanks the whole read. */
   async #collectProgramStatuses(plan, learnerId) {
-    const programIds = [...new Set((plan.entries ?? []).filter((e) => e.program).map((e) => e.program))];
-    const statuses = {};
-    await Promise.all(programIds.map(async (programId) => {
-      try {
-        const launcher = this.#launchers.get(programId);
-        if (!launcher) throw new Error(`no launcher registered for program "${programId}"`);
-        statuses[programId] = await launcher.status({ userId: learnerId });
-      } catch (err) {
-        this.#logger.warn?.('school.completion.launcher-failed', {
-          learnerId, program: programId, error: err?.message ?? String(err),
-        });
-        statuses[programId] = { error: true };
-      }
-    }));
-    return statuses;
+    return collectProgramStatuses({
+      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
+      logEvent: 'school.completion.launcher-failed',
+    });
   }
 }
 

@@ -30,6 +30,11 @@ vi.mock('./game-platform/launcher/useLauncherUser.js', () => ({
   useLauncherUser: () => launcherUserState,
 }));
 
+const schoolGate = { status: 'ready', state: 'complete', unlocked: true };
+vi.mock('./PianoKiosk/useSchoolGameAccess.js', () => ({
+  default: () => schoolGate,
+}));
+
 let inactivityArgs = null;
 vi.mock('./useInactivityTimer.js', () => ({
   useInactivityTimer: (...args) => {
@@ -115,6 +120,7 @@ beforeEach(() => {
     users: [], currentUser: null, pickerOpen: false,
     openPicker: vi.fn(), closePicker: vi.fn(), pickUser: vi.fn(),
   };
+  Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true });
   launcherArgs = null;
   inactivityArgs = null;
   gameProps = null;
@@ -190,6 +196,28 @@ describe('PianoVisualizer game launcher', () => {
     expect(container.querySelector('.note-launcher')).toBeTruthy();
     // Free play stays underneath: dismissing must not have cost you anything.
     expect(container.querySelector('.waterfall-container')).toBeTruthy();
+  });
+
+  it('shows the school lock instead of game keys while work is incomplete', () => {
+    launcherUserState = { ...launcherUserState, currentUser: 'kid1' };
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+    launcherState = { ...launcherState, isOpen: true };
+    const { container } = render(<PianoVisualizer />);
+
+    expect(container.textContent).toContain('Finish today’s schoolwork to unlock Games.');
+    expect(container.querySelectorAll('.nl-key')).toHaveLength(0);
+    expect(launcherArgs.selectionPaused).toBe(true);
+  });
+
+  it('exits and never mounts a note-launched game when school is locked', () => {
+    launcherUserState = { ...launcherUserState, currentUser: 'kid1' };
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+    launcherState = { ...launcherState, activeGameId: 'tetris' };
+    const { queryByTestId, container } = render(<PianoVisualizer />);
+
+    expect(queryByTestId('game-stub')).toBeNull();
+    expect(container.querySelector('.waterfall-container')).toBeTruthy();
+    expect(launcherState.exitGame).toHaveBeenCalledWith('school-locked');
   });
 
   it('builds one key per released registry game, and omits unreleased ones', () => {

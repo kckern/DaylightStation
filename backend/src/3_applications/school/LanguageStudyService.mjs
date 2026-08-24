@@ -530,24 +530,25 @@ export class LanguageStudyService {
    * program must not blank the agenda for the rest (mirrors `summarize`'s
    * per-course try/catch, one level up since this returns a single object).
    *
-   * @param {{userId: string}} args
+   * @param {{userId: string, corpusId?: string|null}} args
    * @returns {{doneToday: boolean, progressLabel: string|null, score: number|null}}
    */
   // READ-ONLY by contract: the agenda preview GET depends on status() never writing (preview spec §3).
-  todayStatus({ userId }) {
+  todayStatus({ userId, corpusId = null }) {
     if (!userId) return { doneToday: false, progressLabel: null, score: null };
     try {
-      for (const corpusId of this.#ds.listCorpusIds()) {
-        const corpus = this.#loadCorpus(corpusId);
+      const corpusIds = corpusId ? [corpusId] : this.#ds.listCorpusIds();
+      for (const candidateCorpusId of corpusIds) {
+        const corpus = this.#loadCorpus(candidateCorpusId);
         if (!corpus) continue;
 
-        const rawProgress = this.#ds.readProgress(userId, corpusId);
-        const log = this.#ds.readAllEvents(userId, corpusId);
+        const rawProgress = this.#ds.readProgress(userId, candidateCorpusId);
+        const log = this.#ds.readAllEvents(userId, candidateCorpusId);
         if (!rawProgress && log.length === 0) continue; // never touched this course
 
-        const progress = this.#readProgress(userId, corpusId);
+        const progress = this.#readProgress(userId, candidateCorpusId);
         let day = progress.day;
-        let queue = this.#fullDayQueue(userId, corpusId, corpus, log, progress);
+        let queue = this.#fullDayQueue(userId, candidateCorpusId, corpus, log, progress);
 
         // The stored day only advances when the learner next opens the app,
         // so a day finished last week still reads as day N with everything
@@ -565,7 +566,7 @@ export class LanguageStudyService {
         });
         if (roll.roll) {
           day += 1;
-          queue = this.#fullDayQueue(userId, corpusId, corpus, log, { ...progress, day });
+          queue = this.#fullDayQueue(userId, candidateCorpusId, corpus, log, { ...progress, day });
         }
 
         const summary = summarizeQueue(queue);

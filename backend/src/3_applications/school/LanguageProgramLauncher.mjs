@@ -53,11 +53,11 @@ export class LanguageProgramLauncher {
   get surface() { return 'portal'; }
 
   /**
-   * @param {{userId: string}} args
+   * @param {{userId: string, programInstance?: string|null}} args
    * @returns {Promise<{doneToday: boolean, progressLabel: string|null, score: number|null}>}
    */
-  async status({ userId }) {
-    return this.#languageStudyService.todayStatus({ userId });
+  async status({ userId, programInstance = null }) {
+    return this.#languageStudyService.todayStatus({ userId, corpusId: programInstance });
   }
 
   /**

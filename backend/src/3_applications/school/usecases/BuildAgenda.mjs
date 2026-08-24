@@ -31,6 +31,7 @@
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
@@ -77,7 +78,7 @@ export class BuildAgenda {
    * @param {import('../ports/ITokenRegistry.mjs').ITokenRegistry} deps.tokens
    * @param {Map<string, import('../ports/IProgramLauncher.mjs').IProgramLauncher>} [deps.launchers]
    *   program id -> launcher. Consulted read-only (`status`) for every
-   *   DISTINCT program id among the plan's entries.
+   *   DISTINCT program instance among the plan's entries.
    * @param {string|null} [deps.timezone] - IANA zone the study-day boundary
    *   and the printed time are both read against
    * @param {() => Date} [deps.clock]
@@ -432,7 +433,7 @@ export class BuildAgenda {
 
   /**
    * `programStatuses` for `planDailyAgenda`: one read-only `status()` call per
-   * DISTINCT program id among the plan's entries. A program that throws or was
+   * DISTINCT program instance among the plan's entries. A program that throws or was
    * never registered must not blank the rest of the agenda — it degrades to
    * `{ error: true }`, which `planDailyAgenda` turns into that subject's
    * "not answering" line.
@@ -441,21 +442,10 @@ export class BuildAgenda {
    *   score: number|null}|{error: true}>>}
    */
   async #collectProgramStatuses(plan, learnerId) {
-    const programIds = [...new Set((plan.entries ?? []).filter((e) => e.program).map((e) => e.program))];
-    const statuses = {};
-    await Promise.all(programIds.map(async (programId) => {
-      try {
-        const launcher = this.#launchers.get(programId);
-        if (!launcher) throw new Error(`no launcher registered for program "${programId}"`);
-        statuses[programId] = await launcher.status({ userId: learnerId });
-      } catch (err) {
-        this.#logger.warn?.('school.agenda.launcher-failed', {
-          learnerId, program: programId, error: err?.message ?? String(err),
-        });
-        statuses[programId] = { error: true };
-      }
-    }));
-    return statuses;
+    return collectProgramStatuses({
+      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
+      logEvent: 'school.agenda.launcher-failed',
+    });
   }
 
   /**
