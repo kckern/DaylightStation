@@ -54,6 +54,7 @@ export default defineConfig(({ command, mode }) => {
         '@shared-music': path.resolve(__dirname, '../shared/music'),
         '@shared-gaming': path.resolve(__dirname, '../shared/gaming'),
         '@shared-presentation': path.resolve(__dirname, '../shared/presentation'),
+        '@shared-interaction': path.resolve(__dirname, '../shared/interaction'),
       }
     },
     server: {
