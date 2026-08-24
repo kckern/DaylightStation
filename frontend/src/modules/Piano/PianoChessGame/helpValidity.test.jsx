@@ -28,6 +28,7 @@ vi.mock('../PianoKiosk/PianoMidiContext.jsx', () => ({
 
 vi.mock('./chessApi.js', () => ({
   requestOpponentMove: vi.fn(),
+  requestOpponentQuip: vi.fn(async () => null),
   requestBestMove: vi.fn(async () => null),
   fetchChessConfig: vi.fn(async () => null),
   saveChessConfig: vi.fn(async () => null),

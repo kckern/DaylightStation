@@ -25,7 +25,7 @@ import { safeSegment } from './lib/emulatorPaths.mjs';
  */
 export function createChessRouter({
   engine, configService, recordStore = null, archiveStore = null, ladderService = null,
-  analyst = null, logger = null,
+  commentaryService = null, analyst = null, logger = null,
 }) {
   const router = express.Router();
 
@@ -119,6 +119,23 @@ export function createChessRouter({
     const move = { from: uci.slice(0, 2), to: uci.slice(2, 4), ...(uci[4] ? { promotion: uci[4] } : {}) };
     logger?.info?.('chess.analyze.served', { depth: evaluation.depth ?? null, cp: evaluation.cp ?? null });
     return res.json({ move, cp: evaluation.cp, mate: evaluation.mate, depth: evaluation.depth, terminal: false });
+  }));
+
+  /** Cosmetic opponent dialogue. Invalid records fail closed; generation fails open. */
+  router.post('/quip', asyncHandler(async (req, res) => {
+    if (!commentaryService) return res.status(501).json({ error: 'commentary_unavailable' });
+    const user = resolveUser(req, res);
+    if (user === undefined) return undefined;
+    const { gameId, ply, level, playerColor, game } = req.body || {};
+    try {
+      const reaction = await commentaryService.react({
+        userId: user, gameId, ply, level, playerColor, game,
+      });
+      return res.json(reaction);
+    } catch (error) {
+      if (error?.code === 'invalid_game') return res.status(400).json({ error: 'invalid_game' });
+      throw error;
+    }
   }));
 
   router.get('/config', asyncHandler(async (req, res) => {

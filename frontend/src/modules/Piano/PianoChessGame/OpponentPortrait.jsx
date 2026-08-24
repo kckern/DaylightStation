@@ -1,5 +1,8 @@
 import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/views/cardIdenticonModel.js';
+import OpponentSpeech from './OpponentSpeech.jsx';
 import './OpponentPortrait.scss';
+
+export { opponentLine, opponentMood, opponentStatus } from './opponentViewModel.js';
 
 /**
  * The face of the character you are playing.
@@ -13,85 +16,9 @@ import './OpponentPortrait.scss';
  * simply replaces the identicon. Nothing else about the ladder changes, which
  * is the point of keeping art out of the promotion arithmetic.
  */
-/**
- * What the opponent is doing, in their own terms.
- *
- * Every state here is read off real game state — whose turn it is, what they
- * last played, what they lost doing it. Nothing is invented to fill the line,
- * because a status that is sometimes theatre is a status a child stops reading.
- */
-export function opponentStatus({ thinking, lastMove, lastCapture, gameOver, result }) {
-  if (gameOver) {
-    if (result === 'win') return 'Beaten';
-    if (result === 'loss') return 'Won';
-    return 'Drew with you';
-  }
-  if (thinking) return 'Thinking…';
-  if (lastCapture) return `Took your ${lastCapture}`;
-  if (lastMove) return `Played ${lastMove}`;
-  return 'Waiting for you';
-}
-
-/**
- * `thinkMs`, when given, is the SAME floor opponentPacing.js is holding the
- * current reply for — not a decorative timing, the actual one. A strong
- * character broods visibly slower, not just for a flat 700ms, because the
- * pulse's own duration is that character's think time. Null (not currently
- * this character's turn) draws no pulse at all.
- */
-/**
- * How the character should look right now.
- *
- * Reactions are derived from what actually happened on the board, never
- * scheduled or randomised — the same discipline `opponentStatus` follows. A
- * portrait that emotes on a timer is theatre, and a child stops reading it for
- * the same reason they stop reading a status that is sometimes invented.
- *
- * Separate from the thinking pulse and composable with it: the pulse says the
- * character is working, the mood says how the last move went for them.
- *
- * One reaction at a time, most consequential first: the game ending outranks a
- * check, which outranks a capture either way. `thinking` is accepted so a
- * caller without a `thinkMs` can still say so.
- */
-export function opponentMood({ thinking, gameOver, result, tookPiece, lostPiece, givingCheck }) {
-  if (gameOver) {
-    if (result === 'win') return 'beaten';
-    return result === 'loss' ? 'triumphant' : 'neutral';
-  }
-  if (thinking) return 'thinking';
-  if (givingCheck) return 'attacking';
-  if (tookPiece) return 'pleased';
-  if (lostPiece) return 'hurt';
-  return 'neutral';
-}
-
-/**
- * What the character says, for the moods that are worth a word.
- *
- * Driven by the SAME derived mood as the animation, so a line can never
- * contradict the face — and only for moods that have something to say. Silence
- * is the default: a character that comments on every move stops being read, the
- * same way an always-on status line does.
- *
- * Keyed by mood rather than written per character, because the roster is data:
- * twenty-one entries in YAML cannot each carry dialogue, and a line that only
- * some characters had would read as a bug.
- */
-const MOOD_LINES = Object.freeze({
-  pleased: 'Thank you.',
-  hurt: 'Ow.',
-  attacking: 'Check!',
-  triumphant: 'Good game.',
-  beaten: 'You got me.',
-});
-
-export function opponentLine(mood) {
-  return MOOD_LINES[mood] ?? null;
-}
-
 export function OpponentPortrait({
   opponent, level, size = 'md', status = null, thinkMs = null, mood = null,
+  speech = null, reactionKey = null,
 }) {
   const name = opponent?.name || `Level ${level ?? 0}`;
   const pulsing = Number.isFinite(thinkMs) && thinkMs > 0;
@@ -107,7 +34,7 @@ export function OpponentPortrait({
       ].filter(Boolean).join(' ')}
       style={pulsing ? { '--pc-think-ms': `${thinkMs}ms` } : undefined}
     >
-      <div className="chess-opponent__face">
+      <div className="chess-opponent__face" key={reactionKey}>
         {opponent?.art ? (
           <img className="chess-opponent__art" src={opponent.art} alt="" />
         ) : (
@@ -135,11 +62,7 @@ export function OpponentPortrait({
       <figcaption className="chess-opponent__text">
         <span className="chess-opponent__name">{name}</span>
         {status && <span className="chess-opponent__status">{status}</span>}
-        {/* The character speaking. Below the status rather than replacing it:
-            the status is what they DID, this is what they think of it. */}
-        {opponentLine(mood) && (
-          <span className="chess-opponent__says" key={`${mood}-${status}`}>{opponentLine(mood)}</span>
-        )}
+        <OpponentSpeech speech={speech} />
       </figcaption>
     </figure>
   );

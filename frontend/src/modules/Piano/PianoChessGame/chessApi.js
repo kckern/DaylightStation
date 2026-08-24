@@ -34,11 +34,12 @@ const withUser = (path, userId) => (userId ? `${path}?user=${encodeURIComponent(
  * the latter on the 2018 tablet is uncertain.
  */
 const MOVE_TIMEOUT_MS = 8000;
+const QUIP_TIMEOUT_MS = 2400;
 
 /** Resolves null on any failure: the caller falls back to the local engine. */
 export async function requestOpponentMove({ fen, rung, level = null, gameId, userId = null }) {
   const request = DaylightAPI(withUser('api/v1/piano-games/chess/move', userId), { fen, rung, level, gameId }, 'POST')
-    .then((body) => (body && body.from ? body : null))
+    .then((body) => (body && body.from && body.to ? body : null))
     .catch((error) => {
       // Attached up front so a rejection arriving after the timeout has already
       // won is still handled rather than surfacing as an unhandled rejection.
@@ -84,6 +85,32 @@ export async function requestBestMove({ fen, userId = null }) {
       logger().warn('chess.analyze.timeout', { timeoutMs: MOVE_TIMEOUT_MS });
       resolve(null);
     }, MOVE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([request, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Ask for cosmetic dialogue after a committed move. This is deliberately a
+ * separate, shorter request: speech may arrive late or not at all, but chess
+ * input and opponent turns never wait for it.
+ */
+export async function requestOpponentQuip({ gameId, ply, level, playerColor, game, userId = null }) {
+  const request = DaylightAPI(withUser('api/v1/piano-games/chess/quip', userId), {
+    gameId, ply, level, playerColor, game,
+  }, 'POST').then((body) => (body?.quip ? body : null)).catch((error) => {
+    logger().warn('chess.quip.request-error', { error: error.message, gameId, ply });
+    return null;
+  });
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      logger().warn('chess.quip.timeout', { gameId, ply, timeoutMs: QUIP_TIMEOUT_MS });
+      resolve(null);
+    }, QUIP_TIMEOUT_MS);
   });
   try {
     return await Promise.race([request, deadline]);
@@ -175,6 +202,6 @@ export function beaconArchive(record) {
 }
 
 export default {
-  requestOpponentMove, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
+  requestOpponentMove, requestOpponentQuip, requestBestMove, fetchChessConfig, saveChessConfig, saveGameRecord,
   archiveGame, beaconArchive, fetchLadder,
 };
