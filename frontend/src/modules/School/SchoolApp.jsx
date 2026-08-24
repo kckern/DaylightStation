@@ -197,7 +197,8 @@ export function parseSchoolPath(urlBase) {
   if (seg[0] === 'typing') return { section: 'typing', materialPath: [] };
   if (seg[0] === 'geography') return { section: 'geography', materialPath: [] };
   if (seg[0] === 'chess') return { section: 'chess', materialPath: [] };
-  if (seg[0] === 'lang' && seg[1]) return { section: `lang:${seg[1]}`, materialPath: [] };
+  // Sentence Ladder authority is memory-only. A direct URL or reload must
+  // return to School rather than reconstructing a learner-scoped launch.
   return empty;
 }
 
@@ -212,7 +213,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'typing') return `${urlBase}/typing`;
   if (section === 'geography') return `${urlBase}/geography`;
   if (section === 'chess') return `${urlBase}/chess`;
-  if (section.startsWith('lang:')) return `${urlBase}/lang/${encodeURIComponent(section.slice(5))}`;
+  if (section.startsWith('sentence-ladder:')) return `${urlBase}/sentence-ladder/${encodeURIComponent(section.slice(16))}`;
   return urlBase;
 }
 
@@ -250,6 +251,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
   const [courses, setCourses] = useState([]);     // sentence-ladder language courses
+  const [studyLaunch, setStudyLaunch] = useState(null);
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -301,8 +303,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
 
   // The nine shelves + the Library, from the three catalogues.
   const grouped = useMemo(
-    () => groupBySubject({ materials, banks, courses }),
-    [materials, banks, courses],
+    // Sentence Ladder is assigned work, not a browsable app catalogue. Keep
+    // course metadata for launch validation/labels but omit it from shelves.
+    () => groupBySubject({ materials, banks, courses: [] }),
+    [materials, banks],
   );
   const bankTitles = useMemo(() => new Map(banks.map((b) => [b.id, b.title])), [banks]);
   // Set alongside the notice, in the same synchronous pass as the
@@ -423,11 +427,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   // Portal-launch subscription (design §4.3): a scan resolves to on-screen
   // work and the backend hands it to whichever screen has School mounted.
   // useSchoolLaunch claims the learner; routing into the named runner is
-  // this callback's job. A program target reuses the same `lang:<id>`
-  // section the Apps tile opens (SubjectPage's `openFor('apps', …)`); since
-  // the launcher never names an instance (LanguageProgramLauncher.launch()
-  // only knows the fixed `{kind:'program', program:'language'}` shape), the
-  // learner's one loaded course is what opens. A bank target resolves the
+  // this callback's job. A Sentence Ladder target must explicitly name its
+  // corpus and carry learner-scoped launch authority. A bank target resolves the
   // bare `bankId` against the loaded summaries (the same `start()` the quiz
   // Start button calls) rather than the generic `onLaunch` above, because
   // the learner is already claimed here — routing back through `onLaunch`
@@ -439,11 +440,16 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   // a screen nobody is watching should stay inert. The KEYPAD caller does not:
   // a child who just pressed a button and got nothing needs words, so
   // `useSelfService` keeps the card up unless this answers `true`.
-  const onPortalLaunch = useCallback(async (target) => {
-    if (target?.kind === 'program' && target.program === 'language') {
-      const courseId = target.corpusId ?? courses[0]?.id ?? null;
-      if (!courseId) { schoolLog.bank('program-unavailable', { program: target.program }); return false; }
-      openSection(`lang:${courseId}`);
+  const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
+    if (target?.kind === 'program' && ['sentence-ladder', 'language'].includes(target.program)) {
+      const courseId = target.corpusId ?? null;
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!courseId || !target.studyGrant || !learnerId || !courses.some((course) => course.id === courseId)) {
+        schoolLog.bank('program-unavailable', { program: target.program });
+        return false;
+      }
+      setStudyLaunch({ learnerId, corpusId: courseId, studyGrant: target.studyGrant });
+      openSection(`sentence-ladder:${courseId}`);
       return true;
     }
     if (target?.kind === 'bank') {
@@ -488,6 +494,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
     setSection(null);
+    setStudyLaunch(null);
     setActive(null);
     setNotice(null);
     setMaterialPath([]);
@@ -567,10 +574,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
     // A remediation session is learner-scoped at the API boundary. Changing
     // profiles pauses the panel instead of trying to reopen it as someone else.
     setActive((current) => (current?.mode === 'remediation' ? null : current));
+    setStudyLaunch((current) => (
+      current && current.learnerId !== currentUser?.id ? null : current
+    ));
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
-  const courseId = section?.startsWith('lang:') ? section.slice(5) : null;
+  const courseId = section?.startsWith('sentence-ladder:') ? section.slice(16) : null;
   const sectionLabel = !section ? null
       : subjectId ? subjectLabel(subjectId)
       : section === 'library' ? 'Library'
@@ -816,10 +826,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
         {/* Language study needs a claimed identity: every rung produces a
             record, and a guest's work is discarded. The program itself shows
             the sign-in prompt rather than drilling into a void. */}
-        {courseId && (
+        {courseId && studyLaunch
+          && studyLaunch.corpusId === courseId
+          && studyLaunch.learnerId === currentUser?.id && (
           <SentenceLadderProgram
-            userId={currentUser?.id || null}
+            userId={studyLaunch.learnerId}
             corpusId={courseId}
+            studyGrant={studyLaunch.studyGrant}
             onSignIn={lock.locked ? goHome : openPicker}
             locked={lock.locked}
           />

@@ -222,3 +222,35 @@ describe('SetAssignments referential honesty (admin advocacy A4)', () => {
       .resolves.toBeTruthy();
   });
 });
+
+describe('SetAssignments program policy validation', () => {
+  const validator = vi.fn((raw) => ({
+    errors: [], enrollment: { ...raw, programId: 'sentence-ladder', lessonSize: raw.lessonSize ?? 10 },
+  }));
+  const make = () => new SetAssignments({
+    assignments, grownUps: gate(), clock, logger: silent,
+    programValidators: new Map([['sentence-ladder', validator]]),
+  });
+
+  it('normalizes the legacy language id before storing', async () => {
+    const result = await make().execute({
+      learnerId: 'learner-1', assignedBy: 'dad',
+      programs: [{ programId: 'language', corpusId: 'korean', lessonSize: 10 }],
+    });
+    expect(result.programs[0].programId).toBe('sentence-ladder');
+    expect(validator).toHaveBeenCalledWith(expect.objectContaining({ programId: 'sentence-ladder' }));
+  });
+
+  it('rejects malformed, unknown, and duplicate program policies', async () => {
+    await expect(make().execute({ learnerId: 'learner-1', assignedBy: 'dad', programs: ['language'] }))
+      .rejects.toThrow(/mappings/);
+    await expect(make().execute({ learnerId: 'learner-1', assignedBy: 'dad', programs: [{ programId: 'mystery' }] }))
+      .rejects.toThrow(/unknown program/);
+    await expect(make().execute({
+      learnerId: 'learner-1', assignedBy: 'dad', programs: [
+        { programId: 'language', corpusId: 'korean' },
+        { programId: 'sentence-ladder', corpusId: 'korean' },
+      ],
+    })).rejects.toThrow(/duplicate/);
+  });
+});

@@ -33,7 +33,7 @@ const build = () => {
   clock = fakeClock();
   eventBus = new FakeEventBus();
   nextState = 'incomplete';
-  getCompletion = { execute: async ({ learnerId }) => ({ learnerId, state: nextState, excused: [] }) };
+  getCompletion = { execute: async ({ learnerId }) => ({ learnerId, studyDate: '2026-08-23', state: nextState, excused: [], faults: [] }) };
   bridge = new SchoolCompletionBridge({ eventBus, getLearnerDayCompletion: getCompletion, clock: clock.now, logger: silentLogger });
 };
 
@@ -66,22 +66,28 @@ describe('start/stop', () => {
   });
 });
 
-describe('transition-only publish', () => {
-  it('the FIRST observed state for a learner is never published (no prior state to compare)', async () => {
+describe('state observation publish', () => {
+  it('publishes the first observed state so consumers can rebuild after restart', async () => {
     bridge.start();
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1', unitId: 'u1', result: 'passed', at: clock.iso() });
-    expect(eventBus.published ?? []).toHaveLength(0);
+    expect(eventBus.published).toEqual([{
+      topic: 'school.completion.state-observed',
+      payload: expect.objectContaining({
+        learnerId: 'kid1', studyDate: '2026-08-23', state: 'incomplete',
+        previousState: null, initial: true,
+      }),
+    }]);
   });
 
-  it('publishes school.completion.changed on an actual transition', async () => {
+  it('publishes school.completion.state-observed on an actual transition', async () => {
     bridge.start();
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1', unitId: 'u1', result: 'passed', at: clock.iso() });
     nextState = 'complete';
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's2', unitId: 'u2', result: 'passed', at: clock.iso() });
-    expect(eventBus.published).toHaveLength(1);
-    expect(eventBus.published[0]).toMatchObject({
-      topic: 'school.completion.changed',
-      payload: { learnerId: 'kid1', state: 'complete', previousState: 'incomplete' },
+    expect(eventBus.published).toHaveLength(2);
+    expect(eventBus.published[1]).toMatchObject({
+      topic: 'school.completion.state-observed',
+      payload: { learnerId: 'kid1', state: 'complete', previousState: 'incomplete', initial: false },
     });
   });
 
@@ -89,7 +95,7 @@ describe('transition-only publish', () => {
     bridge.start();
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1', unitId: 'u1', result: 'passed', at: clock.iso() });
     await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's2', unitId: 'u2', result: 'failed', at: clock.iso() });
-    expect(eventBus.published ?? []).toHaveLength(0);
+    expect(eventBus.published).toHaveLength(1);
   });
 
   it('serializes rapid recomputations for the same learner', async () => {
@@ -100,8 +106,8 @@ describe('transition-only publish', () => {
     let calls = 0;
     getCompletion.execute = async ({ learnerId }) => {
       calls += 1;
-      if (calls === 1) return new Promise((resolve) => { releaseFirst = () => resolve({ learnerId, state: 'complete', excused: [] }); });
-      return { learnerId, state: 'complete', excused: [] };
+      if (calls === 1) return new Promise((resolve) => { releaseFirst = () => resolve({ learnerId, studyDate: '2026-08-23', state: 'complete', excused: [] }); });
+      return { learnerId, studyDate: '2026-08-23', state: 'complete', excused: [] };
     };
 
     const first = eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1' });
@@ -115,8 +121,8 @@ describe('transition-only publish', () => {
     releaseFirst();
     await Promise.all([first, second]);
     expect(calls).toBe(2);
-    expect(eventBus.published).toHaveLength(1);
-    expect(eventBus.published[0].payload).toMatchObject({
+    expect(eventBus.published).toHaveLength(2);
+    expect(eventBus.published[1].payload).toMatchObject({
       learnerId: 'kid1', previousState: 'incomplete', state: 'complete',
     });
   });

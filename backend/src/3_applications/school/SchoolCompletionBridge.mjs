@@ -4,9 +4,9 @@
  * published by `CloseSessionOutcome#settle`, which covers curriculum AND
  * language days since `CloseLanguageDay` routes through the same `#settle`),
  * recomputes the learner's day completion, and publishes
- * `school.completion.changed` ONLY on an actual state transition — never on
- * every recompute, so a rapid sequence of passes or a flapping launcher does
- * not spam the bus.
+ * `school.completion.state-observed` on the first observation after startup
+ * and on actual state transitions. Consumers can therefore rebuild after a
+ * restart without pretending the first observation was a transition.
  *
  * Completion truth never depends on this bridge having fired: any consumer
  * can call `GetLearnerDayCompletion` directly at any time and get the same
@@ -15,11 +15,8 @@
  * failure here is swallowed and logged, exactly like `DoNowSchoolBridge`'s
  * own handler-threw guard.
  *
- * In-memory last-seen-state per learner, reset on process restart: the
- * first state observed for a learner after startup is never treated as a
- * transition (there is no prior state to compare against) — acceptable,
- * since completion is purely derived and any consumer's own direct read
- * after restart already reflects the current state correctly.
+ * Consumers must be idempotent by learnerId+studyDate because a restart can
+ * legitimately publish the same derived state again with `initial: true`.
  */
 export class SchoolCompletionBridge {
   #eventBus; #getCompletion; #clock; #logger; #unsubscribe; #lastState; #learnerQueues;
@@ -73,12 +70,15 @@ export class SchoolCompletionBridge {
   async #handle(payload) {
     const learnerId = payload?.learnerId;
     if (typeof learnerId !== 'string' || !learnerId.trim()) return;
-    const { state } = await this.#getCompletion.execute({ learnerId });
+    const { state, studyDate } = await this.#getCompletion.execute({ learnerId });
     const previousState = this.#lastState.get(learnerId);
     this.#lastState.set(learnerId, state);
-    if (previousState === undefined || previousState === state) return;
-    this.#eventBus.publish('school.completion.changed', {
-      learnerId, state, previousState, at: this.#clock().toISOString(),
+    if (previousState === state) return;
+    this.#eventBus.publish('school.completion.state-observed', {
+      learnerId, studyDate, state,
+      previousState: previousState ?? null,
+      initial: previousState === undefined,
+      at: this.#clock().toISOString(),
     });
   }
 }

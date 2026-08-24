@@ -11,6 +11,7 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { resolveDayCompletion } from '#domains/school/completion.mjs';
 import { collectProgramStatuses } from './programStatusCollection.mjs';
+import { studyDayWindow } from '#domains/school/studyDay.mjs';
 
 export class GetLearnerDayCompletion {
   #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #logger;
@@ -52,8 +53,12 @@ export class GetLearnerDayCompletion {
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
     const { sections } = planDailyAgenda({ plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone });
-    const { state, excused } = resolveDayCompletion({ sections, planErrors: plan.errors });
-    return { learnerId, state, excused };
+    const { state, excused, faults } = resolveDayCompletion({ sections, planErrors: plan.errors });
+    const { startAtMs } = studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone });
+    const studyDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.#timezone ?? 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(startAtMs));
+    return { learnerId, studyDate, state, excused, faults };
   }
 
   /** Mirrors `BuildAgenda#collectProgramStatuses` exactly: one read-only

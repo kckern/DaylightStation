@@ -593,7 +593,10 @@ export class ResolveScanAction {
       const launcher = this.#launchers.get(r.programId);
       let result;
       try {
-        result = await launcher?.launch({ userId: learnerId });
+        result = await launcher?.launch({
+          userId: learnerId,
+          corpusId: r.unit?.programInstance ?? null,
+        });
       } catch (e) {
         this.#logger.warn?.('school.scan.launch-failed', { programId: r.programId, error: e.message });
       }

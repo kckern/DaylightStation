@@ -1,53 +1,32 @@
-# Glossika × School integration handoff
+# Sentence Ladder × School integration handoff
 
-Status: implemented and reconciled onto `main` 2026-08-23.
+Status: implemented on the School remediation branch; not described as
+deployed until a production rollout is independently verified.
 
-The repository had the design plan but not this handoff file. The integration
-now includes:
+`Sentence Ladder` is the domain name because it identifies the actual method:
+each sentence advances through repetition, dictation, recording, and
+interpretation on successive study days. Glossika is retained only where it
+describes vendor provenance, the recovered importer, or a corpus id.
 
-- `program_dispatched` session events, replay/apply support, and a Portal-safe
-  next action;
-- `programInstance` on program units;
-- validated language enrollment policy (`lessonSize`, enrollment-owned rungs,
-  corpus scope, and non-signoff rewards);
-- corpus bands and scoped queue admissions;
-- taxonomy mapping for language course/unit/lesson labels;
-- per-enrollment queue sizing and credit-chain filtering;
-- deterministic language-day completion events and the lazy,
-  idempotent `CloseLanguageDay` bridge;
-- reward overrides and receipt suppression for program sessions;
-- program session visibility in the planner;
-- corpus-instance routing through keypad launches;
-- lock-mode Sentence Ladder completion/device messaging and repetition-save retry;
-- assignment persistence of `programs:` policy records.
+The integration now includes validated per-corpus program assignments,
+instance-scoped status, server-derived queue admission at every evidence write,
+recording-only recording credit, capability-consistent writes, and a
+short-lived HMAC study grant bound to learner and corpus. The browser keeps
+that grant in memory. Direct URLs and refreshes cannot manufacture launch
+authority. Canonical ids and routes use `sentence-ladder`; `language` remains a
+deprecated compatibility alias for stored assignments and old clients.
 
-## Household data to publish
+The frontend requires an explicit corpus and launch grant. It handles
+out-of-order loads, renders the required “finish on another device” state, and
+never exposes Sentence Ladder as a general Language shelf.
 
-Household plans are intentionally outside the tracked repository. For each
-learner, add a program policy and assign the program unit:
+Assignment writes validate and normalize program policy before persistence.
+Invalid stored legacy policy faults loudly rather than silently unenrolling the
+learner.
 
-```yaml
-units:
-  - language-daily
-programs:
-  - programId: language
-    corpusId: glossika-korean
-    lessonSize: 10
-    rungs: [repetition, dictation, recording, interpretation]
-    unitSize: 10
-    reward: {amount: 2}
-    scope: [fluency-1]
-```
+Operations use `node cli/school.mjs ops`: `status` and `monitor` are read-only;
+`assign`, `enroll`, `rematerialize`, and `abandon` are dry-run unless `--apply`
+is supplied, and teacher PINs are read only from `--pin-env NAME`.
 
-The unit should carry `programInstance: glossika-korean`, and the corpus may
-declare validated `bands:` ranges. Existing `daily_limit` remains a fallback
-for learners without a `programs:` policy.
-
-## Verification
-
-Focused Glossika/School tests pass, including session replay, queue scope,
-taxonomy, planner behavior, launch routing, frontend completion behavior, and
-the language-day bridge. A repository-wide Vitest run is not a useful gate in
-this sandbox because unrelated live/integration suites require unavailable
-local services and listening sockets; those failures are environmental rather
-than Glossika failures.
+See [Sentence Ladder reference](../reference/school/sentence-ladder.md) and
+[program operations](../reference/school/programs.md).

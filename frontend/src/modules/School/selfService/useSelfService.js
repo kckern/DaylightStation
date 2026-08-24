@@ -123,6 +123,8 @@ function launchTarget(action, effect) {
     return {
       kind: 'program', program: effect.programId ?? action.target ?? null,
       corpusId: effect.corpusId ?? null,
+      studyGrant: effect.studyGrant ?? null,
+      learnerId: effect.learnerId ?? null,
     };
   }
   return null;

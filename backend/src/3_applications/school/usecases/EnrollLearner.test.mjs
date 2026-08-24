@@ -108,7 +108,7 @@ describe('EnrollLearner', () => {
     expect(entry.profile).toBe('lower');
     expect(entry.syllabusId).toBe('elements-lower');
     expect(entry.passing).toBe(60);
-    expect(entry.enrollment.schema).toBe('school.course-enrollment/v1');
+    expect(entry.enrollment.schema).toBe('school.course-enrollment/v2');
     expect(entry.enrollment.moduleOrder[0]).toBe('foundations');
   });
 

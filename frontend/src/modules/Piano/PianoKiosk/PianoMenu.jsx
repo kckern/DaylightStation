@@ -84,7 +84,11 @@ export function PianoMenu() {
               ? m.blurb
               : gameAccess.status === 'error'
                 ? 'School status unavailable'
-                : gameAccess.status === 'loading'
+                : gameAccess.state === 'indeterminate'
+                  ? 'School plan needs a grown-up'
+                  : gameAccess.status === 'locked'
+                    ? 'Choose your profile to unlock'
+                    : gameAccess.status === 'loading'
                   ? 'Checking schoolwork…'
                   : 'Finish school to unlock';
             return (

@@ -28,7 +28,7 @@ const DEFAULT_BOUNDARY_HOUR = 4;
 const IDLE_AFTER_DAYS = 14;
 const TREND_BUCKETS = 12;
 
-export class LanguageStudyService {
+export class SentenceLadderService {
   #ds; #logger; #now; #timezone; #boundaryHour; #readGate; #readProgramEnrollment; #eventBus;
   #corpusCache = new Map();
 
@@ -149,9 +149,20 @@ export class LanguageStudyService {
       this.#logger.warn?.('school.language.program-policy-invalid', {
         learnerId: userId, corpus: corpus.id, errors: result.errors,
       });
-      return null;
+      throw new ValidationError(`invalid Sentence Ladder enrollment: ${result.errors.join('; ')}`);
     }
     return result.enrollment;
+  }
+
+  /** Write-boundary validator used by SetAssignments. */
+  validateEnrollment(raw) {
+    const programId = raw?.programId === 'language' ? 'sentence-ladder' : raw?.programId;
+    if (programId !== 'sentence-ladder') {
+      return { errors: [`unknown Sentence Ladder programId: ${programId ?? '(missing)'}`] };
+    }
+    let corpus;
+    try { corpus = this.#requireCorpus(raw?.corpusId); } catch (error) { return { errors: [error.message] }; }
+    return validateProgramEnrollment({ ...raw, programId }, { corpus });
   }
 
   #queuePolicy(userId, corpus, progress) {
@@ -282,24 +293,34 @@ export class LanguageStudyService {
    * (design §3) — it exists for the learner's own diff on the Review surface.
    */
   logAttempt({ userId, corpusId, seq, rung, given = null, source = null, capabilities = {} }) {
+    if (rung === 'recording') {
+      throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
+    }
+    return this.#recordAttempt({ userId, corpusId, seq, rung, given, source, capabilities });
+  }
+
+  #recordAttempt({
+    userId, corpusId, seq, rung, given = null, source = null, capabilities = {},
+    allowRecording = false, skipDueCheck = false,
+  }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
 
     const rungDef = rungById(rung);
     if (!rungDef) throw new ValidationError(`unknown rung: ${rung}`, { field: 'rung', value: rung });
+    if (rung === 'recording' && !allowRecording) {
+      throw new ValidationError('recording evidence requires an audio upload', { field: 'rung' });
+    }
 
     // Gated PER RUNG, so the recorder agrees with the queue. A missing keyboard
     // must not refuse a repetition drill the queue just offered — that was the
     // shape of the bug this replaces.
-    const gate = this.#gate();
-    if (!allowsRung(gate, requirementFor(rungDef, corpus.languages), capabilities)) {
-      throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
-    }
-
     const sentence = corpus.index.get(Number(seq));
     if (!sentence) throw new EntityNotFoundError('sentence', `${corpusId}#${seq}`);
 
     const progress = this.#readProgress(userId, corpusId);
+    if (!skipDueCheck) this.#assertOutstanding({ userId, corpus, progress, seq, rung, capabilities });
+
     const at = new Date(this.#now()).toISOString();
 
     const event = {
@@ -343,22 +364,54 @@ export class LanguageStudyService {
     return event;
   }
 
+  #assertOutstanding({ userId, corpus, progress, seq, rung, capabilities }) {
+    const rungDef = rungById(rung);
+    const gate = this.#gate();
+    const allowed = capabilitiesUnder(gate, capabilities);
+    if (!allowsRung(gate, requirementFor(rungDef, corpus.languages), allowed)) {
+      throw new GateClosedError(gateMessage(gate) || 'That is unavailable right now', gate);
+    }
+    const policy = this.#queuePolicy(userId, corpus, progress);
+    const queue = buildDayQueue({
+      log: this.#ds.readAllEvents(userId, corpus.id),
+      day: progress.day,
+      dailyLimit: policy.dailyLimit,
+      corpusSize: corpus.size,
+      capabilities: allowed,
+      languages: corpus.languages,
+      playable: corpus.playable,
+      admission: policy.admission,
+      rungChain: policy.chain,
+    });
+    const due = queue.find((entry) => !entry.done && entry.seq === Number(seq) && entry.rung === rung) ?? null;
+    if (!due) {
+      throw new ValidationError('attempt does not match an outstanding ladder step', {
+        field: 'attempt', expected: queue.filter((entry) => !entry.done).map(({ seq: dueSeq, rung: dueRung }) => ({ seq: dueSeq, rung: dueRung })),
+      });
+    }
+  }
+
   /**
    * Store a voice recording, then log it. Order matters: the file is written
    * first so a crash between the two leaves an orphan file rather than an
    * event pointing at nothing. Evidence is the log — a file with no event
    * counts as not done, which is recoverable; an event with no file is not.
    */
-  saveRecording({ userId, corpusId, seq, buffer, ext = 'webm' }) {
+  saveRecording({ userId, corpusId, seq, buffer, ext = 'webm', capabilities = {} }) {
     this.#requireUser(userId);
     const corpus = this.#requireCorpus(corpusId);
     if (!buffer || buffer.length === 0) {
       throw new ValidationError('recording is empty', { field: 'audio' });
     }
+    const progress = this.#readProgress(userId, corpusId);
+    this.#assertOutstanding({ userId, corpus, progress, seq, rung: 'recording', capabilities });
     const language = corpus.languages.target;
     const written = this.#ds.writeRecording(corpusId, userId, seq, language, buffer, ext);
     if (!written) throw new ValidationError('could not store recording', { field: 'audio' });
-    return this.logAttempt({ userId, corpusId, seq, rung: 'recording' });
+    return this.#recordAttempt({
+      userId, corpusId, seq, rung: 'recording', capabilities,
+      allowRecording: true, skipDueCheck: true,
+    });
   }
 
   // -- pacing --------------------------------------------------------------
@@ -457,9 +510,9 @@ export class LanguageStudyService {
 
   // -- program report (IProgramReporter) -----------------------------------
 
-  get id() { return 'language'; }
+  get id() { return 'sentence-ladder'; }
 
-  get label() { return 'Language study'; }
+  get label() { return 'Sentence Ladder'; }
 
   /**
    * One report per course this learner has touched (design: program interface).
@@ -726,4 +779,7 @@ export class LanguageStudyService {
   }
 }
 
-export default LanguageStudyService;
+// Compatibility export for callers that have not crossed the canonical module
+// boundary yet. Persistence paths remain stable; runtime vocabulary does not.
+export const LanguageStudyService = SentenceLadderService;
+export default SentenceLadderService;

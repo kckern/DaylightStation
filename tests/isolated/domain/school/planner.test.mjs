@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { planLearnerWork, PLAN_STATUSES } from '#domains/school/planner.mjs';
+import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { resolveDayCompletion } from '#domains/school/completion.mjs';
 
 const NOW = '2026-07-27T09:00:00.000Z';
 
@@ -362,6 +364,27 @@ describe('dated_modules gating', () => {
     const result = datedPlan('2026-09-08T09:00:00.000Z', [session({ unitId: 'cfm.w1.d1' })]);
     expect(byId(result, 'cfm.w1.d1').status).toBe('in_progress');
     expect(result.next.unitId).toBe('cfm.w1.d1');
+    expect(result.next.timing.mode).toBe('catch_up');
+  });
+
+  it('keeps an in-progress catch-up worksheet optional through agenda and completion', () => {
+    const finishedRecentWeeks = ['w2', 'w3'].flatMap((module) => (
+      [1, 2, 3].map((day) => passed(`cfm.${module}.d${day}`))
+    ));
+    const work = datedPlan('2026-09-08T09:00:00.000Z', [
+      ...finishedRecentWeeks,
+      session({ unitId: 'cfm.w1.d1' }),
+    ]);
+    const agenda = planDailyAgenda({
+      plan: work,
+      sessions: [],
+      now: '2026-09-08T09:00:00.000Z',
+      timezone: 'UTC',
+    });
+    expect(agenda.sections[0].obligation).toEqual({
+      state: 'excused', reason: 'optional_backlog',
+    });
+    expect(resolveDayCompletion({ sections: agenda.sections }).state).toBe('no_work_today');
   });
 
   it('does not offer work once every assigned dated module is complete', () => {

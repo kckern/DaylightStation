@@ -119,6 +119,17 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       : publishedMembers;
     members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
   });
+  const policyFor = (courseId) => {
+    const enrollment = enrollmentByCourse.get(courseId)?.enrollment;
+    if (isPlainObject(enrollment?.progression)) return enrollment.progression;
+    const catalogPolicy = coursePolicies?.[courseId] ?? null;
+    // v1 compatibility: a materialized schedule is itself durable evidence
+    // that this enrollment is calendar-driven, even if the catalog changed.
+    if (isPlainObject(enrollment?.moduleSchedule)) {
+      return { ...(isPlainObject(catalogPolicy) ? catalogPolicy : {}), mode: 'dated_modules' };
+    }
+    return catalogPolicy;
+  };
   const timingByStandaloneUnit = new Map();
   assignedUnits.forEach(({ id, elective, timing }) => {
     if (!byUnitId.has(id)) { errors.push(`${id}: assigned but not in the published catalog`); return; }
@@ -157,7 +168,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** The nearest earlier unit in this unit's course that has not been passed. */
   const blockerFor = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
-    const policy = coursePolicies?.[unit.courseId];
+    const policy = policyFor(unit.courseId);
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
     if (policy?.mode === 'dated_modules' && unit.module) {
       const ordered = enrollment?.lessonOrder?.[unit.module]
@@ -215,7 +226,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   /** The unit a pass here would open up — what the result receipt promises. */
   const unlockedBy = (unit) => {
     const siblings = courseMembers.get(unit.courseId) || [];
-    const policy = coursePolicies?.[unit.courseId];
+    const policy = policyFor(unit.courseId);
     const enrollment = enrollmentByCourse.get(unit.courseId)?.enrollment;
     if (policy?.mode === 'dated_modules' && unit.module && enrollment) {
       const inModule = enrollment.lessonOrder?.[unit.module]?.map((id) => byUnitId.get(id)).filter(Boolean) ?? [];
@@ -260,7 +271,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
   const datedStateByModule = new Map();
   if (today) {
     enrollmentByCourse.forEach(({ enrollment }, courseId) => {
-      if (coursePolicies?.[courseId]?.mode !== 'dated_modules') return;
+      if (policyFor(courseId)?.mode !== 'dated_modules') return;
       const schedule = isPlainObject(enrollment?.moduleSchedule) ? enrollment.moduleSchedule : {};
       const closed = [];
       Object.entries(schedule).forEach(([moduleId, window]) => {
@@ -288,7 +299,7 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     const rawTiming = unit.courseId
       ? enrollmentByCourse.get(unit.courseId)?.timing ?? null
       : timingByStandaloneUnit.get(unitId) ?? null;
-    const datedKey = unit.courseId && coursePolicies?.[unit.courseId]?.mode === 'dated_modules' && unit.module
+    const datedKey = unit.courseId && policyFor(unit.courseId)?.mode === 'dated_modules' && unit.module
       ? `${unit.courseId}/${unit.module}` : null;
     const datedState = datedKey ? datedStateByModule.get(datedKey) ?? null : null;
     let timingDecision = null;
@@ -330,7 +341,9 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,
       module: unit.module ?? null,
       profile: enrollmentByCourse.get(unit.courseId)?.profile ?? null,
-      timing: timingDecision?.timing ?? rawTiming,
+      timing: datedKey
+        ? { ...(isPlainObject(rawTiming) ? rawTiming : {}), mode: datedState === 'catch_up' ? 'catch_up' : 'dated' }
+        : (timingDecision?.timing ?? rawTiming),
       timingState: datedKey ? (datedState ?? 'upcoming') : (timingDecision?.state ?? 'available'),
       // A worksheet already in a child's hands always resumes before a newer
       // calendar candidate; its module state remains catch_up for display.

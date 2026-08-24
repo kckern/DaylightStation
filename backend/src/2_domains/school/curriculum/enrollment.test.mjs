@@ -20,6 +20,8 @@ describe('course enrollment ordering', () => {
     expect(enrollment.moduleOrder).not.toContain('bonus');
     expect(enrollment.optionalModules).toEqual(['bonus']);
     expect(enrollment.profile).toBe('upper');
+    expect(enrollment.schema).toBe('school.course-enrollment/v2');
+    expect(enrollment.progression).toEqual(policy);
   });
 
   it('gates later modules until the opening module passes', () => {
@@ -106,6 +108,37 @@ describe('dated module schedules', () => {
 
     expect(plan.entries.map((entry) => entry.unitId)).toEqual(['w37.d1']);
     expect(plan.next.unitId).toBe('w37.d1');
+  });
+
+  it('uses the frozen v2 policy even if the catalog later changes mode', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-08-23',
+    });
+    const plan = planLearnerWork({
+      learnerId: 'milo', units: datedUnits,
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] },
+      sessions: [], now: '2026-08-24T09:00:00.000Z',
+      coursePolicies: { cfm: { mode: 'sequential' } },
+    });
+    expect(plan.next.unitId).toBe('w35.d1');
+    expect(plan.entries.find((entry) => entry.unitId === 'w36.d1').status).toBe('upcoming');
+  });
+
+  it('infers dated semantics for a legacy v1 snapshot with moduleSchedule', () => {
+    const enrollment = {
+      schema: 'school.course-enrollment/v1', moduleOrder: ['w35', 'w36'], optionalModules: [],
+      lessonOrder: { w35: ['w35.d1'], w36: ['w36.d1'] },
+      moduleSchedule: {
+        w35: { opensOn: '2026-08-24', closesOn: '2026-08-30' },
+        w36: { opensOn: '2026-08-31', closesOn: '2026-09-06' },
+      },
+    };
+    const plan = planLearnerWork({
+      learnerId: 'milo', units: datedUnits,
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] }, sessions: [],
+      now: '2026-08-24T09:00:00.000Z', coursePolicies: { cfm: { mode: 'sequential' } },
+    });
+    expect(plan.entries.find((entry) => entry.unitId === 'w36.d1').status).toBe('upcoming');
   });
 
   it('keeps a module whose window closes today', () => {

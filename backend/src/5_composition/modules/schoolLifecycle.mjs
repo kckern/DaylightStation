@@ -53,7 +53,7 @@ import { RenderPrintDocument, createYamlBankReader } from '#apps/school/document
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
-import { LanguageProgramLauncher } from '#apps/school/LanguageProgramLauncher.mjs';
+import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
@@ -163,6 +163,7 @@ export async function createSchoolLifecycle({
   economyService = null, userService = null, eventBus = null,
   thermalPrinterRegistry = null, playbackAdapter = null,
   languageStudyService = null,
+  studyGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   clock = () => new Date(), rng = null, logger = console,
@@ -374,14 +375,14 @@ export async function createSchoolLifecycle({
   });
 
   // --- program launchers (Task 8/12/13) ---------------------------------------
-  // The same IANA zone `LanguageStudyService` reads its 4am study-day boundary
+  // The same IANA zone `SentenceLadderService` reads its 4am study-day boundary
   // against (`app.mjs`) — one source, so the agenda's "done today" and the
   // program's own idea of "today" can never drift apart.
   const timezone = configService.getTimezone?.() || null;
   // `donow` is INJECTED now (Task 13) — the real, household-level DoNowService
   // built once in `app.mjs`'s own `5_composition/modules/donow.mjs`, after the
   // seams every surface needs exist. This file used to stand up a minimal,
-  // portal-only stopgap service (Task 12) so `LanguageProgramLauncher` and the
+  // portal-only stopgap service (Task 12) so `SentenceLadderProgramLauncher` and the
   // bank hand-off had SOMETHING occupancy-aware to call before the real
   // registry existed — that stopgap is gone; a missing `donow` here now means
   // exactly what it means everywhere else in this file: every launch/program
@@ -390,14 +391,20 @@ export async function createSchoolLifecycle({
   // Present only when the caller wired a language-study service: no service,
   // no launcher, and a program-typed unit degrades to "not answering" rather
   // than throwing (CurriculumAccess/ResolveSubjectNext's own try/catch).
-  const launchers = new Map(languageStudyService
-    ? [['language', new LanguageProgramLauncher({ languageStudyService, donow, logger })]]
-    : []);
+  const launchers = new Map();
+  if (languageStudyService) {
+    const sentenceLadder = new SentenceLadderProgramLauncher({
+      languageStudyService, donow, studyGrants, logger,
+    });
+    launchers.set('sentence-ladder', sentenceLadder);
+    launchers.set('language', sentenceLadder); // persisted assignment compatibility
+  }
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
   // programs — how daily PE actually exists"). A program id colliding with a
-  // CODE-registered launcher (`language`) is a boot-time error REGARDLESS of
+  // CODE-registered launcher (`sentence-ladder`, including its `language`
+  // compatibility alias) is a boot-time error REGARDLESS of
   // whether `donow` itself happens to be wired — a config mistake should
   // surface immediately, not only on deployments where DoNow is healthy. A
   // non-colliding entry that CANNOT be constructed (no `donow`/`donowDatastore`
@@ -796,6 +803,9 @@ export async function createSchoolLifecycle({
   });
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
+    programValidators: new Map(languageStudyService ? [[
+      'sentence-ladder', (raw) => languageStudyService.validateEnrollment(raw),
+    ]] : []),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
     clock, logger,
   });

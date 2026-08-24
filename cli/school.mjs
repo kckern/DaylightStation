@@ -84,6 +84,10 @@ const NAMESPACES = {
     module: './school/omr.mjs',
     blurb: 'rebuild decoded quiz day files from the raw OMR manifest',
   },
+  ops: {
+    module: './school/ops.mjs',
+    blurb: 'diagnose, monitor, assign, enroll, rematerialize, and repair live School state',
+  },
 };
 
 const HELP = `school — School command line tools

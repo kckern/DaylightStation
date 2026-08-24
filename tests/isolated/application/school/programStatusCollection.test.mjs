@@ -19,10 +19,10 @@ describe('collectProgramStatuses', () => {
     expect(status).toHaveBeenCalledTimes(2);
     expect(status).toHaveBeenCalledWith({ userId: 'kid1', programInstance: 'korean' });
     expect(status).toHaveBeenCalledWith({ userId: 'kid1', programInstance: 'spanish' });
-    expect(result).toEqual({
-      'language::korean': { doneToday: true, progressLabel: 'korean', score: null },
-      'language::spanish': { doneToday: false, progressLabel: 'spanish', score: null },
-    });
+    expect(result).toEqual([
+      { programId: 'language', programInstance: 'korean', status: { doneToday: true, progressLabel: 'korean', score: null } },
+      { programId: 'language', programInstance: 'spanish', status: { doneToday: false, progressLabel: 'spanish', score: null } },
+    ]);
   });
 
   it('contains a failure to the failing instance key', async () => {
@@ -36,9 +36,9 @@ describe('collectProgramStatuses', () => {
       logger: { warn: vi.fn() },
     });
 
-    expect(result).toEqual({
-      'missing::one': { error: true },
-      'working::two': { doneToday: false },
-    });
+    expect(result).toEqual([
+      { programId: 'missing', programInstance: 'one', status: { error: true } },
+      { programId: 'working', programInstance: 'two', status: { doneToday: false } },
+    ]);
   });
 });

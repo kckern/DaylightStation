@@ -25,7 +25,7 @@ describe('completionAllowsGames', () => {
     expect(completionAllowsGames(state)).toBe(true);
   });
 
-  it.each(['incomplete', null, 'plan_error'])('does not unlock for %s', (state) => {
+  it.each(['incomplete', 'indeterminate', null, 'plan_error'])('does not unlock for %s', (state) => {
     expect(completionAllowsGames(state)).toBe(false);
   });
 });
@@ -49,10 +49,10 @@ describe('useSchoolGameAccess', () => {
     );
   });
 
-  it('unlocks Guest without asking School for a nonexistent learner', async () => {
+  it('keeps Guest locked without asking School for a nonexistent learner', async () => {
     const { result } = renderHook(() => useSchoolGameAccess('guest'));
-    await waitFor(() => expect(result.current.unlocked).toBe(true));
-    expect(result.current.state).toBe('no_work_today');
+    await waitFor(() => expect(result.current.status).toBe('locked'));
+    expect(result.current).toMatchObject({ state: null, unlocked: false });
     expect(DaylightAPI).not.toHaveBeenCalled();
   });
 

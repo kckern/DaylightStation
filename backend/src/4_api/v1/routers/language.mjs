@@ -1,5 +1,6 @@
 /**
- * /api/v1/school/language — thin HTTP shell over LanguageStudyService.
+ * /api/v1/school/sentence-ladder — thin HTTP shell over the Sentence Ladder
+ * service. `/language` remains a compatibility mount during migration.
  * All policy lives in the service; this file maps errors to statuses and
  * parses query shapes. Follows school.mjs exactly.
  */
@@ -49,7 +50,7 @@ function sendAudioFile(res, filePath, { cache = AUDIO_CACHE } = {}) {
   fs.createReadStream(filePath).pipe(res);
 }
 
-export function createLanguageRouter({ languageStudyService, schoolErrors = {}, logger = console }) {
+export function createLanguageRouter({ languageStudyService, studyGrants = null, schoolErrors = {}, logger = console }) {
   // School error CLASSES arrive via the factory. A router may not import
   // 2_domains (api-layer-guidelines.md), but it does own the mapping from a
   // domain failure to an HTTP status, so it needs the types to match on.
@@ -58,6 +59,33 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
   // wiring mistake. Composition always supplies these.
   const { GuestForbiddenError, GateClosedError } = schoolErrors;
   const router = express.Router();
+
+  router.use((req, res, next) => {
+    if (req.baseUrl?.endsWith('/language')) {
+      logger.info?.('school.sentence-ladder.legacy-route', { method: req.method, path: req.path });
+      res.setHeader('Deprecation', 'true');
+    }
+    next();
+  });
+
+  const authorized = (req, res, corpusId) => {
+    if (!studyGrants) {
+      res.status(503).json({ error: 'Sentence Ladder launch authority is unavailable' });
+      return false;
+    }
+    const result = studyGrants.verify(req.get('X-School-Study-Grant'), {
+      learnerId: req.params.userId,
+      corpusId,
+    });
+    if (!result.ok) {
+      logger.warn?.('school.sentence-ladder.study-grant-refused', {
+        learnerId: req.params.userId, corpusId, reason: result.reason,
+      });
+      res.status(403).json({ error: 'A current learner-scoped School launch is required' });
+      return false;
+    }
+    return true;
+  };
 
   const wrap = (fn) => (req, res) => {
     Promise.resolve()
@@ -81,6 +109,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
   router.get('/courses', wrap((req, res) => res.json(languageStudyService.listCourses())));
 
   router.get('/users/:userId/day', wrap((req, res) => {
+    if (!authorized(req, res, req.query.corpus)) return;
     res.json(languageStudyService.getDay({
       userId: req.params.userId,
       corpusId: req.query.corpus,
@@ -90,6 +119,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
 
   router.post('/users/:userId/log', wrap((req, res) => {
     const { corpus, seq, rung, given = null } = req.body || {};
+    if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.logAttempt({
       userId: req.params.userId, corpusId: corpus, seq, rung, given,
       capabilities: readCapabilities(req.query),
@@ -98,6 +128,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
 
   router.put('/users/:userId/pacing', wrap((req, res) => {
     const { corpus, dailyLimit } = req.body || {};
+    if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.setPacing({
       userId: req.params.userId, corpusId: corpus, dailyLimit,
     }));
@@ -105,6 +136,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
 
   router.post('/users/:userId/roll', wrap((req, res) => {
     const { corpus } = req.body || {};
+    if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.rollDay({
       userId: req.params.userId,
       corpusId: corpus,
@@ -113,6 +145,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
   }));
 
   router.get('/users/:userId/history', wrap((req, res) => {
+    if (!authorized(req, res, req.query.corpus)) return;
     res.json(languageStudyService.getHistory({
       userId: req.params.userId, corpusId: req.query.corpus,
     }));
@@ -126,8 +159,10 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
   });
   router.post('/users/:userId/recording', rawAudio, wrap((req, res) => {
     const { corpus, seq, ext = 'webm' } = req.query || {};
+    if (!authorized(req, res, corpus)) return;
     res.json(languageStudyService.saveRecording({
       userId: req.params.userId, corpusId: corpus, seq, buffer: req.body, ext,
+      capabilities: readCapabilities(req.query),
     }));
   }));
 
@@ -141,6 +176,7 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
 
   router.get('/recordings/:userId/:corpusId/:seq', wrap((req, res) => {
     const { userId, corpusId, seq } = req.params;
+    if (!authorized(req, res, corpusId)) return;
     // A learner's own voice is not content-addressed and CAN be re-recorded
     // under the same URL, so it must not be cached immutably.
     for (const ext of ['webm', 'mp3', 'ogg', 'm4a', 'wav']) {
@@ -157,3 +193,4 @@ export function createLanguageRouter({ languageStudyService, schoolErrors = {}, 
 }
 
 export default createLanguageRouter;
+export const createSentenceLadderRouter = createLanguageRouter;

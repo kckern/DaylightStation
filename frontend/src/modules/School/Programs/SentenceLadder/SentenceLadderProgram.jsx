@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { languageApi } from './languageApi.js';
 import { languageLog } from './languageLog.js';
 import { useCapabilities } from './useCapabilities.js';
@@ -29,7 +29,7 @@ const RUNG_LABELS = {
  * Requires an identified learner. A guest produces no records, so the program
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
-export default function SentenceLadderProgram({ userId, corpusId = 'glossika-korean', onSignIn, locked = false }) {
+export default function SentenceLadderProgram({ userId, corpusId, studyGrant, onSignIn, locked = false }) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);
@@ -39,6 +39,8 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
   // Sticky for the sitting: the first Play is what grants browser audio
   // activation, and everything after it can run hands-free.
   const [armed, setArmed] = useState(false);
+  const loadGeneration = useRef(0);
+  const loadController = useRef(null);
 
   const languages = day?.corpus?.languages;
   const {
@@ -46,8 +48,15 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
   } = useCapabilities(corpusId, languages);
 
   const load = useCallback(async () => {
-    if (!userId) return;
-    const { ok, status: httpStatus, data } = await languageApi.day(userId, corpusId, capabilities);
+    if (!userId || !corpusId || !studyGrant) return;
+    const generation = ++loadGeneration.current;
+    loadController.current?.abort();
+    const controller = new AbortController();
+    loadController.current = controller;
+    const { ok, status: httpStatus, data } = await languageApi.day(
+      userId, corpusId, capabilities, studyGrant, controller.signal,
+    );
+    if (generation !== loadGeneration.current) return;
     if (!ok) {
       languageLog.programError('day-failed', { corpus: corpusId, status: httpStatus });
       setStatus('error');
@@ -58,11 +67,15 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
     languageLog.program('day-loaded', {
       corpus: corpusId, day: data.day, total: data.summary.total, done: data.summary.done,
     });
-  }, [userId, corpusId, capabilities]);
+  }, [userId, corpusId, capabilities, studyGrant]);
 
   useEffect(() => {
     languageLog.program('mounted', { corpus: corpusId, userId });
-    return () => languageLog.program('unmounted', { corpus: corpusId });
+    return () => {
+      loadGeneration.current += 1;
+      loadController.current?.abort();
+      languageLog.program('unmounted', { corpus: corpusId });
+    };
   }, [corpusId, userId]);
 
   useEffect(() => {
@@ -117,8 +130,8 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
     setSaving(true);
     setNotice(null);
     const result = blob
-      ? await languageApi.recording(userId, corpusId, seq, blob)
-      : await languageApi.log(userId, { corpus: corpusId, seq, rung, given });
+      ? await languageApi.recording(userId, corpusId, seq, blob, capabilities, studyGrant)
+      : await languageApi.log(userId, { corpus: corpusId, seq, rung, given }, capabilities, studyGrant);
     setSaving(false);
 
     if (!result.ok) {
@@ -133,10 +146,10 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
     languageLog.attempt('saved', { corpus: corpusId, seq, rung });
     await load();
     return result;
-  }, [userId, corpusId, load]);
+  }, [userId, corpusId, capabilities, studyGrant, load]);
 
   const onRoll = useCallback(async () => {
-    const { ok, data } = await languageApi.roll(userId, corpusId, capabilities);
+    const { ok, data } = await languageApi.roll(userId, corpusId, capabilities, studyGrant);
     if (ok && data?.rolled) {
       languageLog.pacing('rolled', { corpus: corpusId, day: data.day });
       await load();
@@ -147,22 +160,27 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
           : 'Finish today\'s set first.',
       );
     }
-  }, [userId, corpusId, capabilities, load]);
+  }, [userId, corpusId, capabilities, studyGrant, load]);
 
   const onPacing = useCallback(async (dailyLimit) => {
-    const { ok } = await languageApi.pacing(userId, corpusId, dailyLimit);
+    const { ok } = await languageApi.pacing(userId, corpusId, dailyLimit, studyGrant);
     if (ok) {
       languageLog.pacing('changed', { corpus: corpusId, dailyLimit });
       await load();
     }
-  }, [userId, corpusId, load]);
+  }, [userId, corpusId, studyGrant, load]);
 
   // A guest is stopped, but never stranded: the picker lives one level up and
   // was previously reachable only by knowing the header chip was tappable.
-  if (!userId) {
+  if (!userId || !corpusId || !studyGrant) {
+    const needsLaunch = Boolean(userId) && (!corpusId || !studyGrant);
     return (
       <div className="lang-program lang-program--guest">
-        <p className="lang-program__guest-copy">Sign in to study — a guest&apos;s work isn&apos;t saved.</p>
+        <p className="lang-program__guest-copy">
+          {needsLaunch
+            ? 'Type your code or scan your agenda to start Sentence Ladder.'
+            : 'Sign in to study — a guest\'s work isn\'t saved.'}
+        </p>
         {onSignIn && (
           <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>
             {locked ? 'Type your code again' : 'Sign in'}
@@ -240,21 +258,18 @@ export default function SentenceLadderProgram({ userId, corpusId = 'glossika-kor
       {notice && <p className="lang-program__notice" role="alert">{notice}</p>}
 
       <main className="lang-program__body">
-        {tab === 'review' && <ReviewPanel userId={userId} corpusId={corpusId} />}
+        {tab === 'review' && <ReviewPanel userId={userId} corpusId={corpusId} studyGrant={studyGrant} />}
 
-      {tab === 'study' && allDone && !blockedByDevice && (
+      {tab === 'study' && allDone && (
           <div className="lang-program__complete">
-            <p>Today&apos;s set is done — Day {day?.day}.</p>
-            {locked ? (
+            {blockedByDevice ? (
+              <p>Some required rungs need a different device before the day can be credited.</p>
+            ) : <p>Today&apos;s set is done — Day {day?.day}.</p>}
+            {!blockedByDevice && (locked ? (
               <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>Done</button>
             ) : (
               <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
-      )}
-      {tab === 'study' && blockedByDevice && (
-        <div className="lang-program__complete">
-          <p>Some required rungs need a different device before the day can be credited.</p>
-        </div>
-      )}
+            ))}
           </div>
         )}
 

@@ -1,97 +1,34 @@
 # Student completion state machine handoff
 
-Status: implemented and deployed 2026-08-23 (commit `fe3f587a8`).
+Status: implementation reconciled and verified locally on 2026-08-23. This
+handoff makes no deployment claim.
 
 Design: [2026-08-23-student-completion-state-machine-design.md](plans/2026-08-23-student-completion-state-machine-design.md)
-Plan: [2026-08-23-student-completion-state-machine-plan.md](plans/2026-08-23-student-completion-state-machine-plan.md)
 
-## What shipped
+The learner-day projection is read-only and has four states:
 
-- `planDailyAgenda` (`agenda.mjs`) now computes `obligation:
-  {state, reason}` per section — `served` / `excused` / `obligated` — from a
-  six-rule table (non-elective pass, focus-day suppression, no actionable
-  work, optional catch-up backlog, not-yet-urgent windowed work, otherwise
-  obligated).
-- `completion.mjs` (new, pure): `resolveDayCompletion({sections,
-  planErrors})` folds those into a learner-level
-  `incomplete | complete | no_work_today`, plus an `excused` breadcrumb list
-  for the teacher console. A non-empty `planErrors` surfaces as a
-  `plan_error` pseudo-section rather than being silently dropped.
-- `GetLearnerDayCompletion` (new use case): the read-only twin of
-  `BuildAgenda`'s planning path — same inputs, no session/token side
-  effects. Has a parity test against `BuildAgenda`'s own output so the two
-  paths cannot silently diverge.
-- `CloseSessionOutcome` gained an optional `eventBus` dependency and now
-  publishes `school.session.outcome-recorded` on every settle (pass, fail,
-  honor-close, resettle). `CloseLanguageDay` routes language-day closes
-  through the same `#settle`, so this one publish point covers curriculum
-  and language work uniformly.
-- `SchoolCompletionBridge` (new, same lifecycle shape as
-  `DoNowSchoolBridge`): subscribes to that event, recomputes via
-  `GetLearnerDayCompletion`, and publishes `school.completion.changed`
-  **only on an actual state transition** — never on every recompute.
-- Bug fix along the way: `programUnavailable` used to blank a whole
-  section's `next` whenever any program in that subject errored, even with
-  a live, unrelated curriculum entry sharing the subject. Candidacy is now
-  scoped to entries belonging to the unavailable program only.
-- Also fixed a pre-existing, unrelated red test
-  (`schoolLifecycleWiring.test.mjs`) left broken by the Glossika
-  integration's `closeLanguageDay` addition to the use-case graph.
+- `incomplete`: at least one healthy required section remains;
+- `complete`: all required work was served;
+- `no_work_today`: no healthy section obligated the learner;
+- `indeterminate`: planning or required-program faults prevent a trustworthy
+  answer.
 
-## Open dependency for the dated-modules workstream
+Faults have precedence over the three ordinary states and are returned
+separately from excused breadcrumbs. Guest, `indeterminate`, and unavailable
+HTTP reads lock Piano Games. Identified learners unlock Games only on
+`complete` or `no_work_today`; economy rewards may require `complete`.
 
-Rule 4 ("optional catch-up backlog never obligates") checks
-`entry.timing?.mode === 'catch_up' || entry.timingState === 'catch_up'`.
-That second field is **not safe alone**: `planner.mjs:262` overwrites
-`timingState` to `'in_progress'` the moment a session is open on that entry
-(`evaluateTiming(..., {inProgress: true})` unconditionally returns
-`state: 'in_progress'`), so a learner who has *started* a backlog worksheet
-would read `in_progress`, miss rule 4, and fall through to "obligated" —
-directly contradicting the dated-modules design's own "never gates."
+`SchoolCompletionBridge` publishes an initial observation as well as later
+transitions, so an event consumer does not lose the first completion after a
+process restart. The payload names learner, study date, current and previous
+state, whether the observation is initial, and observation time.
 
-What this needs from that workstream: a field that survives the
-in-progress overwrite — e.g. `timing.mode: 'catch_up'` set once at
-materialization and never touched by `evaluateTiming`'s `inProgress`
-branch — or confirmation that some other durable field (e.g.
-`timingRank > 0`) is preserved through it. The completion code already
-checks `entry.timing?.mode === 'catch_up'` defensively, so if that's the
-field you land on, rule 4 picks it up with no further change on this side.
-Until then this rule simply never fires (there is no `dated_modules` course
-live yet), so nothing is currently broken — but please ping before shipping
-so we can add the one integration test named in the design doc's §9.
+Dated-module catch-up remains non-obligating even while a catch-up session is
+in progress because the planner carries durable `timing.mode: catch_up`.
+Enrollment v2 snapshots the progression policy, and v1 dated enrollments remain
+compatible through their frozen `moduleSchedule`.
 
-## Consumer status
-
-The first consumer is now implemented locally: the piano-kiosk Games tile and
-the direct Games route both read `GetLearnerDayCompletion` through
-`GET /api/v1/school/lifecycle/learners/:learnerId/completion`. The gate unlocks
-on `complete` or `no_work_today`, refreshes while mounted, and fails closed when
-the read is unavailable. Direct routes and note-launcher navigation cannot
-bypass it. Guest is handled locally as `no_work_today`.
-
-The remaining consumer contract is:
-
-| Consumer | Honors |
-| --- | --- |
-| Piano-kiosk games unlock | `complete` **or** `no_work_today` — built locally, not yet committed/deployed |
-| Coins / economy reward | `complete` **only** |
-| Teacher console "today" view | `excused` regardless of state |
-
-The `no_work_today` branch on the unlock matters: without it, a learner who
-finishes every assigned course reads `caught_up` on every subject forever
-and is locked out of the reward a peer doing one lesson a day earns
-nightly.
-
-## Verification
-
-Full `tests/isolated/domain/school/` + `tests/isolated/application/school/`
-+ `tests/isolated/composition/`: 2157 passing, 0 failing, 0 related to this
-change. A full-repo `tests/isolated/` run surfaced 5 further failures, all
-pre-existing on `main` before this branch (nutribot date-boundary tests, a
-fitness playlist test, a content-resolver test) — verified via `git diff`
-against the branch point that none intersect files this change touched.
-
-Deployed: garage-in-use gate checked clear (paused video, no fitness
-session) before rebuilding; container reports `healthy`;
-`school.lifecycle.mounted`/`ready` logged with no errors; `/build.txt`
-confirms the running image is this commit.
+Operational diagnosis and guarded repair are available under
+`node cli/school.mjs ops`; see
+[completion and rewards](../reference/school/completion-and-rewards.md) and
+[program operations](../reference/school/programs.md).

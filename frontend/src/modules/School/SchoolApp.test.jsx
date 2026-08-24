@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import SchoolApp from './SchoolApp.jsx';
+import SchoolApp, { parseSchoolPath } from './SchoolApp.jsx';
 import { schoolApi } from './schoolApi.js';
 
 // Spy on the schoolLog facade so the launch-refused path (F12) is directly
@@ -24,6 +24,14 @@ const learningCatalogsMock = vi.fn();
 const learningLessonMock = vi.fn();
 const surfaceProfileMock = vi.fn();
 const certificationMock = vi.fn();
+
+describe('Sentence Ladder route authority', () => {
+  it('does not reconstruct a learner launch from a direct URL or refresh', () => {
+    expect(parseSchoolPath('/school/sentence-ladder/glossika-korean')).toEqual({
+      section: null, materialPath: [],
+    });
+  });
+});
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'kid1', name: 'Alpha', birthyear: 2016 }, { id: 'dad1', name: 'Papa', birthyear: 1984 }] })),
@@ -369,17 +377,16 @@ describe('language courses', () => {
     expect(screen.queryByText('Glossika Korean')).toBeNull();
   });
 
-  it('an ingested course enables the Language shelf and appears inside it', async () => {
+  it('an ingested Sentence Ladder corpus remains absent from general browse', async () => {
     coursesMock.mockResolvedValue({
       ok: true, status: 200,
       data: [{ id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 }],
     });
     render(<SchoolApp clear={() => {}} mode="open" />);
     const language = (await screen.findByText('Language & Culture')).closest('button');
-    await waitFor(() => expect(language).not.toBeDisabled());
-    fireEvent.click(language);
-    expect(await screen.findByText('Glossika Korean')).toBeTruthy();
-    expect(screen.getByText('Listen, say it, write it')).toBeTruthy();
+    await waitFor(() => expect(coursesMock).toHaveBeenCalled());
+    expect(language).toBeDisabled();
+    expect(screen.queryByText('Glossika Korean')).toBeNull();
   });
 
   it('still builds the wall when the course listing fails', async () => {

@@ -46,7 +46,7 @@ export function useSchoolLaunch({ claim, onLaunch }) {
     const { learnerId, target } = msg;
     logger().info('launch-received', { kind: target.kind, learnerId });
     claim(learnerId);
-    onLaunch(target);
+    onLaunch(target, learnerId);
   }, [claim, onLaunch]);
 
   useWebSocketSubscription(TOPIC, handle, [handle]);
