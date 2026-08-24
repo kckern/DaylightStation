@@ -29,6 +29,8 @@ const PAYLOADS = {
   remediation_opened: { newSessionId: 'ses_next', variant: 1 },
   reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2' },
   failed: { stage: 'print', reason: 'printer offline' },
+  grade_adjusted: { adjustmentId: 'adj_1', percent: 100, reason: 'OMR erased answer misread', adjustedBy: 'parent1' },
+  grade_adjustment_retracted: { adjustmentId: 'adj_1', reason: 'entered against wrong session', retractedBy: 'parent1' },
   abandoned: {},
 };
 
@@ -51,7 +53,7 @@ describe('EVENT_TYPES', () => {
       'created', 'issued', 'reprinted',
       'media_dispatched', 'media_completed', 'media_stalled',
       'launch_dispatched', 'program_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
-      'remediation_opened', 'reassigned', 'failed', 'abandoned',
+      'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
   });
 
@@ -63,6 +65,39 @@ describe('EVENT_TYPES', () => {
     EVENT_TYPES.forEach((type) => {
       expect(createEvent({ type, at: AT, sessionId: SID, seq: 1, ...PAYLOADS[type] }).errors).toEqual([]);
     });
+  });
+});
+
+describe('append-only teacher grade corrections', () => {
+  it('preserves machine evidence while projecting the latest active correction through pass state', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded'], {
+      graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5 },
+      outcome_recorded: { result: 'needs_remediation' },
+    });
+    events.push(ev('grade_adjusted', {
+      adjustmentId: 'adj_eraser', percent: 80, correctCount: 4, totalCount: 5,
+      reason: 'eraser read as two marks', adjustedBy: 'parent1',
+    }));
+    const state = reduceSession(events);
+    expect(state.errors).toEqual([]);
+    expect(state.machineGrade).toMatchObject({ percent: 60, correctCount: 3 });
+    expect(state.gradedPercent).toBe(80);
+    expect(state.outcome).toMatchObject({ result: 'passed', adjustmentId: 'adj_eraser' });
+    expect(state.machineOutcome.result).toBe('needs_remediation');
+    expect(state.rewardTxn).toBe('txn_1');
+  });
+
+  it('retraction restores the machine grade without deleting correction history', () => {
+    const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded'], {
+      graded: { percent: 60, passingPercent: 80 }, outcome_recorded: { result: 'needs_remediation' },
+    });
+    events.push(ev('grade_adjusted', { adjustmentId: 'adj_1', percent: 100, reason: 'freebie', adjustedBy: 'parent1' }));
+    events.push(ev('grade_adjustment_retracted', { adjustmentId: 'adj_1', reason: 'wrong learner', retractedBy: 'parent1' }));
+    const state = reduceSession(events);
+    expect(state.errors).toEqual([]);
+    expect(state.gradedPercent).toBe(60);
+    expect(state.outcome.result).toBe('needs_remediation');
+    expect(state.gradeAdjustments[0]).toMatchObject({ adjustmentId: 'adj_1', retracted: true });
   });
 });
 

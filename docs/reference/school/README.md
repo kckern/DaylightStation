@@ -1254,7 +1254,15 @@ selfService:
 school:
   mode: locked                   # THIS panel shows the keypad
   idleTimeoutSeconds: 120
+  screenOffTimeoutSeconds: 600   # optional; 0/absent disables automatic display sleep
 ```
+
+`idleTimeoutSeconds` and `screenOffTimeoutSeconds` are intentionally separate.
+The first returns an abandoned launch card to the keypad. The second uses the
+Fully Kiosk Browser bridge to turn off the display only while the keypad is
+idle; activity resets it, and cards, runners, scans, and in-flight requests
+suppress it. The keypad always provides a two-tap **Turn off screen** control.
+If the bridge is unavailable, the panel stays on and shows a visible failure.
 
 Minting and locking are independent so the rollout can be staged: print codes
 first, confirm one resolves, lock the panel last. **Both off is exactly the

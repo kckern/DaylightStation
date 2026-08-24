@@ -123,7 +123,7 @@ describe('fail closed', () => {
       'issueComposedWorksheet', 'issueDocument', 'markSessionAbandoned', 'openRemediation', 'previewAgenda',
       'recordMediaCompletion', 'replaceLostAnswerSheet', 'resolveAccessCode', 'resolvePersonalCard',
       'resolveReviewItem', 'resolveScanAction', 'runSelfServiceAction', 'setAssignments',
-      'submitPaperWork', 'unenrollLearner',
+      'submitPaperWork', 'teacherAgendaDispatch', 'unenrollLearner',
     ]);
   });
 

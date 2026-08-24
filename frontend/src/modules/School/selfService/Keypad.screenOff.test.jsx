@@ -1,0 +1,74 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import Keypad from './Keypad.jsx';
+
+const screenOff = vi.hoisted(() => vi.fn());
+const selfService = vi.hoisted(() => vi.fn());
+const selfServiceError = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../lib/fkb.js', () => ({ screenOff }));
+vi.mock('../schoolLog.js', () => ({
+  schoolLog: { selfService, selfServiceError },
+}));
+
+const renderKeypad = (props = {}) => render(
+  <Keypad onSubmit={vi.fn()} {...props} />,
+);
+
+describe('School self-service keypad screen off', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    screenOff.mockReset().mockReturnValue(true);
+    selfService.mockClear();
+    selfServiceError.mockClear();
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('requires two taps for the manual screen-off action', () => {
+    renderKeypad();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off screen' }));
+    expect(screenOff).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Tap again to turn off screen' }));
+    expect(screenOff).toHaveBeenCalledTimes(1);
+    expect(selfService).toHaveBeenCalledWith('screen-off.succeeded', { source: 'manual' });
+  });
+
+  it('keeps automatic sleep disabled by default', () => {
+    renderKeypad();
+    act(() => vi.advanceTimersByTime(60 * 60 * 1000));
+    expect(screenOff).not.toHaveBeenCalled();
+  });
+
+  it('resets configured automatic sleep on keypad activity', () => {
+    renderKeypad({ screenOffTimeoutSeconds: 10 });
+    act(() => vi.advanceTimersByTime(9000));
+    fireEvent.click(screen.getByRole('button', { name: '1' }));
+    act(() => vi.advanceTimersByTime(9000));
+    expect(screenOff).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screenOff).toHaveBeenCalledTimes(1);
+    expect(selfService).toHaveBeenCalledWith('screen-off.succeeded', { source: 'idle' });
+  });
+
+  it('suppresses automatic sleep while busy or a ceremony is visible', () => {
+    const { rerender } = renderKeypad({ screenOffTimeoutSeconds: 1, busy: true });
+    act(() => vi.advanceTimersByTime(2000));
+    expect(screenOff).not.toHaveBeenCalled();
+
+    rerender(<Keypad onSubmit={vi.fn()} screenOffTimeoutSeconds={1} screenOffSuppressed />);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(screenOff).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an unavailable FKB bridge instead of failing silently', () => {
+    screenOff.mockReturnValue(false);
+    renderKeypad();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off screen' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tap again to turn off screen' }));
+    expect(screen.getByText(/The screen can't turn off here/)).toBeInTheDocument();
+    expect(selfServiceError).toHaveBeenCalledWith('screen-off.failed', {
+      source: 'manual', reason: 'fkb_unavailable',
+    });
+  });
+});

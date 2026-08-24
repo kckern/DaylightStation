@@ -137,10 +137,11 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
     // later question about a past run unanswerable. Shape lives in shared/ so
     // the writer and the validator cannot drift.
     const assessment = validateAssessment(body);
-    if (!assessment.valid || typeof body.challenge_id !== 'string') {
+    const hasIdentity = typeof body.challenge_id === 'string' || typeof body.activity_id === 'string';
+    if (!assessment.valid || !hasIdentity) {
       return res.status(400).json({
         error: 'Invalid attempt result',
-        details: assessment.errors.length ? assessment.errors : ['challenge_id is required'],
+        details: assessment.errors.length ? assessment.errors : ['challenge_id or activity_id is required'],
       });
     }
     const attempt = pianoAttemptStore.save(req.params.userId, {
@@ -153,7 +154,15 @@ export function createPianoRouter({ pianoContainer, pianoAttemptStore = null, pi
       attemptId: attempt.attempt_id,
       status: attempt.status,
       rubric: attempt.rubric?.id ?? null,
-      criteria: attempt.criteria ? Object.keys(attempt.criteria) : null,
+      surface: attempt.context?.surface ?? null,
+      matcher: attempt.context?.matcher ?? null,
+      mode: attempt.prompt?.mode ?? null,
+      activityId: attempt.activity_id ?? null,
+      criteria: attempt.criteria ?? null,
+      partWeights: attempt.rubric?.part_weights ?? null,
+      failedCriteria: attempt.verdict?.failed_criteria ?? null,
+      failedGates: attempt.verdict?.failed_gates ?? null,
+      persistence: 'saved',
     });
     res.status(201).json(attempt);
   }));

@@ -219,8 +219,14 @@ function applyTerminalResult(state, command, definition) {
   next.score = (next.score ?? 0) + Math.round(result.score * 100);
 
   const events = [
-    { type: 'challenge_resolved', challenge_id: pending.id, score: result.score, outcome: outcome.id },
+    { type: 'challenge_resolved', challenge_id: pending.id, score: result.score, outcome: outcome.id,
+      ...(card.resolution?.requires_pass ? {
+        passed: result.verdict?.passed === true,
+        failed_criteria: result.verdict?.failed_criteria || [],
+        failed_gates: result.verdict?.failed_gates || [],
+      } : {}) },
   ];
+  if (card.resolution?.requires_pass && result.verdict?.passed !== true) return success(next, events);
   const cardType = card.type || 'attack';
   if (cardType === 'guard') {
     const block = Math.max(0, Math.round(card.block * multiplier));

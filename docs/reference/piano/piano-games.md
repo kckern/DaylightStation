@@ -39,6 +39,16 @@ partner bonds, best scores in four skill families, trainer XP/level, badges, dai
 weekly stamps/tickets, streak/rest tokens, and applied milestones. Guest sessions can
 demonstrate the full battle flow but are excluded from durable campaign rewards.
 
+Timed-pattern moves declare `resolution.effect: score`, `requires_pass: true`,
+and `failure: consume-no-effect`. A failed rubric therefore still consumes and
+records the move, but contributes no damage, block, or focus and does not stop
+the enemy turn. Existing moves without `resolution` retain score-scaled effects.
+
+Musical assessment is reserved for musical expectations. Hero mode uses timed
+assessment; native Space Invaders performs visible-object pitch collision and
+returns no assessment result. Theory, Tetris, Side Scroller, and staff-command
+input use neutral recognition and cannot create attempt evidence.
+
 The ownership boundary is strict:
 
 - `shared/gaming/definitions/card-game.yml` contains combat content and a semantic

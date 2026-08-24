@@ -1686,6 +1686,24 @@
   &:active { transform: scale(0.99); }
   &:disabled { background: var(--school-surface-2); color: var(--school-muted); cursor: default; }
 }
+.school-selfservice__screen-off {
+  position: fixed; right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 2;
+  min-height: 44px; padding: 0.45rem 1rem; border: 1px solid transparent;
+  border-radius: 10px; background: transparent; color: var(--school-muted);
+  font-size: 0.95rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  &.is-armed {
+    border-color: var(--school-warn); color: var(--school-warn);
+    background: color-mix(in srgb, var(--school-warn) 10%, transparent);
+  }
+  &:disabled { opacity: 0.45; cursor: default; }
+}
+.school-selfservice__screen-off-status {
+  position: fixed; left: 50%; bottom: max(4.75rem, calc(env(safe-area-inset-bottom) + 4.75rem));
+  z-index: 2; width: min(30rem, calc(100% - 2rem)); margin: 0;
+  transform: translateX(-50%); color: var(--school-danger);
+  font-size: 0.9rem; font-weight: 700; text-align: center;
+}
 
 @keyframes school-selfservice-shake {
   10%, 90% { transform: translateX(-3px); }

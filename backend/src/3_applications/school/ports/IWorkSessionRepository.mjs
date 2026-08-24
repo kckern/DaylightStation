@@ -23,9 +23,10 @@ export class IWorkSessionRepository {
    *
    * @param {string} sessionId
    * @param {object} event - a validated event from `createEvent`; `seq` is (re)stamped
+   * @param {{expectedSeq?: number}} [options] - optional compare-and-append revision
    * @returns {Promise<object>} the stored event, including its assigned `seq`
    */
-  async appendEvent(sessionId, event) {
+  async appendEvent(sessionId, event, options = {}) { // eslint-disable-line no-unused-vars
     throw new Error('IWorkSessionRepository.appendEvent must be implemented');
   }
 

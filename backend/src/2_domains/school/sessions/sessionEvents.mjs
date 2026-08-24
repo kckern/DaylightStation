@@ -42,6 +42,12 @@ const booleanIfPresent = (field) => (raw, push) => {
 
 const TRANSPORTS = ['paper', 'screen'];
 const RESULTS = ['passed', 'needs_remediation'];
+const percentIfPresent = (field) => (raw, push) => {
+  if (raw[field] !== undefined && (typeof raw[field] !== 'number'
+      || !Number.isFinite(raw[field]) || raw[field] < 0 || raw[field] > 100)) {
+    push(`${field}: must be a number between 0 and 100 when present`);
+  }
+};
 
 /**
  * Key order IS `EVENT_TYPES` (derived below), so a type can never be declared
@@ -171,6 +177,44 @@ const SCHEMA = {
       }
     }),
   },
+  // Teacher corrections are annotations, not replacement grades. The original
+  // `graded` event remains machine evidence; this event supplies the effective
+  // interpretation used by reports and progression. `adjustmentId` makes a
+  // retriable HTTP/CLI command idempotent and is also the retraction target.
+  grade_adjusted: {
+    fields: ['adjustmentId', 'percent', 'correctCount', 'totalCount', 'missedItemIds', 'itemVerdicts', 'reason', 'adjustedBy', 'baseSeq'],
+    validate: allOf(stringField('adjustmentId'), stringField('reason'), stringField('adjustedBy'), percentIfPresent('percent'), (raw, push) => {
+      if (raw.percent === undefined && raw.correctCount === undefined) {
+        push('percent or correctCount must be supplied');
+      }
+      if (raw.percent === undefined && raw.correctCount !== undefined && raw.totalCount === undefined) {
+        push('totalCount is required when deriving percent from correctCount');
+      }
+      if (raw.correctCount !== undefined && (!Number.isInteger(raw.correctCount) || raw.correctCount < 0)) {
+        push('correctCount: must be an integer >= 0 when present');
+      }
+      if (raw.totalCount !== undefined && (!Number.isInteger(raw.totalCount) || raw.totalCount < 1)) {
+        push('totalCount: must be an integer >= 1 when present');
+      }
+      if (Number.isInteger(raw.correctCount) && Number.isInteger(raw.totalCount)
+          && raw.correctCount > raw.totalCount) push('correctCount must not exceed totalCount');
+      if (raw.missedItemIds !== undefined && (!Array.isArray(raw.missedItemIds)
+          || !raw.missedItemIds.every(isNonEmptyString))) {
+        push('missedItemIds: must be an array of non-empty strings when present');
+      }
+      if (raw.itemVerdicts !== undefined && (!Array.isArray(raw.itemVerdicts)
+          || !raw.itemVerdicts.every((v) => v && isNonEmptyString(v.itemId) && typeof v.correct === 'boolean'))) {
+        push('itemVerdicts: must be an array of {itemId, correct} records when present');
+      }
+      if (raw.baseSeq !== undefined && !isSeq(raw.baseSeq)) push('baseSeq: must be an integer >= 1 when present');
+    }),
+  },
+  grade_adjustment_retracted: {
+    fields: ['adjustmentId', 'reason', 'retractedBy', 'baseSeq'],
+    validate: allOf(stringField('adjustmentId'), stringField('reason'), stringField('retractedBy'), (raw, push) => {
+      if (raw.baseSeq !== undefined && !isSeq(raw.baseSeq)) push('baseSeq: must be an integer >= 1 when present');
+    }),
+  },
   failed: { fields: ['stage', 'reason'], validate: allOf(stringField('stage'), stringField('reason')) },
   abandoned: { fields: ['reason', 'decidedBy'], validate: () => {} },
 };
@@ -206,7 +250,10 @@ export const TRANSITIONS = Object.freeze({
  * - `reassigned` (spec §5.3) re-credits the work and rides the existing
  *   `attributedTo` mechanics; the lifecycle position is unchanged.
  */
-export const ANNOTATION_EVENTS = Object.freeze(new Set(['failed', 'reassigned']));
+export const ANNOTATION_EVENTS = Object.freeze(new Set([
+  'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
+]));
+const TERMINAL_ANNOTATIONS = new Set(['grade_adjusted', 'grade_adjustment_retracted']);
 
 /** States the table can reach but never leave. */
 export const TERMINAL_STATES = Object.freeze(new Set(
@@ -290,6 +337,8 @@ const emptyState = () => ({
   firstIssuedAt: null,
   attemptIds: [],
   gradedPercent: null,
+  machineGrade: null,
+  gradeAdjustments: [],
   gradedPassingPercent: null,
   gradedCorrectCount: null,
   gradedTotalCount: null,
@@ -297,6 +346,7 @@ const emptyState = () => ({
   transport: null,
   mediaDispatch: null,
   outcome: null,
+  machineOutcome: null,
   rewardTxn: null,
   remediationOf: null,
   remediationItemIds: [],
@@ -390,15 +440,62 @@ const APPLY = {
     if (Number.isInteger(e.correctCount)) s.gradedCorrectCount = e.correctCount;
     if (Number.isInteger(e.totalCount)) s.gradedTotalCount = e.totalCount;
     if (Array.isArray(e.missedItemIds)) s.missedItemIds = [...e.missedItemIds];
+    s.machineGrade = {
+      percent: typeof e.percent === 'number' ? e.percent : null,
+      passingPercent: typeof e.passingPercent === 'number' ? e.passingPercent : null,
+      correctCount: Number.isInteger(e.correctCount) ? e.correctCount : null,
+      totalCount: Number.isInteger(e.totalCount) ? e.totalCount : null,
+      missedItemIds: Array.isArray(e.missedItemIds) ? [...e.missedItemIds] : [],
+      attemptIds: Array.isArray(e.attemptIds) ? [...e.attemptIds] : [],
+    };
   },
   outcome_recorded(s, e) {
     s.outcome = { outcomeId: e.outcomeId ?? null, result: e.result ?? null, at: e.at };
+    s.machineOutcome = { ...s.outcome };
   },
   rewarded(s, e) { s.rewardTxn = e.txnId ?? null; },
   remediation_opened(s, e) {
     s.remediation = { newSessionId: e.newSessionId ?? null, variant: e.variant ?? null };
   },
   reassigned(s, e) { if (isNonEmptyString(e.toLearnerId)) s.learnerId = e.toLearnerId; },
+  grade_adjusted(s, e, push) {
+    if (!s.machineGrade) {
+      push('cannot adjust a session with no machine grade');
+      return;
+    }
+    if (s.gradeAdjustments.some((row) => row.adjustmentId === e.adjustmentId)) {
+      push(`duplicate adjustmentId "${e.adjustmentId}"`);
+      return;
+    }
+    s.gradeAdjustments.push({
+      adjustmentId: e.adjustmentId,
+      percent: typeof e.percent === 'number' ? e.percent : null,
+      correctCount: Number.isInteger(e.correctCount) ? e.correctCount : null,
+      totalCount: Number.isInteger(e.totalCount) ? e.totalCount : null,
+      missedItemIds: Array.isArray(e.missedItemIds) ? [...e.missedItemIds] : null,
+      itemVerdicts: Array.isArray(e.itemVerdicts) ? e.itemVerdicts.map((v) => ({ ...v })) : [],
+      reason: e.reason,
+      adjustedBy: e.adjustedBy,
+      at: e.at,
+      seq: e.seq,
+      retracted: false,
+    });
+  },
+  grade_adjustment_retracted(s, e, push) {
+    const target = [...s.gradeAdjustments].reverse().find((row) => row.adjustmentId === e.adjustmentId);
+    if (!target) {
+      push(`adjustmentId "${e.adjustmentId}" does not exist`);
+      return;
+    }
+    if (target.retracted) {
+      push(`adjustmentId "${e.adjustmentId}" is already retracted`);
+      return;
+    }
+    target.retracted = true;
+    target.retractedAt = e.at;
+    target.retractedBy = e.retractedBy;
+    target.retractionReason = e.reason;
+  },
   failed(s, e) { s.lastFailure = { stage: e.stage ?? null, reason: e.reason ?? null, at: e.at }; },
   abandoned() {},
 };
@@ -519,7 +616,7 @@ export function reduceSession(events) {
       if (raw.type !== 'created') push('session must open with a created event');
     } else {
       const legal = annotation
-        ? s.state !== null && !TERMINAL_STATES.has(s.state)
+        ? s.state !== null && (!TERMINAL_STATES.has(s.state) || TERMINAL_ANNOTATIONS.has(raw.type))
         : (TRANSITIONS[s.state] || []).includes(raw.type);
       if (!legal) {
         push(`illegal transition ${s.state} -> ${raw.type}`);
@@ -533,6 +630,27 @@ export function reduceSession(events) {
   });
 
   s.terminal = s.state !== null && TERMINAL_STATES.has(s.state);
+  // Last active correction wins. The machine grade/outcome stay separately
+  // visible, while existing consumers of gradedPercent/outcome receive the
+  // effective projection and therefore update reports and gates naturally.
+  const effective = [...s.gradeAdjustments].reverse().find((row) => !row.retracted);
+  if (effective) {
+    if (typeof effective.percent === 'number') s.gradedPercent = effective.percent;
+    else if (Number.isInteger(effective.correctCount) && Number.isInteger(effective.totalCount)) {
+      s.gradedPercent = Math.round((effective.correctCount / effective.totalCount) * 10000) / 100;
+    }
+    if (Number.isInteger(effective.correctCount)) s.gradedCorrectCount = effective.correctCount;
+    if (Number.isInteger(effective.totalCount)) s.gradedTotalCount = effective.totalCount;
+    if (Array.isArray(effective.missedItemIds)) s.missedItemIds = [...effective.missedItemIds];
+    if (s.outcome && typeof s.gradedPercent === 'number' && typeof s.gradedPassingPercent === 'number') {
+      s.outcome = {
+        ...s.outcome,
+        result: s.gradedPercent >= s.gradedPassingPercent ? 'passed' : 'needs_remediation',
+        adjustedBy: effective.adjustedBy,
+        adjustmentId: effective.adjustmentId,
+      };
+    }
+  }
   s.nextAction = computeNextAction(s);
   return s;
 }

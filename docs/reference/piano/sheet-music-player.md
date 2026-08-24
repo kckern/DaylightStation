@@ -6,6 +6,12 @@ light-up. Lives in `frontend/src/modules/Piano/PianoKiosk/modes/SheetMusic/`,
 engraving through the shared OSMD renderer in
 `frontend/src/modules/MusicNotation/renderers/`.
 
+Listen is the only mode that sends demonstration MIDI. Learn is always silent
+wait-for-correct: with no selected loop it advances through the whole score;
+with a loop it wraps inside the selected range. Its optional metronome is a
+reference and never creates placement evidence. Polish remains transport-driven
+and timing-aware; Perform remains presentation-only.
+
 ## Chrome layout
 
 - **Top:** the standard always-on breadcrumb (`PianoChrome`) — `🎹 › Sheet

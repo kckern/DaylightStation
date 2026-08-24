@@ -15,7 +15,7 @@ import { normalizeRequirement } from '#shared/music/learningPrograms.mjs';
  * somebody typed into a constant.
  */
 
-const POLICY_VERSION = 'exercise-bank-v1';
+const POLICY_VERSION = 'exercise-bank-v2';
 
 /**
  * Card-game challenge kinds, mapped onto the bank's derived forms.
@@ -101,7 +101,7 @@ export class BankChallengePolicy {
       });
     }
     const level = Number.isFinite(requirements.level) ? requirements.level : estimateLevel(recent);
-    const mode = requirements.mode || 'free';
+    const mode = requirements.mode || (kind === 'timed-pattern' ? 'cued' : 'free');
 
     // Widen the band rather than fail: an empty pool would end the game, and a
     // slightly-too-easy exercise is a better answer than no exercise.
@@ -141,6 +141,17 @@ export class BankChallengePolicy {
 }
 
 function preparedChallenge({ challengeId, kind, instance, mode, timeoutMs, selection, requirement = null }) {
+  const bpm = Number(requirement?.gates?.pace?.target_bpm ?? instance.tempo?.start_bpm ?? (mode === 'cued' ? 90 : NaN));
+  const effectiveRequirement = requirement || {
+    exercise_id: instance.id,
+    mode,
+    rubric: {
+      id: 'exercise-pass-v2', version: '2',
+      criteria: { completeness: 1, cleanliness: 1, ...(mode === 'cued' ? { placement: 0.8 } : {}) },
+    },
+    ...(mode === 'cued' ? { gates: { pace: { target_bpm: bpm } } } : {}),
+    required_passes: 1,
+  };
   return {
     challenge_id: challengeId,
     kind,
@@ -155,9 +166,10 @@ function preparedChallenge({ challengeId, kind, instance, mode, timeoutMs, selec
       level: instance.level?.[mode] ?? null,
       mode,
       ...(instance.ordering === 'any' ? chordTarget(instance) : {}),
-      ...(requirement?.gates?.pace?.target_bpm ? { tempo_bpm: requirement.gates.pace.target_bpm } : {}),
+      ...(mode === 'cued' ? { tempo_bpm: bpm } : {}),
     },
-    ...(requirement ? { requirement } : {}),
+    requirement: effectiveRequirement,
+    grading_policy_version: effectiveRequirement.rubric.id,
     timeout_ms: timeoutMs,
     pedagogy_policy_version: POLICY_VERSION,
     selection,

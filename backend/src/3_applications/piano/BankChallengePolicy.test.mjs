@@ -24,7 +24,15 @@ const scaleSeed = {
   derived: { form: 'scale' },
 };
 
-const bank = (seeds = [triadSeed, scaleSeed]) => ({ available: () => true, allSeeds: () => seeds });
+const patternSeed = {
+  ...scaleSeed,
+  id: 'patterns/rhythm',
+  title: 'Rhythm pattern',
+  derived: { form: 'sequence' },
+  tempo: { start_bpm: 84 },
+};
+
+const bank = (seeds = [triadSeed, scaleSeed, patternSeed]) => ({ available: () => true, allSeeds: () => seeds });
 const store = (attempts) => ({ listRecent: () => attempts });
 
 describe('level estimation', () => {
@@ -85,6 +93,16 @@ describe('preparing a challenge from the bank', () => {
     const scale = policy().prepare({ userId: 'u', challengeId: 'c2', kind: 'scale' });
     expect(scale.prompt.exercise_id).toMatch(/^scales\//);
     expect(scale.prompt.ordering).toBe('strict');
+  });
+
+  it('makes adaptive rhythm challenges cued with an exact generated requirement', () => {
+    const prepared = policy().prepare({ userId: 'u', challengeId: 'rhythm', kind: 'timed-pattern' });
+    expect(prepared.prompt.mode).toBe('cued');
+    expect(prepared.prompt.expected_events).toEqual(expect.any(Array));
+    expect(prepared.prompt.tempo_bpm).toBeGreaterThan(0);
+    expect(prepared.requirement).toMatchObject({
+      mode: 'cued', rubric: { criteria: { completeness: 1, cleanliness: 1, placement: 0.8 } },
+    });
   });
 
   it('carries the notes to play and the level it chose', () => {

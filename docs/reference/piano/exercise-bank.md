@@ -5,6 +5,14 @@ the producer counterpart to the
 [performance service](performance-assessment.md), which judges a performance and
 authors nothing.
 
+The frontend adapter boundary is
+`PianoKiosk/modes/Exercises/assessment.js::prepareExerciseAssessment`. It
+converts authored values to quarter offsets once and selects the matcher:
+`cued` is timed, untimed `ordering: any` is held, and untimed strict material is
+cursor-based. Unknown note values are rejected in cued mode rather than being
+silently replaced with synthetic spacing. Adaptive rhythm challenges default
+to cued mode and carry an exact generated requirement and starting BPM.
+
 Taxonomy and rationale: [exercise taxonomy design](../../_wip/plans/2026-08-11-exercise-taxonomy-design.md).
 
 ## Two rules
