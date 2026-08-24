@@ -22,7 +22,7 @@
  * after restart already reflects the current state correctly.
  */
 export class SchoolCompletionBridge {
-  #eventBus; #getCompletion; #clock; #logger; #unsubscribe; #lastState;
+  #eventBus; #getCompletion; #clock; #logger; #unsubscribe; #lastState; #learnerQueues;
 
   constructor({
     eventBus, getLearnerDayCompletion, clock = () => new Date(), logger = console,
@@ -36,13 +36,14 @@ export class SchoolCompletionBridge {
     this.#logger = logger;
     this.#unsubscribe = null;
     this.#lastState = new Map();
+    this.#learnerQueues = new Map();
   }
 
   /** Subscribe to `school.session.outcome-recorded`. Safe to call more than once. */
   start() {
     if (this.#unsubscribe) return;
     this.#unsubscribe = this.#eventBus.subscribe('school.session.outcome-recorded', (payload) => (
-      this.#handle(payload).catch((err) => {
+      this.#enqueue(payload).catch((err) => {
         this.#logger.warn?.('school.completion-bridge.handler-threw', { error: err?.message ?? String(err) });
       })
     ));
@@ -52,6 +53,21 @@ export class SchoolCompletionBridge {
   stop() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+  }
+
+  /** Serialize recomputations for one learner while allowing different
+   * learners to proceed independently. EventBus publish is synchronous and
+   * does not await async subscribers, so without this queue two outcomes can
+   * finish their reads in reverse order and corrupt #lastState. */
+  #enqueue(payload) {
+    const learnerId = payload?.learnerId;
+    if (typeof learnerId !== 'string' || !learnerId.trim()) return Promise.resolve();
+    const previous = this.#learnerQueues.get(learnerId) ?? Promise.resolve();
+    const queued = previous.catch(() => {}).then(() => this.#handle(payload));
+    this.#learnerQueues.set(learnerId, queued);
+    return queued.finally(() => {
+      if (this.#learnerQueues.get(learnerId) === queued) this.#learnerQueues.delete(learnerId);
+    });
   }
 
   async #handle(payload) {

@@ -29,6 +29,7 @@
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 
 export class ResolveSubjectNext {
@@ -143,28 +144,17 @@ export class ResolveSubjectNext {
   }
 
   /**
-   * One read-only `status()` call per DISTINCT program id among the plan's
+   * One read-only `status()` call per DISTINCT program instance among the plan's
    * entries — mirrors `BuildAgenda#collectProgramStatuses` exactly. A program
    * that throws or was never registered must not blank the rest of the
    * subject's resolution — it degrades to `{ error: true }`, which
    * `planDailyAgenda` turns into `programUnavailable`.
    */
   async #collectProgramStatuses(plan, learnerId) {
-    const programIds = [...new Set((plan.entries ?? []).filter((e) => e.program).map((e) => e.program))];
-    const statuses = {};
-    await Promise.all(programIds.map(async (programId) => {
-      try {
-        const launcher = this.#launchers.get(programId);
-        if (!launcher) throw new Error(`no launcher registered for program "${programId}"`);
-        statuses[programId] = await launcher.status({ userId: learnerId });
-      } catch (err) {
-        this.#logger.warn?.('school.subject.launcher-failed', {
-          learnerId, program: programId, error: err?.message ?? String(err),
-        });
-        statuses[programId] = { error: true };
-      }
-    }));
-    return statuses;
+    return collectProgramStatuses({
+      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
+      logEvent: 'school.subject.launcher-failed',
+    });
   }
 }
 

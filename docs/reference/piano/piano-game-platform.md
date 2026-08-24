@@ -81,6 +81,16 @@ Board and scene art still gets a colour of its own (the wood of a checkers board
 
 `GameBoundary` wraps the lazy game in `PianoKiosk/modes/Games/Games.jsx`. Nothing stood between a game's render and the app root, so any throw in any of the eight games blanked the whole screen — and on the piano tablet the render watchdog then read a dead page and rebooted it. The boundary recovers to the picker (not "try again in place": whatever state made the game throw is still there) and unlatches on `resetKey`, so one crashed game does not shut its neighbours out.
 
+### School completion access
+
+Games is a reward surface, so the active piano identity must resolve to School
+state `complete` or `no_work_today`. The home tile, the routed `Games.jsx`
+host, and `PianoVisualizer`'s note-launcher host each enforce the rule: neither
+a deep link nor a note selection can bypass the gate.
+The client reads the side-effect-free School lifecycle completion endpoint and
+fails closed when identity or backend state is unavailable. Guest is explicitly
+treated as `no_work_today`; it is not sent to a per-learner School endpoint.
+
 ## Addressed-board layout contract
 
 `InstrumentBoardStage` exposes `leftRail`, `primary`, `secondary`, `rightRail`, and `status` slots. Its supported layout policies are:

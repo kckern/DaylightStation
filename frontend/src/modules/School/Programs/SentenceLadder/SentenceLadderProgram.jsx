@@ -8,7 +8,7 @@ import RecordingRung from './rungs/RecordingRung.jsx';
 import ReviewPanel from './ReviewPanel.jsx';
 import PacingControl from './PacingControl.jsx';
 import DeviceSettings from './DeviceSettings.jsx';
-import './Glossika.scss';
+import './SentenceLadder.scss';
 
 const RUNG_LABELS = {
   repetition: 'Repetition',
@@ -18,7 +18,7 @@ const RUNG_LABELS = {
 };
 
 /**
- * The language-study program shell (design §5).
+ * The sentence-ladder program shell (design §5).
  *
  * Owns the day: fetches it, walks the learner rung by rung through the chain
  * the server says this device supports, and re-fetches after each save so the
@@ -29,7 +29,7 @@ const RUNG_LABELS = {
  * Requires an identified learner. A guest produces no records, so the program
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
-export default function GlossikaProgram({ userId, corpusId = 'glossika-korean', onSignIn, locked = false }) {
+export default function SentenceLadderProgram({ userId, corpusId = 'glossika-korean', onSignIn, locked = false }) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);

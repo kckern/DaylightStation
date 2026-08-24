@@ -299,4 +299,17 @@ describe('program units', () => {
       sessionId: null, state: null, lockReason: null,
     });
   });
+
+  it('preserves the program instance needed for instance-scoped status', () => {
+    const units = [
+      {
+        unitId: 'language-daily', title: 'Korean', subject: 'language',
+        program: 'language', programInstance: 'test-korean', cadence: 'daily',
+      },
+    ];
+    const result = planLearnerWork({
+      learnerId: 'felix', assignment: { units: ['language-daily'] }, units, sessions: [], now: NOW,
+    });
+    expect(result.entries[0].programInstance).toBe('test-korean');
+  });
 });

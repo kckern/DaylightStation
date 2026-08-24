@@ -65,7 +65,7 @@ vi.mock('./schoolApi.js', () => ({
 
 const coursesMock = vi.fn();
 const dayMock = vi.fn();
-vi.mock('./Programs/Glossika/languageApi.js', () => ({
+vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: (...a) => dayMock(...a),
@@ -132,7 +132,7 @@ describe('SchoolApp — Portal launch subscription (school.launch)', () => {
 
     deliverLaunch('kid1', { kind: 'program', program: 'language' });
 
-    // The GlossikaProgram runner mounted for the learner's one loaded course
+    // The SentenceLadderProgram runner mounted for the learner's one loaded course
     // and fetched today's day (Day 1 is its own rendered header, not a stub).
     expect(await screen.findByText('Day 1')).toBeInTheDocument();
     await waitFor(() => expect(dayMock).toHaveBeenCalledWith('kid1', 'glossika-korean', expect.anything()));

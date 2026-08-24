@@ -92,6 +92,35 @@ describe('transition-only publish', () => {
     expect(eventBus.published ?? []).toHaveLength(0);
   });
 
+  it('serializes rapid recomputations for the same learner', async () => {
+    bridge.start();
+    await eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 'seed' });
+
+    let releaseFirst;
+    let calls = 0;
+    getCompletion.execute = async ({ learnerId }) => {
+      calls += 1;
+      if (calls === 1) return new Promise((resolve) => { releaseFirst = () => resolve({ learnerId, state: 'complete', excused: [] }); });
+      return { learnerId, state: 'complete', excused: [] };
+    };
+
+    const first = eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's1' });
+    await Promise.resolve();
+    await Promise.resolve();
+    const second = eventBus.emit('school.session.outcome-recorded', { learnerId: 'kid1', sessionId: 's2' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toBe(1);
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(calls).toBe(2);
+    expect(eventBus.published).toHaveLength(1);
+    expect(eventBus.published[0].payload).toMatchObject({
+      learnerId: 'kid1', previousState: 'incomplete', state: 'complete',
+    });
+  });
+
   it('a getLearnerDayCompletion failure is swallowed, never thrown out of the handler', async () => {
     getCompletion.execute = async () => { throw new Error('store unavailable'); };
     bridge.start();

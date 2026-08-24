@@ -43,7 +43,7 @@ const SUBJECT_IDS = new Set(SUBJECTS.map((s) => s.id));
  *     looking things up, even when a subject is stamped on it.
  *  2. Known `subject` → that shelf; unknown/missing → Library.
  *  3. Banks: same, with Library banks forming the Practice group.
- *  4. Language courses (Glossika) → `language`, unconditionally.
+ *  4. Sentence-ladder language courses → `language`, unconditionally.
  *
  * @param {{materials?: Array, banks?: Array, courses?: Array}} input
  * @returns {{bySubject: Object<string,{materials:Array,banks:Array,courses:Array}>, library: {materials:Array, banks:Array}}}

@@ -10,6 +10,7 @@ import { __clearPianoListCache } from './usePianoList.js';
 // the live keyboard are irrelevant here — except the label, which the activity-strip
 // integration test (below) needs to confirm the tile wall still renders.
 let activityResponse;
+const schoolGate = vi.hoisted(() => ({ status: 'ready', state: 'complete', unlocked: true }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)) }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
@@ -19,21 +20,24 @@ vi.mock('./PianoConfig.jsx', () => ({
   }),
 }));
 vi.mock('./PianoUserContext.jsx', () => ({
-  usePianoUser: () => ({ setCurrentUser: () => {} }),
+  usePianoUser: () => ({ currentUser: 'learner-one', setCurrentUser: () => {} }),
+}));
+vi.mock('./useSchoolGameAccess.js', () => ({
+  default: () => schoolGate,
 }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
 vi.mock('./LiveKeyboard.jsx', () => ({ default: () => null }));
-vi.mock('./PianoTile.jsx', () => ({ default: ({ label }) => createElement('span', null, label) }));
+vi.mock('./PianoTile.jsx', () => ({
+  default: ({ label, blurb, disabled }) => createElement('button', { disabled, title: blurb }, label),
+}));
 vi.mock('../../../lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
 
-// Locks the home-menu tile contract: 10 tiles, the Producer and Games tiles
-// present but disabled (greyed, non-clickable — Producer reachable only via its
-// route; Games turned off at the tile as a household call, still reachable via
-// the MIDI activation combos), and the exercise bank surfaced as "Exercises"
+// Locks the home-menu tile contract: 10 tiles, Producer present but statically
+// disabled (Games is dynamically gated from School completion), and the exercise bank surfaced as "Exercises"
 // (formerly the hard-wired Hanon-only "Training" tile). Every tile carries an
 // icon.
 describe('PIANO_MODES (home menu tiles)', () => {
@@ -53,9 +57,9 @@ describe('PIANO_MODES (home menu tiles)', () => {
     expect(exercises.label).toBe('Exercises');
   });
 
-  it('marks Producer and Games disabled and leaves every other tile enabled', () => {
+  it('marks only Producer statically disabled; Games uses the runtime school gate', () => {
     const disabled = PIANO_MODES.filter((m) => m.disabled).map((m) => m.id);
-    expect(disabled).toEqual(['games', 'producer']);
+    expect(disabled).toEqual(['producer']);
   });
 
   it('uses the expected icons for the new/renamed tiles', () => {
@@ -73,12 +77,31 @@ describe('PIANO_MODES (home menu tiles)', () => {
 // --tile-cols CSS custom property, so the shared grid centers any menu. The home
 // menu has 10 tiles → 5 columns (fewest rows that fit within the 5-col cap).
 describe('PianoMenu (tile grid columns)', () => {
+  beforeEach(() => Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true }));
+
   it('sets --tile-cols from the balanced column count (10 modes → 5)', () => {
     // JSX-free render (this file is a .test.js) — wrap in a router for useNavigate.
     render(createElement(MemoryRouter, null, createElement(PianoMenu)));
     const ul = document.querySelector('.piano-menu__tiles');
     expect(ul).toBeTruthy();
     expect(ul.style.getPropertyValue('--tile-cols')).toBe('5');
+  });
+});
+
+describe('PianoMenu (school completion gate)', () => {
+  beforeEach(() => Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true }));
+
+  it('enables Games after completion', () => {
+    render(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    expect(screen.getByRole('button', { name: 'Games' }).disabled).toBe(false);
+  });
+
+  it('locks Games with an explanation while schoolwork is incomplete', () => {
+    Object.assign(schoolGate, { status: 'ready', state: 'incomplete', unlocked: false });
+    render(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    const games = screen.getByRole('button', { name: 'Games' });
+    expect(games.disabled).toBe(true);
+    expect(games.title).toBe('Finish school to unlock');
   });
 });
 

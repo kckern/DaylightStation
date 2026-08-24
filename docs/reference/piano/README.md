@@ -162,9 +162,13 @@ own data source; the chrome and the live keyboard are the only things they share
 | **Exercises** | Learning workspace and full [exercise-bank](./exercise-bank.md) catalog. Its home resumes the selected learner's next required/enrolled program step or video exit checkpoint; Hanon is a visible 30-step opt-in program with sequential gates and mastery tempos. Browse has URL-addressable musical and per-user progress filters. Detail and run views use real `MusicNotation` engraving, separate wait-for-correct Practice from criterion-bearing Pass challenges, and project progress from the shared attempt ledger. Teacher assignments use the existing PIN-gated Planning console. Replaced the hard-wired Lessons mode; `/piano/lessons` redirects. | Bank content at `data/content/music/`; learning state under per-user and household piano YAML |
 
 Games deserve their own note: they plug in through a registry and can be launched either
-by tapping a tile or by playing a configured chord combination on the keys, so a player can
-jump into a game without leaving the instrument. Their engines and rules are documented
-separately in [piano-games.md](./piano-games.md).
+by tapping a tile or by playing a configured chord combination on the keys. Both entrances
+share the School completion gate: the active player unlocks Games after `complete` or
+`no_work_today`; `incomplete`, a missing identity, or an unavailable completion read stays
+locked with an explanation. The kiosk refreshes the derived state while mounted and when
+the tab becomes visible, so finishing work unlocks the tile without a reload. Guest has no
+School identity and follows the `no_work_today` branch. Their engines and rules are
+documented separately in [piano-games.md](./piano-games.md).
 
 ---
 

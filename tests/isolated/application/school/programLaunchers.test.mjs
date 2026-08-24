@@ -41,7 +41,18 @@ describe('LanguageProgramLauncher', () => {
     const status = await launcher.status({ userId: 'kid1' });
 
     expect(status).toEqual(canned);
-    expect(languageStudyService.todayStatus).toHaveBeenCalledWith({ userId: 'kid1' });
+    expect(languageStudyService.todayStatus).toHaveBeenCalledWith({ userId: 'kid1', corpusId: null });
+  });
+
+  it('status() scopes the read to the configured program instance', async () => {
+    const languageStudyService = { todayStatus: vi.fn().mockReturnValue({ doneToday: false }) };
+    const launcher = new LanguageProgramLauncher({ languageStudyService, donow: { dispatch: vi.fn() } });
+
+    await launcher.status({ userId: 'kid1', programInstance: 'test-spanish' });
+
+    expect(languageStudyService.todayStatus).toHaveBeenCalledWith({
+      userId: 'kid1', corpusId: 'test-spanish',
+    });
   });
 
   it('launch() dispatches the fixed language program target through DoNow, and returns its result', async () => {
@@ -188,6 +199,19 @@ describe('LanguageStudyService.todayStatus', () => {
   it('reports the null triple for a learner with no corpus/progress at all', () => {
     const status = svc.todayStatus({ userId: 'brand-new-kid' });
     expect(status).toEqual({ doneToday: false, progressLabel: null, score: null });
+  });
+
+  it('does not borrow status from a different corpus when one is requested', () => {
+    ds.corpora.set('test-spanish', { ...CORPUS, id: 'test-spanish', label: 'Test Spanish' });
+    svc.setPacing({ userId: 'kckern', corpusId: 'test-korean', dailyLimit: 1 });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'repetition' });
+
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-spanish' })).toEqual({
+      doneToday: false, progressLabel: null, score: null,
+    });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toEqual({
+      doneToday: true, progressLabel: 'Day 1', score: null,
+    });
   });
 
   it('reports doneToday:true / "Course complete" when the corpus was fully retired on a prior day', () => {

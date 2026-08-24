@@ -89,6 +89,21 @@ describe('planDailyAgenda', () => {
     expect(lang.next.unitId).toBe('lang-writing');
   });
 
+  it('scopes launcher status and failure to one program instance', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        entry({ unitId: 'korean', subject: 'language', program: 'language', programInstance: 'korean' }),
+        entry({ unitId: 'spanish', subject: 'language', program: 'language', programInstance: 'spanish', sequence: 2 }),
+      ]),
+      programStatuses: {
+        'language::korean': { error: true },
+        'language::spanish': { doneToday: false, progressLabel: 'Day 4', score: null },
+      },
+    }));
+    expect(sections[0]).toMatchObject({ programUnavailable: true, progressLabel: 'Day 4' });
+    expect(sections[0].next.unitId).toBe('spanish');
+  });
+
   it('next = first in_progress, else first available; all-locked yields the remedy line', () => {
     const { sections } = planDailyAgenda(args({ plan: plan([
       entry({ unitId: 'u2', sequence: 2, status: 'locked', lockReason: 'Finish “Unit One” first',
@@ -180,6 +195,22 @@ describe('obligation', () => {
       ]),
       sessions: [{ sessionId: 's1', unitId: 'elective', state: 'closed', terminal: true,
         outcome: { result: 'passed', at: '2026-07-29T15:00:00Z' }, gradedPercent: 100, updatedAt: '2026-07-29T15:00:00Z' }],
+    }));
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('rule 1: an elective program done today does NOT serve required work', () => {
+    const { sections } = planDailyAgenda(args({
+      plan: plan([
+        entry({ unitId: 'required', subject: 'language' }),
+        entry({
+          unitId: 'elective-language', subject: 'language', sequence: 2,
+          courseId: null, elective: true, program: 'language', programInstance: 'korean',
+        }),
+      ]),
+      programStatuses: {
+        'language::korean': { doneToday: true, progressLabel: 'Day 4', score: null },
+      },
     }));
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });

@@ -24,13 +24,13 @@ import GeoQuizRunner from './geography/GeoQuizRunner.jsx';
 import Icon from './home/icons/Icon.jsx';
 import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadcrumbContext.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
-import GlossikaProgram from './Programs/Glossika/GlossikaProgram.jsx';
+import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
 import LearningContentReader from './catalog/LearningContentReader.jsx';
 import LearningProbeRunner from './probes/LearningProbeRunner.jsx';
-import { languageApi } from './Programs/Glossika/languageApi.js';
+import { languageApi } from './Programs/SentenceLadder/languageApi.js';
 import { schoolApi } from './schoolApi.js';
 import { schoolLog } from './schoolLog.js';
 import { useSchoolLaunch } from './useSchoolLaunch.js';
@@ -249,7 +249,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
   const [pending, setPending] = useState(null); // bank/module launch awaiting a claim
   const [notice, setNotice] = useState(null);
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
-  const [courses, setCourses] = useState([]);     // language courses (Glossika)
+  const [courses, setCourses] = useState([]);     // sentence-ladder language courses
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -674,7 +674,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
             or from a `school.launch` broadcast — looks the same either way. */}
         {/* C4: `section` matters here as much as `active`. A `program` action
             routes through `openSection('lang:<id>')`, which sets SECTION —
-            and GlossikaProgram renders outside the `!lock.locked` wrapper
+            and SentenceLadderProgram renders outside the `!lock.locked` wrapper
             below. Gating on `!active` alone mounted the program with the
             keypad still underneath it. */}
         {lock.locked && !active && !section && (
@@ -817,7 +817,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
             record, and a guest's work is discarded. The program itself shows
             the sign-in prompt rather than drilling into a void. */}
         {courseId && (
-          <GlossikaProgram
+          <SentenceLadderProgram
             userId={currentUser?.id || null}
             corpusId={courseId}
             onSignIn={lock.locked ? goHome : openPicker}

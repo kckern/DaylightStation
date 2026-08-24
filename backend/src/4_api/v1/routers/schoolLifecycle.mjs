@@ -106,6 +106,8 @@ function reply(res, result) {
  * @param {object} [deps.receiptPngRenderer] - `1_rendering`'s PNG receipt
  *   renderer (`createCanvas(document, {tokens})`); the other gate for all
  *   three agenda routes above
+ * @param {object} [deps.getLearnerDayCompletion] - read-only learner-level
+ *   completion projection; gates `GET .../completion`
  * @param {object} [deps.issueDocument]
  * @param {object} [deps.issueComposedWorksheet] - persistent multi-lesson worksheet issuer
  * @param {object} [deps.listPrintableWorksheetSessions] - teacher-safe current paper-session selector
@@ -139,6 +141,7 @@ export function createSchoolLifecycleRouter({
   resolveScanAction = null,
   buildAgenda = null,
   previewAgenda = null,
+  getLearnerDayCompletion = null,
   receiptPngRenderer = null,
   issueDocument = null,
   issueComposedWorksheet = null,
@@ -174,7 +177,7 @@ export function createSchoolLifecycleRouter({
   const router = express.Router();
 
   const wired = Object.entries({
-    resolveScanAction, buildAgenda, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
+    resolveScanAction, buildAgenda, getLearnerDayCompletion, issueDocument, issueComposedWorksheet, dispatchMedia, recordMediaCompletion,
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
   }).filter(([, v]) => v).map(([k]) => k);
   if (!wired.length) {
@@ -297,6 +300,17 @@ export function createSchoolLifecycleRouter({
     // 404 — the route exists, it just cannot answer yet.
     router.get('/learners/:learnerId/agenda/preview', asyncHandler(async (_req, res) => {
       res.status(501).json({ error: 'agenda preview not configured' });
+    }));
+  }
+
+  // --- learner-day completion (read only) ----------------------------------
+  // This is the public read seam for consumers such as the piano kiosk. It
+  // deliberately exposes the three-state value instead of turning it into a
+  // boolean here: each consumer owns whether `no_work_today` counts.
+  if (getLearnerDayCompletion) {
+    router.get('/learners/:learnerId/completion', asyncHandler(async (req, res) => {
+      const result = await getLearnerDayCompletion.execute({ learnerId: req.params.learnerId });
+      res.set('Cache-Control', 'no-store').json(result);
     }));
   }
 
