@@ -27,7 +27,9 @@ $touch-min: 56px;
 
 .lang-program {
   display: flex; flex-direction: column;
-  height: 100%; gap: 0.75rem;
+  box-sizing: border-box;
+  height: 100%; gap: 0.65rem;
+  max-width: 1040px; margin: 0 auto;
   color: var(--school-fg);
 
   &--loading, &--error, &--guest {
@@ -39,22 +41,35 @@ $touch-min: 56px;
 
   // The School shell already renders the course title and a back chevron
   // directly above this. All that belongs here is the day and its two menus.
-  &__header { display: flex; align-items: center; gap: 0.5rem; }
-  &__day { flex: 1; margin: 0; font-size: $body; color: var(--school-muted); }
+  &__header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; min-height: 64px;
+  }
+  &__identity { display: flex; flex-direction: column; gap: 0.1rem; }
+  &__eyebrow {
+    color: var(--school-muted); font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  &__day { margin: 0; font-size: 1.5rem; line-height: 1.1; }
+  &__actions { display: flex; align-items: center; gap: 0.5rem; }
+
+  &__progress-copy {
+    display: flex; justify-content: space-between; align-items: baseline;
+    color: var(--school-muted); font-size: $meta; font-variant-numeric: tabular-nums;
+  }
 
   &__progress {
-    position: relative; height: 24px;
+    position: relative; height: 8px;
     border-radius: 999px; overflow: hidden;
     background: var(--school-surface-2);
   }
   &__progress-bar { height: 100%; background: var(--school-accent); }
-  &__progress-label {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: $meta; color: var(--school-fg);
-  }
 
-  &__tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  &__tabs {
+    display: flex; overflow-x: auto;
+    border: 1px solid var(--school-border); border-radius: $radius;
+    background: var(--school-surface);
+  }
 
   &__notice {
     margin: 0; padding: 0.85rem 1rem; border-radius: $radius;
@@ -63,29 +78,38 @@ $touch-min: 56px;
 
   // min-height: 0 so this is the only scroller — the host body wraps it and
   // two nested overflow:auto containers is the double-scroll trap on touch.
-  &__body { flex: 1; min-height: 0; overflow: auto; }
+  &__body { flex: 1; min-height: 0; overflow: auto; padding-top: 0.25rem; }
 
   &__complete {
+    box-sizing: border-box;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 1rem; min-height: 100%;
+    gap: 1.25rem; min-height: 100%; padding: 2rem;
+    border: 1px solid var(--school-border); border-radius: $radius;
+    background: var(--school-surface); text-align: center;
+    p { max-width: 34rem; margin: 0; font-size: $source; line-height: 1.45; }
   }
 }
 
-// --- tabs: navigation. The ONLY pill in this program. -----------------------
+// --- tabs: a stable mode rail, not a row of decorative pills. ---------------
 .lang-tab {
   position: relative;
-  min-height: $touch-min; padding: 0 1.1rem;
-  border: 1px solid var(--school-border); border-radius: 999px;
-  background: var(--school-surface); color: var(--school-fg);
-  font-size: $body; cursor: pointer;
+  flex: 1 0 max-content; min-width: 9rem;
+  min-height: $touch-min; padding: 0 1rem;
+  border: none; border-right: 1px solid var(--school-border);
+  background: transparent; color: var(--school-muted);
+  font-size: 1rem; cursor: pointer;
+  &:last-child { border-right: none; }
+  &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: -3px; }
 
-  &.is-active { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; font-weight: 700; }
-  &__badge {
-    margin-left: 0.5rem; padding: 0.1rem 0.45rem;
-    border-radius: 999px; background: var(--school-surface-2);
-    font-size: $meta;
+  &.is-active {
+    background: var(--school-surface-2); color: var(--school-fg); font-weight: 700;
+    box-shadow: inset 0 -4px 0 var(--school-accent);
   }
-  &.is-active &__badge { background: rgba(0, 0, 0, 0.2); }
+  &__badge {
+    margin-left: 0.45rem; color: var(--school-muted);
+    font-size: $meta; font-variant-numeric: tabular-nums;
+  }
+  &.is-active &__badge { color: var(--school-accent); }
 }
 
 .lang-btn {
@@ -95,7 +119,9 @@ $touch-min: 56px;
   font-size: $body; cursor: pointer;
 
   &--primary { background: var(--school-accent); color: var(--school-accent-ink); border-color: transparent; font-weight: 700; }
+  &--quiet { min-height: $touch-min; background: transparent; color: var(--school-muted); }
   &--recording { background: var(--school-danger); color: #fff; border-color: transparent; font-weight: 700; }
+  &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   &:disabled { opacity: 0.5; cursor: default; }
 }
 
@@ -108,6 +134,7 @@ $touch-min: 56px;
     border: 1px solid var(--school-border); border-radius: $radius;
     background: var(--school-surface-2); color: var(--school-fg);
     font-size: $meta; cursor: pointer;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: 2px; }
   }
   // Covers the viewport so any tap outside closes the menu. On a device with
   // no Escape key this is the only dismissal there is.
@@ -133,6 +160,7 @@ $touch-min: 56px;
     border: none; border-radius: 8px;
     background: transparent; color: var(--school-fg);
     font-size: $body; text-align: center; cursor: pointer;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: -3px; }
 
     &.is-selected { background: var(--school-accent); color: var(--school-accent-ink); font-weight: 700; }
   }
@@ -155,6 +183,7 @@ $touch-min: 56px;
     border: none; border-radius: 8px;
     background: transparent; color: var(--school-fg);
     font-size: $body; text-align: left; cursor: pointer;
+    &:focus-visible { outline: 3px solid var(--school-accent); outline-offset: -3px; }
 
     &.is-on { background: var(--school-surface); }
   }
@@ -174,10 +203,14 @@ $touch-min: 56px;
 // --- rungs ------------------------------------------------------------------
 .lang-rung {
   display: flex; flex-direction: column; align-items: center;
+  box-sizing: border-box;
   // Centred vertically so the drill does not sit in a different place than the
   // day-complete state, which made the screen appear to jump between them.
   justify-content: center;
-  min-height: 100%; gap: 1rem; padding: 1.5rem 1rem; text-align: center;
+  width: 100%; min-height: 100%; gap: 1.15rem;
+  padding: clamp(2rem, 6vh, 4rem) clamp(1rem, 5vw, 4rem);
+  border: 1px solid var(--school-border); border-radius: $radius;
+  background: var(--school-surface); text-align: center;
 
   // The two sentences are one unit; controls are another. Uniform spacing is
   // spacing as default rather than as a decision.
@@ -218,8 +251,14 @@ $touch-min: 56px;
 // --- review -----------------------------------------------------------------
 .lang-review {
   display: flex; flex-direction: column; gap: 1.5rem;
+  max-width: 880px; margin: 0 auto; padding: 0.75rem 0;
 
-  &__status { color: var(--school-muted); text-align: center; padding: 2rem 0; }
+  &__status {
+    display: flex; flex-direction: column; align-items: center; gap: 1rem;
+    color: var(--school-muted); text-align: center; padding: 2rem 0;
+    p { margin: 0; }
+  }
+  &__status-inline { font-size: $meta; color: var(--school-muted); }
   &__day-title { margin: 0 0 0.5rem; font-size: $body; color: var(--school-muted); }
   &__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 
@@ -232,6 +271,19 @@ $touch-min: 56px;
   &__sentence { font-size: $body; }
   &__score { font-size: $meta; color: var(--school-fg); }
   &__missing { font-size: $meta; color: var(--school-warn); }
+}
+
+@media (max-width: 700px) {
+  .lang-program {
+    &__header { align-items: flex-start; }
+    &__actions { flex-wrap: wrap; justify-content: flex-end; }
+  }
+  .lang-tab { flex-basis: 8.5rem; min-width: 8.5rem; }
+  .lang-rung {
+    justify-content: flex-start; min-height: 100%;
+    padding: 2rem 1rem;
+    &__target { font-size: 1.75rem; }
+  }
 }
 
 // The diff is the point of the review surface, so it is weighted for the

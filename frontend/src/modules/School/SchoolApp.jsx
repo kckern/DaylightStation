@@ -828,7 +828,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             is NO way back to the keypad — the never-dead-end rule, broken by
             the one action that opens a section rather than a runner. Runners
             carry their own onExit; a section does not. */}
-        {lock.locked && section && !active && (
+        {lock.locked && section && !active && !courseId && (
           <button
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
@@ -849,6 +849,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             corpusId={courseId}
             studyGrant={studyLaunch.studyGrant}
             onSignIn={lock.locked ? goHome : openPicker}
+            onExit={lock.locked ? goHome : null}
             locked={lock.locked}
           />
         )}

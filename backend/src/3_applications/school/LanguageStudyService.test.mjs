@@ -6,7 +6,7 @@
  * stored, that a guest cannot produce records, and that rollover cannot be
  * rushed by a client.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LanguageStudyService } from './LanguageStudyService.mjs';
 import { GuestForbiddenError } from '#domains/school/errors.mjs';
 import { ValidationError, EntityNotFoundError } from '#domains/core/errors/index.mjs';
@@ -20,6 +20,7 @@ const CORPUS = {
     { seq: 1, text: { EN: "The weather's nice today.", KR: '오늘 날씨가 좋아요.' } },
     { seq: 2, text: { EN: "I'm not rich.", KR: '저는 부자가 아니예요.' } },
     { seq: 3, text: { EN: "This bag's heavy.", KR: '이 가방은 무거워요.' } },
+    { seq: 4, text: { EN: 'Please sit here.', KR: '여기 앉으세요.' } },
   ],
 };
 
@@ -65,12 +66,13 @@ class FakeDatastore {
 
 const AT = Date.parse('2026-07-21T10:00:00Z');
 
-function makeService(ds, now = AT) {
+function makeService(ds, now = AT, overrides = {}) {
   return new LanguageStudyService({
     datastore: ds,
     now: () => (typeof now === 'function' ? now() : now),
     timezone: 'UTC',
     logger: { warn() {}, info() {}, debug() {} },
+    ...overrides,
   });
 }
 
@@ -92,7 +94,7 @@ describe('courses', () => {
   it('lists a valid corpus with its role binding', () => {
     const svc = makeService(new FakeDatastore());
     expect(svc.listCourses()).toEqual([
-      { id: 'test-korean', label: 'Test Korean', languages: { source: 'EN', target: 'KR' }, size: 3 },
+      { id: 'test-korean', label: 'Test Korean', languages: { source: 'EN', target: 'KR' }, size: 4 },
     ]);
   });
 
@@ -273,6 +275,59 @@ describe('saveRecording', () => {
       buffer: Buffer.from('audio'), capabilities: EQUIPPED,
     })).toThrow(/outstanding/);
     expect(ds.written).toEqual([]);
+  });
+});
+
+describe('School lifecycle completion emission', () => {
+  it('accepts all four due modes and emits canonical completion after the final step', () => {
+    const ds = new FakeDatastore();
+    const eventBus = { publish: vi.fn() };
+    const enrollment = {
+      programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 4,
+      rungs: ['repetition', 'dictation', 'recording', 'interpretation'],
+    };
+    const svc = makeService(ds, AT, {
+      readProgramEnrollment: () => enrollment,
+      eventBus,
+    });
+
+    ds.writeProgress('kckern', 'test-korean', {
+      corpus: 'test-korean', day: 4, daily_limit: 1, last_activity: null,
+    });
+    for (const event of [
+      { day: 3, seq: 1, rung: 'repetition' },
+      { day: 2, seq: 2, rung: 'repetition' },
+      { day: 3, seq: 2, rung: 'dictation', given: 'x', expected: 'x', accuracy: 1 },
+      { day: 1, seq: 3, rung: 'repetition' },
+      { day: 2, seq: 3, rung: 'dictation', given: 'x', expected: 'x', accuracy: 1 },
+      { day: 3, seq: 3, rung: 'recording' },
+    ]) {
+      ds.appendEvent('kckern', 'test-korean', {
+        ...event, at: new Date(AT - (4 - event.day) * 86_400_000).toISOString(), attributedTo: 'kckern',
+      });
+    }
+
+    const initial = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(initial.queue.filter((entry) => !entry.done).map(({ seq, rung }) => ({ seq, rung }))).toEqual([
+      { seq: 4, rung: 'repetition' },
+      { seq: 1, rung: 'dictation' },
+      { seq: 2, rung: 'recording' },
+      { seq: 3, rung: 'interpretation' },
+    ]);
+
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 4, rung: 'repetition', capabilities: EQUIPPED });
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 1, rung: 'dictation', given: '오늘 날씨가 좋아요.', capabilities: EQUIPPED });
+    svc.saveRecording({ userId: 'kckern', corpusId: 'test-korean', seq: 2, buffer: Buffer.from('audio'), capabilities: EQUIPPED });
+    expect(eventBus.publish).not.toHaveBeenCalled();
+    svc.logAttempt({ userId: 'kckern', corpusId: 'test-korean', seq: 3, rung: 'interpretation', given: "This bag's heavy.", capabilities: EQUIPPED });
+
+    expect(eventBus.publish).toHaveBeenCalledTimes(1);
+    expect(eventBus.publish).toHaveBeenCalledWith('school.language.day-complete', {
+      learnerId: 'kckern', corpusId: 'test-korean', day: 4, programId: 'sentence-ladder',
+    });
+    expect(svc.todayStatus({ userId: 'kckern', corpusId: 'test-korean' })).toMatchObject({
+      doneToday: true, progressLabel: 'Day 4', score: null,
+    });
   });
 });
 

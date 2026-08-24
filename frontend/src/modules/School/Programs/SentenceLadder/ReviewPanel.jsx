@@ -26,16 +26,23 @@ function DiffLine({ expected, given }) {
 
 function RecordingPlayback({ userId, corpusId, seq, studyGrant }) {
   const [src, setSrc] = useState(null);
+  const [status, setStatus] = useState('loading');
   useEffect(() => {
     let alive = true;
     let objectUrl = null;
     languageApi.recordingBlob(userId, corpusId, seq, studyGrant).then(({ ok, data }) => {
-      if (!alive || !ok || !data) return;
+      if (!alive) return;
+      if (!ok || !data) {
+        setStatus('error');
+        return;
+      }
       objectUrl = URL.createObjectURL(data);
       setSrc(objectUrl);
+      setStatus('ready');
     });
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [userId, corpusId, seq, studyGrant]);
+  if (status === 'loading') return <span className="lang-review__status-inline">Loading recording…</span>;
   return src ? <audio controls preload="none" src={src} /> : <span className="lang-review__missing">audio unavailable</span>;
 }
 
@@ -80,10 +87,12 @@ function Item({ item, userId, corpusId, languages, studyGrant }) {
 export default function ReviewPanel({ userId, corpusId, studyGrant }) {
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
     (async () => {
+      setStatus('loading');
       const { ok, data } = await languageApi.history(userId, corpusId, studyGrant);
       if (!alive) return;
       if (!ok) {
@@ -95,10 +104,19 @@ export default function ReviewPanel({ userId, corpusId, studyGrant }) {
       setStatus(data.days.length ? 'ready' : 'empty');
     })();
     return () => { alive = false; };
-  }, [userId, corpusId, studyGrant]);
+  }, [userId, corpusId, studyGrant, reloadKey]);
 
   if (status === 'loading') return <p className="lang-review__status">Loading history…</p>;
-  if (status === 'error') return <p className="lang-review__status">Could not load history.</p>;
+  if (status === 'error') {
+    return (
+      <div className="lang-review__status">
+        <p>Could not load history.</p>
+        <button type="button" className="lang-btn" onClick={() => setReloadKey((key) => key + 1)}>
+          Try again
+        </button>
+      </div>
+    );
+  }
   if (status === 'empty') return <p className="lang-review__status">Nothing studied yet.</p>;
 
   const { languages } = history.corpus;

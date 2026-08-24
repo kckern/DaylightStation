@@ -77,6 +77,16 @@ export default function RepetitionRung({
     return () => window.clearTimeout(id);
   }, [autoStart, halted, phase, start]);
 
+  // A rejected play promise ends the sequence without its normal completion
+  // callback. Return to a control the learner can actually use instead of
+  // leaving the screen saying “tap Play” while offering only Stop.
+  useEffect(() => {
+    if (!blocked || phase !== 'playing') return;
+    stop();
+    setHalted(true);
+    setPhase('idle');
+  }, [blocked, phase, stop]);
+
   const sourceLang = entry.prompt?.[0]?.language;
   const targetLang = entry.prompt?.find((p) => p.role === 'target')?.language;
 

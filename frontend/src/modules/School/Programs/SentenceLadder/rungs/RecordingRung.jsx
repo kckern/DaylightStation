@@ -47,6 +47,7 @@ export default function RecordingRung({ entry, audioUrl, onComplete, saving, onD
         // session — on a shared kiosk another app may need it.
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
+        recorderRef.current = null;
         languageLog.capture('stop', { seq: entry.seq, bytes: blob.size });
       };
 
@@ -54,6 +55,11 @@ export default function RecordingRung({ entry, audioUrl, onComplete, saving, onD
       setPhase('recording');
       languageLog.capture('start', { seq: entry.seq });
     } catch (err) {
+      // MediaRecorder construction/start can fail after getUserMedia succeeds.
+      // Release that already-open stream on every failure path.
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      recorderRef.current = null;
       languageLog.captureError('denied', { seq: entry.seq, error: err?.message });
       // The old copy told the learner to "skip this one" — and no skip existed
       // anywhere in this component, so a denied mic stranded the recording
@@ -85,6 +91,12 @@ export default function RecordingRung({ entry, audioUrl, onComplete, saving, onD
     setPhase('prompting');
     playSequence(clipsFor(entry, audioUrl));
   }, [entry, audioUrl, playSequence]);
+
+  useEffect(() => {
+    if (!blocked || phase !== 'prompting') return;
+    stop();
+    setPhase('idle');
+  }, [blocked, phase, stop]);
 
   const stopRecording = useCallback(() => {
     if (recorderRef.current?.state === 'recording') recorderRef.current.stop();

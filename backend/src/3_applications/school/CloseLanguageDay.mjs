@@ -1,5 +1,9 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 
+const canonicalProgramId = (programId) => (
+  programId === 'language' ? 'sentence-ladder' : programId
+);
+
 /** Settles a completed language study day into the School session ledger. */
 export class CloseLanguageDay {
   #assignments; #curriculum; #sessions; #close; #clock; #logger; #locks = new Map();
@@ -38,11 +42,12 @@ export class CloseLanguageDay {
   }
 
   async #settle({ learnerId, corpusId, day, programId, sessionId }) {
+    const canonicalId = canonicalProgramId(programId);
     const assignment = await this.#assignments.get(learnerId);
     const assigned = (assignment?.units ?? []).map((entry) => typeof entry === 'string' ? { unitId: entry } : entry);
     const units = await this.#curriculum.listUnits();
     const unit = units.find((candidate) => assigned.some((entry) => entry.unitId === candidate.unitId)
-      && candidate.program === programId
+      && canonicalProgramId(candidate.program) === canonicalId
       && (candidate.programInstance ?? corpusId) === corpusId);
     if (!unit) {
       this.#logger.info?.('school.language.close-unassigned', { learnerId, corpusId, day, programId });
@@ -60,7 +65,9 @@ export class CloseLanguageDay {
         await this.#sessions.appendEvent(sessionId, event);
       }
     }
-    const policy = (assignment?.programs ?? []).find((entry) => entry?.programId === programId && entry?.corpusId === corpusId);
+    const policy = (assignment?.programs ?? []).find((entry) => (
+      canonicalProgramId(entry?.programId) === canonicalId && entry?.corpusId === corpusId
+    ));
     return this.#close.execute({
       sessionId, honorClose: true,
       rewardOverride: policy?.reward ?? null,

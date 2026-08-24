@@ -29,7 +29,9 @@ const RUNG_LABELS = {
  * Requires an identified learner. A guest produces no records, so the program
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
-export default function SentenceLadderProgram({ userId, corpusId, studyGrant, onSignIn, locked = false }) {
+export default function SentenceLadderProgram({
+  userId, corpusId, studyGrant, onSignIn, onExit = null, locked = false,
+}) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
   const [activeRung, setActiveRung] = useState(null);
@@ -41,6 +43,7 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
   const [armed, setArmed] = useState(false);
   const loadGeneration = useRef(0);
   const loadController = useRef(null);
+  const progressEmission = useRef(null);
 
   const languages = day?.corpus?.languages;
   const {
@@ -87,6 +90,26 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
     }
     if (capsReady) load();
   }, [capsReady, load]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!day) return;
+    const current = day.summary || { total: 0, done: 0 };
+    const settled = current.done === current.total;
+    const empty = current.total === 0;
+    const blocked = settled && (day.missingCreditRungs?.length ?? 0) > 0;
+    const key = `${day.day}:${current.done}:${current.total}:${empty}:${blocked}`;
+    if (progressEmission.current === key) return;
+    progressEmission.current = key;
+    languageLog.program('progress', {
+      corpus: corpusId,
+      day: day.day,
+      done: current.done,
+      total: current.total,
+      complete: settled && !blocked,
+      empty,
+      blockedByDevice: blocked,
+    });
+  }, [corpusId, day]);
 
   // Group the queue by rung, in the order the server's chain reports. Rungs
   // absent from the chain never appear, so a blocked rung cannot be selected.
@@ -201,8 +224,13 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
 
   const summary = day?.summary || { total: 0, done: 0 };
   const percent = summary.total ? Math.round((100 * summary.done) / summary.total) : 0;
-  const allDone = summary.total > 0 && summary.done === summary.total;
-  const blockedByDevice = allDone && (day?.missingCreditRungs?.length ?? 0) > 0;
+  const noSteps = status === 'empty' || summary.total === 0;
+  const settled = summary.done === summary.total;
+  const allDone = summary.total > 0 && settled;
+  const missingCreditRungs = day?.missingCreditRungs ?? [];
+  const blockedByDevice = settled && missingCreditRungs.length > 0;
+  const sessionFinished = settled && !blockedByDevice;
+  const exitHandler = onExit ?? onSignIn;
 
   return (
     <div className="lang-program">
@@ -211,27 +239,52 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
           second chevron with the same destination directly beneath the
           first. */}
       <header className="lang-program__header">
-        <h2 className="lang-program__day">Day {day?.day}</h2>
-        {!locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
-        {!locked && <DeviceSettings
-          languages={languages}
-          capabilities={capabilities}
-          onToggleLanguage={toggleLanguage}
-          onToggleMic={toggleMicrophone}
-        />}
+        <div className="lang-program__identity">
+          <span className="lang-program__eyebrow">Today&apos;s session</span>
+          <h2 className="lang-program__day">Day {day?.day}</h2>
+        </div>
+        <div className="lang-program__actions">
+          {!locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
+          {!locked && <DeviceSettings
+            languages={languages}
+            capabilities={capabilities}
+            onToggleLanguage={toggleLanguage}
+            onToggleMic={toggleMicrophone}
+          />}
+          {locked && onExit && !sessionFinished && (
+            <button
+              type="button"
+              className="lang-btn lang-btn--quiet"
+              data-testid="selfservice-section-exit"
+              onClick={onExit}
+            >
+              Leave for now
+            </button>
+          )}
+        </div>
       </header>
 
-      <div className="lang-program__progress" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-        <div className="lang-program__progress-bar" style={{ width: `${percent}%` }} />
-        <span className="lang-program__progress-label">{summary.done} / {summary.total}</span>
+      <div className="lang-program__progress-copy">
+        <span>{summary.done} of {summary.total} steps</span>
+        <span>{Math.max(0, summary.total - summary.done)} left</span>
       </div>
-      {day?.missingCreditRungs?.length > 0 && (
+      <div
+        className="lang-program__progress"
+        role="progressbar"
+        aria-label={`${summary.done} of ${summary.total} session steps complete`}
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="lang-program__progress-bar" style={{ width: `${percent}%` }} />
+      </div>
+      {missingCreditRungs.length > 0 && !settled && (
         <p className="lang-program__notice" role="alert">
-          Finish {day.missingCreditRungs.map((rung) => RUNG_LABELS[rung] || rung).join(' and ')} on a device with the needed input.
+          Finish {missingCreditRungs.map((rung) => RUNG_LABELS[rung] || rung).join(' and ')} on a device with the needed input.
         </p>
       )}
 
-      <nav className="lang-program__tabs">
+      <nav className="lang-program__tabs" aria-label="Session modes">
         {groups.map((g) => {
           const left = g.items.filter((i) => !i.done).length;
           return (
@@ -239,6 +292,7 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
               key={g.rung}
               type="button"
               className={`lang-tab${g.rung === activeRung && tab === 'study' ? ' is-active' : ''}`}
+              aria-pressed={g.rung === activeRung && tab === 'study'}
               onClick={() => { setTab('study'); setActiveRung(g.rung); }}
             >
               {g.label}
@@ -249,6 +303,7 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
         <button
           type="button"
           className={`lang-tab${tab === 'review' ? ' is-active' : ''}`}
+          aria-pressed={tab === 'review'}
           onClick={() => setTab('review')}
         >
           Review
@@ -260,16 +315,25 @@ export default function SentenceLadderProgram({ userId, corpusId, studyGrant, on
       <main className="lang-program__body">
         {tab === 'review' && <ReviewPanel userId={userId} corpusId={corpusId} studyGrant={studyGrant} />}
 
-      {tab === 'study' && allDone && (
+        {tab === 'study' && (allDone || noSteps) && (
           <div className="lang-program__complete">
             {blockedByDevice ? (
-              <p>Some required rungs need a different device before the day can be credited.</p>
-            ) : <p>Today&apos;s set is done — Day {day?.day}.</p>}
-            {!blockedByDevice && (locked ? (
-              <button type="button" className="lang-btn lang-btn--primary" onClick={onSignIn}>Done</button>
+              <p role="status">
+                Continue on a device that can complete {missingCreditRungs.map((rung) => RUNG_LABELS[rung] || rung).join(' and ')} before today can be credited.
+              </p>
+            ) : noSteps ? (
+              <p role="status">Nothing is due in this course today.</p>
             ) : (
+              <p role="status">
+                Day {day?.day} complete. All {summary.total} steps are saved and count toward today&apos;s School progress.
+              </p>
+            )}
+            {sessionFinished && locked && exitHandler && (
+              <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
+            )}
+            {allDone && !blockedByDevice && !locked && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
-            ))}
+            )}
           </div>
         )}
 
