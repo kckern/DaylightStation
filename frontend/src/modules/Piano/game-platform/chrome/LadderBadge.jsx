@@ -10,9 +10,8 @@ import './gameChrome.scss';
  * and the wins AS a tally: the shapes carry what the sentences did, and the
  * sentences stay on as the accessible name rather than as the primary read.
  *
- * `portrait` is a slot rather than a hard dependency — Chess has character art
- * and a roster to open, Checkers and Connect Four have a name and nothing else,
- * and neither arrangement should have to reimplement the ladder to get it.
+ * `portrait` is a slot rather than a hard dependency. Each board game supplies
+ * its own character pack, while this component owns the common ladder shape.
  *
  * `level` is 1-based: level 1 is the first rung, level `levels` is the top.
  */

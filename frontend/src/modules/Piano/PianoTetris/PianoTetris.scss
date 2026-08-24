@@ -64,7 +64,7 @@
   }
 
   &__stat-label {
-    font-size: 0.5rem;
+    font-size: var(--t-cap, 0.85rem);
     font-weight: 700;
     color: var(--pg-ivory-dim);
     letter-spacing: 0.15em;

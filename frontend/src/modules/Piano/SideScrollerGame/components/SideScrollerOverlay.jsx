@@ -13,7 +13,7 @@ export function SideScrollerOverlay({ phase, countdown, score, level, levelName 
 
   if (phase === 'LEVEL_UP') {
     return (
-      <div className="scroller-overlay">
+      <div className="scroller-overlay" role="status" aria-live="polite">
         <div className="scroller-overlay__level-up">
           <h2 className="scroller-overlay__title">LEVEL UP!</h2>
           <p className="scroller-overlay__level-name">{levelName}</p>
@@ -24,7 +24,7 @@ export function SideScrollerOverlay({ phase, countdown, score, level, levelName 
 
   if (phase === 'GAME_OVER') {
     return (
-      <div className="scroller-overlay">
+      <div className="scroller-overlay" role="status" aria-live="polite">
         <div className="scroller-overlay__gameover">
           <h2 className="scroller-overlay__title">GAME OVER</h2>
           <div className="scroller-overlay__stats">

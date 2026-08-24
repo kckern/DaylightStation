@@ -168,7 +168,7 @@ export function rotatePiece(board, piece, direction) {
  */
 export function getGhostPosition(board, piece) {
   let ghost = { ...piece };
-  while (true) {
+  for (;;) {
     const next = { ...ghost, y: ghost.y + 1 };
     if (!isValidPosition(board, next)) return ghost;
     ghost = next;

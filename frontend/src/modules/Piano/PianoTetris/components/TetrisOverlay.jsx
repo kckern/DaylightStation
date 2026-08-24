@@ -16,7 +16,7 @@ export function TetrisOverlay({ phase, countdown, score, linesCleared, level }) 
 
   if (phase === 'GAME_OVER') {
     return (
-      <div className="tetris-overlay">
+      <div className="tetris-overlay" role="status" aria-live="polite">
         <div className="tetris-overlay__gameover">
           <h2 className="tetris-overlay__title">GAME OVER</h2>
           <div className="tetris-overlay__stats">

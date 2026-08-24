@@ -46,7 +46,7 @@
     position: absolute;
     bottom: -2px;
     right: -4px;
-    font-size: 0.5rem;
+    font-size: var(--t-cap, 0.85rem);
     font-weight: 800;
     color: rgba(180, 120, 0, 0.9);
     background: rgba(255, 255, 255, 0.8);
@@ -112,11 +112,4 @@
     }
   }
 
-  &__label {
-    font-size: 0.6rem;
-    color: rgba(0, 0, 0, 0.4);
-    letter-spacing: 0.05em;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
 }

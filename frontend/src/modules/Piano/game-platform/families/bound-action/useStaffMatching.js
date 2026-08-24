@@ -308,7 +308,7 @@ export function useStaffMatching(activeNotes, targets, onAction, enabled = true)
     }
 
     setMatchedActions(nextMatched);
-  }, [activeNotes, targets, enabled, clearActionTimers]);
+  }, [activeNotes, targets, enabled, clearActionTimers, logger]);
 
   // Cleanup all timers on unmount
   useEffect(() => {

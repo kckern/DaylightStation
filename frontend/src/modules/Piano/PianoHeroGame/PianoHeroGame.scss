@@ -96,6 +96,10 @@
     border-bottom: 1px solid rgba(255,255,255,.1);
   }
   &__songs {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
     min-height: 46px;
     border: 1px solid rgba(255,255,255,.2);
     border-radius: 12px;
@@ -160,7 +164,7 @@
     font-weight: 800;
     letter-spacing: .02em;
 
-    span { font-size: 22px; line-height: 1; }
+    .piano-icon { font-size: 20px; line-height: 1; }
     &.is-on {
       color: var(--hero-hit-pale);
       border-color: color-mix(in srgb, var(--pg-brass-fill) 70%, transparent);
@@ -471,6 +475,7 @@
   }
   &--complete h2 { color: var(--hero-hit); font-size: 68px; }
   &__actions { display: flex; gap: 12px; margin-top: 22px; }
+  &__status { margin: 0.75rem 0 -0.75rem; }
   &__actions button.is-secondary { color: var(--hero-spark); background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.2); }
 }
 

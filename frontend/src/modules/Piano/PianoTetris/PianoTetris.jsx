@@ -80,7 +80,7 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
       className="piano-tetris"
       instrumentClassName="piano-tetris__keyboard"
       instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
-      overlay={<TetrisOverlay phase={game.phase} countdown={game.countdown} score={game.score} linesCleared={game.linesCleared} level={game.level} />}
+      overlay={<TetrisOverlay phase={game.phase} countdown={game.countdown} score={game.score} linesCleared={game.linesCleared} level={game.level + 1} />}
     >
       {/* Play area */}
       <div className="piano-tetris__play-area">

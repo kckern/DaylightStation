@@ -59,6 +59,7 @@ describe('Games mode', () => {
     const tile = screen.getByText('Battle Stadium').closest('button');
     expect(tile.disabled).toBe(true);
     expect(tile.className).toContain('is-disabled');
+    expect(tile.textContent).toContain('Preview');
     for (const label of ['Tetris', 'Piano Chess', 'Flashcards']) {
       expect(screen.getByText(label).closest('button').disabled).toBe(false);
     }

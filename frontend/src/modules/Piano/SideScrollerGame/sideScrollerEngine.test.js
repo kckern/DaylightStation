@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   TOTAL_HEALTH,
   GROUND_Y,
@@ -157,22 +157,7 @@ describe('tickWorld', () => {
   });
 
   it('marks obstacle as dodged when its right edge passes PLAYER_X', () => {
-    const obstacleWidth = 0.05;
-    // Place obstacle so that its right edge is just past PLAYER_X after tick
-    const startX = PLAYER_X; // right edge = startX + width = 0.15 + 0.05 = 0.20 > PLAYER_X
-    let world = {
-      ...createInitialWorld(),
-      obstacles: [
-        { type: OBSTACLE_LOW, x: startX, y: 0.65, width: obstacleWidth, height: 0.10, hit: false, dodged: false },
-      ],
-    };
-    // After a tick, obstacle moves left. With scrollSpeed=10, dt=1: shift = 10*0.08*1 = 0.8
-    // newX = 0.15 - 0.8 = -0.65, right edge = -0.65 + 0.05 = -0.60, which is < PLAYER_X
-    const ticked = tickWorld(world, 1, 10);
-    // The obstacle was removed (past left edge) or dodged
-    // Actually it might be removed since x + width < 0. Let's use smaller dt.
-    // Let's use precise placement instead.
-    let world2 = {
+    const world = {
       ...createInitialWorld(),
       obstacles: [
         { type: OBSTACLE_LOW, x: 0.26, y: 0.65, width: 0.04, height: 0.10, hit: false, dodged: false },
@@ -181,7 +166,7 @@ describe('tickWorld', () => {
     // right edge = 0.26 + 0.04 = 0.30 > PLAYER_X(0.25) before tick
     // After tick: shift = 1 * 0.08 * 1 = 0.08, newX = 0.26 - 0.08 = 0.18
     // right edge = 0.18 + 0.04 = 0.22 < PLAYER_X(0.25)
-    const ticked2 = tickWorld(world2, 1, 1);
+    const ticked2 = tickWorld(world, 1, 1);
     expect(ticked2.obstacles[0].dodged).toBe(true);
     expect(ticked2.dodgeCount).toBe(1);
   });

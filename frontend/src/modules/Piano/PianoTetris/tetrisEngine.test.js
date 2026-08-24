@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  PIECES,
   PIECE_TYPES,
   BOARD_ROWS,
   BOARD_COLS,
-  LINE_SCORES,
   createBoard,
   getPieceCells,
   isValidPosition,

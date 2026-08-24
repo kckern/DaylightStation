@@ -67,6 +67,10 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
     setScreenFlash(false);
   }, [game.wrongNotes]);
 
+  const levelProgressPct = game.levelProgress?.pointsNeeded > 0
+    ? Math.min(100, (game.levelProgress.pointsEarned / game.levelProgress.pointsNeeded) * 100)
+    : 0;
+
   return (
     <PianoGameHost
       gameId="space-invaders"
@@ -105,9 +109,16 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
             <div className="space-invaders-game__level-info">
               <span className="space-invaders-game__level-name">{game.currentLevel.name}</span>
               {game.levelProgress && (
-                <div className="space-invaders-game__progress-bar">
+                <div
+                  className="space-invaders-game__progress-bar"
+                  role="progressbar"
+                  aria-label="Level progress"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-valuenow={Math.round(levelProgressPct)}
+                >
                   <div className="space-invaders-game__progress-fill"
-                    style={{ width: `${Math.min(100, (game.levelProgress.pointsEarned / game.levelProgress.pointsNeeded) * 100)}%` }}
+                    style={{ width: `${levelProgressPct}%` }}
                   />
                 </div>
               )}
@@ -133,7 +144,14 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
           gameMode={game}
         />
         {game.gameState === 'PLAYING' && (
-          <div className="space-invaders-game__life-meter" aria-hidden="true">
+          <div
+            className="space-invaders-game__life-meter"
+            role="meter"
+            aria-label="Health"
+            aria-valuemin="0"
+            aria-valuemax={game.totalHealth}
+            aria-valuenow={Math.max(0, Math.ceil(game.health))}
+          >
             <div className="space-invaders-game__life-frame">
               {Array.from({ length: game.totalHealth }, (_, i) => (
                 <div key={i} className={`space-invaders-game__life-notch${i < Math.ceil(game.health) ? ' space-invaders-game__life-notch--active' : ''}${

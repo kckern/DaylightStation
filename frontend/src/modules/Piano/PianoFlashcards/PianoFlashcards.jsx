@@ -117,7 +117,7 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
   }, [game.cardStatus, activeNotes, game.currentCard]);
 
   // Level label
-  const levelLabel = game.levelConfig?.name ?? `Level ${game.level}`;
+  const levelLabel = game.levelConfig?.name ?? `Level ${game.level + 1}`;
 
   // Progress percentage
   const progressPct = game.scoreNeeded > 0
@@ -148,7 +148,14 @@ export function PianoFlashcards({ activeNotes, gameConfig, onDeactivate, onNoteO
             <div className="piano-flashcards__score-value">{game.score}</div>
             <div className="piano-flashcards__score-label">/ {game.scoreNeeded}</div>
           </div>
-          <div className="piano-flashcards__progress">
+          <div
+            className="piano-flashcards__progress"
+            role="progressbar"
+            aria-label="Training progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={Math.round(progressPct)}
+          >
             <div
               className="piano-flashcards__progress-fill"
               style={{ width: `${progressPct}%` }}

@@ -37,7 +37,6 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, terminal = f
               <span className="stat-label">Perfects</span>
             </div>
           </div>
-          {terminal && <p className="game-overlay__continue">Press any key to play again</p>}
         </div>
       </div>
     );
@@ -59,7 +58,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, terminal = f
               <span className="stat-label">Misses</span>
             </div>
           </div>
-          <p className="game-overlay__continue">Press any key to play again</p>
+          {terminal && <p className="game-overlay__continue">Press any key to play again</p>}
         </div>
       </div>
     );
@@ -74,7 +73,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, terminal = f
       : 0;
 
     return (
-      <div className="game-overlay">
+      <div className="game-overlay" role="status" aria-live="polite">
         <div className="victory">
           <h1>Victory!</h1>
           <div className="victory-stats">
@@ -101,6 +100,7 @@ export function SpaceInvadersOverlay({ gameState, countdown, score, terminal = f
               </div>
             </div>
           </div>
+          <p className="game-overlay__continue">Press any key to play again</p>
         </div>
       </div>
     );

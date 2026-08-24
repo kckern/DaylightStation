@@ -8,10 +8,11 @@ import ChessBoard from '../../Chess/ChessBoard.jsx';
 import { pieceSource } from '../../Chess/pieceAssets.js';
 import PianoGameHost from '../game-platform/host/PianoGameHost.jsx';
 import { thinkTimeFor, useOpponentReply } from '../game-platform/opponent/opponentPacing.js';
-import { GameRail, GameSlot, GameButton, WinTally } from '../game-platform/chrome/index.js';
+import { GameRail, GameSlot, GameButton, GameStatusBar, WinTally } from '../game-platform/chrome/index.js';
 import { resolveAddressing } from '../game-platform/addressing/resolveAddressing.js';
 import { schemeFor } from '../game-platform/addressing/buildScheme.js';
 import GearIcon from '../game-platform/chrome/GearIcon.jsx';
+import Icon from '../ui/icons/Icon.jsx';
 import { useAddressingLadder } from '../game-platform/addressing/useAddressingLadder.js';
 import ChordNamePanel from '../components/ChordNamePanel.jsx';
 import CurrentChordStaff from '../components/CurrentChordStaff.jsx';
@@ -742,7 +743,7 @@ export function PianoChessGame({
       announce(state);
       logger().info('move-played', { san: event.move.san, chords: state.history.at(-1)?.chords });
     } else logger().debug(`chord-${event.type}`, { square });
-  }, []);
+  }, [announce]);
 
   const [rosterOpen, setRosterOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -753,7 +754,7 @@ export function PianoChessGame({
    * `saveChessConfig` is the same deep-merged config write every other setting
    * uses, so a rung earned here lands beside the opponent ladder.
    */
-  const readingLadder = useAddressingLadder({
+  const { startTurn: startReadingTurn, record: recordReading } = useAddressingLadder({
     client: { writeConfig: saveChessConfig },
     gameId: 'chess',
     userId: lockedUser,
@@ -763,7 +764,7 @@ export function PianoChessGame({
 
   // Time-to-address runs from when it became this player's turn.
   const myTurn = !game.status?.game_over && game.status?.turn === playerColor;
-  useEffect(() => { if (myTurn) readingLadder.startTurn(); }, [myTurn]);
+  useEffect(() => { if (myTurn) startReadingTurn(); }, [myTurn, startReadingTurn]);
 
   /**
    * A landed address, counted once per ply.
@@ -780,7 +781,7 @@ export function PianoChessGame({
       return;
     }
     addressedPliesRef.current = game.history.length;
-    readingLadder.record({ ok: true });
+    recordReading({ ok: true });
     // Chess logged errors and nothing else — no record of a move ever landing.
     // A game that stops accepting input looked identical to one nobody touched.
     const last = game.history[game.history.length - 1];
@@ -788,20 +789,20 @@ export function PianoChessGame({
       from: last?.from ?? null, to: last?.to ?? null, san: last?.san ?? null,
       ply: game.history.length, turn: game.turn ?? null,
     });
-  }, [game.history.length]);
+  }, [game.history, game.turn, recordReading]);
 
   const rejection = game.rejection;
 
   // A refused chord is an address that did not land — exactly what accuracy is.
   useEffect(() => {
     if (rejection?.seq === undefined) return;
-    readingLadder.record({ ok: false });
+    recordReading({ ok: false });
     // The reason is the whole point: "why won't it take my move" is otherwise
     // unanswerable from outside the room.
     logger().info('chess.rejected', {
       reason: rejection.reason ?? null, square: rejection.square ?? null, ply: game.history.length,
     });
-  }, [rejection?.seq]);
+  }, [game.history.length, recordReading, rejection]);
   useEffect(() => {
     if (!rejection || !cues.toast) return undefined;
     setToast({ text: REJECTION_MESSAGES[rejection.reason] ?? 'Try another chord.', seq: rejection.seq });
@@ -1177,10 +1178,10 @@ export function PianoChessGame({
   // they defeated its bail-out on identity alone, and all 64 squares reconciled
   // on every note event as a result.
   const fileLabels = useMemo(() => (reading
-    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={midi} midi={midi} clef="treble" />)
+    ? liveScheme.roots.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)
     : liveScheme.roots), [reading, liveScheme]);
   const rankLabels = useMemo(() => (reading
-    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={midi} midi={midi} clef="bass" />)
+    ? liveScheme.qualities.map((midi) => <StaffNoteLabel key={midi} midi={midi} />)
     : liveScheme.qualities.map((quality) => CHORD_QUALITIES[quality]?.label || 'maj')),
   [reading, liveScheme]);
 
@@ -1371,7 +1372,7 @@ export function PianoChessGame({
             that resizes as fingers land drags the eye and, worse, moves the
             board. Fixed rows, fixed rail width, board centred regardless. */}
         <GameRail
-          label="What the game is thinking"
+          label="Move controls"
           className="piano-chess__rail piano-chess__rail--state"
           foot={(
             <>
@@ -1405,11 +1406,11 @@ export function PianoChessGame({
               same tile, because "Put it back" floating on its own asks "put
               WHAT back?" every time the socket is empty. */}
           <GameSlot
-            label="In hand"
+            label={<><Icon name="hand-right" /> Piece</>}
             /* Measured above the tallest state this socket has, not guessed —
                see gameChrome.scss. The rail must not step when a piece is
                picked up. */
-            reserve="8.5rem"
+            reserve="6rem"
             variant={game.origin ? 'active' : null}
             className={`piano-chess__hand${game.origin ? ' piano-chess__hand--holding' : ''}`}
           >
@@ -1425,7 +1426,7 @@ export function PianoChessGame({
               ) : null}
             </div>
             <span className="piano-chess__hand-from">
-              {game.origin ? `from ${game.origin}` : 'Nothing picked up'}
+              {game.origin ? `from ${game.origin}` : <span aria-label="No piece selected">—</span>}
             </span>
           </GameSlot>
 
@@ -1444,7 +1445,7 @@ export function PianoChessGame({
                reservation exists to stop the rail stepping, and a slot that is
                taller than its reservation for four consecutive steps is not
                stepping. */
-            reserve={onboardCopy ? null : '9.75rem'}
+            reserve={onboardCopy ? null : '5.5rem'}
             className="piano-chess__says"
           >
             <ChordReadout
@@ -1456,18 +1457,12 @@ export function PianoChessGame({
               minNotes={minNotes}
               isReading={reading}
             />
-            {/* One instruction at a time. While a step is being taught, the
-                onboarding card IS the instruction — showing the standing prompt
-                as well put two different things to do in one box, and cost the
-                rail the 50px that pushed "Take it back" off its foot. */}
-            {!onboardCopy && <p className="piano-chess__prompt" role="status">{prompt}</p>}
             {onboardCopy && (
               <aside className="chess-onboard" key={onboardStep}>
                 <span className="chess-onboard__step">
                   {`Step ${ONBOARD_ORDER.indexOf(onboardStep) + 1} of ${ONBOARD_ORDER.length}`}
                 </span>
                 <strong className="chess-onboard__title">{onboardCopy.title}</strong>
-                <span className="chess-onboard__body">{onboardCopy.body}</span>
               </aside>
             )}
             {/* The deadline on that sentence, made visible. Keyed on the arming
@@ -1501,7 +1496,6 @@ export function PianoChessGame({
                 id: 'octave',
                 pressed: [0, 12],
                 title: 'Put it back',
-                note: game.origin ? 'the piece in hand' : 'when holding a piece',
                 active: !!game.origin,
                 muted: !game.origin,
               },
@@ -1509,23 +1503,18 @@ export function PianoChessGame({
                 id: 'legal',
                 pressed: [0, 1, 2],
                 title: 'Show moves',
-                note: help.legal ? 'showing' : 'counts as a hint',
                 active: help.legal,
               },
               {
                 id: 'best',
                 pressed: [0, 1, 2, 3],
                 title: 'Best move',
-                note: help.best ? 'showing' : 'counts as help',
                 active: !!help.best,
               },
               {
                 id: 'replay',
                 pressed: [0, 1, 2, 3, 4],
                 title: 'Show that again',
-                // Never charged: it replays what already happened in full view
-                // and tells the player nothing they were not entitled to see.
-                note: replay ? 'replaying' : (game.history.length ? 'free' : 'after a move'),
                 active: !!replay,
                 muted: !game.history.length,
               },
@@ -1544,12 +1533,6 @@ export function PianoChessGame({
               },
             ]}
           />
-
-          {shuffleEachTurn && (
-            <p className={`piano-chess__redeal${justDealt ? ' piano-chess__redeal--fresh' : ''}`} role="status">
-              {justDealt ? 'New chord map — read the edges' : 'Chords move every turn'}
-            </p>
-          )}
         </GameRail>
 
         <ChessBoard
@@ -1702,6 +1685,15 @@ export function PianoChessGame({
           </div>
         </GameRail>
       </div>
+
+      <GameStatusBar
+        className="piano-chess__status"
+        aside={shuffleEachTurn
+          ? (justDealt ? 'New chord map — read the edges' : 'Map changes every turn')
+          : null}
+      >
+        <span className="piano-chess__prompt">{onboardCopy?.body ?? prompt}</span>
+      </GameStatusBar>
 
       {/* The start of the game, given a moment. Same placement as the result
           card — over the board, so the position is never hidden from view. */}

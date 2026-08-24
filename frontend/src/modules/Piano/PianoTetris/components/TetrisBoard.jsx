@@ -36,7 +36,7 @@ export function TetrisBoard({ board, currentPiece, ghostPiece }) {
 
   return (
     <div className="tetris-board-wrapper">
-      <div className="tetris-board">
+      <div className="tetris-board" role="img" aria-label="Tetris board">
         {displayGrid.map((row, r) =>
           row.map((cell, c) => (
             <div

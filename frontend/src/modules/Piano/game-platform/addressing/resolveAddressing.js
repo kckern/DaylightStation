@@ -80,8 +80,9 @@ function rungConfig(ladder, explicit, notes) {
     notes.push(`no addressing rung ${number}`);
     return null;
   }
-  const { rung: _rung, label: _label, ...config } = entry;
-  return config;
+  return Object.fromEntries(
+    Object.entries(entry).filter(([key]) => key !== 'rung' && key !== 'label'),
+  );
 }
 
 /**

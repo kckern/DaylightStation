@@ -58,9 +58,9 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  const levels = gameConfig?.levels ?? [];
-  const timing = gameConfig?.timing ?? {};
-  const scoring = gameConfig?.scoring ?? {};
+  const levels = useMemo(() => gameConfig?.levels ?? [], [gameConfig?.levels]);
+  const timing = useMemo(() => gameConfig?.timing ?? {}, [gameConfig?.timing]);
+  const scoring = useMemo(() => gameConfig?.scoring ?? {}, [gameConfig?.scoring]);
   const laserTravelMs = gameConfig?.laser_travel_ms ?? 250;
 
   // ─── Cleanup helper ─────────────────────────────────────────
@@ -262,7 +262,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     }
 
     lastNoteHistoryLen.current = noteHistory.length;
-  }, [noteHistory.length, gameState.phase, levels, logger]);
+  }, [noteHistory, gameState.phase, levels, logger]);
 
   // ─── Banner Auto-Advance (LEVEL_COMPLETE / LEVEL_FAILED / VICTORY) ─
 
@@ -292,7 +292,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     if (gameState.phase === 'VICTORY') {
       return undefined;
     }
-  }, [gameState.phase, gameState.levelIndex, gameState.score.points, cleanup, startCountdown, logger]);
+  }, [gameState.phase, gameState.failReason, gameState.levelIndex, gameState.score.points, cleanup, startCountdown, logger]);
 
   // Cleanup on unmount
   useEffect(() => cleanup, [cleanup]);
@@ -345,6 +345,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
     score: gameState.score,
     health: gameState.health,
     countdown: gameState.countdown,
+    failReason: gameState.failReason ?? null,
     levelProgress,
     assessment,
     fallDuration: getFallDuration(currentLevel),

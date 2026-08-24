@@ -83,13 +83,20 @@ export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNote
       className="side-scroller"
       instrumentClassName="side-scroller__keyboard"
       instrument={{ activeNotes, startNote, endNote, showLabels: true, targetNotes: keyboardTargets, onNoteOn, onNoteOff }}
-      overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level} levelName={game.levelName} />}
+      overlay={<SideScrollerOverlay phase={game.phase} countdown={game.countdown} score={game.score} level={game.level + 1} levelName={game.levelName} />}
     >
       {/* Play area */}
       <div className="side-scroller__play-area">
         {/* Health bar — far left */}
         {game.phase === 'PLAYING' && (
-          <div className="side-scroller__life-meter" aria-hidden="true">
+          <div
+            className="side-scroller__life-meter"
+            role="meter"
+            aria-label="Health"
+            aria-valuemin="0"
+            aria-valuemax={game.totalHealth}
+            aria-valuenow={Math.max(0, Math.ceil(game.health))}
+          >
             <div className="side-scroller__life-frame">
               {Array.from({ length: game.totalHealth }, (_, i) => (
                 <div key={i} className={[

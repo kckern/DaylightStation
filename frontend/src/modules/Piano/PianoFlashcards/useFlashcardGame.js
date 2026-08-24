@@ -38,7 +38,7 @@ export function useFlashcardGame(activeNotes, flashcardsConfig, currentUser = nu
   const advanceTimerRef = useRef(null);
   const lastCardRef = useRef(null);
 
-  const levels = flashcardsConfig?.levels ?? [];
+  const levels = useMemo(() => flashcardsConfig?.levels ?? [], [flashcardsConfig?.levels]);
   const startLevel = resolveStartLevel(levels, flashcardsConfig?.user_start_levels, currentUser);
   const [state, setState] = useState(() => createInitialState(startLevel));
   const levelConfig = levels[state.level] ?? null;
