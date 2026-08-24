@@ -4,6 +4,17 @@ const SAFE_ID = /^[a-z][a-z0-9-]{0,63}$/;
 const JOURNEY_ID = 'pokemon-practice-journey-v1';
 const POKEMON_ASSET_FACING = new Set(['left', 'right', 'front']);
 
+function validateResolution(owner, resolution, errors) {
+  if (resolution === undefined) return;
+  if (!resolution || typeof resolution !== 'object' || Array.isArray(resolution)) {
+    errors.push(`${owner} resolution must be an object`);
+    return;
+  }
+  if (resolution.effect !== 'score') errors.push(`${owner} resolution.effect must be score`);
+  if (resolution.requires_pass !== undefined && typeof resolution.requires_pass !== 'boolean') errors.push(`${owner} resolution.requires_pass must be boolean`);
+  if (resolution.failure !== undefined && resolution.failure !== 'consume-no-effect') errors.push(`${owner} resolution.failure must be consume-no-effect`);
+}
+
 function validateJourneyDefinition(definition, errors) {
   const journey = definition.journey;
   if (!journey || typeof journey !== 'object') {
@@ -78,6 +89,7 @@ function validateJourneyDefinition(definition, errors) {
         if (index > 0 && threshold >= move.outcomes[index - 1].min_score) errors.push(`journey move ${moveId} outcomes must be strictly descending`);
       }
     }
+    validateResolution(`journey move ${moveId}`, move.resolution, errors);
   }
 }
 
@@ -181,6 +193,7 @@ export function validateDefinition(definition) {
       errors.push(`card ${cardId} challenge timeout_ms must be at least 1000`);
     }
     const outcomes = card.outcomes;
+    validateResolution(`card ${cardId}`, card.resolution, errors);
     if (!Array.isArray(outcomes) || outcomes.length === 0 || outcomes.at(-1)?.min_score !== 0) {
       errors.push(`card ${cardId} outcomes must end at min_score 0`);
     } else {

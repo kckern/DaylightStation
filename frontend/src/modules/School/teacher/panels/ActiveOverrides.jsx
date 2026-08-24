@@ -15,7 +15,14 @@ export default function ActiveOverrides({ kids = [] }) {
   const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'active-overrides', nullAs: 'empty' });
   const attestations = usePanelFetch(() => schoolApi.attestations(), { panel: 'active-attestations', nullAs: 'empty' });
 
-  const overrideRows = Array.isArray(overrides.data) ? overrides.data : [];
+  // The current API returns `{ overrides: { [unitId]: percent|record } }`.
+  // Keep accepting the earlier array projection so mixed-version installs
+  // still show their active policy instead of incorrectly claiming "none".
+  const overrideRows = Array.isArray(overrides.data)
+    ? overrides.data
+    : Object.entries(overrides.data?.overrides ?? {}).map(([unitId, value]) => (
+      typeof value === 'object' && value !== null ? { unitId, ...value } : { unitId, percent: value }
+    ));
   const attestationRows = attestations.data?.entries ?? [];
   const empty = !overrideRows.length && !attestationRows.length;
   const state = overrides.state === 'loading' || attestations.state === 'loading' ? 'loading'

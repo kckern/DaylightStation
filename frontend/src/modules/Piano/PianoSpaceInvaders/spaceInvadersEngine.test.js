@@ -165,4 +165,8 @@ describe('common assessment projection', () => {
     expect(assessment.criteria.cleanliness).toBe(0.8);
     expect(assessment.criteria.placement).toBe(0.9);
   });
+
+  it('creates no musical evidence for native Invaders collisions', () => {
+    expect(assessSpaceInvaders({ perfects: 3, goods: 0, misses: 0, wrong: 0 }, 'invaders')).toBeNull();
+  });
 });

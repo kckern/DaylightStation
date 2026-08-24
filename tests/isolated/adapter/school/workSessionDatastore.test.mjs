@@ -59,6 +59,14 @@ describe('appendEvent', () => {
     expect(stored.seq).toBe(2);
   });
 
+  it('compare-and-appends only when the preview revision is still current', async () => {
+    await ds.appendEvent(SID, created());
+    await expect(ds.appendEvent(SID, issued(), { expectedSeq: 1 })).resolves.toMatchObject({ seq: 2 });
+    await expect(ds.appendEvent(SID, { ...issued(), artifactId: 'doc_2' }, { expectedSeq: 1 }))
+      .rejects.toMatchObject({ code: 'STALE_SAVE' });
+    expect(await ds.readEvents(SID)).toHaveLength(2);
+  });
+
   it('stamps the sessionId so a mislabelled event cannot land in the wrong log', async () => {
     const stored = await ds.appendEvent(SID, { ...created(), sessionId: 'ses_elsewhere' });
     expect(stored.sessionId).toBe(SID);

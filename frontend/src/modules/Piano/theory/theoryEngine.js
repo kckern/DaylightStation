@@ -7,7 +7,7 @@
 // See lessonTypes.js for the catalog these primitives back.
 
 import { Chord, Scale, Interval, Note, Progression } from 'tonal';
-import { classifyHeldNotes } from '../performance/assessmentSession.js';
+import { recognizeHeldSet as classifyHeldNotes } from '../input/recognition.js';
 
 /** MIDI note number → scientific name, e.g. 60 → "C4". */
 export const midiToName = (midi) => Note.fromMidi(midi);

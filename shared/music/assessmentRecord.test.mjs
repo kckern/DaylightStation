@@ -101,6 +101,29 @@ describe('portable advancement evidence', () => {
   });
 });
 
+describe('part and span evidence', () => {
+  it('accepts explainable nested completed evidence', () => {
+    const result = validateAssessment(completed({
+      criteria: { completeness: 1, cleanliness: 0.8 },
+      parts: { rh: { criteria: { completeness: 1, cleanliness: 0.9 }, diagnostics: { expected_notes: 2, wrong_notes: 0 } } },
+      spans: { 'measure:1': { criteria: { completeness: 1, cleanliness: 0.8 }, parts: { rh: { criteria: { completeness: 1 } } }, diagnostics: { expected_notes: 2 } } },
+      rubric: { id: 'learn-v2', version: '2', weights: { completeness: 1, cleanliness: 1 }, part_weights: { rh: 1 } },
+      verdict: { score: 0.8, passed: false, failed_criteria: ['cleanliness'], failed_gates: [] },
+    }));
+    assert.equal(result.valid, true, result.errors.join('; '));
+  });
+
+  it('rejects malformed nested evidence and unnormalized part weights', () => {
+    const result = validateAssessment(completed({
+      parts: { rh: { criteria: { completeness: 4 } } },
+      rubric: { id: 'bad', part_weights: { rh: 1, lh: 1 } },
+      verdict: { score: 0.8, passed: false, failed_criteria: 'cleanliness' },
+    }));
+    assert.equal(result.valid, false);
+    assert.match(result.errors.join(' '), /part_weights|failed_criteria|completeness/);
+  });
+});
+
 describe('re-projection — the reason the vector is kept', () => {
   const vector = { completeness: 1, cleanliness: 0.5, placement: 0.5 };
 

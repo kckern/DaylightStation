@@ -45,6 +45,7 @@ import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.
 import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnchorStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
+import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
 import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrintDocumentRepository.mjs';
@@ -61,6 +62,7 @@ import { GetLearnerDayCompletion } from '#apps/school/GetLearnerDayCompletion.mj
 import { SchoolCompletionBridge } from '#apps/school/SchoolCompletionBridge.mjs';
 import { WorkSessionReporter } from '#apps/school/WorkSessionReporter.mjs';
 import { BuildAgenda } from '#apps/school/usecases/BuildAgenda.mjs';
+import { TeacherAgendaDispatch } from '#apps/school/usecases/TeacherAgendaDispatch.mjs';
 import { ListLearnerSessions } from '#apps/school/usecases/ListLearnerSessions.mjs';
 import { ListPrintableWorksheetSessions } from '#apps/school/usecases/ListPrintableWorksheetSessions.mjs';
 import { makeTeacherGate } from '#apps/school/TeacherGate.mjs';
@@ -576,6 +578,9 @@ export async function createSchoolLifecycle({
     selfService: cfg.selfService,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
+  const teacherAgendaDispatch = new TeacherAgendaDispatch({
+    previewAgenda, buildAgenda, receipts, teacherGate, clock, logger,
+  });
   // `receiptPngRenderer` (the canvas renderer) is already built above,
   // before `receipts` — it backs BOTH the printed receipt (via
   // `receiptPrintRenderer`) and this preview route, so a parent previewing an
@@ -611,6 +616,7 @@ export async function createSchoolLifecycle({
   });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
+  const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
@@ -622,6 +628,7 @@ export async function createSchoolLifecycle({
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
     assignments: stores.assignments, worksheetInstances,
+    issuedArtifacts,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
     // policy keys already live in (see the printer construction above and
@@ -907,7 +914,7 @@ export async function createSchoolLifecycle({
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
-    getLearnerDayCompletion,
+    getLearnerDayCompletion, teacherAgendaDispatch,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -986,7 +993,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances,
+      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, issuedArtifacts,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

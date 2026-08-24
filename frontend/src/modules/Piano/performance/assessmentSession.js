@@ -14,6 +14,24 @@ import {
   createPerformanceRun,
 } from './performanceJudge.js';
 import { tallyGrades, worstSpan } from './spans.js';
+import {
+  advanceAssessmentAttempt as advanceCanonicalAttempt,
+  assessmentAttemptProgress as canonicalAttemptProgress,
+  closeAssessmentAttemptSpan as closeCanonicalSpan,
+} from './assessmentAttempt.js';
+export {
+  compileAssessmentExpectation,
+  compileScoreExpectation,
+  prepareExerciseAssessment,
+  createAssessmentAttempt,
+  startAssessmentAttempt,
+  observeAssessment,
+  advanceAssessmentAttempt,
+  closeAssessmentAttemptSpan,
+  finalizeAssessmentAttempt,
+  assessmentAttemptProgress,
+} from './assessmentAttempt.js';
+export { createAssessmentRuntime, useAssessmentRuntime } from './assessmentRuntime.js';
 
 const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
 
@@ -80,18 +98,21 @@ export function applyAssessmentPress(session, pitch, atMs = 0, context = {}) {
 }
 
 export function advanceAssessment(session, atMs) {
+  if (session?.expectation?.version === 1 && session?.status) return advanceCanonicalAttempt(session, atMs);
   if (session.matcher !== 'timed') return { session, events: [] };
   const result = advancePerformanceRun(session.run, atMs, session.policy);
   return { session: { ...session, run: result.run }, events: result.events };
 }
 
 export function closeAssessmentSpan(session, span, atMs) {
+  if (session?.expectation?.version === 1 && session?.status) return closeCanonicalSpan(session, span, atMs);
   if (session.matcher !== 'timed') return { session, events: [] };
   const result = closePerformanceMeasure(session.run, span, atMs);
   return { session: { ...session, run: result.run }, events: result.events };
 }
 
 export function assessmentProgress(session) {
+  if (session?.expectation?.version === 1 && session?.status) return canonicalAttemptProgress(session);
   if (session.matcher === 'cursor') return drillProgress(session.run);
   if (session.matcher === 'timed') {
     const pending = session.run.targets.findIndex((target) => target.state === 'pending');

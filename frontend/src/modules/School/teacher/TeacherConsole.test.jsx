@@ -1,126 +1,95 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TeacherConsole from './TeacherConsole.jsx';
-import { TODO } from './todoRegistry.js';
 
 vi.mock('../schoolApi.js', () => {
   const okEmpty = async () => ({ ok: true, status: 200, data: [] });
   return { schoolApi: {
-    teachers: vi.fn(async () => ({
-      ok: true, status: 200, data: { configured: true, teachers: [{ id: 'kckern', name: 'KC' }] },
-    })),
-    roster: vi.fn(async () => ({
-      ok: true, status: 200, data: [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }],
-    })),
-    // Panel reads — benign empties; panel behavior has its own per-tab tests.
+    teachers: vi.fn(async () => ({ ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] } })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }] })),
     teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'felix', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
     lifecycleReview: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
     learnerSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
+    printableWorksheetSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     progress: vi.fn(async () => ({ ok: true, status: 200, data: { recentScores: [] } })),
-    printPending: vi.fn(okEmpty),
-    quizRequests: vi.fn(okEmpty),
+    printPending: vi.fn(okEmpty), quizRequests: vi.fn(okEmpty), periods: vi.fn(okEmpty),
     assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     allAssignments: vi.fn(async () => ({ ok: true, status: 200, data: { assignments: [] } })),
     staleSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
-    periods: vi.fn(okEmpty),
-    curriculumUnits: vi.fn(okEmpty),
-    learningCatalogs: vi.fn(okEmpty),
-    syllabi: vi.fn(async () => ({ ok: true, status: 200, data: { syllabi: [] } })),
-    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })),
-    reportCardFrozen: vi.fn(okEmpty),
-    instructionalInsights: vi.fn(async () => ({ ok: true, status: 200, data: null })),
-    reviewLearner: vi.fn(okEmpty),
-    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })),
-    materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
-    attemptDays: vi.fn(async () => ({ ok: true, status: 200, data: { days: [] } })),
-    retract: vi.fn(okEmpty),
-    transcript: vi.fn(okEmpty),
-    offerRetake: vi.fn(okEmpty),
-    attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
-    passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })),
-    milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
+    curriculumUnits: vi.fn(async () => ({ ok: true, status: 200, data: { units: [] } })),
+    learningCatalogs: vi.fn(okEmpty), syllabi: vi.fn(async () => ({ ok: true, status: 200, data: { syllabi: [] } })),
+    reportCard: vi.fn(async () => ({ ok: true, status: 200, data: null })), reportCardFrozen: vi.fn(okEmpty),
+    instructionalInsights: vi.fn(async () => ({ ok: true, status: 200, data: null })), reviewLearner: vi.fn(okEmpty),
+    agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [] } })), materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
+    attemptDays: vi.fn(async () => ({ ok: true, status: 200, data: { days: [] } })), attestations: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
+    passOverrides: vi.fn(async () => ({ ok: true, status: 200, data: { overrides: {} } })), milestones: vi.fn(async () => ({ ok: true, status: 200, data: { milestones: [] } })),
     enrichment: vi.fn(async () => ({ ok: true, status: 200, data: { entries: [] } })),
-    putAssignments: vi.fn(okEmpty),
-    putPeriods: vi.fn(okEmpty),
-    putPassOverride: vi.fn(okEmpty),
-    putMilestones: vi.fn(okEmpty),
-    postEnrichment: vi.fn(okEmpty),
-    resolveReview: vi.fn(okEmpty),
-    printApprove: vi.fn(okEmpty),
-    printDeny: vi.fn(okEmpty),
-    quizRequestDismiss: vi.fn(okEmpty),
   } };
 });
-const { schoolApi } = await import('../schoolApi.js');
+vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
+  timeline: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
+  session: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  agendaDispatchPreview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  agendaDispatch: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  adjustGrade: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+} }));
+const { teacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
 
-beforeEach(() => {
-  sessionStorage.clear();
-  window.history.pushState({}, '', '/school/teacher');
-});
+beforeEach(() => { sessionStorage.clear(); window.history.pushState({}, '', '/school/teacher'); });
+afterEach(() => cleanup());
 
 const ready = async () => {
   render(<TeacherConsole />);
-  await waitFor(() => expect(screen.getByRole('navigation', { name: 'Sections' })).toBeTruthy());
+  await waitFor(() => expect(screen.getByRole('navigation', { name: 'Workspace' })).toBeTruthy());
 };
 
-describe('TeacherConsole shell', () => {
-  it('renders the four tabs, Today active at the root URL', async () => {
+describe('TeacherConsole workspace', () => {
+  it('renders global navigation and dashboard at the root', async () => {
     await ready();
-    for (const label of ['Today', 'Planning', 'Records', 'Repair']) {
-      expect(screen.getByRole('button', { name: label })).toBeTruthy();
-    }
-    expect(screen.getByRole('button', { name: 'Today' }).getAttribute('aria-current')).toBe('page');
+    for (const label of ['Dashboard', 'Action queue', 'Curriculum', 'Operations']) expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    expect(screen.getByText('Today at a glance')).toBeTruthy();
   });
 
-  it('tab click updates the URL; learner pick appends the id', async () => {
+  it('opens a persistent learner workspace with deep-linkable sections', async () => {
     await ready();
-    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Planning' })); });
-    expect(window.location.pathname).toBe('/school/teacher/planning');
-    await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
-    expect(window.location.pathname).toBe('/school/teacher/planning/felix');
+    act(() => fireEvent.click(screen.getByRole('navigation', { name: 'Students' }).querySelector('button')));
+    expect(window.location.pathname).toBe('/school/teacher/students/felix/overview');
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Felix workspace' })).toBeTruthy());
+    act(() => fireEvent.click(screen.getByRole('button', { name: 'History' })));
+    expect(window.location.pathname).toBe('/school/teacher/students/felix/history');
+    await waitFor(() => expect(screen.getByText('No sessions recorded.')).toBeTruthy());
   });
 
-  it('popstate re-parses the URL into tab + learner', async () => {
+  it('restores route state on browser navigation', async () => {
     await ready();
-    act(() => {
-      window.history.pushState({}, '', '/school/teacher/records/milo');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    });
-    await waitFor(() => (
-      expect(screen.getByRole('button', { name: 'Records' }).getAttribute('aria-current')).toBe('page')
-    ));
+    act(() => { window.history.pushState({}, '', '/school/teacher/students/milo/reports'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Milo workspace' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Reports' }).getAttribute('aria-current')).toBe('page');
   });
 
-  it('every registry todoId renders exactly once across the four tabs, and stubs carry no controls', async () => {
-    await ready();
-    const seen = new Map();
-    for (const label of ['Today', 'Planning', 'Records', 'Repair']) {
-      act(() => { fireEvent.click(screen.getByRole('button', { name: label })); });
-      // eslint-disable-next-line no-await-in-loop
-      await waitFor(() => expect(document.querySelector('.teacher-tab')).toBeTruthy());
-      for (const el of document.querySelectorAll('[data-todo]')) {
-        const id = el.getAttribute('data-todo');
-        seen.set(id, (seen.get(id) ?? 0) + 1);
-        expect(el.querySelectorAll('button, input, select, textarea').length).toBe(0);
-        expect(el.textContent).toContain('Planned — not built yet.');
-      }
-    }
-    const expected = Object.values(TODO).sort();
-    expect([...seen.keys()].sort()).toEqual(expected);
-    for (const [id, count] of seen) expect({ id, count }).toEqual({ id, count: 1 });
-  });
-
-  it('configured:false renders the no-teachers card instead of the sign-in chip', async () => {
-    schoolApi.teachers.mockResolvedValueOnce({ ok: true, status: 200, data: { configured: false, teachers: [] } });
+  it('names an unknown bookmarked learner instead of blanking', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/missing/overview');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText(/No teachers configured/)).toBeTruthy());
-    expect(screen.queryByRole('button', { name: /Sign in/ })).toBe(null);
+    await waitFor(() => expect(screen.getByText('Student not found')).toBeTruthy());
   });
 
-  it('configured-but-none-resolve renders the resolve-failure copy', async () => {
-    schoolApi.teachers.mockResolvedValueOnce({ ok: true, status: 200, data: { configured: true, teachers: [] } });
+  it('inspects a session and previews a grade correction before apply', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      schema: 'school.teacher-session/v1', sessionId: 'ses_1', revision: 4, artifactIds: ['art_1'],
+      state: { learnerId: 'felix', unitId: 'fractions', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 70 }, events: [],
+    } });
+    teacherWorkspaceApi.adjustGrade.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      applied: false, baseSeq: 4, adjustmentId: 'adj_1', previousEffectiveGrade: { percent: 70 }, effectiveGrade: { percent: 90 }, outcome: { result: 'passed' },
+    } });
+    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_1');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText(/No listed teacher resolves/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Machine grade').nextSibling.textContent).toBe('70%'));
+    fireEvent.click(screen.getByRole('button', { name: 'Correct grade…' }));
+    fireEvent.change(screen.getByLabelText('Effective percent'), { target: { value: '90' } });
+    fireEvent.change(screen.getByLabelText('Grade correction reason'), { target: { value: 'Erased mark read incorrectly' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview correction' }));
+    await waitFor(() => expect(screen.getByText(/Impact preview/)).toBeTruthy());
+    expect(teacherWorkspaceApi.adjustGrade).toHaveBeenCalledWith('ses_1', expect.objectContaining({ percent: 90, apply: false, baseSeq: 4 }));
   });
 });

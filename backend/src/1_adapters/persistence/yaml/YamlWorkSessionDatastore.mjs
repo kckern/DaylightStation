@@ -13,6 +13,7 @@ import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IWorkSessionRepository } from '#apps/school/ports/IWorkSessionRepository.mjs';
 import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 // Single flat segment, starting alphanumeric: "..", a leading "/", a hidden name
 // and a nested path all fail to match, which is what keeps traversal out (same
@@ -122,7 +123,7 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
   }
 
   /** @inheritdoc */
-  async appendEvent(sessionId, event) {
+  async appendEvent(sessionId, event, { expectedSeq } = {}) {
     if (!isSafeSessionId(sessionId)) {
       throw new Error(`YamlWorkSessionDatastore: unsafe sessionId: ${sessionId}`);
     }
@@ -138,6 +139,11 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       // caller passed: two callers that each read nextSeq() before either wrote
       // would otherwise be handed the same number.
       const maxSeq = events.reduce((m, e) => Math.max(m, seqOf(e)), 0);
+      if (expectedSeq !== undefined && expectedSeq !== maxSeq) {
+        throw new DomainInvariantError(`session ${sessionId} changed after this preview`, {
+          code: 'STALE_SAVE', details: { expected: expectedSeq, actual: maxSeq },
+        });
+      }
       const stored = { ...event, sessionId, seq: maxSeq + 1 };
       events.push(stored);
       await fs.writeFile(path.join(dir, `${sessionId}.yml`), dumpYaml({

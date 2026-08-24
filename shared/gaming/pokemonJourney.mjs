@@ -320,7 +320,16 @@ function resolvePractice(state, command, definition) {
   const events = [{
     type: 'challenge_resolved', challenge_id: pending.id, score: normalizedScore, outcome: outcome.id,
     status: result.status,
+    ...(move.resolution?.requires_pass ? {
+      passed: result.verdict?.passed === true,
+      failed_criteria: result.verdict?.failed_criteria || [],
+      failed_gates: result.verdict?.failed_gates || [],
+    } : {}),
   }];
+  if (move.resolution?.requires_pass && result.verdict?.passed !== true) {
+    resolveEnemyAction(next, events);
+    return success(next, events);
+  }
   const focus = next.player.focus;
   const baseDamage = Math.max(0, Math.round((move.damage || 0) * multiplier));
   const attemptedDamage = baseDamage + focus;

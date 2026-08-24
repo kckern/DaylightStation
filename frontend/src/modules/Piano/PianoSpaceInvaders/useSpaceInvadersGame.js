@@ -335,7 +335,7 @@ export function useSpaceInvadersGame(activeNotes, noteHistory, gameConfig) {
         missesAllowed: currentLevel.max_misses,
       }
     : null;
-  const assessment = useMemo(() => assessSpaceInvaders(gameState.score), [gameState.score]);
+  const assessment = useMemo(() => assessSpaceInvaders(gameState.score, currentLevel?.mode ?? 'hero'), [currentLevel?.mode, gameState.score]);
 
   return {
     gameState: gameState.phase,

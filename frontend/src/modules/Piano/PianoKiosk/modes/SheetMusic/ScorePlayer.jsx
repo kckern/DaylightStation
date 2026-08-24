@@ -343,21 +343,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const rangeRef = useRef(range); rangeRef.current = range; // read latest range inside the transport tick
   const focusRef = useRef(focus); focusRef.current = focus; // read latest focus (measure indices) inside onFollowWrap
 
-  // ── The Learn state matrix (wave-3 §B) ───────────────────────────────────────
-  // Learn is three states, not one:
-  //   1. no range         → machineLearn: the kiosk performs the active hands on
-  //                         the transport (Play live), nothing is gated on input.
-  //   2. range + loop ON  → learnGate: the follow tracker drives the cursor, the
-  //                         kiosk stays silent, and Play is locked.
-  //   3. range + loop OFF → machineLearn again, over the WHOLE piece; the range
-  //                         brackets stay on screen but nothing wraps.
-  // `learnGate` keys off `focus`, NOT `range`: `range` is the already-gated step
-  // span (null the moment looping is off), which would collapse rows 2 and 3.
-  const learnGate = mode === 'learn' && !!focus && loopOn;
-  const machineLearn = mode === 'learn' && !learnGate;
+  // Learn always means silent wait-for-correct. A focused loop changes the
+  // cursor range, never who performs the music; machine demonstration belongs
+  // exclusively to Listen.
+  const learnGate = mode === 'learn';
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
-  const sendsAudio = mode === 'listen' || machineLearn;
+  const sendsAudio = mode === 'listen';
   // Array position (== measure INDEX) whose step run contains `i`. Used to turn a
   // tapped note (step index) into a measure index for the custom loop brackets.
   const measureIndexOfStep = useCallback((i) => {
@@ -428,17 +420,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const keyboardVisible = kbOverrideRef.current[mode] ?? autoKb; // eslint-disable-line no-unused-expressions
   void kbTick; // keyboardVisible re-reads the override ref whenever kbTick bumps
 
-  // Listen — and Learn's machine states (wave-3 §B) — perform the ACTIVE staves;
+  // Listen performs the active staves. Learn and Polish retain silent timelines;
   // an inactive staff is engraved but simply muted — never sent to the piano, and
   // no longer highlighted as "yours" (wave-3 A retires the play-along model).
   // Tempo-scaled by the user's multiplier (faster tempo → shorter durations →
   // factor 1/tempoMult). Polish (and Learn's gate) keep the silent step timeline;
   // Polish is scaled too so its tempo control tracks the same knob.
   const playTimeline = useMemo(
-    () => (mode === 'listen' || machineLearn
+    () => (mode === 'listen'
       ? scaleTimeline(buildPlayTimeline(events, layout.notes, tempoMap, roles), 1 / tempoMult)
       : scaleTimeline(stepTimeline, 1 / tempoMult)),
-    [mode, machineLearn, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
+    [mode, events, layout.notes, tempoMap, roles, stepTimeline, tempoMult],
   );
 
   const soundingRef = useRef(new Set());
@@ -960,7 +952,18 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // End of piece in Learn: show the completion card (audit M5). Follow-timing stats
   // still flush when the user leaves Learn / on unmount, so no flush is needed here.
   const [learnDone, setLearnDone] = useState(false);
-  const onFollowComplete = useCallback(() => { setLearnDone(true); logger.info('score.learn.complete', {}); }, [logger]);
+  const onFollowComplete = useCallback(() => {
+    const voided = cycleVoidRef.current;
+    const wrongs = cycleWrongsRef.current;
+    cycleVoidRef.current = false;
+    cycleWrongsRef.current = new Set();
+    if (!voided) {
+      const indices = (layoutRef.current?.measures || []).map((_, index) => index);
+      if (indices.length) recordCycle({ measureIndices: indices, wrongMeasures: wrongs, bucket: bucketOf(grandStaff, activeParts) });
+    }
+    setLearnDone(true);
+    logger.info('score.learn.complete', { wrongs: wrongs.size, voided });
+  }, [activeParts, grandStaff, logger, recordCycle]);
 
   // Fires the instant the tracker wraps the range's out-point back to its
   // in-point — one full, uninterrupted pass. A voided cycle (any disruption since
@@ -993,8 +996,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [recordCycle, grandStaff, activeParts, logger]);
 
   useFollowTracker({
-    // Learn's GATE only (range + loop on — wave-3 §B): the machine states run the
-    // transport instead, and must not gate the cursor on what the user plays.
+    // Every Learn configuration is driven by player input. A null range is the
+    // whole score; a focused loop wraps inside its authored bounds.
     enabled: learnGate,
     steps,
     activeParts,

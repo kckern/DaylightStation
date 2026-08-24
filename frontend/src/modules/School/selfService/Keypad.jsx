@@ -28,6 +28,9 @@
  * next) belongs to useSelfService.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { screenOff } from '../../../lib/fkb.js';
+import useArmedAction from '../../../lib/identity/useArmedAction.js';
+import { schoolLog } from '../schoolLog.js';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -98,6 +101,11 @@ function useTapFire() {
  * @param {() => void} [props.onReload] - Clear pressed on an already-empty
  *   entry. The panel's only refresh affordance (no address bar, no header in
  *   lock mode); absent, an empty Clear simply does nothing.
+ * @param {number} [props.screenOffTimeoutSeconds] - Keypad-only display sleep.
+ *   Zero/invalid disables automatic sleep. This is deliberately independent
+ *   from the card-to-keypad idle timeout owned by useSelfService.
+ * @param {boolean} [props.screenOffSuppressed] - Ceremony/runner or another
+ *   foreground obligation is using the panel; do not sleep it.
  */
 export default function Keypad({
   length = 6,
@@ -107,13 +115,54 @@ export default function Keypad({
   degraded = false,
   onRetry = null,
   onReload = null,
+  screenOffTimeoutSeconds = 0,
+  screenOffSuppressed = false,
 }) {
   const [entry, setEntry] = useState('');
+  const [screenOffFailure, setScreenOffFailure] = useState(null);
+  const [activityEpoch, setActivityEpoch] = useState(0);
   // null when idle; otherwise { phase, shown } — how many slots have turned
   // over so far, counting up through the reveal and back down through the wipe.
   const [reject, setReject] = useState(null);
   const timersRef = useRef([]);
   const tap = useTapFire();
+
+  const turnScreenOff = useCallback((source) => {
+    schoolLog.selfService('screen-off.requested', { source });
+    if (screenOff()) {
+      setScreenOffFailure(null);
+      schoolLog.selfService('screen-off.succeeded', { source });
+      return true;
+    }
+    const sentence = "The screen can't turn off here. Tell a grown-up.";
+    setScreenOffFailure(sentence);
+    schoolLog.selfServiceError('screen-off.failed', { source, reason: 'fkb_unavailable' });
+    return false;
+  }, []);
+  const { armed: screenOffArmed, trigger: triggerScreenOff } = useArmedAction(
+    () => turnScreenOff('manual'),
+    { armMs: 3000 },
+  );
+
+  const noteActivity = useCallback(() => {
+    setScreenOffFailure(null);
+    setActivityEpoch((current) => current + 1);
+  }, []);
+
+  // Automatic screen sleep belongs ONLY to the anonymous keypad. Keypad
+  // unmounting already suppresses it for cards and runners; the explicit gates
+  // cover a resolve in flight and the scan ceremony, which overlays the keypad.
+  useEffect(() => {
+    const ms = Number(screenOffTimeoutSeconds) * 1000;
+    if (!Number.isFinite(ms) || ms <= 0 || busy || screenOffSuppressed) return undefined;
+    const timer = setTimeout(() => turnScreenOff('idle'), ms);
+    return () => clearTimeout(timer);
+  }, [activityEpoch, busy, screenOffSuppressed, screenOffTimeoutSeconds, turnScreenOff]);
+
+  const requestScreenOff = useCallback(() => {
+    if (!screenOffArmed) schoolLog.selfService('screen-off.armed', { source: 'manual' });
+    triggerScreenOff();
+  }, [screenOffArmed, triggerScreenOff]);
 
   const letters = useMemo(
     () => REJECT_WORD.slice(0, length).padEnd(length, REJECT_WORD.slice(-1)).split(''),
@@ -202,7 +251,13 @@ export default function Keypad({
     : Array.from({ length }, (_, i) => entry[i] ?? null);
 
   return (
-    <section className="school-selfservice" data-testid="selfservice-keypad">
+    <section
+      className="school-selfservice"
+      data-testid="selfservice-keypad"
+      onPointerDownCapture={noteActivity}
+      onKeyDownCapture={noteActivity}
+      onClickCapture={noteActivity}
+    >
       <h1 className="school-selfservice__title">Type your code</h1>
 
       <div
@@ -307,6 +362,19 @@ export default function Keypad({
       >
         Go
       </button>
+
+      <button
+        type="button"
+        className={`school-selfservice__screen-off${screenOffArmed ? ' is-armed' : ''}`}
+        aria-live="polite"
+        disabled={busy || screenOffSuppressed}
+        {...tap(requestScreenOff)}
+      >
+        {screenOffArmed ? 'Tap again to turn off screen' : 'Turn off screen'}
+      </button>
+      <p className="school-selfservice__screen-off-status" role="status">
+        {screenOffFailure ?? ''}
+      </p>
     </section>
   );
 }

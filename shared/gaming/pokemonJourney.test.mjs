@@ -25,6 +25,7 @@ function resolveMove(state, moveId, result, prefix = `${moveId}-${state.practice
       status: 'completed', score: result.score,
       metrics: { firstTry: result.firstTry ?? true },
       provider_version: 'provider-v1', attempt_id: `${prefix}-attempt`,
+      verdict: { passed: result.passed ?? true, failed_criteria: result.failed_criteria || [], failed_gates: result.failed_gates || [] },
     },
   }, `${prefix}-result`), definition);
 }
@@ -59,6 +60,25 @@ describe('Pokémon piano practice journey', () => {
     expect(result.events).toContainEqual(expect.objectContaining({
       type: 'damage_dealt', target: 'enemy', amount: expectedDamage,
     }));
+  });
+
+  it('consumes a failed pass-gated rhythm move with no effect and continues the enemy turn', () => {
+    const state = createInitialState(definition, {
+      seed: 7, participants: [{ user_id: 'kid-1' }], setup: { partner_id: 'bulbasaur' },
+    });
+    state.current_encounter = 1;
+    state.completed_encounters = ['pidgey'];
+    state.zones.hand.push({ instance_id: 'rhythm-card', definition_id: 'razor-leaf' });
+    const enemyHealth = state.enemy.health;
+    const playerHealth = state.player.health;
+    const result = resolveMove(state, 'razor-leaf', { score: 0.9, passed: false, failed_criteria: ['placement'] });
+    expect(result.state.enemy.health).toBe(enemyHealth);
+    expect(result.state.player.health).toBeLessThanOrEqual(playerHealth);
+    expect(result.state.practice_attempts.at(-1)).toMatchObject({ move_id: 'razor-leaf', score: 0.9 });
+    expect(result.events).toContainEqual(expect.objectContaining({
+      type: 'challenge_resolved', passed: false, failed_criteria: ['placement'], failed_gates: [],
+    }));
+    expect(result.events).not.toContainEqual(expect.objectContaining({ type: 'damage_dealt', target: 'enemy' }));
   });
 
   it('turns aborts and timeouts into misses, while provider errors refund and unrank the run', () => {

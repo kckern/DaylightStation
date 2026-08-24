@@ -34,6 +34,13 @@ export function createSchoolRouter({
   assignmentsStore = null,
   schoolDatastore = null,
   regradeBankAttempts = null,
+  getTeacherSession = null,
+  getLearnerTimeline = null,
+  adjustSessionGrade = null,
+  retractSessionGradeAdjustment = null,
+  issuedArtifactStore = null,
+  teacherAgendaDispatch = null,
+  renderArtifactPostview = null,
   schoolCalcRouter = null,
   surfaceCertification = null,
   surfaceRegistry = null,
@@ -1109,6 +1116,96 @@ export function createSchoolRouter({
   router.get('/teacher/today', wrap(async (req, res) => {
     if (!getTeacherToday) return res.json([]);
     res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute());
+  }));
+
+  // V2 teacher workspace read models. These are intentionally additive to the
+  // older lifecycle routes so rollout/cutback never changes student behavior.
+  router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
+    if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
+    res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
+      learnerId: req.params.learnerId,
+      limit: req.query.limit,
+      before: textQuery(req.query.before),
+      unitId: textQuery(req.query.unitId),
+    }));
+  }));
+  router.post('/teacher/learners/:learnerId/agenda/dispatch/preview', wrap(async (req, res) => {
+    if (!teacherAgendaDispatch) throw new EntityNotFoundError('teacher agenda dispatch', 'not configured');
+    res.set('Cache-Control', 'no-store').json(await teacherAgendaDispatch.preview({
+      learnerId: req.params.learnerId, learnerName: req.body?.learnerName ?? null,
+    }));
+  }));
+  router.post('/teacher/learners/:learnerId/agenda/dispatch', wrap(async (req, res) => {
+    if (!teacherAgendaDispatch) throw new EntityNotFoundError('teacher agenda dispatch', 'not configured');
+    const body = req.body || {};
+    res.status(201).json(await teacherAgendaDispatch.execute({
+      learnerId: req.params.learnerId, learnerName: body.learnerName ?? null,
+      dispatchedBy: body.dispatchedBy ?? null, pin: body.pin ?? null,
+      idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey,
+    }));
+  }));
+  router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
+    if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
+    res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
+  }));
+  router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
+    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    res.set('Cache-Control', 'no-store').json(artifact.manifest);
+  }));
+  router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
+    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    res.set('Cache-Control', 'private, no-store')
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.pdf"`)
+      .send(artifact.bytes);
+  }));
+  router.get('/teacher/artifacts/:artifactId/postview.pdf', wrap(async (req, res) => {
+    if (!issuedArtifactStore || !getTeacherSession || !renderArtifactPostview) {
+      return res.status(501).json({ error: 'artifact postview is not configured' });
+    }
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const session = await getTeacherSession.execute({ sessionId: artifact.manifest.sessionId });
+    const rendered = await renderArtifactPostview({ originalPdf: artifact.bytes, session });
+    return res.set('Cache-Control', 'private, no-store')
+      .set('Content-Type', 'application/pdf')
+      .set('Content-Disposition', `inline; filename="postview-${slugify(req.params.artifactId)}.pdf"`)
+      .send(rendered.pdf);
+  }));
+  router.post('/teacher/sessions/:sessionId/grade-adjustments', wrap(async (req, res) => {
+    if (!adjustSessionGrade) throw new EntityNotFoundError('grade adjustment', 'not configured');
+    const body = req.body || {};
+    res.status(body.apply === true ? 201 : 200).json(await adjustSessionGrade.execute({
+      sessionId: req.params.sessionId,
+      adjustmentId: body.adjustmentId,
+      percent: body.percent,
+      correctCount: body.correctCount,
+      totalCount: body.totalCount,
+      missedItemIds: body.missedItemIds,
+      itemVerdicts: body.itemVerdicts,
+      reason: body.reason,
+      adjustedBy: body.adjustedBy,
+      pin: body.pin,
+      baseSeq: body.baseSeq,
+      apply: body.apply === true,
+    }));
+  }));
+  router.post('/teacher/sessions/:sessionId/grade-adjustments/:adjustmentId/retract', wrap(async (req, res) => {
+    if (!retractSessionGradeAdjustment) throw new EntityNotFoundError('grade adjustment retraction', 'not configured');
+    const body = req.body || {};
+    res.json(await retractSessionGradeAdjustment.execute({
+      sessionId: req.params.sessionId,
+      adjustmentId: req.params.adjustmentId,
+      reason: body.reason,
+      retractedBy: body.retractedBy,
+      pin: body.pin,
+      baseSeq: body.baseSeq,
+      apply: body.apply === true,
+    }));
   }));
 
   // The configured academic calendar — a plain array, not wrapped, matching

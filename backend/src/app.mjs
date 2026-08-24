@@ -321,9 +321,12 @@ import { PlexSchoolMediaCatalog } from './1_adapters/school/media/plex/PlexSchoo
 import { GeneratedBankSource } from '#adapters/school/generated-content/GeneratedBankSource.mjs';
 import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
 import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
+import { AdjustSessionGrade, RetractSessionGradeAdjustment } from '#apps/school/usecases/AdjustSessionGrade.mjs';
+import { GetTeacherSession, GetLearnerTimeline } from '#apps/school/usecases/GetTeacherSession.mjs';
 import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
+import { createArtifactPostviewRenderer } from '#rendering/school/documents/ArtifactPostviewRenderer.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
@@ -3641,6 +3644,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       learnerDirectory: schoolLearnerDirectory,
       logger: rootLogger.child({ module: 'school-regrade' }),
     }) : null,
+    getTeacherSession: schoolLifecycle.stores?.sessions
+      ? new GetTeacherSession({ sessions: schoolLifecycle.stores.sessions }) : null,
+    getLearnerTimeline: schoolLifecycle.stores?.sessions
+      ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions }) : null,
+    adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
+      ? new AdjustSessionGrade({
+        sessions: schoolLifecycle.stores.sessions,
+        teacherGate: schoolTeacherGate,
+        logger: rootLogger.child({ module: 'school-grade-adjustment' }),
+      }) : null,
+    retractSessionGradeAdjustment: schoolLifecycle.stores?.sessions && schoolTeacherGate
+      ? new RetractSessionGradeAdjustment({
+        sessions: schoolLifecycle.stores.sessions,
+        teacherGate: schoolTeacherGate,
+        logger: rootLogger.child({ module: 'school-grade-adjustment' }),
+      }) : null,
+    issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
+    teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
+    renderArtifactPostview: createArtifactPostviewRenderer(),
     milestoneStore: schoolMilestoneStore,
     assignmentsStore: schoolLifecycle.stores?.assignments ?? null,
     getLearnerRecord: new GetLearnerRecord({

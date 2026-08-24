@@ -1,34 +1,30 @@
-import { describe, it, expect } from 'vitest';
-import { TABS, parseTeacherPath, teacherPathFor } from './teacherUrl.js';
+import { describe, expect, it } from 'vitest';
+import {
+  parseTeacherPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
+} from './teacherUrl.js';
 
-describe('teacherUrl', () => {
-  it('exposes the four tabs in display order', () => {
-    expect(TABS).toEqual(['today', 'planning', 'records', 'repair']);
+describe('teacher workspace URL model', () => {
+  it('lands roots and stale paths on the dashboard', () => {
+    expect(parseTeacherPath('/school/teacher')).toMatchObject({ kind: 'section', section: 'dashboard' });
+    expect(parseTeacherPath('/school/teacher/unknown')).toMatchObject({ kind: 'section', section: 'dashboard' });
   });
 
-  it('root parses to the Today tab with no learner', () => {
-    expect(parseTeacherPath('/school/teacher')).toEqual({ tab: 'today', learnerId: null });
-    expect(parseTeacherPath('/school/teacher/')).toEqual({ tab: 'today', learnerId: null });
+  it('round-trips learner, course, and session routes', () => {
+    expect(parseTeacherPath(teacherLearnerPath('a b', 'courses', 'world-history'))).toMatchObject({
+      kind: 'learner', section: 'courses', learnerId: 'a b', courseId: 'world-history',
+    });
+    expect(parseTeacherPath(teacherSessionPath('a b', 'session/1'))).toMatchObject({
+      kind: 'session', section: 'history', learnerId: 'a b', sessionId: 'session/1',
+    });
   });
 
-  it('tab and learner round-trip', () => {
-    expect(parseTeacherPath('/school/teacher/records/felix')).toEqual({ tab: 'records', learnerId: 'felix' });
-    expect(teacherPathFor('records', 'felix')).toBe('/school/teacher/records/felix');
-    expect(parseTeacherPath(teacherPathFor('planning', 'milo'))).toEqual({ tab: 'planning', learnerId: 'milo' });
+  it('supports the temporary rollout base', () => {
+    expect(parseTeacherPath('/school/teacher-next/queue')).toMatchObject({ base: '/school/teacher-next', section: 'queue' });
+    expect(teacherSectionPath('operations', '/school/teacher-next')).toBe('/school/teacher-next/operations');
   });
 
-  it('a tab alone round-trips without a learner segment', () => {
-    expect(teacherPathFor('planning')).toBe('/school/teacher/planning');
-    expect(parseTeacherPath('/school/teacher/planning')).toEqual({ tab: 'planning', learnerId: null });
-  });
-
-  it('an unknown tab normalizes to today', () => {
-    expect(parseTeacherPath('/school/teacher/nonsense')).toEqual({ tab: 'today', learnerId: null });
-    expect(parseTeacherPath('/school/teacher/nonsense/felix')).toEqual({ tab: 'today', learnerId: null });
-  });
-
-  it('learner ids are URI-encoded and decoded', () => {
-    expect(teacherPathFor('records', 'a b')).toBe('/school/teacher/records/a%20b');
-    expect(parseTeacherPath('/school/teacher/records/a%20b')).toEqual({ tab: 'records', learnerId: 'a b' });
+  it('interprets useful legacy bookmarks', () => {
+    expect(parseTeacherPath('/school/teacher/records/felix')).toMatchObject({ kind: 'learner', learnerId: 'felix', section: 'reports' });
+    expect(parseTeacherPath('/school/teacher/planning/felix')).toMatchObject({ kind: 'learner', learnerId: 'felix', section: 'courses' });
   });
 });

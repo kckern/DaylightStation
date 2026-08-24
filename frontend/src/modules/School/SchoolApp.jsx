@@ -87,26 +87,35 @@ function browserModeFromUrl() {
   } catch { return null; }
 }
 
-function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds }) {
+// Number(null) and Number('') are both zero. Props default to null and absent
+// YAML keys may arrive as null, so a bare Number.isFinite(Number(value)) makes
+// "not configured" override the real screen config with a disabled timeout.
+const configuredSeconds = (value) => (
+  value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+    ? Number(value)
+    : null
+);
+
+function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds }) {
   const explicit = mode === 'locked' || mode === 'open' || mode === 'unlocked';
   // A standalone mount resolves synchronously — there is no screen config to
   // fetch — and it defaults to LOCKED so the keypad is what opens.
   const browserLocked = () => (browserModeFromUrl() ?? 'locked') === 'locked';
   const [state, setState] = useState(() => (
     explicit
-      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null }
+      ? { resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
       : screenId === 'browser'
-        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null }
-        : { resolved: false, locked: false, idleTimeoutSeconds: null }
+        ? { resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
+        : { resolved: false, locked: false, idleTimeoutSeconds: null, screenOffTimeoutSeconds: null }
   ));
 
   useEffect(() => {
     if (explicit) {
-      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null });
+      setState({ resolved: true, locked: mode === 'locked', idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
     if (screenId === 'browser') {
-      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null });
+      setState({ resolved: true, locked: browserLocked(), idleTimeoutSeconds: null, screenOffTimeoutSeconds: null });
       return undefined;
     }
     let alive = true;
@@ -116,9 +125,8 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds }) {
       setState({
         resolved: true,
         locked: cfg?.mode === 'locked',
-        idleTimeoutSeconds: Number.isFinite(Number(cfg?.idleTimeoutSeconds))
-          ? Number(cfg.idleTimeoutSeconds)
-          : null,
+        idleTimeoutSeconds: configuredSeconds(cfg?.idleTimeoutSeconds),
+        screenOffTimeoutSeconds: configuredSeconds(cfg?.screenOffTimeoutSeconds),
       });
     });
     return () => { alive = false; };
@@ -128,9 +136,14 @@ function useSchoolLockMode({ screenId, mode, idleTimeoutSeconds }) {
     resolved: state.resolved,
     locked: state.locked,
     // Prop (widget config) → screen config → the design's default.
-    idleTimeoutSeconds: Number.isFinite(Number(idleTimeoutSeconds))
-      ? Number(idleTimeoutSeconds)
+    idleTimeoutSeconds: configuredSeconds(idleTimeoutSeconds) !== null
+      ? configuredSeconds(idleTimeoutSeconds)
       : (state.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS),
+    // Automatic display sleep is opt-in. The manual, two-tap control remains
+    // available on the keypad even when this is zero.
+    screenOffTimeoutSeconds: configuredSeconds(screenOffTimeoutSeconds) !== null
+      ? configuredSeconds(screenOffTimeoutSeconds)
+      : (state.screenOffTimeoutSeconds ?? 0),
   };
 }
 
@@ -226,7 +239,7 @@ export function schoolPathFor(urlBase, section, materialPath = []) {
   return `${base}/${materialPath.map((id) => encodeURIComponent(stripSource(id))).join('/')}`;
 }
 
-function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
+function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffTimeoutSeconds = null }) {
   const { status, roster, currentUser, isGuest, pickerOpen, openPicker, closePicker, claim, continueAsGuest } = useSchoolProfile();
   const { crumbs: extraCrumbs } = useSchoolBreadcrumbBar();
   const urlBase = useMemo(schoolUrlBase, []);
@@ -463,7 +476,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
 
   // Lock mode is a NARROWING of a surface that is already terminal (the Portal
   // mounts School with no `clear`), not a new cage.
-  const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds });
+  const lock = useSchoolLockMode({ screenId, mode, idleTimeoutSeconds, screenOffTimeoutSeconds });
 
   // The `school.launch` subscription stays live in lock mode, deliberately.
   // `portal.yml` is the ONLY screen in the house that mounts School, so
@@ -696,6 +709,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
               degraded={selfService.degraded}
               onRetry={selfService.retry}
               onReload={selfService.reload}
+              screenOffTimeoutSeconds={lock.screenOffTimeoutSeconds}
+              screenOffSuppressed={!!ceremony.current}
             />
           ) : (
             <LaunchCard
@@ -866,16 +881,27 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null }) {
  *  - as the `school` screen widget, where it IS the screen (the Portal) and no
  *    `clear` exists because there is nothing behind it.
  *
- * `mode` / `idleTimeoutSeconds` normally come from the screen's own `school:`
+ * `mode` / `idleTimeoutSeconds` / `screenOffTimeoutSeconds` normally come from
+ * the screen's own `school:`
  * block, which `useSchoolLockMode` fetches — that is the live path. As props
  * they must be nested under a layout child's `props:` key, which is all
  * `PanelRenderer` spreads. Both absent is today, exactly: a browsable School.
  */
-export default function SchoolApp({ clear, mode = null, idleTimeoutSeconds = null }) {
+export default function SchoolApp({
+  clear,
+  mode = null,
+  idleTimeoutSeconds = null,
+  screenOffTimeoutSeconds = null,
+}) {
   return (
     <SchoolProfileProvider>
       <SchoolBreadcrumbProvider>
-        <SchoolShell clear={clear} mode={mode} idleTimeoutSeconds={idleTimeoutSeconds} />
+        <SchoolShell
+          clear={clear}
+          mode={mode}
+          idleTimeoutSeconds={idleTimeoutSeconds}
+          screenOffTimeoutSeconds={screenOffTimeoutSeconds}
+        />
       </SchoolBreadcrumbProvider>
     </SchoolProfileProvider>
   );

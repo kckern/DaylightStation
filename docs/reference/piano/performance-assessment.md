@@ -7,6 +7,41 @@ notation, keyboards, or game chrome as they see fit. It answers one question —
 and deliberately owns nothing else: no rendering, no content authoring, no
 progression policy.
 
+## Canonical expectation and lifecycle
+
+The supported façade is `performance/assessmentSession.js`. New consumers
+compile score, exercise, or chart material into version-1 onset events. Each
+event preserves its quarter-note onset and duration, span identity, and logical
+notes with stable ids and parts. Score staves map to `rh`, `lh`, then
+`staff-N`; exercise hands map only from authored `hand` data, with missing data
+remaining `unassigned`.
+
+Attempts are immutable values. Create and start an attempt, feed attacks or
+held snapshots through `observeAssessment`, advance a timed clock when needed,
+and finalize once. Cursor and held matching are untimed in both free and
+metronome modes. Only cued mode uses timed matching and emits placement.
+Terminal transitions are idempotent, and input before start, after termination,
+or from another clock domain is recorded as ignored rather than graded.
+
+`createAssessmentRuntime` and `useAssessmentRuntime` are thin subscription
+bindings over that pure lifecycle. They own MIDI subscriptions and clock ticks,
+but never render or persist.
+
+## Portable result and attribution
+
+Completed results carry aggregate criteria plus `parts` and `spans`. Active
+parts receive equal aggregate weight by default even when one hand has many
+more notes. A rubric or attempt may override those weights; the normalized
+weights and criterion weights are stored with the result. Wrong notes are
+charged to the current part whose expected register is nearest. An equal-distance
+tie is not asserted as per-part evidence and is divided by normalized part
+weight only for aggregate cleanliness. One physical unison attack can satisfy
+multiple logical part notes at the same onset.
+
+Interrupted attempts retain numeric diagnostics but have no score, criteria,
+or verdict. A completed practice verdict remains non-curricular because
+`purpose: practice` is an authorization boundary, not a weaker kind of score.
+
 ## Concept map
 
 The domain as a whole, arranged so each concept belongs to exactly one stage.

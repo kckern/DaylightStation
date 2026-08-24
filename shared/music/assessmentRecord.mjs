@@ -33,6 +33,38 @@ export const CRITERIA = Object.freeze(['completeness', 'cleanliness', 'placement
 
 const isUnit = (value) => Number.isFinite(value) && value >= 0 && value <= 1;
 
+function validateCriteria(criteria, label, errors) {
+  if (!criteria || typeof criteria !== 'object' || Array.isArray(criteria)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  for (const [name, value] of Object.entries(criteria)) {
+    if (!CRITERIA.includes(name)) errors.push(`unknown criterion: ${name}`);
+    else if (!isUnit(value)) errors.push(`criterion ${label}.${name} must be a number from 0 to 1`);
+  }
+}
+
+function validateDiagnostics(diagnostics, label, errors) {
+  if (!diagnostics || typeof diagnostics !== 'object' || Array.isArray(diagnostics)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  for (const [name, value] of Object.entries(diagnostics)) if (!Number.isFinite(value)) errors.push(`diagnostic ${label}.${name} must be a number`);
+}
+
+function validateBreakdown(value, label, errors, { allowParts = false } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  if (value.criteria !== undefined) validateCriteria(value.criteria, `${label}.criteria`, errors);
+  if (value.diagnostics !== undefined) validateDiagnostics(value.diagnostics, `${label}.diagnostics`, errors);
+  if (allowParts && value.parts !== undefined) {
+    if (!value.parts || typeof value.parts !== 'object' || Array.isArray(value.parts)) errors.push(`${label}.parts must be an object`);
+    else for (const [part, partValue] of Object.entries(value.parts)) validateBreakdown(partValue, `${label}.parts.${part}`, errors);
+  }
+}
+
 /**
  * Validates the assessment half of an attempt body.
  *
@@ -58,13 +90,8 @@ export function validateAssessment(body = {}) {
   // The vector is optional for now — the old writers predate it — but if it is
   // present it must be well formed, or it is worse than nothing.
   if (body.criteria !== undefined) {
-    if (!body.criteria || typeof body.criteria !== 'object' || Array.isArray(body.criteria)) {
-      errors.push('criteria must be an object');
-    } else {
-      for (const [name, value] of Object.entries(body.criteria)) {
-        if (!CRITERIA.includes(name)) errors.push(`unknown criterion: ${name}`);
-        else if (!isUnit(value)) errors.push(`criterion ${name} must be a number from 0 to 1`);
-      }
+    validateCriteria(body.criteria, 'criteria', errors);
+    if (body.criteria && typeof body.criteria === 'object' && !Array.isArray(body.criteria)) {
       if (!completed && Object.keys(body.criteria).length) {
         errors.push('criteria must be absent unless the attempt completed');
       }
@@ -94,18 +121,41 @@ export function validateAssessment(body = {}) {
     else if (body.rubric.version !== undefined && typeof body.rubric.version !== 'string') {
       errors.push('rubric.version must be a string');
     }
+    if (body.rubric?.weights !== undefined) {
+      if (!body.rubric.weights || typeof body.rubric.weights !== 'object' || Array.isArray(body.rubric.weights)) errors.push('rubric.weights must be an object');
+      else for (const [name, weight] of Object.entries(body.rubric.weights)) {
+        if (!CRITERIA.includes(name)) errors.push(`unknown rubric weight: ${name}`);
+        else if (!Number.isFinite(weight) || weight < 0) errors.push(`rubric weight ${name} must be a non-negative number`);
+      }
+    }
+    if (body.rubric?.part_weights !== undefined) {
+      if (!body.rubric.part_weights || typeof body.rubric.part_weights !== 'object' || Array.isArray(body.rubric.part_weights)) errors.push('rubric.part_weights must be an object');
+      else {
+        let sum = 0;
+        for (const [part, weight] of Object.entries(body.rubric.part_weights)) {
+          if (!Number.isFinite(weight) || weight < 0) errors.push(`part weight ${part} must be a non-negative number`);
+          else sum += weight;
+        }
+        if (Object.keys(body.rubric.part_weights).length && Math.abs(sum - 1) > 1e-6) errors.push('rubric.part_weights must be normalized');
+      }
+    }
   }
 
   // Diagnostics are measured, never scored, and are free-form by design — but
   // they must be a bag of numbers, not a place to smuggle prose.
   if (body.diagnostics !== undefined) {
-    if (!body.diagnostics || typeof body.diagnostics !== 'object' || Array.isArray(body.diagnostics)) {
-      errors.push('diagnostics must be an object');
-    } else {
-      for (const [name, value] of Object.entries(body.diagnostics)) {
-        if (!Number.isFinite(value)) errors.push(`diagnostic ${name} must be a number`);
-      }
-    }
+    validateDiagnostics(body.diagnostics, 'diagnostics', errors);
+  }
+
+  if (body.parts !== undefined) {
+    if (!completed) errors.push('parts must be absent unless the attempt completed');
+    if (!body.parts || typeof body.parts !== 'object' || Array.isArray(body.parts)) errors.push('parts must be an object');
+    else for (const [part, value] of Object.entries(body.parts)) validateBreakdown(value, `parts.${part}`, errors);
+  }
+  if (body.spans !== undefined) {
+    if (!completed) errors.push('spans must be absent unless the attempt completed');
+    if (!body.spans || typeof body.spans !== 'object' || Array.isArray(body.spans)) errors.push('spans must be an object');
+    else for (const [span, value] of Object.entries(body.spans)) validateBreakdown(value, `spans.${span}`, errors, { allowParts: true });
   }
 
   if (body.verdict !== undefined) {
@@ -114,6 +164,11 @@ export function validateAssessment(body = {}) {
     } else {
       if (!isUnit(body.verdict.score)) errors.push('verdict.score must be a number from 0 to 1');
       if (typeof body.verdict.passed !== 'boolean') errors.push('verdict.passed must be boolean');
+      for (const field of ['failed_criteria', 'failed_gates']) {
+        if (body.verdict[field] !== undefined && (!Array.isArray(body.verdict[field]) || body.verdict[field].some((name) => typeof name !== 'string'))) {
+          errors.push(`verdict.${field} must be an array of strings`);
+        }
+      }
       if (isUnit(body.score) && isUnit(body.verdict.score) && body.score !== body.verdict.score) {
         errors.push('verdict.score must equal score');
       }

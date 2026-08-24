@@ -232,8 +232,12 @@ cards:
     challenge: &timed_challenge
       domain: piano
       kind: timed-pattern
-      requirements: { curriculum: pokemon-journey-foundations }
+      requirements: { curriculum: pokemon-journey-foundations, mode: cued }
       timeout_ms: 90000
+    resolution: &pass_gated_resolution
+      effect: score
+      requires_pass: true
+      failure: consume-no-effect
     outcomes: *journey_outcomes
 
   ember:
@@ -278,6 +282,7 @@ cards:
     cost: 0
     damage: 58
     challenge: *timed_challenge
+    resolution: *pass_gated_resolution
     outcomes: *journey_outcomes
 
   water-gun:
@@ -322,6 +327,7 @@ cards:
     cost: 0
     damage: 58
     challenge: *timed_challenge
+    resolution: *pass_gated_resolution
     outcomes: *journey_outcomes
   stadium-finale:
     title: Stadium Finale
@@ -333,4 +339,5 @@ cards:
     cost: 0
     damage: 70
     challenge: *timed_challenge
+    resolution: *pass_gated_resolution
     outcomes: *journey_outcomes

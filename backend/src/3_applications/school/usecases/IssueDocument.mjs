@@ -138,6 +138,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument;
+  #issuedArtifacts;
   #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #logger;
 
@@ -178,6 +179,7 @@ export class IssueDocument {
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null,
+    issuedArtifacts = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
@@ -197,6 +199,7 @@ export class IssueDocument {
     this.#allocationStore = allocationStore;
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
+    this.#issuedArtifacts = issuedArtifacts;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
     this.#printCooldownMinutes = normalizePrintCooldownMinutes(printCooldownMinutes);
     this.#publishPrintDocument = publishPrintDocument
@@ -347,6 +350,7 @@ export class IssueDocument {
       });
     }
 
+    rendered.pdf = await this.#retainIssuedPdf({ artifactId, rendered, reprinting, nowIso, sessionId, state });
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -487,6 +491,10 @@ export class IssueDocument {
       await this.#worksheetInstances.put(instance);
     }
 
+    rendered.pdf = await this.#retainIssuedPdf({
+      artifactId: instance.id, rendered, reprinting, nowIso, sessionId, state,
+      worksheetInstanceId: instance.id, allocation: rendered.allocation,
+    });
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -664,6 +672,9 @@ export class IssueDocument {
       });
     }
 
+    rendered.pdf = await this.#retainIssuedPdf({
+      artifactId, rendered, reprinting, nowIso, sessionId, state, allocation: rendered.allocation,
+    });
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -724,6 +735,37 @@ export class IssueDocument {
       document: null,
       message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
     };
+  }
+
+  /** Persist before dispatch; a reprint always reads the retained bytes. */
+  async #retainIssuedPdf({ artifactId, rendered, reprinting, nowIso, sessionId, state,
+    worksheetInstanceId = null, allocation = null }) {
+    const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
+    if (!this.#issuedArtifacts) return renderedBytes;
+    if (reprinting) {
+      const retained = await this.#issuedArtifacts.get(artifactId);
+      if (retained) {
+        // Some renderers allocate an OMR card while proving the source still
+        // renders. If that allocation differs from the card printed into the
+        // retained PDF, release it and keep the original allocation lineage;
+        // otherwise the store would claim the reprint carried a card that is
+        // not actually visible on its exact bytes.
+        if (allocation?.recordId
+            && allocation.recordId !== retained.manifest?.allocation?.recordId) {
+          await this.#orphanAllocation(allocation, {
+            sessionId, unitId: state.unitId, stage: 'retained-reprint',
+          });
+          rendered.allocation = retained.manifest?.allocation ?? null;
+        }
+        return retained.bytes;
+      }
+    }
+    const retained = await this.#issuedArtifacts.put({
+      artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
+      issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
+      captureKind: reprinting ? 'reconstructed' : 'original', worksheetInstanceId, allocation,
+    });
+    return retained.bytes;
   }
 
   /**

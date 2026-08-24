@@ -216,6 +216,23 @@ function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = '
     .map((note, index) => ({ note, index }))
     .filter(({ note }) => note.state === 'falling');
   if (!candidates.length) return null;
+  if (mode === 'invaders') {
+    const candidate = candidates.find(({ note }) => note.pitches.includes(pitch) && !note.hitPitches.has(pitch));
+    if (!candidate) return null;
+    const hitPitches = new Set(candidate.note.hitPitches);
+    hitPitches.add(pitch);
+    const complete = candidate.note.pitches.every((expected) => hitPitches.has(expected));
+    return {
+      index: candidate.index,
+      result: complete ? 'perfect' : null,
+      note: {
+        ...candidate.note, hitPitches,
+        state: complete ? 'hit' : 'falling',
+        hitResult: complete ? 'perfect' : candidate.note.hitResult,
+        resolvedTime: complete ? now : candidate.note.resolvedTime,
+      },
+    };
+  }
   const targets = candidates.map(({ note }) => ({
     id: note.id,
     pitches: note.pitches,
@@ -503,7 +520,8 @@ export function processDestroyedKeys(state, now) {
 }
 
 /** Portable level assessment; points/health remain Space Invaders projections. */
-export function assessSpaceInvaders(score) {
+export function assessSpaceInvaders(score, mode = 'hero') {
+  if (mode === 'invaders') return null;
   const hits = (score?.perfects || 0) + (score?.goods || 0);
   const resolved = hits + (score?.misses || 0);
   const criteria = {

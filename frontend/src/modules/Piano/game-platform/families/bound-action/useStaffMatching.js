@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getChildLogger } from '../../../../../lib/logging/singleton.js';
 import { shuffle, buildNotePool } from '../../../noteUtils.js';
-import { classifyHeldNotes } from '../../../performance/assessmentSession.js';
+import { recognizeHeldSet as classifyHeldNotes } from '../../../input/recognition.js';
 
 // ─── Constants ──────────────────────────────────────────────────
 
