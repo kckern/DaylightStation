@@ -41,6 +41,7 @@ vi.mock('./teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
   agendaDispatch: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   adjustGrade: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   retractGradeAdjustment: vi.fn(async () => ({ ok: false, status: 404, data: null })),
+  artifactOriginal: vi.fn(async () => ({ ok: false, status: 404, data: null })),
   artifactPostview: vi.fn(async () => ({ ok: false, status: 404, data: null })),
 } }));
 const { teacherWorkspaceApi } = await import('./teacherWorkspaceApi.js');
@@ -122,6 +123,25 @@ describe('TeacherConsole workspace', () => {
     expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, pin: null }), 'grant-1');
   });
 
+  it('re-unlocks and retries a protected session read after server capability expiry', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    const priorSessionReads = teacherWorkspaceApi.session.mock.calls.length;
+    teacherWorkspaceApi.session
+      .mockResolvedValueOnce({ ok: false, status: 403, data: { error: 'expired' } })
+      .mockResolvedValueOnce({ ok: true, status: 200, data: {
+        schema: 'school.teacher-session/v1', sessionId: 'ses_expired', revision: 1, artifactIds: [],
+        state: { learnerId: 'felix', unitId: 'chemistry', state: 'closed', machineGrade: { percent: 83 }, gradedPercent: 83 }, events: [],
+      } });
+    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_expired');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByText('Unlock teacher tools')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByText('Machine grade').nextSibling.textContent).toBe('83%'));
+    expect(teacherWorkspaceApi.session.mock.calls.length - priorSessionReads).toBe(2);
+    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('teacher', '4321');
+  });
+
   it('prepares a protected artifact postview after resource-scoped confirmation', async () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     const createObjectURL = vi.fn(() => 'blob:postview');
@@ -198,5 +218,34 @@ describe('TeacherConsole workspace', () => {
     await waitFor(() => expect(schoolApi.regradeAttempts).toHaveBeenCalledTimes(2));
     expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'attempts.regrade', resource: 'math/fractions' });
     expect(schoolApi.regradeAttempts).toHaveBeenLastCalledWith(expect.objectContaining({ apply: true, pin: null }), 'grant-1');
+  });
+
+  it('reuses one agenda idempotency key when a failed response is confirmed again', async () => {
+    sessionStorage.setItem('school-teacher-claim', 'teacher');
+    const priorDispatches = teacherWorkspaceApi.agendaDispatch.mock.calls.length;
+    schoolApi.agendaPreview.mockResolvedValueOnce({ ok: true, status: 200, data: {
+      sections: [{ subject: 'science', next: { title: 'How Chemistry Surrounds You' } }],
+    } });
+    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValueOnce({ ok: true, status: 200, data: { ready: true } });
+    teacherWorkspaceApi.agendaDispatch
+      .mockResolvedValueOnce({ ok: false, status: 500, data: { error: 'response lost' } })
+      .mockResolvedValueOnce({ ok: true, status: 201, data: { printed: true, idempotencyKey: 'replayed' } });
+    window.history.pushState({}, '', '/school/teacher/students/felix/overview');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Print agenda…' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Print agenda…' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm print' })).toBeTruthy());
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm print' }));
+      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      if (attempt === 0) await waitFor(() => expect(screen.getByText('response lost')).toBeTruthy());
+    }
+    await waitFor(() => expect(screen.getByText('Agenda printed.')).toBeTruthy());
+    const calls = teacherWorkspaceApi.agendaDispatch.mock.calls.slice(priorDispatches);
+    expect(calls).toHaveLength(2);
+    expect(calls[0][2]).toBe(calls[1][2]);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 import { usePanelFetch } from './usePanelFetch.js';
@@ -30,6 +30,21 @@ const stateOf = (session) => session?.state ?? session?.status ?? session?.outco
 
 function CapabilityNotice({ children }) {
   return <p className="teacher-capability-notice">{children}</p>;
+}
+
+function useAuthorizedTeacherRead() {
+  const { requestAuthorization, invalidateAuthorization } = useTeacherProfile();
+  return useCallback(async (read) => {
+    let authorized = await requestAuthorization();
+    if (!authorized.ok) return { ok: false, status: 403, data: null };
+    let response = await read();
+    if (response.status !== 403) return response;
+    invalidateAuthorization();
+    authorized = await requestAuthorization();
+    if (!authorized.ok) return response;
+    response = await read();
+    return response;
+  }, [requestAuthorization, invalidateAuthorization]);
 }
 
 const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}:${Math.random().toString(36).slice(2)}`}`;
@@ -127,15 +142,13 @@ function AgendaPreview({ learnerId, learnerName }) {
 }
 
 function SessionList({ learnerId, onOpenSession, window = null }) {
-  const { requestAuthorization } = useTeacherProfile();
+  const authorizedRead = useAuthorizedTeacherRead();
   const [additional, setAdditional] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sessions = usePanelFetch(async () => {
     if (window) return schoolApi.learnerSessions(learnerId, { window });
-    const authorized = await requestAuthorization();
-    if (!authorized.ok) return { ok: false, status: 403, data: null };
-    const timeline = await teacherWorkspaceApi.timeline(learnerId);
+    const timeline = await authorizedRead(() => teacherWorkspaceApi.timeline(learnerId));
     if (timeline.status !== 404) return { ...timeline, data: timeline.data ? { sessions: timeline.data.items ?? [], nextCursor: timeline.data.nextCursor } : null };
     return schoolApi.learnerSessions(learnerId);
   }, {
@@ -146,7 +159,7 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
-    const response = await teacherWorkspaceApi.timeline(learnerId, { before: nextCursor });
+    const response = await authorizedRead(() => teacherWorkspaceApi.timeline(learnerId, { before: nextCursor }));
     if (response.ok) {
       setAdditional((rows) => [...rows, ...(response.data?.items ?? [])]);
       setNextCursor(response.data?.nextCursor ?? null);
@@ -397,16 +410,38 @@ function ArtifactPostview({ artifactId }) {
   );
 }
 
+function ArtifactOriginal({ artifactId, index = null }) {
+  const [url, setUrl] = useState(null);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const authorizedRead = useAuthorizedTeacherRead();
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const prepare = async () => {
+    setBusy(true);
+    setError(null);
+    const response = await authorizedRead(() => teacherWorkspaceApi.artifactOriginal(artifactId));
+    if (response.ok) {
+      setUrl((prior) => {
+        if (prior) URL.revokeObjectURL(prior);
+        return URL.createObjectURL(response.data);
+      });
+    } else setError('Couldn’t open the retained original.');
+    setBusy(false);
+  };
+  return <>{url
+    ? <a target="_blank" rel="noreferrer" href={url}>Open issued PDF{index === null ? '' : ` ${index + 1}`}</a>
+    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `Open issued PDF${index === null ? '' : ` ${index + 1}`}…`}</button>}
+  {error && <span className="teacher-panel__error">{error}</span>}</>;
+}
+
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
-  const { requestAuthorization } = useTeacherProfile();
+  const authorizedRead = useAuthorizedTeacherRead();
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const authorized = await requestAuthorization();
-      if (!authorized.ok) return { state: 'error', session: null, ownerId: learnerId };
-      const dedicated = await teacherWorkspaceApi.session(sessionId);
+      const dedicated = await authorizedRead(() => teacherWorkspaceApi.session(sessionId));
       if (dedicated.ok) return { state: 'ok', session: dedicated.data, ownerId: dedicated.data?.state?.learnerId ?? dedicated.data?.learnerId ?? learnerId };
       if (dedicated.status !== 404) return { state: 'error', session: null, ownerId: learnerId };
       const candidates = learnerId ? kids.filter((kid) => kid.id === learnerId) : kids;
@@ -423,7 +458,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
       setResult(next);
     }).catch(() => alive && setResult({ state: 'error', session: null, ownerId: learnerId }));
     return () => { alive = false; };
-  }, [learnerId, sessionId, kids, attempt, requestAuthorization]);
+  }, [learnerId, sessionId, kids, attempt, authorizedRead]);
 
   const session = result.session;
   const sessionState = session?.schema === 'school.teacher-session/v1' ? session.state : session;
@@ -463,7 +498,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
           </section>
           <section className="teacher-panel">
             <h3 className="teacher-panel__title">Artifact lineage</h3>
-            {artifactIds.length ? artifactIds.map((artifactId, index) => <div className="teacher-artifact-actions" key={artifactId}><a target="_blank" rel="noreferrer" href={`/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf`}>Issued PDF {artifactIds.length > 1 ? index + 1 : ''}</a><ArtifactPostview artifactId={artifactId} /><span>{artifactId}</span></div>) : <CapabilityNotice>No retained artifact is linked to this session. Legacy issues may only have event metadata.</CapabilityNotice>}
+            {artifactIds.length ? artifactIds.map((artifactId, index) => <div className="teacher-artifact-actions" key={artifactId}><ArtifactOriginal artifactId={artifactId} index={artifactIds.length > 1 ? index : null} /><ArtifactPostview artifactId={artifactId} /><span>{artifactId}</span></div>) : <CapabilityNotice>No retained artifact is linked to this session. Legacy issues may only have event metadata.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{event.at ? new Date(event.at).toLocaleString() : ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>

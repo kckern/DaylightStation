@@ -5,9 +5,11 @@ import { createEvent, reduceSession } from '#domains/school/sessions/sessionEven
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const lastSeq = (events) => events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0);
 
-function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount }) {
+function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount,
+  missedItemIds, itemVerdicts }) {
   const digest = createHash('sha256')
-    .update(JSON.stringify({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount }))
+    .update(JSON.stringify({ sessionId, baseSeq, adjustedBy, reason, percent, correctCount, totalCount,
+      missedItemIds, itemVerdicts }))
     .digest('hex').slice(0, 16);
   return `adj_${digest}`;
 }
@@ -39,11 +41,16 @@ export class AdjustSessionGrade {
     const currentSeq = lastSeq(events);
     const id = text(adjustmentId) ?? stableAdjustmentId({
       sessionId, baseSeq: baseSeq ?? currentSeq, adjustedBy, reason: reason.trim(), percent, correctCount, totalCount,
+      missedItemIds, itemVerdicts,
     });
     const prior = events.find((event) => event?.type === 'grade_adjusted' && event.adjustmentId === id);
     if (prior) {
-      const sameRequest = prior.adjustedBy === adjustedBy && prior.reason === reason.trim()
-        && prior.percent === percent && prior.correctCount === correctCount && prior.totalCount === totalCount;
+      const sameRequest = JSON.stringify({
+        adjustedBy: prior.adjustedBy, reason: prior.reason, percent: prior.percent,
+        correctCount: prior.correctCount, totalCount: prior.totalCount,
+        missedItemIds: prior.missedItemIds, itemVerdicts: prior.itemVerdicts,
+      }) === JSON.stringify({ adjustedBy, reason: reason.trim(), percent, correctCount, totalCount,
+        missedItemIds, itemVerdicts });
       if (!sameRequest) throw new DomainInvariantError(`adjustment id ${id} was already used for another correction`, {
         code: 'IDEMPOTENCY_CONFLICT',
       });
@@ -110,8 +117,17 @@ export class RetractSessionGradeAdjustment {
     const state = reduceSession(events);
     const target = state.gradeAdjustments.find((row) => row.adjustmentId === adjustmentId);
     if (!target) throw new EntityNotFoundError('grade adjustment', adjustmentId);
-    if (target.retracted) return { schema: 'school.grade-adjustment-retraction-receipt/v1', applied: true,
-      idempotent: true, sessionId, adjustmentId, baseSeq: currentSeq, effectiveGrade: gradeOf(state), outcome: state.outcome };
+    if (target.retracted) {
+      const prior = [...events].reverse().find((event) => event?.type === 'grade_adjustment_retracted'
+        && event.adjustmentId === adjustmentId);
+      if (prior?.reason !== reason.trim() || prior?.retractedBy !== retractedBy) {
+        throw new DomainInvariantError(`adjustment ${adjustmentId} was already retracted by another request`, {
+          code: 'IDEMPOTENCY_CONFLICT',
+        });
+      }
+      return { schema: 'school.grade-adjustment-retraction-receipt/v1', applied: true,
+        idempotent: true, sessionId, adjustmentId, baseSeq: currentSeq, effectiveGrade: gradeOf(state), outcome: state.outcome };
+    }
     if (baseSeq !== undefined && baseSeq !== currentSeq) {
       throw new DomainInvariantError(`session ${sessionId} changed after this preview`, { code: 'STALE_SAVE' });
     }

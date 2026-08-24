@@ -65,6 +65,7 @@ export const teacherWorkspaceApi = {
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
   ),
   artifact: (artifactId) => request(`/artifacts/${encodeURIComponent(artifactId)}`),
+  artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original.pdf`),
   artifactPostview: (artifactId, grantToken) => requestBlob(
     `/artifacts/${encodeURIComponent(artifactId)}/postview.pdf`,
     { headers: { 'X-Teacher-Step-Up': grantToken } },

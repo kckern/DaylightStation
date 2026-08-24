@@ -1,0 +1,39 @@
+id: science/how-chemistry-surrounds-you/01-checkpoint
+title: Matter, Atoms, and Molecules Checkpoint
+subject: science
+audience: assigned
+unit: how-chemistry-surrounds-you.01
+topics:
+  - chemistry
+  - matter
+items:
+  - id: chemistry-q1
+    type: multiple_choice
+    prompt: What is the smallest unit of an element that retains that element's properties?
+    choices: [Atom, Molecule, Compound, Mixture]
+    answer: Atom
+  - id: chemistry-q2
+    type: multiple_choice
+    prompt: What forms when two or more atoms bond together?
+    choices: [A molecule, A neutron, A mixture, A phase]
+    answer: A molecule
+  - id: chemistry-q3
+    type: multiple_choice
+    prompt: Which substance is a compound?
+    choices: [Oxygen, Gold, Water, Helium]
+    answer: Water
+  - id: chemistry-q4
+    type: multiple_choice
+    prompt: Which observation most strongly indicates a chemical change?
+    choices: [Ice melting, Paper tearing, A gas forming, Sugar dissolving]
+    answer: A gas forming
+  - id: chemistry-q5
+    type: multiple_choice
+    prompt: Which particle has a negative electric charge?
+    choices: [Electron, Proton, Neutron, Nucleus]
+    answer: Electron
+  - id: chemistry-q6
+    type: multiple_choice
+    prompt: Which state of matter has a fixed volume but takes the shape of its container?
+    choices: [Liquid, Solid, Gas, Plasma]
+    answer: Liquid

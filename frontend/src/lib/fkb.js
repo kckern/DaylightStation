@@ -234,8 +234,13 @@ export function screenOff() {
     return false;
   }
   logger().info('fkb.screenOff', {});
-  fully.turnScreenOff();
-  return true;
+  try {
+    fully.turnScreenOff();
+    return true;
+  } catch (error) {
+    logger().warn('fkb.screenOff.failed', { error: error?.message ?? String(error) });
+    return false;
+  }
 }
 
 /**
@@ -250,8 +255,13 @@ export function screenOn() {
     return false;
   }
   logger().info('fkb.screenOn', {});
-  fully.turnScreenOn();
-  return true;
+  try {
+    fully.turnScreenOn();
+    return true;
+  } catch (error) {
+    logger().warn('fkb.screenOn.failed', { error: error?.message ?? String(error) });
+    return false;
+  }
 }
 
 /**

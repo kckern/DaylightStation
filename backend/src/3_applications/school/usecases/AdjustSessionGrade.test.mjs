@@ -61,6 +61,20 @@ describe('AdjustSessionGrade', () => {
     expect(f.sessions.appendEvent).toHaveBeenCalledTimes(2);
   });
 
+  it('refuses reuse of a correction or retraction id for different evidence', async () => {
+    const f = fixture();
+    await f.adjust.execute({ sessionId: 'ses_1', adjustmentId: 'adj_1', percent: 100,
+      missedItemIds: ['q2'], reason: 'scanner miss', adjustedBy: 'parent', baseSeq: 6, apply: true });
+    await expect(f.adjust.execute({ sessionId: 'ses_1', adjustmentId: 'adj_1', percent: 100,
+      missedItemIds: ['q1'], reason: 'scanner miss', adjustedBy: 'parent', baseSeq: 6, apply: true }))
+      .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+    await f.retract.execute({ sessionId: 'ses_1', adjustmentId: 'adj_1', reason: 'wrong session',
+      retractedBy: 'parent', baseSeq: 7, apply: true });
+    await expect(f.retract.execute({ sessionId: 'ses_1', adjustmentId: 'adj_1', reason: 'duplicate',
+      retractedBy: 'parent', baseSeq: 7, apply: true }))
+      .rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  });
+
   it('refuses a stale preview revision', async () => {
     const f = fixture();
     await expect(f.adjust.execute({ sessionId: 'ses_1', percent: 90, reason: 'fix', adjustedBy: 'parent', baseSeq: 5 }))

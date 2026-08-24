@@ -1,0 +1,51 @@
+id: how-chemistry-surrounds-you-01-omr
+title: Matter, Atoms, and Molecules Checkpoint
+seed: 20260824
+variant: 0
+target:
+  - letter
+blocks:
+  - type: rich_text
+    md: |
+      ## Matter, Atoms, and Molecules
+
+      Fill in one bubble for each question. Erase completely if you change an answer.
+  - type: question
+    itemId: chemistry-q1
+    number: 1
+    blocks:
+      - { type: rich_text, md: "What is the smallest unit of an element that retains that element's properties?" }
+      - { type: omr_response, itemId: chemistry-q1, choices: 4 }
+  - type: question
+    itemId: chemistry-q2
+    number: 2
+    blocks:
+      - { type: rich_text, md: "What forms when two or more atoms bond together?" }
+      - { type: omr_response, itemId: chemistry-q2, choices: 4 }
+  - type: question
+    itemId: chemistry-q3
+    number: 3
+    blocks:
+      - { type: rich_text, md: "Which substance is a compound?" }
+      - { type: omr_response, itemId: chemistry-q3, choices: 4 }
+  - type: question
+    itemId: chemistry-q4
+    number: 4
+    blocks:
+      - { type: rich_text, md: "Which observation most strongly indicates a chemical change?" }
+      - { type: omr_response, itemId: chemistry-q4, choices: 4 }
+  - type: question
+    itemId: chemistry-q5
+    number: 5
+    blocks:
+      - { type: rich_text, md: "Which particle has a negative electric charge?" }
+      - { type: omr_response, itemId: chemistry-q5, choices: 4 }
+  - type: question
+    itemId: chemistry-q6
+    number: 6
+    blocks:
+      - { type: rich_text, md: "Which state of matter has a fixed volume but takes the shape of its container?" }
+      - { type: omr_response, itemId: chemistry-q6, choices: 4 }
+  - type: scan_action
+    action: recovery
+    label: Scan this code if you need another copy of this sheet

@@ -1,0 +1,24 @@
+# The teacher-operations e2e course: a real printable science sequence used to
+# prove enrollment, agenda, grading, history, reporting, and corrective work.
+unitId: how-chemistry-surrounds-you.01
+title: Matter, Atoms, and Molecules
+subject: science
+courseId: how-chemistry-surrounds-you
+sequence: 1
+grades:
+  - lower
+  - upper
+objectives:
+  - Distinguish atoms, molecules, elements, and compounds.
+  - Recognize physical and chemical changes.
+document: how-chemistry-surrounds-you-01-omr
+bank: science/how-chemistry-surrounds-you/01-checkpoint
+passing:
+  percent: 80
+reward:
+  amount: 5
+provenance:
+  source: test curriculum derived from the household chemistry course
+  author: parent
+  reviewState: approved
+  reviewedOn: '2026-08-24'

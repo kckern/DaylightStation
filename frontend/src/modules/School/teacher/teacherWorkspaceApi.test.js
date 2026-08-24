@@ -50,4 +50,13 @@ describe('teacherWorkspaceApi', () => {
       credentials: 'same-origin', headers: { 'X-Teacher-Step-Up': 'grant-2' },
     }));
   });
+
+  it('returns the retained original as an authenticated same-origin blob', async () => {
+    const result = await teacherWorkspaceApi.artifactOriginal('art/1');
+    expect(result.ok).toBe(true);
+    expect(result.data).toBeInstanceOf(Blob);
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/original.pdf', expect.objectContaining({
+      credentials: 'same-origin', headers: {},
+    }));
+  });
 });
