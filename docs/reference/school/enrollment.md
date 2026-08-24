@@ -1,463 +1,150 @@
-# Enrollment and Syllabi — Design
+# Enrollment and syllabi
 
-> **Status:** Sections 1–3 describe the pre-enrollment state of `main` as of
-> 2026-08-13 (kept for history — see §2 for what changed). **Waves 0 and 1 are
-> now BUILT**: `AssignmentsView` preserves unknown entry fields on save,
-> `EnrollLearner`/`UnenrollLearner` materialize and remove enrollments through
-> `createCourseEnrollment`, both routes sit behind the real `teacherGate`, and
-> the whole-school matrix + drawer (§9) are live. **There is no console UI for
-> creating or editing a syllabus yet** — `schoolApi.putSyllabus`/
-> `archiveSyllabus` exist and have no caller — so until a syllabus is authored
-> by hand or via a direct API call, the drawer's syllabus picker shows its
-> empty state everywhere. **Scope subsetting (§5), profile de-hardcoding, and
-> the per-learner pass bar (§6–7) remain designed, not built.** The runtime
-> core for time-sensitive planning is described in §8 and
-> [`timing-and-priority.md`](./timing-and-priority.md).
->
-> An earlier revision of this document was written against a branch ~174 commits
-> behind `main` and got its central facts wrong — it proposed building an
-> enrollment model that `main` had already shipped. This revision is written
-> against `main` and is a delta on `school.course-enrollment/v1`, not a
-> greenfield model.
->
-> Parent reference: [`README.md`](./README.md)
+> **Current state:** whole-course enrollment is built. A teacher can enroll,
+> re-materialize, or unenroll a learner from the School matrix or lifecycle API.
+> Syllabi can be stored and archived through the API, but there is no syllabus
+> authoring UI; new syllabus YAML is authored by hand. Module-subset enrollment,
+> per-learner pass bars, and per-enrollment report-card rows remain unbuilt.
 
----
+Related: [planning](./planning.md),
+[timing and priority](./timing-and-priority.md), and
+[progress and reporting](./progress-and-reporting.md).
 
-## 1. Enrollment already exists, and the runtime honors it
+## The three records
 
-`school.course-enrollment/v1` (`2_domains/school/curriculum/enrollment.mjs`) is a
-per-learner, per-course record embedded in the assignment entry:
+These records are related but not interchangeable:
+
+| Record | Meaning | Authority |
+| --- | --- | --- |
+| Course | Published curriculum: units, modules, progression, profiles, grading, printables | `data/content/school/` |
+| Syllabus | Reusable teacher-authored arguments for enrolling in one course | `data/household/school/plans/syllabi/` |
+| Enrollment | Frozen realization of that syllabus for one learner | Learner assignment record |
+
+A syllabus is a template. An enrollment is the runtime contract. Editing or
+archiving a syllabus never silently changes an existing learner.
+
+## Enrollment v2
+
+An enrolled course is an object in the learner's `courses` assignment list:
 
 ```yaml
-# household/school/plans/learners/felix.yml
-learnerId: felix
-enrollments:
-  - math-fractions                          # bare string: no enrollment
-  - courseId: young-peoples-atlas-us
-    profile: upper
+courses:
+  - courseId: come-follow-me-ot-2026
+    profile: lower
+    syllabusId: come-follow-me-ot-2026-lower
+    enrolledAt: '2026-08-23T20:00:00.000Z'
     enrollment:
-      schema: school.course-enrollment/v1
-      enrollmentId: enr-felix-young-peoples-atlas-us
-      courseId: young-peoples-atlas-us
-      profile: upper
-      moduleOrder: [united-states, midwest, southwest, south, …]
-      optionalModules: [bonus]
+      schema: school.course-enrollment/v2
+      enrollmentId: enr_milo_come_follow_me
+      courseId: come-follow-me-ot-2026
+      profile: lower
+      progression:
+        mode: dated_modules
+        module_order: fixed
+        lesson_order: shuffle_once
+      moduleOrder: [w35-aug24, w36-aug31]
+      optionalModules: []
       lessonOrder:
-        midwest: [atlas-us-p012-midwest, atlas-us-p100-south-dakota, …]
-        …
-      # Present only for progression.mode: dated_modules.
+        w35-aug24: [cfm-w35-mon, cfm-w35-tue]
+        w36-aug31: [cfm-w36-mon, cfm-w36-tue]
       moduleSchedule:
         w35-aug24: { opensOn: '2026-08-24', closesOn: '2026-08-30' }
         w36-aug31: { opensOn: '2026-08-31', closesOn: '2026-09-06' }
 ```
 
-`planner.mjs` reads it (`readAssignmentList` keeps `profile` and `enrollment`
-off each entry) and uses it throughout gating:
+`createCourseEnrollment` snapshots:
 
-- `optionalModules` — a module that unlocks with the opening module but never
-  joins the serial chain;
-- `moduleOrder` — every earlier module must complete before the next opens;
-- `lessonOrder` — the enrollment's frozen order within a module wins over
-  `sequence`;
-- alongside the course's own `progression` policy: `required_opening_module`,
-  `one_active_module`, or `mode: sequential | module_blocks | dated_modules`.
+- the effective progression policy;
+- the learner profile;
+- module membership and order;
+- optional modules;
+- the once-only lesson order inside every module;
+- dated module windows, when the course uses `dated_modules`.
 
-For `dated_modules`, `moduleSchedule` is frozen at enrollment from the course
-manifest. It prevents later calendar edits from moving a learner's active
-plan; modules already closed when the learner enrolls are omitted entirely.
+That snapshot prevents later catalog edits from reordering an active learner or
+moving their calendar. Legacy v1 enrollments remain readable. A v1 enrollment
+with `moduleSchedule` is treated as `dated_modules`, because the schedule itself
+is durable evidence of the original policy.
 
-`profile` reaches the issue path. `issueWorksheet` filters items by
-`item.levels.includes(profile)` and seeds selection on
-`{revision, learnerId, enrollmentId, lessonId}`, producing a **self-contained
-worksheet instance** — "No later bank lookup is needed to grade it."
+## Syllabus shape
 
-That last point matters to any design here: **policy is already snapshotted at
-issue time** on the v2 path. Nothing needs inventing for in-flight protection.
-
-### Courses author their own structure
-
-`school.course/v2` `index.yml` carries `structure`, `modules[]`, `progression`,
-`grading`, `printables`, and `profiles`:
+The built whole-course syllabus shape is:
 
 ```yaml
-schema: school.course/v2
-work: the-elements-ted-gray
-progression: { mode: module_blocks, required_opening_module: foundations,
-               one_active_module: true, module_order: fixed,
-               lesson_order: shuffle_once }
-profiles:
-  lower: { question_count: 6,  visible_choices: [3, 4], multi_select: 0 }
-  upper: { question_count: 10, visible_choices: [5],    multi_select: [1, 2] }
-modules:
-  - { module: foundations, title: Periodic Table Foundations }
-  - { module: period-1,    title: Period 1 }
-  …
-```
-
----
-
-## 2. The gap that waves 0–1 closed (history)
-
-This section describes `main` **before** waves 0–1 landed; it is kept because
-§§3–9 are written as a delta against it. As of this document's current status
-(see the banner above), the gap it describes is closed for whole-course
-enrollment: `EnrollLearner`/`UnenrollLearner` are `createCourseEnrollment`'s
-production callers, `AssignmentsView` preserves `profile`/`enrollment`/unknown
-fields on save, and the matrix + drawer (§9) are the authoring surface for
-enrolling/re-materializing/unenrolling. What follows is the original framing.
-
----
-
-**`createCourseEnrollment` had zero production callers.** It was defined, unit
-tested, and invoked by nothing. `felix.yml` above was hand-written — including a
-58-entry `lessonOrder`.
-
-Neither `profile` nor `enrollment` appeared anywhere in the teacher console or in
-`SetAssignments`. The console's assignments editor wrote bare id lists of
-courses and standalone units; the enrollment shape it would need to preserve was
-invisible to it, which also meant **editing assignments through the console
-would drop a hand-authored enrollment on save** — the bug wave 0 fixed.
-
-So the runtime was complete and the authoring path was a text editor.
-
-Four things were absent (waves 0–1 closed the first; the rest remain open —
-see §10):
-
-| | State |
-|---|---|
-| A way to create or edit an enrollment | **Closed (wave 1):** `EnrollLearner`/`UnenrollLearner` + the matrix drawer. Still open: a console UI for authoring the *syllabus itself* (see status banner) |
-| Scope: enrolling in *part* of a course | None — see §5, the planner assigns every course unit |
-| Per-learner pass bar | None — `percentFor(unitId)` takes no learner |
-| Terms / dating / pacing | None |
-
-The per-learner bar is unchanged from the previous revision and remains the
-clearest defect: `passOverrides.percentFor(unitId)` at `GradeSubmission.mjs:272`
-and `CloseSessionOutcome.mjs:197` is learner-agnostic, so lowering one child's
-bar lowers everyone's.
-
----
-
-## 3. Authored-but-dead inventory
-
-A recurring pattern on `main`: the authoring schema runs ahead of its consumer.
-Four cases, all verified, all relevant to this design because each is a
-customization that *looks* available and is not.
-
-| Authored | Validated by | Consumed by |
-|---|---|---|
-| `work.profiles.*` (`question_count`, `visible_choices`, `multi_select`) | `workValidation.mjs:220-223` | **Nothing.** `questionBankV2.profileSpec()` hardcodes `lower`/`upper` and `throw`s on any other value — a third profile is impossible despite being authorable |
-| `work.grading.pass_percent` | `workValidation.mjs:129-141` | **Nothing.** The bar resolves `percentFor(unitId) ?? unit.passing.percent`; the course-level bar is never consulted |
-| `school.course-unit/v1` (`units/<module>/index.yml`) | nothing | **Nothing.** `course/v2`'s `modules[]` plus lesson-side `module:`/`moduleRole:` won; these files are a third, dead representation |
-| `unit.grades[]` | `unitValidation.mjs` | Displayed by `CurriculumBrowser.jsx:103-104`. Nothing *branches* on it |
-
-`work.profiles` is the sharpest of these: the elements course authors exactly the
-numbers `profileSpec` hardcodes, so it reads as working. It is a facade.
-
----
-
-## 4. The model
-
-**A syllabus is a saved, named, reusable set of arguments to
-`createCourseEnrollment`.** Nothing about the enrollment record or the runtime
-changes.
-
-```js
-createCourseEnrollment({ courseId, profile, units, policy })
-//                        └──────── this is a syllabus ────────┘
-//   → { schema: 'school.course-enrollment/v2', enrollmentId, courseId,
-//       profile, progression, moduleOrder, optionalModules, lessonOrder }
-```
-
-```yaml
-# household/school/plans/syllabi/elements.periods-1-2.yml
-syllabusId: elements.periods-1-2
-title: The Elements — Periods 1 & 2
-courseId: the-elements-ted-gray
-modules: [foundations, period-1, period-2]   # subset; omit for the whole course
+schema: school.syllabus/v1
+syllabusId: come-follow-me-ot-2026-lower
+title: Come Follow Me — Old Testament 2026 (lower)
+courseId: come-follow-me-ot-2026
 profile: lower
-policy:                                       # overrides work.progression
+policy:
   lesson_order: shuffle_once
-passing: 60                                   # per-learner bar (§7)
-term: 2026-fall                               # optional (§8)
 ```
 
-Enrolling a learner calls `createCourseEnrollment` with the syllabus's course,
-profile and policy, and with `units` filtered to the syllabus's modules. The
-returned record is written onto the assignment entry exactly as today, plus
-provenance:
+A syllabus may also carry a `timingTemplate`; see
+[timing and priority](./timing-and-priority.md). The current syllabus validator
+does not accept a `modules` subset, a per-learner passing threshold, or a term
+that creates a separate grading scope. Those are future model changes, not
+hidden YAML features.
 
-```yaml
-courses:
-  - courseId: the-elements-ted-gray
-    profile: lower
-    syllabusId: elements.periods-1-2          # new: provenance
-    enrolledAt: 2026-09-08T…                  # new
-    enrollment: { schema: school.course-enrollment/v2, … }
+## Runtime behavior
+
+The planner takes membership from the frozen `lessonOrder` when an enrollment
+has one. It falls back to the live catalog only for a legacy bare course
+assignment. This matters for a dated mid-course enrollment: modules omitted at
+enrollment do not reappear later as upcoming work or inflate progress totals.
+
+The profile reaches worksheet issuance. The issued worksheet stores its own
+selected questions, order, answer mapping, learner, enrollment, and curriculum
+revision. Grading therefore reads the issued snapshot rather than a potentially
+changed question bank.
+
+## Enroll, re-materialize, and unenroll
+
+`EnrollLearner` reads the syllabus and course, creates enrollment v2, and writes
+the rich course entry through the assignment store. The write is protected by
+`TeacherGate` and the assignment revision stale-save guard.
+
+Re-materialization explicitly creates a new snapshot from the current syllabus
+and course. It refuses while the learner has any open session in that course;
+otherwise an active worksheet could refer to a lesson removed by the new
+snapshot. Passed history remains safe because it is keyed by stable `unitId`.
+
+Unenrollment removes the current plan entry. It does not delete sessions,
+attempts, issued worksheets, feedback, assignment history, or report-card
+evidence.
+
+CLI writes are dry-run unless `--apply` is present:
+
+```bash
+SCHOOL_PIN=... node cli/school.mjs ops enroll milo \
+  --syllabus come-follow-me-ot-2026-lower \
+  --teacher kckern --pin-env SCHOOL_PIN
+
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize milo \
+  --syllabus come-follow-me-ot-2026-lower \
+  --teacher kckern --pin-env SCHOOL_PIN --apply
 ```
 
-### Materialization is a snapshot, by construction
+## Assignment history and reporting
 
-`createCourseEnrollment` persists the effective `progression` policy and
-`lessonOrder`, so neither a later catalog mode change nor a `shuffle_once`
-order can move under a learner. An enrollment is therefore a snapshot of the
-syllabus and course progression at enrollment time. Legacy v1 enrollments with
-a `moduleSchedule` are interpreted as `dated_modules`, preserving the calendar
-contract across the migration.
+Every assignment change appends a history record with `recordedAt`. Report
+cards use that history rather than pretending the current assignment was in
+force for the whole period. Removing a course today does not erase work done
+earlier in the period.
 
-Re-materializing is an explicit per-enrollment action. It must warn: a re-shuffle
-changes the order of lessons a learner has not yet reached, and re-materializing
-a course mid-run is only safe if already-passed lessons keep their identity —
-which they do, since `passedUnits` is keyed on `unitId` from session history and
-is independent of the enrollment.
+Current report cards are keyed by `courseId`, not `enrollmentId`. If two
+syllabi for the same course occur in one academic period, the report card emits
+a `multiple-enrollments` warning rather than silently presenting the merged
+number as one clean enrollment grade. Per-enrollment report-card rows remain
+future work.
 
-### Templates
+## Known limitations
 
-A syllabus with no `term` is a template: the same record, not yet dated, used
-only as an argument bundle. Enrolling from a template is legal — `term` never
-reaches `createCourseEnrollment`. Terms matter only for grading windows (§8),
-which is why nothing breaks when they are absent.
-
----
-
-## 5. Scope subsetting and planner membership
-
-This area originally needed two planner changes. Frozen enrollment membership
-is now honored; lesson-level completion scoping for `module_blocks` remains.
-
-`createCourseEnrollment` supports subsetting — it filters
-`units` to the course and derives `moduleOrder`/`lessonOrder` from whatever it
-is given, so passing a module subset produces a subset enrollment.
-
-**Membership now comes from the frozen enrollment.** When `lessonOrder` is
-present, the planner takes the union of its unit ids and the units belonging to
-`optionalModules`. It falls back to catalog membership only for legacy course
-assignments without frozen enrollment data. This is load-bearing for a dated
-mid-course enrollment: weeks omitted because they closed before enrollment do
-not reappear as `upcoming` entries or inflate progress totals.
-
-**One remaining limitation:** module completion for `module_blocks` is still
-computed over the catalog (`planner.mjs:137-138`):
-
-```js
-const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
-  .every((u) => passedUnits.has(u.unitId));
-```
-
-`siblings` is every catalog unit in the course. So a module containing even one
-lesson the learner is not enrolled in can never be "passed", and the next module
-never opens. Fix: restrict `passedModule` to enrolled lessons.
-
-Consequence for sequencing: **whole-module subsetting is now safe; lesson-level
-exclusion within an included `module_blocks` module is not safe until
-`passedModule` is fixed too.** Dated enrollment subsets whole modules, so its
-mid-course membership contract does not depend on that remaining change.
-
-### The gating invariant
-
-`planner.mjs:119-120` states the rule this design bends: *"a sequence is a
-property of the curriculum, so assigning unit 2 alone cannot smuggle a child
-past unit 1."* Honoring an enrollment subset **repeals that for enrolled
-courses** — a syllabus of `[period-4]` alone has no blocker on its first lesson.
-
-This is deliberate; partial enrollment is the point. It is not justified by
-"a grown-up decided it" — assignment was already grown-up-gated
-(`SetAssignments.mjs:55`) and the planner refuses to skip prerequisites anyway.
-The honest justification is narrower: a *named, saved* syllabus is a curriculum
-statement, which is the thing the invariant protects. The syllabus editor
-should therefore warn when a module subset has a dangling front edge — modules
-selected without their predecessors — rather than silently producing an
-unblocked mid-course start.
-
----
-
-## 6. Profiles must stop being hardcoded
-
-Wiring `work.profiles` into `profileSpec` is a prerequisite for treating profile
-as a syllabus field, for two reasons: `profileSpec` throws on any value that is
-not `lower`/`upper`, and a course that authors different counts is silently
-given the elements course's numbers.
-
-The change is small — read the spec from the course record, keep the current
-values as the fallback when a course authors none — but until it lands, "set the
-level on a syllabus" is a two-valued switch, not a field.
-
----
-
-## 7. Per-learner pass bar
-
-Precedence, most specific first:
-
-```
-session stamp (already written at grading; issue-time on the v2 path)
-  → enrollment.passing        (from the syllabus at materialization)
-  → work.grading.pass_percent (course-level; currently dead, §3 — wired in wave 3)
-  → unit.passing.percent
-```
-
-Materializing the bar onto the enrollment rather than resolving through the
-syllabus at grade time keeps the snapshot property of §4 and means neither call
-site needs to load a syllabus — they read the assignment record they already
-have.
-
-**The global per-unit override is retired**, not demoted (§11 Q1). It has never
-been used — `pass-overrides.yml` does not exist in production — and its one
-distinct job, fixing a unit's bar for *everyone*, is already served by editing
-the unit YAML: curriculum lives in the bind-mounted data volume,
-`YamlCurriculumDatastore` holds no cache, and the only School-side cache is a
-5-minute TTL over bank *summaries* (`SchoolService.mjs:26`), not unit
-definitions.
-
-**Retirement and wiring `work.grading.pass_percent` must land in the same wave.**
-Removing the override while the course-level bar is still unconsumed deletes a
-rung and gains nothing — the elements course's authored `80` would still do
-nothing and everything would fall through to `unit.passing.percent`.
-
----
-
-## 8. Terms, grading, and pacing
-
-`courseGradeFromSessions({ sessions, courseId, unitIds, window })` already
-accepts a unit list and a date window, and treats `window: null` as all history.
-A dated syllabus supplies both, which is what separates two sittings of one
-course years apart — the Elements case — into two grades rather than one merged
-figure.
-
-The timing model is documented in
-[`timing-and-priority.md`](./timing-and-priority.md). It distinguishes course
-sequence from academic periods, availability windows, targets, and effective
-agenda priority. Timing attaches to an enrollment or standalone-work plan,
-inherits reusable defaults from a syllabus, and materializes local dates onto
-the learner record. This keeps an active plan stable when a source anchor or
-syllabus later changes.
-
-The runtime now honors materialized timing: it adds planner date gates, urgency
-promotion, flexible-only focus-day displacement, and same-day chaining after a
-pass. Anchor and template authoring remains hand-authored/API-driven. The
-existing invariant still holds: timing may prioritize eligible work, but it
-cannot reorder or pre-issue a sequential lesson ahead of its prerequisite.
-
----
-
-## 9. Surface
-
-`SchoolMatrix` becomes the way in rather than a read-only report: a cell is an
-enrollment, a column header opens that course's syllabi.
-
-```
-The whole school                              [+ Enroll]
-
-              elements     atlas      calc
-  milo        P1-2 lower    --         --
-  alan        P1-2 upper   US-W        AB
-  soren       heavy upper   --         BC
-  felix         --         US-E ⚠      --
-              ▲ cell → enrollment drawer
-  ▲ column header → that course's syllabi
-
-  ⚠ felix × atlas: enrollment has no syllabusId (hand-authored)
-  ! nobody enrolled in: writing-workshop
-```
-
-The drawer shows the materialized enrollment — module order, optional modules,
-profile, bar — with **Re-materialize** and **Unenroll**, and flags drift from
-its syllabus. Re-materialize refuses while any session on that course is open,
-naming them (§11 Q5). Hand-authored enrollments without a `syllabusId` render as
-first-class, flagged as unmanaged rather than treated as broken; `felix.yml` must
-keep working untouched.
-
-Below the grid, a per-learner list shows enrollments plus a separate
-**Standalone** group for `assignments.units[]` — program and course-less units
-that have no syllabus (§11 Q2).
-
-`AssignmentsView` is the immediate hazard: it currently round-trips assignments
-as bare id lists and would drop `enrollment`/`profile` on save. It must preserve
-unknown entry fields before anything else here ships.
-
----
-
-## 10. Sequencing
-
-| Wave | Contents | Status |
-|---|---|---|
-| **0** | `AssignmentsView` preserves `profile`/`enrollment`/unknown fields on save. Pure bug fix, independently shippable, **blocked everything else** — editing assignments through the console used to delete a hand-authored enrollment. | **Built** |
-| **1** | Syllabus store + validator; `EnrollLearner`/`UnenrollLearner` use cases calling `createCourseEnrollment`; API behind `teacherGate` with the `baseUpdatedAt` stale-save guard; matrix cell editor and drawer (re-materialize with the open-session refusal of §4, unenroll); standalone-units group (§11 Q2); report-card multi-enrollment guard (§11 Q4). Whole-course syllabi only. | **Built** — except a console UI for *authoring* a syllabus, which does not exist yet (see status banner); syllabi must be written by hand or via API for the drawer to have anything to offer |
-| **2** | Scope: the two `planner.mjs` fixes in §5, module subsetting, dangling-front-edge warning. Plus §11 Q6 — extend `course/v2` `modules[]`, migrate the 17 `course-unit/v1` files, delete them. | Designed, not built |
-| **3** | `work.profiles` wired into `profileSpec` (§6); per-learner pass bar (§7); `work.grading.pass_percent` consulted **and** the global override retired, together (§7). | Designed, not built |
-| **4** | Terms and grading windows (§8); per-enrollment report cards; then pacing. | Designed, not built |
-
-Two placements are deliberate. **Q6 is in wave 2, not filed as cleanup**: per-module
-`lesson_order` is an *input* to materialization ordering, so it belongs with the
-subsetting work rather than after it. **The report-card guard is in wave 1, not
-wave 4**: a second enrollment in one course becomes possible the moment enrolling
-does.
-
----
-
-## 11. Resolved decisions
-
-These were open in the previous revision. All six are settled; the evidence for
-each is recorded because it is the kind that goes stale.
-
-**Q1 — Global pass-override: retire it.** `pass-overrides.yml` has never existed
-in production, so there is nothing to migrate. Its one distinct job is better
-served by editing the unit YAML (§7). Retirement spans ~29 references across 9
-files, including `SchoolMatrix`'s ⚑ overridden-course flag and one `kind` in the
-audit-trail feed. Must ship with `work.grading.pass_percent` being wired (§7).
-
-**Q2 — Standalone units: unchanged.** `assignments.units[]` holds work belonging
-to no course — live usage is a single entry, felix's `language-daily`, a program
-unit with daily cadence. Programs cannot have a syllabus by construction. They
-stay on the assignment record and appear in the learner's enrollment list as a
-separate *Standalone* group, never in the grid, which is course × learner.
-
-**Q3 — Syllabus deletion: safe by construction.** Because materialization is a
-snapshot (§4), an enrollment is self-contained and `syllabusId` is provenance
-only. Deleting a syllabus breaks nothing at runtime; the enrollment becomes
-*unmanaged* — the same state felix's hand-authored one is already in. Archive
-rather than hard-delete, so the drawer can still name where an enrollment came
-from.
-
-**Q4 — Report cards: keep courseId keying, add a guard.** Per-enrollment rows
-are deferred to wave 4, when terms make `courseGradeFromSessions`' `window`
-real and the frozen `school.report-card/v1` schema can be migrated once rather
-than twice. Meanwhile a period containing sessions from two enrollments of one
-course is *flagged*, so the merge is visible rather than a silent average of two
-unrelated scopes.
-
-**Q5 — Re-materialization: refuse while any session is open.** Blocked until
-open sessions on that course are closed or abandoned, naming them, with
-`markSessionAbandoned` as the escape. Passed work is never at risk regardless —
-`passedUnits` is keyed on `unitId` from session history and is independent of
-the enrollment — but an open session on a lesson leaving the enrollment would
-strand, and this codebase has been bitten by that class of ghost before.
-
-**Q6 — `school.course-unit/v1`: fold into `course/v2`, then delete.** Not
-cleanup. The 17 files carry `sequence`, `required`, `overview_first` and
-per-module `lesson_order`, while `modules[]` accepts only
-`{module, title, media?}` (`workValidation.mjs:171-190`) and
-`progression.lesson_order` is course-*wide*. The elements course sets
-`shuffle_once` course-wide while `units/00-foundations/index.yml` asks for
-`sequence` — so the "start here" overview module is authored to stay in order
-and is being shuffled. No live damage yet (nobody is enrolled in elements).
-Extend `modules[]` with the missing fields, migrate the 17 files, delete them.
-
-### Still genuinely open
-
-- **Terms.** §8 assumes a syllabus may carry one, but no academic-period link is
-  designed. Wave 4.
-- **Pacing.** `self_paced` / `deadline` / `flex` are named in §8 and designed
-  nowhere. Flex ordering has no home in the current model, since order is frozen
-  into `lessonOrder` at materialization.
-
----
-
-## 12. Related
-
-- [`README.md`](./README.md) — the School subsystem map.
-- [`authoring/work-config.md`](./authoring/work-config.md) — `school.course/v2`,
-  including `progression` and `profiles`.
-- [`authoring/content-layout.md`](./authoring/content-layout.md) — where
-  curriculum content lives on disk.
-- [`print-documents.md`](./print-documents.md) — the rev-pinning discipline the
-  v2 worksheet instance path follows.
+- New syllabi require hand-authored YAML or direct API use.
+- The enrollment surface is whole-course; module-subset authoring is not live.
+- Course profiles are still constrained by the existing worksheet profile
+  implementation.
+- Passing thresholds are unit-level plus household pass overrides; they are not
+  snapshotted per learner.
+- Academic periods scope reports, but an enrollment does not yet own a term or
+  independent grading window.

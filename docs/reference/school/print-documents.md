@@ -1,8 +1,8 @@
 # Print Documents — Worksheets, Quizzes, and OMR Grading
 
-> **Status: built and deployed.** The full loop runs in production: author a
-> YAML source → publish → render on demand (per-student, per-variant) → the
-> student answers on a physical bubble card → the card scan grades, records
+> **Status: implemented.** Verify the active deployment separately. The full
+> loop is: author a YAML source → publish → render on demand (per-student,
+> per-variant) → the student answers on a physical bubble card → the card scan grades, records
 > evidence, and advances the work session — with anything a machine cannot
 > honestly grade routed to a person.
 >
@@ -994,7 +994,7 @@ Known, accepted limits (each was reviewed, not overlooked):
 | Content (sources) | `data/content/school/catalog/documents/` — hand-authored, by taxonomy path (CLI: `--source-root`) |
 | Content (artifacts) | `data/content/school/print-documents/` — `published/`, `derived-banks/`, `allocations/` only (CLI: `--content-root`) |
 | Evidence | `data/users/{id}/apps/school/attempts/` (shared with the on-screen engine) |
-| Config | `data/household/config/school.yml` → `print.teacherPin` |
+| Config | `data/household/school/school.yml` → `print.teacherPin` |
 
 Curriculum units reference a print quiz as `document: print/<id-path>@<rev>`
 — the rev is pinned at authoring time, so a republish never silently changes

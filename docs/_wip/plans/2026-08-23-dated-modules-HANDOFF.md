@@ -2,8 +2,9 @@
 
 **Written:** 2026-08-23; updated after merge into `main`.
 
-**Status:** Runtime framework merged. Come Follow Me course data, two syllabi,
-and learner enrollments remain pending.
+**Status:** Runtime framework merged. The Come Follow Me course and lower/upper
+syllabi are authored and domain-validated. Live Milo/Felix enrollment remains
+pending because it requires explicit teacher authority.
 
 **Merged branch:** `feat/school-dated-modules`
 **Branch point:** `6347803bb` on `main`
@@ -29,11 +30,12 @@ Come Follow Me is a **dated** course: 17 weekly modules each pinned to a real we
 | 4 — `EnrollLearner` passes modules + today | ✅ `10efe41a2` |
 | 5 — planner stops gating across dated modules | ✅ `10efe41a2`; frozen membership fix `b165d96e4` |
 | 6 — agenda honors `timingRank` | ✅ `10efe41a2` |
-| 7 — full suite green, then author the CFM course | Runtime ✅; course authoring ⬜ |
-| 8 — author two syllabi, enroll Milo and Felix | ⬜ |
-| 9 — docs | ✅ reference docs updated; this handoff reconciled at merge |
+| 7 — full suite green, then author the CFM course | ✅ runtime and external course data validated |
+| 8 — author two syllabi, enroll Milo and Felix | Syllabi ✅; live enrollments ⬜ |
+| 9 — docs | ✅ canonical lifecycle references and this rollout status updated |
 
-The remaining work is household content/configuration, not runtime support.
+The remaining work is the teacher-authorized learner enrollment operation, not
+runtime or content support.
 
 ## Historical mid-execution notes
 

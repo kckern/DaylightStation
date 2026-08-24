@@ -1,22 +1,24 @@
-# School (Portal Homeschool) — Reference
+# School — reference index
 
-> **Status:** Built and deployed — identity + quizzes/flashcards, the subject
-> wall home (nine paired subjects, 3×3), the materials framework (video/audio
-> courses with quiz gates, quiz-on-demand, the FitnessShow-style unit browser),
-> the program report interface, Sentence Ladder study,
-> **printing** (worksheets on the kitchen laser printer), **print documents**
-> (authored worksheet/quiz PDFs with OMR bubble-card grading — see
-> [`print-documents.md`](./print-documents.md)), and interactive
-> geography quizzes (click-a-region and image-choice item types, a
-> generated-content deck pipeline, a resurfacing drill mode). Writing, typing, the
-> parent reassignment UI, and reading (PDF/EPUB) remain **specced only** —
-> section 3. Each section below says which it is.
+> **Repository status:** the learner surface, curriculum/session lifecycle,
+> assignments and whole-course enrollment, timed planning, agenda printing,
+> quizzes and OMR, teacher console, feedback, repair, reporting, program
+> integration, and Sentence Ladder are implemented on `main`.
+>
+> **Deployment status is separate.** A commit or push does not prove that a
+> particular host is running it. Household content rollout and learner
+> enrollment are also separate from runtime support. Check those explicitly in
+> operations rather than inferring them from this page.
+>
+> **Not built:** syllabus-authoring UI, module-subset enrollment, per-learner
+> pass bars, per-enrollment report-card rows, writing/composition delivery, and
+> typing tutor, general PDF/EPUB reading.
 >
 > **Requirements (the whole programme):** [`docs/superpowers/specs/2026-07-21-portal-homeschool-requirements.md`](../../superpowers/specs/2026-07-21-portal-homeschool-requirements.md)
 >
 > **Roadmap (candidate future work, categorized):** [`docs/roadmap/2026-07-21-school-module-roadmap.md`](../../roadmap/2026-07-21-school-module-roadmap.md)
 >
-> **Enrollment and syllabi (whole-course path built, wave 1):**
+> **Enrollment and syllabi (whole-course path built):**
 > [`enrollment.md`](./enrollment.md) — `school.course-enrollment/v2` exists and
 > the planner and issue path honor it fully. `EnrollLearner`/`UnenrollLearner`
 > now materialize/remove enrollments from a saved *syllabus* — a reusable set
@@ -25,9 +27,7 @@
 > *authoring* a syllabus (`putSyllabus`/`archiveSyllabus` exist in the client
 > with no caller), so a syllabus must be written by hand or via API before the
 > drawer has anything to enroll from. Scope subsetting and the per-learner pass
-> bar remain designed, not built (waves 2–4). Time-sensitive planning is
-> implemented separately below. §3 inventories four authored-but-unconsumed
-> curriculum fields.
+> bar remain designed, not built.
 
 > **Time-sensitive planning (runtime core built):**
 > [`timing-and-priority.md`](./timing-and-priority.md) — household-owned event
@@ -40,13 +40,24 @@
 >
 > **Formative learner/three-calculator pilot:** [`school-learning-pilot-protocol.md`](./school-learning-pilot-protocol.md)
 >
-> This is the durable map of the School subsystem: what runs today, what is
-> designed but unbuilt, and the decisions behind both.
+## Start here
 
-Focused references: [completion and rewards](./completion-and-rewards.md),
-[program integration](./programs.md), and
-[Sentence Ladder](./sentence-ladder.md). Operational commands are documented
-in [program integration](./programs.md#operations-cli).
+| Question | Canonical reference |
+| --- | --- |
+| What belongs in a learner's plan? | [Planning](./planning.md) |
+| How do syllabi and frozen enrollments work? | [Enrollment](./enrollment.md) |
+| How do dates, urgency, and catch-up work? | [Timing and priority](./timing-and-priority.md) |
+| How does today's paper and completion gate work? | [Agenda and completion](./agenda-and-completion.md) |
+| How are attempts graded and notes delivered? | [Assessment and feedback](./assessment-and-feedback.md) |
+| What do progress, course grade, and status mean? | [Progress and reporting](./progress-and-reporting.md) |
+| How do I inspect or repair live state? | [Operations](./operations.md) |
+| How do external programs plug in? | [Programs](./programs.md) |
+| How does the sentence sequence work? | [Sentence Ladder](./sentence-ladder.md) |
+
+The remainder of this file is the detailed subsystem inventory. The focused
+pages above are authoritative for lifecycle vocabulary and current behavior;
+historical wave narratives below are retained only when they explain an
+existing constraint.
 
 ---
 
@@ -92,7 +103,7 @@ membership from `data/users/{id}/profile.yml`, not a separate list.
 
 ---
 
-## 2. Built and deployed
+## 2. Implemented subsystem inventory
 
 ### Identity
 
@@ -198,7 +209,7 @@ failure warns (`school.sitting.write-failed`) and never fails the answer.
 | Frontend | `frontend/src/modules/School/` |
 | Shared identity | `frontend/src/lib/identity/` |
 | Screen | `data/household/screens/portal.yml` → `widget: school` |
-| Config | `data/household/config/school.yml` |
+| Config | `data/household/school/school.yml` |
 
 Any screen's config YAML may carry an optional top-level `surfaceProfile: <surfaceId>` key naming which certified surface profile that screen presents as, resolved via `GET /api/v1/school/surfaces/profile?screen=<screenId>` (a bare `browser`/absent screen resolves the fixed `screen-browser` profile instead).
 
@@ -294,7 +305,7 @@ preserved — but no configured content uses it; a gate runner meeting one treat
 it as unsatisfied and warns), and coin/curriculum *consumption* of completion
 (sub-projects 4 and 6 read what this framework records).
 
-**Config:** `data/household/config/school.yml` `materials:` block — sources
+**Config:** `data/household/school/school.yml` `materials:` block — sources
 (label, source, root, medium, category) plus `completion_threshold_percent` and
 `quiz_pass_percent`. Boot-cached; config edits need a container restart.
 
@@ -952,7 +963,7 @@ the paper a child burns without changing what any request costs them.
 | Pending queue | `data/household/school/runtime/queues/print.yml` |
 | Worksheet files | `data/household/content/worksheets/*.pdf` (for `type: pdf`) |
 | Device | `data/household/config/devices.yml` → `kitchen-printer` (Brother HL-L2460DW) |
-| Config | `data/household/config/school.yml` → `printing:` + `printables:` |
+| Config | `data/household/school/school.yml` → `printing:` + `printables:` |
 
 **API:** `GET /print/printables` (with resolved page counts), `GET
 /print/quota?userId=`, `POST /print/request` `{userId, printableId, copies}` →
@@ -1232,7 +1243,7 @@ rewording the copy cannot remove the retry button.
 #### Configuration — two independent switches
 
 ```yaml
-# data/household/school/school.yml   (colocated policy; NOT household/config/school.yml)
+# data/household/school/school.yml   (colocated School policy; the retired config tree is not consulted)
 selfService:
   enabled: true                  # mint and print codes
   mediaSurface:
@@ -1340,11 +1351,12 @@ and does nothing.
 
 ### An assigned course, not a catalog, is what prints
 
-> An assignment entry may also carry a `profile` and a
-> `school.course-enrollment/v1` **enrollment** (module order, optional modules,
-> frozen lesson order), which the planner and the worksheet issue path honor.
-> Nothing creates one yet — see [`enrollment.md`](./enrollment.md), which
-> designs the **syllabus** that materializes them and the teacher surface for it.
+> An assignment entry may carry a `profile` and a
+> `school.course-enrollment/v2` snapshot: effective progression, module
+> membership/order, optional modules, frozen lesson order, and—when dated—its
+> module schedule. `EnrollLearner` materializes it from a stored syllabus;
+> re-materialization and unenrollment are explicit teacher-gated operations.
+> See [enrollment and syllabi](./enrollment.md).
 
 A valid curriculum catalog offers **nothing** on its own. `BuildAgenda` builds
 strictly from what a grown-up has assigned — courses, standalone units, and
@@ -1641,18 +1653,16 @@ did.
 | Frontend | `frontend/src/modules/School/home/useLearnerFeedback.js`, `useLearnerStanding.js`, `StudentPanel.jsx` |
 | CLI | `cli/school.mjs certify` — `--strict-concepts` |
 | Content | `data/content/school/concepts.yml` — the concept label registry |
-| Config | `data/household/config/school.yml` → `progress.academicPeriods` |
+| Config | `data/household/school/school.yml` → `progress.academicPeriods` |
 
-### The teacher console (read-only skeleton)
+### The teacher console
 
 The grown-up side of the desk: a phone-first browser surface at
 **`/school/teacher`** — never a Portal widget, never in kiosk nav — with four
-tabs (**Today · Planning · Records · Repair**) over the existing read APIs.
-The URL carries the whole nav state (`/school/teacher/<tab>[/<learnerId>]`).
-Wave 1 is deliberately read-only: every future mutation renders as an honest
-**stub card** carrying a stable `data-todo` id from the placeholder registry
-(spec §4.6) — a stub with no registry row, or a row with no stub, is a test
-failure (`TeacherConsole.test.jsx` scans the rendered set).
+tabs (**Today · Planning · Records · Repair**) over the lifecycle, reporting,
+and repair APIs. The URL carries the whole navigation state
+(`/school/teacher/<tab>[/<learnerId>]`). All four tabs expose live
+teacher-gated reads and mutations; the placeholder registry is empty.
 
 **Teachers are config-declared, not age-derived.** `school.yml` `teachers:`
 lists roster ids; `GET /api/v1/school/teachers` resolves them against the
@@ -1660,10 +1670,9 @@ live roster per request (shape-only validation at boot; a typo or blank
 birthyear costs a picker entry and a warning, never the container) and
 answers `{configured, teachers: [{id, name}]}` — profile fields never leave
 the server. The console's soft claim (sessionStorage) is attribution only;
-per the spec's settled security posture, every future mutation wave lands
-behind a distinct `teacherConsolePin` checked in the owning use cases, with
-role-is-authority (the stamped id must be a configured teacher when the key
-exists).
+per the settled security posture, every mutation is behind the
+`teacherConsolePin` checked in its owning use case, with role-is-authority (the
+stamped id must be a configured teacher when the key exists).
 
 **Panel isolation, five states.** Every panel fetches independently through
 `usePanelFetch` (`loading | error | empty | unavailable | ok`): one failing
@@ -1752,7 +1761,7 @@ math shared with `GetTeacherToday`.
 | API | `GET /api/v1/school/teachers`; `?window=today` on the lifecycle sessions read |
 | Frontend | `frontend/src/modules/School/teacher/` — `TeacherConsole`, `TeacherProfileContext`, `usePanelFetch`, `todoRegistry`, `tabs/`, `panels/` |
 | Routes | `frontend/src/main.jsx` — `/school/teacher[/*]` + `/app/school/teacher` redirect |
-| Config | `data/household/config/school.yml` → `teachers:` (boot-cached; adding a teacher takes a restart) |
+| Config | `data/household/school/school.yml` → `teachers:` |
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
 
@@ -1941,14 +1950,13 @@ way to mint) — both recorded here rather than reopened as new debt.
 
 ## 3. Specced, not built
 
-No code exists for anything in this section. Each links its spec.
+No delivery surface exists for anything in this section. Each available design
+links its spec.
 
 | Sub-project | Spec | Shape |
 |---|---|---|
 | **Writing assignments** | [`2026-07-26-school-composition-delivery-design.md`](../../superpowers/specs/2026-07-26-school-composition-delivery-design.md) | Keyboard-first composition, curriculum-defined submission, advisory rubric feedback, and parent-controlled print/email/postal outbox |
 | **Typing tutor** | [`2026-07-21-school-typing-tutor-design.md`](../../superpowers/specs/2026-07-21-school-typing-tutor-design.md) | Drill (curriculum) + arcade, modelled on `PianoSpaceInvaders`' pure-engine split. No npm dependency |
-| Curriculum / assignments | — | Not yet designed |
-| Parent view, sign-off, reassignment UI | — | Not yet designed. **The reassignment UI is unbuilt**; today's storage makes it *possible*, nothing performs it |
 | Reading (PDF / EPUB) | — | Not yet designed. Adapters exist; the two renderers are stubs |
 
 ### Decisions already made in those specs
@@ -1995,7 +2003,7 @@ No code exists for anything in this section. Each links its spec.
 
 ## 5. Gotchas
 
-- **`data/household/config/school.yml`'s `materials:` block is live config** —
+- **`data/household/school/school.yml`'s `materials:` block is live config** —
   the materials framework reads it at boot. The old staged `courses:` block is
   retired. A missing `materials:` block degrades to an empty catalog with a
   single logged warning, never a 500.
