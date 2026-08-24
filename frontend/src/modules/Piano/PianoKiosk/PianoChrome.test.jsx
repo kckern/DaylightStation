@@ -1,102 +1,67 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
-const midi = vi.hoisted(() => ({ connected: true, status: 'connected', connect: vi.fn() }));
-const sound = vi.hoisted(() => ({ activeName: 'Grand Piano' }));
-const longPressHandlers = vi.hoisted(() => ({ onPointerDown: vi.fn(), onPointerUp: vi.fn() }));
+const connection = vi.hoisted(() => ({ health: { state: 'ready', copy: 'ready' } }));
 const longPressSpy = vi.hoisted(() => vi.fn());
 const breadcrumbBar = vi.hoisted(() => ({ crumbs: [] }));
 
-vi.mock('./PianoMidiContext.jsx', () => ({ usePianoMidi: () => midi }));
-vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => sound }));
+vi.mock('./PianoConnectionContext.jsx', () => ({
+  usePianoConnection: () => connection,
+}));
+vi.mock('./PianoSoundContext.jsx', () => ({ usePianoSound: () => ({ activeName: 'Grand Piano' }) }));
 vi.mock('./PianoConfig.jsx', () => ({ usePianoKioskConfig: () => ({ basePath: '/piano' }) }));
 vi.mock('./PianoBreadcrumbContext.jsx', () => ({ usePianoBreadcrumbBar: () => breadcrumbBar }));
-vi.mock('../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span className="piano-icon" data-icon={name} /> }));
-vi.mock('./SoundPanel.jsx', () => ({ default: ({ open }) => (open ? <div>SOUND-PANEL-OPEN</div> : null) }));
-vi.mock('./OperatorDrawer.jsx', () => ({ default: ({ open }) => (open ? <div>OPERATOR-DRAWER-OPEN</div> : null) }));
+vi.mock('../ui/icons/Icon.jsx', () => ({ default: ({ name }) => <span data-icon={name} /> }));
+vi.mock('./PianoUserChip.jsx', () => ({ default: () => <button type="button">Player</button> }));
+vi.mock('./PianoLinkBanner.jsx', () => ({ default: () => null }));
+vi.mock('./SoundPanel.jsx', () => ({ default: ({ open }) => open ? <div>Sound sheet</div> : null }));
+vi.mock('./OperatorDrawer.jsx', () => ({ default: ({ open }) => open ? <div>Piano maintenance</div> : null }));
 vi.mock('./useLongPress.js', () => ({
-  useLongPress: (onLongPress, opts) => {
-    longPressSpy(onLongPress, opts);
-    return longPressHandlers;
+  useLongPress: (onLongPress, options) => {
+    longPressSpy(onLongPress, options);
+    return { onPointerDown: vi.fn(), onPointerUp: vi.fn() };
   },
 }));
 
 import { PianoChrome } from './PianoChrome.jsx';
 
-const renderChrome = (props = {}) =>
-  render(<MemoryRouter><PianoChrome {...props} /></MemoryRouter>);
+const renderChrome = (props = {}) => render(<MemoryRouter><PianoChrome {...props} /></MemoryRouter>);
 
 describe('PianoChrome', () => {
-  beforeEach(() => {
-    longPressSpy.mockClear();
-    breadcrumbBar.crumbs = [];
-  });
+  beforeEach(() => { longPressSpy.mockClear(); breadcrumbBar.crumbs = []; Object.assign(connection.health, { state: 'ready', copy: 'ready' }); });
 
-  it('shows the active voice in the status chip', () => {
-    renderChrome({ modeLabel: 'Courses', modeKey: 'videos' });
-    expect(screen.getByText('Grand Piano')).toBeTruthy();
-  });
-
-  it('renders the mode breadcrumb crumb', () => {
-    renderChrome({ modeLabel: 'Courses', modeKey: 'videos' });
-    expect(screen.getByText('Courses')).toBeTruthy();
-  });
-
-  it('wires the chip to useLongPress: tap opens SoundPanel, long-press opens OperatorDrawer', () => {
+  it('exposes one sound chip with canonical health copy and no Settings gear', () => {
     renderChrome();
-    expect(longPressSpy).toHaveBeenCalled();
-    const [onLongPress, opts] = longPressSpy.mock.calls[0];
-
-    expect(screen.queryByText('SOUND-PANEL-OPEN')).toBeNull();
-    act(() => opts.onTap());
-    expect(screen.getByText('SOUND-PANEL-OPEN')).toBeTruthy();
-
-    expect(screen.queryByText('OPERATOR-DRAWER-OPEN')).toBeNull();
-    act(() => onLongPress());
-    expect(screen.getByText('OPERATOR-DRAWER-OPEN')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Change sound, Grand Piano. Piano ready' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Settings/i })).toBeNull();
   });
 
-  it('opens the Operator Drawer from the visible Settings gear (no long-press needed)', () => {
+  it('opens Sound on tap and Piano maintenance on the 550ms hold contract', () => {
     renderChrome();
-    expect(screen.queryByText('OPERATOR-DRAWER-OPEN')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Settings/i }));
-    expect(screen.getByText('OPERATOR-DRAWER-OPEN')).toBeTruthy();
+    const [onHold, options] = longPressSpy.mock.calls[0];
+    expect(options.holdMs ?? 550).toBe(550);
+    act(() => options.onTap());
+    expect(screen.getByText('Sound sheet')).toBeTruthy();
+    act(() => onHold());
+    expect(screen.getByText('Piano maintenance')).toBeTruthy();
   });
 
-  it('hides the inline Reconnect affordance when connected', () => {
-    midi.connected = true;
-    midi.status = 'connected';
+  it('uses partial health in the accessible name without exposing maintenance hints', () => {
+    connection.health.state = 'input-only';
+    connection.health.copy = 'input-only';
     renderChrome();
-    expect(screen.queryByText('Reconnect')).toBeNull();
+    const chip = screen.getByRole('button', { name: /Piano input-only/ });
+    expect(chip.getAttribute('aria-label')).not.toMatch(/hold|maintenance|operator/i);
   });
 
-  it('shows an inline Reconnect affordance when disconnected, and it calls connect', () => {
-    midi.connected = false;
-    midi.status = 'no-input';
-    midi.connect = vi.fn();
-    renderChrome();
-    const reconnectBtn = screen.getByText('Reconnect');
-    expect(reconnectBtn).toBeTruthy();
-    fireEvent.click(reconnectBtn);
-    expect(midi.connect).toHaveBeenCalled();
-  });
-
-  it('renders crumb thumbnails and icons, and a clickable current crumb', () => {
-    const spy = vi.fn();
-    breadcrumbBar.crumbs = [
-      { label: 'Super Mario Theme', image: '/img/mario.jpg' },
-      { label: 'Listen', icon: 'mode-listen', onClick: spy },
-    ];
-    renderChrome();
-
-    const img = document.querySelector('.piano-chrome__crumb-thumb');
-    expect(img).not.toBeNull();
-    expect(img).toHaveAttribute('src', '/img/mario.jpg');
-
-    const modeCrumb = screen.getByRole('button', { name: /listen/i });
-    expect(modeCrumb.querySelector('.piano-icon')).not.toBeNull();
-    fireEvent.click(modeCrumb);
-    expect(spy).toHaveBeenCalled();
+  it('keeps breadcrumb thumbnails, icons, and current actions intact', () => {
+    const action = vi.fn();
+    breadcrumbBar.crumbs = [{ label: 'Song', image: '/song.jpg' }, { label: 'Listen', icon: 'mode-listen', onClick: action }];
+    renderChrome({ modeLabel: 'Music', modeKey: 'music' });
+    expect(screen.getByText('Music')).toBeTruthy();
+    expect(document.querySelector('img')).toHaveAttribute('src', '/song.jpg');
+    fireEvent.click(screen.getByRole('button', { name: /Listen/i }));
+    expect(action).toHaveBeenCalledTimes(1);
   });
 });

@@ -150,6 +150,10 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   // BLE state is actually connected, NOT merely present. Drives the unified MIDI
   // health signal so a silently-dead output surfaces instead of reading healthy.
   const [outputConnected, setOutputConnected] = useState(false);
+  // Increments after every completed Web MIDI acquisition attempt. Connection
+  // repair requires a generation newer than its starting point, so stale
+  // pre-reset `ready` state can never satisfy recovery.
+  const [bindingGeneration, setBindingGeneration] = useState(0);
 
   // Live-note state (activeNotes/noteHistory/sustainPedal/isPlaying) lives in an
   // external store, NOT React state, so a note event re-renders only
@@ -344,7 +348,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
       setStatus('unsupported');
       logger().warn('midi.unsupported', {});
-      return;
+      return { ok: false, reason: 'unsupported' };
     }
     setStatus('requesting');
     try {
@@ -386,9 +390,13 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
           hasOutput: !!outputRef.current, heldInput: !!inputRef.current,
         });
       }
+      setBindingGeneration((generation) => generation + 1);
+      return { ok: true };
     } catch (err) {
       setStatus('denied');
       logger().error('midi.denied', { error: err?.message });
+      setBindingGeneration((generation) => generation + 1);
+      return { ok: false, reason: 'denied', error: err?.message };
     }
   }, [bindInput, bindOutput, acquireInput, holdInputForOutput]);
 
@@ -403,7 +411,10 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     inputRef.current = null;
     outputRef.current = null;
     setOutputName(null);
-    await connect();
+    setInputName(null);
+    setOutputConnected(false);
+    setStatus('requesting');
+    return connect();
   }, [connect]);
 
   // Clear any pending debounced rebind on unmount so it can't fire into a torn-down hook.
@@ -742,6 +753,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     // on-screen sound changes can't reach the piano; `resetLink()` re-scans.
     outputName,
     outputConnected,
+    bindingGeneration,
     resetLink,
     // Live-note store (activeNotes/noteHistory/sustainPedal/isPlaying). Read via
     // usePianoMidiNotes() so only note-reading leaves re-render per note; this
@@ -763,7 +775,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     pressNote,
     releaseNote,
     feedNote,
-  }), [status, inputName, outputName, outputConnected, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote, feedNote]);
+  }), [status, inputName, outputName, outputConnected, bindingGeneration, resetLink, connect, sendProgramChange, sendVoice, sendLocalControl, sendControlChange, sendPanic, sendNote, sendNoteOff, sendNoteAt, sendNoteOffAt, scheduleNotes, subscribe, subscribeRaw, pressNote, releaseNote, feedNote]);
 }
 
 export default useWebMidiBLE;

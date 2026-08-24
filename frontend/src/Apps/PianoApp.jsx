@@ -3,9 +3,6 @@ import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 're
 import useDocumentTitle from '../hooks/useDocumentTitle.js';
 import getLogger, { configure as configureLogger } from '../lib/logging/Logger.js';
 import { attachPageLifecycleLogging } from '../lib/logging/pageLifecycle.js';
-import { launchAndroidTarget } from '../lib/fkb.js';
-import { DaylightAPI } from '../lib/api.mjs';
-import Icon from '../modules/Piano/ui/icons/Icon.jsx';
 import {
   PianoConfigProvider,
   ActivePianoProvider,
@@ -17,8 +14,6 @@ import { PianoMidiProvider, usePianoMidi, usePianoMidiNotes } from '../modules/P
 import { PianoUserProvider } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useInactivityReturn } from '../modules/Piano/PianoKiosk/useInactivityReturn.js';
 import { useAutoStudioEntry } from '../modules/Piano/PianoKiosk/useAutoStudioEntry.js';
-import { useScreenControl, screenOffFailureMessage } from '../modules/Piano/PianoKiosk/useScreenControl.js';
-import { useArmedAction } from '../lib/identity/useArmedAction.js';
 import {
   PianoWakeLockProvider,
   usePianoScreensaver,
@@ -57,6 +52,7 @@ import PianoTest from '../modules/Piano/PianoKiosk/modes/Test/PianoTest.jsx';
 import KeepAliveVideo from '../modules/Piano/PianoKiosk/KeepAliveVideo.jsx';
 import PianoDesignScale from '../modules/Piano/PianoKiosk/PianoDesignScale.jsx';
 import { PianoMixProvider } from '../modules/Piano/PianoKiosk/PianoMixContext.jsx';
+import { PianoConnectionProvider } from '../modules/Piano/PianoKiosk/PianoConnectionContext.jsx';
 import { usePianoUser } from '../modules/Piano/PianoKiosk/PianoUserContext.jsx';
 import { useIdleGap } from '../lib/identity/useIdleGap.js';
 import { useWhoPromptAutoClose } from '../modules/Piano/PianoKiosk/useWhoPromptAutoClose.js';
@@ -72,134 +68,12 @@ import './PianoApp.scss';
 export const PIANO_KIOSK_LOG_APP = 'piano-kiosk';
 
 /**
- * Connect-gate: BLE pairing is an OS concern, so the browser only sees already-
- * paired ports. Until Web MIDI is connected, show a tap-to-connect screen.
- */
-export function ConnectGate({ children }) {
-  const { status, connect } = usePianoMidi();
-  const { config } = usePianoKioskConfig();
-  const { turnOffScreen } = useScreenControl();
-  const [dismissed, setDismissed] = useState(false);
-  const [screenError, setScreenError] = useState(null);
-
-  useEffect(() => {
-    if (status === 'idle') connect();
-  }, [status, connect]);
-
-  // 2-tap arm/confirm even here — the connect screen is the highest lock-out-risk
-  // surface (no piano paired → no BLE/MIDI wake; once the backlight is off, touch
-  // is dead → only FKB REST recovers it), so a stray tap must not blank it.
-  const { armed: screenArmed, trigger: triggerScreenOff } = useArmedAction(async () => {
-    const res = await turnOffScreen();
-    setScreenError(res?.ok === false ? screenOffFailureMessage(res) : null);
-  }, { armMs: 3000 });
-
-  // Reboot the tablet (2-tap arm — a reboot is disruptive and this gate is the
-  // one surface with no piano to un-brick from). Backend does it over ADB.
-  const deviceId = config.screensaver?.deviceId;
-  const { armed: rebootArmed, trigger: triggerReboot } = useArmedAction(() => {
-    if (!deviceId) return;
-    DaylightAPI(`api/v1/device/${deviceId}/reboot`, {}, 'POST').catch(() => {});
-  }, { armMs: 3000 });
-
-  // Auto-retry the connect while no piano is found: once it's paired over
-  // Bluetooth the gate advances on its own, so there's no manual "Connect"
-  // button (a successful connect auto-advances — the button was dead weight).
-  useEffect(() => {
-    if (status !== 'no-input') return undefined;
-    const t = setInterval(() => connect(), 5000);
-    return () => clearInterval(t);
-  }, [status, connect]);
-
-  // Auto-clear the transient failure note.
-  useEffect(() => {
-    if (!screenError) return undefined;
-    const t = setTimeout(() => setScreenError(null), 4000);
-    return () => clearTimeout(t);
-  }, [screenError]);
-
-  if (status === 'connected' || dismissed) return children;
-
-  const message = {
-    idle: 'Connecting…',
-    requesting: 'Connecting…',
-    'no-input': 'No piano found. Pair it over Bluetooth, then tap to retry.',
-    denied: 'MIDI access was blocked. Tap to grant access.',
-    unsupported: 'This browser does not support Web MIDI.',
-  }[status] || 'Connect your piano.';
-
-  return (
-    <div className="piano-connect-gate">
-      <div className="piano-connect-gate__card">
-        <div className="piano-connect-gate__mark"><Icon name="piano-mark" /></div>
-        <h1 className="piano-connect-gate__title">Piano</h1>
-        {/* Status line doubles as the transient screen-off failure surface. */}
-        <p className="piano-connect-gate__status" role="status" aria-live="polite">{screenError || message}</p>
-
-        {/* Primary choices as clear buttons (no dead "Connect" button — a good
-            connection auto-advances; a missing piano auto-retries above). */}
-        <div className="piano-connect-gate__actions">
-          {config?.bluetooth && (
-            <button
-              type="button"
-              className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
-              onClick={() => launchAndroidTarget(config.bluetooth)}
-            >
-              <Icon name="bluetooth-active" /> Bluetooth settings
-            </button>
-          )}
-          <button
-            type="button"
-            className="piano-connect-gate__btn piano-connect-gate__btn--ghost"
-            onClick={() => setDismissed(true)}
-          >
-            <Icon name="media-playlist-consecutive" /> Continue without piano
-          </button>
-        </div>
-
-        {/* Device actions — separated below a divider (not connect actions). Both
-            are 2-tap arm/confirm: on a touch kiosk a stray tap must not blank or
-            reboot the screen. Reboot only when we know the device id. */}
-        <div className="piano-connect-gate__device">
-          <button
-            type="button"
-            className={`piano-connect-gate__devbtn${screenArmed ? ' is-armed' : ''}`}
-            aria-live="polite"
-            onClick={triggerScreenOff}
-          >
-            <Icon name="system-shutdown" /> {screenArmed ? 'Tap again to confirm' : 'Turn off screen'}
-          </button>
-          {deviceId && (
-            <button
-              type="button"
-              className={`piano-connect-gate__devbtn${rebootArmed ? ' is-armed' : ''}`}
-              aria-live="polite"
-              onClick={triggerReboot}
-            >
-              <Icon name="system-reboot" /> {rebootArmed ? 'Tap again to reboot' : 'Reboot device'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Drives the tablet screensaver independent of the connect gate. Mounted ABOVE
- * <ConnectGate> (unlike PianoShell) so an idle tablet still sleeps its screen
- * even when no piano is connected — otherwise the screensaver would only arm
- * once Web MIDI connects, and a tablet parked on the connect screen would never
- * sleep. Shares the wake-lock context with the modes below, so a playing video
- * still keeps the screen awake. Renders nothing.
- */
-/**
  * Fleet visibility: publish this tablet's live device-state (idle / playing
  * video / karaoke) so the /media Devices view shows it. Identity comes from
  * the served config's screensaver.deviceId (yellow-room-tablet) — explicit,
  * never inferred, so a laptop opening /piano can't impersonate the tablet.
- * Mounted above <ConnectGate>, like ScreensaverDriver, so an idle tablet
- * still reports. Player mounts register via usePlayerSessionBinding.
+ * Mounted above the route shell so an idle or disconnected tablet still
+ * reports. Player mounts register via usePlayerSessionBinding.
  */
 function PianoFleetPublisher() {
   const { config } = usePianoKioskConfig();
@@ -354,8 +228,6 @@ function PianoShell() {
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
 
   return (
-    <PianoSoundProvider>
-      <PianoPresetProvider>
       <PianoBreadcrumbProvider>
         <div className="piano-app">
           <ProfilePicker
@@ -387,8 +259,6 @@ function PianoShell() {
           </Routes>
         </div>
       </PianoBreadcrumbProvider>
-      </PianoPresetProvider>
-    </PianoSoundProvider>
   );
 }
 
@@ -403,8 +273,8 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
   return (
     <ActivePianoProvider pianoId={pianoId} basePath={basePath} config={config}>
       {/* Always-on keep-alive video — fixes the WebView frame-clock stall on the
-          SM-T590 kiosk. Outside ConnectGate so it runs on every piano screen,
-          including the connect/menu screens. See KeepAliveVideo.jsx. */}
+          SM-T590 kiosk. It runs on every piano screen, including while the
+          connection is unavailable. See KeepAliveVideo.jsx. */}
       <KeepAliveVideo />
       {/* Fixed design canvas: every screen inside lays out at the tablet's
           resolution and scales to fit whatever browser is looking. */}
@@ -412,7 +282,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
       <PianoUserProvider pianoId={pianoId}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
         <PianoWakeLockProvider>
-          {/* Screensaver runs above the connect gate so an idle tablet sleeps
+          {/* Screensaver runs above the route shell so an idle tablet sleeps
               even with no piano connected; the wake-lock provider is hoisted
               with it so a playing video (a hold set by the modes below) still
               keeps the screen awake. PianoScreenControlProvider wraps both the
@@ -427,11 +297,13 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
               <ScreensaverDriver />
               <PianoFleetPublisher />
               <KioskLaunchListener />
-              <ConnectGate>
-                <PianoMixProvider>
-                  <PianoShell />
-                </PianoMixProvider>
-              </ConnectGate>
+              <PianoMixProvider>
+                <PianoSoundProvider>
+                  <PianoConnectionProvider>
+                    <PianoPresetProvider><PianoShell /></PianoPresetProvider>
+                  </PianoConnectionProvider>
+                </PianoSoundProvider>
+              </PianoMixProvider>
             </PianoPlaybackProvider>
           </PianoScreenControlProvider>
         </PianoWakeLockProvider>

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import getLogger from '../../../lib/logging/Logger.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
+import { usePianoKioskConfigOptional } from './PianoConfig.jsx';
 
 /**
  * PianoMix — the single owner of the two software output levels that share the
@@ -12,7 +13,7 @@ const PIANO_KEY = 'piano.mix.pianoLevel';
 const MEDIA_KEY = 'piano.mix.mediaLevel';
 const CC_VOLUME = 7; // MIDI Channel Volume (GM Main Volume)
 
-const clamp01 = (v) => Math.max(0, Math.min(1, Math.round(v * 10) / 10));
+const clamp01 = (v) => Math.max(0, Math.min(1, Number(v)));
 const readLevel = (key) => {
   try {
     const raw = localStorage.getItem(key);
@@ -22,13 +23,35 @@ const readLevel = (key) => {
   } catch { return 1; }
 };
 
-const FALLBACK = { pianoLevel: 1, mediaLevel: 1, setPianoLevel: () => {}, setMediaLevel: () => {} };
+// Media/transport components also render in isolated test and preview surfaces.
+// Keep their harmless defaults, while the real kiosk tree installs the sole
+// state-owning provider above sound, connection, presets and every mode.
+const FALLBACK = {
+  pianoLevel: 1,
+  mediaLevel: 1,
+  setPianoLevel: () => {},
+  setMediaLevel: () => {},
+  reassertPianoLevel: () => false,
+};
 const Ctx = createContext(FALLBACK);
 
 export function PianoMixProvider({ children }) {
   const { outputConnected, sendControlChange } = usePianoMidi();
+  const pianoId = usePianoKioskConfigOptional()?.pianoId || 'default';
   const logger = useMemo(() => getLogger().child({ component: 'piano-mix' }), []);
-  const [pianoLevel, setPianoLevelState] = useState(() => readLevel(PIANO_KEY));
+  const pianoKey = `${PIANO_KEY}.${pianoId}`;
+  const readPianoLevel = useCallback(() => {
+    try {
+      const scoped = localStorage.getItem(pianoKey);
+      if (scoped != null) return readLevel(pianoKey);
+      const legacyRaw = localStorage.getItem(PIANO_KEY);
+      if (legacyRaw == null) return 1;
+      const legacy = readLevel(PIANO_KEY);
+      localStorage.setItem(pianoKey, String(legacy)); // one-time copy; old key remains backward-compatible
+      return legacy;
+    } catch { return 1; }
+  }, [pianoKey]);
+  const [pianoLevel, setPianoLevelState] = useState(readPianoLevel);
   const [mediaLevel, setMediaLevelState] = useState(() => readLevel(MEDIA_KEY));
   const pianoRef = useRef(pianoLevel);
   pianoRef.current = pianoLevel;
@@ -36,11 +59,25 @@ export function PianoMixProvider({ children }) {
   const setPianoLevel = useCallback((v) => {
     const level = clamp01(v);
     setPianoLevelState(level);
-    try { localStorage.setItem(PIANO_KEY, String(level)); } catch { /* storage unavailable */ }
+    try { localStorage.setItem(pianoKey, String(level)); } catch { /* storage unavailable */ }
     const cc = Math.round(level * 127);
     sendControlChange(CC_VOLUME, cc);
     logger.info('piano.mix.piano-level', { level, cc });
-  }, [sendControlChange, logger]);
+  }, [pianoKey, sendControlChange, logger]);
+
+  const reassertPianoLevel = useCallback(() => {
+    const level = pianoRef.current;
+    const cc = Math.round(level * 127);
+    const sent = sendControlChange(CC_VOLUME, cc);
+    logger.info('piano.mix.cc7-reassert', { pianoId, level, cc, sent });
+    return sent;
+  }, [sendControlChange, logger, pianoId]);
+
+  useEffect(() => {
+    const level = readPianoLevel();
+    pianoRef.current = level;
+    setPianoLevelState(level);
+  }, [readPianoLevel]);
 
   const setMediaLevel = useCallback((v) => {
     const level = clamp01(v);
@@ -62,8 +99,8 @@ export function PianoMixProvider({ children }) {
   }, [outputConnected, sendControlChange, logger]);
 
   const value = useMemo(
-    () => ({ pianoLevel, mediaLevel, setPianoLevel, setMediaLevel }),
-    [pianoLevel, mediaLevel, setPianoLevel, setMediaLevel],
+    () => ({ pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel }),
+    [pianoLevel, mediaLevel, setPianoLevel, setMediaLevel, reassertPianoLevel],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -6,7 +6,7 @@
 export function bundleKey(bundle) {
   if (!bundle || !bundle.voice) return '';
   const { pc, bank } = bundle.voice;
-  return `${pc}:${bank}`;
+  return `${pc}:${bank || 0}`;
 }
 
 /**
@@ -31,7 +31,7 @@ export function buildFunnel({ favorites = [], shortlistVoices = [], allGroups = 
   // Filter shortlist: exclude any entries that match a favorite's pc:bank
   const shortlist = shortlistVoices.filter((voice) => {
     // For shortlist entries, pc and bank are at the top level, not nested
-    const key = `${voice.pc}:${voice.bank}`;
+    const key = `${voice.pc}:${voice.bank || 0}`;
     return !favKeys.has(key);
   });
 

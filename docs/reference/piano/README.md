@@ -32,7 +32,7 @@ for the game engines see [piano-games.md](./piano-games.md).
          │                   │                  │
    WIDI Master         the piano's         DaylightStation backend
    BLE-MIDI adapter    onboard voices      (config · Plex · devices ·
-   → the piano         + voice bridge       studio takes · screen control)
+   → the piano                            studio takes · screen control)
 ```
 
 Four layers cooperate:
@@ -124,24 +124,29 @@ for MIDI notes so the UI can be exercised without a piano.
 
 ## The sound path
 
-The app distinguishes *what the player sees* from *what they hear*, and owns the latter
-through a sound context. Most of the time the piano makes its own sound: selecting a voice
-sends a program (and, where needed, bank) change out the MIDI port, and adjusting reverb
-or chorus sends the corresponding control changes, all interpreted by the instrument's
-firmware. The set of available voices and the exact effect mappings come from the
-configured **hardware device profile** — a module that encodes one instrument's voice list
-and effect control numbers as the single source of truth for that model. The
+The piano makes its own sound. Selecting an instrument sends a program (and, where needed,
+bank) change out the MIDI port, while Room sound and Chorus use the configured effect
+dialect, route, transport, and resend policy. The set of available instruments and the
+effect mappings come exclusively from the configured **hardware device profile** — a
+module that encodes one instrument's catalog and effect controls as the single source of
+truth for that model. The
 [Suzuki MDG-400 profile](../../../frontend/src/modules/Piano/PianoKiosk/devices/suzukiMdg400.js)
 is the worked example: General-MIDI voice families plus onboard folk voices, with reverb
 and chorus addressed by their documented control numbers.
 
-When a richer timbre is wanted than the instrument's firmware provides, the app can hand
-sound off to a local **voice bridge** — a separate rendering service the app reaches over
-a WebSocket. Choosing a rendered instrument sends a fully-resolved preset (engine, sample
-or patch, gain, tuning, velocity response, effects) to the bridge and mutes the piano's
-local voice so only the rendered one is heard; live gain and reverb tweaks are sent as
-follow-up parameter messages. The bridge connection self-heals with backoff, and its
-status feeds the UI so the player sees when a rendered voice is actually live.
+Player sound state is `{ voice, reverb, chorus }`. Saved sounds and the named player's
+automatically remembered last sound use that shape; legacy preset `volume` fields are
+ignored. The device-wide Piano level is owned separately by the mix context, stored per
+`pianoId`, and is never changed by switching players or recalling a saved sound.
+
+Connection state is likewise centralized. One provider maps MIDI input, MIDI output, and
+bridge availability to `connecting`, `ready`, `input-only`, `output-only`, or `offline`.
+The chrome, reconnect banner, and Piano maintenance consume that result rather than
+interpreting transport flags themselves. Repair is one guarded sequence: reset the native
+bridge when present, reacquire browser MIDI, wait for a fresh ready binding, then reassert
+the current instrument, effects, and Piano level. Non-kiosk browsers skip only the native
+bridge reset. The app remains usable while disconnected; the banner is the sole
+player-facing interruption.
 
 ---
 
@@ -184,9 +189,11 @@ A few components appear across many modes because they are the kiosk's visual vo
   history, so motion costs no per-frame JavaScript.
 - **The chord staff** — a live grand staff that shows the peak chord under the hands,
   detects the key signature from a rolling buffer, and decays shortly after release.
-- **The chrome** — a persistent header carrying a breadcrumb trail on one side and a status
-  chip (MIDI connection and active voice, tap to open settings) on the other, with deeper
-  routes free to publish their own breadcrumb segments.
+- **The chrome** — a persistent header carrying a breadcrumb trail and a Sound chip. Tap
+  the chip to choose instruments, room sound, saved sounds, and the piano-wide level; hold
+  it for 550ms to open adult-only **Piano maintenance**. There is deliberately no Settings
+  gear. Connection health, the reconnect banner, and Maintenance share one connection model,
+  so only Maintenance exposes diagnostics, Bluetooth pairing, repair, or recovery actions.
 - **Icons** — inline single-colour SVGs that inherit their button's colour.
 - **Transport primitives** — the touch controls shared by every player-style mode
   (Sheet Music, Courses, Music, Karaoke/Singalong/Playalong): a single button shape
