@@ -52,7 +52,7 @@ What is missing, in one sentence each:
 | D3 | Trigger | Backend, on the logged attempt that completes the day — credit lands wherever the child finished (panel, laptop, split sittings). Never frontend-initiated, never agenda-lazy. Plus an idempotent catch-up at day boundaries (D11). |
 | D4 | Session creation | **The bridge is the only session creator.** No session is opened at dispatch — the keypad path launches and mounts only. Occupancy protection is DoNow's job, not the session's. (Revised: an eager dispatch session cannot mint the deterministic id without the language day counter, and a random-id session would never close.) |
 | D5 | Lesson size | `lessonSize` = target **total items per day**, derived: `newPerDay = max(1, round(lessonSize / enrollmentChainLength))` — against the **enrollment's chain** (D12), never the device's. |
-| D6 | Content scope | Corpus declares named `banks:` (seq ranges); enrollment carries an ordered `scope:` of bank ids and/or raw ranges. Gates **admissions only, never graduates**; edits are prospective. |
+| D6 | Content scope | Corpus declares named `bands:` (seq ranges); enrollment carries an ordered `scope:` of band ids and/or raw ranges. Gates **admissions only, never graduates**; edits are prospective. |
 | D7 | Taxonomy | Subject = shelf · Course = corpus · Unit = band of `unitSize` study days · **Lesson = one study day** · Module = rung. Synthesized by a pure helper, one source of wording. |
 | D8 | State machine | New `program_dispatched` state, parallel to `launch_dispatched`. Full event support — SCHEMA, APPLY, `computeNextAction` — not just TRANSITIONS (§4.1). |
 | D9 | Never `completed` | `planner.mjs:243`'s guard (a program unit never flips to `completed` off `passedUnits`) **stays**. Daily recurrence = that guard + `servedToday`; the outcome record sits beside it, not under it. |
@@ -103,7 +103,7 @@ programs:
 ```
 
 Milo's entry: `lessonSize: 4, rungs: [repetition]`. A scope may mix named
-banks and raw ranges, in study order:
+bands and raw ranges, in study order:
 `scope: [fluency-2, {range: [3200, 3400]}]`.
 
 **`requiresSignoff` is forbidden on a program reward** (validation error). The
@@ -116,12 +116,12 @@ ever wanted, it is its own design (§9).
 Editing this record never rewrites history — the ladder log is untouched; only
 future queue builds see it.
 
-### 3.3 Corpus banks
+### 3.3 Corpus bands
 
-`data/content/language/{corpusId}.yml` gains a validated `banks:` section:
+`data/content/language/{corpusId}.yml` gains a validated `bands:` section:
 
 ```yaml
-banks:
+bands:
   - { id: fluency-1, label: Fluency 1, range: [1, 1000] }
   - { id: fluency-2, label: Fluency 2, range: [1001, 2000] }
   - { id: fluency-3, label: Fluency 3, range: [2001, 3000] }
@@ -130,8 +130,8 @@ banks:
 
 (The bands are real: seq 1–3000 is the commercial course, 3001+ the wordbook
 import — parent design §6.) `corpus.mjs` validates shape: kebab ids, integer
-ranges within `[1, size]`, no duplicate ids. Overlap between banks is legal
-(banks are views, not partitions); overlap *within one enrollment's scope*
+ranges within `[1, size]`, no duplicate ids. Overlap between bands is legal
+(bands are views, not partitions); overlap *within one enrollment's scope*
 resolves by first-listed-wins since `everSeen` already dedupes admissions.
 
 ### 3.4 What moves out of `progress.yml`
@@ -395,8 +395,8 @@ reports, so only the launch path changes.
 ## 8. Validation, tests, migration
 
 **Validation:** `programs:` entries (known corpus, `lessonSize >= 1`, `rungs`
-⊆ RUNG_IDS and non-empty, scope banks resolve, ranges within corpus size,
-`reward.requiresSignoff` forbidden); corpus `banks:` shape; `programInstance`
+⊆ RUNG_IDS and non-empty, scope bands resolve, ranges within corpus size,
+`reward.requiresSignoff` forbidden); corpus `bands:` shape; `programInstance`
 program-only + output whitelist; `PUT /pacing` refusal.
 
 **Tests (by layer):**
@@ -417,7 +417,7 @@ program-only + output whitelist; `PUT /pacing` refusal.
   agenda `servedToday` + coins.
 
 **Migration:** additive throughout. Felix/Milo plans gain `units:` +
-`programs:`; corpus gains `banks:`; `progress.yml` untouched (its
+`programs:`; corpus gains `bands:`; `progress.yml` untouched (its
 `daily_limit` demotes to fallback). No event-log rewrite; no published-doc or
 allocation impact. Rollout order: domain → service (plans-reader dependency,
 four call sites) → bridge/composition (event wiring) → plan data → frontend;

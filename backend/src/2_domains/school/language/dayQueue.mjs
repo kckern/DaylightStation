@@ -71,8 +71,9 @@ function clearedIndex(log) {
  * @param {number}   args.day          the study day being built
  * @param {number}   args.dailyLimit   new sentences admitted per day
  * @param {number}   args.corpusSize   highest sequence number available
- * @param {Iterable<number>} [args.admission] ordered candidate sequence
- *        numbers for new material; omitted means 1..corpusSize
+ * @param {number[]|null} [args.admission] ordered candidate sequence numbers
+ *        for new material; omitted/null means 1..corpusSize. A malformed value
+ *        is an empty scope, never an unrestricted corpus.
  * @param {string[]} [args.rungChain] enrollment-owned credit chain; device
  *        capabilities still remove rungs it cannot serve
  * @param {object}   [args.capabilities] {microphone, textInput[]} — filters the ladder
@@ -122,14 +123,20 @@ export function buildDayQueue({
   // material would both duplicate it (it is already due at the next rung) and
   // throw away the progress the import exists to restore.
   let admitted = enteredToday.length;
-  const candidates = admission ?? Array.from({ length: corpusSize }, (_, i) => i + 1);
+  const candidates = admission === null || admission === undefined
+    ? Array.from({ length: corpusSize }, (_, i) => i + 1)
+    : (Array.isArray(admission) ? admission : []);
+  const admittedSeqs = new Set();
   for (const rawSeq of candidates) {
+    if (typeof rawSeq !== 'number' && typeof rawSeq !== 'string') continue;
     const seq = Number(rawSeq);
     if (!Number.isInteger(seq) || seq < 1 || seq > corpusSize) continue;
     if (admitted >= dailyLimit) break;
+    if (admittedSeqs.has(seq)) continue;
     if (everSeen.has(seq)) continue;
     if (!canDrill(seq)) continue;
     queue.push({ seq, rung: entryRung, done: false });
+    admittedSeqs.add(seq);
     admitted += 1;
   }
 

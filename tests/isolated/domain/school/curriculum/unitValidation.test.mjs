@@ -49,6 +49,15 @@ describe('validateUnit: shape', () => {
     expect(errs(valid({ programInstance: 'glossika-korean' }))).toContain('programInstance is only meaningful on a program unit');
   });
 
+  it('trims a programInstance at the authoring boundary', () => {
+    const raw = valid({
+      unitId: 'language-daily', title: 'Korean', subject: 'language', document: undefined,
+      program: 'language', programInstance: '  glossika-korean  ', provenance: { source: 'hand-authored', reviewState: 'approved' },
+    });
+    expect(errs(raw)).toEqual([]);
+    expect(unitOf(raw).programInstance).toBe('glossika-korean');
+  });
+
   it.each([
     ['null', null],
     ['undefined', undefined],

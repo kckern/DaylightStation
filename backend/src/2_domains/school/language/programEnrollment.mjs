@@ -25,17 +25,17 @@ export function validateProgramEnrollment(raw, { corpus = null } = {}) {
     }
   }
   if (raw.scope !== undefined && !Array.isArray(raw.scope)) errors.push('scope must be an array');
-  const banks = new Map((corpus?.banks ?? []).map((b) => [b.id, b]));
+  const bands = new Map((corpus?.bands ?? []).map((band) => [band.id, band]));
   const scope = [];
   for (const item of (Array.isArray(raw.scope) ? raw.scope : [])) {
     if (typeof item === 'string') {
-      if (banks.has(item)) scope.push(item);
-      else errors.push(`scope bank '${item}' not found`);
+      if (bands.has(item)) scope.push(item);
+      else errors.push(`scope band '${item}' not found`);
     } else if (item?.range instanceof Array && item.range.length === 2
       && Number.isInteger(item.range[0]) && Number.isInteger(item.range[1])
       && item.range[0] >= 1 && item.range[1] <= (corpus?.size ?? 0) && item.range[0] <= item.range[1]) {
       scope.push({ range: [item.range[0], item.range[1]] });
-    } else errors.push('scope entries must be known bank ids or bounded integer ranges');
+    } else errors.push('scope entries must be known band ids or bounded integer ranges');
   }
   if (errors.length) return { errors };
   return { errors, enrollment: {

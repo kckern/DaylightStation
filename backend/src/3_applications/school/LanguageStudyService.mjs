@@ -162,7 +162,7 @@ export class LanguageStudyService {
       : progress.dailyLimit;
     const admission = enrollment?.scope?.flatMap((item) => {
       const range = typeof item === 'string'
-        ? corpus.banks?.find((bank) => bank.id === item)?.range
+        ? corpus.bands?.find((band) => band.id === item)?.range
         : item.range;
       return range ? Array.from({ length: range[1] - range[0] + 1 }, (_, i) => range[0] + i) : [];
     }) ?? null;
