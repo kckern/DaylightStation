@@ -158,3 +158,23 @@ export function graduationEdges(capabilities = {}, languages) {
   const chain = chainFor(capabilities, languages);
   return chain.slice(0, -1).map((from, i) => ({ from, to: chain[i + 1] }));
 }
+
+/**
+ * The enrollment-defined chain that decides whether a study day is complete.
+ *
+ * Device capabilities answer what this panel can serve; they must never lower
+ * the bar for credit. Invalid or empty configuration falls back to the full
+ * ladder so a malformed plan cannot award credit for an empty day.
+ *
+ * @param {string[]|null} rungs
+ * @param {{source: string, target: string}} languages Reserved for parity with
+ *   the other chain helpers and future corpus-specific ladders.
+ * @returns {string[]} rung ids in ladder order; always a fresh, non-empty array
+ */
+// eslint-disable-next-line no-unused-vars
+export function creditChain(rungs, languages) {
+  if (!Array.isArray(rungs) || rungs.length === 0) return [...RUNG_IDS];
+  const wanted = new Set(rungs);
+  const chain = RUNG_IDS.filter((id) => wanted.has(id));
+  return chain.length ? chain : [...RUNG_IDS];
+}
