@@ -1,6 +1,6 @@
 # Glossika × School integration handoff
 
-Status: implementation continued 2026-08-23.
+Status: implemented and reconciled onto `main` 2026-08-23.
 
 The repository had the design plan but not this handoff file. The integration
 now includes:
@@ -10,7 +10,7 @@ now includes:
 - `programInstance` on program units;
 - validated language enrollment policy (`lessonSize`, enrollment-owned rungs,
   corpus scope, and non-signoff rewards);
-- corpus banks and scoped queue admissions;
+- corpus bands and scoped queue admissions;
 - taxonomy mapping for language course/unit/lesson labels;
 - per-enrollment queue sizing and credit-chain filtering;
 - deterministic language-day completion events and the lazy,
@@ -18,7 +18,7 @@ now includes:
 - reward overrides and receipt suppression for program sessions;
 - program session visibility in the planner;
 - corpus-instance routing through keypad launches;
-- lock-mode Glossika completion/device messaging and repetition-save retry;
+- lock-mode Sentence Ladder completion/device messaging and repetition-save retry;
 - assignment persistence of `programs:` policy records.
 
 ## Household data to publish
@@ -40,7 +40,7 @@ programs:
 ```
 
 The unit should carry `programInstance: glossika-korean`, and the corpus may
-declare validated `banks:` ranges. Existing `daily_limit` remains a fallback
+declare validated `bands:` ranges. Existing `daily_limit` remains a fallback
 for learners without a `programs:` policy.
 
 ## Verification

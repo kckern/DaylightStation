@@ -33,6 +33,21 @@ describe('new material', () => {
     ]);
   });
 
+  it('deduplicates overlapping admission bands after normalization', () => {
+    expect(build({ admission: [6, '6', 7], dailyLimit: 3 }).map((entry) => entry.seq))
+      .toEqual([6, 7]);
+  });
+
+  it('treats malformed admission as an empty scope, not the whole corpus', () => {
+    for (const admission of ['123', 0, {}, new Set([1, 2])]) {
+      expect(build({ admission })).toEqual([]);
+    }
+  });
+
+  it('does not coerce booleans into sequence numbers', () => {
+    expect(build({ admission: [true, false] })).toEqual([]);
+  });
+
   it('admits exactly dailyLimit sentences on a fresh start', () => {
     const queue = build();
     expect(queue).toEqual([

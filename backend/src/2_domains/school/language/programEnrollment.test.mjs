@@ -3,7 +3,7 @@ import { validateProgramEnrollment } from './programEnrollment.mjs';
 
 const corpus = {
   id: 'glossika-korean', size: 100,
-  banks: [{ id: 'fluency-1', label: 'Fluency 1', range: [1, 50] }],
+  bands: [{ id: 'fluency-1', label: 'Fluency 1', range: [1, 50] }],
 };
 
 describe('validateProgramEnrollment', () => {
@@ -24,7 +24,7 @@ describe('validateProgramEnrollment', () => {
     }, { corpus });
     expect(result.errors).toEqual(expect.arrayContaining([
       'program rewards cannot require signoff',
-      'scope entries must be known bank ids or bounded integer ranges',
+      'scope entries must be known band ids or bounded integer ranges',
     ]));
   });
 });

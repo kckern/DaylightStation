@@ -14,6 +14,7 @@
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]*$/i;
 const LANG_RE = /^[A-Za-z]{2,8}$/;
+const BAND_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * @param {object} raw - parsed YAML
@@ -43,23 +44,24 @@ export function validateCorpus(raw) {
     return { ok: false, errors };
   }
 
-  let banks;
-  if (raw.banks !== undefined) {
-    if (!Array.isArray(raw.banks)) errors.push('banks must be a list');
+  let bands = [];
+  if (raw.banks !== undefined) errors.push('banks is not supported for language corpora; use bands');
+  if (raw.bands !== undefined) {
+    if (!Array.isArray(raw.bands)) errors.push('bands must be a list');
     else {
       const ids = new Set();
       const maxSeq = raw.sentences.reduce((max, sentence) => Math.max(max, Number(sentence?.seq) || 0), 0);
-      banks = raw.banks.map((bank, i) => {
-        const range = bank?.range;
-        if (!ID_RE.test(String(bank?.id ?? ''))) errors.push(`banks[${i}].id must be alphanumeric with - or _`);
-        if (ids.has(bank?.id)) errors.push(`banks[${i}].id is duplicated`);
-        ids.add(bank?.id);
+      bands = raw.bands.map((band, i) => {
+        const range = band?.range;
+        if (!BAND_ID_RE.test(String(band?.id ?? ''))) errors.push(`bands[${i}].id must be kebab-case`);
+        if (ids.has(band?.id)) errors.push(`bands[${i}].id is duplicated`);
+        ids.add(band?.id);
         if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isInteger)) {
-          errors.push(`banks[${i}].range must be two integers`);
+          errors.push(`bands[${i}].range must be two integers`);
         } else if (range[0] < 1 || range[0] > range[1] || range[1] > maxSeq) {
-          errors.push(`banks[${i}].range must be within 1..${maxSeq}`);
+          errors.push(`bands[${i}].range must be within 1..${maxSeq}`);
         }
-        return { id: String(bank?.id ?? ''), label: String(bank?.label ?? bank?.id ?? ''), range };
+        return { id: String(band?.id ?? ''), label: String(band?.label ?? band?.id ?? ''), range };
       });
     }
   }
@@ -120,9 +122,9 @@ export function validateCorpus(raw) {
       // is the ceiling — not the count, which would strand the tail whenever
       // the corpus has gaps.
       size: sentences[sentences.length - 1].seq,
+      bands,
       // Precomputed once so the queue builder never re-scans the corpus.
       playable: new Set(sentences.filter((s) => s.audio).map((s) => s.seq)),
-      ...(banks ? { banks } : {}),
     },
   };
 }

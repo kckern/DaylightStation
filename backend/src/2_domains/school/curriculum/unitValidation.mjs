@@ -253,10 +253,10 @@ export function validateUnit(raw, sets = {}) {
     }
     if (isPresent(raw.programInstance)) {
       if (!isNonEmptyString(raw.programInstance)) errors.push('programInstance must be a non-empty string');
-      else if (!/^[a-z0-9][a-z0-9_-]*$/i.test(raw.programInstance)) {
+      else if (!/^[a-z0-9][a-z0-9_-]*$/i.test(raw.programInstance.trim())) {
         errors.push(`programInstance must match /^[a-z0-9][a-z0-9_-]*$/, got: ${raw.programInstance}`);
       } else {
-        programInstance = raw.programInstance;
+        programInstance = raw.programInstance.trim();
       }
     }
   } else {
