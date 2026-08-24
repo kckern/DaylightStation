@@ -1,5 +1,14 @@
 # Performance Assessment Service Adoption — Implementation Plan
 
+> **Status (2026-08-24): Superseded.** This checklist records the earlier flat-runner
+> migration and is not the current implementation contract. The first-class,
+> immutable event lifecycle replaced `drillRun`, `performanceTargets`, standalone
+> grading helpers, and the no-per-part limitation described below. See
+> [Performance assessment](../../reference/piano/performance-assessment.md) for the
+> as-built expectation, lifecycle, result, persistence, observability, and consumer
+> contracts. Unchecked boxes below are historical and do not describe outstanding
+> work in the current implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Consolidate piano grading/matching/aggregation into the existing `frontend/src/modules/Piano/performance/` module and give the Hanon lesson drill scored runs for the first time.

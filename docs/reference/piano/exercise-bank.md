@@ -13,6 +13,28 @@ cursor-based. Unknown note values are rejected in cued mode rather than being
 silently replaced with synthetic spacing. Adaptive rhythm challenges default
 to cued mode and carry an exact generated requirement and starting BPM.
 
+Prepared game challenges expose three authoritative structures:
+
+```yaml
+prompt:
+  expected_events: [...]       # canonical authored onset events
+assessment:
+  mode: cued
+  tempo_bpm: 72
+  lead_in_ms: 2000
+requirement:
+  rubric:
+    id: exercise-pass-v2
+    version: '2'
+    criteria: { completeness: 1, cleanliness: 1, placement: 0.8 }
+  gates: { pace: { target_bpm: 72 } }
+```
+
+The prompt may still contain deprecated flat projections for older clients,
+but current Exercises, Battle Stadium, and the verification CLI consume
+`expected_events`, `assessment`, and `requirement`. Authored durations and onset
+offsets are never replaced with synthetic one-beat spacing.
+
 Taxonomy and rationale: [exercise taxonomy design](../../_wip/plans/2026-08-11-exercise-taxonomy-design.md).
 
 ## Two rules
@@ -60,7 +82,9 @@ data/content/music/
   progressions/                 #  3 seeds ->   36   I-V-vi-IV, three voicings
 ```
 
-58 seeds, 2,760 instances.
+58 seeds declare 2,760 axis combinations; 2,757 currently materialize inside
+the 88-key MIDI range. The assessment compatibility sweep prepares 7,143
+supported-mode runs across those performable instances.
 
 The bank lives in the Dropbox-synced data directory, not in the git repository
 (`data/` is gitignored). This document is the tracked artefact; the content it
@@ -261,6 +285,11 @@ milestones rather than extra steps.
   for collection, form, level, mode, hands, and the selected learner's progress.
 - **Practice** is wait-for-correct and can never open a gate. **Pass challenge**
   uses the requirement's tempo/rubric and writes portable assessment evidence.
+
+A guest may practice, with persistence reported as `skipped-guest`, but may not
+start a Pass challenge. The UI asks for a persistent piano profile instead of
+silently downgrading challenge intent to practice; that preserves the requested
+purpose and prevents identity-free curricular evidence.
 
 `ExerciseRun.jsx` selects the common assessment matcher from the authored
 material and run intent: cursor for self-paced strict sequences, held-set for

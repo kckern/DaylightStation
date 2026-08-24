@@ -1,7 +1,13 @@
 # Performance Assessment Service — Design (v2)
 
 **Date:** 2026-08-11
-**Status:** Implemented — see docs/reference/piano/performance-assessment.md and docs/superpowers/plans/2026-08-11-performance-assessment-adoption.md.
+**Status:** Superseded on 2026-08-24 by the first-class immutable, event-based
+assessment lifecycle. This document is retained as design history; its flat runners,
+standalone grading helpers, and deferred per-part attribution are no longer current.
+See [Performance assessment](../../reference/piano/performance-assessment.md) for the
+as-built contract and
+[the historical adoption checklist](../plans/2026-08-11-performance-assessment-adoption.md)
+for the migration sequence.
 
 ## What changed from v1
 
