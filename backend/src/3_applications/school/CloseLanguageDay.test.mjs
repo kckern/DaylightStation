@@ -30,6 +30,38 @@ describe('CloseLanguageDay', () => {
     expect(result.status).toBe('settled');
   });
 
+  it('settles canonical Sentence Ladder completion against legacy unit and assignment ids', async () => {
+    const f = subject();
+    const bridge = new CloseLanguageDay({ ...f, closeSessionOutcome: f.close });
+    await bridge.handle({
+      learnerId: 'felix', corpusId: 'glossika-korean', day: 4, programId: 'sentence-ladder',
+    });
+
+    expect(f.close.execute).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'ses_lang_felix_glossika-korean_d4',
+      honorClose: true,
+      rewardOverride: { amount: 2 },
+    }));
+  });
+
+  it('settles a legacy completion event against canonical unit and assignment ids', async () => {
+    const f = subject();
+    f.curriculum.listUnits.mockResolvedValue([{ ...unit, program: 'sentence-ladder' }]);
+    f.assignments.get.mockResolvedValue({
+      units: ['language-daily'],
+      programs: [{ programId: 'sentence-ladder', corpusId: 'glossika-korean', reward: { amount: 3 } }],
+    });
+    const bridge = new CloseLanguageDay({ ...f, closeSessionOutcome: f.close });
+    await bridge.handle({
+      learnerId: 'felix', corpusId: 'glossika-korean', day: 4, programId: 'language',
+    });
+
+    expect(f.close.execute).toHaveBeenCalledWith(expect.objectContaining({
+      honorClose: true,
+      rewardOverride: { amount: 3 },
+    }));
+  });
+
   it('does nothing when the program unit is not assigned', async () => {
     const f = subject();
     f.assignments.get.mockResolvedValue({ units: [] });

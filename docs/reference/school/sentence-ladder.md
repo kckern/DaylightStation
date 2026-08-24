@@ -27,3 +27,29 @@ queue before audio is persisted.
 The frontend requires explicit learner, corpus, and grant. It cancels stale
 loads, re-derives after each write, and directs a learner to a capable device
 when an enrollment-owned credit rung cannot be completed locally.
+
+## School lifecycle
+
+On a locked Portal, the learner enters through the anonymous self-service
+keypad. Resolving the code claims the learner; the program action carries the
+corpus and an in-memory study grant into the ordinary School launch path. The
+runner then offers only the repetition, dictation, recording, and
+interpretation work that is both due and supported by that device.
+
+Each accepted step appends evidence and the runner re-fetches the derived day.
+It emits one structured `school.language.program.progress` diagnostic for each
+observable `(day, done, total, blocked)` state and shows the same saved-step
+progress to the learner. The payload also identifies an `empty` queue so a
+no-work day is distinguishable from an ordinary completed set. A locked runner
+says `Leave for now` while work is outstanding or blocked by device capability;
+`Done` appears only after the full credit chain is complete, or when no work is
+due at all.
+
+Completing an enrollment-owned day publishes
+`school.language.day-complete`. `CloseLanguageDay` settles the deterministic
+School program session through the standard outcome/reward path, which in turn
+publishes `school.session.outcome-recorded`; `SchoolCompletionBridge`
+recomputes and emits `school.completion.state-observed`. Canonical
+`sentence-ladder` and legacy `language` identifiers are treated as equivalent
+at this settlement boundary so migrated assignments cannot lose credit or a
+configured reward.

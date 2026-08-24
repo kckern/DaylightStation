@@ -6,6 +6,24 @@ const dayMock = vi.fn();
 const logMock = vi.fn();
 const rollMock = vi.fn();
 const pacingMock = vi.fn();
+const historyMock = vi.fn();
+const { programLogMock } = vi.hoisted(() => ({ programLogMock: vi.fn() }));
+
+vi.mock('./languageLog.js', () => ({
+  languageLog: {
+    program: (...args) => programLogMock(...args),
+    programError: vi.fn(),
+    rung: vi.fn(),
+    attempt: vi.fn(),
+    attemptError: vi.fn(),
+    audio: vi.fn(),
+    audioError: vi.fn(),
+    capture: vi.fn(),
+    captureError: vi.fn(),
+    pacing: vi.fn(),
+    capability: vi.fn(),
+  },
+}));
 
 vi.mock('./languageApi.js', () => ({
   languageApi: {
@@ -14,8 +32,9 @@ vi.mock('./languageApi.js', () => ({
     log: (...a) => logMock(...a),
     roll: (...a) => rollMock(...a),
     pacing: (...a) => pacingMock(...a),
-    history: vi.fn(async () => ({ ok: true, status: 200, data: { corpus: { languages: { source: 'EN', target: 'KR' } }, days: [] } })),
+    history: (...a) => historyMock(...a),
     recording: vi.fn(async () => ({ ok: true, status: 200, data: {} })),
+    recordingBlob: vi.fn(async () => ({ ok: false, status: 404, data: null })),
     audioUrl: (c, seq, lang) => `/audio/${c}/${seq}/${lang}`,
     recordingUrl: (u, c, seq) => `/rec/${u}/${c}/${seq}`,
   },
@@ -37,7 +56,9 @@ const entry = (seq, rung, done = false) => ({
         : null,
 });
 
-function dayPayload({ queue, chain = ['repetition'], day = 1, dailyLimit = 5 }) {
+function dayPayload({
+  queue, chain = ['repetition'], day = 1, dailyLimit = 5, missingCreditRungs = [],
+}) {
   const done = queue.filter((e) => e.done).length;
   return {
     ok: true,
@@ -49,6 +70,7 @@ function dayPayload({ queue, chain = ['repetition'], day = 1, dailyLimit = 5 }) 
       chain,
       queue,
       summary: { total: queue.length, done, byRung: {} },
+      missingCreditRungs,
       rollover: { roll: false, reason: 'queue-incomplete' },
     },
   };
@@ -56,6 +78,12 @@ function dayPayload({ queue, chain = ['repetition'], day = 1, dailyLimit = 5 }) 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  programLogMock.mockClear();
+  historyMock.mockReset().mockResolvedValue({
+    ok: true,
+    status: 200,
+    data: { corpus: { languages: LANGUAGES }, days: [] },
+  });
   window.localStorage.clear();
   // jsdom has no real audio pipeline; the drill only needs play() to resolve.
   window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve());
@@ -84,7 +112,22 @@ describe('the day', () => {
       queue: [entry(1, 'repetition', true), entry(2, 'repetition')],
     }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
-    expect(await screen.findByText('1 / 2')).toBeTruthy();
+    expect(await screen.findByText('1 of 2 steps')).toBeTruthy();
+    expect(screen.getByText('1 left')).toBeTruthy();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-label', '1 of 2 session steps complete');
+  });
+
+  it('emits one structured progress acknowledgement for an observable day state', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      queue: [entry(1, 'repetition', true), entry(2, 'repetition')], day: 7,
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    await waitFor(() => expect(programLogMock).toHaveBeenCalledWith('progress', {
+      corpus: 'glossika-korean', day: 7, done: 1, total: 2,
+      complete: false, empty: false, blockedByDevice: false,
+    }));
+    expect(programLogMock.mock.calls.filter(([detail]) => detail === 'progress')).toHaveLength(1);
   });
 
   it('renders a tab per rung in the chain, with an outstanding count', async () => {
@@ -96,6 +139,25 @@ describe('the day', () => {
     await screen.findByText('Repetition');
     expect(screen.getByText('Dictation')).toBeTruthy();
     expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('lets a fully equipped session proceed through every offered mode', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['repetition', 'dictation', 'recording', 'interpretation'],
+      queue: [
+        entry(1, 'repetition'), entry(2, 'dictation'),
+        entry(3, 'recording'), entry(4, 'interpretation'),
+      ],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    expect(await screen.findByText('English 1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Dictation/ }));
+    expect(screen.getByLabelText(/Type what you hear/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Recording/ }));
+    expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Interpretation/ }));
+    expect(screen.getByLabelText(/Type what it means/i)).toBeTruthy();
   });
 
   it('NEVER renders a rung the device cannot perform', async () => {
@@ -127,6 +189,43 @@ describe('the day', () => {
     expect(await screen.findByText(/Could not load/i)).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
   });
+
+  it('explains an empty day instead of rendering a blank study panel', async () => {
+    const onExit = vi.fn();
+    dayMock.mockResolvedValue(dayPayload({ queue: [] }));
+    render(
+      <SentenceLadderProgram
+        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        locked onExit={onExit}
+      />,
+    );
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Nothing is due in this course today.');
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(programLogMock).toHaveBeenCalledWith('progress', expect.objectContaining({
+      total: 0, done: 0, complete: true, empty: true, blockedByDevice: false,
+    }));
+  });
+
+  it('keeps a device-blocked empty queue escapable without claiming completion', async () => {
+    const onExit = vi.fn();
+    dayMock.mockResolvedValue(dayPayload({ queue: [], missingCreditRungs: ['recording'] }));
+    render(
+      <SentenceLadderProgram
+        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        locked onExit={onExit}
+      />,
+    );
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/device that can complete Recording/i);
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Leave for now' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(programLogMock).toHaveBeenCalledWith('progress', expect.objectContaining({
+      complete: false, empty: true, blockedByDevice: true,
+    }));
+  });
 });
 
 describe('repetition', () => {
@@ -137,6 +236,30 @@ describe('repetition', () => {
     expect(screen.getByText('한국어 1')).toBeTruthy();
     fireEvent.click(screen.getByText('Play'));
     await waitFor(() => expect(window.HTMLMediaElement.prototype.play).toHaveBeenCalled());
+  });
+
+  it('returns to Play when the browser blocks audio', async () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.reject(new Error('blocked')));
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Play' }));
+    expect(await screen.findByText(/Audio was blocked/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  });
+});
+
+describe('recording', () => {
+  it('returns to the start control when prompt audio is blocked', async () => {
+    window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.reject(new Error('blocked')));
+    dayMock.mockResolvedValue(dayPayload({ chain: ['recording'], queue: [entry(1, 'recording')] }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Listen, then record' }));
+    expect(await screen.findByText(/Audio was blocked/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
+    expect(screen.queryByText('Listen…')).toBeNull();
   });
 });
 
@@ -221,7 +344,35 @@ describe('day rollover', () => {
   it('offers the next day once everything is done', async () => {
     dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
     render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
-    expect(await screen.findByText(/Today's set is done/)).toBeTruthy();
+    expect(await screen.findByRole('status')).toHaveTextContent(/Day 1 complete.*1 steps are saved.*School progress/i);
+  });
+
+  it('uses an honest leave affordance during a locked session and one Done after completion', async () => {
+    const onExit = vi.fn();
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    const view = render(
+      <SentenceLadderProgram
+        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        locked onExit={onExit}
+      />,
+    );
+    fireEvent.click(await screen.findByText('Leave for now'));
+    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Done')).toBeNull();
+
+    view.unmount();
+    onExit.mockClear();
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition', true)] }));
+    render(
+      <SentenceLadderProgram
+        studyGrant="test-grant" userId="kckern" corpusId="glossika-korean"
+        locked onExit={onExit}
+      />,
+    );
+    expect(await screen.findByRole('button', { name: 'Done' })).toBeTruthy();
+    expect(screen.queryByText('Leave for now')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
   });
 
   it('refuses an early roll and says why, rather than silently doing nothing', async () => {
@@ -293,6 +444,22 @@ describe('dismissal and dead ends', () => {
     fireEvent.click(screen.getByText('Device'));
     expect(screen.getByText('KR keyboard')).toBeTruthy();
     expect(screen.getByText('Microphone')).toBeTruthy();
+  });
+
+  it('lets the learner retry a failed history load', async () => {
+    dayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'repetition')] }));
+    historyMock
+      .mockResolvedValueOnce({ ok: false, status: 500, data: null })
+      .mockResolvedValueOnce({
+        ok: true, status: 200, data: { corpus: { languages: LANGUAGES }, days: [] },
+      });
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    expect(await screen.findByText('Could not load history.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Nothing studied yet.')).toBeTruthy();
+    expect(historyMock).toHaveBeenCalledTimes(2);
   });
 });
 
