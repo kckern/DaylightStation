@@ -299,9 +299,9 @@ export class CloseSessionOutcome {
         token: record.token,
         label: unlocked.title,
         presentation: 'lesson',
-        eyebrow: 'Next up',
+        eyebrow: 'One more?',
         title: unlocked.title,
-        description: unlocked.description,
+        description: 'Today is already complete. Scan only if you want one more.',
         icon: unit.subject,
         taxonomy: unlocked.taxonomy,
         // Explicit either way (a real code, or `null` when self-service is

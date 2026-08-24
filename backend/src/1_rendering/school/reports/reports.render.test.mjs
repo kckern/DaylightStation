@@ -32,7 +32,7 @@ describe('ProgressReportRenderer', () => {
 });
 
 describe('CertificateRenderer', () => {
-  it('renders a one-page certificate', async () => {
+  it('renders a one-page landscape Letter certificate', async () => {
     const render = createCertificatePdfRenderer();
     const { pdf, pageCount } = await render({
       learnerName: 'Felix', courseId: 'math-fractions', percent: 88,
@@ -40,5 +40,6 @@ describe('CertificateRenderer', () => {
     });
     expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
     expect(pageCount).toBe(1);
+    expect(pdf.toString('latin1')).toMatch(/\/MediaBox\s*\[0 0 792 612\]/);
   });
 });

@@ -25,6 +25,7 @@ export function createSchoolRouter({
   recordLearningReflection = null,
   recordLearningProbeInteraction = null,
   remediationTutor = null,
+  offerCatalogQuizRemediation = null,
   learnerDirectory = null,
   issueContinuationCode = null,
   printService = null,
@@ -729,6 +730,17 @@ export function createSchoolRouter({
       sessionId: req.params.sessionId, itemId, given, selfGrade,
       probeAttemptNumber, responseId,
     }));
+  }));
+  router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {
+    if (!offerCatalogQuizRemediation) {
+      throw new EntityNotFoundError('adaptive remediation offer', 'not configured');
+    }
+    const learnerId = req.body?.learnerId;
+    const result = await offerCatalogQuizRemediation.execute({
+      sessionId: req.params.sessionId,
+      learnerId,
+    });
+    return res.status(result.status === 'offered' ? 201 : 200).json(result);
   }));
   router.get('/users/:userId/results', wrap((req, res) => {
     res.json(schoolService.getResults(req.params.userId, { bankId: req.query.bankId }));

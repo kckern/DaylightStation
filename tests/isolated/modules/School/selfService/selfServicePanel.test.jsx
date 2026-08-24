@@ -644,7 +644,10 @@ describe('locked panel — program actions', () => {
       outcome: 'mount',
       sentence: 'Opening it here on the screen.',
       sessionId: null,
-      effect: { kind: 'program', programId: 'language', unitId: 'u1', learnerId: 'kid1' },
+      effect: {
+        kind: 'program', programId: 'language', corpusId: 'glossika-korean',
+        studyGrant: 'study-grant', unitId: 'u1', learnerId: 'kid1',
+      },
     },
   };
 
@@ -685,8 +688,9 @@ describe('locked panel — program actions', () => {
     fireEvent.click(await findActionButton('program'));
     await screen.findByText('Day 1');
 
-    // Lock mode has no header, so the program would otherwise be terminal.
-    fireEvent.click(await screen.findByTestId('selfservice-section-exit'));
+    // The mounted program owns its exit so there is one obvious way back,
+    // rather than a second shell-level exit competing with its Done action.
+    fireEvent.click(await screen.findByRole('button', { name: 'Done' }));
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
   });
 

@@ -7,10 +7,13 @@ import MatchingItem from './MatchingItem.jsx';
 
 describe('MultipleChoiceItem', () => {
   const item = { id: 'q', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] };
-  it('submits the tapped choice; inert after verdict', () => {
+  it('arms a tapped choice, submits only when it is tapped again, and is inert after verdict', () => {
     const onSubmit = vi.fn();
     const { rerender } = render(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={null} />);
     fireEvent.click(screen.getByRole('button', { name: 'Olympia' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Olympia.*tap again/i })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Olympia.*tap again/i }));
     expect(onSubmit).toHaveBeenCalledWith('Olympia');
     rerender(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={{ correct: false, expected: 'Olympia' }} />);
     fireEvent.click(screen.getByRole('button', { name: 'Seattle' }));
@@ -19,13 +22,24 @@ describe('MultipleChoiceItem', () => {
     expect(screen.getByTestId('mc-verdict')).toHaveTextContent('Not quite — the answer is Olympia.');
     expect(screen.getByText('— your pick')).toBeInTheDocument();
   });
-  it('double-tap on the same choice submits exactly once while verdict is still null', () => {
+  it('a third tap on the same choice cannot submit twice while verdict is still null', () => {
     const onSubmit = vi.fn();
     render(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={null} />);
     const btn = screen.getByRole('button', { name: 'Olympia' });
     fireEvent.click(btn);
     fireEvent.click(btn);
+    fireEvent.click(btn);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+  it('moves the armed choice without submitting when a different option is tapped', () => {
+    const onSubmit = vi.fn();
+    render(<MultipleChoiceItem item={item} onSubmit={onSubmit} verdict={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Seattle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Olympia' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Olympia.*tap again/i })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: /Olympia.*tap again/i }));
+    expect(onSubmit).toHaveBeenCalledWith('Olympia');
   });
   it('renders safely and goes inert on an unrecorded verdict carrying no expected/correct', () => {
     const onSubmit = vi.fn();

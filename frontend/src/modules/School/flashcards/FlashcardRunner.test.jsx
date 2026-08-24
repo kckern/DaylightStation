@@ -56,6 +56,22 @@ describe('FlashcardRunner', () => {
     expect(await screen.findByTestId('cards-summary')).toHaveTextContent('1 / 2'); // first-try count
   });
 
+  it('can rotate a card to see it again without recording or affecting totals', async () => {
+    render(<FlashcardRunner bank={bank} onExit={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /show me again/i }));
+    expect(answerMock).not.toHaveBeenCalled();
+    expect(await screen.findByText('WA?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /got it/i }));
+    expect(await screen.findByText('OR?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /show answer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /got it/i }));
+    expect(await screen.findByTestId('cards-summary')).toHaveTextContent('2 / 2');
+    expect(screen.getByTestId('cards-summary')).toHaveTextContent('2 cards seen');
+    expect(answerMock).toHaveBeenCalledTimes(2);
+  });
+
   it('any item type is drillable: a matching card reveals the pair list', async () => {
     render(<FlashcardRunner bank={matchingBank} onExit={() => {}} />);
     expect(await screen.findByText('Match these')).toBeInTheDocument();

@@ -44,11 +44,14 @@ function fixture() {
     get: vi.fn(async () => ({ sessionId: 'rem-1', learnerId: 'kid-a', status: 'active' })),
     act: vi.fn(async () => ({ status: 'complete', session: { sessionId: 'rem-1' } })),
   };
+  const offerCatalogQuizRemediation = {
+    execute: vi.fn(async () => ({ status: 'offered', offer: { sessionId: 'rem-quiz-1' } })),
+  };
   const app = express();
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
     schoolService: service, getLearningProgress, getInstructionalInsights,
-    recordLearningReflection, remediationTutor, learnerDirectory,
+    recordLearningReflection, remediationTutor, offerCatalogQuizRemediation, learnerDirectory,
     recordLearningProbeInteraction,
     learningCatalog,
     openCatalogLearningSession,
@@ -57,7 +60,8 @@ function fixture() {
   }));
   return {
     app, getLearningProgress, getInstructionalInsights, recordLearningReflection,
-    recordLearningProbeInteraction, learningCatalog, remediationTutor, learnerDirectory,
+    recordLearningProbeInteraction, learningCatalog, remediationTutor,
+    offerCatalogQuizRemediation, learnerDirectory,
     openCatalogLearningSession,
     issueContinuationCode,
   };
@@ -161,6 +165,17 @@ describe('School progress HTTP projection', () => {
     expect(remediationTutor.act).toHaveBeenCalledWith(expect.objectContaining({
       access: { surface: 'web', learnerId: 'kid-a' }, action: 'explain', turnId: 'turn-2',
     }));
+  });
+
+  it('mints a remediation offer from server-owned completed-quiz evidence', async () => {
+    const { app, offerCatalogQuizRemediation } = fixture();
+    const response = await request(app).post('/api/v1/school/sessions/ses-quiz-1/remediation-offer')
+      .send({ learnerId: 'kid-a', bankId: 'untrusted-client-bank' })
+      .expect(201);
+    expect(response.body).toEqual({ status: 'offered', offer: { sessionId: 'rem-quiz-1' } });
+    expect(offerCatalogQuizRemediation.execute).toHaveBeenCalledWith({
+      sessionId: 'ses-quiz-1', learnerId: 'kid-a',
+    });
   });
 
   it('records probe feedback and continuation separately while owning web source identity', async () => {

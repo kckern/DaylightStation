@@ -34,17 +34,23 @@ beforeEach(() => {
   recordProbeInteraction.mockReset().mockResolvedValue({ ok: true, status: 201, data: {} });
 });
 
+async function confirmChoice(name) {
+  const choice = await screen.findByRole('button', { name });
+  fireEvent.click(choice);
+  fireEvent.click(choice);
+}
+
 describe('LearningProbeRunner', () => {
   it('explains, retries, and preserves the first response as the displayed score', async () => {
     answer
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Division' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: true, expected: 'Division' } });
     render(<LearningProbeRunner module={module} learning={{ lessonId: 'rates' }} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Addition' }));
+    await confirmChoice('Addition');
     expect(await screen.findByText(/Divide by the second quantity/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await screen.findByText(/attempt 2/);
-    fireEvent.click(screen.getByRole('button', { name: 'Division' }));
+    await confirmChoice('Division');
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
 
     const summary = await screen.findByTestId('probe-summary');
@@ -70,7 +76,7 @@ describe('LearningProbeRunner', () => {
       .mockResolvedValueOnce({ ok: false, status: 0, data: null })
       .mockResolvedValue({ ok: true, status: 200, data: {} });
     render(<LearningProbeRunner module={module} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Division' }));
+    await confirmChoice('Division');
     fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(/didn’t go through/);
     expect(screen.queryByTestId('probe-summary')).not.toBeInTheDocument();
@@ -82,7 +88,7 @@ describe('LearningProbeRunner', () => {
     const onExit = vi.fn();
     answer.mockResolvedValue({ ok: false, status: 410, data: null });
     render(<LearningProbeRunner module={module} onExit={onExit} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Division' }));
+    await confirmChoice('Division');
     const card = await screen.findByTestId('session-lost');
     expect(card).toHaveTextContent(/timed out/i);
     expect(onExit).not.toHaveBeenCalled();

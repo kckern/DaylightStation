@@ -6,11 +6,13 @@ import QuizRunner from './QuizRunner.jsx';
 const answerMock = vi.fn();
 const openSessionMock = vi.fn();
 const requestRetakeMock = vi.fn();
+const remediationOfferMock = vi.fn();
 vi.mock('../schoolApi.js', () => ({
   schoolApi: {
     openSession: (...a) => openSessionMock(...a),
     answer: (...a) => answerMock(...a),
     requestRetake: (...a) => requestRetakeMock(...a),
+    remediationOffer: (...a) => remediationOfferMock(...a),
   },
 }));
 
@@ -33,7 +35,16 @@ beforeEach(() => {
   answerMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } });
   openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { sessionId: 'ses_1' } });
   requestRetakeMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { requested: true } });
+  remediationOfferMock.mockReset().mockResolvedValue({
+    ok: true, status: 201, data: { status: 'offered', offer: { sessionId: 'REM_1' } },
+  });
 });
+
+async function confirmChoice(name) {
+  const choice = await screen.findByRole('button', { name });
+  fireEvent.click(choice);
+  fireEvent.click(choice);
+}
 
 describe('QuizRunner', () => {
   it('runs one pass — a wrong answer is NOT re-asked — and ends on a summary', async () => {
@@ -41,9 +52,9 @@ describe('QuizRunner', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'att_1' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: true, expected: 'Salem', attemptId: 'att_2' } });
     render(<QuizRunner bank={bank} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Seattle' })); // wrong
+    await confirmChoice('Seattle'); // wrong
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));  // right
+    await confirmChoice('Salem');  // right
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-summary')).toHaveTextContent('1 / 2');
     expect(answerMock).toHaveBeenCalledTimes(2); // strictly one POST per item
@@ -51,7 +62,7 @@ describe('QuizRunner', () => {
   it('shows the unrecorded banner on a 500 and still allows continuing', async () => {
     answerMock.mockResolvedValueOnce({ ok: false, status: 500, data: { error: 'internal' } });
     render(<QuizRunner bank={bank} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     expect(await screen.findByTestId('unrecorded')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument();
   });
@@ -59,7 +70,7 @@ describe('QuizRunner', () => {
     const onExit = vi.fn();
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<QuizRunner bank={bank} onExit={onExit} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     expect(await screen.findByTestId('session-lost')).toHaveTextContent(/took a long break and timed out/i);
     expect(onExit).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
@@ -71,7 +82,7 @@ describe('QuizRunner', () => {
     const onRestart = vi.fn();
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<QuizRunner bank={bank} onExit={onExit} onRestart={onRestart} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     await screen.findByTestId('session-lost');
     fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
     expect(onRestart).toHaveBeenCalled();
@@ -128,9 +139,9 @@ describe('QuizRunner', () => {
       .mockResolvedValueOnce({ ok: false, status: 500, data: { error: 'internal' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: true, expected: 'Salem', attemptId: 'att_2' } });
     render(<QuizRunner bank={bank} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' })); // fails to record
+    await confirmChoice('Olympia'); // fails to record
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Salem' })); // correct + recorded
+    await confirmChoice('Salem'); // correct + recorded
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     const summary = await screen.findByTestId('quiz-summary');
     expect(summary).toHaveTextContent('1 / 1'); // 1 correct out of 1 GRADED item, not 1/2
@@ -155,6 +166,7 @@ describe('QuizRunner', () => {
     const { rerender } = render(<QuizRunner bank={bank} onExit={onExit} />);
     // Answer the first item correctly
     const btn = await screen.findByRole('button', { name: 'Olympia' });
+    fireEvent.click(btn);
     fireEvent.click(btn);
     // Verdict appears
     await waitFor(() => expect(screen.getByRole('button', { name: /next/i })).toBeInTheDocument());
@@ -193,9 +205,9 @@ describe('student-advocacy wave 7', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
     render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Seattle' }));
+    await confirmChoice('Seattle');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Boise' }));
+    await confirmChoice('Boise');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('0% — passing is 80%. You can try again.');
     fireEvent.click(screen.getByRole('button', { name: /ask for a retake/i }));
@@ -206,9 +218,9 @@ describe('student-advocacy wave 7', () => {
 
   it('a passing graded run celebrates and does NOT offer the retake ask', async () => {
     render(<QuizRunner bank={bank} learning={{ passingPercent: 80 }} onExit={() => {}} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));
+    await confirmChoice('Salem');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent('Passed — 100%, and passing is 80%.');
     expect(screen.getByTestId('quiz-cheer')).toHaveTextContent('Perfect! Every single one.');
@@ -217,24 +229,30 @@ describe('student-advocacy wave 7', () => {
     expect(screen.getByTestId('quiz-dots').querySelectorAll('.is-right')).toHaveLength(2);
   });
 
-  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the lesson,
-  // not just the retake ask. AdaptiveTutorPanel needs a pre-existing
-  // remediation sessionId that a live failing summary never has, so this is
-  // the real, reachable target — SchoolApp supplies `onReview` and the unit
-  // context comes from the catalog-launch `learning` object.
-  describe('review-lesson link (debt W7b)', () => {
+  describe('failed Catalog quiz recovery', () => {
     const failBoth = () => {
       answerMock
         .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Olympia', attemptId: 'a1' } })
         .mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Salem', attemptId: 'a2' } });
     };
     const runToSummary = async (labels = ['Seattle', 'Boise']) => {
-      fireEvent.click(await screen.findByRole('button', { name: labels[0] }));
+      await confirmChoice(labels[0]);
       fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-      fireEvent.click(await screen.findByRole('button', { name: labels[1] }));
+      await confirmChoice(labels[1]);
       fireEvent.click(await screen.findByRole('button', { name: /next/i }));
       return screen.findByTestId('quiz-summary');
     };
+
+    it('mints and opens an adaptive tutor session from the completed quiz', async () => {
+      failBoth();
+      const onTutor = vi.fn();
+      render(<QuizRunner bank={bank} learning={{ passingPercent: 80, unitId: 'intro' }}
+        onExit={() => {}} onTutor={onTutor} />);
+      await runToSummary();
+      await waitFor(() => expect(remediationOfferMock).toHaveBeenCalledWith('ses_1', 'kid1'));
+      fireEvent.click(await screen.findByTestId('open-tutor'));
+      expect(onTutor).toHaveBeenCalledWith('REM_1');
+    });
 
     it('shows the link on a failing summary with unit context and fires onReview', async () => {
       failBoth();
@@ -289,7 +307,7 @@ describe('mid-quiz resume (Task 17)', () => {
     expect(screen.queryByRole('button', { name: 'Olympia' })).not.toBeInTheDocument();
     // Finish the run: the summary score and dots carry the resumed point.
     answerMock.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: true, expected: 'Salem', attemptId: 'att_2' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Salem' }));
+    await confirmChoice('Salem');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     const summary = await screen.findByTestId('quiz-summary');
     expect(summary).toHaveTextContent('2 / 2');
@@ -319,9 +337,9 @@ describe('mid-quiz resume (Task 17)', () => {
       );
     }
     render(<Host />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Salem' }));
+    await confirmChoice('Salem');
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     await screen.findByTestId('quiz-summary');
     expect(openSessionMock).toHaveBeenCalledTimes(1);
@@ -347,7 +365,7 @@ describe('mid-quiz resume (Task 17)', () => {
     }
     answerMock.mockResolvedValueOnce({ ok: false, status: 410, data: null });
     render(<Host />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Olympia' }));
+    await confirmChoice('Olympia');
     await screen.findByTestId('session-lost');
     fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
     await waitFor(() => expect(openSessionMock).toHaveBeenCalledTimes(2));

@@ -149,9 +149,13 @@ answer-key behavior.
   explicitly not a security boundary.
 - **A quiz is one pass** — each item asked once, then a score. Resurfacing
   would converge every score to 100% and destroy the completion signal courses
-  depend on.
+  depend on. A multiple-choice answer takes two taps on the same tile: the
+  first arms it and says "tap again"; the second submits. Choosing another
+  tile moves the arm, so an accidental kiosk tap is never irreversible.
 - **A flashcard drill resurfaces** missed cards until they are got. Drilling
-  and assessment are different jobs.
+  and assessment are different jobs. Its third lane, **Show me again
+  (doesn't count)**, rotates the card to the back without recording an answer
+  or changing first-try/cards-seen totals.
 - Short-answer matching is deliberately conservative: trim, collapse
   whitespace, casefold, nothing more. "St. Paul" vs "St Paul" is an explicit
   `accept` entry's job, not a clever matcher's.
@@ -184,6 +188,20 @@ sitting is deleted the moment the last item is answered. A deliberate restart
 ("Try again") opens with `fresh: true`, which wipes the sitting first; the
 timed-out-session card's "Start again" deliberately does NOT, so its "your
 finished answers are saved" promise actually resumes the run.
+
+### Failed-quiz adaptive tutor handoff
+
+A failed Catalog quiz with authored `remediation:` policy and concept-tagged
+bank items can immediately offer **Get tutor help**. `POST
+/api/v1/school/sessions/:sessionId/remediation-offer` accepts only the learner
+and session identities. The server owns the rest: it verifies session
+ownership and completion, reads durable answers, uses the immutable bank
+snapshot, re-resolves the exact Catalog lesson/module, refuses content-revision
+drift, evaluates the authored trigger, and mints or reuses the durable adaptive
+remediation session. Neither answers nor answer keys round-trip through the
+browser. The School shell opens `AdaptiveTutorPanel` with the returned session
+id; modules without remediation policy retain **Review this lesson** as the
+honest fallback.
 
 A sitting is a **convenience, not evidence** — the attempt log stays the sole
 record. That asymmetry sets every edge rule: sittings are quiz-mode,
@@ -1739,7 +1757,9 @@ read model where `paceMilestones` turns a behind-but-enrichment-covered
 milestone into **excused — never delinquency** (spec C5), with the period's
 enrichment entries as their own credit section; `GET /certificate`
 (`CertificateRenderer`) prints a course-completion certificate and refuses a
-course with nothing graded — no fabricated diplomas. Only the three repair
+course with nothing graded — no fabricated diplomas. The certificate is
+landscape US Letter, with the ceremony border, centered name, and signature
+line. Only the three repair
 rows remain in the placeholder registry.
 
 **Wave 5 — repair is live; the placeholder registry is EMPTY.** Attestation
@@ -1835,9 +1855,9 @@ what didn't save.
   Learner reflections surface on the teacher's roster strip
   (`GetTeacherToday` optional `evidenceRepository` dep).
 
-Deferred with records (plan appendix): mid-quiz resumability, tap-confirm on
-choices, a third no-stakes flashcard lane, tutor deep-links from fail
-summaries, the Portal day-plan panel.
+The plan appendix items once deferred with these records are now shipped:
+mid-quiz resumability, tap-to-confirm choices, the no-stakes flashcard lane,
+failed-quiz tutor handoff, and the Portal day-plan panel.
 
 ### Administration (wave 8)
 
@@ -1954,15 +1974,15 @@ course gates correctly for the first time.
   ceremony — gated by a `beforeAll` probe that refuses to run the mutation
   test at all unless the install's PIN gate proves itself armed first.
 
-**Deliberately not built, still open by choice** — design choices the
-teacher/student/administrator advocates themselves accepted, not debt: tap-
-to-confirm on multiple-choice items, paper's "one more?" affordance past the
-daily serve cap, a third no-stakes flashcard lane, and the certificate's
-portrait orientation. A failed catalog quiz's "Review this lesson" link
-reopens the Catalog root, not the exact failed lesson (no deep-link support
-exists yet); a failed quiz never synchronously offers the adaptive tutor
-(the tutor needs a server-side remediation-offer id a live quiz close has no
-way to mint) — both recorded here rather than reopened as new debt.
+**Software-only closeout (2026-08-24).** The five choices previously left open
+are closed. Multiple-choice uses tap-then-confirm; flashcards have a no-stakes
+rotate-to-back lane; a settled paper result offers an explicit optional **One
+more?** continuation whose `subject_next` token carries `continueToday:true`;
+certificates render landscape; and a failed, remediation-enabled Catalog quiz
+mints and opens a server-authoritative tutor session for the exact lesson and
+bank revision. Deployment, physical-printer checks, live-model/learner trials,
+and the manual stranded-session decision remain separate operational or human
+verification, not unfinished software behavior.
 
 ## 3. Specced, not built
 

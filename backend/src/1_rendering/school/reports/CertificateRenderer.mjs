@@ -1,6 +1,6 @@
 /**
- * The course-completion certificate (teacher-console spec C2): one Letter
- * page. Wave-9 ceremony (design audit #9): a certificate is THEATRE — a
+ * The course-completion certificate (teacher-console spec C2): one landscape
+ * Letter page. Wave-9 ceremony (design audit #9): a certificate is THEATRE — a
  * double border rule, content vertically centered on the page (not crammed
  * into the top half), the learner's name at display size, a humane date,
  * and a real signature line above "Teacher". A child should want this on
@@ -20,6 +20,7 @@ export function createCertificatePdfRenderer({ theme = documentPdfTheme, fontDir
     return new Promise((resolve, reject) => {
       const out = new PDFDocument({
         size: 'letter',
+        layout: 'landscape',
         margin: theme.page.marginPt,
         autoFirstPage: false,
         info: { CreationDate: PINNED_CREATION_DATE },
@@ -33,7 +34,7 @@ export function createCertificatePdfRenderer({ theme = documentPdfTheme, fontDir
 
       const ink = theme.ink?.text ?? '#111';
       const muted = theme.ink?.muted ?? '#666';
-      const pageW = 612; const pageH = 792; // US Letter, points
+      const pageW = 792; const pageH = 612; // US Letter landscape, points
       const m = theme.page.marginPt;
 
       // The frame: a double border rule — outer heavy, inner hairline.
@@ -51,7 +52,7 @@ export function createCertificatePdfRenderer({ theme = documentPdfTheme, fontDir
         return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
       })();
 
-      out.y = pageH * 0.24;
+      out.y = pageH * 0.16;
       out.font(theme.fonts.bold.name).fontSize(30).fillColor(ink)
         .text('Certificate of Completion', { align: 'center' });
       out.moveDown(1.6);
@@ -75,7 +76,7 @@ export function createCertificatePdfRenderer({ theme = documentPdfTheme, fontDir
       // to sign above, the issuer's name beneath it, the role beneath that.
       const sigW = 220;
       const sigX = (pageW - sigW) / 2;
-      const sigY = pageH - m - 120;
+      const sigY = pageH - m - 86;
       out.save().lineWidth(0.75).strokeColor(ink)
         .moveTo(sigX, sigY).lineTo(sigX + sigW, sigY).stroke().restore();
       out.font(theme.fonts.regular.name).fontSize(12).fillColor(ink)

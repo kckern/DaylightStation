@@ -1,4 +1,7 @@
-/** Tap-target multiple choice. Submits on tap; inert once a verdict exists.
+/** Tap-target multiple choice. The first tap arms a choice and the second tap
+ * confirms it; tapping a different choice moves the arm instead. This keeps a
+ * stray kiosk tap from becoming an irreversible answer while preserving the
+ * same large answer targets. Inert once a verdict exists.
  * After the verdict the child's OWN pick stays marked (advocacy wave 7): a
  * board that only highlights the right answer erases what they actually
  * chose, so the correction teaches nothing. A one-line text verdict says it
@@ -15,8 +18,11 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
   useEffect(() => { submittedRef.current = false; setChosen(null); }, [item.id]);
   const submit = (choice) => {
     if (verdict || submittedRef.current) return;
+    if (chosen !== choice) {
+      setChosen(choice);
+      return;
+    }
     submittedRef.current = true;
-    setChosen(choice);
     onSubmit(choice);
   };
   return (
@@ -29,11 +35,17 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
             if (choice === verdict.expected) cls.push('school-item__choice--right');
             else if (choice === chosen) cls.push('school-item__choice--chosen-wrong');
             else cls.push('school-item__choice--dim');
+          } else if (choice === chosen) {
+            cls.push('school-item__choice--armed');
           }
           return (
             <button key={choice} type="button" className={cls.join(' ')} disabled={!!verdict}
+              aria-pressed={!verdict && choice === chosen}
               onClick={() => submit(choice)}>
               {choice}
+              {!verdict && choice === chosen && (
+                <span className="school-item__confirm"> — tap again</span>
+              )}
               {verdict && choice === chosen && (
                 <span className="school-item__you" aria-hidden="true"> — your pick</span>
               )}
@@ -41,6 +53,7 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
           );
         })}
       </div>
+      {!verdict && <p className="school-item__choice-hint">Choose once, then tap it again to answer.</p>}
       {verdict && !verdict.unrecorded && (
         <p className="school-item__verdict" data-testid="mc-verdict">
           {verdict.correct ? 'Right!' : `Not quite — the answer is ${verdict.expected}.`}
