@@ -60,3 +60,75 @@ describe('course enrollment ordering', () => {
     expect(plan.entries.find((x) => x.unitId === 'atlas.05').unlocks).toBeNull();
   });
 });
+
+describe('dated module schedules', () => {
+  const modules = [
+    { module: 'w35', title: 'Week 35', opensOn: '2026-08-24', closesOn: '2026-08-30' },
+    { module: 'w36', title: 'Week 36', opensOn: '2026-08-31', closesOn: '2026-09-06' },
+    { module: 'w37', title: 'Week 37', opensOn: '2026-09-07', closesOn: '2026-09-13' },
+  ];
+  const datedUnits = [
+    { unitId: 'w35.d1', courseId: 'cfm', module: 'w35', sequence: 1 },
+    { unitId: 'w36.d1', courseId: 'cfm', module: 'w36', sequence: 2 },
+    { unitId: 'w37.d1', courseId: 'cfm', module: 'w37', sequence: 3 },
+  ];
+  const datedPolicy = { mode: 'dated_modules', lesson_order: 'sequence' };
+
+  it('copies each module window onto the enrollment', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-08-23',
+    });
+    expect(enrollment.moduleSchedule).toEqual({
+      w35: { opensOn: '2026-08-24', closesOn: '2026-08-30' },
+      w36: { opensOn: '2026-08-31', closesOn: '2026-09-06' },
+      w37: { opensOn: '2026-09-07', closesOn: '2026-09-13' },
+    });
+  });
+
+  it('omits modules that closed before enrollment — they were never assigned', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-09-08',
+    });
+    expect(Object.keys(enrollment.moduleSchedule)).toEqual(['w37']);
+    expect(enrollment.moduleOrder).toEqual(['w37']);
+  });
+
+  it('keeps omitted pre-enrollment modules out of the planner', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-09-08',
+    });
+    const plan = planLearnerWork({
+      learnerId: 'milo', units: datedUnits,
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] },
+      sessions: [], now: '2026-09-08T09:00:00.000Z',
+      coursePolicies: { cfm: datedPolicy },
+    });
+
+    expect(plan.entries.map((entry) => entry.unitId)).toEqual(['w37.d1']);
+    expect(plan.next.unitId).toBe('w37.d1');
+  });
+
+  it('keeps a module whose window closes today', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-08-30',
+    });
+    expect(Object.keys(enrollment.moduleSchedule)).toContain('w35');
+  });
+
+  it('orders dated modules by calendar, never shuffled', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules,
+      policy: { mode: 'dated_modules', module_order: 'shuffle_once', lesson_order: 'sequence' },
+      today: '2026-08-23', rng: () => 0,
+    });
+    expect(enrollment.moduleOrder).toEqual(['w35', 'w36', 'w37']);
+  });
+
+  it('adds no moduleSchedule to a course that is not dated', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'atlas', units: [{ unitId: 'a.1', courseId: 'atlas', module: 'midwest', sequence: 1 }],
+      policy: { mode: 'module_blocks' },
+    });
+    expect(enrollment.moduleSchedule).toBeUndefined();
+  });
+});

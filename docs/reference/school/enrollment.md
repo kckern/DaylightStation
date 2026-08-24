@@ -32,7 +32,7 @@ per-learner, per-course record embedded in the assignment entry:
 ```yaml
 # household/school/plans/learners/felix.yml
 learnerId: felix
-courses:
+enrollments:
   - math-fractions                          # bare string: no enrollment
   - courseId: young-peoples-atlas-us
     profile: upper
@@ -46,6 +46,10 @@ courses:
       lessonOrder:
         midwest: [atlas-us-p012-midwest, atlas-us-p100-south-dakota, …]
         …
+      # Present only for progression.mode: dated_modules.
+      moduleSchedule:
+        w35-aug24: { opensOn: '2026-08-24', closesOn: '2026-08-30' }
+        w36-aug31: { opensOn: '2026-08-31', closesOn: '2026-09-06' }
 ```
 
 `planner.mjs` reads it (`readAssignmentList` keeps `profile` and `enrollment`
@@ -57,7 +61,11 @@ off each entry) and uses it throughout gating:
 - `lessonOrder` — the enrollment's frozen order within a module wins over
   `sequence`;
 - alongside the course's own `progression` policy: `required_opening_module`,
-  `one_active_module`, `mode: sequential | module_blocks`.
+  `one_active_module`, or `mode: sequential | module_blocks | dated_modules`.
+
+For `dated_modules`, `moduleSchedule` is frozen at enrollment from the course
+manifest. It prevents later calendar edits from moving a learner's active
+plan; modules already closed when the learner enrolls are omitted entirely.
 
 `profile` reaches the issue path. `issueWorksheet` filters items by
 `item.levels.includes(profile)` and seeds selection on
@@ -210,27 +218,24 @@ which is why nothing breaks when they are absent.
 
 ---
 
-## 5. Scope subsetting needs two planner changes
+## 5. Scope subsetting and planner membership
 
-This is the part with real work in it, and the previous revision missed it.
+This area originally needed two planner changes. Frozen enrollment membership
+is now honored; lesson-level completion scoping for `module_blocks` remains.
 
-`createCourseEnrollment` **already supports subsetting** — it filters
+`createCourseEnrollment` supports subsetting — it filters
 `units` to the course and derives `moduleOrder`/`lessonOrder` from whatever it
-is given, so passing a module subset produces a subset enrollment. The planner
-then ignores it, in two distinct places.
+is given, so passing a module subset produces a subset enrollment.
 
-**Membership comes from the catalog, not the enrollment** (`planner.mjs:90-95`):
+**Membership now comes from the frozen enrollment.** When `lessonOrder` is
+present, the planner takes the union of its unit ids and the units belonging to
+`optionalModules`. It falls back to catalog membership only for legacy course
+assignments without frozen enrollment data. This is load-bearing for a dated
+mid-course enrollment: weeks omitted because they closed before enrollment do
+not reappear as `upcoming` entries or inflate progress totals.
 
-```js
-const members = catalog.filter((u) => u.courseId === id).sort(bySequence);
-members.forEach((u) => { if (!wanted.has(u.unitId)) wanted.set(u.unitId, elective); });
-```
-
-Every published unit of an assigned course is wanted, whatever the enrollment
-says. Fix: when the entry carries an enrollment, membership is the union of its
-`lessonOrder` values plus its optional modules.
-
-**Module completion is computed over the catalog** (`planner.mjs:137-138`):
+**One remaining limitation:** module completion for `module_blocks` is still
+computed over the catalog (`planner.mjs:137-138`):
 
 ```js
 const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
@@ -241,9 +246,10 @@ const passedModule = (moduleId) => siblings.filter((u) => u.module === moduleId)
 lesson the learner is not enrolled in can never be "passed", and the next module
 never opens. Fix: restrict `passedModule` to enrolled lessons.
 
-Consequence for sequencing: **whole-module subsetting is nearly free once
-membership is fixed; lesson-level exclusion within an included module is not
-safe until `passedModule` is fixed too.** They should land together.
+Consequence for sequencing: **whole-module subsetting is now safe; lesson-level
+exclusion within an included `module_blocks` module is not safe until
+`passedModule` is fixed too.** Dated enrollment subsets whole modules, so its
+mid-course membership contract does not depend on that remaining change.
 
 ### The gating invariant
 

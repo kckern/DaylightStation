@@ -13,6 +13,17 @@ const entry = (over) => ({
 const plan = (entries) => ({ entries, errors: [] });
 const args = (over = {}) => ({ plan: plan([]), sessions: [], programStatuses: {}, now: NOW, timezone: TZ, ...over });
 
+describe('dated module ranking', () => {
+  it('picks the current dated module over an older one at equal priority', () => {
+    const entries = [
+      entry({ unitId: 'cfm.w1.d1', subject: 'scripture', courseId: 'cfm', timingPriority: 3, timingRank: 1, timingState: 'catch_up' }),
+      entry({ unitId: 'cfm.w2.d1', subject: 'scripture', courseId: 'cfm', timingPriority: 3, timingRank: 0, timingState: 'available' }),
+    ];
+    const { sections } = planDailyAgenda({ plan: { entries }, now: '2026-09-01T09:00:00.000Z' });
+    expect(sections.find((section) => section.subject === 'scripture').next.unitId).toBe('cfm.w2.d1');
+  });
+});
+
 describe('planDailyAgenda', () => {
   it('groups by subject in the nine-subject order, then other', () => {
     const { sections } = planDailyAgenda(args({ plan: plan([

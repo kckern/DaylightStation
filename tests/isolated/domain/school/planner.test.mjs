@@ -313,3 +313,89 @@ describe('program units', () => {
     expect(result.entries[0].programInstance).toBe('test-korean');
   });
 });
+
+describe('dated_modules gating', () => {
+  const modules = ['w1', 'w2', 'w3'];
+  const datedUnits = () => modules.flatMap((module, week) => [1, 2, 3].map((day) => unit({
+    unitId: `cfm.${module}.d${day}`, title: `${module} day ${day}`, subject: 'scripture',
+    courseId: 'cfm', module, sequence: week * 10 + day,
+  })));
+  const schedule = {
+    w1: { opensOn: '2026-08-24', closesOn: '2026-08-30' },
+    w2: { opensOn: '2026-08-31', closesOn: '2026-09-06' },
+    w3: { opensOn: '2026-09-07', closesOn: '2026-09-13' },
+  };
+  const datedAssignment = () => ({ courses: [{ courseId: 'cfm', enrollment: {
+    moduleOrder: modules, optionalModules: [], moduleSchedule: schedule,
+    lessonOrder: Object.fromEntries(modules.map((module) => [module, [1, 2, 3].map((day) => `cfm.${module}.d${day}`)])),
+  } }] });
+  const datedPlan = (now, sessions = []) => planLearnerWork({
+    learnerId: 'milo', assignment: datedAssignment(), units: datedUnits(), sessions, now,
+    coursePolicies: { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } },
+  });
+
+  it('offers the current week even though an earlier week is unfinished', () => {
+    expect(datedPlan('2026-09-01T09:00:00.000Z').next.unitId).toBe('cfm.w2.d1');
+  });
+
+  it('still chains lessons inside a week and never offers a future week', () => {
+    const result = datedPlan('2026-09-01T09:00:00.000Z');
+    expect(byId(result, 'cfm.w2.d2').status).toBe('locked');
+    expect(byId(result, 'cfm.w3.d1').status).toBe('upcoming');
+  });
+
+  it('falls back to catch-up after completing the current week', () => {
+    const completed = [1, 2, 3].map((day) => passed(`cfm.w2.d${day}`));
+    const result = datedPlan('2026-09-01T09:00:00.000Z', completed);
+    expect(result.next.unitId).toBe('cfm.w1.d1');
+    expect(result.next.timingState).toBe('catch_up');
+  });
+
+  it('falls back to the newest unfinished closed week', () => {
+    const completed = [1, 2, 3].flatMap((day) => passed(`cfm.w3.d${day}`));
+    const result = datedPlan('2026-09-08T09:00:00.000Z', completed);
+    expect(result.next.unitId).toBe('cfm.w2.d1');
+    expect(result.next.timingState).toBe('catch_up');
+  });
+
+  it('keeps a closed in-progress worksheet resumable', () => {
+    const result = datedPlan('2026-09-08T09:00:00.000Z', [session({ unitId: 'cfm.w1.d1' })]);
+    expect(byId(result, 'cfm.w1.d1').status).toBe('in_progress');
+    expect(result.next.unitId).toBe('cfm.w1.d1');
+  });
+
+  it('does not offer work once every assigned dated module is complete', () => {
+    const completed = modules.flatMap((module) => [1, 2, 3].map((day) => passed(`cfm.${module}.d${day}`)));
+    expect(datedPlan('2026-09-08T09:00:00.000Z', completed).available).toEqual([]);
+  });
+
+  it('does not resurrect modules omitted by a mid-course enrollment', () => {
+    const enrollment = {
+      moduleOrder: ['w3'], optionalModules: [],
+      moduleSchedule: { w3: schedule.w3 },
+      lessonOrder: { w3: [1, 2, 3].map((day) => `cfm.w3.d${day}`) },
+    };
+    const result = planLearnerWork({
+      learnerId: 'milo',
+      assignment: { courses: [{ courseId: 'cfm', enrollment }] },
+      units: datedUnits(), sessions: [], now: '2026-09-08T09:00:00.000Z',
+      coursePolicies: { cfm: { mode: 'dated_modules', lesson_order: 'sequence' } },
+    });
+
+    expect(result.entries.map((entry) => entry.unitId)).toEqual([
+      'cfm.w3.d1', 'cfm.w3.d2', 'cfm.w3.d3',
+    ]);
+    expect(result.entries.some((entry) => entry.timingReasons.includes('not_scheduled'))).toBe(false);
+  });
+
+  it('never turns old dated backlog dormant', () => {
+    const result = datedPlan('2027-01-05T09:00:00.000Z');
+    expect(result.entries.every((entry) => entry.status !== 'dormant')).toBe(true);
+    expect(result.available.map((entry) => entry.unitId)).toEqual(['cfm.w3.d1', 'cfm.w2.d1', 'cfm.w1.d1']);
+  });
+
+  it('does not promise that completing a dated module unlocks a future module', () => {
+    const result = datedPlan('2026-09-01T09:00:00.000Z');
+    expect(byId(result, 'cfm.w2.d3').unlocks).toBeNull();
+  });
+});
