@@ -1,6 +1,6 @@
 import { shuffle, buildNotePool } from '../noteUtils.js';
 import { spellNoteName, rootQualityOf } from '../../MusicNotation/model/spelling.js';
-import { classifyHeldNotes } from '../performance/assessmentSession.js';
+import { recognizeHeldSet as classifyHeldNotes } from '../input/recognition.js';
 
 /**
  * Generate random pitches for a flashcard.

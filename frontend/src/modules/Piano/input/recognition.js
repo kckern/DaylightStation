@@ -29,3 +29,15 @@ export function recognizeOrderedPress(expectedMidi = [], progress = 0, pitch, { 
   const next = restartOnWrong && pitch === expectedMidi[0] ? 1 : (restartOnWrong ? 0 : progress);
   return { progress: next, wrong: true, complete: false };
 }
+
+export function recognizeCursorPress(expectedInput, struckInput, pitch, { plausibilityWindow = 24 } = {}) {
+  const expected = expectedInput instanceof Set ? expectedInput : new Set(expectedInput || []);
+  const struck = new Set(struckInput || []);
+  if (expected.has(pitch)) {
+    struck.add(pitch);
+    const complete = [...expected].every((note) => struck.has(note));
+    return { status: complete ? 'complete' : 'hit', struck, complete };
+  }
+  const plausible = [...expected].some((note) => Math.abs(pitch - note) <= plausibilityWindow);
+  return { status: plausible ? 'wrong' : 'ignored', struck, complete: false };
+}

@@ -24,14 +24,17 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
   const emit = () => listeners.forEach((listener) => listener());
   const publish = (next, events = []) => {
     const previousStatus = state.status;
-    state = next;
+    state = next.status === 'completed' && !next.result ? finalizeAssessmentAttempt(next) : next;
     for (const event of events.filter(Boolean)) onEvent?.(event, state);
     emit();
-    if (previousStatus !== state.status && ['completed', 'aborted', 'timeout', 'error'].includes(state.status)) onTerminal?.(state.result, state);
+    if (previousStatus !== state.status && ['completed', 'aborted', 'timeout', 'error'].includes(state.status)) {
+      disconnect();
+      onTerminal?.(state.result, state);
+    }
   };
   const observe = (event) => {
     const result = observeAssessment(state, event);
-    publish(result.attempt, [result.event]);
+    publish(result.attempt, result.events || [result.event]);
   };
   const tick = () => {
     if (state.status !== 'running') return;

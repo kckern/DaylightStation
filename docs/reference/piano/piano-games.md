@@ -141,8 +141,8 @@ mechanics:
 | Game | Shared service use | Game-owned behavior | Advancement evidence |
 |---|---|---|---|
 | Piano Hero | timed target matching, misses, timing criteria, portable run result | points, combo, highway effects | in memory by default |
-| Space Invaders | timed target matching and common level criteria | lasers, health, points, combo | in memory by default |
-| Flashcards | exact-MIDI and pitch-class held matching; common session result | card score, level ladder, rolling accuracy | in memory by default |
+| Space Invaders | native mode: no assessment; Hero mode: timed canonical chart | lasers, health, points, combo | native mode creates no evidence |
+| Flashcards | held attempts for scored note cards; neutral recognition for theory | card score, level ladder, rolling accuracy | in memory by default |
 | Battle Stadium | held chords or ordered cursor, timing dimensions, rubric and pace gate | move strength, damage, campaign flow | bank-backed challenges persist to the piano ledger |
 | Tetris | exact-MIDI held command recognition | movement, rotations, line score, repeat timing | none |
 | Side Scroller | reuses Tetris's shared held-command hook | running/jumping and game score | none |
@@ -621,11 +621,10 @@ another source without changing the timing engine.
    `api/v1/proxy/media/stream/:encodedPath` (`.mxl` is decompressed by the
    backend, exactly as in Sheet Music).
 4. `parseMusicXml` creates the shared renderer-independent score model.
-5. The shared performance target compiler groups simultaneous onsets into chord
-   targets and converts quarter-note time to milliseconds using the complete
-   MusicXML tempo map.
-6. A timed `assessmentSession` instance matches live note-on events to the
-   nearest target. Chords resolve only when every pitch is struck; Hero adapts
+5. Hero compiles a canonical score expectation preserving simultaneous onsets,
+   logical note identities, parts, durations, and the complete tempo map.
+6. A timed canonical attempt matches live note-on events to the nearest pending
+   logical target. Chords resolve only when every pitch is struck; Hero adapts
    the same events into its own points and combo rules and exposes the portable
    musical result separately.
 
@@ -654,9 +653,8 @@ becomes a falling target.
 | File | Purpose |
 |------|---------|
 | `PianoHeroGame/PianoHeroGame.jsx` | MusicXML picker, loading, highway, keyboard, and results UI |
-| `performance/performanceTargets.js` | Shared tempo-resolved score-to-target compiler |
-| `performance/assessmentSession.js` | Public parameterized matcher, observation, criteria, and verdict service shared with Polish and the other assessment consumers |
-| `performance/performanceJudge.js` | Internal timed target-matching primitive |
+| `performance/assessmentSession.js` | Public canonical expectation, immutable attempt lifecycle, and runtime façade |
+| `performance/assessmentAttempt.js` | Pure timed chart matcher and portable result implementation |
 | [performance-assessment.md](./performance-assessment.md) | Overview of the shared performance service (grading, matching, spans) |
 | `PianoHeroGame/heroChart.js` | Hero chart metadata and points/combo adapter |
 | `PianoHeroGame/usePianoHeroGame.js` | MIDI subscription and timed run lifecycle |

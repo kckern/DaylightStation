@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useScoreEvaluator } from './useScoreEvaluator.js';
+import { compileAssessmentExpectation } from '../../../performance/assessmentAttempt.js';
 
 function makeSubscribe() {
   let cb = null;
@@ -17,13 +18,21 @@ const TARGETS = Object.entries(EXPECTED).flatMap(([measure, pitches]) => pitches
   measureIndex: Number(measure),
   targetTimeMs: 0,
 })));
+const asExpectation = (targets) => compileAssessmentExpectation({
+  source: { kind: 'score', id: 'polish-test', revision: null },
+  tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
+  events: targets.map((target) => ({
+    id: String(target.id), onsetQuarter: target.targetTimeMs / 1000, durationQuarters: 1,
+    spanId: `measure:${target.measureIndex}`, notes: target.pitches.map((midi) => ({ midi, part: 'rh' })),
+  })),
+});
 const opts = (over) => ({
   enabled: over.enabled ?? true,
   cfg,
   subscribe: over.subscribe,
   currentMeasure: over.currentMeasure,
   boundary: over.boundary, // undefined → the hook's default (0)
-  targets: TARGETS,
+  expectation: asExpectation(TARGETS),
   positionForNote: () => 0, // on-time
   onMeasureGrade: over.onMeasureGrade,
   onSilentStop: over.onSilentStop,
@@ -43,7 +52,7 @@ describe('useScoreEvaluator', () => {
       cfg,
       subscribe,
       currentMeasure: p.measure,
-      targets: repeated,
+      expectation: asExpectation(repeated),
       positionForNote: () => atMs,
       onMeasureGrade,
       onSilentStop: vi.fn(),
@@ -54,7 +63,7 @@ describe('useScoreEvaluator', () => {
     expect(onMeasureGrade).toHaveBeenCalledWith(expect.objectContaining({
       expectedCount: 2,
       matchedCount: 1,
-      noteScore: 0.5,
+      criteria: expect.objectContaining({ completeness: 0.5, cleanliness: 1 }),
     }));
   });
 
@@ -67,12 +76,12 @@ describe('useScoreEvaluator', () => {
       cfg,
       subscribe,
       currentMeasure: p.measure,
-      targets: oneTarget,
+      expectation: asExpectation(oneTarget),
       positionForNote: () => 0,
       onMeasureGrade,
       onSilentStop: vi.fn(),
     }), { initialProps: { measure: 0 } });
-    act(() => { emit(60); emit(61); });
+    act(() => { emit(61); emit(60); });
     rerender({ measure: 1 });
     expect(onMeasureGrade).toHaveBeenCalledWith(expect.objectContaining({
       expectedCount: 1,
@@ -185,7 +194,7 @@ describe('useScoreEvaluator', () => {
       cfg: { silentMeasuresToStop: 4 },
       subscribe: (fn) => { fire = fn; return () => {}; },
       currentMeasure: 3,
-      targets: [{ id: '3-0', pitches: [60], measureIndex: 3, targetTimeMs: 0 }],
+      expectation: asExpectation([{ id: '3-0', pitches: [60], measureIndex: 3, targetTimeMs: 0 }]),
       positionForNote: () => 0,
       onMeasureGrade,
       onSilentStop: vi.fn(),
@@ -315,7 +324,7 @@ describe('useScoreEvaluator', () => {
     const onMeasureGrade = vi.fn();
     const { result } = renderHook(() => useScoreEvaluator({
       enabled: false, cfg, subscribe, currentMeasure: 2,
-      targets: TARGETS, positionForNote: () => 0,
+      expectation: asExpectation(TARGETS), positionForNote: () => 0,
       onMeasureGrade, onSilentStop: vi.fn(),
     }));
     act(() => result.current.finalize());

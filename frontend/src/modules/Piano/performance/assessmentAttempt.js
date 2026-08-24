@@ -30,22 +30,24 @@ export function compileAssessmentExpectation(input = {}) {
       const midi = Number(sourceNote.midi);
       if (!Number.isFinite(midi)) return null;
       const part = authoredPart(sourceNote);
-      return { ...sourceNote, id: String(sourceNote.id ?? noteKey(id, part, midi, noteIndex + 1)), midi, part };
+      return Object.freeze({ ...sourceNote, id: String(sourceNote.id ?? noteKey(id, part, midi, noteIndex + 1)), midi, part });
     }).filter(Boolean).filter((note) => !active || active.has(note.part));
-    return {
+    return Object.freeze({
       ...sourceEvent,
       id,
       onsetQuarter: Number(sourceEvent.onsetQuarter) || 0,
       durationQuarters: Math.max(0, Number(sourceEvent.durationQuarters) || 0),
       spanId: sourceEvent.spanId == null ? null : String(sourceEvent.spanId),
-      notes,
-    };
+      notes: Object.freeze(notes),
+    });
   }).sort((a, b) => a.onsetQuarter - b.onsetQuarter);
+  const source = Object.freeze({ kind: input.source?.kind || 'chart', id: String(input.source?.id || 'anonymous'), revision: input.source?.revision ?? null });
+  const tempoMap = Object.freeze(normalizeTempoMap(input.tempoMap, input.bpm).map((entry) => Object.freeze(entry)));
   return Object.freeze({
     version: 1,
-    source: { kind: input.source?.kind || 'chart', id: String(input.source?.id || 'anonymous'), revision: input.source?.revision ?? null },
-    events,
-    tempoMap: normalizeTempoMap(input.tempoMap, input.bpm),
+    source,
+    events: Object.freeze(events),
+    tempoMap,
   });
 }
 
@@ -76,8 +78,9 @@ export function prepareExerciseAssessment({ instance, mode = 'free', purpose = '
     const value = event.durationQuarters ?? VALUES[event.value];
     if (mode === 'cued' && !Number.isFinite(value)) throw new Error(`Unrecognized exercise note value in cued mode: ${event.value}`);
     const durationQuarters = Number.isFinite(value) ? value : 0;
-    const compiled = { id: `event-${index + 1}`, onsetQuarter, durationQuarters, spanId: event.spanId ?? 'exercise:1', notes: event.notes || [] };
-    onsetQuarter += durationQuarters;
+    const eventOnset = Number.isFinite(Number(event.onsetQuarter)) ? Number(event.onsetQuarter) : onsetQuarter;
+    const compiled = { id: event.id ?? `event-${index + 1}`, onsetQuarter: eventOnset, durationQuarters, spanId: event.spanId ?? 'exercise:1', notes: event.notes || [] };
+    onsetQuarter = Math.max(onsetQuarter, eventOnset + durationQuarters);
     return compiled;
   });
   const bpm = Number(requirement?.gates?.pace?.target_bpm ?? instance.tempo?.start_bpm);
@@ -126,6 +129,7 @@ export function createAssessmentAttempt(config = {}) {
     grading: config.grading || {}, policy: { matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320, wrongWindow: 24, ...config.policy },
     status: 'prepared', startedAt: null, originQuarter: 0, leadInMs: 0, clock: config.clock ?? null,
     cursor: skipEmpty(expectation.events, 0), hits: {}, wrong: [], ignored: [], misses: [], responses: [], closedSpans: [], musicalInput: false,
+    heldWrongLatched: false,
   };
 }
 
@@ -162,10 +166,13 @@ function completeIfDone(attempt, events) {
 }
 
 export function observeAssessment(attempt, midiOrHeldEvent) {
+  if (attempt.status === 'prepared') return ignored(attempt, 'before_start', {});
+  if (TERMINAL.has(attempt.status)) return ignored(attempt, 'terminated', {});
   if (attempt.status !== 'running') return ignored(attempt, 'not_running', {});
   const input = eventTime(attempt, midiOrHeldEvent);
   if (attempt.clock != null && input.clock !== attempt.clock) return ignored(attempt, 'wrong_clock', input);
   if (!Number.isFinite(input.midi) && !input.held) return ignored(attempt, 'invalid_input', input);
+  if (attempt.matcher === 'timed' && !Number.isFinite(input.time)) return ignored(attempt, 'missing_time', input);
   if (Number.isFinite(input.time) && input.time < attempt.startedAt) return ignored(attempt, 'before_start', input);
 
   if (attempt.matcher === 'timed') {
@@ -177,14 +184,22 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
       if (Math.abs(drift) <= attempt.policy.matchWindowMs && (!best || Math.abs(drift) < Math.abs(best.drift))) best = { ...candidate, targetTime, drift };
     }
     if (!best) {
-      return { attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: input.midi, time: input.time, spanId: null }] }, event: { type: 'wrong', midi: input.midi } };
+      const nearest = pendingNotes(attempt).map((candidate) => ({
+        ...candidate,
+        distance: Math.abs(input.time - timedTarget(attempt, candidate.event)),
+      })).sort((a, b) => a.distance - b.distance)[0];
+      return {
+        attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: input.midi, time: input.time, spanId: nearest?.event.spanId ?? null, eventId: nearest?.event.id ?? null }] },
+        event: { type: 'wrong', midi: input.midi, eventId: nearest?.event.id ?? null },
+      };
     }
     const samePitch = pendingNotes(attempt).filter(({ event, note }) => event.id === best.event.id && note.midi === input.midi);
     const hits = { ...attempt.hits };
     for (const { note } of samePitch) hits[note.id] = { time: input.time, driftMs: best.drift };
     const next = { ...attempt, musicalInput: true, hits, responses: [...attempt.responses, Math.max(0, input.time - best.targetTime)] };
     const onsetComplete = best.event.notes.every((note) => hits[note.id]);
-    return completeIfDone(next, [{ type: onsetComplete ? 'onset_complete' : 'hit', eventId: best.event.id, noteIds: samePitch.map(({ note }) => note.id), driftMs: best.drift }]);
+    const completed = completeIfDone(next, [{ type: onsetComplete ? 'onset_complete' : 'hit', eventId: best.event.id, noteIds: samePitch.map(({ note }) => note.id), driftMs: best.drift }]);
+    return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
   }
 
   const index = skipEmpty(attempt.expectation.events, attempt.cursor);
@@ -194,6 +209,29 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
     return { attempt: completed.attempt, event: completed.events.at(-1) || { type: 'ignored', reason: 'complete' } };
   }
   const heldPitches = input.held ? new Set(input.held instanceof Map ? input.held.keys() : input.held) : null;
+  if (attempt.matcher === 'held' && heldPitches) {
+    if (heldPitches.size === 0) {
+      return { attempt: { ...attempt, heldWrongLatched: false }, event: { type: 'ignored', reason: 'held_released' } };
+    }
+    const expectedPitches = new Set(current.notes.map((note) => note.midi));
+    const containsExpected = [...expectedPitches].every((midi) => heldPitches.has(midi));
+    const exact = containsExpected && (attempt.policy.allowExtras || heldPitches.size === expectedPitches.size);
+    if (!exact) {
+      const onlyExpected = [...heldPitches].every((midi) => expectedPitches.has(midi));
+      if (onlyExpected && heldPitches.size < expectedPitches.size) {
+        return {
+          attempt: { ...attempt, musicalInput: true, heldWrongLatched: false },
+          event: { type: 'partial', eventId: current.id, held: [...heldPitches] },
+        };
+      }
+      if (attempt.heldWrongLatched) return { attempt, event: { type: 'ignored', reason: 'held_wrong_latched' } };
+      const wrongMidi = [...heldPitches].find((midi) => !expectedPitches.has(midi)) ?? [...heldPitches][0];
+      return {
+        attempt: { ...attempt, musicalInput: true, heldWrongLatched: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
+        event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
+      };
+    }
+  }
   const matches = current.notes.filter((note) => !attempt.hits[note.id] && (heldPitches ? heldPitches.has(note.midi) : note.midi === input.midi));
   if (matches.length) {
     const hits = { ...attempt.hits };
@@ -201,15 +239,16 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
     const onsetComplete = current.notes.every((note) => hits[note.id]);
     const cursor = onsetComplete ? skipEmpty(attempt.expectation.events, index + 1) : index;
     const response = Number.isFinite(input.time) ? Math.max(0, input.time - (attempt.lastOnsetAt ?? attempt.startedAt)) : null;
-    const next = { ...attempt, musicalInput: true, hits, cursor, lastOnsetAt: onsetComplete && Number.isFinite(input.time) ? input.time : attempt.lastOnsetAt, responses: response == null ? attempt.responses : [...attempt.responses, response] };
+    const next = { ...attempt, musicalInput: true, heldWrongLatched: false, hits, cursor, lastOnsetAt: onsetComplete && Number.isFinite(input.time) ? input.time : attempt.lastOnsetAt, responses: response == null ? attempt.responses : [...attempt.responses, response] };
     const events = [{ type: onsetComplete ? 'onset_complete' : 'hit', eventId: current.id, noteIds: matches.map((note) => note.id) }];
     if (onsetComplete && current.spanId !== attempt.expectation.events[cursor]?.spanId) events.push({ type: 'span_complete', spanId: current.spanId });
-    return completeIfDone(next, events);
+    const completed = completeIfDone(next, events);
+    return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
   }
   const pitches = current.notes.map((note) => note.midi);
   const plausible = heldPitches ? heldPitches.size > 0 : pitches.some((midi) => Math.abs(midi - input.midi) <= attempt.policy.wrongWindow);
   return plausible
-    ? { attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: input.midi, time: input.time, spanId: current.spanId }] }, event: { type: 'wrong', eventId: current.id } }
+    ? { attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: input.midi, time: input.time, spanId: current.spanId, eventId: current.id }] }, event: { type: 'wrong', eventId: current.id, midi: input.midi } }
     : ignored(attempt, 'implausible_pitch', input);
 }
 
@@ -227,24 +266,28 @@ export function advanceAssessmentAttempt(attempt, time) {
 }
 
 export function closeAssessmentAttemptSpan(attempt, spanId, time) {
-  if (TERMINAL.has(attempt.status)) return { attempt, events: [] };
+  if (attempt.result || ['aborted', 'timeout', 'error'].includes(attempt.status)) return { attempt, events: [] };
   const misses = [...attempt.misses];
   const events = [];
   for (const { event, note } of pendingNotes(attempt)) if (event.spanId === spanId) { misses.push(note.id); events.push({ type: 'miss', eventId: event.id, noteId: note.id, time }); }
-  return { attempt: { ...attempt, misses, closedSpans: [...new Set([...attempt.closedSpans, spanId])] }, events: [...events, { type: 'span_complete', spanId }] };
+  const next = { ...attempt, misses, closedSpans: [...new Set([...attempt.closedSpans, spanId])] };
+  const spanResult = finalizeAssessmentAttempt(next, { status: 'completed' }).result?.spans?.[spanId] ?? null;
+  return { attempt: next, events: [...events, { type: 'span_complete', spanId, result: spanResult }] };
 }
 
-function attribution(attempt, wrong, parts, weights) {
-  const current = attempt.expectation.events[attempt.cursor] || attempt.expectation.events.find((event) => event.spanId === wrong.spanId);
-  if (!current?.notes.length || !Number.isFinite(wrong.midi)) return {};
+function attribution(attempt, wrong) {
+  const current = attempt.expectation.events.find((event) => event.id === wrong.eventId)
+    || attempt.expectation.events.find((event) => event.spanId === wrong.spanId)
+    || attempt.expectation.events[attempt.cursor];
+  if (!current?.notes.length || !Number.isFinite(wrong.midi)) return { ambiguous: true };
   let distance = Infinity;
   let nearest = [];
   for (const note of current.notes) {
     const d = Math.abs(note.midi - wrong.midi);
     if (d < distance) { distance = d; nearest = [note.part]; } else if (d === distance && !nearest.includes(note.part)) nearest.push(note.part);
   }
-  if (nearest.length === 1) return { [nearest[0]]: 1 };
-  return Object.fromEntries(parts.map((part) => [part, weights[part]]));
+  if (nearest.length === 1) return { part: nearest[0] };
+  return { ambiguous: true };
 }
 
 function resultSlice(attempt, notes, wrongCount) {
@@ -269,16 +312,60 @@ export function finalizeAssessmentAttempt(attempt, { status = 'completed' } = {}
   const total = Object.values(raw).reduce((sum, value) => sum + value, 0) || 1;
   const weights = Object.fromEntries(parts.map((part) => [part, raw[part] / total]));
   const wrongByPart = Object.fromEntries(parts.map((part) => [part, 0]));
-  for (const wrong of attempt.wrong) for (const [part, share] of Object.entries(attribution(attempt, wrong, parts, weights))) wrongByPart[part] = (wrongByPart[part] || 0) + share;
+  const aggregateWrongByPart = { ...wrongByPart };
+  for (const wrong of attempt.wrong) {
+    const attributed = attribution(attempt, wrong);
+    if (attributed.part) {
+      wrongByPart[attributed.part] += 1;
+      aggregateWrongByPart[attributed.part] += 1;
+    } else {
+      for (const part of parts) aggregateWrongByPart[part] += weights[part];
+    }
+  }
   const partResults = Object.fromEntries(parts.map((part) => [part, resultSlice(attempt, allNotes.filter((note) => note.part === part), wrongByPart[part])]));
   const criteriaNames = attempt.matcher === 'timed' ? ['completeness', 'cleanliness', 'placement'] : ['completeness', 'cleanliness'];
   const criteria = Object.fromEntries(criteriaNames.map((name) => [name, parts.reduce((sum, part) => sum + partResults[part].criteria[name] * weights[part], 0)]));
+  criteria.cleanliness = parts.reduce((sum, part) => {
+    const matched = partResults[part].diagnostics.matched_notes;
+    const wrong = aggregateWrongByPart[part];
+    return sum + (matched + wrong ? matched / (matched + wrong) : 0) * weights[part];
+  }, 0);
   const spans = {};
   for (const spanId of new Set(allNotes.map((note) => note.spanId).filter((id) => id != null))) {
     const spanNotes = allNotes.filter((note) => note.spanId === spanId);
-    const spanParts = {};
-    for (const part of parts) if (spanNotes.some((note) => note.part === part)) spanParts[part] = resultSlice(attempt, spanNotes.filter((note) => note.part === part), 0);
-    spans[spanId] = { ...resultSlice(attempt, spanNotes, attempt.wrong.filter((wrong) => wrong.spanId === spanId).length), parts: spanParts };
+    const spanPartNames = parts.filter((part) => spanNotes.some((note) => note.part === part));
+    const spanWeightTotal = spanPartNames.reduce((sum, part) => sum + weights[part], 0) || 1;
+    const spanWeights = Object.fromEntries(spanPartNames.map((part) => [part, weights[part] / spanWeightTotal]));
+    const spanWrongs = attempt.wrong.filter((wrong) => wrong.spanId === spanId);
+    const spanWrongByPart = Object.fromEntries(spanPartNames.map((part) => [part, 0]));
+    const spanAggregateWrong = { ...spanWrongByPart };
+    for (const wrong of spanWrongs) {
+      const attributed = attribution(attempt, wrong);
+      if (attributed.part && attributed.part in spanWrongByPart) {
+        spanWrongByPart[attributed.part] += 1;
+        spanAggregateWrong[attributed.part] += 1;
+      } else {
+        for (const part of spanPartNames) spanAggregateWrong[part] += spanWeights[part];
+      }
+    }
+    const spanParts = Object.fromEntries(spanPartNames.map((part) => [
+      part,
+      resultSlice(attempt, spanNotes.filter((note) => note.part === part), spanWrongByPart[part]),
+    ]));
+    const spanCriteria = Object.fromEntries(criteriaNames.map((name) => [
+      name,
+      spanPartNames.reduce((sum, part) => sum + spanParts[part].criteria[name] * spanWeights[part], 0),
+    ]));
+    spanCriteria.cleanliness = spanPartNames.reduce((sum, part) => {
+      const matched = spanParts[part].diagnostics.matched_notes;
+      const wrong = spanAggregateWrong[part];
+      return sum + (matched + wrong ? matched / (matched + wrong) : 0) * spanWeights[part];
+    }, 0);
+    spans[spanId] = {
+      criteria: spanCriteria,
+      parts: spanParts,
+      diagnostics: resultSlice(attempt, spanNotes, spanWrongs.length).diagnostics,
+    };
   }
   const rubricWeights = { completeness: 1, cleanliness: 1, ...(attempt.matcher === 'timed' ? { placement: 1 } : {}), ...(attempt.grading.weights || {}) };
   const usedWeight = criteriaNames.reduce((sum, name) => sum + Math.max(0, rubricWeights[name] || 0), 0) || 1;
@@ -300,7 +387,10 @@ export function finalizeAssessmentAttempt(attempt, { status = 'completed' } = {}
 export function assessmentAttemptProgress(attempt) {
   const expected = attempt.expectation.events.reduce((sum, event) => sum + event.notes.length, 0);
   const matched = Object.keys(attempt.hits).length;
-  return { eventIndex: attempt.cursor, expectedNotes: expected, matchedNotes: matched, ratio: expected ? matched / expected : 1, complete: attempt.status === 'completed' };
+  const timedIndex = attempt.matcher === 'timed'
+    ? attempt.expectation.events.findIndex((event) => event.notes.some((note) => !attempt.hits[note.id] && !attempt.misses.includes(note.id)))
+    : attempt.cursor;
+  return { eventIndex: timedIndex < 0 ? attempt.expectation.events.length : timedIndex, expectedNotes: expected, matchedNotes: matched, ratio: expected ? matched / expected : 1, complete: attempt.status === 'completed' };
 }
 
 export { VALUES as EXERCISE_VALUE_QUARTERS };

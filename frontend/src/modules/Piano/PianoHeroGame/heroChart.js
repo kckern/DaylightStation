@@ -1,11 +1,13 @@
 import { buildTempoMap } from '../../MusicNotation/scoreTimeline.js';
 import { buildPerformanceTargets } from '../performance/performanceTargets.js';
 import {
-  advanceAssessment,
-  applyAssessmentPress,
-  createAssessmentSession,
-  finalizeAssessment,
-} from '../performance/assessmentSession.js';
+  advanceAssessmentAttempt,
+  compileScoreExpectation,
+  createAssessmentAttempt,
+  finalizeAssessmentAttempt,
+  observeAssessment,
+  startAssessmentAttempt,
+} from '../performance/assessmentAttempt.js';
 
 export const HERO_DEFAULTS = {
   leadInMs: 3000,
@@ -25,13 +27,25 @@ export function buildHeroChart(score, options = {}) {
   if (!Number.isFinite(cfg.leadInMs)) cfg.leadInMs = HERO_DEFAULTS.leadInMs;
   if (!Number.isFinite(cfg.fallDurationMs)) cfg.fallDurationMs = HERO_DEFAULTS.fallDurationMs;
   const tempoMap = buildTempoMap(score?.tempoEntries || [], score?.tempo || 90);
+  const scoreNotes = (score?.parts || []).flatMap((part) => part?.notes || []);
+  const expectation = compileScoreExpectation({
+    notes: scoreNotes,
+    source: { id: score?.id || score?.title || 'piano-hero-chart' },
+    tempoMap,
+    fallbackBpm: score?.tempo || 90,
+    activeParts: options.activeParts,
+  });
   const targets = buildPerformanceTargets(
-    (score?.parts || []).flatMap((part) => part?.notes || []),
+    scoreNotes,
     { tempoMap, leadInMs: cfg.leadInMs },
-  );
+  ).map((target) => ({
+    ...target,
+    assessmentEventId: expectation.events.find((event) => event.notes.length && Math.abs(event.onsetQuarter - target.onsetQuarter) < 1e-6)?.id,
+  }));
 
   const pitches = targets.flatMap((target) => target.pitches);
   return {
+    expectation,
     targets,
     tempo: score?.tempo || 90,
     timeSig: score?.timeSig || { beats: 4, beatType: 4 },
@@ -44,20 +58,23 @@ export function buildHeroChart(score, options = {}) {
 }
 
 export function createHeroRun(chart) {
-  const assessment = createAssessmentSession({
-    matcher: 'timed',
-    expectation: { targets: chart?.targets || [] },
-    policy: HERO_DEFAULTS,
-    grading: { rubric: { id: 'piano-hero-v1', version: '1' } },
-  });
+  const attempt = startAssessmentAttempt(createAssessmentAttempt({
+    matcher: 'timed', mode: 'cued', purpose: 'practice', expectation: chart?.expectation,
+    clock: 'piano-hero',
+    policy: {
+      matchWindowMs: HERO_DEFAULTS.goodWindowMs,
+      missWindowMs: HERO_DEFAULTS.missWindowMs,
+      timingToleranceMs: HERO_DEFAULTS.perfectWindowMs,
+      timingWindowMs: HERO_DEFAULTS.goodWindowMs - HERO_DEFAULTS.perfectWindowMs,
+    },
+    requirement: { rubric: { id: 'piano-hero-v2', version: '2', criteria: {} } },
+  }), { time: 0, leadInMs: chart?.leadInMs || 0, clock: 'piano-hero' });
   return {
-    ...assessment.run,
-    assessment,
+    targets: (chart?.targets || []).map((target) => ({ ...target, state: 'pending', hitPitches: [], drifts: [], resolvedAt: null, result: null })),
+    attempt,
     score: { points: 0, combo: 0, maxCombo: 0, perfect: 0, good: 0, misses: 0, wrong: 0 },
   };
 }
-
-const projectHeroRun = (assessment, score) => ({ ...assessment.run, assessment, score });
 
 // The ceiling has to clear the fastest written chart times the top practice
 // step, or the picker lies: Super Mario is charted at 216 BPM, and against a
@@ -84,6 +101,12 @@ export function retimeHeroChart(chart, bpm) {
       targetTimeMs: leadInMs + (target.targetTimeMs - leadInMs) * ratio,
       durationMs: target.durationMs * ratio,
     })),
+    ...(chart.expectation ? {
+      expectation: {
+        ...chart.expectation,
+        tempoMap: chart.expectation.tempoMap.map((entry) => ({ ...entry, bpm: entry.bpm * (nextTempo / sourceTempo) })),
+      },
+    } : {}),
     durationMs: leadInMs + (chart.durationMs - leadInMs) * ratio,
   };
 }
@@ -94,35 +117,51 @@ export function applyHeroPress(run, pitch, elapsedMs, options = {}) {
   if (!Number.isFinite(cfg.perfectWindowMs)) cfg.perfectWindowMs = HERO_DEFAULTS.perfectWindowMs;
   if (!Number.isFinite(cfg.goodWindowMs)) cfg.goodWindowMs = HERO_DEFAULTS.goodWindowMs;
   if (!Number.isFinite(cfg.missWindowMs)) cfg.missWindowMs = HERO_DEFAULTS.missWindowMs;
-  const current = { ...run.assessment, policy: cfg };
-  const judged = applyAssessmentPress(current, pitch, elapsedMs);
-  if (judged.event.type === 'unmatched_note') {
-    return projectHeroRun(judged.session, { ...run.score, combo: 0, wrong: run.score.wrong + 1 });
+  const current = { ...run.attempt, policy: { ...run.attempt.policy, matchWindowMs: cfg.goodWindowMs, missWindowMs: cfg.missWindowMs } };
+  const judged = observeAssessment(current, { midi: pitch, time: elapsedMs, clock: 'piano-hero' });
+  if (judged.event.type === 'wrong') {
+    return { ...run, attempt: judged.attempt, score: { ...run.score, combo: 0, wrong: run.score.wrong + 1 } };
   }
-  if (judged.event.type === 'target_partial') return projectHeroRun(judged.session, run.score);
+  if (!['hit', 'onset_complete'].includes(judged.event.type)) return { ...run, attempt: judged.attempt };
+  const targetIndex = run.targets.findIndex((target) => target.assessmentEventId === judged.event.eventId);
+  if (targetIndex < 0) return { ...run, attempt: judged.attempt };
+  const targets = run.targets.map((target, index) => index === targetIndex ? {
+    ...target,
+    hitPitches: [...new Set([...target.hitPitches, pitch])],
+    drifts: [...target.drifts, judged.event.driftMs],
+    ...(judged.event.type === 'onset_complete' ? {
+      state: 'hit', resolvedAt: elapsedMs,
+      result: Math.abs(judged.event.driftMs) <= cfg.perfectWindowMs ? 'perfect' : 'good',
+    } : {}),
+  } : target);
+  if (judged.event.type === 'hit') return { ...run, attempt: judged.attempt, targets };
 
-  const result = judged.event.result;
+  const result = Math.abs(judged.event.driftMs) <= cfg.perfectWindowMs ? 'perfect' : 'good';
   const combo = run.score.combo + 1;
   const multiplier = Math.min(2, 1 + Math.floor(combo / 10) * 0.25);
   const base = result === 'perfect' ? 1000 : 600;
-  return projectHeroRun(judged.session, {
+  return { ...run, attempt: judged.attempt, targets, score: {
       ...run.score,
       points: run.score.points + Math.round(base * multiplier),
       combo,
       maxCombo: Math.max(run.score.maxCombo, combo),
       [result]: run.score[result] + 1,
-  });
+  } };
 }
 
 /** Resolve targets whose timing window has passed. */
 export function advanceHeroRun(run, elapsedMs, options = {}) {
   const cfg = { ...HERO_DEFAULTS, ...options };
   if (!Number.isFinite(cfg.missWindowMs)) cfg.missWindowMs = HERO_DEFAULTS.missWindowMs;
-  const current = { ...run.assessment, policy: cfg };
-  const advanced = advanceAssessment(current, elapsedMs);
-  const misses = advanced.events.length;
-  if (!misses) return run;
-  return projectHeroRun(advanced.session, { ...run.score, combo: 0, misses: run.score.misses + misses });
+  const current = { ...run.attempt, policy: { ...run.attempt.policy, missWindowMs: cfg.missWindowMs } };
+  const advanced = advanceAssessmentAttempt(current, elapsedMs);
+  const missedEvents = new Set(advanced.events.filter((event) => event.type === 'miss').map((event) => event.eventId));
+  const targets = run.targets.map((target) => missedEvents.has(target.assessmentEventId) && target.state === 'pending'
+    ? { ...target, state: 'missed', resolvedAt: elapsedMs, result: 'missed' }
+    : target);
+  const misses = targets.filter((target, index) => target.state === 'missed' && run.targets[index].state === 'pending').length;
+  if (!misses) return { ...run, attempt: advanced.attempt, targets };
+  return { ...run, attempt: advanced.attempt, targets, score: { ...run.score, combo: 0, misses: run.score.misses + misses } };
 }
 
 export function heroAccuracy(run) {
@@ -133,15 +172,17 @@ export function heroAccuracy(run) {
 
 /** Portable musical assessment; Hero's points/combo remain a separate projection. */
 export function heroAssessment(run, options = {}) {
-  if (!run?.assessment) return null;
-  return finalizeAssessment(run.assessment, {
-    ...options,
+  if (!run?.attempt) return null;
+  const result = finalizeAssessmentAttempt(run.attempt, { status: 'completed' }).result;
+  return {
+    ...result,
     diagnostics: {
+      ...result.diagnostics,
       perfect_targets: run.score?.perfect ?? 0,
       good_targets: run.score?.good ?? 0,
       ...options.diagnostics,
     },
-  });
+  };
 }
 
 export default { buildHeroChart, createHeroRun, applyHeroPress, advanceHeroRun, heroAccuracy, heroAssessment, clampHeroTempo, retimeHeroChart };

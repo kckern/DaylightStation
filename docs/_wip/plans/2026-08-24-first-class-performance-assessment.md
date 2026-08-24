@@ -1,6 +1,6 @@
 # First-Class Piano Performance Assessment
 
-**Status:** Problem statement and target architecture  
+**Status:** Implemented first-party migration (2026-08-24)
 **Date:** 2026-08-24  
 **Scope:** `frontend/src/modules/Piano/performance/` and its piano-surface adapters
 
@@ -12,14 +12,9 @@ Daylight needs one reusable performance-assessment capability that can answer:
 > the player complete, what did they play incorrectly, and—only when a clock is
 > part of the exercise—how well did they place it in time?
 
-The current `assessmentSession.js` is the beginning of that capability, but it
-is not yet a first-class attempt runtime. Timed Sheet Music Polish is a complete
-consumer. Sheet Music Learn uses only a stateless cursor-step classifier.
-Exercises compiles and runs attempts inside a kiosk React component. Battle
-Stadium independently rebuilds an exercise runner from flattened MIDI arrays.
-Several games borrow classifiers for command recognition, and Space Invaders
-adapts key-based collision behavior through a timed assessment even when timing
-is deliberately irrelevant.
+The migration described here now supplies that first-class runtime and moves
+the first-party consumers onto canonical expectations. This document retains
+the original problem analysis, followed by the implemented target contract.
 
 This leaves Daylight with shared primitives but not one shared performance
 model. A feature can import matching or grading functions, but it cannot yet
@@ -570,9 +565,9 @@ not create assessment sessions.
 - It does not turn every MIDI comparison into an assessment; controller input
   and arcade collision remain outside.
 - It does not grade timing in a wait-for-correct interaction.
-- Sustain, duration, articulation, dynamics, and per-hand attribution remain
-  future measurement dimensions. The canonical event model should preserve the
-  information needed to add them later.
+- Sustain, performed duration, articulation, dynamics, pedal technique, and
+  fingering remain future measurement dimensions. Authored staff/hand identity
+  now provides per-part attack evidence; clef alone never assigns a hand.
 
 ## Acceptance criteria
 

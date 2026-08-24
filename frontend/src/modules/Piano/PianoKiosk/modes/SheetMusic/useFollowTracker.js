@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { expectedMidisAtStep } from './activeParts.js';
 import { nextPlayableStep } from './focusRange.js';
-import { classifyCursorStep } from '../../../performance/assessmentSession.js';
+import { recognizeCursorPress } from '../../../input/recognition.js';
 
 /**
  * useFollowTracker — full-hand Follow tracking. Advances the cursor only once
@@ -79,7 +79,7 @@ export function useFollowTracker({ enabled, steps, activeParts, step, subscribe,
       const stepObj = stepsRef.current?.[stepRef.current];
       if (!stepObj) return; // end of piece / empty — no throw, no advance
       const expected = expectedMidisAtStep(stepObj, activePartsRef.current || {});
-      const judged = classifyCursorStep(expected, struckRef.current, evt.note, { plausibilityWindow: 24 });
+      const judged = recognizeCursorPress(expected, struckRef.current, evt.note, { plausibilityWindow: 24 });
       struckRef.current = judged.struck;
       if (judged.status === 'hit' || judged.status === 'complete') {
         onHitRef.current?.(evt.note);

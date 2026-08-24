@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scaleClashDefinition } from './fixtures/scaleClash.mjs';
+import { scaleClashDefinition } from './definitions/scaleClash.mjs';
 import { createInitialState, deriveInteraction, transition } from './reducer.mjs';
 
 function command(type, revision, payload, id = `${type}-${revision}`) {
