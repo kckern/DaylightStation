@@ -10,12 +10,18 @@ import { SideScrollerOverlay } from './components/SideScrollerOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { PLAYER_X } from './sideScrollerEngine.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './SideScrollerGame.scss';
 
 export function SideScrollerGame({ activeNotes, gameConfig, onDeactivate, onNoteOn, onNoteOff }) {
   const logger = useMemo(() => getChildLogger({ component: 'side-scroller-game' }), []);
 
   const game = useSideScrollerGame(activeNotes, gameConfig);
+  usePianoRunSession({
+    gameId: 'side-scroller', phase: game.phase, initialPhase: 'IDLE', score: game.score,
+    metrics: { level: game.level, health: game.health, distance: game.distance },
+    activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
+  });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'side-scroller');
   useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
 

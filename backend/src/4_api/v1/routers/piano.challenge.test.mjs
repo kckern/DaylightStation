@@ -22,27 +22,35 @@ describe('piano challenge preparation API', () => {
     const policy = {
       prepare: vi.fn(() => ({
         challenge_id: 'challenge-1', kind: 'scale',
-        prompt: { label: 'G major scale', expected_midi: [67, 69, 71] },
+        assessment: { mode: 'free', tempo_bpm: null, lead_in_ms: 0 },
+        prompt: {
+          label: 'G major scale',
+          expected_events: [67, 69, 71].map((midi, index) => ({
+            id: `event-${index}`, onsetQuarter: index, durationQuarters: 1,
+            notes: [{ id: `note-${index}`, midi, hand: 'right' }],
+          })),
+        },
         timeout_ms: 90000,
-        pedagogy_policy_version: 'foundation-major-scales-v1',
+        pedagogy_policy_version: 'exercise-bank-v2',
       })),
     };
     const response = await request(app({ policy }))
       .post('/api/v1/piano/users/guest/challenges/prepare')
       .send({
         challenge_id: 'challenge-1', kind: 'scale',
-        requirements: { curriculum: 'foundation-major-scales' },
+        requirements: { collection: 'major-scales' },
         context: { challenge_sequence: 1 },
       });
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
-      prompt: { label: 'G major scale', expected_midi: [67, 69, 71] },
-      pedagogy_policy_version: 'foundation-major-scales-v1',
+      assessment: { mode: 'free' },
+      prompt: { label: 'G major scale', expected_events: expect.any(Array) },
+      pedagogy_policy_version: 'exercise-bank-v2',
     });
     expect(policy.prepare).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'guest',
-      requirements: { curriculum: 'foundation-major-scales' },
+      requirements: { collection: 'major-scales' },
     }));
   });
 

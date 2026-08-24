@@ -11,7 +11,7 @@ describe('materializePianoScalePrompt', () => {
     const prompt = materializePianoScalePrompt({
       scale: { tonic, octave, mode: 'major', direction: 'ascending', octaves: 1 },
     });
-    expect(prompt.expected_midi).toEqual(expected);
+    expect(prompt.expected_events.flatMap((event) => event.notes.map((note) => note.midi))).toEqual(expected);
     expect(prompt.label).toBe(`${tonic} major scale`);
     expect(prompt.key_signature).toBe(tonic);
   });

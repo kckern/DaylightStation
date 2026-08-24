@@ -16,11 +16,13 @@
  * }
  */
 import {
+  advanceAssessment,
   compileAssessmentExpectation,
   createAssessmentAttempt,
+  finalizeAssessmentAttempt,
   observeAssessment,
   startAssessmentAttempt,
-} from '../performance/assessmentAttempt.js';
+} from '../performance/assessmentSession.js';
 
 const DEFAULT_FALL_DURATION_MS = 2500; // Default; overridable per level via fall_duration_ms
 export const TOTAL_HEALTH = 28; // Mega Man life meter notch count
@@ -32,6 +34,8 @@ export function createInitialState() {
     phase: 'IDLE',
     levelIndex: 0,
     fallingNotes: [],
+    resolvedNotes: [],
+    wrongObservations: [],
     score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0, wrong: 0 },
     health: TOTAL_HEALTH,
     wrongStreak: 0,
@@ -50,6 +54,8 @@ export function resetForLevel(state, levelIndex) {
     phase: 'PLAYING',
     levelIndex,
     fallingNotes: [],
+    resolvedNotes: [],
+    wrongObservations: [],
     score: { points: 0, combo: 0, maxCombo: 0, perfects: 0, goods: 0, misses: 0, wrong: 0 },
     health: TOTAL_HEALTH,
     wrongStreak: 0,
@@ -149,7 +155,7 @@ export function getFallDuration(level) {
  * Respects spawn_delay_ms (or BPM fallback) and max_visible.
  * Returns updated state (with new note added) or same state if not time yet.
  */
-export function maybeSpawnNote(state, level, now) {
+export function maybeSpawnNote(state, level, now, timingConfig = {}) {
   const spawnInterval = level.spawn_delay_ms
     ?? (60000 / level.bpm) / (level.notes_per_beat || 1);
 
@@ -178,6 +184,10 @@ export function maybeSpawnNote(state, level, now) {
     state: 'falling',
     hitResult: null,
     hitPitches: new Set(),
+    hitEvidence: {},
+    assessmentAttempt: (level.mode ?? 'hero') === 'invaders'
+      ? null
+      : createHeroTargetAttempt(state.levelIndex, state.nextNoteId, pitches, targetTime, timingConfig),
   };
 
   return {
@@ -186,6 +196,34 @@ export function maybeSpawnNote(state, level, now) {
     nextNoteId: state.nextNoteId + 1,
     lastSpawnTime: now,
   };
+}
+
+function createHeroTargetAttempt(levelIndex, noteId, pitches, targetTime, timingConfig) {
+  const eventId = `invader-${noteId}`;
+  const expectation = compileAssessmentExpectation({
+    source: { kind: 'chart', id: `space-invaders-hero-level-${levelIndex + 1}`, revision: null },
+    tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
+    events: [{
+      id: eventId,
+      onsetQuarter: targetTime / 1000,
+      durationQuarters: 0,
+      spanId: `level:${levelIndex + 1}`,
+      notes: pitches.map((midi) => ({ id: `${eventId}-note-${midi}`, midi, part: 'unassigned' })),
+    }],
+  });
+  return startAssessmentAttempt(createAssessmentAttempt({
+    expectation,
+    matcher: 'timed',
+    mode: 'cued',
+    purpose: 'practice',
+    clock: 'space-invaders-hero',
+    policy: {
+      matchWindowMs: timingConfig.good_ms ?? 200,
+      missWindowMs: timingConfig.miss_threshold_ms ?? 350,
+      timingToleranceMs: timingConfig.perfect_ms ?? 80,
+      timingWindowMs: Math.max(1, (timingConfig.good_ms ?? 200) - (timingConfig.perfect_ms ?? 80)),
+    },
+  }), { time: 0, clock: 'space-invaders-hero' });
 }
 
 // ─── Hit Detection ──────────────────────────────────────────────
@@ -234,39 +272,25 @@ function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = '
       },
     };
   }
-  const expectation = compileAssessmentExpectation({
-    source: { kind: 'chart', id: 'space-invaders-hero', revision: null },
-    tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
-    events: candidates.map(({ note }) => ({
-      id: `invader-${note.id}`,
-      onsetQuarter: note.targetTime / 1000,
-      durationQuarters: 0,
-      spanId: 'level:1',
-      notes: note.pitches.map((midi) => ({ midi, part: 'unassigned' })),
-    })),
-  });
-  let attempt = startAssessmentAttempt(createAssessmentAttempt({
-    expectation, matcher: 'timed', mode: 'cued', purpose: 'practice', clock: 'space-invaders-hero',
-    policy: {
-      matchWindowMs: visibleTarget ? Number.MAX_SAFE_INTEGER : timingConfig.good_ms,
-      missWindowMs: timingConfig.miss_threshold_ms,
-      timingToleranceMs: timingConfig.perfect_ms,
-      timingWindowMs: Math.max(1, timingConfig.good_ms - timingConfig.perfect_ms),
-    },
-  }), { time: 0, clock: 'space-invaders-hero' });
-  const hits = { ...attempt.hits };
-  for (const { note } of candidates) {
-    const event = expectation.events.find((item) => item.id === `invader-${note.id}`);
-    for (const logical of event?.notes || []) if (note.hitPitches.has(logical.midi)) hits[logical.id] = { time: note.targetTime, driftMs: 0 };
-  }
-  attempt = { ...attempt, hits };
+  const candidate = candidates
+    .filter(({ note }) => note.pitches.includes(pitch) && !note.hitPitches.has(pitch))
+    .sort((left, right) => Math.abs(left.note.targetTime - now) - Math.abs(right.note.targetTime - now))[0];
+  if (!candidate) return null;
+  const targetAttempt = candidate.note.assessmentAttempt
+    || createHeroTargetAttempt(0, candidate.note.id, candidate.note.pitches, candidate.note.targetTime, timingConfig);
+  const attempt = visibleTarget
+    ? { ...targetAttempt, policy: { ...targetAttempt.policy, matchWindowMs: Number.MAX_SAFE_INTEGER } }
+    : targetAttempt;
   const judged = observeAssessment(attempt, { midi: pitch, time: now, clock: 'space-invaders-hero' });
   if (judged.event?.type === 'wrong' || judged.event?.type === 'ignored') return null;
-  const candidate = candidates.find(({ note }) => `invader-${note.id}` === judged.event?.eventId);
-  if (!candidate) return null;
-  const event = expectation.events.find((item) => item.id === judged.event.eventId);
+  const event = judged.attempt.expectation.events[0];
   const hitPitches = new Set(event.notes.filter((logical) => judged.attempt.hits[logical.id]).map((logical) => logical.midi));
   const hitDrifts = event.notes.map((logical) => judged.attempt.hits[logical.id]?.driftMs).filter(Number.isFinite);
+  const hitEvidence = { ...(candidate.note.hitEvidence || {}) };
+  for (const logical of event.notes) {
+    const hit = judged.attempt.hits[logical.id];
+    if (hit) hitEvidence[logical.midi] = { time: hit.time, driftMs: hit.driftMs };
+  }
   const complete = judged.event.type === 'onset_complete';
   const projectedResult = complete
     ? mode === 'invaders' || Math.abs(now - candidate.note.targetTime) <= timingConfig.perfect_ms
@@ -282,6 +306,8 @@ function judgeFallingPress(fallingNotes, pitch, now, timingConfig = {}, mode = '
       ...candidate.note,
       hitPitches,
       hitDrifts,
+      hitEvidence,
+      assessmentAttempt: judged.attempt,
       state: complete ? 'hit' : 'falling',
       hitResult: complete ? projectedResult : candidate.note.hitResult,
       resolvedTime: complete ? now : candidate.note.resolvedTime,
@@ -328,7 +354,8 @@ export function processMisses(state, now, missThresholdMs, cooldownMs = 8000) {
       missOccurred = true;
       missCount++;
       fg.pitches.forEach(p => missedPitches.push(p));
-      return { ...fg, state: 'missed', hitResult: null, resolvedTime: now };
+      const advanced = fg.assessmentAttempt ? advanceAssessment(fg.assessmentAttempt, now) : null;
+      return { ...fg, state: 'missed', hitResult: null, resolvedTime: now, assessmentAttempt: advanced?.attempt ?? fg.assessmentAttempt };
     }
     return fg;
   });
@@ -363,14 +390,31 @@ const RESOLVED_DISPLAY_MS = 1200;
  * Remove hit/missed notes that have been displayed long enough.
  */
 export function cleanupResolvedNotes(state, now) {
+  const archived = [];
   const filtered = state.fallingNotes.filter(fg => {
     if (fg.state === 'falling') return true;
     const resolvedAt = fg.resolvedTime ?? fg.targetTime;
-    return now - resolvedAt < RESOLVED_DISPLAY_MS;
+    if (now - resolvedAt < RESOLVED_DISPLAY_MS) return true;
+    archived.push(fg);
+    return false;
   });
 
   if (filtered.length === state.fallingNotes.length) return state;
-  return { ...state, fallingNotes: filtered };
+  return { ...state, fallingNotes: filtered, resolvedNotes: [...(state.resolvedNotes || []), ...archived] };
+}
+
+/** Retain wrong musical input after its laser/glow projection disappears. */
+export function recordHeroWrongObservation(state, midi, time) {
+  const nearest = state.fallingNotes
+    .filter((note) => note.state === 'falling')
+    .map((note) => ({ note, distance: Math.abs(note.targetTime - time) }))
+    .sort((a, b) => a.distance - b.distance)[0]?.note;
+  return {
+    ...state,
+    wrongObservations: [...(state.wrongObservations || []), {
+      midi, time, eventId: nearest ? `invader-${nearest.id}` : null, spanId: `level:${state.levelIndex + 1}`,
+    }],
+  };
 }
 
 // ─── Level Evaluation ───────────────────────────────────────────
@@ -528,30 +572,58 @@ export function processDestroyedKeys(state, now) {
   };
 }
 
-/** Portable level assessment; points/health remain Space Invaders projections. */
-export function assessSpaceInvaders(score, mode = 'hero') {
+/** Portable logical-note assessment; points/health remain game projections. */
+export function assessSpaceInvaders(state, mode = 'hero', timingConfig = {}) {
   if (mode === 'invaders') return null;
-  const hits = (score?.perfects || 0) + (score?.goods || 0);
-  const resolved = hits + (score?.misses || 0);
-  const criteria = {
-    completeness: resolved > 0 ? hits / resolved : 0,
-    cleanliness: hits + (score?.wrong || 0) > 0 ? hits / (hits + (score?.wrong || 0)) : 0,
-    placement: hits > 0 ? ((score?.perfects || 0) + 0.6 * (score?.goods || 0)) / hits : 0,
-  };
-  const scoreValue = (criteria.completeness + criteria.cleanliness + criteria.placement) / 3;
-  return {
+  const targets = [...(state?.resolvedNotes || []), ...(state?.fallingNotes || [])]
+    .filter((target) => target.state === 'hit' || target.state === 'missed');
+  const spanId = `level:${(state?.levelIndex ?? 0) + 1}`;
+  const events = targets.map((target) => ({
+    id: `invader-${target.id}`,
+    onsetQuarter: target.targetTime / 1000,
+    durationQuarters: 0,
+    spanId,
+    notes: target.pitches.map((midi) => ({ id: `invader-${target.id}-note-${midi}`, midi, part: 'unassigned' })),
+  }));
+  const expectation = compileAssessmentExpectation({
+    source: { kind: 'chart', id: `space-invaders-hero-level-${(state?.levelIndex ?? 0) + 1}`, revision: null },
+    tempoMap: [{ onsetQuarter: 0, bpm: 60 }], events,
+  });
+  const base = createAssessmentAttempt({
+    expectation, matcher: 'timed', mode: 'cued', purpose: 'practice',
+    policy: {
+      timingToleranceMs: timingConfig.perfect_ms ?? 80,
+      timingWindowMs: Math.max(1, (timingConfig.good_ms ?? 200) - (timingConfig.perfect_ms ?? 80)),
+    },
+    requirement: { rubric: { id: 'space-invaders-hero-v2', version: '2', criteria: {} } },
+  });
+  const hits = {};
+  const misses = [];
+  for (const target of targets) {
+    for (const midi of target.pitches) {
+      const id = `invader-${target.id}-note-${midi}`;
+      const evidence = target.assessmentAttempt?.hits?.[id] ?? target.hitEvidence?.[midi];
+      if (evidence) hits[id] = evidence;
+      else if (target.assessmentAttempt?.misses?.includes(id) || target.state === 'missed') misses.push(id);
+    }
+  }
+  const attempt = {
+    ...base,
     status: 'completed',
-    score: scoreValue,
-    criteria,
-    parts: {},
-    spans: {},
-    rubric: { id: 'space-invaders-hero-v2', version: '2', weights: { completeness: 1, cleanliness: 1, placement: 1 }, part_weights: {} },
-    verdict: { score: scoreValue, passed: true, failed_criteria: [], failed_gates: [] },
+    startedAt: 0,
+    hits,
+    misses,
+    wrong: [...(state?.wrongObservations || [])],
+    musicalInput: Object.keys(hits).length > 0 || (state?.wrongObservations?.length || 0) > 0,
+  };
+  const result = finalizeAssessmentAttempt(attempt).result;
+  return {
+    ...result,
     diagnostics: {
-      perfect_targets: score?.perfects || 0,
-      good_targets: score?.goods || 0,
-      missed_targets: score?.misses || 0,
-      wrong_notes: score?.wrong || 0,
+      ...result.diagnostics,
+      perfect_targets: state?.score?.perfects || 0,
+      good_targets: state?.score?.goods || 0,
+      missed_targets: state?.score?.misses || 0,
     },
   };
 }

@@ -1,13 +1,12 @@
-import { buildTempoMap } from '../../MusicNotation/scoreTimeline.js';
-import { buildPerformanceTargets } from '../performance/performanceTargets.js';
+import { buildTempoMap, msAtQuarter } from '../../MusicNotation/scoreTimeline.js';
 import {
-  advanceAssessmentAttempt,
+  advanceAssessment,
   compileScoreExpectation,
   createAssessmentAttempt,
   finalizeAssessmentAttempt,
   observeAssessment,
   startAssessmentAttempt,
-} from '../performance/assessmentAttempt.js';
+} from '../performance/assessmentSession.js';
 
 export const HERO_DEFAULTS = {
   leadInMs: 3000,
@@ -35,13 +34,21 @@ export function buildHeroChart(score, options = {}) {
     fallbackBpm: score?.tempo || 90,
     activeParts: options.activeParts,
   });
-  const targets = buildPerformanceTargets(
-    scoreNotes,
-    { tempoMap, leadInMs: cfg.leadInMs },
-  ).map((target) => ({
-    ...target,
-    assessmentEventId: expectation.events.find((event) => event.notes.length && Math.abs(event.onsetQuarter - target.onsetQuarter) < 1e-6)?.id,
-  }));
+  const targets = expectation.events.filter((event) => event.notes.length).map((event) => {
+    const onsetMs = msAtQuarter(expectation.tempoMap, event.onsetQuarter);
+    const offMs = msAtQuarter(expectation.tempoMap, event.onsetQuarter + event.durationQuarters);
+    const measures = [...new Set(event.notes.map((note) => note.measureIndex ?? note.measure).filter(Number.isFinite))].sort((a, b) => a - b);
+    return {
+      id: event.id,
+      assessmentEventId: event.id,
+      onsetQuarter: event.onsetQuarter,
+      pitches: [...new Set(event.notes.map((note) => note.midi))].sort((a, b) => a - b),
+      staves: [...new Set(event.notes.map((note) => note.staff).filter(Number.isInteger))].sort((a, b) => a - b),
+      measureIndex: measures.length === 1 ? measures[0] : null,
+      targetTimeMs: cfg.leadInMs + onsetMs,
+      durationMs: Math.max(90, offMs - onsetMs),
+    };
+  });
 
   const pitches = targets.flatMap((target) => target.pitches);
   return {
@@ -154,7 +161,7 @@ export function advanceHeroRun(run, elapsedMs, options = {}) {
   const cfg = { ...HERO_DEFAULTS, ...options };
   if (!Number.isFinite(cfg.missWindowMs)) cfg.missWindowMs = HERO_DEFAULTS.missWindowMs;
   const current = { ...run.attempt, policy: { ...run.attempt.policy, missWindowMs: cfg.missWindowMs } };
-  const advanced = advanceAssessmentAttempt(current, elapsedMs);
+  const advanced = advanceAssessment(current, elapsedMs);
   const missedEvents = new Set(advanced.events.filter((event) => event.type === 'miss').map((event) => event.eventId));
   const targets = run.targets.map((target) => missedEvents.has(target.assessmentEventId) && target.state === 'pending'
     ? { ...target, state: 'missed', resolvedAt: elapsedMs, result: 'missed' }

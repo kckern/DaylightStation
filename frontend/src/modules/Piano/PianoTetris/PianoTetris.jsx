@@ -6,9 +6,10 @@ import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { TetrisBoard } from './components/TetrisBoard.jsx';
 import { ActionStaff } from '../components/ActionStaff.jsx';
 import { TetrisOverlay } from './components/TetrisOverlay.jsx';
-import { ACTIONS } from './useStaffMatching.js';
+import { ACTIONS } from '../game-platform/families/bound-action/useStaffMatching.js';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './PianoTetris.scss';
 
 /**
@@ -24,6 +25,11 @@ export function PianoTetris({ activeNotes, gameConfig, onDeactivate, onNoteOn, o
   const logger = useMemo(() => getChildLogger({ component: 'piano-tetris-layout' }), []);
 
   const game = useTetrisGame(activeNotes, gameConfig);
+  usePianoRunSession({
+    gameId: 'tetris', phase: game.phase, initialPhase: 'IDLE', score: game.score,
+    metrics: { lines_cleared: game.linesCleared, level: game.level },
+    activePhases: ['IDLE', 'STARTING', 'PLAYING'], terminalPhases: ['GAME_OVER'], logger,
+  });
   useAutoGameLifecycle(game.phase, game.startGame, onDeactivate, logger, 'tetris');
   useAnyKeyToContinue({ enabled: game.phase === 'GAME_OVER', activeNotes, onContinue: game.startGame });
 

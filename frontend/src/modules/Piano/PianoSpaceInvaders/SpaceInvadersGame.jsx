@@ -8,6 +8,7 @@ import { useAutoGameLifecycle } from '../useAutoGameLifecycle.js';
 import { SpaceInvadersOverlay } from './components/SpaceInvadersOverlay.jsx';
 import { computeKeyboardRange } from '../noteUtils.js';
 import { useAnyKeyToContinue } from '../game-platform/input/useAnyKeyToContinue.js';
+import { usePianoRunSession } from '../game-platform/runtime/usePianoRunSession.js';
 import './SpaceInvadersGame.scss';
 
 /**
@@ -27,6 +28,11 @@ export function SpaceInvadersGame({ activeNotes, noteHistory, gameConfig, onDeac
   useAutoGameLifecycle(game.gameState, game.startGame, onDeactivate, logger, 'space-invaders');
   const terminal = game.gameState === 'VICTORY'
     || (game.gameState === 'LEVEL_FAILED' && game.failReason === 'health');
+  usePianoRunSession({
+    gameId: 'space-invaders', phase: terminal ? 'TERMINAL' : game.gameState, initialPhase: 'IDLE', score: game.score,
+    metrics: { level: game.levelIndex, health: game.health, fail_reason: game.failReason },
+    activePhases: ['IDLE', 'STARTING', 'PLAYING', 'LEVEL_COMPLETE', 'LEVEL_FAILED'], terminalPhases: ['TERMINAL'], logger,
+  });
   useAnyKeyToContinue({ enabled: terminal, activeNotes, onContinue: game.startGame });
 
   const [screenFlash, setScreenFlash] = useState(false);
