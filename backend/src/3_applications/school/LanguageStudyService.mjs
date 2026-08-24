@@ -11,10 +11,9 @@
  */
 import {
   validateCorpus, indexBySeq, buildDayQueue, summarizeQueue,
-  shouldRollDay, chainFor, rungById, resolveRole, accuracy,
+  shouldRollDay, chainFor, creditChain, rungById, resolveRole, accuracy,
   validateProgramEnrollment,
 } from '#domains/school/language/index.mjs';
-import { RUNG_IDS } from '#domains/school/language/ladder.mjs';
 import { resolveGate, capabilitiesUnder, allowsRung, gateMessage } from '#domains/school/accessGate.mjs';
 import { requirementFor } from '#domains/school/language/ladder.mjs';
 import { offsetMinutesFor } from '#domains/school/studyDay.mjs';
@@ -157,9 +156,9 @@ export class LanguageStudyService {
 
   #queuePolicy(userId, corpus, progress) {
     const enrollment = this.#enrollment(userId, corpus);
-    const chain = enrollment?.rungs ?? null;
+    const chain = enrollment ? creditChain(enrollment.rungs, corpus.languages) : null;
     const dailyLimit = enrollment
-      ? Math.max(1, Math.round(enrollment.lessonSize / (chain?.length || RUNG_IDS.length)))
+      ? Math.max(1, Math.round(enrollment.lessonSize / chain.length))
       : progress.dailyLimit;
     const admission = enrollment?.scope?.flatMap((item) => {
       const range = typeof item === 'string'
@@ -238,7 +237,7 @@ export class LanguageStudyService {
       day: progress.day,
       dailyLimit: policy.dailyLimit,
       chain: chainFor(allowed, corpus.languages).filter((rung) => !policy.chain || policy.chain.includes(rung)),
-      creditChain: policy.chain ?? chainFor({ microphone: true, textInput: Object.values(corpus.languages) }, corpus.languages),
+      creditChain: policy.chain ?? creditChain(null, corpus.languages),
       missingCreditRungs: policy.chain
         ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
         : [],

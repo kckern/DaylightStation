@@ -8,7 +8,7 @@
 export {
   ROLES, RUNGS, RUNG_IDS,
   rungById, resolveRole, requirementFor,
-  chainFor, nextRung, graduationEdges,
+  chainFor, nextRung, graduationEdges, creditChain,
 } from './ladder.mjs';
 
 export { buildDayQueue, summarizeQueue } from './dayQueue.mjs';

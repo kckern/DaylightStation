@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   RUNGS, RUNG_IDS, ROLES, rungById, resolveRole,
-  requirementFor, chainFor, nextRung, graduationEdges,
+  requirementFor, chainFor, nextRung, graduationEdges, creditChain,
 } from './ladder.mjs';
 
 const KOREAN = { source: 'EN', target: 'KR' };
@@ -119,5 +119,26 @@ describe('graduationEdges', () => {
 
   it('has no edges when only one rung is available', () => {
     expect(graduationEdges({}, KOREAN)).toEqual([]);
+  });
+});
+
+describe('creditChain', () => {
+  it('defaults malformed or empty configuration to the full ladder', () => {
+    expect(creditChain(null, KOREAN)).toEqual(RUNG_IDS);
+    expect(creditChain([], KOREAN)).toEqual(RUNG_IDS);
+    expect(creditChain(['unknown'], KOREAN)).toEqual(RUNG_IDS);
+    expect(creditChain('repetition', KOREAN)).toEqual(RUNG_IDS);
+  });
+
+  it('filters an enrollment subset into pedagogical ladder order', () => {
+    expect(creditChain(['interpretation', 'repetition', 'repetition'], KOREAN))
+      .toEqual(['repetition', 'interpretation']);
+  });
+
+  it('returns a fresh array', () => {
+    const chain = creditChain(null, KOREAN);
+    expect(chain).not.toBe(RUNG_IDS);
+    chain.pop();
+    expect(RUNG_IDS).toHaveLength(RUNGS.length);
   });
 });
