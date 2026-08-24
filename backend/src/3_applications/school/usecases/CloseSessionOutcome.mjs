@@ -50,7 +50,7 @@ import { studyDayWindow } from '#domains/school/studyDay.mjs';
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
-  #selfService;
+  #selfService; #eventBus;
 
   /**
    * @param {object} deps
@@ -97,6 +97,11 @@ export class CloseSessionOutcome {
     // `{percentFor(unitId)}` — an override wins over the authored percent.
     passOverrides = null, worksheetInstances = null, timezone = 'UTC',
     selfService = null,
+    // Optional: `{publish(topic, payload)}`. When present, every settle
+    // publishes `school.session.outcome-recorded` for the completion
+    // state machine (design 2026-08-23) — absent, settling behaves exactly
+    // as it did before that feature existed.
+    eventBus = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -123,6 +128,7 @@ export class CloseSessionOutcome {
     // `enabled: true` behaves exactly as it did before self-service existed
     // for THIS use case (no code minted, no key on the record).
     this.#selfService = selfService?.enabled === true;
+    this.#eventBus = eventBus;
     this.#logger = logger;
   }
 
@@ -239,6 +245,13 @@ export class CloseSessionOutcome {
   }
 
   async #settle({ sessionId, state, unit, outcome, signedOff, rewardOverride = null, nowIso, resettling }) {
+    // Unconditional on pass/fail and on resettling: a fail settle changes no
+    // section's `obligation`, and a resettle republishing an unchanged fact
+    // is harmless — `SchoolCompletionBridge` only acts on an actual state
+    // transition (design 2026-08-23-student-completion-state-machine, §5).
+    this.#eventBus?.publish?.('school.session.outcome-recorded', {
+      learnerId: state.learnerId, sessionId, unitId: state.unitId, result: outcome.result, at: nowIso,
+    });
     const passed = outcome.result === 'passed';
     const reward = passed
       ? await this.#applyReward({ sessionId, state, unit, outcome, signedOff, rewardOverride, nowIso })
