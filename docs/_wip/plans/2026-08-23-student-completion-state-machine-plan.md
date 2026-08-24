@@ -665,13 +665,18 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import {
   FakeCatalog, FakeSessionRepository, FakeAssignmentStore, fakeClock, silentLogger,
 } from '#testlib/school/lifecycleFakes.mjs';
-import { rawUnits, BANK_IDS } from '#testlib/school/lifecycleFixtures.mjs';
+import { rawUnits, rawDocuments, rawManifests, BANK_IDS } from '#testlib/school/lifecycleFixtures.mjs';
 
 let clock, catalog, curriculum, sessions, assignments, useCase;
 
 const build = ({ assignment = { learnerId: 'kid1', courses: [] }, units, launchers = new Map() } = {}) => {
   clock = fakeClock();
-  catalog = new FakeCatalog({ units: units ?? rawUnits() });
+  // documents/manifests are required, not optional — `validateUnit` resolves
+  // cross-references against them, and omitting them silently drops every
+  // unit as unpublishable (found during execution: the first run of this
+  // suite read `no_work_today` for an assigned course, because units with
+  // unresolved document/manifest refs never became plan entries at all).
+  catalog = new FakeCatalog({ units: units ?? rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
   curriculum = new CurriculumAccess({
     catalog, bankIds: () => BANK_IDS, programIds: () => [], clock: clock.epoch, logger: silentLogger,
   });
