@@ -5111,5 +5111,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     });
   }
 
+  // Graceful shutdown: unsubscribe the School lifecycle's completion bridge.
+  if (schoolLifecycle.schoolCompletionBridge) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.schoolCompletionBridge.stop();
+        rootLogger.info?.('school.completion-bridge.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.completion-bridge.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
   return app;
 }
