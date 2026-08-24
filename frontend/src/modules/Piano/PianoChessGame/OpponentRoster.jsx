@@ -1,5 +1,6 @@
 import { describeLevel } from '@shared-gaming/chess/ladder.mjs';
 import { cardIdenticonCells, GRID_SIZE } from '../../Gaming/views/cardIdenticonModel.js';
+import GameSheet from '../game-platform/chrome/GameSheet.jsx';
 import './OpponentRoster.scss';
 
 /**
@@ -51,19 +52,7 @@ function Face({ opponent, size = 34 }) {
 export function OpponentRosterModal({ roster = [], unlockedThrough = 0, onClose }) {
   if (!roster.length) return null;
   return (
-    <div className="opponent-roster-modal" role="dialog" aria-label="Opponents" aria-modal="true">
-      <header className="opponent-roster-modal__head">
-        <h2 className="opponent-roster-modal__title">Opponents</h2>
-        <button type="button" className="chess-settings__close" onClick={onClose}>Done</button>
-      </header>
-      {/* A legend, because three states cannot be inferred from styling alone —
-          and one of them ("you may replay this one") is an invitation a child
-          would otherwise never discover. */}
-      <ul className="opponent-roster-modal__legend">
-        <li><span className="roster-key roster-key--beaten" /> Beaten — play again</li>
-        <li><span className="roster-key roster-key--current" /> Facing now</li>
-        <li><span className="roster-key roster-key--ahead" /> Not yet</li>
-      </ul>
+    <GameSheet title="Opponents" onClose={onClose} className="opponent-roster-modal">
       <ol className="opponent-roster-modal__list">
         {roster.map((opponent) => {
           const state = opponent.level < unlockedThrough ? 'beaten'
@@ -77,13 +66,13 @@ export function OpponentRosterModal({ roster = [], unlockedThrough = 0, onClose 
                 <span className="opponent-roster__blurb">{describeLevel(opponent.level)}</span>
               </span>
               <span className="opponent-roster-modal__state">
-                {state === 'beaten' ? 'Play again' : state === 'current' ? 'Facing now' : 'Locked'}
+                {state === 'beaten' ? 'Beaten' : state === 'current' ? 'Now' : 'Locked'}
               </span>
             </li>
           );
         })}
       </ol>
-    </div>
+    </GameSheet>
   );
 }
 

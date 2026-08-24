@@ -78,7 +78,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  const levels = tetrisConfig?.levels ?? [];
+  const levels = useMemo(() => tetrisConfig?.levels ?? [], [tetrisConfig?.levels]);
   const progression = tetrisConfig?.progression;
 
   // Timer refs
@@ -228,7 +228,7 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
     if (rotation === 'piece') {
       regenerateTargets(gameState.linesCleared);
     }
-  }, [gameState.phase, gameState._spawnCount, gameState.level, gameState.linesCleared, levels, regenerateTargets]);
+  }, [gameState.phase, gameState.currentPiece, gameState._spawnCount, gameState.level, gameState.linesCleared, levels, regenerateTargets]);
 
   // ─── Gravity Tick ───────────────────────────────────────────
 
@@ -475,9 +475,8 @@ export function useTetrisGame(activeNotes, tetrisConfig) {
         setGameState(prev => {
           const type = prev._pendingType;
           const spawned = spawnPiece(prev.board, type);
-          const { _pendingType, ...rest } = prev;
           return {
-            ...rest,
+            ...prev,
             phase: 'PLAYING',
             countdown: null,
             currentPiece: spawned,

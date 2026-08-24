@@ -72,6 +72,7 @@
   }
 
   &__picker {
+    position: relative;
     background: var(--fc-field-lift);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 14px;
@@ -90,6 +91,25 @@
     color: rgba(255, 255, 255, 0.6);
     text-align: center;
     margin-bottom: 0.75rem;
+  }
+
+  &__picker-close {
+    position: absolute;
+    inset: 0.55rem 0.55rem auto auto;
+    display: grid;
+    place-items: center;
+    width: var(--pg-tap, 2.75rem);
+    height: var(--pg-tap, 2.75rem);
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--pg-ivory-dim);
+    font: inherit;
+    cursor: pointer;
+
+    &:active { background: rgba(255, 255, 255, 0.1); }
+    .piano-icon { font-size: 1.2rem; }
   }
 
   &__picker-list {
@@ -138,14 +158,14 @@
   }
 
   &__picker-kind {
-    font-size: 0.75rem;
+    font-size: var(--t-cap, 0.85rem);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: rgba(255, 255, 255, 0.35);
   }
 
   &__level-num {
-    font-size: 0.75rem;
+    font-size: var(--t-cap, 0.85rem);
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: rgba(255, 255, 255, 0.5);
@@ -287,6 +307,11 @@
     margin-top: 0.5rem;
   }
 
+  &__complete-continue {
+    color: var(--pg-ivory-dim);
+    font-size: var(--t-body, 1rem);
+  }
+
   // ─── Keyboard ──────────────────────────────────────
   &__keyboard {
   }
@@ -328,7 +353,7 @@
   }
 
   &__label {
-    font-size: 0.7rem;
+    font-size: var(--t-cap, 0.85rem);
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: rgba(255, 255, 255, 0.4);

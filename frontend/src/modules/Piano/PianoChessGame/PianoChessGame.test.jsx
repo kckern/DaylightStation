@@ -463,13 +463,13 @@ describe('PianoChessGame settings wiring', () => {
     // seed-permuted and do not match.
     fetchChessConfig.mockResolvedValue({ ...SERVED_CONFIG, shuffle_each_turn: false });
     const { container } = render(<PianoChessGame seed={1} />);
-    // The re-deal notice disappearing proves the config has been applied...
-    await waitFor(() => expect(container.querySelector('.piano-chess__redeal')).toBeNull());
-    // ...and the file axis must then be the unshuffled base scheme — the deal
-    // in force, not just the label.
-    const fileAxis = [...container.querySelectorAll('.chess-board__file-axis .chess-board__axis-label')]
-      .map((el) => el.textContent);
-    expect(fileAxis).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+    // Wait on the deal itself. The old assertion waited for a rail notice that
+    // no longer exists, so it was true before the async config had even loaded.
+    await waitFor(() => {
+      const fileAxis = [...container.querySelectorAll('.chess-board__file-axis .chess-board__axis-label')]
+        .map((el) => el.textContent);
+      expect(fileAxis).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+    });
   });
 
   it('shows a human label, never the raw rung id, before the config resolves', () => {

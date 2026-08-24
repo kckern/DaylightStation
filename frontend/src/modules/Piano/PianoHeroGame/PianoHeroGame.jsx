@@ -120,7 +120,7 @@ export function HeroSongPicker({ sheetmusic, onSelect, subRoute = null, onSubRou
             return (
               <li key={song.id}>
                 <button type="button" onClick={() => onSelect({ ...song, title })} title={title}>
-                  {cover ? <img src={cover} alt="" /> : <span className="piano-hero-picker__note">♪</span>}
+                  {cover ? <img src={cover} alt="" /> : <span className="piano-hero-picker__note"><Icon name="music" /></span>}
                   <strong>{title}</strong>
                   {/* The key that plays this song, as notation — the same
                       grammar the game launcher uses, so a player who has picked
@@ -279,7 +279,10 @@ export function HeroGame({
       }}
     >
       <header className="piano-hero-game__hud">
-        <button type="button" className="piano-hero-game__songs" onClick={onChooseSong}>Songs</button>
+        <button type="button" className="piano-hero-game__songs" onClick={onChooseSong}>
+          <Icon name="sheet-music" />
+          <span>Songs</span>
+        </button>
         <div className="piano-hero-game__title">
           <strong>{song.title}</strong>
           <button
@@ -302,14 +305,23 @@ export function HeroGame({
           aria-pressed={metronomeOn}
           onClick={toggleMetronome}
         >
-          <span aria-hidden="true">♩</span>
-          Click {metronomeOn ? 'on' : 'off'}
+          <Icon name="metronome" />
+          <span>{metronomeOn ? 'On' : 'Off'}</span>
         </button>
         <div className="piano-hero-game__score">
           <strong>{game.run.score.points.toLocaleString()}</strong>
           <span>{game.run.score.combo > 1 ? `${game.run.score.combo} note streak` : 'Score'}</span>
         </div>
-        <div className="piano-hero-game__progress"><span style={{ width: `${progress}%` }} /></div>
+        <div
+          className="piano-hero-game__progress"
+          role="progressbar"
+          aria-label="Song progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow={Math.round(progress)}
+        >
+          <span style={{ width: `${progress}%` }} />
+        </div>
       </header>
 
       <HeroHighway
@@ -339,8 +351,11 @@ export function HeroGame({
             <span><strong>{game.run.score.misses}</strong> Missed</span>
             <span><strong>{game.run.score.maxCombo}</strong> Best streak</span>
           </div>
+          {needsKeys && (
+            <p className="piano-hero-overlay__status" role="status">Any key starts a new run</p>
+          )}
           <div className="piano-hero-overlay__actions">
-            <button type="button" onClick={game.start}>{needsKeys ? 'Play again — or press any key' : 'Play again'}</button>
+            <button type="button" onClick={game.start}>Play again</button>
             <button type="button" className="is-secondary" onClick={onChooseSong}>Choose a song</button>
           </div>
         </div>

@@ -43,7 +43,7 @@
   /* Two zones: the game (stage), then the instrument. There is no header row:
      the kiosk breadcrumb rail above already names where we are, and the
      context rail carries the way out. */
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr auto auto;
   gap: 0.75rem;
   padding: 1rem 1.25rem 0;
   /* A size container so every descendant measures the DESIGN box in cq units,
@@ -56,23 +56,6 @@
   /* Inherited from the kiosk shell — a game does not pick its own face. */
   overflow: hidden;
 }
-
-/* ---- status (in the right context rail) --------------------------------- */
-
-/* The re-deal notice. Loud for a beat, then a standing reminder — the player
-   needs to know the map moved without it shouting every turn. */
-.piano-chess__redeal {
-  margin: 0;
-  font-size: var(--t-cap, 0.85rem);
-  color: var(--piano-muted);
-  transition: color 300ms ease;
-}
-
-.piano-chess__redeal--fresh {
-  color: var(--pc-brass-glow);
-}
-
-
 
 /* Settings is `.pg-btn--icon` now; only its open state is chess's to say. */
 .piano-chess__settings-btn[aria-expanded='true'] {
@@ -186,6 +169,10 @@
   font-size: var(--t-body, 1rem);
   line-height: 1.35;
   color: var(--piano-fg);
+}
+
+.piano-chess__status .piano-chess__prompt {
+  margin: 0;
 }
 
 /* THE PICK-UP WINDOW. A rule under the prompt that drains left to right for
@@ -550,8 +537,6 @@
 
 
 .piano-chess__hand-from,
-.piano-chess__redeal { font-size: var(--t-cap); }
-
 
 
 
@@ -652,19 +637,6 @@
   padding: 0;
   min-height: 0;
   gap: 0.05rem;
-}
-
-.piano-chess__says .piano-chess__prompt {
-  margin: 0.35rem 0 0;
-  padding-block-start: 0.35rem;
-  border-block-start: 1px solid var(--piano-border);
-  /* TWO LINES, RESERVED. The messages run one or two lines ("Your opponent is
-     thinking." vs "That chord is not on the board. Try another."), and without
-     this the bubble changed height by 30px every time one replaced the other —
-     which moved the gesture cards below it AND, through the flex free-space
-     split, the in-hand socket above it. A refusal must not shift the thing the
-     player is staring at. */
-  line-height: 1.35;
 }
 
 /* Likewise the read-out: its "square" state adds a third line, so the space for
@@ -793,9 +765,8 @@
 
 /* ---- first-game walkthrough ---------------------------------------------- */
 
-/* Under the prompt, not over the board: this teaches the instruction the
-   prompt is already giving, so it belongs beside it rather than covering the
-   thing the player is being taught to read. Shown once per player. */
+/* The compact rail marker for onboarding. The explanatory sentence lives in
+   the status line below the board, where longer guidance belongs. */
 .chess-onboard {
   display: flex;
   flex-direction: column;
@@ -820,12 +791,6 @@
   font-size: var(--t-body, 1rem);
   font-weight: 700;
   color: var(--pc-ivory);
-}
-
-.chess-onboard__body {
-  font-size: var(--t-cap, 0.85rem);
-  line-height: 1.35;
-  color: var(--pc-ivory-dim);
 }
 
 @keyframes chess-onboard-in {

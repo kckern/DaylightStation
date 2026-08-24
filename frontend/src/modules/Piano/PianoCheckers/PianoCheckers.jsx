@@ -124,7 +124,7 @@ function CheckersBoard({ game, selected, hint }) {
                   '--ck-slide-ms': `${slideMs}ms`,
                 } : undefined}
               >
-                {piece === piece.toUpperCase() && <span className="checkers-board__crown">♛</span>}
+                {piece === piece.toUpperCase() && <Icon name="crown" className="checkers-board__crown" label="King" />}
               </span>
             )}
           </div>
@@ -176,7 +176,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
 
   // The reading ladder watches how the player ADDRESSES, not whether they win —
   // see game-platform/addressing/addressingProgress.js.
-  const reading = useAddressingLadder({
+  const { startTurn: startReadingTurn, record: recordReading } = useAddressingLadder({
     client: checkersClient, gameId: 'checkers', userId, config, logger,
   });
 
@@ -222,8 +222,8 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
 
   // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
-    if (!game.status.gameOver && game.turn === 1 && !thinking) reading.startTurn();
-  }, [game.status.gameOver, game.turn, thinking]);
+    if (!game.status.gameOver && game.turn === 1 && !thinking) startReadingTurn();
+  }, [game.status.gameOver, game.turn, startReadingTurn, thinking]);
 
   useEffect(() => {
     // Every one of these swallows the player's input. Silently, until now: a
@@ -262,7 +262,7 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
     // needing its own "how many notes so far" bookkeeping.
     const square = squareForAddress([...activeNotes.keys()], notes);
     if (square === null) return;
-    reading.record({ ok: true });
+    recordReading({ ok: true });
     const available = legalMoves(game.board, 1, game.forcedFrom);
     const currentSelection = game.forcedFrom ?? selected;
     const destinations = available
@@ -310,11 +310,11 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         });
         // A refused address is still an address that did not land: the ladder
         // counts it, because accuracy is what it is judging.
-        reading.record({ ok: false });
+        recordReading({ ok: false });
       }
     }
     latchedRef.current = true;
-  }, [activeNotes, game, level, logger, notes, selected, thinking]);
+  }, [activeNotes, game, level, logger, notes, recordReading, selected, thinking]);
 
   const restart = () => {
     setMoves([]);
@@ -450,9 +450,9 @@ export default function PianoCheckers({ activeNotes = new Map(), currentUser = n
         )}
         status={(
           <GameStatusBar
-            aside={localPractice ? 'local practice' : null}
+            aside={game.status.gameOver ? 'Any key: play again' : localPractice ? 'Local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
             )}
           >
             {status}

@@ -67,6 +67,7 @@ function GamePicker() {
               <PianoTile
                 icon={entry?.icon || 'game'}
                 label={entry?.label ?? id}
+                blurb={entry?.status === 'preview' ? 'Preview' : null}
                 disabled={entry?.status !== 'released'}
                 onClick={() => {
                   logger.info('piano.game-enter', { game: id });

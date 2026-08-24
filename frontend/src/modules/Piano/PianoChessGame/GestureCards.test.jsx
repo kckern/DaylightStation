@@ -3,10 +3,10 @@ import { render, screen } from '@testing-library/react';
 import GestureCards from './GestureCards.jsx';
 
 describe('gesture cards', () => {
-  it('draws the keys and the words for each gesture', () => {
-    render(<GestureCards gestures={[{ id: 'octave', pressed: [0, 12], title: 'Put it back', note: 'when holding a piece' }]} />);
+  it('draws the keys and a compact label for each gesture', () => {
+    const { container } = render(<GestureCards gestures={[{ id: 'octave', pressed: [0, 12], title: 'Put it back' }]} />);
     expect(screen.getByText('Put it back')).toBeInTheDocument();
-    expect(screen.getByText('when holding a piece')).toBeInTheDocument();
+    expect(container.querySelector('.gesture-card__keys')).toBeTruthy();
   });
 
   it('marks a gesture that has to be played more than once', () => {

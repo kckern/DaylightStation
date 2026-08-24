@@ -53,6 +53,18 @@ Chess pack or each other's characters. Rail copy is limited to labels, counts, a
 sentence that explains a move, refusal, hint, or map change belongs in `GameStatusBar` or a toast,
 not in permanently mounted rail furniture.
 
+Player identity follows the same honesty rule. A game receives a roster-resolved display name (and
+portrait where the surface supports one); a database id is never presentation copy. When a profile
+cannot be resolved, the UI says `Player` or `Guest` rather than printing the slug.
+
+### Terminal results stay put
+
+A finished run is a decision point, not a timed advertisement. Game-over, victory, and completed-run
+surfaces remain until the player explicitly starts again or leaves. On piano-only surfaces any fresh
+key starts again; that alternative is stated in the status/result line, while the button itself keeps
+the short action label `Play again`. A timeout must never silently return a completed game to `IDLE`,
+because the host correctly interprets `IDLE` as an exited game.
+
 ### The reservation rule
 
 A slot holds its size whether or not it has anything to say. The rails size the stage, so a read-out that grows a line as fingers land moves the **board** — during the exact half-second the player is looking at it.

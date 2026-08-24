@@ -275,7 +275,7 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
   }), [config, columnNotes, addressing.vocabulary, addressing.x.tier]);
 
   // The reading ladder watches how the player ADDRESSES, not whether they win.
-  const reading = useAddressingLadder({
+  const { startTurn: startReadingTurn, record: recordReading } = useAddressingLadder({
     client: connectFourClient, gameId: 'connect-four', userId, config, logger,
   });
 
@@ -306,8 +306,8 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
 
   // Time-to-address is measured from when it became the player's turn.
   useEffect(() => {
-    if (!game.status.gameOver && game.turn === 1 && !thinking) reading.startTurn();
-  }, [game.status.gameOver, game.turn, thinking]);
+    if (!game.status.gameOver && game.turn === 1 && !thinking) startReadingTurn();
+  }, [game.status.gameOver, game.turn, startReadingTurn, thinking]);
 
   useEffect(() => {
     // Same silent swallow as checkers had: a finished board re-entered from the
@@ -343,9 +343,9 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
       logger.info('connect-four.drop', { column, ply: next.moves.length });
     }
     // A full column is a refused address, not a landed one.
-    reading.record({ ok: !next.error });
+    recordReading({ ok: !next.error });
     latchedRef.current = true;
-  }, [activeNotes, columns, deal, game, level, logger, moves, thinking]);
+  }, [activeNotes, columns, deal, game, level, logger, moves, recordReading, thinking]);
 
   const restart = () => {
     setMoves([]);
@@ -462,9 +462,9 @@ export default function PianoConnectFour({ activeNotes = new Map(), currentUser 
         )}
         status={(
           <GameStatusBar
-            aside={localPractice ? 'local practice' : null}
+            aside={game.status.gameOver ? 'Any key: play again' : localPractice ? 'Local practice' : null}
             action={game.status.gameOver && (
-              <GameButton variant="primary" onClick={restart}>Play again — or press any key</GameButton>
+              <GameButton variant="primary" onClick={restart}>Play again</GameButton>
             )}
           >
             {status}

@@ -98,7 +98,7 @@ export function useSideScrollerGame(activeNotes, gameConfig) {
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { levelRef.current = level; }, [level]);
 
-  const levels = gameConfig?.levels ?? [];
+  const levels = useMemo(() => gameConfig?.levels ?? [], [gameConfig?.levels]);
 
   // ─── Memoize config to prevent gameLoop recreation every render ─
   const config = useMemo(() => ({

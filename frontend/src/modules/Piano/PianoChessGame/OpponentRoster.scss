@@ -106,39 +106,10 @@
    it. Opened by pressing the opponent — it is somewhere you go and look, not
    something needed beside the board every turn. */
 .opponent-roster-modal {
-  position: absolute;
-  /* Height FITS: it was pinned top and bottom, so a short roster left a slab of
-     empty surface under the last row. */
-  inset-block-start: 7%;
-  max-height: 86%;
-  inset-inline: 0;
-  z-index: 7;
-  justify-self: center;
   width: min(36rem, 88cqw);
-  margin-inline: auto;
-  padding: 1rem 1.2rem 1.2rem;
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-lg, 16px);
-  background: var(--piano-surface);
-  box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 65%);
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  overflow: hidden;
 }
 
-.opponent-roster-modal__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.opponent-roster-modal__title {
-  margin: 0;
-  font-size: var(--t-h);
-  color: var(--piano-fg);
-}
+.opponent-roster-modal .pg-sheet__body { padding-block-start: 0.7rem; }
 
 /* Three across: twenty-one characters as a sequence you can take in at once,
    rather than a column you scroll a fifth of at a time. */
@@ -169,10 +140,9 @@
 .opponent-roster-modal__row .opponent-roster__name { grid-area: name; }
 .opponent-roster-modal__row .opponent-roster__blurb { grid-area: blurb; }
 
-/* The level number and the state word are what a compact grid has no room for;
-   the position in the sequence is the order, and the state is the highlight. */
-.opponent-roster-modal__level,
-.opponent-roster-modal__state { display: none; }
+/* The sequence supplies the level number. State still has to be said on each
+   character: a border colour is not a legend and was never enough on its own. */
+.opponent-roster-modal__level { display: none; }
 
 .opponent-roster-modal__row--current { border-color: var(--piano-accent); }
 .opponent-roster-modal__row--beaten { opacity: 0.75; }
@@ -254,27 +224,3 @@
 }
 
 .opponent-roster-modal__row--ahead .opponent-roster-modal__state { color: var(--piano-muted); }
-
-.opponent-roster-modal__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.15rem 0.9rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: var(--t-cap, 0.85rem);
-  color: var(--piano-muted);
-
-  li { display: flex; align-items: center; gap: 0.3rem; }
-}
-
-.roster-key {
-  width: 0.85rem;
-  height: 0.85rem;
-  border: 1px solid var(--piano-border);
-  border-radius: 3px;
-}
-
-.roster-key--beaten { border-color: color-mix(in srgb, var(--piano-accent) 40%, transparent); }
-.roster-key--current { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 16%, transparent); }
-.roster-key--ahead { border-style: dashed; }

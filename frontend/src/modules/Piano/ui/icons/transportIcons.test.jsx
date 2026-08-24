@@ -5,7 +5,7 @@ import Icon from './Icon.jsx';
 describe('transport icons', () => {
   it.each([
     'minus', 'plus', 'chevron-down', 'quarter-note',
-    'hand-left', 'hand-right',
+    'hand-left', 'hand-right', 'crown',
     'mode-listen', 'mode-learn', 'mode-polish', 'mode-perform',
     'layout-down', 'layout-across',
   ])('renders %s as inline svg', (name) => {

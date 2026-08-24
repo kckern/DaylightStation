@@ -107,7 +107,7 @@
   }
 
   &__score-label {
-    font-size: 0.6rem;
+    font-size: var(--t-cap, 0.85rem);
     font-weight: 700;
     color: rgba(255, 255, 255, 0.4);
     letter-spacing: 0.15em;

@@ -138,7 +138,7 @@
   }
 
   &__miss-label {
-    font-size: 0.7rem;
+    font-size: var(--t-cap, 0.85rem);
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--pg-ivory-dim);

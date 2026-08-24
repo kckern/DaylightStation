@@ -26,6 +26,17 @@ const ACTION_ICONS = {
   duck: <IconArrowBigDownLine className="action-icon" />,
 };
 
+const ACTION_LABELS = {
+  moveLeft: 'Move left',
+  moveRight: 'Move right',
+  rotateCCW: 'Rotate left',
+  rotateCW: 'Rotate right',
+  hardDrop: 'Drop',
+  hold: 'Hold piece',
+  jump: 'Jump',
+  duck: 'Duck',
+};
+
 /**
  * Renders a single action staff with clef, target notes, and action icon.
  * The staff itself (clef/notes/ghosts) is delegated to the shared
@@ -47,7 +58,7 @@ export function ActionStaff({ action, targetPitches = [], matched = false, fired
   return (
     <div className={cls}>
       {action && (
-        <div className="action-staff__icon">
+        <div className="action-staff__icon" role="img" aria-label={ACTION_LABELS[action] ?? action}>
           {ACTION_ICONS[action]}
           {action === 'hold' && heldPiece && (
             <span className="action-staff__held-type">{heldPiece}</span>
