@@ -97,6 +97,7 @@ export function formatTime(iso) {
 export function describeOdometerSource(source, confidence) {
   if (confidence === 'unknown') return 'No reading yet — log a fill-up with the dash odometer';
   if (source === 'dash') return 'From your last dash reading';
+  if (source === 'pid_a6') return 'Direct from the verified vehicle odometer';
   if (source === 'pid_31') {
     return confidence === 'degraded'
       ? 'Estimated from the car — has gaps where codes were cleared'

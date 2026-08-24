@@ -43,4 +43,12 @@ vehicles:
     emit:
       snapshot_s: 15                 # live snapshot cadence while on home WiFi
       trip_chunk_samples: 300        # max samples per `trip` WS message (chunked above this)
+    standby:
+      engine_off_v: 13.0             # sustained below this closes the drive
+      wake_sleep_v: 13.2             # fast-sleep only if max grace-window voltage stays below
+      wake_grace_s: 8                # observe voltage + motion, then try one ECU link
+      confirm_s: 120                 # low-voltage duration before normal standby
+      upload_window_s: 60            # bounded final upload window
+      check_s: 60                    # parked deep-sleep interval
+      volt_fault_s: 600              # fail-safe sleep when ATRV is unreadable
     topic: automotive

@@ -208,6 +208,8 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
           max_speed_kph: meta.max_speed_kph,
           ecu: meta.ecu,
           samples: meta.samples,
+          odometer_start_km: meta.odometer_start_km,
+          odometer_end_km: meta.odometer_end_km,
         });
         const day = (descriptor.startedAt || descriptor.receivedAt)?.toISOString().slice(0, 10);
         if (day && !withinDayWindow(day, from, to)) continue;
@@ -245,6 +247,8 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
       endFix: null,
       counterStartKm: null,
       counterEndKm: null,
+      odometerStartKm: numberOrNull(record.odometer_start_km),
+      odometerEndKm: numberOrNull(record.odometer_end_km),
       fuelReadings: [],
     };
   }
@@ -295,6 +299,8 @@ export class YamlVehicleHistoryDatastore extends IVehicleHistoryRepository {
       // gains mileage the moment it starts arriving, with no code change here.
       counterStartKm: numberOrNull(trip.meta?.distance_start_km),
       counterEndKm: numberOrNull(trip.meta?.distance_end_km),
+      odometerStartKm: numberOrNull(trip.meta?.odometer_start_km),
+      odometerEndKm: numberOrNull(trip.meta?.odometer_end_km),
     };
   }
 }

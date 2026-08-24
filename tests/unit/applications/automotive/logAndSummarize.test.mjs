@@ -144,4 +144,23 @@ describe('GetVehicleOverview', () => {
     expect(result.reminders).toEqual([]);
     expect(result.counts).toEqual({ service_records: 0, fuel_logs: 0, documents: 0 });
   });
+
+  it('uses direct PID A6 only after vehicle-level dashboard verification', async () => {
+    await records.saveVehicle(VEHICLE, {
+      label: 'Test car', odometer: { pid_a6_verified: true },
+    });
+    const history = {
+      ...emptyHistory,
+      listTripDescriptors: async () => [{
+        odometerEndKm: 72359.1,
+        endedAt: new Date('2026-08-11T18:00:00-07:00'),
+        distanceKm: 1,
+      }],
+    };
+    const directOverview = new GetVehicleOverview({
+      historyRepository: history, recordRepository: records, logger: silent,
+    });
+    const result = await directOverview.execute({ vehicleId: VEHICLE, now: new Date('2026-08-13') });
+    expect(result.odometer).toMatchObject({ km: 72359.1, source: 'pid_a6', confidence: 'exact' });
+  });
 });
