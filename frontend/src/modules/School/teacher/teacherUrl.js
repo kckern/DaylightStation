@@ -51,7 +51,10 @@ export function parseTeacherPath(pathname) {
   }
 
   const section = SECTIONS.includes(segments[0]) ? segments[0] : 'dashboard';
-  return { kind: 'section', section, learnerId: null, courseId: null, sessionId: null, base };
+  return { kind: 'section', section, learnerId: null,
+    courseId: section === 'curriculum' ? (segments[1] ?? null) : null,
+    lessonId: section === 'curriculum' && segments[2] === 'lessons' ? (segments[3] ?? null) : null,
+    sessionId: null, base };
 }
 
 export function teacherSectionPath(section = 'dashboard', base = TEACHER_BASE) {

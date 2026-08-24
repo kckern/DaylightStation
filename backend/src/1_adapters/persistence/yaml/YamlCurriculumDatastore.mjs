@@ -323,6 +323,22 @@ export class YamlCurriculumDatastore extends ICurriculumCatalog {
       : loadYamlSafe(path.join(this.#workDir(subject, work), 'work')) ?? null;
   }
 
+  async getCoursePoster(id) {
+    if (typeof id !== 'string' || !CURRICULUM_ID_RE.test(id)) return null;
+    for (const subject of SUBJECT_IDS) {
+      const course = this.#courseConfig(subject, id);
+      if (course?.schema !== COURSE_V2 || course?.poster !== 'poster.jpg') continue;
+      try {
+        const bytes = await fs.promises.readFile(path.join(this.#workDir(subject, id), 'poster.jpg'));
+        // JPEG SOI + marker. Serving a renamed SVG/HTML file as an image from a
+        // teacher-authenticated route would still be content-sniffing trouble.
+        if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;
+        return bytes;
+      } catch { return null; }
+    }
+    return null;
+  }
+
   /** @param {{ batch?: number }} [options] */
   listUnits(options) { return this.#list(KINDS.units, options); }
 

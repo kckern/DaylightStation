@@ -201,6 +201,35 @@ export class YamlAllocationStore {
   }
 
   /**
+   * Physical-card usage. Historical rows are intentionally never reclaimed:
+   * a satisfied/released/superseded allocation still has bubbles on paper.
+   */
+  async describeCard(cardId, { capacity = 50, expectedLearnerId = null } = {}) {
+    assertCardId(cardId);
+    if (!Number.isInteger(capacity) || capacity < 1 || capacity > 50) {
+      throw new Error('YamlAllocationStore.describeCard capacity must be 1..50');
+    }
+    const allocations = this.#load(cardId);
+    const occupiedThrough = allocations.reduce((max, record) => Math.max(max, record.rowRange?.end ?? 0), 0);
+    const learnerIds = [...new Set(allocations.map((record) => record.learnerId).filter(Boolean))];
+    const mappedLearnerId = learnerIds.length === 1 ? learnerIds[0] : null;
+    const statusCounts = Object.fromEntries(ALLOCATION_STATUSES.map((status) => [
+      status, allocations.filter((record) => record.status === status).length,
+    ]));
+    const warnings = [];
+    if (learnerIds.length > 1) warnings.push('This Student No. has allocations mapped to more than one learner.');
+    if (expectedLearnerId && mappedLearnerId && mappedLearnerId !== expectedLearnerId) {
+      warnings.push(`This Student No. is mapped to ${mappedLearnerId}, not ${expectedLearnerId}.`);
+    }
+    return {
+      schema: 'school.answer-sheet/v1', cardId, studentNumber: cardId, capacity,
+      usedRows: Math.min(capacity, occupiedThrough), remainingContiguousSlots: Math.max(0, capacity - occupiedThrough),
+      nextRow: occupiedThrough < capacity ? occupiedThrough + 1 : null,
+      mappedLearnerId, learnerIds, statusCounts, warnings, allocations: structuredClone(allocations),
+    };
+  }
+
+  /**
    * Every record for `documentId` across ALL cards — the sheet-identity lookup
    * behind "reuse this document's existing sheet" (the print route's automatic
    * omr mode). A linear scan of the allocations directory: card counts are

@@ -509,6 +509,10 @@ export async function createSchoolLifecycle({
   // the same live-roster adult rule, via the one shared factory so the
   // config accessors cannot drift between composition sites.
   const teacherGate = makeTeacherGate({ configService, userService, clock, logger });
+  const { YamlCurriculumExceptionStore } = await import('#adapters/persistence/yaml/YamlCurriculumExceptionStore.mjs');
+  const { ManageCurriculumException } = await import('#apps/school/usecases/ManageCurriculumException.mjs');
+  const curriculumExceptionStore = new YamlCurriculumExceptionStore({ configService });
+  const manageCurriculumException = new ManageCurriculumException({ store: curriculumExceptionStore, curriculum, teacherGate, clock });
   // Mid-period pass-criteria overrides (W3-2): read at grade time, one
   // consumption point (CloseSessionOutcome).
   const passOverrides = new YamlPassOverrideStore({ configService, logger });
@@ -529,6 +533,7 @@ export async function createSchoolLifecycle({
     reviewQueue: stores.reviewQueue, logger,
     schoolCalcStudies,
     schoolCalcMode: schoolCalcStudies ? 'issue' : 'off',
+    curriculumExceptions: curriculumExceptionStore,
     // `school.yml`'s own `selfService` block, passed through untouched. Off (or
     // absent) means BuildAgenda mints no panel codes and the receipt is exactly
     // what it printed before the feature existed.
@@ -537,7 +542,7 @@ export async function createSchoolLifecycle({
   const resolveSubjectNext = new ResolveSubjectNext({
     attestations,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
-    launchers, timezone, clock, newSessionId, logger,
+    launchers, timezone, clock, newSessionId, curriculumExceptions: curriculumExceptionStore, logger,
   });
   // Read-only twin of `buildAgenda`'s planning path (design
   // 2026-08-23-student-completion-state-machine): "is this learner done for
@@ -578,6 +583,7 @@ export async function createSchoolLifecycle({
     schoolCalcStudies,
     schoolCalcMode: schoolCalcStudies ? 'preview' : 'off',
     selfService: cfg.selfService,
+    curriculumExceptions: curriculumExceptionStore,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });
   const teacherAgendaDispatch = new TeacherAgendaDispatch({
@@ -638,12 +644,18 @@ export async function createSchoolLifecycle({
     // edits the household's whole print posture from.
     printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
     bankReader, clock, rng: draw, logger,
+    curriculumExceptions: curriculumExceptionStore,
   });
   const issueComposedWorksheet = new IssueComposedWorksheet({
     curriculum, sessions: stores.sessions, assignments: stores.assignments,
     worksheetInstances, bankReader, printDocuments, renderPrintDocument,
     allocationStore, printer: laserPrinter, answerSheetPolicy: cfg.answer_sheets ?? null,
     teacherGate, clock, logger,
+  });
+  const { ReprintIssuedArtifact } = await import('#apps/school/usecases/ReprintIssuedArtifact.mjs');
+  const reprintIssuedArtifact = new ReprintIssuedArtifact({
+    issuedArtifacts, sessions: stores.sessions, printer: laserPrinter, teacherGate,
+    curriculumExceptions: curriculumExceptionStore, clock, logger,
   });
   const dispatchMedia = playback
     ? new DispatchMedia({
@@ -705,7 +717,8 @@ export async function createSchoolLifecycle({
       closeSessionOutcome, eventBus, clock, logger,
     })
     : null;
-  const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions, clock, logger });
+  const openRemediation = new OpenRemediation({ curriculum, sessions: stores.sessions,
+    curriculumExceptions: curriculumExceptionStore, clock, logger });
   // One name lookup for everything that prints a learner's name — the card
   // scan AND the agenda routes, so tape and preview show the same header.
   const displayRoster = {
@@ -874,6 +887,7 @@ export async function createSchoolLifecycle({
     sessions: stores.sessions,
     launchers,
     attestations,
+    curriculumExceptions: curriculumExceptionStore,
     issueDocument,
     selfService: cfg.selfService,
     timezone,
@@ -916,7 +930,7 @@ export async function createSchoolLifecycle({
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
-    getLearnerDayCompletion, teacherAgendaDispatch,
+    getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, manageCurriculumException,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -995,7 +1009,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, issuedArtifacts,
+      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, issuedArtifacts, curriculumExceptionStore,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

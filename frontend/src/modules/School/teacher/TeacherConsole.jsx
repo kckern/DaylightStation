@@ -118,7 +118,7 @@ function TeacherShell() {
     const views = {
       dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,
       queue: <QueueView kids={kids} />,
-      curriculum: <CurriculumView kids={kids} />,
+      curriculum: <CurriculumView kids={kids} courseId={route.courseId} lessonId={route.lessonId} />,
       operations: <OperationsView kids={kids} />,
     };
     view = views[route.section] ?? views.dashboard;

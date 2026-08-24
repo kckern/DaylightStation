@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { validateWork } from './workValidation.mjs';
 
 const courseV2 = {
-  schema: 'school.course/v2', work: 'molecules', title: 'Molecules', subject: 'science',
+  schema: 'school.course/v2', poster: 'poster.jpg', work: 'molecules', title: 'Molecules', subject: 'science',
   category: 'course', medium: 'paper',
   structure: { shape: 'modules', module: 'chapter', items: { from: 'units', order: 'sequence' } },
   grading: { gate: 'omr', scope: 'item', pass_percent: 80, exit: 'Complete each chapter.' },

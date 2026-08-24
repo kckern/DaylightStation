@@ -65,7 +65,7 @@ function dayOf(iso) {
 }
 
 export class RecordCardScanOutcome {
-  #datastore; #sessions; #reviewQueue; #clock; #logger;
+  #datastore; #sessions; #reviewQueue; #resultArtifacts; #renderMachineResult; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -90,12 +90,15 @@ export class RecordCardScanOutcome {
    * @param {object} [deps.logger]
    */
   constructor({
-    datastore, sessions = null, reviewQueue = null, clock = () => new Date(), logger = console,
+    datastore, sessions = null, reviewQueue = null, resultArtifacts = null, renderMachineResult = null,
+    clock = () => new Date(), logger = console,
   } = {}) {
     if (!datastore?.appendAttempt) throw new Error('RecordCardScanOutcome requires datastore.appendAttempt');
     this.#datastore = datastore;
     this.#sessions = sessions;
     this.#reviewQueue = reviewQueue;
+    this.#resultArtifacts = resultArtifacts;
+    this.#renderMachineResult = renderMachineResult;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -282,6 +285,8 @@ export class RecordCardScanOutcome {
       };
       const attempt = createAttempt({
         at,
+        processedAt: at,
+        studyDay: preReadState?.studyDay ?? (preReadState?.firstIssuedAt ?? preReadState?.createdAt ?? at).slice(0, 10),
         sessionId: card.sessionId ?? null,
         bankId: `${card.documentId}@${card.rev}`,
         itemId: row.itemId,
@@ -337,6 +342,16 @@ export class RecordCardScanOutcome {
     const session = await this.#bridgeSession(
       card, attemptIds, attemptIdByItem, at, preReadState,
     );
+    if (session?.advancedTo === 'graded' && card.sessionId && this.#resultArtifacts && this.#renderMachineResult) {
+      try {
+        const bytes = await this.#renderMachineResult({ sessionId: card.sessionId, unitId, card });
+        await this.#resultArtifacts.putMachineIfAbsent(card.sessionId, bytes);
+      } catch (error) {
+        this.#logger.warn?.('school.print.machine-result-retention-failed', {
+          sessionId: card.sessionId, recordId: card.recordId, error: error.message,
+        });
+      }
+    }
     return { recorded: true, attemptIds, ...(session ? { session } : {}) };
   }
 

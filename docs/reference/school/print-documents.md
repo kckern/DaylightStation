@@ -978,6 +978,28 @@ same physical answer sheet when rows remain.
 
 ## 9. Trust model and known limits
 
+### Teacher retained-artifact workflow
+
+Every issued worksheet retained by `YamlIssuedArtifactStore` is immutable.
+Teacher Open PDF reads those exact bytes; teacher Reprint sends those same
+bytes and preserves the artifact id, Student No., allocation, and row range.
+Direct printing requires a fresh teacher confirmation plus an idempotency key,
+and appends `reprinted` only after the printer confirms. It never allocates a
+new answer card. A lost card must use the replacement flow, which commits the
+new identity only after successful printing.
+
+Answer-card capacity is physical history, not the number of live allocations:
+`usedRows` is the highest row ever allocated across live, satisfied, released,
+and superseded records. Rows are never reclaimed. A card occupied through row
+26 therefore has 24 contiguous slots left on a 50-row card.
+
+New paper attempts retain both `studyDay` (from their issuing session) and
+`processedAt` (scan ingestion time). The OMR scan key plus session and item is
+the deduplication identity, so re-feeds do not inflate daily work. Machine and
+effective result PNG routes render the decoded OMR evidence; they are labeled
+as rendered/reconstructed artifacts because the device does not provide a
+physical scan photograph.
+
 Print endpoints are unauthenticated household surfaces; the only privileged
 artifact is the answer key, gated by `print.teacherPin` (school config,
 boot-cached). A bare teacher-key read (`teacher=1&pin=` on the GET) still

@@ -190,6 +190,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             static routes outrank the /school/* splat (v6 ranking), so the
             kids' shell never parses a /school/teacher URL. */}
         <Route path="/school/teacher" element={<TeacherConsoleRoute />} />
+        <Route path="/school/teacher/dashabord" element={<Navigate to="/school/teacher/dashboard" replace />} />
         <Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />
         {/* Temporary rollout alias for teacher-workspace validation. It uses
             the same route-aware shell, so bookmarks remain valid at cutover. */}

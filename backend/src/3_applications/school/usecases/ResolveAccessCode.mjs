@@ -51,6 +51,7 @@ import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { offeredActions, cardSentence, resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { nextMove } from './offerSession.mjs';
+import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -97,7 +98,7 @@ const NOT_ANSWERING = Object.freeze({
 });
 
 export class ResolveAccessCode {
-  #tokens; #curriculum; #assignments; #sessions; #launchers; #attestations;
+  #tokens; #curriculum; #assignments; #sessions; #launchers; #attestations; #curriculumExceptions;
   #issueDocument; #mediaSurface; #timezone; #clock; #logger;
 
   /**
@@ -121,7 +122,7 @@ export class ResolveAccessCode {
    */
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
-    attestations = null, issueDocument = null, selfService = null,
+    attestations = null, curriculumExceptions = null, issueDocument = null, selfService = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -133,6 +134,7 @@ export class ResolveAccessCode {
     this.#sessions = sessions;
     this.#launchers = launchers;
     this.#attestations = attestations;
+    this.#curriculumExceptions = curriculumExceptions;
     this.#issueDocument = issueDocument;
     this.#mediaSurface = selfService?.mediaSurface ?? null;
     this.#timezone = timezone;
@@ -287,7 +289,10 @@ export class ResolveAccessCode {
       sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
       outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
     }));
-    const history = attested.length ? [...rawHistory, ...attested] : rawHistory;
+    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
+    const history = withCurriculumExceptions(
+      attested.length ? [...rawHistory, ...attested] : rawHistory, activeExceptions, learnerId,
+    );
 
     const coursePolicies = Object.fromEntries((works ?? [])
       .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
@@ -319,6 +324,9 @@ export class ResolveAccessCode {
 
     const unit = new Map(units.map((u) => [u.unitId, u])).get(entry.unitId) ?? null;
     if (entry.program) return { kind: 'program', programId: entry.program, unit };
+
+    const paused = pausedExceptionFor(activeExceptions, entry.unitId);
+    if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };
 
     const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
     return { kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry };

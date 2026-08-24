@@ -138,7 +138,7 @@ export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
   #assignments; #worksheetInstances; #publishPrintDocument;
-  #issuedArtifacts;
+  #issuedArtifacts; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes;
   #clock; #rng; #newArtifactId; #logger;
 
@@ -179,7 +179,7 @@ export class IssueDocument {
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
     assignments = null, worksheetInstances = null, publishPrintDocument = null,
-    issuedArtifacts = null,
+    issuedArtifacts = null, curriculumExceptions = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
     clock = () => new Date(), rng = Math.random,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
@@ -200,6 +200,7 @@ export class IssueDocument {
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
     this.#issuedArtifacts = issuedArtifacts;
+    this.#curriculumExceptions = curriculumExceptions;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
     this.#printCooldownMinutes = normalizePrintCooldownMinutes(printCooldownMinutes);
     this.#publishPrintDocument = publishPrintDocument
@@ -235,6 +236,9 @@ export class IssueDocument {
     const state = reduceSession(events);
 
     if (!state.sessionId) return this.#unavailable(sessionId, 'unknown-session', 'We could not find that work.');
+    const paused = (await this.#curriculumExceptions?.active?.() ?? [])
+      .find((exception) => exception.kind === 'paused' && exception.resolvedLessonIds?.includes(state.unitId));
+    if (paused) return this.#unavailable(sessionId, 'content-paused', `This lesson is paused: ${paused.reason}.`);
     if (!ISSUABLE.has(state.state)) {
       return {
         status: 'already_done',

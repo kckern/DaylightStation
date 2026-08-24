@@ -93,4 +93,30 @@ describe('AdjustSessionGrade', () => {
     expect(f.events.map((event) => event.type)).toContain('grade_adjustment_retracted');
     expect(reduceSession(f.events).gradedPercent).toBe(50);
   });
+
+  it('applies and reverses the exact reward delta with append-only reconciliation evidence', async () => {
+    const f = fixture();
+    const economy = { adjust: vi.fn(async (_learnerId, args) => ({ txnId: `txn:${args.ref}` })) };
+    const curriculum = { getUnit: vi.fn(async () => ({ reward: { amount: 5 } })) };
+    const deps = { sessions: f.sessions, teacherGate: f.teacherGate, economy, curriculum,
+      economyEnabled: true, clock: () => new Date('2026-08-02T12:00:00.000Z'), logger: { info() {}, warn() {} } };
+    const adjust = new AdjustSessionGrade(deps);
+    const retract = new RetractSessionGradeAdjustment(deps);
+
+    const corrected = await adjust.execute({ sessionId: 'ses_1', adjustmentId: 'adj_reward', percent: 100,
+      reason: 'OMR false negative', adjustedBy: 'parent', baseSeq: 6, apply: true });
+    expect(corrected.rewardReconciliation).toMatchObject({ status: 'applied', delta: 5, desiredAmount: 5 });
+    expect(economy.adjust).toHaveBeenLastCalledWith('kid', expect.objectContaining({
+      delta: 5, ref: 'grade-adjustment:adj_reward', source: 'school-grade-correction',
+    }));
+    expect(reduceSession(f.events).rewardAmount).toBe(5);
+
+    const reversed = await retract.execute({ sessionId: 'ses_1', adjustmentId: 'adj_reward',
+      reason: 'correction was mistaken', retractedBy: 'parent', baseSeq: 8, apply: true });
+    expect(reversed.rewardReconciliation).toMatchObject({ status: 'applied', delta: -5, desiredAmount: 0 });
+    expect(economy.adjust).toHaveBeenLastCalledWith('kid', expect.objectContaining({
+      delta: -5, ref: 'grade-adjustment-retraction:adj_reward',
+    }));
+    expect(reduceSession(f.events).rewardAmount).toBe(0);
+  });
 });

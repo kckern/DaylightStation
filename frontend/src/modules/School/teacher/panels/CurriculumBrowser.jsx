@@ -119,7 +119,7 @@ export default function CurriculumBrowser() {
         {[...byCourse.entries()].map(([courseId, list]) => (
           <div key={courseId} className="teacher-curriculum__course">
             <h3>
-              {labelize(courseId)}
+              <a href={`/school/teacher/curriculum/${encodeURIComponent(courseId)}`}>{labelize(courseId)}</a>
               <a
                 className="teacher-reportcard__pdf"
                 href={`/api/v1/school/syllabus?courseId=${encodeURIComponent(courseId)}&format=pdf`}

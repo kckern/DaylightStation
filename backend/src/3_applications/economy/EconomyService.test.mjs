@@ -108,6 +108,14 @@ describe('EconomyService', () => {
     await expect(svc.deposit(USER, { amount: -5 })).rejects.toThrow();
     await expect(svc.deposit(USER, { amount: 2.5 })).rejects.toThrow();
   });
+  it('adjust is lifetime-idempotent, bypasses caps, and negative debt is repaid by later earnings', async () => {
+    const svc = makeService();
+    const first = await svc.adjust(USER, { delta: -7, source: 'school-grade', ref: 'adjustment:one', note: 'grade reversed' });
+    expect(first.balance).toBe(0);
+    expect((await svc.adjust(USER, { delta: -7, source: 'school-grade', ref: 'adjustment:one' })).duplicate).toBe(true);
+    expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later' })).balance).toBe(0);
+    expect((await svc.earn(USER, { action: 'piano-lesson-complete', source: 'piano', ref: 'later-2' })).balance).toBe(3);
+  });
 });
 
 describe('metered sessions', () => {

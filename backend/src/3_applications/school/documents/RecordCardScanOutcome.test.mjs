@@ -489,6 +489,19 @@ describe('session bridge', () => {
     expect(graded.attemptIds).toEqual(outcome.attemptIds);
   });
 
+  it('retains one immutable rendered machine result for a newly graded scan', async () => {
+    const datastore = fakeDatastore();
+    const sessions = fakeSessions(seededSession('ws-1'));
+    const resultArtifacts = { putMachineIfAbsent: vi.fn(async () => ({ created: true })) };
+    const renderMachineResult = vi.fn(async () => Buffer.from('png-bytes'));
+    const useCase = new RecordCardScanOutcome({ datastore, sessions, resultArtifacts, renderMachineResult,
+      logger: quietLogger });
+
+    await useCase.execute({ testId: '1234567', card: gradedCard({ sessionId: 'ws-1' }) });
+    expect(renderMachineResult).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'ws-1', unitId: 'unit-1' }));
+    expect(resultArtifacts.putMachineIfAbsent).toHaveBeenCalledWith('ws-1', Buffer.from('png-bytes'));
+  });
+
   it('a partial scan records attempts but does NOT advance the session', async () => {
     const datastore = fakeDatastore();
     const sessions = fakeSessions(seededSession('ws-1'));

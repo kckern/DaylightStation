@@ -38,6 +38,7 @@ import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school
 import { studyDayIndex, offsetMinutesFor, studyDayWindow } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
+import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -68,7 +69,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService;
+  #selfService; #curriculumExceptions;
 
   /**
    * @param {object} deps
@@ -108,7 +109,7 @@ export class BuildAgenda {
     // planner's gate-unlock; teacher notes join the "Notes for you" window.
     attestations = null, teacherNotes = null,
     schoolCalcStudies = null, schoolCalcMode = 'off',
-    selfService = null,
+    selfService = null, curriculumExceptions = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -133,6 +134,7 @@ export class BuildAgenda {
     }
     this.#schoolCalcStudies = schoolCalcStudies;
     this.#schoolCalcMode = schoolCalcMode;
+    this.#curriculumExceptions = curriculumExceptions;
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
     // byte for byte — no code minted, no key on the record, no line on the paper.
     this.#selfService = selfService?.enabled === true;
@@ -181,7 +183,10 @@ export class BuildAgenda {
       this.#curriculum.listWorks?.() ?? [],
       this.#sessions.listForLearner(learnerId),
     ]);
-    const history = withAttestedPasses(rawHistory, this.#attestations, learnerId);
+    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
+    const history = withCurriculumExceptions(
+      withAttestedPasses(rawHistory, this.#attestations, learnerId), activeExceptions, learnerId,
+    );
 
     const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
@@ -471,8 +476,12 @@ export class BuildAgenda {
       const hint = launcher?.locationHint ?? null;
       return { sessionId: null, suffix: hint ?? 'go do this', created: false };
     }
+    const paused = (await this.#curriculumExceptions?.active?.() ?? [])
+      .find((exception) => exception.kind === 'paused' && exception.resolvedLessonIds?.includes(entry.unitId));
+    if (paused) return { sessionId: null, suffix: `content paused (${paused.reason})`, created: false };
     const { sessionId, state, created } = await ensureSession({
       entry, learnerId, nowIso, sessions: this.#sessions, newSessionId: this.#newSessionId,
+      timezone: this.#timezone,
     });
     const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
     return { sessionId, suffix: move.label, created };

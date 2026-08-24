@@ -152,6 +152,10 @@ export class CurriculumAccess {
     return (await this.#current()).works.get(id) ?? null;
   }
 
+  async getCoursePoster(courseId) {
+    return this.#catalog.getCoursePoster?.(courseId) ?? null;
+  }
+
   /** @returns {Promise<object[]>} every publishable unit, normalised */
   async listUnits() {
     return [...(await this.#current()).units.values()];

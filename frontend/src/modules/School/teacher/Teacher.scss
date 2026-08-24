@@ -258,10 +258,34 @@
   input { min-height: 38px; border: 1px solid #d8cfbe; border-radius: 7px; padding: 0 9px; background: white; color: #30291f; font: inherit; }
   .teacher-action-preview, .teacher-action-row, .teacher-panel__error { grid-column: 1 / -1; }
 }
+.teacher-item-verdicts { grid-column: 1 / -1; display: grid; gap: 6px; margin: 4px 0; padding: 10px; border: 1px solid #ded3bf; border-radius: 8px;
+  label { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; padding-top: 6px; border-top: 1px solid #eee6d8; }
+  label:first-of-type { border-top: 0; } span { display: grid; } small { color: #887e6e; font-weight: 400; } select { min-height: 38px; }
+}
+.teacher-result-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;
+  figure { margin: 0; } img { display: block; width: 100%; max-height: 520px; border: 1px solid #ddd3c1; background: white; object-fit: contain; } figcaption { margin-top: 5px; color: #6b6255; font-size: 12px; }
+}
+.teacher-answer-sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0;
+  div { padding: 9px; border-radius: 8px; background: #f7f2e8; } dt { color: #817666; font-size: 11px; } dd { margin: 3px 0 0; font-weight: 700; } p { grid-column: 1 / -1; color: #8a3627; }
+}
+.teacher-course-context { display: grid; grid-template-columns: minmax(150px, 250px) 1fr; gap: 18px;
+  > img { width: 100%; aspect-ratio: 2 / 3; border-radius: 10px; object-fit: contain; background: #eee5d6; }
+  ol { margin: 0; padding-left: 22px; } li { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; } a { color: #604521; }
+}
 .teacher-session-list { margin: 0; padding: 0; list-style: none;
   li + li { border-top: 1px solid #eee7d9; }
   button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 3px; border: 0; background: transparent; cursor: pointer; text-align: left; }
   button > span:first-child { display: flex; flex-direction: column; gap: 3px; } small { color: #8a8272; }
+}
+.teacher-roster__entry { position: relative; }
+.teacher-roster__disclosure { position: absolute; top: 20px; right: 12px; color: #66543c; pointer-events: none; }
+.teacher-roster__details { padding: 8px 10px 14px; }
+.teacher-day-sessions { display: grid; gap: 8px; }
+.teacher-day-session { display: flex; gap: 10px; padding: 9px; border: 1px solid #e5dccb; border-radius: 9px; color: inherit; text-decoration: none;
+  img { width: 46px; aspect-ratio: 2 / 3; border-radius: 4px; object-fit: cover; background: #e9e1d3; } span { display: grid; gap: 2px; } small { color: #796f60; }
+}
+.teacher-processed { margin-top: 12px; padding-top: 10px; border-top: 1px solid #e7dece;
+  h3 { margin: 0 0 6px; font-size: 13px; } a { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; color: #604521; text-decoration: none; } span { color: #817665; font-size: 12px; }
 }
 .teacher-status { flex: 0 0 auto; border-radius: 999px; padding: 3px 8px; background: #eee7d9; color: #5f5648; font-size: 11px; font-weight: 700; }
 .teacher-status--passed, .teacher-status--complete, .teacher-status--closed { background: #e2efdc; color: #396034; }
@@ -276,6 +300,7 @@
   button:disabled { background: #d9d1c4; color: #746c60; cursor: not-allowed; }
   span { color: #8a8272; font: 12px monospace; }
 }
+.teacher-reprint-confirm { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px; border-radius: 7px; background: #fff3d9; color: #6c5425; }
 .teacher-event-list { margin: 0; padding-left: 24px;
   li { display: grid; grid-template-columns: minmax(140px, 1fr) 1fr auto; gap: 12px; padding: 7px 0; border-top: 1px solid #eee7d9; }
   span, small { color: #837968; }
@@ -309,6 +334,8 @@
   .teacher-session-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .teacher-event-list li { grid-template-columns: 1fr; gap: 2px; }
   .teacher-grade-correction { grid-template-columns: 1fr; > * { grid-column: 1; } }
+  .teacher-result-previews, .teacher-answer-sheet { grid-template-columns: 1fr; }
+  .teacher-course-context { grid-template-columns: 1fr; > img { max-width: 230px; margin: 0 auto; } }
 }
 
 .teacher-tab {
@@ -1260,3 +1287,8 @@
   background: #fdf0ed; color: #7c2417; font-weight: 800; cursor: pointer; white-space: nowrap;
 }
 .teacher-stale__row button { white-space: nowrap; }
+
+.teacher-exception-panel {
+  ul { margin: 1rem 0 0; padding-left: 1.25rem; }
+  li { margin-block: 0.5rem; }
+}
