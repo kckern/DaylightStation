@@ -547,13 +547,13 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#5c636a',
-                fontSize: '0.65rem',
+                color: '#adb5bd',
+                fontSize: '0.78rem',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.25rem',
-                padding: '0.15rem 0.3rem',
+                padding: '0.45rem 0.55rem',
                 borderRadius: '4px',
               }}
               aria-label="Archive"

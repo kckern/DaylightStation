@@ -235,6 +235,69 @@
   }
 }
 
+.detail-error,
+.scroll-detail-error {
+  margin: 1rem;
+  padding: 1rem;
+  border: 1px solid #a61e4d;
+  border-radius: 0.65rem;
+  background: #2b151c;
+  color: #ffe3e3;
+}
+
+.detail-error button,
+.scroll-detail-error button,
+.detail-mobile-nav button {
+  min-height: 44px;
+  border: 1px solid #5c636a;
+  border-radius: 0.5rem;
+  background: #25272a;
+  color: #f1f3f5;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+}
+
+.scroll-detail-error {
+  position: fixed;
+  z-index: 220;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(34rem, calc(100% - 2rem));
+  margin: 0;
+  box-shadow: 0 1rem 4rem rgba(0, 0, 0, 0.65);
+
+  h1 { margin-top: 0; }
+  > div { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+}
+
+.detail-iframe-note {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  color: #adb5bd;
+  font-size: 0.78rem;
+}
+
+.detail-mobile-nav {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .detail-mobile-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 7;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.65rem 1rem max(0.65rem, env(safe-area-inset-bottom));
+    background: rgba(17, 17, 17, 0.96);
+    border-top: 1px solid #343a40;
+  }
+
+  .detail-mobile-nav button:disabled { opacity: 0.35; cursor: default; }
+}
+
 // ─── Desktop Modal/Lightbox ────────────────────────────────
 .detail-modal-scrim {
   position: fixed;

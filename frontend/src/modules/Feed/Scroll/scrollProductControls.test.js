@@ -15,6 +15,11 @@ describe('Scroll product controls', () => {
     ])).toEqual([['reddit', 'Reddit'], ['komga', 'Books']]);
   });
 
+  test('does not silently hide sources after the first ten', () => {
+    const items = Array.from({ length: 14 }, (_, index) => ({ source: `source-${index}`, sourceInfo: { label: `Source ${index}` } }));
+    expect(getScrollSourceOptions(items)).toHaveLength(14);
+  });
+
   test('enforces a configured session boundary without mutating the source list', () => {
     const input = Array.from({ length: 40 }, (_, id) => ({ id }));
     const result = applySessionBudget(input, 30);

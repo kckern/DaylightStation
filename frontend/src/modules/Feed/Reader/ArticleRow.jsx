@@ -121,11 +121,11 @@ export default function ArticleRow({ article, isNew = false, onMarkRead, onState
             </>
           ) : (
             <>
-              <div
-                ref={contentRef}
-                className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content || '') }}
-              />
+              {article.content ? <div
+                  ref={contentRef}
+                  className={`article-content ${fullHeight ? 'full' : ''} ${overflows && !fullHeight ? 'capped' : ''}`}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content) }}
+                /> : <p ref={contentRef} className="article-content">{article.preview || 'This saved item has no cached article body. Open the original to continue reading.'}</p>}
               {overflows && !fullHeight && (
                 <button className="article-readmore" onClick={(e) => { e.stopPropagation(); setFullHeight(true); }}>
                   Read more

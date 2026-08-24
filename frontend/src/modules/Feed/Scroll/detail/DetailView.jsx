@@ -7,7 +7,7 @@ import AnnotationPanel from '../../Annotations/AnnotationPanel.jsx';
 import OfflineEditionButton from '../../offline/OfflineEditionButton.jsx';
 import './DetailView.scss';
 
-export default function DetailView({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailView({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
@@ -171,6 +171,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
             item={item}
             heroImage={heroImage}
             sections={sections}
+            loading={loading}
             onPlay={onPlay}
           />
         ) : heroImage && imagePhase !== 'hidden' && !sections.some(s => s.type === 'player' || s.type === 'embed') && (() => {
@@ -221,7 +222,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
             <button type="button" onClick={() => onStateAction?.((item.state?.isRead ?? item.isRead) ? 'unread' : 'read')}>{(item.state?.isRead ?? item.isRead) ? 'Mark unread' : 'Mark read'}</button>
             <OfflineEditionButton item={item} detail={{ sections, ogImage, ogDescription }} />
           </div>
-          {item.link && !showIframe && (
+          {item.link && (
             <a
               href={item.meta?.paywall && item.meta?.paywallProxy ? item.meta.paywallProxy + item.link : item.link}
               target="_blank"
@@ -251,6 +252,13 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
           </div>
         )}
 
+        {!loading && error && (
+          <div className="detail-error" role="alert">
+            <p>{error}</p>
+            {onRetry && <button type="button" onClick={onRetry}>Try reader view again</button>}
+          </div>
+        )}
+
         {!loading && sections.map((section, i) => (
           <div key={i} className="detail-section">
             {renderSection(section, { onPlay, activeMedia, playback, item, onNavigateToItem })}
@@ -259,6 +267,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
         {showIframe && (
           <div className="detail-iframe-wrap">
+            <p className="detail-iframe-note">If the publisher blocks the embedded page, use the original-link action above.</p>
             <iframe
               src={iframeSrc}
               title={item.title}
@@ -273,13 +282,18 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
         <AnnotationPanel item={item} />
 
+        {(onPrev || onNext) && <nav className="detail-mobile-nav" aria-label="Article navigation">
+          <button type="button" onClick={() => navigateWithAnimation(-1, onPrev)} disabled={!onPrev}>Previous</button>
+          <button type="button" onClick={() => navigateWithAnimation(1, onNext)} disabled={!onNext}>Next</button>
+        </nav>}
+
       </div>
       </div>
     </div>
   );
 }
 
-function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
+function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {
   const [ytPlaying, setYtPlaying] = useState(false);
   const [useEmbed, setUseEmbed] = useState(false);
 
@@ -296,7 +310,6 @@ function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
   const embedSection = sections.find(
     s => s.type === 'embed' && s.data?.provider === 'youtube'
   );
-  const sectionsLoaded = sections.length > 0;
   const embedFallback = playerSection?.data?.embedFallback
     || embedSection?.data?.url
     || `https://www.youtube.com/embed/${item.meta.videoId}?autoplay=1&rel=0`;
@@ -336,7 +349,7 @@ function YouTubeHero({ item, heroImage, sections, onPlay: _onPlay }) {
   }
 
   // Sections still loading — show loading state, not iframe
-  if (!sectionsLoaded) {
+  if (loading) {
     return (
       <div className="detail-hero" style={{ aspectRatio }}>
         {heroImage && <img src={heroImage} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.4 }} />}

@@ -24,6 +24,7 @@ function createHistory() {
     }),
     summarize: (_username, states) => ({
       unread: [...docs.values()].filter(doc => !(states.get(doc.stateKey)?.isRead ?? doc.isRead)).length,
+      readerUnread: [...docs.values()].filter(doc => doc.origins?.includes('reader') && !(states.get(doc.stateKey)?.isRead ?? doc.isRead)).length,
       saved: [...states.values()].filter(state => state.isSaved).length,
       archived: [...states.values()].filter(state => state.isArchived).length,
     }),

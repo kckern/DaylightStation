@@ -125,6 +125,45 @@ describe('TierAssemblyService', () => {
     });
   });
 
+  describe('tier filters', () => {
+    const now = new Date('2026-08-24T12:00:00Z').getTime();
+
+    test('read_status removes read items while preserving unread candidates', () => {
+      const config = structuredClone(defaultConfig);
+      config.tiers.wire.selection.filter = ['read_status'];
+      const read = { ...makeItem('read', 'wire', 'news', '2026-08-24T11:00:00Z'), state: { isRead: true } };
+      const unread = { ...makeItem('unread', 'wire', 'news', '2026-08-24T10:00:00Z'), state: { isRead: false } };
+      expect(service.assemble([read, unread], config, { effectiveLimit: 10, now }).items.map(item => item.id)).toEqual(['unread']);
+    });
+
+    test('recently_shown removes session-seen and recently selected items', () => {
+      const config = structuredClone(defaultConfig);
+      config.tiers.wire.selection = { sort: 'timestamp_desc', filter: ['recently_shown'], recently_shown_hours: 12 };
+      const items = [
+        { ...makeItem('seen', 'wire', 'news', '2026-08-24T11:00:00Z'), _seen: true },
+        makeItem('recent', 'wire', 'news', '2026-08-24T10:00:00Z'),
+        makeItem('eligible', 'wire', 'news', '2026-08-24T09:00:00Z'),
+      ];
+      const selectionCounts = new Map([
+        ['recent', { count: 1, last: '2026-08-24T08:00:00Z' }],
+        ['eligible', { count: 1, last: '2026-08-22T08:00:00Z' }],
+      ]);
+      expect(service.assemble(items, config, { effectiveLimit: 10, selectionCounts, now }).items.map(item => item.id)).toEqual(['eligible']);
+    });
+
+    test('staleness removes expired, explicitly stale, and over-age items', () => {
+      const config = structuredClone(defaultConfig);
+      config.tiers.compass.selection = { sort: 'priority', filter: ['staleness'], stale_after_hours: 24 };
+      const items = [
+        makeItem('fresh', 'compass', 'weather', '2026-08-24T06:00:00Z', 1),
+        makeItem('old', 'compass', 'weather', '2026-08-22T06:00:00Z', 2),
+        { ...makeItem('flagged', 'compass', 'weather', '2026-08-24T07:00:00Z', 3), stale: true },
+        { ...makeItem('expired', 'compass', 'weather', '2026-08-24T08:00:00Z', 4), expiresAt: '2026-08-24T09:00:00Z' },
+      ];
+      expect(service.assemble(items, config, { effectiveLimit: 10, now }).items.map(item => item.id)).toEqual(['fresh']);
+    });
+  });
+
   describe('flex-based allocation', () => {
     test('uses FlexAllocator for tier distribution with flex config', () => {
       const flexConfig = {

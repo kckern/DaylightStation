@@ -360,7 +360,7 @@ This guarantees no freed wire slots are wasted — they cascade to whichever tie
 
 ```yaml
 scroll:
-  wire_decay_half_life: 2   # wire halves every 2 batches (default)
+  wire_decay_half_life: 4   # wire halves every 4 batches (default)
 ```
 
 Set to `0` or omit to disable decay (wire allocation stays constant).
@@ -375,7 +375,13 @@ If `?focus=reddit:science`, filter wire items to that source/subsource. Subsourc
 
 **5b. Tier Filters**
 
-`#applyTierFilters()` — currently a shell for future filter strategies (read_status, staleness, recently_shown).
+`#applyTierFilters()` applies the configured strategies before sorting and allocation:
+
+- `read_status` removes items already marked read.
+- `recently_shown` removes items already served in the session or selected within `recently_shown_hours` (24 by default).
+- `staleness` removes explicitly stale/expired items and items older than `stale_after_hours` (48 by default).
+
+The default wire tier uses `read_status` plus `recently_shown`; the default compass tier uses `staleness` plus `recently_shown`. User tier configuration can override the filter array and horizons.
 
 **5c. Tier Sort** (`#applyTierSort`)
 

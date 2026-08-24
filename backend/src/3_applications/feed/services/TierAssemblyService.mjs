@@ -65,7 +65,7 @@ export class TierAssemblyService {
    * @param {string} [options.focus] - Focus source key (wire-only filtering)
    * @returns {{ items: Object[], hasMore: boolean }}
    */
-  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, sourcePreferences = {}, batchNumber = 1 } = {}) {
+  assemble(allItems, scrollConfig, { effectiveLimit, focus, selectionCounts, sourcePreferences = {}, batchNumber = 1, now = Date.now() } = {}) {
     const tierConfig = this.#resolveTierConfig(scrollConfig);
     const halfLife = scrollConfig.wire_decay_half_life ?? 4;
 
@@ -84,13 +84,13 @@ export class TierAssemblyService {
       const candidates = buckets[tier] || [];
       const config = tierConfig[tier] || TIER_DEFAULTS[tier];
       const slots = tierSlots.get(tier);
-      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences, tierSlots: slots });
+      selected[tier] = this.#selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences, tierSlots: slots, now });
     }
 
     // Post-selection redistribution: if a tier selected fewer items than
     // allocated (pool exhausted after dedup/filters), give the shortfall
     // to non-wire tiers that have spare capacity, then re-select.
-    tierSlots = this.#redistributeShortfall(tierSlots, selected, buckets, tierConfig, { focus, selectionCounts, sourcePreferences });
+    tierSlots = this.#redistributeShortfall(tierSlots, selected, buckets, tierConfig, { focus, selectionCounts, sourcePreferences, now });
 
     // Cross-tier interleave
     const interleaved = this.#interleave(selected, tierConfig, effectiveLimit);
@@ -315,7 +315,7 @@ export class TierAssemblyService {
    * @param {number} [options.tierSlots] - Flex-allocated slot count for this tier
    * @returns {Object[]} Selected items for this tier
    */
-  #selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences = {}, tierSlots } = {}) {
+  #selectForTier(tier, candidates, config, { focus, selectionCounts, sourcePreferences = {}, tierSlots, now } = {}) {
     if (!candidates.length) return [];
 
     let items = [...candidates];
@@ -326,7 +326,7 @@ export class TierAssemblyService {
     }
 
     // Apply tier selection strategy
-    items = this.#applyTierFilters(items, config.selection);
+    items = this.#applyTierFilters(items, config.selection, { selectionCounts, now });
     items = this.#applyTierSort(items, config.selection, selectionCounts);
     items = items
       .map((item, index) => ({ item, index, rank: sourcePreferences[item.source] === 'more' ? 1 : sourcePreferences[item.source] === 'less' ? -1 : 0 }))
@@ -392,15 +392,37 @@ export class TierAssemblyService {
 
   /**
    * Apply tier-level filters (read_status, staleness, recently_shown).
-   * TODO: Implement filter strategies
    */
-  #applyTierFilters(items, selection) {
-    // Shell — filters not yet implemented
-    // Each filter in selection.filter array would remove items
-    // e.g. 'read_status' removes already-read articles
-    // e.g. 'staleness' removes stale compass data
-    // e.g. 'recently_shown' removes items shown in recent batches
-    return items;
+  #applyTierFilters(items, selection = {}, { selectionCounts, now = Date.now() } = {}) {
+    const filters = new Set(Array.isArray(selection.filter) ? selection.filter : (selection.filter ? [selection.filter] : []));
+    let filtered = items;
+
+    if (filters.has('read_status')) {
+      filtered = filtered.filter(item => !(item.state?.isRead ?? item.isRead));
+    }
+
+    if (filters.has('recently_shown')) {
+      const horizonMs = Math.max(0, Number(selection.recently_shown_hours ?? 24)) * 3_600_000;
+      filtered = filtered.filter(item => {
+        if (item._seen) return false;
+        const last = selectionCounts?.get(item.id)?.last;
+        const lastMs = last ? new Date(last).getTime() : NaN;
+        return !Number.isFinite(lastMs) || now - lastMs >= horizonMs;
+      });
+    }
+
+    if (filters.has('staleness')) {
+      const maxAgeMs = Math.max(0, Number(selection.stale_after_hours ?? selection.max_age_hours ?? 48)) * 3_600_000;
+      filtered = filtered.filter(item => {
+        if (item.stale === true || item.meta?.stale === true) return false;
+        const expiresMs = new Date(item.expiresAt || item.meta?.expiresAt || 0).getTime();
+        if (expiresMs > 0 && expiresMs <= now) return false;
+        const publishedMs = new Date(item.timestamp || item.publishedAt || item.published || 0).getTime();
+        return !Number.isFinite(publishedMs) || publishedMs <= 0 || now - publishedMs <= maxAgeMs;
+      });
+    }
+
+    return filtered;
   }
 
   /**

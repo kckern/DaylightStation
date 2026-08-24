@@ -12,10 +12,10 @@ Start with [Feed System Architecture](./feed-system-architecture.md) for the cro
 ## Current product contract
 
 - Read, unread, save, and archive are canonical user-scoped states shared by every mode.
-- Accepted Daylight state remains authoritative while failed FreshRSS writes retry from a durable server queue. Browser-network failures enter a separate durable client queue and replay in order when connectivity returns.
+- Accepted Daylight state remains authoritative while failed FreshRSS writes retry from a durable server queue. Browser-network failures enter a separate account-scoped durable client queue and replay in order when connectivity returns.
 - Scroll sessions and served-item history survive reloads and server restarts for 24 hours.
 - Reader and Scroll mount at most 60 list rows/cards while preserving the full scroll range.
-- Filters, Reader views, headline view/edition, and search criteria are URL-addressable.
+- Filters, Reader views, headline view/edition, and search criteria are URL-addressable. Reader Unread/Saved/Archived are canonical history queries rather than filters over the recent stream.
 - Theme, reading size, line spacing, width, density, optional Scroll session budgets, Reader/Scroll checkpoints, and source weighting preferences are account-scoped. Existing local appearance settings migrate on first use.
 - Search supports text-free history browsing, filters, opaque pagination, and visible backfill coverage.
 - Headlines provides a ranked briefing, outlet comparison matrix, multi-source provenance, and a chronological coverage timeline. Timeline labels are deterministic title classification, not an editorial guarantee that a publisher issued a formal correction.

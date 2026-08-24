@@ -143,12 +143,15 @@
   z-index: 6;
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 0.4rem;
   padding: 0.55rem;
   background: rgba(17, 18, 20, 0.94);
   backdrop-filter: blur(8px);
 
   button {
+    flex: 0 0 auto;
+    white-space: nowrap;
     min-height: 40px;
     border: 1px solid #4b4f54;
     border-radius: 999px;
@@ -159,6 +162,26 @@
   }
 
   button.active { border-color: #74c0fc; background: #164c72; color: #fff; }
+}
+
+@media (max-width: 600px) {
+  .scroll-controls {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    overscroll-behavior-x: contain;
+  }
+
+  .scroll-source-filter > div {
+    position: fixed;
+    top: 6.5rem;
+    right: 0.5rem;
+    left: 0.5rem;
+    width: auto;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
 }
 
 .scroll-source-tuning {
@@ -181,6 +204,7 @@
 
 .scroll-source-filter {
   position: relative;
+  flex: 0 0 auto;
 
   > summary {
     min-height: 40px;

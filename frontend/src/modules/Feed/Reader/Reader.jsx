@@ -10,6 +10,18 @@ import { listOfflineEditions } from '../offline/feedOfflineStore.js';
 import './Reader.scss';
 
 const log = getLogger().child({ app: 'feed', module: 'reader' });
+const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
+
+function historyItemToArticle(item) {
+  return {
+    ...item,
+    link: item.link || item.url || null,
+    published: item.published || item.publishedAt || null,
+    preview: item.preview || item.summary || '',
+    feedTitle: item.feedTitle || item.sourceInfo?.label || item.source || '',
+    iconUrl: item.iconUrl || item.sourceInfo?.iconUrl || null,
+  };
+}
 
 /** Group articles by day label */
 function groupByDay(articles) {
@@ -257,6 +269,16 @@ export default function Reader() {
     else setLoadingMore(true);
     setStreamError(null);
     try {
+      if (HISTORY_VIEWS.has(activeView)) {
+        const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
+        if (cont) params.set('cursor', cont);
+        const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal: controller.signal });
+        const incoming = applyPendingMutations((data.items || []).map(historyItemToArticle));
+        setArticles(prev => append ? [...prev, ...incoming.filter(item => !prev.some(existing => existing.stateKey === item.stateKey))] : incoming);
+        setContinuation(data.nextCursor || null);
+        setExhausted(!data.nextCursor);
+        return;
+      }
       const isFiltered = activeFeeds.size > 0;
       const params = new URLSearchParams();
       if (isFiltered) {
@@ -284,7 +306,7 @@ export default function Reader() {
       }
       appendLockRef.current = false;
     }
-  }, [activeFeeds, applyPendingMutations]);
+  }, [activeFeeds, activeView, applyPendingMutations]);
 
   // Initial load + reload on filter change
   useEffect(() => {
@@ -413,7 +435,7 @@ export default function Reader() {
     });
   };
 
-  const isFiltered = activeFeeds.size > 0;
+  const isFiltered = activeFeeds.size > 0 || HISTORY_VIEWS.has(activeView);
   const visibleArticles = (activeView === 'offline' ? offlineItems : articles).filter(article => {
     if (activeView === 'unread') return !(article.state?.isRead ?? article.isRead);
     if (activeView === 'saved') return article.state?.isSaved;
@@ -435,20 +457,19 @@ export default function Reader() {
     overscan: 600,
   });
 
-  // Close drawer when a filter is applied on mobile
+  // Keep the drawer open while choosing feeds so touch users can build a
+  // multi-feed selection without modifier keys. The explicit close button
+  // completes the selection.
   const handleMobileToggleFeed = (feedId, multi) => {
     handleToggleFeed(feedId, multi);
-    setDrawerOpen(false);
   };
   const handleMobileToggleCategory = (feedIds, multi) => {
     handleToggleCategory(feedIds, multi);
-    setDrawerOpen(false);
   };
   const handleMobileClearFilters = () => {
     const params = new URLSearchParams(searchParams);
     params.delete('feeds');
     setSearchParams(params);
-    setDrawerOpen(false);
   };
 
   return (
@@ -471,11 +492,11 @@ export default function Reader() {
             <span /><span /><span />
           </button>
           <span className="reader-mobile-title">
-            {isFiltered ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
+            {HISTORY_VIEWS.has(activeView) ? `${activeView[0].toUpperCase()}${activeView.slice(1)} articles` : activeFeeds.size > 0 ? `${activeFeeds.size} feed${activeFeeds.size > 1 ? 's' : ''} selected` : 'All Articles'}
           </span>
         </div>
         <div className="reader-view-tabs" role="group" aria-label="Article state">
-          {['all', 'unread', 'saved', 'archived', 'offline'].map(view => <button key={view} className={activeView === view ? 'active' : ''} onClick={() => {
+          {['all', 'unread', 'saved', 'archived', 'offline'].map(view => <button key={view} type="button" aria-pressed={activeView === view} className={activeView === view ? 'active' : ''} onClick={() => {
             const params = new URLSearchParams(searchParams);
             if (view === 'all') params.delete('view'); else params.set('view', view);
             setSearchParams(params);
@@ -534,8 +555,8 @@ export default function Reader() {
             {activeView === 'offline' && offlineItems.length === 0 && (
               <div className="reader-empty">No downloaded articles. Open an article and choose Download to build an offline edition.</div>
             )}
-            {activeView !== 'offline' && !continuation && articles.length === 0 && (
-              <div className="reader-empty">No articles</div>
+            {activeView !== 'offline' && !continuation && visibleArticles.length === 0 && (
+              <div className="reader-empty">{activeView === 'all' ? 'No articles' : `No ${activeView} articles in your Reader history.`}</div>
             )}
             {activeView !== 'offline' && !continuation && exhausted && articles.length > 0 && (
               <div className="reader-end">End of Available Articles</div>

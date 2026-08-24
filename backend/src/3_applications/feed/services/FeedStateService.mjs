@@ -269,7 +269,7 @@ export class FeedStateService {
 
   summary(username) {
     const data = this.#store.load(username);
-    const historySummary = this.#history.summarize?.(username, new Map(Object.entries(data.items || {}))) || { unread: 0, saved: 0, archived: 0 };
+    const historySummary = this.#history.summarize?.(username, new Map(Object.entries(data.items || {}))) || { unread: 0, readerUnread: 0, saved: 0, archived: 0 };
     return {
       ...historySummary,
       pendingSync: (data.pendingSync || []).length,

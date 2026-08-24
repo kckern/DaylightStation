@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { notifications } from '@mantine/notifications';
 import { DaylightAPI } from '../../lib/api.mjs';
 import getLogger from '../../lib/logging/Logger.js';
+import { offlineStorageUser } from './offline/feedOfflineStore.js';
 
 const FeedWorkspaceContext = createContext(null);
 const log = getLogger().child({ app: 'feed', module: 'workspace' });
 const PREFERENCES_KEY = 'feed:reading-preferences';
-const PENDING_KEY = 'feed:pending-mutations';
+const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
 
 function loadJson(key, fallback) {
@@ -24,8 +25,12 @@ function loadReadingPreferences() {
   return { ...DEFAULT_READING_PREFERENCES, ...stored, ...(density ? { density } : {}) };
 }
 
-function loadPendingMutations() {
-  const stored = loadJson(PENDING_KEY, []);
+function pendingKey(user = offlineStorageUser()) {
+  return `${PENDING_PREFIX}${user}`;
+}
+
+function loadPendingMutations(user = offlineStorageUser()) {
+  const stored = loadJson(pendingKey(user), []);
   if (!Array.isArray(stored)) return [];
   const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
   return stored.slice(0, 500).filter(entry => entry?.id && actions.has(entry.action) && Array.isArray(entry.itemIds));
@@ -59,9 +64,10 @@ function mutationId() {
 }
 
 export function FeedWorkspaceProvider({ children }) {
+  const userScopeRef = useRef(offlineStorageUser());
   const snapshotsRef = useRef(new Map());
   const checkpointsRef = useRef({});
-  const pendingRef = useRef(loadPendingMutations());
+  const pendingRef = useRef(loadPendingMutations(userScopeRef.current));
   const flushRef = useRef(false);
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
@@ -71,7 +77,7 @@ export function FeedWorkspaceProvider({ children }) {
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [pendingMutations, setPendingMutations] = useState(pendingRef.current);
   const [revision, setRevision] = useState(0);
-  const [summary, setSummary] = useState({ unread: 0, saved: 0, archived: 0, pendingSync: 0 });
+  const [summary, setSummary] = useState({ unread: 0, readerUnread: 0, saved: 0, archived: 0, pendingSync: 0 });
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -113,18 +119,32 @@ export function FeedWorkspaceProvider({ children }) {
     const next = typeof value === 'function' ? value(pendingRef.current) : value;
     pendingRef.current = next;
     setPendingMutations(next);
-    localStorage.setItem(PENDING_KEY, JSON.stringify(next));
+    localStorage.setItem(pendingKey(userScopeRef.current), JSON.stringify(next));
     return next;
   }, []);
 
+  const synchronizeUserScope = useCallback(() => {
+    const currentUser = offlineStorageUser();
+    if (currentUser === userScopeRef.current) return currentUser;
+    userScopeRef.current = currentUser;
+    const next = loadPendingMutations(currentUser);
+    pendingRef.current = next;
+    setPendingMutations(next);
+    flushRef.current = false;
+    return currentUser;
+  }, []);
+
   const flushPendingMutations = useCallback(async () => {
+    synchronizeUserScope();
     if (flushRef.current || !pendingRef.current.length || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+    const userScope = userScopeRef.current;
     flushRef.current = true;
     let completed = 0;
     try {
       for (const operation of [...pendingRef.current]) {
         try {
           await DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH');
+          if (offlineStorageUser() !== userScope) break;
           commitPending(current => current.filter(entry => entry.id !== operation.id));
           completed += 1;
         } catch (error) {
@@ -139,7 +159,7 @@ export function FeedWorkspaceProvider({ children }) {
     } finally {
       flushRef.current = false;
     }
-  }, [commitPending, refreshSummary]);
+  }, [commitPending, refreshSummary, synchronizeUserScope]);
 
   useEffect(() => {
     let active = true;
@@ -234,6 +254,7 @@ export function FeedWorkspaceProvider({ children }) {
 
   const mutateItems = useCallback(async (items, action, { onApply } = {}) => {
     if (!items.length) return null;
+    synchronizeUserScope();
     const previous = new Map(items.map(item => [item.id, item.state]));
     const now = new Date().toISOString();
     const optimistic = items.map(item => applyAction(item, action, { now }));
@@ -279,7 +300,7 @@ export function FeedWorkspaceProvider({ children }) {
       log.warn('feed.state.mutation_failed', { action, count: items.length, error: error.message });
       throw error;
     }
-  }, [commitPending, flushPendingMutations, refreshSummary]);
+  }, [commitPending, flushPendingMutations, refreshSummary, synchronizeUserScope]);
 
   const retrySync = useCallback(async () => {
     try {

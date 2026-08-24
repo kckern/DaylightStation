@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import DetailView from './DetailView.jsx';
 import './DetailView.scss';
 
-export default function DetailModal({ item, sections, ogImage, ogDescription, loading, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailModal({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const panelRef = useRef(null);
   useEffect(() => {
     const previous = document.activeElement;
@@ -40,6 +40,8 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
           ogImage={ogImage}
           ogDescription={ogDescription}
           loading={loading}
+          error={error}
+          onRetry={onRetry}
           onBack={onBack}
           onNext={onNext}
           onPrev={onPrev}

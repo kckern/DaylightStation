@@ -94,8 +94,8 @@ export default function Headlines({ pageId }) {
       <header className="headlines-toolbar">
         <div>
           <div className="headlines-view-switcher" role="group" aria-label="Headline view">
-            <button className={view === 'briefing' ? 'active' : ''} onClick={() => setView('briefing')}>Briefing</button>
-            <button className={view === 'outlets' ? 'active' : ''} onClick={() => setView('outlets')}>Outlets</button>
+            <button type="button" aria-pressed={view === 'briefing'} className={view === 'briefing' ? 'active' : ''} onClick={() => setView('briefing')}>Briefing</button>
+            <button type="button" aria-pressed={view === 'outlets'} className={view === 'outlets' ? 'active' : ''} onClick={() => setView('outlets')}>Outlets</button>
           </div>
           <span className="headlines-meta">{Object.keys(sources).length} sources{data?.lastHarvest && ` · updated ${formatTime(data.lastHarvest)}`}</span>
         </div>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import { SourcePanel } from './SourcePanel.jsx';
 
@@ -13,6 +13,10 @@ const source = {
 };
 
 describe('SourcePanel', () => {
+  test.beforeEach(() => {
+    apiMock.mockReset().mockResolvedValue({});
+  });
+
   test('keeps source navigation and refresh as separate controls', () => {
     render(<SourcePanel source={source} col={0} totalCols={1} onRefresh={vi.fn()} />);
 
@@ -29,5 +33,19 @@ describe('SourcePanel', () => {
 
     fireEvent.blur(screen.getByRole('link', { name: 'A useful headline' }), { relatedTarget: null });
     expect(container.querySelector('.headline-tooltip')).toBeNull();
+  });
+
+  test('keeps a failed source refresh actionable', async () => {
+    apiMock.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({});
+    const onRefresh = vi.fn().mockResolvedValue({});
+    render(<SourcePanel source={source} col={0} totalCols={1} onRefresh={onRefresh} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Daily News' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Refresh failed.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 });

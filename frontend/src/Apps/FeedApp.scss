@@ -184,6 +184,8 @@
 .feed-app[data-density="compact"] { --feed-row-height: 36px; --feed-ui-size: 0.82rem; }
 
 .feed-app[data-reading-theme="dark"] :is(.article-expanded, .detail-article) { background: #17191c; color: #e9ecef; }
+.feed-app[data-reading-theme="dark"] :is(.article-expanded, .detail-article) :is(.article-content, h1, h2, h3, h4, strong, b) { color: inherit; }
+.feed-app[data-reading-theme="dark"] :is(.article-expanded, .detail-article) a { color: #74c0fc; }
 .feed-app[data-reading-theme="sepia"] :is(.article-expanded, .detail-article) { background: #f3ead7; color: #30291e; }
 .feed-app[data-reading-theme="light"] :is(.article-expanded, .detail-article) { background: #fff; color: #1f2328; }
 

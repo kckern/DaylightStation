@@ -42,4 +42,19 @@ describe('annotationOfflineStore', () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(queuedAnnotationCount()).toBe(0);
   });
+
+  test('does not write a completed replay into a different account queue', async () => {
+    const tokenFor = username => `header.${btoa(JSON.stringify({ sub: username })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.signature`;
+    localStorage.setItem('ds_token', tokenFor('alice'));
+    queueAnnotationMutation({ queueId: 'alice-note', method: 'POST', path: '/annotations', data: { note: 'Alice' } });
+    localStorage.setItem('feed:annotation-queue:bob', JSON.stringify([{ queueId: 'bob-note', method: 'POST', path: '/annotations', data: { note: 'Bob' } }]));
+    let release;
+    const replay = flushAnnotationMutations(() => new Promise(resolve => { release = resolve; }));
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    release({});
+
+    expect(await replay).toBe(0);
+    expect(JSON.parse(localStorage.getItem('feed:annotation-queue:alice'))).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem('feed:annotation-queue:bob'))).toHaveLength(1);
+  });
 });

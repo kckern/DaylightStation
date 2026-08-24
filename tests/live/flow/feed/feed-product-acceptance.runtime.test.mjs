@@ -17,6 +17,7 @@ function scrollItem(index) {
     tier: index % 4 === 0 ? 'library' : 'wire',
     contentType: 'article',
     publishedAt: NOW,
+    link: `https://example.test/discovery-${index}`,
     state: state(),
   };
 }
@@ -34,7 +35,7 @@ async function installFeedRoutes(page) {
       sourcePreferences: {},
       checkpoints: {},
     });
-    if (path.endsWith('/items/state/summary')) return json({ unread: 12, saved: 3, archived: 1, pendingSync: 0 });
+    if (path.endsWith('/items/state/summary')) return json({ unread: 12, readerUnread: 4, saved: 3, archived: 1, pendingSync: 0 });
     if (path.endsWith('/headlines/pages')) return json([{ id: 'mainstream', label: 'Daily' }, { id: 'technology', label: 'Technology' }]);
     if (path.endsWith('/reader/feeds')) return json([{ id: 'feed/1', title: 'World', category: 'News', unread: 4 }]);
     if (path.endsWith('/reader/stream')) return json({
@@ -52,6 +53,16 @@ async function installFeedRoutes(page) {
       })),
       continuation: null,
       exhausted: true,
+    });
+    if (path.endsWith('/search')) return json({
+      items: [{
+        id: 'reader-saved-old', stateKey: 'reader-saved-old', title: 'Saved from last month', summary: 'A durable Reader history result.',
+        url: 'https://example.test/saved-old', publishedAt: '2026-07-01T12:00:00.000Z', source: 'freshrss',
+        sourceInfo: { id: 'feed/1', type: 'freshrss', label: 'World' }, origins: ['reader'], state: state({ isRead: true, isSaved: true }),
+      }],
+      total: 1,
+      nextCursor: null,
+      coverage: { retentionMonths: 12, status: 'complete' },
     });
     if (path.endsWith('/headlines')) {
       const coverage = [
@@ -96,6 +107,21 @@ test.describe('Feed product acceptance', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     expect(await page.locator('.reader-view-tabs').evaluate(element => getComputedStyle(element).overflowX)).toBe('auto');
 
+    await page.locator('.article-row-header').first().click();
+    const contrast = await page.locator('.article-content').first().evaluate(element => {
+      const parse = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+      const luminance = rgb => {
+        const channels = rgb.map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+      };
+      const foreground = luminance(parse(getComputedStyle(element).color));
+      const background = luminance(parse(getComputedStyle(element.closest('.article-expanded')).backgroundColor));
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    await page.getByRole('button', { name: 'saved' }).click();
+    await expect(page.getByText('Saved from last month', { exact: true })).toBeVisible();
+
     await page.getByRole('button', { name: 'Open subscriptions' }).click();
     await expect(page.locator('#reader-subscriptions')).toHaveAttribute('role', 'dialog');
     await page.keyboard.press('Escape');
@@ -125,6 +151,10 @@ test.describe('Feed product acceptance', () => {
     await expect(page.locator('.scroll-item-wrapper').first()).toBeVisible();
     expect(await page.locator('.scroll-item-wrapper').count()).toBeLessThanOrEqual(60);
     const firstCard = page.locator('.scroll-item-wrapper').first();
+    await firstCard.getByRole('button', { name: 'Open: Discovery story 0' }).click();
+    await expect(page.getByRole('link', { name: 'Open in browser' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to feed' }).first().click();
     await firstCard.getByText('Why shown', { exact: true }).click();
     await firstCard.getByRole('button', { name: 'Mute' }).click();
     await expect(page.getByRole('button', { name: 'Open: Discovery story 0' })).toHaveCount(0);

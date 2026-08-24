@@ -141,7 +141,7 @@ function FeedLayout() {
           from Scroll; compact modifier keeps it unobtrusive while scrolling. (F-12) */}
       <nav className={isScroll ? 'feed-tabs feed-tabs--compact' : 'feed-tabs'} aria-label="Feed modes">
         <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
-          Reader{summary.unread > 0 && <span className="feed-tab-badge" aria-label={`${summary.unread} unread items`}>{summary.unread > 999 ? '999+' : summary.unread}</span>}
+          Reader{summary.readerUnread > 0 && <span className="feed-tab-badge" aria-label={`${summary.readerUnread} unread Reader items`}>{summary.readerUnread > 999 ? '999+' : summary.readerUnread}</span>}
         </NavLink>
         <NavLink to={`/feed/headlines/${currentHeadlinePage || headlinePages[0]?.id || 'mainstream'}`} className={() => isHeadlines ? 'active' : ''}>Headlines</NavLink>
         <NavLink to="/feed/scroll" className={({ isActive }) => isActive ? 'active' : ''}>

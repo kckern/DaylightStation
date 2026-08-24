@@ -525,6 +525,8 @@ scroll:
 | `spacing.max_consecutive` | 1 |
 | `spacing.max_consecutive_subsource` | 2 |
 | `wire.selection.sort` | `timestamp_desc` |
+| `wire.selection.filter` | `read_status`, `recently_shown` |
+| `compass.selection.filter` | `staleness`, `recently_shown` |
 | `wire.flex` | `grow: 1, basis: auto` (fills remaining) |
 | `library.flex` | `basis: 2` (fixed) |
 | `scrapbook.flex` | `basis: 2` (fixed) |

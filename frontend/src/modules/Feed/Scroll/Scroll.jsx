@@ -174,6 +174,8 @@ export default function Scroll() {
   itemsRef.current = items;
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const { activeMedia, play: contextPlay, stop: contextStop, playerRef, speed } = useFeedPlayer();
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
@@ -456,10 +458,15 @@ export default function Scroll() {
   // overwrite the sections of a newer selection. (F-11)
   const detailGenRef = useRef(0);
   useEffect(() => {
-    if (!urlSlug || urlSlug === prevSlugRef.current) return;
-    prevSlugRef.current = urlSlug;
+    const requestKey = `${urlSlug || ''}:${detailRetry}`;
+    if (!urlSlug || requestKey === prevSlugRef.current) return;
+    prevSlugRef.current = requestKey;
 
-    if (!fullId) return;
+    if (!fullId) {
+      setDetailError('This Feed link is invalid. Return to Scroll and choose an item again.');
+      setDetailLoading(false);
+      return;
+    }
 
     const gen = ++detailGenRef.current;
     const isCurrent = () => gen === detailGenRef.current;
@@ -479,6 +486,7 @@ export default function Scroll() {
       // Item is in the scroll batch — fetch detail the normal way
       feedLog.detail('open (in batch)', { id: fullId, source: item.source, title: item.title });
       setDetailData(null);
+      setDetailError(null);
       setDetailLoading(true);
       if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
 
@@ -505,6 +513,7 @@ export default function Scroll() {
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
           setDetailData(result);
+          setDetailError(null);
         })
         .catch(async err => {
           if (!isCurrent() || err.name === 'AbortError') return;
@@ -513,8 +522,12 @@ export default function Scroll() {
             const offline = await getOfflineEdition(item.id);
             if (!isCurrent()) return;
             setDetailData(offline?.item ? (offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null }) : null);
+            setDetailError(offline?.item ? null : 'The reader view could not be loaded. You can still open the original article.');
           } catch {
-            if (isCurrent()) setDetailData(null);
+            if (isCurrent()) {
+              setDetailData(null);
+              setDetailError('The reader view could not be loaded. You can still open the original article.');
+            }
           }
         })
         .finally(() => { if (isCurrent()) setDetailLoading(false); });
@@ -522,6 +535,7 @@ export default function Scroll() {
       // Cold load / deep link — fetch item + detail from server cache
       feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
       setDetailData(null);
+      setDetailError(null);
       setDetailLoading(true);
       setDeepLinkedItem(null);
       if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
@@ -541,6 +555,7 @@ export default function Scroll() {
             ogImage: result.ogImage || null,
             ogDescription: result.ogDescription || null,
           });
+          setDetailError(null);
         })
         .catch(async err => {
           if (!isCurrent() || err.name === 'AbortError') return;
@@ -556,13 +571,13 @@ export default function Scroll() {
           } catch (offlineError) {
             feedLog.detail('offline edition unavailable', { slug: urlSlug, error: offlineError.message });
           }
-          feedLog.detail('deep link error — redirecting to list', { slug: urlSlug, error: err.message });
-          navigate(`/feed/scroll${location.search}`, { replace: true });
+          feedLog.detail('deep link unavailable', { slug: urlSlug, error: err.message });
+          setDetailError('This item is no longer available in Feed history or on this device.');
         })
         .finally(() => { if (isCurrent()) setDetailLoading(false); });
     }
     return () => detailAbortRef.current?.abort();
-  }, [applyPendingMutations, urlSlug, fullId, navigate, location.search, mutateItems, isDesktop]);
+  }, [applyPendingMutations, urlSlug, fullId, detailRetry, mutateItems, isDesktop]);
 
   // Restore scroll position when navigating back to list
   const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
@@ -572,6 +587,7 @@ export default function Scroll() {
       const el = getScrollEl();
       scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
       setDetailData(null);
+      setDetailError(null);
       setDetailLoading(false);
       setDeepLinkedItem(null);
       prevSlugRef.current = null;
@@ -715,12 +731,12 @@ export default function Scroll() {
       <div className="scroll-view" style={{ display: (urlSlug && !isDesktop) ? 'none' : undefined }}>
         <div className="scroll-controls" aria-label="Scroll filters">
           {[['', 'For you'], ['wire', 'News'], ['library', 'Library'], ['scrapbook', 'Personal']].map(([filter, label]) => (
-            <button key={label} className={(searchParams.get('filter') || '') === filter ? 'active' : ''} onClick={() => setProductFilter(filter)}>{label}</button>
+            <button key={label} type="button" aria-pressed={(searchParams.get('filter') || '') === filter} className={(searchParams.get('filter') || '') === filter ? 'active' : ''} onClick={() => setProductFilter(filter)}>{label}</button>
           ))}
           {!!sourceOptions.length && <details className="scroll-source-filter">
             <summary>Sources</summary>
             <div>
-              {sourceOptions.map(([source, label]) => <button type="button" key={source} className={filterParam === source ? 'active' : ''} onClick={() => setProductFilter(source)}>{label}</button>)}
+              {sourceOptions.map(([source, label]) => <button type="button" key={source} aria-pressed={filterParam === source} className={filterParam === source ? 'active' : ''} onClick={() => setProductFilter(source)}>{label}</button>)}
             </div>
           </details>}
         </div>
@@ -797,6 +813,16 @@ export default function Scroll() {
           <div className="scroll-empty">Nothing in your feed yet</div>
         )}
       </div>
+      {urlSlug && !selectedItem && !detailLoading && (
+        <section className="scroll-detail-error" role="alert">
+          <h1>Article unavailable</h1>
+          <p>{detailError || 'This article could not be opened.'}</p>
+          <div>
+            {fullId && <button type="button" onClick={() => setDetailRetry(value => value + 1)}>Try again</button>}
+            <button type="button" onClick={handleBack}>Back to Scroll</button>
+          </div>
+        </section>
+      )}
       {selectedItem && isDesktop && (
         <DetailModal
           item={selectedItem}
@@ -804,6 +830,8 @@ export default function Scroll() {
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}
           loading={detailLoading}
+          error={detailError}
+          onRetry={() => setDetailRetry(value => value + 1)}
           onBack={handleBack}
           onNext={currentIdx < visibleItems.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
@@ -821,6 +849,8 @@ export default function Scroll() {
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}
           loading={detailLoading}
+          error={detailError}
+          onRetry={() => setDetailRetry(value => value + 1)}
           onBack={handleBack}
           onNext={currentIdx < visibleItems.length - 1 ? () => handleNav(1) : null}
           onPrev={currentIdx > 0 ? () => handleNav(-1) : null}
