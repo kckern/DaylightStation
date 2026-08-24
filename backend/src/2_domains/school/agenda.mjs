@@ -139,7 +139,16 @@ export function planDailyAgenda({
       .filter(Boolean);
     const programUnavailable = statuses.some((s) => s.error === true);
     const programDone = statuses.some((s) => !s.error && s.doneToday === true);
-    const candidate = [...list.filter((e) => e.status === 'in_progress'), ...list.filter((e) => e.status === 'available')]
+    // Only entries belonging to an UNAVAILABLE program are excluded from
+    // candidacy — not the whole section. Gating the whole section on the
+    // subject-level `programUnavailable` flag (the old behaviour) blanked a
+    // live curriculum sibling whenever ANY program in the subject errored,
+    // and was order-dependent besides (whichever entry won priority).
+    const unavailablePrograms = new Set(
+      programs.filter((e) => programStatuses[e.program]?.error === true).map((e) => e.program),
+    );
+    const eligible = list.filter((e) => !(e.program && unavailablePrograms.has(e.program)));
+    const candidate = [...eligible.filter((e) => e.status === 'in_progress'), ...eligible.filter((e) => e.status === 'available')]
       .sort(byEntryPriority)[0] ?? null;
     const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));
     const candidatePasses = candidate ? (passedTodayByScope.get(timingScope(candidate)) ?? 0) : 0;
@@ -150,7 +159,7 @@ export function planDailyAgenda({
     const servedToday = (subjectPassedToday || programDone)
       && !(isFocus && candidatePasses < focusBudget(candidate));
 
-    const next = !servedToday && !programUnavailable ? candidate : null;
+    const next = !servedToday ? candidate : null;
 
     const lockedRemedy = (!servedToday && !next && list.some((e) => e.status === 'locked'))
       ? (list.find((e) => e.status === 'locked')?.lockReason ?? null)
@@ -163,6 +172,38 @@ export function planDailyAgenda({
       : timingHeld?.status === 'dormant'
         ? 'Ask a grown-up to continue or reschedule this work.'
         : null;
+
+    // --- obligation (student-completion-state-machine design, 2026-08-23) --
+    // A section is OBLIGATED only if it holds actionable, non-elective work
+    // with a same-day claim on the child; everything else is EXCUSED. Rule 1
+    // deliberately ignores the focus multi-block term above (a focus subject
+    // partway through its extra blocks is still "served" for completion
+    // purposes) and counts only non-elective passes (an elective pass must
+    // never excuse a required entry sharing its subject).
+    const nonElectiveList = list.filter((e) => !e.elective);
+    const actionable = eligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
+    const obligationServed = nonElectiveList.some((e) => passedTodayIds.has(e.unitId)) || programDone;
+    const isBacklog = (e) => e.timing?.mode === 'catch_up' || e.timingState === 'catch_up';
+    const hasNonElective = (pred) => nonElectiveList.some(pred);
+    let obligation;
+    if (obligationServed) {
+      obligation = { state: 'served', reason: null };
+    } else if (actionable.length === 0) {
+      let reason;
+      if (nonElectiveList.length === 0) reason = 'elective_only';
+      else if (hasNonElective((e) => e.program && unavailablePrograms.has(e.program))) reason = 'program_unavailable';
+      else if (hasNonElective((e) => e.status === 'locked')) reason = 'blocked_no_offer';
+      else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
+      else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';
+      else reason = 'caught_up';
+      obligation = { state: 'excused', reason };
+    } else if (actionable.every(isBacklog)) {
+      obligation = { state: 'excused', reason: 'optional_backlog' };
+    } else if (actionable.every((e) => e.timingState === 'available' && e.timing?.target?.dueOn)) {
+      obligation = { state: 'excused', reason: 'not_due_yet' };
+    } else {
+      obligation = { state: 'obligated', reason: null };
+    }
 
     return {
       subject,
@@ -179,6 +220,7 @@ export function planDailyAgenda({
         extraBlocks: focusExtras(next),
       } : null,
       suppressed: null,
+      obligation,
       _subjectPosition: subjectPosition,
     };
   });
@@ -202,6 +244,12 @@ export function planDailyAgenda({
         reasons: focus.next.timingReasons ?? ['urgent_focus'],
       };
       candidate.next = null;
+      // Rule 1 outranks rule 2: a section that already served its non-elective
+      // obligation stays `served` even when its extra-block offer is
+      // displaced for printing purposes.
+      if (candidate.obligation.state !== 'served') {
+        candidate.obligation = { state: 'excused', reason: 'suppressed_by_focus' };
+      }
       remaining -= 1;
     }
   });
