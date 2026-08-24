@@ -15,7 +15,7 @@
 
 const TIER_DEFAULTS = Object.freeze({
   wire: Object.freeze({
-    selection: Object.freeze({ sort: 'timestamp_desc', filter: [], diversity: 'source' }),
+    selection: Object.freeze({ sort: 'timestamp_desc', filter: ['read_status', 'recently_shown'], recently_shown_hours: 24, diversity: 'source' }),
     sources: Object.freeze({}),
   }),
   library: Object.freeze({
@@ -30,7 +30,7 @@ const TIER_DEFAULTS = Object.freeze({
   }),
   compass: Object.freeze({
     allocation: 6,
-    selection: Object.freeze({ sort: 'priority', filter: [], freshness: true }),
+    selection: Object.freeze({ sort: 'priority', filter: ['staleness', 'recently_shown'], stale_after_hours: 48, recently_shown_hours: 24, freshness: true }),
     sources: Object.freeze({}),
   }),
 });

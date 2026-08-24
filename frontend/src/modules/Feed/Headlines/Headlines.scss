@@ -102,16 +102,17 @@
 }
 
 .headlines-harvest-btn {
-  padding: 0.3rem 0.8rem;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 4px;
-  background: rgba(255,255,255,0.04);
-  color: #999;
+  min-height: 40px;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #5c636a;
+  border-radius: 999px;
+  background: #25272a;
+  color: #f1f3f5;
   cursor: pointer;
   font-size: 0.8rem;
   font-family: inherit;
 
-  &:hover { background: rgba(255,255,255,0.07); }
+  &:hover { background: #343a40; border-color: #74c0fc; }
   &:disabled { opacity: 0.4; cursor: default; }
 }
 
@@ -231,6 +232,15 @@
 
   &:hover { color: rgba(255,255,255,0.7); }
   &:disabled { opacity: 0.3; cursor: default; }
+}
+
+.source-refresh-error {
+  padding: 0.45rem 0.6rem;
+  background: #402626;
+  color: #ffe3e3;
+  font-size: 0.75rem;
+
+  button { border: 0; background: transparent; color: #74c0fc; text-decoration: underline; cursor: pointer; }
 }
 
 // ============================================================

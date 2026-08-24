@@ -26,6 +26,8 @@ describe('ScrollConfigLoader', () => {
       });
       expect(config.tiers.wire.sources).toEqual({});
       expect(config.tiers.library.sources).toEqual({});
+      expect(config.tiers.wire.selection.filter).toEqual(['read_status', 'recently_shown']);
+      expect(config.tiers.compass.selection).toMatchObject({ filter: ['staleness', 'recently_shown'], stale_after_hours: 48 });
       expect(mockDataService.user.read).toHaveBeenCalledWith('config/feed', 'user_1');
     });
 

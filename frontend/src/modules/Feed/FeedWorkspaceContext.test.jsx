@@ -32,6 +32,10 @@ function MutationProbe() {
   );
 }
 
+function tokenFor(username) {
+  return `header.${btoa(JSON.stringify({ sub: username })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.signature`;
+}
+
 
 describe('FeedWorkspaceProvider reading preferences', () => {
   beforeEach(() => {
@@ -78,15 +82,40 @@ describe('FeedWorkspaceProvider reading preferences', () => {
 
     await waitFor(() => expect(screen.getByLabelText('saved')).toHaveTextContent('true'));
     expect(screen.getByLabelText('pending')).toHaveTextContent('1');
-    expect(JSON.parse(localStorage.getItem('feed:pending-mutations'))).toMatchObject([{ itemIds: ['one'], action: 'save' }]);
+    expect(JSON.parse(localStorage.getItem('feed:pending-mutations:household'))).toMatchObject([{ itemIds: ['one'], action: 'save' }]);
     expect(apiMock).not.toHaveBeenCalledWith('/api/v1/feed/items/state', expect.anything(), 'PATCH');
   });
 
   test('replays durable offline mutations when connectivity is available', async () => {
-    localStorage.setItem('feed:pending-mutations', JSON.stringify([{ id: 'queued-1', itemIds: ['one'], action: 'save', createdAt: '2026-08-24T10:00:00.000Z' }]));
+    localStorage.setItem('feed:pending-mutations:household', JSON.stringify([{ id: 'queued-1', itemIds: ['one'], action: 'save', createdAt: '2026-08-24T10:00:00.000Z' }]));
     render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
 
-    await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations'))).toEqual([]));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations:household'))).toEqual([]));
     expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', { itemIds: ['one'], action: 'save' }, 'PATCH');
+  });
+
+  test('never loads or replays another account’s pending mutations', async () => {
+    localStorage.setItem('ds_token', tokenFor('alice'));
+    localStorage.setItem('feed:pending-mutations:bob', JSON.stringify([{ id: 'bob-change', itemIds: ['private'], action: 'archive', createdAt: '2026-08-24T10:00:00.000Z' }]));
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace'));
+    expect(screen.getByLabelText('pending')).toHaveTextContent('0');
+    expect(JSON.parse(localStorage.getItem('feed:pending-mutations:bob'))).toHaveLength(1);
+    expect(apiMock).not.toHaveBeenCalledWith('/api/v1/feed/items/state', expect.anything(), 'PATCH');
+  });
+
+  test('switches queue scope before a mutation after the active account changes', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    localStorage.setItem('ds_token', tokenFor('alice'));
+    localStorage.setItem('feed:pending-mutations:alice', JSON.stringify([{ id: 'alice-change', itemIds: ['alice-item'], action: 'save', createdAt: '2026-08-24T10:00:00.000Z' }]));
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+
+    expect(screen.getByLabelText('pending')).toHaveTextContent('1');
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations:bob'))).toMatchObject([{ itemIds: ['one'], action: 'save' }]));
+    expect(JSON.parse(localStorage.getItem('feed:pending-mutations:alice'))).toHaveLength(1);
   });
 });

@@ -202,7 +202,7 @@ describe('Feed Router', () => {
       feedStateService = {
         enrich: vi.fn((_username, items) => items),
         mutate: vi.fn().mockResolvedValue([{ id: 'one', state: { isSaved: true } }]),
-        summary: vi.fn().mockReturnValue({ unread: 4, saved: 1, archived: 0, pendingSync: 0 }),
+        summary: vi.fn().mockReturnValue({ unread: 4, readerUnread: 2, saved: 1, archived: 0, pendingSync: 0 }),
         retryPending: vi.fn().mockResolvedValue(undefined),
         ensureHistoryBackfill: vi.fn(),
         historyBackfillStatus: vi.fn().mockReturnValue({ status: 'complete', indexed: 40 }),
@@ -242,7 +242,7 @@ describe('Feed Router', () => {
       const mutation = await request(featureApp).patch('/api/v1/feed/items/state').send({ itemIds: ['one'], action: 'save' });
       const summary = await request(featureApp).get('/api/v1/feed/items/state/summary');
       expect(mutation.status).toBe(200);
-      expect(summary.body).toMatchObject({ unread: 4, saved: 1 });
+      expect(summary.body).toMatchObject({ unread: 4, readerUnread: 2, saved: 1 });
     });
 
     test('passes indexed search filters and reports coverage', async () => {

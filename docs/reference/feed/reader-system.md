@@ -140,6 +140,7 @@ This means the initial load shows a manageable window (e.g., 3 days) while progr
 - **Unfiltered** (`activeFeeds` empty): `?days=3`
 - **Filtered** (`activeFeeds` has entries): `?count=50&feeds=id1,id2,...`
 - **Pagination**: passes `?continuation=...` when appending
+- **Unread, Saved, Archived**: query canonical 12-month Reader history with `GET /feed/search?mode=reader&state=...`; Saved snapshots remain addressable beyond normal history retention
 
 Changing `activeFeeds` aborts the obsolete request and starts a fresh fetch. Reader keeps independent subscription-list and inbox errors so partial failures do not blank useful content.
 
@@ -155,11 +156,11 @@ The shell's `Aa` menu persists theme, text size, line spacing, reading width, de
 
 | Action | Behavior |
 |--------|----------|
-| Click feed name | Toggle that feed in `activeFeeds` (replaces selection unless Ctrl/Cmd held) |
+| Click feed name | Independently toggle that feed in `activeFeeds`; no keyboard modifier is required |
 | Click category label | Toggle all feeds in that category |
 | Click "View All" | Clear `activeFeeds` entirely |
-| Expand a filtered category (click arrow) | Auto-removes that category's filter |
-| Mobile: any filter action | Also closes the drawer |
+| Expand/collapse a category (click arrow) | Change disclosure only; selection is preserved |
+| Mobile filter actions | Keep the drawer open for multi-feed selection; Close completes the selection |
 
 ### Mark as Read
 

@@ -42,23 +42,17 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onTogg
     });
   }, [feeds]);
 
-  const toggleCollapse = (cat, catFeeds) => {
-    const wasCollapsed = collapsed[cat];
+  const toggleCollapse = (cat) => {
     setCollapsed(prev => ({ ...prev, [cat]: !prev[cat] }));
-    // Expanding a filtered category → auto-remove that category's filter
-    if (wasCollapsed && isCategoryActive(catFeeds)) {
-      const feedIds = catFeeds.map(f => f.id);
-      onToggleCategory(feedIds, false);
-    }
   };
 
-  const handleFeedClick = (feedId, e) => {
-    onToggleFeed(feedId, e.ctrlKey || e.metaKey);
+  const handleFeedClick = (feedId) => {
+    onToggleFeed(feedId, true);
   };
 
-  const handleCategoryClick = (catFeeds, e) => {
+  const handleCategoryClick = (catFeeds) => {
     const feedIds = catFeeds.map(f => f.id);
-    onToggleCategory(feedIds, e.ctrlKey || e.metaKey);
+    onToggleCategory(feedIds, true);
   };
 
   // Check if all feeds in a category are active
@@ -78,14 +72,14 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onTogg
             <button
               type="button"
               className={`reader-category-arrow ${collapsed[category] ? 'collapsed' : ''}`}
-              onClick={() => toggleCollapse(category, catFeeds)}
+              onClick={() => toggleCollapse(category)}
               aria-expanded={!collapsed[category]}
               aria-label={`${collapsed[category] ? 'Expand' : 'Collapse'} ${category}`}
             >&#9662;</button>
             <button
               type="button"
               className="reader-category-label"
-              onClick={(e) => handleCategoryClick(catFeeds, e)}
+              onClick={() => handleCategoryClick(catFeeds)}
               aria-pressed={isCategoryActive(catFeeds)}
             >{category}</button>
           </div>
@@ -93,9 +87,10 @@ export default function ReaderSidebar({ feeds, activeFeeds, onToggleFeed, onTogg
             <button
               key={feed.id}
               className={`reader-feed-item ${activeFeeds.has(feed.id) ? 'active' : ''}`}
-              onClick={(e) => handleFeedClick(feed.id, e)}
+              onClick={() => handleFeedClick(feed.id)}
+              aria-pressed={activeFeeds.has(feed.id)}
             >
-              {feed.title}
+              <span aria-hidden="true">{activeFeeds.has(feed.id) ? '✓' : '○'}</span> {feed.title}
             </button>
           ))}
         </div>

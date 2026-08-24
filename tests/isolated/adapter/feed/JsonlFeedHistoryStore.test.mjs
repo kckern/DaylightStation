@@ -53,4 +53,13 @@ describe('JsonlFeedHistoryStore', () => {
     expect(result.items.map(item => item.id)).toContain('saved-old');
     expect(fs.existsSync(expiredPath)).toBe(false);
   });
+
+  test('reports Reader unread separately from cross-mode unread', () => {
+    const store = new JsonlFeedHistoryStore({ dataService, logger: { warn() {} } });
+    store.record('alice', [
+      { id: 'reader-one', stateKey: 'reader-one', title: 'Reader', origins: ['reader'] },
+      { id: 'scroll-one', stateKey: 'scroll-one', title: 'Scroll', origins: ['scroll'] },
+    ]);
+    expect(store.summarize('alice')).toMatchObject({ unread: 2, readerUnread: 1 });
+  });
 });

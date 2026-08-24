@@ -99,11 +99,14 @@ export class JsonlFeedHistoryStore {
 
   summarize(username, states = new Map()) {
     this.#load(username);
-    const summary = { unread: 0, saved: 0, archived: 0 };
+    const summary = { unread: 0, readerUnread: 0, saved: 0, archived: 0 };
     for (const stateKey of this.#indexes.get(username)?.documents || []) {
       const doc = this.#docs.get(`${username}:${stateKey}`);
       const state = states.get(stateKey) || { isRead: !!doc?.isRead, isSaved: false, isArchived: false };
-      if (!state.isRead && !state.isArchived) summary.unread += 1;
+      if (!state.isRead && !state.isArchived) {
+        summary.unread += 1;
+        if (doc?.origins?.includes('reader')) summary.readerUnread += 1;
+      }
       if (state.isSaved) summary.saved += 1;
       if (state.isArchived) summary.archived += 1;
     }

@@ -17,6 +17,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
   const [refreshing, setRefreshing] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
   const [activePreview, setActivePreview] = useState(null);
+  const [refreshError, setRefreshError] = useState(false);
   const imgRef = useRef(null);
 
   if (!source) return <div className="source-cell source-cell--empty" />;
@@ -33,11 +34,13 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
     e.preventDefault();
     e.stopPropagation();
     setRefreshing(true);
+    setRefreshError(false);
     try {
       await DaylightAPI(`/api/v1/feed/headlines/harvest/${source.id}`, {}, 'POST');
       await onRefresh();
     } catch (err) {
       log.warn('headline.source.refresh_failed', { sourceId: source.id, error: err.message });
+      setRefreshError(true);
     } finally {
       setRefreshing(false);
     }
@@ -83,7 +86,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
             const href = isPaywalled ? paywallProxy + link : link;
             const desc = item.desc && item.desc !== item.title ? item.desc : null;
             return (
-              <li key={i} className="source-headline"
+              <li key={item.stateKey || item.id || href || i} className="source-headline"
                 onMouseEnter={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   e.currentTarget.classList.toggle('source-headline--tooltip-below', rect.top < 250);
@@ -121,6 +124,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
           })}
         </ul>
       )}
+      {refreshError && <div className="source-refresh-error" role="alert">Refresh failed. <button type="button" onClick={handleRefresh}>Try again</button></div>}
     </div>
   );
 }

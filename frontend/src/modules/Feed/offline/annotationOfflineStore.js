@@ -4,7 +4,7 @@ const CACHE_PREFIX = 'feed:annotation-cache:';
 const QUEUE_PREFIX = 'feed:annotation-queue:';
 const MAX_CACHED = 250;
 const MAX_QUEUED = 500;
-let flushPromise = null;
+const flushPromises = new Map();
 
 function read(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
@@ -43,15 +43,18 @@ export function queuedAnnotationCount() {
 }
 
 export async function flushAnnotationMutations(send) {
-  if (flushPromise) return flushPromise;
-  flushPromise = (async () => {
-    let queue = read(queueKey(), []);
+  const user = offlineStorageUser();
+  const key = `${QUEUE_PREFIX}${user}`;
+  if (flushPromises.has(user)) return flushPromises.get(user);
+  const promise = (async () => {
+    let queue = read(key, []);
     let completed = 0;
     for (const operation of [...queue]) {
       try {
         await send(operation.path, operation.data || {}, operation.method);
+        if (offlineStorageUser() !== user) break;
         queue = queue.filter(value => value.queueId !== operation.queueId);
-        write(queueKey(), queue);
+        write(key, queue);
         completed += 1;
       } catch {
         break;
@@ -59,8 +62,9 @@ export async function flushAnnotationMutations(send) {
     }
     return completed;
   })();
-  try { return await flushPromise; }
-  finally { flushPromise = null; }
+  flushPromises.set(user, promise);
+  try { return await promise; }
+  finally { flushPromises.delete(user); }
 }
 
 export function offlineAnnotationId() {

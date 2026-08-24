@@ -4,7 +4,7 @@ export function buildScrollFilterSearch(searchParams, filter) {
   return next.toString();
 }
 
-export function getScrollSourceOptions(items, limit = 10) {
+export function getScrollSourceOptions(items, limit = Number.POSITIVE_INFINITY) {
   const sources = new Map();
   for (const item of items) {
     if (!item.source || sources.has(item.source)) continue;
