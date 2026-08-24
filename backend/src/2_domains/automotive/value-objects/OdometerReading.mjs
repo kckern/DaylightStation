@@ -29,7 +29,7 @@
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 /** Ordered most to least authoritative. */
-export const ODOMETER_SOURCES = Object.freeze(['dash', 'pid_31', 'speed_integration', 'gps']);
+export const ODOMETER_SOURCES = Object.freeze(['dash', 'pid_a6', 'pid_31', 'speed_integration', 'gps']);
 
 /** Sources that can serve as an anchor for accumulation. Only a real dash reading qualifies. */
 const ANCHOR_SOURCES = Object.freeze(['dash']);

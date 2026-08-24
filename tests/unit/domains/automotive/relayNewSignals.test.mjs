@@ -105,4 +105,14 @@ describe('snapshot diagnostics', () => {
     // 0 km since codes were cleared is a genuine answer right after a clear.
     expect(normalizeSnapshotReadings({ distance_since_cleared_km: 0 }).distance_since_cleared_km).toBe(0);
   });
+
+  it('repairs legacy A6 scale and rejects saturated distance and malformed VIN', () => {
+    const out = normalizeSnapshotReadings({
+      telemetry_schema: 1, odometer_km: 723591,
+      distance_since_cleared_km: 65535, vin: '4 1: 52 43',
+    });
+    expect(out.odometer_km).toBe(72359.1);
+    expect(out).not.toHaveProperty('distance_since_cleared_km');
+    expect(out).not.toHaveProperty('vin');
+  });
 });

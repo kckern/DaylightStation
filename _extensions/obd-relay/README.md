@@ -1,7 +1,8 @@
 # obd-relay — in-car vehicle telemetry → DaylightStation event bus
 
-> **Status (2026-07-30): hardware in hand, bench bring-up done, transport
-> proven end-to-end against deployed prod. No vehicle data yet.**
+> **Status (2026-08-24): transport is active in the vehicle and trip history is
+> arriving. Firmware 0.3.0 hardens intermittent ECU links, parked wakes,
+> timestamps, and odometer decoding; on-car acceptance is still required.**
 >
 > Working and measured on the device: boot, co-processor link (`devType=14`),
 > WiFi, WebSocket, trip buffering, ack-gated upload+delete, HTTP status/pull
@@ -10,12 +11,10 @@
 > Sampling is now implemented: PIDs + GNSS + DTCs, all read on core 0 and
 > handed to the loop task. GNSS starts (`gps_ready: true`).
 >
-> **BLOCKED:** `obd.init()` has never reached the ECU — `obd_ready: false`
-> across 2 minutes with the ignition on. Until that links, `/pids` returns an
-> all-false table and trips still upload as empty envelopes. Everything
-> downstream (which PIDs this car answers, whether the odometer is reachable,
-> what a diagnostics view can show) is gated on it. **This is the next thing to
-> debug**, and it is a vehicle/protocol question, not a transport one.
+> Measured from persisted history through 2026-08-23: battery voltage is
+> effectively continuous and GPS/speed are common, while RPM/coolant/fuel are
+> intermittent. PID A6 answers, with its raw tenths-of-km scale corrected in
+> schema 2. PID 0x31 saturates at 65,535 on this car and is treated as absent.
 >
 > Per `feedback_dont_assert_unverified_device_facts`, nothing about the vehicle
 > or standby current is documented here as fact until measured on the car.
@@ -76,6 +75,8 @@ ECU link required**, so it works with the ignition off.
 | Constant | Default | Meaning |
 |---|---|---|
 | `STANDBY_ENGINE_OFF_V` | 13.0 V | below this = not charging = engine off |
+| `STANDBY_WAKE_SLEEP_V` | 13.2 V | fast-sleep only if max grace voltage stays at/below this |
+| `STANDBY_WAKE_GRACE_S` | 8 s | observe voltage + motion, then try one ECU link |
 | `STANDBY_CONFIRM_S` | 120 s | sustained low volts before believing it |
 | `STANDBY_UPLOAD_WINDOW_S` | 60 s | bounded drain window before sleeping |
 | `STANDBY_CHECK_S` | 60 s | deep-sleep interval between voltage checks |
@@ -83,7 +84,8 @@ ECU link required**, so it works with the ignition off.
 
 Flow: sustained low voltage → close trip → bounded upload window → radio off,
 co-processor to `ATLP`, ESP32 deep sleep → timer wake → **if still off, back to
-sleep without ever powering the radio**.
+sleep without ever powering the radio**. A wake stays up when any of three
+signals votes for a drive: charging voltage, motion, or an ECU response.
 
 Two deliberate choices worth knowing:
 
@@ -313,13 +315,14 @@ correlating an axis against OBD speed changes over a few drives.)
 > vote narrows that window; it does not close it. If the INT GPIO is ever
 > identified, arm it at the marked hook in the standby fast path.
 
-### Mileage via PID 0x31
+### Mileage via PID A6 (and PID 0x31 fallback)
 
-**Implemented in firmware, UNVERIFIED on the car.** Gated on the ECU link like
-everything else here; treat every claim below as a hypothesis until `/pids`
-returns a measured table.
+PID A6 is measured on this car. The Freematics library returns tenths of a
+kilometre, so firmware schema 2 divides the raw value by ten. The app will only
+show A6 as the authoritative odometer after a one-time dashboard comparison is
+recorded as `odometer.pid_a6_verified: true` in that vehicle's record.
 
-The mileage source is **`PID_DISTANCE` (0x31, "distance since codes cleared")**,
+The fallback mileage source is **`PID_DISTANCE` (0x31, "distance since codes cleared")**,
 not the odometer PID. It is standard Mode 01 — the same request class as speed
 and RPM — so if the ECU links at all it will very likely answer, where 0xA6
 likely will not. Being wheel-derived it has neither the GPS undercount nor the
@@ -329,7 +332,8 @@ It is a **delta source anchored to one dash reading**, never an absolute
 odometer, because it fails in two ways that both look like "the counter went
 down":
 
-- **16-bit, wraps at 65,536 km.**
+- **16-bit, wraps at 65,536 km.** A value of 65,535 is the observed saturated
+  response on this vehicle and is discarded, never presented as distance.
 - **Resets to zero when DTCs are cleared** — routine after a shop repair.
 
 The app separates them by a plausibility window and records a reset as an
@@ -338,7 +342,7 @@ The app separates them by a plausibility window and records a reset as an
 
 What the firmware now does:
 
-- Caches both counters (`g_distanceKm`, `g_odometerKm`), refreshed on the OBD
+- Caches both counters (`g_distanceKm`, raw `g_odometerRaw`), refreshed on the OBD
   task every `COUNTER_REFRESH_MS`. **Cached, not read on demand** — every
   `obd.*` call is a UART round trip that must stay on core 0, and
   `tripOpen()`/`tripClose()` run on the loop task.
@@ -453,6 +457,20 @@ node cli/automotive.cli.mjs migrate            # dry run, prints the plan
 node cli/automotive.cli.mjs migrate --apply
 ```
 
+Repairing pre-schema-2 telemetry is a separate, idempotent operation. Apply
+mode copies the complete automotive history root to
+`data/_backups/automotive/<timestamp>/` before atomically replacing any file:
+
+```bash
+node cli/automotive.cli.mjs repair-telemetry            # dry run
+node cli/automotive.cli.mjs repair-telemetry --apply    # backup, then repair
+```
+
+This corrects legacy A6 scaling, removes saturated 0x31 and malformed VIN
+values, and deduplicates repeated day-log trip references. New trip ingestion
+is retry-safe: if the durable trip file already exists, the backend ACKs it
+without appending a second reference.
+
 ## Build & flash
 
 Prereqs: PlatformIO (`pio`), Node. The Freematics flashes over its microUSB.
@@ -481,7 +499,13 @@ node tools/simulate-device.mjs --host localhost --port 3112 --id family-car
 ```
 
 Unit tests: `tests/unit/suite/applications/hardware/automotiveRelay.test.mjs`
-(relay + file format) and `cli/automotive.cli.test.mjs` (history migration).
+(relay + file format), `cli/automotive.cli.test.mjs` (history migration/repair),
+and `pio test -e native` (firmware decision logic).
+
+Release acceptance for firmware 0.3.0 is three ordinary drives plus an
+overnight park of at least eight hours. Verify regular GPS/battery snapshots,
+ECU recovery without a reboot, A6 against the dashboard, no negative dates or
+duplicate trip references, and no repeated full-radio parked wake loop.
 
 ## Bring-up checklist (day the hardware arrives)
 

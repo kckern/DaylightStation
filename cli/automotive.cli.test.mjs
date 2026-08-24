@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { regroupByLocalDay, convertLegacyTrip } from './automotive/lib.mjs';
+import { regroupByLocalDay, convertLegacyTrip, repairTelemetryDocument } from './automotive/lib.mjs';
 
 const TZ = 'America/Los_Angeles';
 
@@ -126,5 +126,28 @@ describe('convertLegacyTrip', () => {
     const { droppable, trip } = convertLegacyTrip({ ...legacy, samples: [] }, TZ);
     expect(droppable).toBe(true);
     expect(trip.meta.samples).toBe(0);
+  });
+});
+
+describe('repairTelemetryDocument', () => {
+  it('repairs legacy A6 scale, saturated 0x31, malformed VIN and duplicate refs', () => {
+    const input = [
+      { kind: 'snapshot', odometer_km: 723591, distance_since_cleared_km: 65535, vin: 'garbage' },
+      { kind: 'trip', trip_id: 'same', odometer_start_km: 723590 },
+      { kind: 'trip', trip_id: 'same', odometer_start_km: 723590 },
+    ];
+    const { document, stats } = repairTelemetryDocument(input);
+    expect(document[0].odometer_km).toBe(72359.1);
+    expect(document[0]).not.toHaveProperty('distance_since_cleared_km');
+    expect(document[0]).not.toHaveProperty('vin');
+    expect(document).toHaveLength(2);
+    expect(stats).toEqual({ odometers: 2, saturatedDistances: 1, invalidVins: 1, duplicateTrips: 1 });
+  });
+
+  it('is idempotent for schema-2 telemetry', () => {
+    const first = repairTelemetryDocument({ meta: { telemetry_schema: 2, odometer_end_km: 72359.1 } });
+    const second = repairTelemetryDocument(first.document);
+    expect(second.document.meta.odometer_end_km).toBe(72359.1);
+    expect(second.stats.odometers).toBe(0);
   });
 });

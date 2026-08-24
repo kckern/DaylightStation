@@ -211,6 +211,18 @@ describe('automotiveRelay', () => {
     expect(tripBroadcast.payload.samples).toBeUndefined();
   });
 
+  it('acks a retried trip without appending a duplicate day-log reference', async () => {
+    relay = make();
+    bus.ingest('c9', tripMsg());
+    await relay.flush();
+    bus.ingest('c9', tripMsg());
+    await relay.flush();
+
+    expect(bus.clientSends).toHaveLength(2);
+    const dayLog = await readDayLog();
+    expect(dayLog.filter((r) => r.kind === 'trip' && r.trip_id === 'abc1')).toHaveLength(1);
+  });
+
   it('rebases boot-relative times when uploaded in the same power session', async () => {
     relay = make();
     bus.ingest('c1', tripMsg({

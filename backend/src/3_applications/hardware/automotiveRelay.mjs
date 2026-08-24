@@ -139,7 +139,10 @@ export function createAutomotiveRelay({
         id,
         kind: 'snapshot',
         ...normalizeSnapshotReadings(message),
-        dtc: Array.isArray(message.dtc) ? message.dtc : [],
+        telemetry_schema: Number(message.telemetry_schema) || 1,
+        ecu_linked: message.ecu_linked === true,
+        dtc_read: message.dtc_read === true,
+        dtc: Array.isArray(message.dtc_codes) ? message.dtc_codes : [],
         ts,
       };
       eventBus.broadcast(topic, snapshot);
@@ -211,7 +214,13 @@ export function createAutomotiveRelay({
 
     // Persist FULL trip, then summary to the day log, then ack the device.
     enqueue('trip', id, async () => {
-      const relPath = await dayLog.writeDocument(id, path.join('trips', tripRelPath(trip, timezone)), dumpTrip(trip));
+      const relPath = path.join('trips', tripRelPath(trip, timezone));
+      if (await dayLog.documentExists?.(id, relPath)) {
+        eventBus.sendToClient?.(clientId, { type: 'trip-ack', trip_id: tripId });
+        logger.info?.('automotive.trip.duplicate', { id, tripId, file: relPath });
+        return;
+      }
+      await dayLog.writeDocument(id, relPath, dumpTrip(trip));
       await dayLog.appendAt(id, at, {
         id, kind: 'trip', trip_id: tripId, ts,
         file: relPath,
@@ -252,6 +261,7 @@ const numOrNull = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
  * records by the same rule; a day log must not mix both conventions.
  */
 export function normalizeSnapshotReadings(source) {
+  const telemetrySchema = Number(source.telemetry_schema) || 1;
   const normalized = {
     battery_v: reading(source.battery_v, 'batt_v'),
     fuel_pct: reading(source.fuel_pct, 'fuel_pct'),
@@ -281,14 +291,19 @@ export function normalizeSnapshotReadings(source) {
 
   // Identity, straight from the ECU. Worth persisting because it is the one
   // field that proves WHICH car produced this history — the device is portable.
-  if (typeof source.vin === 'string' && source.vin.trim()) normalized.vin = source.vin.trim();
+  const vin = typeof source.vin === 'string' ? source.vin.trim().toUpperCase() : '';
+  if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) normalized.vin = vin;
 
   const counters = {
     distance_since_cleared_km: numOrNull(source.distance_since_cleared_km),
     odometer_km: numOrNull(source.odometer_km),
   };
   for (const [key, value] of Object.entries(counters)) {
-    if (value !== null && value >= 0) normalized[key] = value;
+    if (value === null || value < 0) continue;
+    if (key === 'distance_since_cleared_km' && value === 65535) continue;
+    normalized[key] = key === 'odometer_km' && telemetrySchema < 2 && value > 200000
+      ? value / 10
+      : value;
   }
 
   return normalized;
@@ -338,6 +353,7 @@ function resolveTripClock(meta, samples) {
   const uploadBoot = Number(meta.upload_boot_ms) || 0;
   const endedBoot = Number(meta.ended_boot_ms) || 0;
   const firstBoot = samples.length ? Number(samples[0]?.[0]) || 0 : 0;
+  const startedBoot = Number(meta.started_boot_ms) || firstBoot;
 
   if (startedEpoch > 0) {
     const spanMs = samples.length > 1
@@ -346,11 +362,14 @@ function resolveTripClock(meta, samples) {
     return { startedMs: startedEpoch, endedMs: startedEpoch + Math.max(0, spanMs), source: 'device' };
   }
 
-  const sameSession = uploadEpoch > 0 && uploadBoot > 0 && uploadBoot >= endedBoot;
+  const clockWasSynchronized = Number(meta.telemetry_schema || 1) < 2
+    || meta.clock_synced_at_upload === true;
+  const sameSession = clockWasSynchronized
+    && uploadEpoch > 0 && uploadBoot > 0 && uploadBoot >= endedBoot;
   if (sameSession) {
     const bootToWall = (bootMs) => uploadEpoch - (uploadBoot - bootMs);
     return {
-      startedMs: firstBoot > 0 ? bootToWall(firstBoot) : null,
+      startedMs: startedBoot > 0 ? bootToWall(startedBoot) : null,
       endedMs: endedBoot > 0 ? bootToWall(endedBoot) : null,
       source: 'rebased',
     };
@@ -451,6 +470,7 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
   return {
     meta: {
       vehicle: id,
+      telemetry_schema: Number(meta.telemetry_schema) || 1,
       ...odometerCounters(meta),
       trip_id: tripId,                                    // device id, kept for ack correlation
       started: startedMs ? formatIsoLocal(new Date(startedMs), timezone) : null,
@@ -462,7 +482,8 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
       max_speed_kph: maxSpeed,
       gps_fix_pct: samples.length ? Math.round((fixCount / samples.length) * 100) : 0,
       ecu,
-      dtc: Array.isArray(meta.dtc) ? meta.dtc : [],
+      dtc_read: meta.dtc_read === true,
+      dtc: Array.isArray(meta.dtc_codes) ? meta.dtc_codes : (Array.isArray(meta.dtc) ? meta.dtc : []),
       received: ts,
     },
     units: Object.fromEntries(Object.entries(UNITS).filter(([k]) => present.has(k))),
@@ -485,8 +506,13 @@ export function buildTripRecord(id, tripId, meta, rawSamples, at, ts, timezone) 
 function odometerCounters(meta) {
   const counters = {};
   for (const key of ['distance_start_km', 'distance_end_km', 'odometer_start_km', 'odometer_end_km']) {
-    const value = numOrNull(meta[key]);
-    if (value !== null && value >= 0) counters[key] = value;
+    let value = numOrNull(meta[key]);
+    if (value === null || value < 0) continue;
+    if (key.startsWith('distance_') && value === 65535) continue;
+    if (key.startsWith('odometer_') && Number(meta.telemetry_schema || 1) < 2 && value > 200000) {
+      value /= 10;
+    }
+    counters[key] = value;
   }
   return counters;
 }

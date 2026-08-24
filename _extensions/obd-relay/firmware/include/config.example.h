@@ -15,3 +15,11 @@
 #define SAMPLE_HZ           1      // trip sample rate while driving
 #define SNAPSHOT_S          15     // live snapshot cadence on home WiFi
 #define TRIP_CHUNK_SAMPLES  300    // max samples per `trip` WS message
+
+#define STANDBY_ENGINE_OFF_V     13.0f
+#define STANDBY_WAKE_SLEEP_V     13.2f
+#define STANDBY_WAKE_GRACE_S     8
+#define STANDBY_CONFIRM_S        120
+#define STANDBY_UPLOAD_WINDOW_S  60
+#define STANDBY_CHECK_S          60
+#define STANDBY_VOLT_FAULT_S     600

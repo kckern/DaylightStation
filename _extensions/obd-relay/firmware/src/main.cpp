@@ -31,6 +31,7 @@
 #include <Preferences.h>
 #include <Update.h>
 #include "config.h"
+#include "telemetry_logic.h"
 
 // ---- standby / battery protection ------------------------------------------
 // The OBD-II port is typically always-hot, so the device keeps drawing with the
@@ -48,6 +49,12 @@
 // would cut a live trip short). Override in config.h via gen-config.
 #ifndef STANDBY_ENGINE_OFF_V
 #define STANDBY_ENGINE_OFF_V     13.0f  // below this = not charging = engine off
+#endif
+#ifndef STANDBY_WAKE_SLEEP_V
+#define STANDBY_WAKE_SLEEP_V     13.2f  // parked-wake threshold after grace sampling
+#endif
+#ifndef STANDBY_WAKE_GRACE_S
+#define STANDBY_WAKE_GRACE_S     8      // observe volts + motion before a fast sleep
 #endif
 #ifndef STANDBY_CONFIRM_S
 #define STANDBY_CONFIRM_S        120    // sustained low volts before believing it
@@ -78,7 +85,8 @@ static COBD obd;   // co-processor UART OBD link
 static GPS_DATA* gpsData = nullptr;
 #endif
 
-static const char* FW_VERSION = "0.2.0";   // 0.2.0: /led (persisted LED control)
+static const char* FW_VERSION = "0.3.0";
+static const uint8_t TELEMETRY_SCHEMA = 2;
 static const char* TRIP_DIR = "/trips";
 
 // ---- one telemetry sample (positional order == wire order) ---------------
@@ -119,33 +127,36 @@ struct PidProbe {
   bool ok;        // did this car answer, last attempt
   int  value;
   bool tried;
+  uint32_t attempts;
+  uint32_t successes;
+  uint32_t lastOkMs;
 };
 
 // Sampled at SAMPLE_HZ — the ones that actually change while driving.
 static PidProbe g_hotPids[] = {
-  { PID_SPEED,        "speed",       "kph", false, 0, false },
-  { PID_RPM,          "rpm",         "rpm", false, 0, false },
-  { PID_COOLANT_TEMP, "coolant",     "C",   false, 0, false },
-  { PID_FUEL_LEVEL,   "fuel_level",  "%",   false, 0, false },
+  { PID_SPEED,        "speed",       "kph", false, 0, false, 0, 0, 0 },
+  { PID_RPM,          "rpm",         "rpm", false, 0, false, 0, 0, 0 },
+  { PID_COOLANT_TEMP, "coolant",     "C",   false, 0, false, 0, 0, 0 },
+  { PID_FUEL_LEVEL,   "fuel_level",  "%",   false, 0, false, 0, 0, 0 },
 };
 // Slow-moving / diagnostic. Read once per trip and then periodically; these are
 // the "what is the state of the car" set rather than the "what is it doing now"
 // set, and they are what a diagnostics view is built from.
 static PidProbe g_diagPids[] = {
-  { PID_CONTROL_MODULE_VOLTAGE, "control_module_voltage", "V",  false, 0, false },
-  { PID_ENGINE_LOAD,            "engine_load",            "%",  false, 0, false },
-  { PID_THROTTLE,               "throttle",               "%",  false, 0, false },
-  { PID_INTAKE_TEMP,            "intake_temp",            "C",  false, 0, false },
-  { PID_AMBIENT_TEMP,           "ambient_temp",           "C",  false, 0, false },
-  { PID_ENGINE_OIL_TEMP,        "engine_oil_temp",        "C",  false, 0, false },
-  { PID_BAROMETRIC,             "barometric",             "kPa",false, 0, false },
-  { PID_RUNTIME,                "runtime_since_start",    "s",  false, 0, false },
-  { PID_DISTANCE_WITH_MIL,      "distance_with_mil",      "km", false, 0, false },
-  { PID_DISTANCE,               "distance_since_cleared", "km", false, 0, false },
-  { PID_WARMS_UPS,              "warmups_since_cleared",  "",   false, 0, false },
-  { PID_TIME_WITH_MIL,          "time_with_mil",          "min",false, 0, false },
-  { PID_TIME_SINCE_CODES_CLEARED,"time_since_cleared",    "min",false, 0, false },
-  { PID_ODOMETER,               "odometer",               "km", false, 0, false },
+  { PID_CONTROL_MODULE_VOLTAGE, "control_module_voltage", "V",  false, 0, false, 0, 0, 0 },
+  { PID_ENGINE_LOAD,            "engine_load",            "%",  false, 0, false, 0, 0, 0 },
+  { PID_THROTTLE,               "throttle",               "%",  false, 0, false, 0, 0, 0 },
+  { PID_INTAKE_TEMP,            "intake_temp",            "C",  false, 0, false, 0, 0, 0 },
+  { PID_AMBIENT_TEMP,           "ambient_temp",           "C",  false, 0, false, 0, 0, 0 },
+  { PID_ENGINE_OIL_TEMP,        "engine_oil_temp",        "C",  false, 0, false, 0, 0, 0 },
+  { PID_BAROMETRIC,             "barometric",             "kPa",false, 0, false, 0, 0, 0 },
+  { PID_RUNTIME,                "runtime_since_start",    "s",  false, 0, false, 0, 0, 0 },
+  { PID_DISTANCE_WITH_MIL,      "distance_with_mil",      "km", false, 0, false, 0, 0, 0 },
+  { PID_DISTANCE,               "distance_since_cleared", "km", false, 0, false, 0, 0, 0 },
+  { PID_WARMS_UPS,              "warmups_since_cleared",  "",   false, 0, false, 0, 0, 0 },
+  { PID_TIME_WITH_MIL,          "time_with_mil",          "min",false, 0, false, 0, 0, 0 },
+  { PID_TIME_SINCE_CODES_CLEARED,"time_since_cleared",    "min",false, 0, false, 0, 0, 0 },
+  { PID_ODOMETER,               "odometer",               "km", false, 0, false, 0, 0, 0 },
 };
 #define HOT_PID_COUNT  (sizeof(g_hotPids)  / sizeof(g_hotPids[0]))
 #define DIAG_PID_COUNT (sizeof(g_diagPids) / sizeof(g_diagPids[0]))
@@ -177,7 +188,7 @@ static void relayLogLine(const char* line);
 static void relayLogf(const char* fmt, ...);
 #ifdef USE_FREEMATICS
 struct PidProbe;
-static void probePids(PidProbe* table, size_t count);
+static uint8_t probePids(PidProbe* table, size_t count);
 static int pidValue(const PidProbe* table, size_t count, byte pid, int fallback);
 #endif
 
@@ -246,8 +257,11 @@ static bool memsInMotion() {
 // -1 means "no reading", never 0: a car that genuinely reports 0 km since a
 // recent code clear is a real answer, and must not be confused with silence.
 static volatile int32_t g_distanceKm = -1;   // PID 0x31
-static volatile int32_t g_odometerKm = -1;   // PID 0xA6
+static volatile int32_t g_odometerRaw = -1;  // PID 0xA6, raw tenths of a km
 static uint32_t g_countersReadMs = 0;
+static size_t g_diagCursor = DIAG_PID_COUNT - 1;  // odometer first
+static obdrelay::LinkFailureTracker g_linkFailures;
+static uint32_t g_obdReconnects = 0;
 
 // The counters barely move, but they must be fresh at trip OPEN and CLOSE for
 // the per-trip delta to mean anything. A minute is well inside the shortest
@@ -388,6 +402,7 @@ static volatile uint32_t g_batteryAgeMs = 0;
 static uint32_t g_engineOffSinceMs = 0;  // first sustained low-voltage reading
 static bool g_wokeFromStandby = false;
 static bool g_otaActive = false;         // suppress standby mid-flash
+static bool g_otaVerifyBoot = false;     // one reboot gets a full network/status window
 // Temporary standby inhibit, for flashing or debugging a device that is parked.
 // ALWAYS time-bounded and never persisted: an inhibit that outlived the session
 // would silently reintroduce exactly the battery drain standby exists to stop.
@@ -507,23 +522,29 @@ static bool readSample(Sample& s) {
 // the note at g_distanceKm. A PID that does not answer leaves its cache at -1
 // rather than writing a zero, so "this car does not support 0xA6" and "this car
 // has travelled 0 km" stay distinguishable downstream.
-static void refreshDistanceCounters() {
+static void refreshDiagnosticPid() {
 #ifdef USE_FREEMATICS
   if (!g_obdReady) return;
   uint32_t now = millis();
-  if (g_countersReadMs && (now - g_countersReadMs) < COUNTER_REFRESH_MS) return;
+  // Spread slow/unsupported reads across the minute instead of blocking the
+  // live sampler on fourteen consecutive UART timeouts.
+  const uint32_t interval = COUNTER_REFRESH_MS / DIAG_PID_COUNT;
+  if (g_countersReadMs && (now - g_countersReadMs) < interval) return;
   g_countersReadMs = now;
-
-  // Re-probe the WHOLE slow-moving set, not just the two distance counters.
-  // These were being read once per ECU link and then surfacing only on the HTTP
-  // pull plane (/pids, /diagnostics), which means they evaporated — nothing
-  // reached history. They cost 14 UART round trips once a minute, nowhere near
-  // the 1 Hz sampling path.
-  probePids(g_diagPids, DIAG_PID_COUNT);
-
-  g_distanceKm = (int32_t)pidValue(g_diagPids, DIAG_PID_COUNT, PID_DISTANCE, -1);
-  g_odometerKm = (int32_t)pidValue(g_diagPids, DIAG_PID_COUNT, PID_ODOMETER, -1);
+  PidProbe& p = g_diagPids[g_diagCursor];
+  probePids(&p, 1);
+  if (p.pid == PID_DISTANCE) {
+    const int value = p.ok ? p.value : -1;
+    g_distanceKm = obdrelay::distanceCounterUsable(value) ? value : -1;
+  } else if (p.pid == PID_ODOMETER) {
+    g_odometerRaw = p.ok ? p.value : -1;
+  }
+  g_diagCursor = (g_diagCursor + 1) % DIAG_PID_COUNT;
 #endif
+}
+
+static double currentOdometerKm() {
+  return obdrelay::odometerKmFromRaw(g_odometerRaw);
 }
 
 /**
@@ -537,7 +558,10 @@ static void addDiagReadings(JsonObject target) {
 #ifdef USE_FREEMATICS
   for (size_t i = 0; i < DIAG_PID_COUNT; i++) {
     if (!g_diagPids[i].ok) continue;
-    target[g_diagPids[i].name] = g_diagPids[i].value;
+    if (g_diagPids[i].pid == PID_ODOMETER)
+      target[g_diagPids[i].name] = obdrelay::odometerKmFromRaw(g_diagPids[i].value);
+    else
+      target[g_diagPids[i].name] = g_diagPids[i].value;
   }
 #endif
 }
@@ -555,13 +579,14 @@ static void tripOpen() {
   if (!tripFile) { Serial.println("[trip] open FAILED"); return; }
   JsonDocument h;
   h["trip_id"] = tripId;
+  h["telemetry_schema"] = TELEMETRY_SCHEMA;
   h["started_epoch_ms"] = epochMs();          // 0 = clock unknown at start
   h["started_boot_ms"] = tripStartMs;
   h["schema"] = "t,lat,lon,speed_kph,rpm,coolant_c,fuel_pct,batt_v,alt_m,heading,hdop,sat";
   // Odometer anchors for this trip. Omitted entirely when unread — an absent
   // key, never a sentinel, matching the rest of the persistence contract.
   if (g_distanceKm >= 0) h["distance_start_km"] = (int32_t)g_distanceKm;
-  if (g_odometerKm >= 0) h["odometer_start_km"] = (int32_t)g_odometerKm;
+  if (g_odometerRaw >= 0) h["odometer_start_km"] = currentOdometerKm();
   String line; serializeJson(h, line);
   tripFile.println(line);
   tripFile.flush();
@@ -578,8 +603,8 @@ static void tripClose() {
   // Footer carries the closing counters as extra CSV fields. Older files have
   // the bare "E,<ms>" form and still parse — the upload reader defaults both to
   // -1, so a pre-upgrade buffered trip uploads unchanged rather than being lost.
-  tripFile.printf("E,%lu,%ld,%ld\n", (unsigned long)millis(),
-                  (long)g_distanceKm, (long)g_odometerKm);
+  tripFile.printf("E,%lu,%ld,%.1f\n", (unsigned long)millis(),
+                  (long)g_distanceKm, currentOdometerKm());
   tripFile.flush();
   tripFile.close();
   relayLogf("[trip] closed %s (%lu samples)", tripId.c_str(), (unsigned long)sampleCount);
@@ -631,6 +656,8 @@ static void sendSnapshot() {
   if (!haveSample) return;
   JsonDocument doc;
   doc["type"] = "snapshot";
+  doc["telemetry_schema"] = TELEMETRY_SCHEMA;
+  doc["ecu_linked"] = g_obdReady;
   doc["battery_v"] = lastSample.battV;
   doc["fuel_pct"] = lastSample.fuelPct;
   doc["coolant_c"] = lastSample.coolantC;
@@ -640,7 +667,7 @@ static void sendSnapshot() {
   gps["lat"] = lastSample.lat; gps["lon"] = lastSample.lon;
   // Live mileage counters, omitted when unread rather than sent as zero.
   if (g_distanceKm >= 0) doc["distance_since_cleared_km"] = (int32_t)g_distanceKm;
-  if (g_odometerKm >= 0) doc["odometer_km"] = (int32_t)g_odometerKm;
+  if (g_odometerRaw >= 0) doc["odometer_km"] = currentOdometerKm();
   // The slow-moving diagnostic set — ambient/oil temperature, engine load,
   // distance and time driven with the check-engine light on, warm-ups and time
   // since codes were cleared. Previously read and discarded.
@@ -654,7 +681,17 @@ static void sendSnapshot() {
     addDiagReadings(diag);
     if (diag.size() == 0) doc.remove("diag");
   }
-  if (g_vin[0]) doc["vin"] = g_vin;
+  if (obdrelay::isValidVin(g_vin)) doc["vin"] = g_vin;
+  doc["dtc_read"] = (g_dtcCount >= 0);
+  if (g_dtcCount >= 0) {
+    JsonArray codes = doc["dtc_codes"].to<JsonArray>();
+    const char systems[] = {'P','C','B','U'};
+    for (int i = 0; i < g_dtcCount && i < MAX_DTC; i++) {
+      char code[8];
+      snprintf(code, sizeof(code), "%c%04X", systems[(g_dtc[i] >> 14) & 0x3], g_dtc[i] & 0x3FFF);
+      codes.add(code);
+    }
+  }
   doc["ts"] = epochMs();
   sendJson(doc);
 }
@@ -733,7 +770,8 @@ static void uploadNextTrip() {
   uint32_t total = 0, endedT = 0;
   // Closing counters, from the footer. -1 = absent, which is also what a file
   // written before the footer carried them yields.
-  long distEndKm = -1, odoEndKm = -1;
+  long distEndKm = -1;
+  double odoEndKm = -1;
   JsonDocument doc;
   JsonArray samples;
   auto beginChunk = [&]() {
@@ -748,7 +786,7 @@ static void uploadNextTrip() {
       unsigned long endMs = 0;
       // Matches 1 field on an old footer, 3 on a new one; distEndKm/odoEndKm
       // keep their -1 in the former case.
-      sscanf(line.c_str(), "E,%lu,%ld,%ld", &endMs, &distEndKm, &odoEndKm);
+      sscanf(line.c_str(), "E,%lu,%ld,%lf", &endMs, &distEndKm, &odoEndKm);
       break;
     }
     Sample s; // parse CSV line
@@ -771,6 +809,9 @@ static void uploadNextTrip() {
   doc["final"] = true;
   JsonObject meta = doc["meta"].to<JsonObject>();
   meta["started_epoch_ms"] = startedEpoch;
+  meta["telemetry_schema"] = header["telemetry_schema"] | 1;
+  meta["started_boot_ms"] = header["started_boot_ms"] | (uint32_t)0;
+  meta["clock_synced_at_upload"] = timeSynced;
   meta["time_approx"] = (startedEpoch == 0);
   meta["samples"] = total;
   meta["ended_boot_ms"] = endedT;
@@ -780,7 +821,7 @@ static void uploadNextTrip() {
   // Odometer anchors. Emitted only when the ECU actually answered, so the
   // backend can tell "no reading" from a real zero.
   long distStartKm = header["distance_start_km"] | -1;
-  long odoStartKm  = header["odometer_start_km"] | -1;
+  double odoStartKm = header["odometer_start_km"] | -1.0;
   if (distStartKm >= 0) meta["distance_start_km"] = distStartKm;
   if (distEndKm   >= 0) meta["distance_end_km"]   = distEndKm;
   if (odoStartKm  >= 0) meta["odometer_start_km"] = odoStartKm;
@@ -808,6 +849,7 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
       if (tripFile && sampleCount > 0) { tripClose(); tripOpen(); }
       JsonDocument doc;
       doc["type"] = "hello"; doc["fw"] = FW_VERSION;
+      doc["telemetry_schema"] = TELEMETRY_SCHEMA;
       doc["rssi"] = WiFi.RSSI(); doc["ts"] = epochMs();
       sendJson(doc);
       sendEvent("wifi-joined");
@@ -852,13 +894,21 @@ static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
 // Individually rather than via the batch readPID(): the batch form reports only
 // how many succeeded, not which, and "which PIDs does this car support" is the
 // entire question bring-up step 1 exists to answer.
-static void probePids(PidProbe* table, size_t count) {
+static uint8_t probePids(PidProbe* table, size_t count) {
+  uint8_t answered = 0;
   for (size_t i = 0; i < count; i++) {
     int v = 0;
     table[i].tried = true;
+    table[i].attempts++;
     table[i].ok = obd.readPID(table[i].pid, v);
-    if (table[i].ok) table[i].value = v;
+    if (table[i].ok) {
+      table[i].value = v;
+      table[i].successes++;
+      table[i].lastOkMs = millis();
+      answered++;
+    }
   }
+  return answered;
 }
 
 static int pidValue(const PidProbe* table, size_t count, byte pid, int fallback) {
@@ -868,15 +918,15 @@ static int pidValue(const PidProbe* table, size_t count, byte pid, int fallback)
 }
 
 // Build one telemetry sample from the vehicle. Runs on core 0 only.
-static void sampleVehicle() {
-  probePids(g_hotPids, HOT_PID_COUNT);
+static uint8_t sampleVehicle(bool readEcu) {
+  const uint8_t answered = readEcu ? probePids(g_hotPids, HOT_PID_COUNT) : 0;
 
   Sample s{};
   s.t = millis();
-  s.speedKph = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_SPEED, 0);
-  s.rpm      = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_RPM, 0);
-  s.coolantC = (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_COOLANT_TEMP, 0);
-  s.fuelPct  = (int8_t) pidValue(g_hotPids, HOT_PID_COUNT, PID_FUEL_LEVEL, -1);
+  s.speedKph = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_SPEED, 0) : 0;
+  s.rpm      = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_RPM, 0) : 0;
+  s.coolantC = readEcu ? (int16_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_COOLANT_TEMP, 0) : 0;
+  s.fuelPct  = readEcu ? (int8_t)pidValue(g_hotPids, HOT_PID_COUNT, PID_FUEL_LEVEL, -1) : -1;
   s.battV    = g_batteryV;
 
   s.altM = NAN; s.heading = -1; s.hdop = -1; s.sat = -1;
@@ -898,6 +948,7 @@ static void sampleVehicle() {
   g_liveSample = s;
   g_haveLiveSample = true;
   portEXIT_CRITICAL(&g_sampleMux);
+  return answered;
 }
 
 // Walk every protocol. "Linked" is not enough — init() can succeed while the
@@ -991,20 +1042,33 @@ static void obdLinkTask(void*) {
       // Once per link rather than per sample — these barely move, and each one
       // is a UART round trip we do not want in the 1Hz path.
       if (g_dtcCount < 0) {
-        if (!g_vin[0]) obd.getVIN(g_vin, sizeof(g_vin));
-        probePids(g_diagPids, DIAG_PID_COUNT);
+        if (!g_vin[0]) {
+          obd.getVIN(g_vin, sizeof(g_vin));
+          if (!obdrelay::isValidVin(g_vin)) g_vin[0] = 0;
+        }
         int n = obd.readDTC(g_dtc, MAX_DTC);
         g_dtcCount = n < 0 ? 0 : n;
         relayLogf("[obd] linked — %d DTC(s), vin=%s", g_dtcCount, g_vin[0] ? g_vin : "n/a");
         g_countersReadMs = 0;               // force a counter read on this link
+        g_diagCursor = DIAG_PID_COUNT - 1;   // direct odometer first
       }
-      refreshDistanceCounters();
-      sampleVehicle();
+      refreshDiagnosticPid();
+      const uint8_t answered = sampleVehicle(true);
+      if (g_linkFailures.observe(answered)) {
+        g_obdReady = false;
+        g_obdReconnects++;
+        g_distanceKm = -1;
+        g_odometerRaw = -1;
+        obd.uninit();
+        continue;
+      }
       vTaskDelay(pdMS_TO_TICKS(1000 / SAMPLE_HZ));
     } else {
+      sampleVehicle(false);         // retain GPS + rail voltage without ECU
       // No ECU: keep the voltage poll alive (standby depends on it) but do not
       // hammer init(); each attempt blocks for seconds.
       g_dtcCount = -1;              // re-read diagnostics when the link returns
+      g_linkFailures.reset();
       vTaskDelay(pdMS_TO_TICKS(5000));
     }
   }
@@ -1200,7 +1264,17 @@ static void addPidTable(JsonArray arr, const PidProbe* table, size_t count, cons
     if (table[i].unit[0]) o["unit"] = table[i].unit;
     o["tried"] = table[i].tried;
     o["supported"] = table[i].ok;
-    if (table[i].ok) o["value"] = table[i].value;
+    o["attempts"] = table[i].attempts;
+    o["successes"] = table[i].successes;
+    if (table[i].lastOkMs) o["last_success_age_s"] = (millis() - table[i].lastOkMs) / 1000;
+    if (table[i].ok) {
+      if (table[i].pid == PID_ODOMETER)
+        o["value"] = obdrelay::odometerKmFromRaw(table[i].value);
+      else
+        o["value"] = table[i].value;
+      if (table[i].pid == PID_DISTANCE && !obdrelay::distanceCounterUsable(table[i].value))
+        o["status"] = "saturated";
+    }
   }
 }
 
@@ -1215,7 +1289,8 @@ static void handlePids() {
     doc["note"] = "No ECU link — results are meaningless until obd_ready is true "
                   "(ignition fully on).";
   }
-  if (g_vin[0]) doc["vin"] = g_vin;
+  doc["vin_valid"] = obdrelay::isValidVin(g_vin);
+  if (obdrelay::isValidVin(g_vin)) doc["vin"] = g_vin;
   JsonArray arr = doc["pids"].to<JsonArray>();
   addPidTable(arr, g_hotPids, HOT_PID_COUNT, "hot");
   addPidTable(arr, g_diagPids, DIAG_PID_COUNT, "diagnostic");
@@ -1325,7 +1400,11 @@ static void handleUpdateResult() {
   http.sendHeader("Connection", "close");
   http.send(ok ? 200 : 500, "application/json",
             ok ? "{\"ok\":true,\"rebooting\":true}" : "{\"ok\":false}");
-  if (ok) { delay(250); ESP.restart(); }
+  if (ok) {
+    g_prefs.putBool("ota_verify", true);
+    delay(250);
+    ESP.restart();
+  }
   g_otaActive = false;
 }
 
@@ -1397,6 +1476,8 @@ static void handleStatus() {
   vehicle["coproc_ready"] = g_sysReady;   // sys.begin() — the boot-critical one
   vehicle["dev_type"] = g_devType;
   vehicle["obd_ready"] = g_obdReady;      // false until ignition is fully on
+  vehicle["obd_reconnects"] = g_obdReconnects;
+  vehicle["obd_failure_streak"] = g_linkFailures.consecutiveFullFailures;
   // Battery/standby: this is the drain story, made observable instead of
   // estimated. battery_v comes from ATRV (co-processor, no ECU needed).
   vehicle["battery_v"] = g_batteryV;
@@ -1404,6 +1485,8 @@ static void handleStatus() {
   vehicle["woke_from_standby"] = g_wokeFromStandby;
   JsonObject sb = vehicle["standby"].to<JsonObject>();
   sb["engine_off_below_v"] = STANDBY_ENGINE_OFF_V;
+  sb["wake_sleep_at_or_below_v"] = STANDBY_WAKE_SLEEP_V;
+  sb["wake_grace_s"] = STANDBY_WAKE_GRACE_S;
   sb["confirm_s"] = STANDBY_CONFIRM_S;
   sb["upload_window_s"] = STANDBY_UPLOAD_WINDOW_S;
   sb["check_s"] = STANDBY_CHECK_S;
@@ -1471,6 +1554,8 @@ void setup() {
   // leave the LED lit for the second it is awake.
   g_prefs.begin("obd-relay", false);
   g_ledMode = g_prefs.getUChar("led_mode", LED_MODE_FLOAT);
+  g_otaVerifyBoot = g_prefs.getBool("ota_verify", false);
+  if (g_otaVerifyBoot) g_prefs.remove("ota_verify");
   ledApply();
 
   g_fsMounted = LittleFS.begin(true);          // true = format on first/corrupt mount
@@ -1504,9 +1589,21 @@ void setup() {
     // to sleep without ever powering the radio. This is what keeps the duty
     // cycle — and therefore the average draw on the car battery — low. A full
     // wake costs seconds of WiFi; this costs a single ATRV round trip.
-    if (g_wokeFromStandby) {
-      float v = obd.getVoltage();
-      if (v > 0) { g_batteryV = v; g_batteryAgeMs = millis(); }
+    if (g_wokeFromStandby && !g_otaVerifyBoot) {
+      float maxV = 0;
+      bool moving = false;
+      const uint32_t graceStarted = millis();
+      do {
+        const float v = obd.getVoltage();
+        if (v > 0) {
+          maxV = max(maxV, v);
+          g_batteryV = v;
+          g_batteryAgeMs = millis();
+        }
+        moving = moving || memsInMotion();
+        if (moving || maxV > STANDBY_WAKE_SLEEP_V) break;
+        delay(250);
+      } while (millis() - graceStarted < (uint32_t)STANDBY_WAKE_GRACE_S * 1000);
       // The motion sensor gets a vote before we go back to sleep. Voltage alone
       // says "not charging", which is true for the first seconds of a drive too
       // — the alternator takes a moment. If the car is physically MOVING, that
@@ -1517,18 +1614,25 @@ void setup() {
       // a wake-on-motion interrupt, which needs the sensor's INT line on an
       // RTC-capable GPIO — not present in this board's pin map (see memsInit).
       // If that pin is ever identified, arm esp_sleep_enable_ext0_wakeup here.
-      const bool moving = memsInMotion();
-      if (v > 0 && v < STANDBY_ENGINE_OFF_V && !moving) {
-        Serial.printf("[standby] still off (%.2fV) — back to sleep\n", v);
+      bool ecuAnswered = false;
+      if (!moving && maxV <= STANDBY_WAKE_SLEEP_V) {
+        ecuAnswered = obd.init(PROTO_AUTO, true);
+        if (ecuAnswered) g_obdReady = true;
+      }
+      if (obdrelay::shouldFastSleep(maxV, moving, ecuAnswered, STANDBY_WAKE_SLEEP_V)) {
+        Serial.printf("[standby] no wake signal after grace (max %.2fV) — back to sleep\n", maxV);
         obd.enterLowPowerMode();
         delay(50);
         esp_sleep_enable_timer_wakeup((uint64_t)STANDBY_CHECK_S * 1000000ULL);
         esp_deep_sleep_start();       // does not return
       }
-      if (moving && v > 0 && v < STANDBY_ENGINE_OFF_V) {
-        relayLogf("[standby] low volts (%.2fV) but MOVING — staying up", v);
+      if (moving && maxV <= STANDBY_WAKE_SLEEP_V) {
+        relayLogf("[standby] low volts (%.2fV) but MOVING — staying up", maxV);
       }
-      relayLogf("[standby] woke — %.2fV, engine on", v);
+      relayLogf("[standby] staying awake — max=%.2fV motion=%d ecu=%d", maxV, moving, ecuAnswered);
+    } else if (g_otaVerifyBoot) {
+      g_standbyInhibitUntilMs = millis() + 2UL * 60000UL;
+      relayLogLine("[ota] post-reboot verification window: standby held for 2 min");
     }
     // obd.init() BLOCKS for ~5s and fails until the ignition is fully on, so it
     // must never run on the Arduino loop task. Measured 2026-07-30: retrying it
@@ -1567,6 +1671,20 @@ void setup() {
   relayLogf("[wifi] associate took %lums", (unsigned long)g_wifiAssociateMs);
   relayLogf("[wifi] %s", WiFi.status() == WL_CONNECTED
             ? WiFi.localIP().toString().c_str() : "not associated (will retry)");
+
+  // Establish wall time before the WebSocket can upload buffered boot-relative
+  // trips. This keeps first-connect uploads from acquiring 1970/negative dates.
+  if (WiFi.status() == WL_CONNECTED) {
+    configTime(0, 0, "pool.ntp.org");
+    struct tm tinfo;
+    if (getLocalTime(&tinfo, 3000)) {
+      timeSynced = true;
+      rtcClockValid = true;
+      relayLogLine("[time] NTP synced before transport start");
+    } else {
+      relayLogLine("[time] pre-transport NTP timeout; background retry enabled");
+    }
+  }
 
   webSocket.begin(WS_HOST, WS_PORT, WS_PATH);
   webSocket.onEvent(wsEvent);

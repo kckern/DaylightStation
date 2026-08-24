@@ -107,3 +107,59 @@ export function convertLegacyTrip(doc, timezone) {
     droppable: samples.length === 0,
   };
 }
+
+/**
+ * Repair telemetry values emitted before firmware schema 2.
+ * Pure and idempotent: a second pass reports no changes and never divides an
+ * already-correct odometer again.
+ */
+export function repairTelemetryDocument(input) {
+  const doc = structuredClone(input);
+  const stats = { odometers: 0, saturatedDistances: 0, invalidVins: 0, duplicateTrips: 0 };
+  const validVin = (v) => typeof v === 'string' && /^[A-HJ-NPR-Z0-9]{17}$/.test(v.trim().toUpperCase());
+
+  const repairObject = (obj, inheritedLegacy = true) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+    const schema = Number(obj.telemetry_schema ?? obj.meta?.telemetry_schema ?? 1);
+    const legacy = inheritedLegacy && schema < 2 && Number(obj.telemetry_revision || 1) < 2;
+
+    for (const key of ['odometer', 'odometer_km', 'odometer_start_km', 'odometer_end_km']) {
+      if (legacy && Number.isFinite(Number(obj[key])) && Number(obj[key]) > 200000) {
+        obj[key] = Number(obj[key]) / 10;
+        stats.odometers += 1;
+      }
+    }
+    for (const key of ['distance_since_cleared', 'distance_since_cleared_km', 'distance_start_km', 'distance_end_km']) {
+      if (Number(obj[key]) === 65535) {
+        delete obj[key];
+        stats.saturatedDistances += 1;
+      }
+    }
+    if ('vin' in obj && !validVin(obj.vin)) {
+      delete obj.vin;
+      stats.invalidVins += 1;
+    } else if (validVin(obj.vin)) {
+      obj.vin = obj.vin.trim().toUpperCase();
+    }
+    if (obj.diag && typeof obj.diag === 'object') repairObject(obj.diag, legacy);
+    if (obj.meta && typeof obj.meta === 'object') repairObject(obj.meta, legacy);
+  };
+
+  if (Array.isArray(doc)) {
+    const seenTrips = new Set();
+    const repaired = [];
+    for (const row of doc) {
+      if (row?.kind === 'trip' && row.trip_id) {
+        const key = String(row.trip_id);
+        if (seenTrips.has(key)) { stats.duplicateTrips += 1; continue; }
+        seenTrips.add(key);
+      }
+      repairObject(row);
+      repaired.push(row);
+    }
+    return { document: repaired, stats };
+  }
+
+  repairObject(doc);
+  return { document: doc, stats };
+}

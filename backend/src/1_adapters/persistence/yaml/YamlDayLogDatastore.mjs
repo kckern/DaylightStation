@@ -120,6 +120,18 @@ export class YamlDayLogDatastore {
     await fs.writeFile(file, contents, 'utf8');
     return relPath;
   }
+
+  /** True when a durable document already exists (used for retry-safe ACKs). */
+  async documentExists(deviceId, relPath) {
+    const file = path.join(this.#root, sanitize(deviceId), relPath);
+    try {
+      await fs.access(file);
+      return true;
+    } catch (err) {
+      if (err.code === 'ENOENT') return false;
+      throw err;
+    }
+  }
 }
 
 export default YamlDayLogDatastore;

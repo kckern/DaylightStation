@@ -44,12 +44,24 @@ export class GetVehicleOverview {
       this.#historyRepository.listTripDescriptors(vehicleId, { withFixes: true }),
     ]);
 
-    const odometer = estimateOdometer({
+    let odometer = estimateOdometer({
       anchors: collectAnchors({ fuelLogs, serviceRecords }),
       counterReadings: collectCounterReadings(descriptors),
       fallbackDistanceKm: null,
       at: now,
     });
+    // PID A6 is an absolute odometer, but manufacturers vary in availability
+    // and scaling. It becomes authoritative only after a one-time comparison
+    // against the dashboard is recorded in vehicle.yml.
+    if (vehicle?.odometer?.pid_a6_verified === true) {
+      const direct = latestDirectOdometer(descriptors, now);
+      if (direct) {
+        odometer = {
+          km: direct.km, source: 'pid_a6', confidence: 'exact', anchor: null,
+          accumulatedKm: 0, unmeasuredSpans: [], observedAt: direct.at,
+        };
+      }
+    }
 
     const fuel = summarizeFuel(fuelLogs);
     const reminders = buildReminders({ serviceRecords, documents, asOf: now });
@@ -70,7 +82,9 @@ export class GetVehicleOverview {
         km: odometer.km,
         source: odometer.source,
         confidence: odometer.confidence,
-        anchored_at: odometer.anchor ? odometer.anchor.observedAt.toISOString() : null,
+        anchored_at: odometer.anchor
+          ? odometer.anchor.observedAt.toISOString()
+          : (odometer.observedAt?.toISOString() || null),
         accumulated_km: odometer.accumulatedKm,
         unmeasured_spans: odometer.unmeasuredSpans.length,
       },
@@ -97,6 +111,21 @@ export class GetVehicleOverview {
       },
     };
   }
+}
+
+function latestDirectOdometer(descriptors, asOf) {
+  const readings = [];
+  for (const d of descriptors) {
+    if (Number.isFinite(d.odometerStartKm) && d.startedAt instanceof Date) {
+      readings.push({ km: d.odometerStartKm, at: d.startedAt });
+    }
+    if (Number.isFinite(d.odometerEndKm) && d.endedAt instanceof Date) {
+      readings.push({ km: d.odometerEndKm, at: d.endedAt });
+    }
+  }
+  return readings
+    .filter((r) => !(asOf instanceof Date) || r.at <= asOf)
+    .sort((a, b) => b.at - a.at)[0] || null;
 }
 
 /**

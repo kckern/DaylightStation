@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import yaml from 'js-yaml';
 import { parseArgv } from './_argv.mjs';
-import { regroupByLocalDay, convertLegacyTrip } from './automotive/lib.mjs';
+import { regroupByLocalDay, convertLegacyTrip, repairTelemetryDocument } from './automotive/lib.mjs';
 import { dumpTrip } from '#apps/hardware/automotiveRelay.mjs';
 import { DEFAULT_TIMEZONE } from '#domains/core/utils/timezone.mjs';
 
@@ -127,24 +127,80 @@ async function migrateVehicle(vehicleDir, timezone, { apply, keepLegacy }) {
   return plan;
 }
 
+async function listYamlFiles(dir) {
+  const out = [];
+  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...await listYamlFiles(file));
+    else if (entry.isFile() && /\.ya?ml$/i.test(entry.name)) out.push(file);
+  }
+  return out;
+}
+
+async function repairTelemetry(root, dataDir, { apply }) {
+  const files = await listYamlFiles(root);
+  const total = { files: 0, odometers: 0, saturatedDistances: 0, invalidVins: 0, duplicateTrips: 0 };
+  const changes = [];
+
+  for (const file of files) {
+    const before = await readYaml(file);
+    if (before == null) continue;
+    const { document, stats } = repairTelemetryDocument(before);
+    const changed = Object.values(stats).some((n) => n > 0);
+    if (!changed) continue;
+    total.files += 1;
+    for (const key of Object.keys(stats)) total[key] += stats[key];
+    changes.push({ file, document, stats });
+  }
+
+  let backup = null;
+  if (apply && changes.length) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    backup = path.join(dataDir, '_backups', 'automotive', stamp);
+    await fs.mkdir(path.dirname(backup), { recursive: true });
+    await fs.cp(root, backup, { recursive: true, errorOnExist: true });
+    for (const { file, document } of changes) {
+      const temp = `${file}.repair-${process.pid}.tmp`;
+      await fs.writeFile(temp, yaml.dump(document, { noRefs: true, lineWidth: -1 }), 'utf8');
+      await fs.rename(temp, file);
+    }
+  }
+  return { total, backup };
+}
+
 async function main() {
   const { subcommand, flags, help } = parseArgv(process.argv.slice(2));
-  if (help || subcommand !== 'migrate') {
-    console.log('usage: node cli/automotive.cli.mjs migrate [--apply] [--keep-legacy] [--root <dir>]');
+  if (help || !['migrate', 'repair-telemetry'].includes(subcommand)) {
+    console.log('usage: node cli/automotive.cli.mjs <migrate|repair-telemetry> [--apply] [--keep-legacy] [--root <dir>] [--data-dir <dir>]');
     process.exit(help ? 0 : 1);
   }
 
   const apply = Boolean(flags.apply);
   const keepLegacy = Boolean(flags['keep-legacy']);
-  const dataDir = await resolveDataDir();
+  const explicitRoot = flags.root ? path.resolve(String(flags.root)) : null;
+  const dataDir = flags['data-dir']
+    ? path.resolve(String(flags['data-dir']))
+    : (explicitRoot ? path.resolve(explicitRoot, '..', '..', '..') : await resolveDataDir());
   const timezone = await resolveTimezone(dataDir);
-  const root = flags.root
-    ? String(flags.root)
+  const root = explicitRoot
+    ? explicitRoot
     : path.join(dataDir, 'household', 'automotive', 'log');
 
   console.log(`root:     ${root}`);
   console.log(`timezone: ${timezone}`);
   console.log(`mode:     ${apply ? 'APPLY' : 'dry run (pass --apply to write)'}\n`);
+
+  if (subcommand === 'repair-telemetry') {
+    const { total, backup } = await repairTelemetry(root, dataDir, { apply });
+    console.log(`files changed:       ${total.files}`);
+    console.log(`odometers corrected: ${total.odometers}`);
+    console.log(`saturated distances: ${total.saturatedDistances}`);
+    console.log(`invalid VINs removed:${total.invalidVins}`);
+    console.log(`duplicate trip refs: ${total.duplicateTrips}`);
+    if (backup) console.log(`backup:              ${backup}`);
+    if (!apply) console.log('Nothing written. Re-run with --apply; a full backup is created first.');
+    return;
+  }
 
   let vehicles = [];
   try {
