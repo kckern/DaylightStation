@@ -39,15 +39,6 @@ export const pianoLearningApi = {
     const query = exerciseId ? `?exercise_id=${encodeURIComponent(exerciseId)}` : '';
     return request(`users/${encodeURIComponent(userId)}/attempts${query}`);
   },
-  recordAttempt: (userId, attempt, { keepalive = false } = {}) => {
-    if (keepalive) {
-      return fetch(`/api/v1/piano/users/${encodeURIComponent(userId)}/attempts`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(attempt), keepalive: true,
-      }).then(async (response) => ({ ok: response.ok, status: response.status, data: await response.json().catch(() => null) }))
-        .catch(() => ({ ok: false, status: 0, data: null }));
-    }
-    return request(`users/${encodeURIComponent(userId)}/attempts`, { method: 'POST', body: attempt });
-  },
   assignments: (userId) => request(`users/${encodeURIComponent(userId)}/program-assignments`),
   putAssignments: (userId, body) => request(`users/${encodeURIComponent(userId)}/program-assignments`, { method: 'PUT', body }),
   programs: () => request('programs'),

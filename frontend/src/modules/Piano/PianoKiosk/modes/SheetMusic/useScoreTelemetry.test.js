@@ -100,6 +100,7 @@ describe('useScoreTelemetry', () => {
     const warn = logged.find(([lvl, e]) => lvl === 'warn' && e === 'score.playback.sched-late');
     expect(warn).toBeTruthy();
     expect(warn[2]).toMatchObject({ leadMs: -20 });
+    expect(warn[2]).not.toHaveProperty('note');
   });
 
   it('does not emit a stats record for a run that produced nothing', () => {
@@ -168,7 +169,8 @@ describe('useScoreTelemetry', () => {
     act(() => result.current.recordFollowHit({ step: 4, note: 60, sinceAdvanceMs: 812.6 }));
     const ev = logged.find(([, e]) => e === 'score.follow.timing');
     expect(ev[0]).toBe('sampled');
-    expect(ev[2]).toMatchObject({ step: 4, note: 60, sinceAdvanceMs: 813 });
+    expect(ev[2]).toMatchObject({ step: 4, sinceAdvanceMs: 813 });
+    expect(ev[2]).not.toHaveProperty('note');
     expect(ev[2]).not.toHaveProperty('feel');
     expect(ev[2]).not.toHaveProperty('driftMs');
     expect(ev[2]).not.toHaveProperty('expectedMs');

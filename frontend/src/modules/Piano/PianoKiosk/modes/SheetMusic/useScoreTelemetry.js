@@ -47,7 +47,7 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
     app: 'piano-sheetmusic',
     sessionLog: true,
     get scoreId() { return idRef.current; },
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  }), []);
   const drifts = useRef([]);
   const gaps = useRef([]);
   const stalls = useRef(0);
@@ -114,7 +114,7 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
     // note was sent with a past timestamp (dispatches immediately, audibly late).
     if (leadMs < 0 && schedLateWarns.current < SCHED_LATE_WARN_CAP) {
       schedLateWarns.current += 1;
-      logger.warn('score.playback.sched-late', { note: ev.note, leadMs: Math.round(leadMs) });
+      logger.warn('score.playback.sched-late', { leadMs: Math.round(leadMs) });
     }
   }, [logger]);
 
@@ -143,9 +143,9 @@ export function useScoreTelemetry({ id, tickMs = 100 }) {
   // classified it against the written note duration (~94ms), which made every
   // human response a `drag` and `tight` unreachable — 24 of 31 field records were
   // `drag`, up to 47s (audit M5b). No verdict is emitted now.
-  const recordFollowHit = useCallback(({ step, note, sinceAdvanceMs }) => {
+  const recordFollowHit = useCallback(({ step, sinceAdvanceMs }) => {
     follow.current.push(sinceAdvanceMs);
-    logger.sampled('score.follow.timing', { step, note, sinceAdvanceMs: Math.round(sinceAdvanceMs) }, { maxPerMinute: 20, aggregate: true });
+    logger.sampled('score.follow.timing', { step, sinceAdvanceMs: Math.round(sinceAdvanceMs) }, { maxPerMinute: 20, aggregate: true });
   }, [logger]);
 
   const flushFollow = useCallback((hits, wrongs) => {

@@ -3,14 +3,23 @@ import getLogger from '../../../../../lib/logging/Logger.js';
 import { PianoKeyboard } from '../../../components/PianoKeyboard.jsx';
 import { usePianoMidi, usePianoMidiNotes } from '../../PianoMidiContext.jsx';
 import { usePianoUser } from '../../PianoUserContext.jsx';
-import { isPersistentUser } from '../../pianoUser.js';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
-import { assessmentAttemptProgress, createAssessmentAttempt } from '../../../performance/assessmentAttempt.js';
-import { createAssessmentRuntime } from '../../../performance/assessmentRuntime.js';
+import {
+  assessmentProgress,
+  createAssessmentAttempt,
+  createAssessmentRuntime,
+} from '../../../performance/assessmentSession.js';
+import {
+  buildPianoAttemptEvidence,
+  pianoAssessmentTelemetry,
+  pianoAttemptClient,
+  pianoPersistenceOutcome,
+} from '../../../performance/attemptEvidence.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { pianoLearningApi } from './pianoLearningApi.js';
 import { prepareExerciseAssessment } from './assessment.js';
+import { resolveExerciseRunAccess } from './authorization.js';
 import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import './Exercises.scss';
 
@@ -18,11 +27,6 @@ const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musical
 
 function makeId(prefix) {
   return `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
-}
-
-function defaultRequirement(instance) {
-  const bpm = Number(instance?.tempo?.start_bpm);
-  return prepareExerciseAssessment({ instance, mode: Number.isFinite(bpm) ? 'cued' : 'free' }).requirement;
 }
 
 export default function ExerciseRun({ instanceId, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, requirementOverride = null, onExit, onPassed }) {
@@ -40,7 +44,8 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
   activeNotesRef.current = activeNotes;
   const persistedRef = useRef(false);
   const runtimeRef = useRef(null);
-  const challenge = intent === 'challenge' && isPersistentUser(currentUser);
+  const access = resolveExerciseRunAccess(intent, currentUser);
+  const { challenge } = access;
   const selectedMode = challenge ? requirement?.mode : practiceMode;
 
   useEffect(() => {
@@ -55,19 +60,19 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
       const loaded = instanceResponse.data;
       const step = programResponse.ok ? programResponse.data.steps?.find((entry) => entry.id === stepId) : null;
       setInstance(loaded);
-      setRequirement(requirementOverride ?? step?.requirement ?? defaultRequirement(loaded));
+      setRequirement(requirementOverride ?? step?.requirement ?? null);
     });
     return () => { alive = false; };
   }, [instanceId, programId, requirementOverride, stepId]);
 
   const buildAttempt = useCallback(() => {
-    if (!instance || !requirement) return null;
+    if (!access.allowed || !instance || (challenge && !requirement)) return null;
     const mode = selectedMode;
     const prepared = prepareExerciseAssessment({
       instance, mode, purpose: challenge ? 'challenge' : 'practice', requirement: challenge ? requirement : null,
     });
     return createAssessmentAttempt({ ...prepared, policy: { matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320 } });
-  }, [challenge, instance, requirement, selectedMode]);
+  }, [access.allowed, challenge, instance, requirement, selectedMode]);
 
   const installRuntime = useCallback(() => {
     const attempt = buildAttempt();
@@ -92,28 +97,39 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
 
   const snapshot = useSyncExternalStore(
     useCallback((listener) => runtime?.subscribe(listener) || (() => {}), [runtime]),
-    useCallback(() => runtime?.getSnapshot() || EMPTY_SNAPSHOT, [runtime]),
+    useCallback(() => runtime?.getStoreSnapshot() || EMPTY_SNAPSHOT, [runtime]),
     () => EMPTY_SNAPSHOT,
   );
 
   const persist = useCallback(async (result, status = result?.status || 'completed', { keepalive = false } = {}) => {
-    if (!isPersistentUser(currentUser) || persistedRef.current || !instance) return;
+    if (persistedRef.current || !instance) return;
     persistedRef.current = true;
-    const body = {
-      attempt_id: makeId('attempt'),
-      challenge_id: makeId(challenge ? 'exercise-challenge' : 'exercise-practice'),
+    const terminalResult = { ...(result || {}), status };
+    const body = buildPianoAttemptEvidence({
+      result: terminalResult,
+      attemptId: makeId('attempt'),
+      ...(challenge
+        ? { challengeId: makeId('exercise-challenge') }
+        : { activityId: `exercise:${instance.id}:${selectedMode}` }),
       kind: instance.form ?? 'exercise',
       purpose: challenge ? 'challenge' : 'practice',
-      status,
-      ...(result || {}),
       prompt: { exercise_id: instance.id, label: instance.title, mode: selectedMode, level: instance.level?.[selectedMode] ?? null },
       context: { surface: 'exercises', matcher: runtimeRef.current?.getSnapshot().matcher ?? null, program_id: programId, step_id: stepId },
-      grading_policy_version: result?.rubric?.id ?? 'exercise-interrupted-v2',
-      provider_version: 'exercise-runtime-v3',
-    };
-    const response = await pianoLearningApi.recordAttempt(currentUser, body, { keepalive });
-    if (!response.ok) logger.warn('piano.exercise-attempt-save-failed', { id: instance.id, status: response.status });
-  }, [challenge, currentUser, instance, logger, programId, selectedMode, stepId]);
+      gradingPolicyVersion: result?.rubric?.id ?? 'exercise-interrupted-v2',
+      providerVersion: 'exercise-runtime-v4',
+    });
+    if (!access.persistent) {
+      logger.info('piano.exercise-assessment', pianoAssessmentTelemetry(body, { outcome: 'skipped-guest' }));
+      return;
+    }
+    const response = await pianoAttemptClient.record(currentUser, body, { keepalive });
+    const outcome = pianoPersistenceOutcome(response);
+    const log = pianoAssessmentTelemetry(body, {
+      outcome, status: response.status, error: response.error, durationMs: response.durationMs,
+    });
+    if (outcome === 'saved') logger.info('piano.exercise-assessment', log);
+    else logger.warn('piano.exercise-assessment', log);
+  }, [access.persistent, challenge, currentUser, instance, logger, programId, selectedMode, stepId]);
 
   useEffect(() => {
     if (!snapshot.result || persistedRef.current) return;
@@ -164,10 +180,11 @@ export default function ExerciseRun({ instanceId, intent = 'practice', practiceM
     runtimeRef.current?.dispose();
   }, [persist]);
 
-  if (instance === undefined || !requirement || !runtime) return <SkeletonStage />;
+  if (!access.allowed) return <PianoEmpty title="Choose a player" hint="Challenges require a persistent piano profile so the result can be verified and recorded." />;
+  if (instance === undefined || (challenge && !requirement) || !runtime) return <SkeletonStage />;
   if (!instance) return <PianoEmpty title="Exercise not found" hint="It may have been renamed." />;
 
-  const progress = assessmentAttemptProgress(snapshot);
+  const progress = assessmentProgress(snapshot);
   const eventIndex = Math.min(progress.eventIndex, instance.events.length);
   const result = snapshot.result?.status === 'completed' ? snapshot.result : null;
   const phase = snapshot.status === 'prepared' ? 'ready' : snapshot.status === 'completed' ? 'done' : countdown ? 'countdown' : 'running';

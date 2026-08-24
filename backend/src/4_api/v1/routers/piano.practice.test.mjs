@@ -108,4 +108,14 @@ describe('piano practice endpoints', () => {
     expect(r.body.measures['0']).toBeUndefined();  // stale measures discarded
     expect(r.body.measures['2']).toBeTruthy();
   });
+
+  it('uses the v2 content digest when equal-size engravings differ', async () => {
+    const a = app();
+    await request(a).put('/api/v1/piano/users/kc/practice/files-z')
+      .send({ fingerprint: { version: 2, measureCount: 8, xmlBytes: 100, contentSha256: 'a'.repeat(64) }, measures: { 0: { rh: { attempts: 3, passes: 3 } } } });
+    const r = await request(a).put('/api/v1/piano/users/kc/practice/files-z')
+      .send({ fingerprint: { version: 2, measureCount: 8, xmlBytes: 100, contentSha256: 'b'.repeat(64) }, measures: { 2: { rh: { attempts: 1, passes: 0 } } } });
+    expect(r.body.measures['0']).toBeUndefined();
+    expect(r.body.measures['2']).toBeTruthy();
+  });
 });

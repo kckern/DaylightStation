@@ -28,7 +28,7 @@ vi.mock('../../PianoUserContext.jsx', () => ({
 
 import usePracticeRecord from './usePracticeRecord.js';
 
-const FP = { measureCount: 40, xmlBytes: 12345 };
+const FP = { version: 2, measureCount: 40, xmlBytes: 12345, contentSha256: 'a'.repeat(64) };
 
 beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; });
 
@@ -100,7 +100,14 @@ describe('usePracticeRecord', () => {
   });
 
   it('fingerprint mismatch on load: server record is discarded, record is {}', async () => {
-    store = { fingerprint: { measureCount: 999, xmlBytes: 1 }, measures: { 1: { both: { attempts: 5, passes: 5 } } } };
+    store = { fingerprint: { version: 2, measureCount: 40, xmlBytes: 12345, contentSha256: 'b'.repeat(64) }, measures: { 1: { both: { attempts: 5, passes: 5 } } } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.record).toEqual({});
+  });
+
+  it('treats legacy shape-only fingerprints as stale', async () => {
+    store = { fingerprint: { measureCount: FP.measureCount, xmlBytes: FP.xmlBytes }, measures: { 1: { both: { attempts: 5, passes: 5 } } } };
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
     await waitFor(() => expect(result.current.loaded).toBe(true));
     expect(result.current.record).toEqual({});
