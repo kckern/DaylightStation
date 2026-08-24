@@ -68,3 +68,23 @@ it('rejects an unknown mode', () => {
   const { svc } = harness();
   expect(() => svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'bogus' })).toThrow(/quiz\|flashcard\|drill/);
 });
+
+it('returns durable completed Catalog quiz evidence only to the owning learner', () => {
+  const { svc } = harness();
+  const learningContext = {
+    catalogId: 'core', subjectId: 'geography', courseId: 'places',
+    unitId: 'locations', lessonId: 'regions', moduleId: 'check',
+  };
+  const { sessionId } = svc.openResolvedSession({
+    userId: 'u1', bankSnapshot: bank, mode: 'quiz', learningContext,
+  });
+  expect(() => svc.completedQuizAssessment({ sessionId, learnerId: 'u1' }))
+    .toThrow(/must be complete/i);
+  svc.answer({ sessionId, itemId: 'location-1', given: 'A' });
+  expect(svc.completedQuizAssessment({ sessionId, learnerId: 'u1' })).toMatchObject({
+    sessionId, learnerId: 'u1', bank: { id: bank.id }, learning: learningContext,
+    responses: [{ itemId: 'location-1', given: 'A' }],
+  });
+  expect(() => svc.completedQuizAssessment({ sessionId, learnerId: 'u2' }))
+    .toThrow(/does not belong/i);
+});

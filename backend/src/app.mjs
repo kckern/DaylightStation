@@ -297,6 +297,7 @@ import { GetLearningProgress } from './3_applications/school/GetLearningProgress
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
 import { RecordLearningReflection } from './3_applications/school/RecordLearningReflection.mjs';
 import { OpenCatalogLearningSession } from './3_applications/school/OpenCatalogLearningSession.mjs';
+import { OfferCatalogQuizRemediation } from './3_applications/school/remediation/OfferCatalogQuizRemediation.mjs';
 import { IssueSchoolContinuationCode } from './3_applications/school/IssueSchoolContinuationCode.mjs';
 import { AssessmentReviewFollowUpSource } from './3_applications/school/AssessmentReviewFollowUpSource.mjs';
 import {
@@ -2669,6 +2670,13 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
+  const offerCatalogQuizRemediation = schoolCatalog.query
+    ? new OfferCatalogQuizRemediation({
+      catalog: schoolCatalog.query,
+      grader: schoolService,
+      remediationOffers: schoolLearningLoop.offers,
+    })
+    : null;
   // Six-digit codes have to remain valid after ordinary roster edits.  Their
   // explicitly configured slots are therefore a School-wide publication
   // policy, never a device-discovered or array-order-derived implementation
@@ -3662,6 +3670,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     recordLearningReflection,
     recordLearningProbeInteraction: schoolLearningLoop.probeInteractions,
     remediationTutor: schoolLearningLoop.tutor,
+    offerCatalogQuizRemediation,
     learnerDirectory: schoolLearnerDirectory,
     printService: schoolPrintService,
     academicPeriodStore: schoolAcademicPeriods,

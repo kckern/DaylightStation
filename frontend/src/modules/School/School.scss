@@ -146,6 +146,7 @@
   &__choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem; }
   &__choice, &__check, &__chip { min-height: 84px; border: 1px solid var(--school-border); border-radius: 14px; background: var(--school-surface-2); color: var(--school-fg); font-size: 1.3rem; font-weight: 700; cursor: pointer; }
   &__choice--right { border-color: var(--school-accent); color: var(--school-accent); }
+  &__choice--armed { border: 3px solid var(--school-accent); background: color-mix(in srgb, var(--school-accent) 12%, var(--school-surface-2)); }
   &__choice--dim { opacity: 0.5; }
   &__chip { width: 100%; &--selected { border-color: var(--school-accent); } &--paired { opacity: 0.5; } }
   &__columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -188,8 +189,9 @@
     &.is-unknown { background: transparent; border: 2px dashed var(--school-border); }
   }
   &--summary { text-align: center; align-items: center; }
-  &__grades { display: flex; gap: 0.75rem; button { flex: 0 0 calc(50% - 0.375rem); min-height: 64px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; } }
+  &__grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; button { min-height: 64px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; } }
   &__missed { border: 1px solid var(--school-danger); background: transparent; color: var(--school-danger); }
+  &__again-later { border: 1px solid var(--school-border); background: var(--school-surface-2); color: var(--school-fg); span { display: block; color: var(--school-muted); font-size: 0.72em; } }
   &__got { border: none; background: var(--school-accent); color: var(--school-accent-ink); }
   &__score { font-size: 2rem; font-weight: 800; margin: 0; }
   &__loading, &__hint, &__cards-seen, &__unrecorded-summary { color: var(--school-muted); }
@@ -204,6 +206,11 @@
     min-height: 52px; padding: 0 1rem; border: 1px solid var(--school-border); border-radius: 10px;
     background: var(--school-surface); color: var(--school-fg); font-weight: 700; cursor: pointer;
   }
+  &__tutor-btn {
+    min-height: 60px; padding: 0 1.25rem; border: none; border-radius: 12px;
+    background: var(--school-accent); color: var(--school-accent-ink); font-weight: 800; cursor: pointer;
+  }
+  &__tutor-status { margin: 0; color: var(--school-muted); }
   &__stop {
     min-height: 40px; padding: 0 0.9rem; margin-left: auto; border: 1px solid var(--school-border);
     border-radius: 999px; background: transparent; color: var(--school-muted); font-weight: 700; cursor: pointer;
@@ -219,6 +226,8 @@
 .school-probe__out-of-tries { color: var(--school-muted); margin: 0; }
 
 .school-item__choice--chosen-wrong { border: 2px solid var(--school-warn); opacity: 1; }
+.school-item__confirm { display: block; margin-top: 0.2rem; font-size: 0.72em; color: var(--school-accent); }
+.school-item__choice-hint { margin: -0.3rem 0 0; text-align: center; color: var(--school-muted); font-size: 0.9rem; }
 .school-item__you { font-size: 0.8em; color: var(--school-muted); }
 .school-item__verdict { margin: 0.35rem 0 0; font-weight: 700; }
 

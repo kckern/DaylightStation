@@ -40,6 +40,12 @@ vi.mock('./schoolApi.js', () => ({
     bank: vi.fn(async (id) => ({ ok: true, status: 200, data: { id, title: 'Caps', audience: 'assigned', items: [{ id: 'q1', type: 'multiple_choice', prompt: 'WA?', answer: 'Olympia', choices: ['Seattle', 'Olympia'] }] } })),
     openSession: vi.fn(async () => ({ ok: true, status: 200, data: { sessionId: 'ses_1' } })),
     answer: vi.fn(async () => ({ ok: true, status: 200, data: { correct: true, expected: 'Olympia', attemptId: 'att_1' } })),
+    remediationOffer: vi.fn(async () => ({ ok: true, status: 201, data: { status: 'offered', offer: { sessionId: 'REM_1' } } })),
+    remediationSession: vi.fn(async () => ({ ok: true, status: 200, data: { session: {
+      sessionId: 'REM_1', status: 'offered', masteryPercent: 0, targetPercent: 80,
+      learnerControls: ['stop'], turns: [], cursor: { nextClientSequence: 0, latestServerSequence: 0 },
+    } } })),
+    remediationAction: vi.fn(),
     materials: (...a) => materialsMock(...a),
     learningCatalogs: (...a) => learningCatalogsMock(...a),
     learningLesson: (...a) => learningLessonMock(...a),
@@ -201,10 +207,7 @@ describe('authored learning Catalog', () => {
     expect(surfaceLogMock).toHaveBeenCalledWith('launch-refused', expect.objectContaining({ moduleId: 'check' }));
   });
 
-  // Task 16 (debt W7b): a failed catalog quiz offers a way back to the
-  // Catalog (the real, reachable target -- AdaptiveTutorPanel needs a
-  // pre-existing remediation sessionId this screen doesn't have yet).
-  it('a failed catalog quiz module offers Review this lesson, which reopens the Catalog', async () => {
+  it('a failed catalog quiz opens the adaptive tutor session minted from that attempt', async () => {
     // Not `...Once`: LearningCatalogBrowser unmounts while the quiz plays
     // (`section === 'catalog' && !active`) and re-fetches on remount after
     // Review this lesson is tapped, so both mounts need this same catalog.
@@ -241,13 +244,16 @@ describe('authored learning Catalog', () => {
     // The shared `answer` mock always grades "correct" regardless of which
     // choice was tapped; override once so this run actually fails the bar.
     schoolApi.answer.mockResolvedValueOnce({ ok: true, status: 200, data: { correct: false, expected: 'Yes', attemptId: 'a1' } });
-    fireEvent.click(await screen.findByRole('button', { name: 'No' })); // wrong answer -> fails the 80% bar
+    const wrongChoice = await screen.findByRole('button', { name: 'No' });
+    fireEvent.click(wrongChoice);
+    fireEvent.click(wrongChoice); // confirm wrong answer -> fails the 80% bar
     fireEvent.click(await screen.findByRole('button', { name: /next/i }));
     expect(await screen.findByTestId('quiz-passbar')).toHaveTextContent(/passing is 80%/);
-    fireEvent.click(screen.getByTestId('review-lesson'));
-    // Back at the Catalog root, quiz gone -- the same tile trail is walkable again.
+    fireEvent.click(await screen.findByTestId('open-tutor'));
+    // The quiz hands off to the exact server-minted remediation session.
     expect(screen.queryByTestId('quiz-summary')).toBeNull();
-    expect(await screen.findByRole('button', { name: /^Core$/i })).toBeInTheDocument();
+    expect(await screen.findByText('Adaptive tutor')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /start tutoring/i })).toBeInTheDocument();
   });
 });
 

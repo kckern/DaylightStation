@@ -101,7 +101,8 @@ describe('scenario 1 — the video unit, end to end', () => {
     const receipt = h.lastReceiptText();
     expect(receipt).toContain('PASSED');
     expect(receipt).toContain('6 of 6 correct');
-    expect(receipt).toContain('NEXT UP');
+    expect(receipt).toContain('ONE MORE?');
+    expect(receipt).toContain('Today is already complete. Scan only if you want one more.');
     expect(receipt).toContain('Adding and Subtracting Unlike Denominators');
 
     // --- and unit 02 is now offered ----------------------------------------

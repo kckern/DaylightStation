@@ -136,6 +136,15 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
     }
   };
 
+  // A no-stakes third lane: the child can ask to see the card again without
+  // claiming success or failure. It rotates to the back of the deck, writes
+  // no answer, and does not affect first-try or cards-seen totals.
+  const showAgain = () => {
+    if (!card || gradingRef.current || abandonedRef.current) return;
+    setRevealed(false);
+    setQueue((q) => q.length > 1 ? [...q.slice(1), q[0]] : [...q]);
+  };
+
   if (queue.length === 0) {
     return (
       <div className="school-runner school-runner--summary" data-testid="cards-summary">
@@ -217,6 +226,9 @@ export default function FlashcardRunner({ bank, learning = null, onExit }) {
         : (
           <div className="school-runner__grades">
             <button type="button" className="school-runner__missed" disabled={grading} onClick={() => grade(false)}>Not yet</button>
+            <button type="button" className="school-runner__again-later" disabled={grading} onClick={showAgain}>
+              Show me again <span>(doesn&rsquo;t count)</span>
+            </button>
             <button type="button" className="school-runner__got" disabled={grading} onClick={() => grade(true)}>Got it</button>
           </div>
         )}

@@ -503,6 +503,43 @@ export class SchoolService {
     return this.#gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance });
   }
 
+  /**
+   * Return the server-authoritative evidence needed to offer tutoring after a
+   * completed Catalog quiz. This is an application-to-application seam, not an
+   * HTTP response: the immutable bank snapshot and answers never go back to
+   * the browser. Attempts are read from durable storage so a resumed quiz is
+   * complete even when some answers came from an earlier process.
+   */
+  completedQuizAssessment({ sessionId, learnerId } = {}) {
+    const session = this.#session(sessionId);
+    if (!learnerId || session.userId !== learnerId) {
+      throw new GuestForbiddenError('quiz session does not belong to this learner');
+    }
+    if (session.mode !== 'quiz' || !session.learningContext?.lessonId || !session.learningContext?.moduleId) {
+      throw new ValidationError('adaptive tutoring requires a Catalog quiz session');
+    }
+    const attempts = this.#ds.readAllAttempts(learnerId)
+      .filter((attempt) => attempt.sessionId === session.id
+        && attempt.bankId === session.bankId
+        && !isRegradeCorrection(attempt));
+    const byItem = new Map();
+    for (const attempt of attempts) byItem.set(attempt.itemId, attempt);
+    const responses = session.bank.items.map((item) => byItem.get(item.id))
+      .filter(Boolean)
+      .map((attempt) => ({ itemId: attempt.itemId, given: structuredClone(attempt.given) }));
+    if (responses.length !== session.bank.items.length) {
+      throw new ValidationError('quiz must be complete before adaptive tutoring is offered');
+    }
+    return {
+      sessionId: session.id,
+      learnerId,
+      bankRev: session.bankRev,
+      bank: structuredClone(session.bank),
+      learning: structuredClone(session.learningContext),
+      responses,
+    };
+  }
+
   #gradeAndRecord({ session: s, item, given, selfGrade, transport, provenance, recordedAt = null, learningContext = null }) {
     // A resumed sitting has already banked some answers: re-answering one
     // would double-record the item and skew the score, so it is refused

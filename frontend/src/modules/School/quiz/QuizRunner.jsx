@@ -63,7 +63,38 @@ function FlagAsk({ userId, bankId, sessionId, title }) {
   );
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh = false, onExit, onRestart = null, onReview = null }) {
+/**
+ * Mint the durable tutor offer as soon as the failed summary appears. The
+ * browser sends only session identity; the server re-reads the immutable bank,
+ * durable answers, exact Catalog lesson, and authored remediation policy.
+ */
+function TutorOffer({ userId, sessionId, onOpen }) {
+  const [state, setState] = useState({ kind: 'loading', sessionId: null });
+  useEffect(() => {
+    let alive = true;
+    schoolApi.remediationOffer(sessionId, userId).then(({ ok, data }) => {
+      if (!alive) return;
+      const offeredId = data?.offer?.sessionId ?? null;
+      if (ok && offeredId) setState({ kind: 'ready', sessionId: offeredId });
+      else if (ok && ['not_configured', 'not_triggered'].includes(data?.status)) {
+        setState({ kind: 'unavailable', sessionId: null });
+      } else setState({ kind: 'failed', sessionId: null });
+    });
+    return () => { alive = false; };
+  }, [sessionId, userId]);
+
+  if (state.kind === 'loading') return <p className="school-runner__tutor-status">Checking for tutor help…</p>;
+  if (state.kind === 'ready') return (
+    <button type="button" className="school-runner__tutor-btn" data-testid="open-tutor"
+      onClick={() => onOpen(state.sessionId)}>
+      Get tutor help
+    </button>
+  );
+  if (state.kind === 'failed') return <p className="school-runner__tutor-status">Tutor help couldn&rsquo;t open right now.</p>;
+  return null;
+}
+
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh = false, onExit, onRestart = null, onReview = null, onTutor = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -207,6 +238,9 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh
         )}
         {passed === false && currentUser?.id && (
           <RetakeAsk userId={currentUser.id} bankId={bank.id} title={bank.title} />
+        )}
+        {passed === false && learning?.unitId && currentUser?.id && onTutor && (
+          <TutorOffer userId={currentUser.id} sessionId={sessionId} onOpen={onTutor} />
         )}
         {/* Student-advocacy W7b: a fail is also a way back to the lesson, not
             just a retake ask. Gated on `learning?.unitId` — the context only a

@@ -51,6 +51,9 @@ export const schoolApi = {
     userId, bankId, mode, ...(learning ? { learning } : {}), ...(fresh ? { fresh: true } : {}),
   }),
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
+  remediationOffer: (sessionId, learnerId) => req(
+    `/sessions/${encodeURIComponent(sessionId)}/remediation-offer`, { learnerId },
+  ),
   results: (userId, bankId) => req(`/users/${encodeURIComponent(userId)}/results${bankId ? `?bankId=${encodeURIComponent(bankId)}` : ''}`),
   materials: () => req('/materials'),
   // `audience` filters metrics SERVER-SIDE: a learner request never receives

@@ -271,13 +271,18 @@ describe('the result receipt', () => {
       .toContain(fixtureUnit(WORKSHEET_UNIT).objectives[0]);
   });
 
-  it('names the newly unlocked next unit on a pass', async () => {
+  it('offers the newly unlocked unit as an optional one-more beyond today\'s cap', async () => {
     await graded({ unitId: MEDIA_UNIT, percent: 100 });
     const result = await close.execute({ sessionId: SID });
     const next = fixtureUnit(WORKSHEET_UNIT).title;
     expect(result.unlocked).toMatchObject({ unitId: WORKSHEET_UNIT, title: next });
     expect(result.document.blocks.find((b) => b.type === 'scan_action')).toMatchObject({
-      eyebrow: 'Next up', label: next, presentation: 'lesson', hideCode: true,
+      eyebrow: 'One more?', label: next, presentation: 'lesson', hideCode: true,
+      description: 'Today is already complete. Scan only if you want one more.',
+    });
+    expect(await tokens.get(result.nextSubjectToken)).toMatchObject({
+      tokenClass: 'subject_next',
+      subject: { learnerId: 'kid1', subject: 'math', continueToday: true },
     });
   });
 
