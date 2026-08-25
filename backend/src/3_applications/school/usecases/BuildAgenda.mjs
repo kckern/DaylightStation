@@ -66,6 +66,28 @@ function withAttestedPasses(history, attestations, learnerId) {
   ];
 }
 
+/**
+ * Pure: the "Unit N · M/of" progress label printed under a subject's next
+ * lesson. Both indices are 1-based on paper — `moduleIndex` needs the same
+ * `+ 1` `lessonIndex` already gets. Any missing/unmatched index (module not
+ * in `moduleOrder`, unit not in that module's `lessonOrder`, absent
+ * enrollment) falls back to the caller's existing label unchanged.
+ *
+ * @param {object} params
+ * @param {{moduleOrder?: string[], lessonOrder?: Record<string, string[]>}|null|undefined} params.enrollment
+ * @param {{module?: string, unitId?: string}|null|undefined} params.entry
+ * @param {string|null} [params.fallback]
+ * @returns {string|null}
+ */
+export function moduleProgressLabel({ enrollment, entry, fallback = null }) {
+  const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
+  const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
+  const lessonIndex = lessons.indexOf(entry?.unitId);
+  return moduleIndex >= 0 && lessonIndex >= 0
+    ? `Unit ${moduleIndex + 1} · ${lessonIndex + 1}/${lessons.length}`
+    : fallback;
+}
+
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
@@ -384,16 +406,11 @@ export class BuildAgenda {
             lesson: entry?.title,
           };
         })(),
-        progressLabel: (() => {
-          const entry = section.next;
-          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
-          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
-          const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
-          const lessonIndex = lessons.indexOf(entry?.unitId);
-          return moduleIndex >= 0 && lessonIndex >= 0
-            ? `Unit ${moduleIndex} · ${lessonIndex + 1}/${lessons.length}`
-            : section.progressLabel;
-        })(),
+        progressLabel: moduleProgressLabel({
+          enrollment: assignment?.courses?.find((course) => course.courseId === section.next?.courseId)?.enrollment,
+          entry: section.next,
+          fallback: section.progressLabel,
+        }),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)
           ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
