@@ -9,6 +9,19 @@ import {
 } from './entrance.js';
 import { registerSurroundModule, resetSurroundRegistry } from './registry.js';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -464,7 +477,7 @@ describe('SurroundFrame', () => {
 describe('SurroundFrame — the shipped composition', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'SurroundFrame.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'SurroundFrame.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -839,7 +852,7 @@ describe('SurroundFrame — the shipped composition', () => {
  * of a drape rather than as something the drape hangs in front of.
  */
 describe('SurroundFrame — the curtain’s bleed', () => {
-  const sheet = () => sass.compile(
+  const sheet = () => compileSheetOnce(
     path.join(path.dirname(fileURLToPath(import.meta.url)), 'SurroundFrame.scss'),
   ).css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ');
 
