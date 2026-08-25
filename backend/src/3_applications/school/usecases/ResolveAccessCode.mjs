@@ -216,7 +216,9 @@ export class ResolveAccessCode {
     }
 
     try {
-      const resolution = await this.#resolve({ learnerId, subject });
+      const resolution = await this.#resolve({
+        learnerId, subject, continueToday: record.subject?.continueToday === true,
+      });
       const options = {
         mediaSurface: this.#mediaSurface,
         bankPrintable: this.#bankPrintable(resolution.unit),
@@ -388,7 +390,7 @@ export class ResolveAccessCode {
    * The `ResolveSubjectNext` resolution shape, computed WITHOUT ensuring a
    * session. See the file header for why the two are not one function.
    */
-  async #resolve({ learnerId, subject }) {
+  async #resolve({ learnerId, subject, continueToday = false }) {
     const nowIso = this.#clock().toISOString();
     const [assignment, units, rawHistory, works] = await Promise.all([
       this.#assignments.get(learnerId),
@@ -427,12 +429,20 @@ export class ResolveAccessCode {
     const withProjection = (value) => ({ ...value, projection });
     const section = sections.find((s) => s.subject === subject);
     if (!section) return withProjection({ kind: 'empty' });
-    // No `continueToday` here, ever: the panel has no affordance for "do it
-    // again anyway", and that flag is precisely the case that would force a
-    // fresh session open on a subject already finished for the day.
-    if (section.servedToday) return withProjection({ kind: 'served', subjectLabel: subject });
+    // The receipt prints a QR AND a six-digit code side by side for the SAME
+    // "one more?" action (`CloseSessionOutcome.mjs`, ~:290-314) — the panel
+    // DOES have the affordance to do it again, because that code IS it. The
+    // token carries `continueToday` for exactly this, and this resolver must
+    // honour the token's own flag, never assume it is always false. Mirror
+    // `ResolveSubjectNext.mjs` (the scan path reading the same token) so the
+    // two resolvers can never disagree about what one token means: only
+    // refuse with `served` when the subject is served AND the token did not
+    // ask to continue anyway.
+    if (section.servedToday && !continueToday) return withProjection({ kind: 'served', subjectLabel: subject });
 
-    const entry = section.next;
+    const entry = section.next ?? (continueToday && section.servedToday
+      ? [...plan.inProgress, ...plan.available].find((candidate) => candidate.subject === subject)
+      : null);
     if (!entry) {
       if (section.lockedRemedy) return withProjection({ kind: 'locked', remedy: section.lockedRemedy });
       if (section.programUnavailable) return withProjection({ kind: 'unavailable' });
