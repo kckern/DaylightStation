@@ -60,7 +60,9 @@ const ready = async () => {
 describe('TeacherConsole workspace', () => {
   it('renders global navigation and dashboard at the root', async () => {
     await ready();
-    for (const label of ['Dashboard', 'Action queue', 'Curriculum', 'Operations']) expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    // Rail + labeled mobile tab both answer to the full name since the
+    // truthful-abbreviation wave — at least one each.
+    for (const label of ['Dashboard', 'Action queue', 'Curriculum', 'Operations']) expect(screen.getAllByRole('button', { name: label }).length).toBeGreaterThan(0);
     expect(screen.getByText('Today at a glance')).toBeTruthy();
   });
 
