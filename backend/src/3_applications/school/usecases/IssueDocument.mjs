@@ -43,6 +43,7 @@ import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocumen
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
 import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
+import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
@@ -421,8 +422,13 @@ export class IssueDocument {
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
           description: unit.description ?? null,
-          sourceTitle: 'The Young People’s Atlas of the United States',
+          sourceTitle: unit.sourceTitle ?? 'The Young People’s Atlas of the United States',
           printedPages: unit.provenance?.printed_pages ?? [],
+          subjectIcon: unit.subject ?? 'school',
+          subjectName: unit.subject ?? 'School',
+          breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
+          passPercent: unit.passing?.percent ?? null,
+          progress: await this.#lessonProgress({ state, unit, nowIso }),
         }),
       });
       instance = { ...instance, documentId: published.id, documentRevision: published.rev };
@@ -449,7 +455,20 @@ export class IssueDocument {
     // see `RenderPrintDocument`'s `buildManifestText`.
     const passPercent = unit.passing?.percent ?? null;
     let rendered;
-    try {
+    // A retained artifact is already the exact paper that was issued. Do not
+    // render merely to prove it still renders: card-attached rendering writes
+    // allocation state, which makes a reprint a mutation and can burn a card.
+    const retained = reprinting && this.#issuedArtifacts
+      ? await this.#issuedArtifacts.get(instance.id) : null;
+    if (retained) {
+      rendered = {
+        pdf: retained.bytes,
+        pageCount: retained.manifest.pageCount ?? null,
+        formMap: null,
+        allocation: retained.manifest.allocation ?? null,
+        duplex: retained.manifest.renderContext?.duplex ?? null,
+      };
+    } else try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
         context: reprinting && instance.omr?.cardId
@@ -498,6 +517,7 @@ export class IssueDocument {
     rendered.pdf = await this.#retainIssuedPdf({
       artifactId: instance.id, rendered, reprinting, nowIso, sessionId, state,
       worksheetInstanceId: instance.id, allocation: rendered.allocation,
+      document: publishedDocument,
     });
     let printResult;
     try {
@@ -527,6 +547,16 @@ export class IssueDocument {
       pageCount: rendered.pageCount, tokens: {}, allocation: rendered.allocation,
       document: null, message: reprinting ? 'Printing that exact worksheet again.' : 'Printing your worksheet.',
     };
+  }
+
+  async #lessonProgress({ state, unit, nowIso }) {
+    if (!unit?.courseId || typeof this.#curriculum.listUnits !== 'function'
+      || typeof this.#sessions.listForLearner !== 'function') return null;
+    const [assignment, units, sessions, works] = await Promise.all([
+      this.#assignments.get(state.learnerId), this.#curriculum.listUnits(),
+      this.#sessions.listForLearner(state.learnerId), this.#curriculum.listWorks?.() ?? [],
+    ]);
+    return lessonProgressRows({ learnerId: state.learnerId, unit, assignment, units, sessions, works, now: nowIso });
   }
 
   /**
@@ -630,7 +660,17 @@ export class IssueDocument {
     const tokens = await this.#mintSheetTokens(published, sessionId, nowIso);
 
     let rendered;
-    try {
+    const retained = reprinting && this.#issuedArtifacts
+      ? await this.#issuedArtifacts.get(artifactId) : null;
+    if (retained) {
+      rendered = {
+        pdf: retained.bytes,
+        pageCount: retained.manifest.pageCount ?? null,
+        formMap: null,
+        allocation: retained.manifest.allocation ?? null,
+        duplex: retained.manifest.renderContext?.duplex ?? null,
+      };
+    } else try {
       const result = await this.#renderPrintDocument.execute({
         // The session's own `variant` overrides the published document's,
         // exactly like the legacy path below (`state.variant === (document.variant
@@ -678,6 +718,7 @@ export class IssueDocument {
 
     rendered.pdf = await this.#retainIssuedPdf({
       artifactId, rendered, reprinting, nowIso, sessionId, state, allocation: rendered.allocation,
+      document: published,
     });
     let printResult;
     try {
@@ -743,7 +784,7 @@ export class IssueDocument {
 
   /** Persist before dispatch; a reprint always reads the retained bytes. */
   async #retainIssuedPdf({ artifactId, rendered, reprinting, nowIso, sessionId, state,
-    worksheetInstanceId = null, allocation = null }) {
+    worksheetInstanceId = null, allocation = null, document = null }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
     if (reprinting) {
@@ -768,6 +809,12 @@ export class IssueDocument {
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
       captureKind: reprinting ? 'reconstructed' : 'original', worksheetInstanceId, allocation,
+      kind: 'worksheet', document,
+      renderContext: {
+        learnerId: state.learnerId ?? null, sessionId,
+        variant: state.variant ?? 0, passPercent: state.passingPercent ?? null,
+        duplex: rendered.duplex ?? null,
+      },
     });
     return retained.bytes;
   }

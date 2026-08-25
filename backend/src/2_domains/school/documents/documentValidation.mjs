@@ -188,7 +188,7 @@ export function validateDocument(raw, { allowAnswers = false } = {}) {
   }
   const errors = [];
   if (typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id) || raw.id.length > ID_MAX_LENGTH) {
-    errors.push('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)');
+    errors.push('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/creature-identification/quiz-1)');
   } else if (/^[0-9]{7}$/.test(raw.id)) {
     // A bare 7-digit id is RESERVED: it is the OMR card-id shape, and the
     // print route resolves /print/<7 digits> as a card lookup. A document

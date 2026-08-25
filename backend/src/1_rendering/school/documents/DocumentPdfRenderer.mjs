@@ -496,11 +496,17 @@ export function createDocumentPdfRenderer({
     const innerX = xPt + node.paddingPt;
     const innerY = yPt + node.paddingPt;
     const textX = innerX;
-    // A full-height subject mark belongs at the end of the card, where it
-    // frames rather than delays the reading flow. The measured rail reserves
-    // this exact width, so text can never collide with it.
-    const iconX = xPt + node.widthPt - node.paddingPt - node.icon.widthPt;
-    SVGtoPDF(out, node.icon.svg, iconX, innerY, { width: node.icon.widthPt, height: node.icon.heightPt, assumePt: true });
+    // The side rail holds the subject mark and the lesson's place in its
+    // course, without competing with the reading flow.
+    const railX = xPt + node.widthPt - node.paddingPt - node.railPt;
+    const iconX = railX + (node.railPt - node.icon.widthPt) / 2;
+    setFont(out, 'bold', 6.5, 'muted');
+    out.text(node.subjectName, railX, innerY, { width: node.railPt, align: 'center', lineBreak: false });
+    // The card mark is supporting context, not the primary lesson label.
+    // Subject assets resolve `currentColor` to opaque black for ordinary SVG
+    // drawing; tint only this full-height lesson-card rail to 25% black.
+    const iconSvg = node.icon.svg.replaceAll('#000000', '#BFBFBF');
+    SVGtoPDF(out, iconSvg, iconX, innerY + node.subjectLabelHeightPt, { width: node.icon.widthPt, height: node.icon.heightPt, assumePt: true });
     let cursorY = innerY;
     const draw = (entry, styleKey) => {
       if (!entry) return;
@@ -515,8 +521,30 @@ export function createDocumentPdfRenderer({
     out.save().lineWidth(0.6).strokeColor(theme.ink.rule)
       // The divider belongs to the information rail.  It must stop before
       // the full-height subject SVG instead of visually slicing through it.
-      .moveTo(textX, cursorY - 4).lineTo(xPt + node.widthPt - node.paddingPt - node.railPt, cursorY - 4).stroke().restore();
+      .moveTo(textX, cursorY - 4).lineTo(railX - 12, cursorY - 4).stroke().restore();
     drawLines(out, node.success.lines, { xPt: textX, yPt: cursorY, styleKey: 'label' });
+    let progressY = innerY + node.subjectLabelHeightPt + node.icon.heightPt + 5;
+    for (const progress of node.progress ?? []) {
+      setFont(out, 'bold', 6.5, 'muted');
+      out.text(progress.label.toUpperCase(), railX, progressY, { width: node.railPt, lineBreak: false });
+      setFont(out, 'regular', 6.5, 'muted');
+      out.text(`${progress.completed}/${progress.total}`, railX, progressY, { width: node.railPt, align: 'right', lineBreak: false });
+      const trackY = progressY + 8;
+      out.save().lineWidth(1.4).strokeColor(theme.ink.rule)
+        .moveTo(railX, trackY).lineTo(railX + node.railPt, trackY).stroke().restore();
+      const completedWidth = node.railPt * progress.completed / progress.total;
+      if (completedWidth > 0) out.save().lineWidth(2).strokeColor(theme.ink.text)
+        .moveTo(railX, trackY).lineTo(railX + completedWidth, trackY).stroke().restore();
+      const inProgress = Math.min(progress.inProgress, progress.total - progress.completed);
+      if (inProgress > 0) {
+        const from = railX + completedWidth;
+        const to = railX + node.railPt * (progress.completed + inProgress) / progress.total;
+        out.save().lineWidth(0.45).strokeColor(theme.ink.text);
+        for (let tick = from + 2; tick < to; tick += 3) out.moveTo(tick, trackY - 1.5).lineTo(tick - 1.5, trackY + 1.5).stroke();
+        out.restore();
+      }
+      progressY += node.progressRowHeightPt;
+    }
   }
 
   /** `divider` — a bare rule centred in its reserved vertical band. */

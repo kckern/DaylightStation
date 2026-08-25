@@ -44,7 +44,7 @@ describe('useSchoolLaunch', () => {
     deliver({ topic: 'school', type: 'school.launch', learnerId: 'kid1', target });
 
     expect(claim).toHaveBeenCalledWith('kid1');
-    expect(onLaunch).toHaveBeenCalledWith(target);
+    expect(onLaunch).toHaveBeenCalledWith(target, 'kid1');
     const claimOrder = claim.mock.invocationCallOrder[0];
     const launchOrder = onLaunch.mock.invocationCallOrder[0];
     expect(claimOrder).toBeLessThan(launchOrder);
@@ -56,7 +56,7 @@ describe('useSchoolLaunch', () => {
     deliver({ topic: 'school', type: 'school.launch', learnerId: 'kid1', target });
 
     expect(claim).toHaveBeenCalledWith('kid1');
-    expect(onLaunch).toHaveBeenCalledWith(target);
+    expect(onLaunch).toHaveBeenCalledWith(target, 'kid1');
     const claimOrder = claim.mock.invocationCallOrder[0];
     const launchOrder = onLaunch.mock.invocationCallOrder[0];
     expect(claimOrder).toBeLessThan(launchOrder);

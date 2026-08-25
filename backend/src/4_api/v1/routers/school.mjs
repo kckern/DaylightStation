@@ -9,6 +9,7 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 // filename/document-id — see receipts.mjs:30. Reused here (not replicated) so
 // the two Content-Disposition-adjacent id-sanitizing call sites can't drift.
 import { slugify } from '#domains/school/documents/receipts.mjs';
+import { buildReprintContext, deriveIssueDate, deriveLearnerName } from '#apps/school/documents/reprintContext.mjs';
 
 export function createSchoolRouter({
   schoolErrors = {},
@@ -1209,14 +1210,12 @@ export function createSchoolRouter({
     res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute());
   }));
   router.get('/teacher/day', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherToday) throw new EntityNotFoundError('teacher day', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherToday.execute({
-      studyDay: requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
+      studyDay: req.query.studyDay == null ? null : requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
     }));
   }));
   router.get('/teacher/curriculum/:courseId/poster.jpg', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     let bytes = await curriculumForSyllabus?.getCoursePoster?.(req.params.courseId);
     if (!bytes && renderCoursePosterFallback) {
       bytes = renderCoursePosterFallback(req.params.courseId);
@@ -1227,19 +1226,16 @@ export function createSchoolRouter({
       .set('X-Content-Type-Options', 'nosniff').send(bytes);
   }));
   router.get('/teacher/curriculum-exceptions', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!manageCurriculumException) throw new EntityNotFoundError('curriculum exceptions', 'not configured');
     res.set('Cache-Control', 'no-store').json(await manageCurriculumException.list());
   }));
   router.get('/teacher/answer-sheets/:cardId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!printAllocationStore?.describeCard) throw new EntityNotFoundError('answer sheet', 'not configured');
     const card = await printAllocationStore.describeCard(req.params.cardId);
     if (!card.allocations.length) throw new EntityNotFoundError('answer sheet', req.params.cardId);
     res.set('Cache-Control', 'no-store').json(card);
   }));
   router.get('/teacher/learners/:learnerId/answer-sheets', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!printAllocationStore?.listCardIds || !printAllocationStore?.describeCard) {
       throw new EntityNotFoundError('learner answer sheets', 'not configured');
     }
@@ -1259,7 +1255,6 @@ export function createSchoolRouter({
     res.json(await manageCurriculumException.retract({ ...req.body, exceptionId: req.params.exceptionId }));
   }));
   router.get('/teacher/curriculum/:courseId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!curriculumForSyllabus) throw new EntityNotFoundError('teacher curriculum', 'not configured');
     const [works, units] = await Promise.all([
       curriculumForSyllabus.listWorks(), curriculumForSyllabus.listUnitSummaries(),
@@ -1272,7 +1267,6 @@ export function createSchoolRouter({
     });
   }));
   router.get('/teacher/curriculum/:courseId/lessons/:lessonId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     const unit = await curriculumForSyllabus?.getUnitSummary?.(req.params.lessonId);
     if (!unit || unit.courseId !== req.params.courseId) throw new EntityNotFoundError('course lesson', req.params.lessonId);
     res.set('Cache-Control', 'no-store').json({ schema: 'school.teacher-lesson/v1',
@@ -1281,7 +1275,6 @@ export function createSchoolRouter({
     });
   }));
   router.get('/teacher/learners/:learnerId/courses/:courseId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!curriculumForSyllabus || !getLearnerTimeline) throw new EntityNotFoundError('learner course progress', 'not configured');
     const [units, timeline, exceptionRead] = await Promise.all([
       curriculumForSyllabus.listUnitSummaries(), getLearnerTimeline.execute({ learnerId: req.params.learnerId, limit: 200 }),
@@ -1311,7 +1304,6 @@ export function createSchoolRouter({
   // V2 teacher workspace read models. These are intentionally additive to the
   // older lifecycle routes so rollout/cutback never changes student behavior.
   router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
       learnerId: req.params.learnerId,
@@ -1336,12 +1328,42 @@ export function createSchoolRouter({
     }));
   }));
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
   }));
+  // Historical worksheet viewing is a pure reconstruction from the immutable
+  // published document revision and the issued worksheet instance. It never
+  // allocates a card, creates an artifact, or changes session state.
+  router.get('/teacher/sessions/:sessionId/worksheet.pdf', wrap(async (req, res) => {
+    if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo) {
+      throw new EntityNotFoundError('worksheet render', 'not configured');
+    }
+    const session = await getTeacherSession.execute({ sessionId: req.params.sessionId });
+    const assignment = session.assignment;
+    if (!assignment?.documentId || !assignment?.documentRevision) {
+      throw new EntityNotFoundError('worksheet artifact', req.params.sessionId);
+    }
+    const document = await printDocumentsRepo.getPublished(assignment.documentId, assignment.documentRevision);
+    if (!document) throw new EntityNotFoundError('published worksheet', assignment.documentId);
+    const instance = session.worksheetSnapshot;
+    const cardContext = instance?.omr?.cardId && instance?.omr?.rowRange
+      ? { ...buildReprintContext(instance), historicalCard: true }
+      : {
+        learnerId: instance?.learnerId ?? session.state?.learnerId ?? null,
+        learnerName: deriveLearnerName(instance?.learnerId ?? session.state?.learnerId ?? ''),
+        date: instance?.issuedAt ? deriveIssueDate(instance.issuedAt) : null,
+        sessionId: req.params.sessionId,
+      };
+    const result = await renderPrintDocument.execute({ document, context: {
+      ...cardContext,
+      passPercent: instance?.passingPercent ?? session.state?.gradedPassingPercent ?? null,
+    } });
+    res.set('Cache-Control', 'private, no-store')
+      .set('X-School-Artifact', 'deterministic-replay')
+      .set('Content-Disposition', `inline; filename="worksheet-${slugify(req.params.sessionId)}.pdf"`)
+      .type('application/pdf').send(Buffer.from(result.bytes));
+  }));
   router.get('/teacher/sessions/:sessionId/results/:kind.png', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession || !renderSessionResult) throw new EntityNotFoundError('rendered session result', 'not configured');
     if (!['machine', 'effective'].includes(req.params.kind)) throw new ValidationError('result kind must be machine or effective');
     const retained = req.params.kind === 'machine'
@@ -1362,14 +1384,12 @@ export function createSchoolRouter({
     res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
   }));
   router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);

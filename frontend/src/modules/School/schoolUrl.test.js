@@ -33,11 +33,11 @@ describe('parseSchoolPath — full materials chain', () => {
     expect(parseSchoolPath(BASE)).toEqual({ section: 'library', materialPath: ['plex:1', 'plex:2'] });
   });
 
-  it('non-materials sections carry no chain', () => {
+  it('non-materials sections carry no chain and protected language routes do not restore authority', () => {
     at(`${BASE}/print`);
     expect(parseSchoolPath(BASE)).toEqual({ section: 'print', materialPath: [] });
     at(`${BASE}/lang/glossika-korean`);
-    expect(parseSchoolPath(BASE)).toEqual({ section: 'lang:glossika-korean', materialPath: [] });
+    expect(parseSchoolPath(BASE)).toEqual({ section: null, materialPath: [] });
   });
 
   it('works under the /app/school base too', () => {

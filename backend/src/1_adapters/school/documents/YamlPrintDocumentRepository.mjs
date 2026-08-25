@@ -128,7 +128,7 @@ export class YamlPrintDocumentRepository {
   /**
    * @returns {Array<{id: string, file: string, document: *}>} one entry per
    *   source YAML file in the source tree (hierarchical ids nest their source
-   *   files, e.g. `arts/pokemon-identification/quiz-1.yml`), sorted by
+   *   files, e.g. `arts/creature-identification/quiz-1.yml`), sorted by
    *   relative path. `document` is the raw parsed content (or null on a parse
    *   failure).
    *

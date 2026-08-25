@@ -649,7 +649,7 @@ export async function createSchoolLifecycle({
   const issueComposedWorksheet = new IssueComposedWorksheet({
     curriculum, sessions: stores.sessions, assignments: stores.assignments,
     worksheetInstances, bankReader, printDocuments, renderPrintDocument,
-    allocationStore, printer: laserPrinter, answerSheetPolicy: cfg.answer_sheets ?? null,
+    allocationStore, printer: laserPrinter, issuedArtifacts, answerSheetPolicy: cfg.answer_sheets ?? null,
     teacherGate, clock, logger,
   });
   const { ReprintIssuedArtifact } = await import('#apps/school/usecases/ReprintIssuedArtifact.mjs');

@@ -979,47 +979,38 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   // a line wrap and thereby increase the card (and icon) height.
   const pad = theme.box.paddingPt + 4;
   const iconGapPt = 12;
-  const maxIconPt = widthPt * 0.2;
   const resolved = ctx.resolveAsset?.(`subject-icon:${block.subjectIcon}`);
   if (!resolved?.svg) throw new UnresolvedAssetError(`subject-icon:${block.subjectIcon}`, path);
   const gap = 3;
   const bandGap = 7;
-  const successText = `${block.questionCount ?? 0} questions${Number.isFinite(block.passPercent) ? `     MASTERY ${block.passPercent}%` : ''}`;
-  let iconSizePt = 0;
+  const questionCount = Number(block.questionCount ?? 0);
+  const neededToPass = Number.isFinite(block.passPercent) && questionCount > 0
+    ? Math.ceil(questionCount * block.passPercent / 100)
+    : null;
+  // A percentage is a teacher configuration value, not an instruction a child
+  // can act on. State the concrete target printed paper actually asks for.
+  const successText = neededToPass === null
+    ? `${questionCount} questions`
+    : `${questionCount} questions     Get ${neededToPass} right to pass`;
+  const progress = (Array.isArray(block.progress) ? block.progress : [])
+    .filter((row) => Number.isInteger(row?.total) && row.total > 0 && Number.isInteger(row?.completed))
+    .map((row) => ({
+      label: String(row.label ?? 'Progress'),
+      total: row.total,
+      completed: Math.max(0, Math.min(row.completed, row.total)),
+      inProgress: Math.max(0, Math.min(Number.isInteger(row.inProgress) ? row.inProgress : 0, row.total)),
+    }));
+  const railPt = Math.min(92, widthPt * 0.18);
+  const iconSizePt = Math.min(46, railPt - 12);
+  const subjectLabelHeightPt = 10;
+  const progressRowHeightPt = 14;
+  const sideRailHeightPt = subjectLabelHeightPt + iconSizePt + (progress.length ? 5 + progress.length * progressRowHeightPt : 0);
   let breadcrumb;
   let title;
   let reading;
   let citation;
   let success;
-  let railPt;
-  let innerHeight = 0;
-  // Text reflows as the icon rail widens; a short breadcrumb can converge in
-  // two passes while a wrapped title/citation needs several.  Stop only once
-  // the icon has truly reached the card's usable height (or its 20% clamp),
-  // rather than leaving a visibly undersized SVG from an early measurement.
-  for (let pass = 0; pass < 8; pass += 1) {
-    railPt = iconSizePt > 0 ? iconSizePt + iconGapPt : 0;
-    const textWidthPt = widthPt - pad * 2 - railPt;
-    const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
-      widthPt: textWidthPt, styleKey,
-    });
-    breadcrumb = make(String(block.breadcrumb ?? '').toUpperCase(), 'caption');
-    title = make(String(block.lessonTitle ?? ''), 'heading');
-    reading = block.reading ? make(String(block.reading), 'body') : null;
-    citation = block.citation ? make(String(block.citation), 'caption') : null;
-    success = make(successText, 'label');
-    const content = [breadcrumb, title, reading, citation].filter(Boolean);
-    const measuredTopHeight = content.reduce((sum, entry) => sum + entry.heightPt, 0)
-      + Math.max(0, content.length - 1) * gap;
-    innerHeight = measuredTopHeight + bandGap + success.heightPt;
-    const nextIconSizePt = Math.min(maxIconPt, innerHeight);
-    if (Math.abs(nextIconSizePt - iconSizePt) < 0.01) break;
-    iconSizePt = nextIconSizePt;
-  }
-  // Last pass settled the text width at the final icon size. Icon height
-  // fills the card interior unless the 20%-of-width clamp takes over.
-  railPt = iconSizePt > 0 ? iconSizePt + iconGapPt : 0;
-  const textWidthPt = widthPt - pad * 2 - railPt;
+  const textWidthPt = widthPt - pad * 2 - railPt - iconGapPt;
   const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
     widthPt: textWidthPt, styleKey,
   });
@@ -1031,12 +1022,13 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   const finalContent = [breadcrumb, title, reading, citation].filter(Boolean);
   const finalTopHeight = finalContent.reduce((sum, entry) => sum + entry.heightPt, 0)
     + Math.max(0, finalContent.length - 1) * gap;
-  innerHeight = Math.max(iconSizePt, finalTopHeight + bandGap + success.heightPt);
+  const innerHeight = Math.max(sideRailHeightPt, finalTopHeight + bandGap + success.heightPt);
   return {
     kind: 'lessonCard', widthPt, heightPt: innerHeight + pad * 2, paddingPt: pad,
     radiusPt: theme.box.radiusPt, borderWidthPt: theme.box.borderWidthPt,
     icon: { svg: resolved.svg, widthPt: iconSizePt, heightPt: iconSizePt }, railPt,
-    breadcrumb, title, reading, citation, success, gap, bandGap,
+    subjectName: String(block.subjectName ?? block.subjectIcon ?? 'School').toUpperCase(), subjectLabelHeightPt,
+    breadcrumb, title, reading, citation, success, progress, progressRowHeightPt, gap, bandGap,
   };
 }
 
