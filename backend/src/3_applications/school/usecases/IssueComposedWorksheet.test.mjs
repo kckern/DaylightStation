@@ -36,7 +36,22 @@ describe('IssueComposedWorksheet', () => {
     const teacherGate = { assert: vi.fn() };
     const printer = { jobs: [], async printPdf(bytes, options) { this.jobs.push({ bytes, options }); return { ok: true }; } };
     const curriculum = {
-      async getUnit(id) { return { unitId: id, title: `Lesson ${id}`, subject: 'science', courseId: 'chemistry', bank: `bank-${id}`, passing: { percent: 80 } }; },
+      async getUnit(id) {
+        return {
+          unitId: id, title: `Lesson ${id}`, description: 'Weekday 2 of the assigned week.',
+          subject: 'scripture', courseId: 'cfm', module: 'w35', bank: `bank-${id}`,
+          passing: { percent: 80 },
+          provenance: { source: 'NIrV Adventure Bible for Early Readers (Revised, 2008)', printed_pages: [681, 682] },
+        };
+      },
+      async listWorks() {
+        return [{
+          work: 'cfm', title: 'Come Follow Me — Old Testament 2026', short_title: 'Come Follow Me',
+          progression: { module_number_start: 35 },
+          source: { title: 'Come, Follow Me — For Home and Church', reader: { title: 'NIrV Adventure Bible for Early Readers' } },
+          modules: [{ module: 'w35', title: 'Aug 24–30 · Psalms 49–86', short_title: 'Psalms 49–86' }],
+        }];
+      },
     };
     const publish = { async execute({ source }) { const rev = 'abcdef123'; published.set(`${source.id}@${rev}`, { ...source, rev }); return { id: source.id, rev }; } };
     const allocations = {
@@ -57,7 +72,12 @@ describe('IssueComposedWorksheet', () => {
     };
     const useCase = new IssueComposedWorksheet({
       curriculum, sessions,
-      assignments: { async get() { return { courses: [{ courseId: 'chemistry', profile: 'lower', enrollment: { enrollmentId: 'enr-1' } }] }; } },
+      assignments: { async get() { return { courses: [{
+        courseId: 'cfm', profile: 'lower', enrollment: {
+          enrollmentId: 'enr-1', moduleOrder: ['w35'], lessonOrder: { w35: ['one', 'two'] },
+          progression: { module_number_start: 35 },
+        },
+      }] }; } },
       worksheetInstances: {
         async findBySession(id) { return [...instances.values()].find((entry) => entry.sessionId === id) ?? null; },
         async put(instance) { instances.set(instance.id, instance); return instance; },
@@ -85,6 +105,13 @@ describe('IssueComposedWorksheet', () => {
     ]);
     expect(sessions.events.get('s-one').at(-1)).toMatchObject({ type: 'issued', confirmed: true });
     expect(sessions.events.get('s-two').at(-1)).toMatchObject({ type: 'issued', confirmed: true });
+    const composed = [...published.values()].find((source) => source.id.startsWith('composed/'));
+    expect(composed.blocks[0]).toMatchObject({
+      breadcrumb: 'Come Follow Me › Unit 35 · Psalms 49–86',
+      reading: 'Read: NIrV Adventure Bible for Early Readers, pages 681–682.',
+      citation: 'Weekday 2 of the assigned week.',
+    });
+    expect(composed.blocks[0].reading).not.toContain('For Home and Church');
   });
 
   it('splits a teacher selection at the physical 50-row OMR-card boundary', async () => {

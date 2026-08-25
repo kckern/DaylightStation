@@ -1,5 +1,6 @@
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { resultDocument } from '#domains/school/documents/receipts.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 
 const nameOf = (id) => id ? `${id[0].toUpperCase()}${id.slice(1)}` : null;
 
@@ -18,6 +19,12 @@ export class IssueCorrectedResultReceipt {
     const state = reduceSession(events);
     if (!state.sessionId || !state.outcome) return null;
     const unit = await this.#curriculum.getUnit(state.unitId);
+    const work = (await this.#curriculum.listWorks?.() ?? [])
+      .find((candidate) => candidate?.work === unit?.courseId) ?? null;
+    const courseLabel = courseDisplay({ work, fallback: unit?.courseTitle ?? unit?.courseId ?? 'Independent study' });
+    const moduleLabel = moduleDisplay({
+      work, moduleId: unit?.module, fallbackTitle: unit?.module ?? unit?.title ?? state.unitId,
+    });
     const worksheet = await this.#worksheets?.findBySession?.(sessionId) ?? null;
     const at = this.#clock().toISOString();
     const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: this.#timezone }).format(new Date(at));
@@ -32,8 +39,8 @@ export class IssueCorrectedResultReceipt {
       passingPercent: state.gradedPassingPercent ?? unit?.passing?.percent ?? null,
       questionStart: worksheet?.omr?.rowRange?.start ?? null, subjectIcon: unit?.subject ?? null,
       learnerName: nameOf(state.learnerId), date, time, studentNo: worksheet?.omr?.cardId ?? null,
-      taxonomy: { subject: nameOf(unit?.subject) ?? 'School', course: unit?.courseTitle ?? unit?.courseId ?? 'Independent study',
-        unit: unit?.module ?? unit?.title ?? state.unitId, lesson: unit?.title ?? state.unitId },
+      taxonomy: { subject: nameOf(unit?.subject) ?? 'School', course: courseLabel.title,
+        unit: moduleLabel.taxonomyLabel, lesson: unit?.title ?? state.unitId },
       actions: [], hints: [], objectives: [], notes: [`Updated result: ${reason}`],
     });
     const captured = await this.#capture.execute({ artifactId, sessionId, learnerId: state.learnerId,

@@ -66,7 +66,13 @@ import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
  * no other source. Dropping it is what made the school e2e suites unable to
  * tell an agenda card naming its action from one naming only a lesson title.
  */
-function codesFrom(job) {
+/**
+ * Exported so the composition's retained-artifact printer harvests codes the
+ * SAME way this renderer does. Two copies of "what can be scanned off this
+ * receipt" would drift, and the drift would be invisible until a child scanned
+ * a code that no record said was there.
+ */
+export function codesFrom(job) {
   const codes = [];
   let printed = [];
   for (const item of job?.items ?? []) {

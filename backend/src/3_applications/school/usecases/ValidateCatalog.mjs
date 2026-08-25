@@ -46,6 +46,7 @@ export class ValidateCatalog {
   #bankIds;
   #programIds;
   #surfaceValidators;
+  #activityValidators;
   #measureProbe;
   #recordedUnitIds;
   #bankUnits;
@@ -63,12 +64,13 @@ export class ValidateCatalog {
    * @param {(document: object, ctx: {id: string}) => (void|{errors?: string[]}|Promise<*>)} [deps.measureProbe]
    *   optional render-measure callback; only consulted under `renderProbe`
    */
-  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), measureProbe = null, recordedUnitIds = null, bankUnits = null } = {}) {
+  constructor({ catalog, bankIds = [], programIds = [], surfaceValidators = new Map(), activityValidators = new Map(), measureProbe = null, recordedUnitIds = null, bankUnits = null } = {}) {
     if (!catalog) throw new Error('ValidateCatalog requires a catalog');
     this.#catalog = catalog;
     this.#bankIds = bankIds instanceof Set ? bankIds : new Set(bankIds);
     this.#programIds = programIds instanceof Set ? programIds : new Set(programIds);
     this.#surfaceValidators = surfaceValidators instanceof Map ? surfaceValidators : new Map(surfaceValidators);
+    this.#activityValidators = activityValidators instanceof Map ? activityValidators : new Map(activityValidators);
     this.#measureProbe = typeof measureProbe === 'function' ? measureProbe : null;
     // The REVERSE sweep (admin advocacy A2): a thunk answering unitIds that
     // appear in recorded session history. Forward validation asks "does
@@ -142,6 +144,7 @@ export class ValidateCatalog {
       manifestIds: new Set(validManifests.keys()),
       programIds: this.#programIds,
       surfaceValidators: this.#surfaceValidators,
+      activityValidators: this.#activityValidators,
     };
 
     const unitErrors = {};

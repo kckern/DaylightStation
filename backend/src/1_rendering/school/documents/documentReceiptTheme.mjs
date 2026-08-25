@@ -112,6 +112,8 @@ export const documentReceiptTheme = Object.freeze({
     taxonomyGap: 6,
     /** The Unit line's small hanging indent past the breadcrumb's left edge. */
     taxonomyBottomIndent: 12,
+    /** The Lesson line begins separately and one step deeper than its Unit. */
+    taxonomyLessonIndent: 30,
     /** Space between each row-group inside the lesson card (eyebrow -> taxonomy
      *  -> title -> description). Larger type needs room to breathe; this is the
      *  "spend the vertical space" fix — 58mm tape has height to spare, so the

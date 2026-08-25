@@ -8,6 +8,10 @@ import { createMeasurementDocument } from './measure.mjs';
 const FONT_DIR = fileURLToPath(new URL('../../../../assets/fonts', import.meta.url));
 
 describe('workbookTheme', () => {
+  it('reserves visible breathing room above lesson-card progress rows', () => {
+    expect(createWorkbookTheme().lessonCard.progressGapPt).toBe(10);
+  });
+
   it('ships all four Atkinson Hyperlegible faces plus the OFL license', () => {
     const dir = path.join(FONT_DIR, 'atkinson-hyperlegible');
     for (const file of ['AtkinsonHyperlegible-Regular.ttf', 'AtkinsonHyperlegible-Bold.ttf',

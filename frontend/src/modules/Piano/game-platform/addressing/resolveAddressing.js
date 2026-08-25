@@ -27,12 +27,22 @@ export function resolveAddressing({
   axisSize = 8,
 } = {}) {
   const notes = [];
-  const layers = [
-    ADDRESSING_DEFAULTS,
-    normalizeAddressing(game, notes, 'game'),
-    normalizeAddressing(rungConfig(ladder, rung, notes), notes, 'rung'),
-    normalizeAddressing(user, notes, 'user'),
-  ];
+  const gameLayer = normalizeAddressing(game, notes, 'game');
+  const rungLayer = normalizeAddressing(rungConfig(ladder, rung, notes), notes, 'rung');
+  const userLayer = normalizeAddressing(user, notes, 'user');
+
+  // The ladder is a difficulty ladder, not a vocabulary switch. A rung may move
+  // every other dimension — tiers, order, cadence, inversions, clefs — but when
+  // the game or the player has stated a vocabulary, the rung's is dropped: a
+  // board configured for chords must climb in chords (wider roots, shuffles,
+  // accidentals), never wake up reading a different notation.
+  const statedVocabulary = userLayer.vocabulary ?? gameLayer.vocabulary;
+  if (rungLayer.vocabulary && statedVocabulary && rungLayer.vocabulary !== statedVocabulary) {
+    notes.push(`rung vocabulary "${rungLayer.vocabulary}" yields to the configured "${statedVocabulary}"`);
+    delete rungLayer.vocabulary;
+  }
+
+  const layers = [ADDRESSING_DEFAULTS, gameLayer, rungLayer, userLayer];
 
   let resolved = {};
   for (const layer of layers) resolved = mergeLayer(resolved, layer);

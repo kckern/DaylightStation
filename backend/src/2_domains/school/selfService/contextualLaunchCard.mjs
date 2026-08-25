@@ -70,7 +70,7 @@ export function buildContextualLaunchCard({
   const normalizedModule = module?.id ? {
     id: module.id,
     title: module.title || module.id,
-    ...(Number.isInteger(module.position) && module.position > 0 ? { position: module.position } : {}),
+    ...(Number.isInteger(module.position) && module.position >= 0 ? { position: module.position } : {}),
   } : null;
   const normalizedLesson = lesson?.id ? { id: lesson.id, title: lesson.title || lesson.id } : null;
   const trail = [

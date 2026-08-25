@@ -61,17 +61,113 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { accessSync, constants as fsConstants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const execFileAsync = promisify(execFile);
 
-/** ghostscript output device for each raster format we're willing to produce. */
-const GS_DEVICE_BY_FORMAT = {
-  'image/urf': 'urf',
-  'image/pwg-raster': 'pwgraster',
+/**
+ * ghostscript output devices for each raster format, CANONICAL FIRST.
+ *
+ * WHY THIS IS A LIST AND NOT A NAME. Ghostscript's device set is a build-time
+ * decision, not a stable API: 10.05 ships `urf` and `pwgraster`, while 10.07
+ * (Homebrew's current bottle) ships neither — it has only the colour-specific
+ * `urfgray`/`urfrgb`/`urfcmyk`. The old code hardcoded `urf`, so on any
+ * ghostscript without it every print died at RASTERIZE_FAILED with nothing but
+ * "Command failed: gs …" — the device name is not in that message, so the one
+ * fact you need is the one fact you do not get. That is a live upgrade hazard,
+ * not a hypothetical: a container rebuild that lands a newer ghostscript takes
+ * printing down and says almost nothing about why.
+ *
+ * The canonical device stays first, so a ghostscript that HAS it produces
+ * byte-identical output to before. The fallbacks are colour-specific variants
+ * of the same format — verified to accept the same `-dcupsColorSpace`/
+ * `-dcupsBitsPerColor` switches and to emit the same `UNIRAST\0` magic.
+ *
+ * `image/pwg-raster` has no variant to fall back to: a ghostscript without
+ * `pwgraster` cannot produce it at all, and says so by name.
+ */
+const GS_DEVICE_CANDIDATES = {
+  'image/urf': ({ channels }) => ['urf', channels >= 4 ? 'urfcmyk' : channels === 3 ? 'urfrgb' : 'urfgray'],
+  'image/pwg-raster': () => ['pwgraster'],
 };
+
+/**
+ * Every `gs` on PATH, in PATH order — because the FIRST one is not necessarily
+ * the capable one. This machine carries 10.07.0 (no `urf`) ahead of 10.00.0
+ * (has `urf`) on PATH, which is exactly how a working install still fails.
+ * An explicit path in `gsBin` is taken as given and never searched around.
+ */
+function ghostscriptBinaries(gsBin) {
+  if (gsBin.includes('/')) return [gsBin];
+  const dirs = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const seen = new Set();
+  const found = [];
+  for (const dir of dirs) {
+    const candidate = path.join(dir, gsBin);
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    try { accessSync(candidate, fsConstants.X_OK); found.push(candidate); } catch { /* not here */ }
+  }
+  return found.length ? found : [gsBin];
+}
+
+/** Device names one ghostscript build reports. Cached — `gs -h` is a process spawn. */
+const deviceCache = new Map();
+async function ghostscriptDevices(bin) {
+  if (deviceCache.has(bin)) return deviceCache.get(bin);
+  let text = '';
+  try {
+    const { stdout } = await execFileAsync(bin, ['-h'], { timeout: 10000 });
+    text = stdout;
+  } catch (err) {
+    // `gs -h` exits non-zero on some builds but still prints the list.
+    text = err?.stdout || '';
+  }
+  // Bounded at BOTH ends. Everything after the device list is `Search path:`
+  // and a list of directories — unbounded, those paths get tokenized too, and
+  // a directory merely CONTAINING the string `urf` would read as a device.
+  const after = text.split('Available devices:')[1] || '';
+  const section = after.split(/^\s*Search path:/m)[0];
+  const devices = new Set(section.split(/\s+/).filter(Boolean));
+  deviceCache.set(bin, devices);
+  return devices;
+}
+
+/** Reset between tests that manipulate PATH. */
+export function __resetGhostscriptDeviceCache() { deviceCache.clear(); }
+
+/**
+ * First (binary, device) pair that can actually produce `format`. Device is the
+ * OUTER loop so the canonical device on a later binary beats a fallback device
+ * on an earlier one — a test run and production then exercise the same device.
+ */
+async function resolveGhostscript({ format, colorParams, gsBin }) {
+  const candidates = GS_DEVICE_CANDIDATES[format]?.(colorParams);
+  if (!candidates) {
+    throw new InfrastructureError(`no ghostscript device for raster format: ${format}`, {
+      code: 'UNSUPPORTED_RASTER_FORMAT', format,
+    });
+  }
+  const binaries = ghostscriptBinaries(gsBin);
+  const seen = [];
+  for (const device of candidates) {
+    for (const bin of binaries) {
+      // eslint-disable-next-line no-await-in-loop
+      const devices = await ghostscriptDevices(bin);
+      seen.push(`${bin}:${devices.size}`);
+      if (devices.has(device)) return { bin, device };
+    }
+  }
+  throw new InfrastructureError(
+    `no ghostscript on PATH provides a device for ${format} — tried devices [${candidates.join(', ')}] `
+    + `across [${binaries.join(', ')}]. Install a ghostscript built with one of those devices, `
+    + 'or point `gsBin` at one that is.',
+    { code: 'RASTERIZE_NO_DEVICE', format, candidates, binaries },
+  );
+}
 
 /** Magic bytes each device's output starts with — a cheap sanity check that ghostscript did what we asked. */
 const MAGIC_BY_FORMAT = {
@@ -252,14 +348,11 @@ export async function rasterizePdf(pdf, {
   format, dpi = 300, media = 'na_letter_8.5x11in', colorParams = DEFAULT_COLOR_PARAMS,
   gsBin = 'gs', timeoutMs = 30000, logger = console, maxPages = null, duplex = false,
 } = {}) {
-  const device = GS_DEVICE_BY_FORMAT[format];
-  if (!device) {
-    throw new InfrastructureError(`no ghostscript device for raster format: ${format}`, {
-      code: 'UNSUPPORTED_RASTER_FORMAT', format,
-    });
-  }
   const paperSize = PAPER_SIZE_BY_MEDIA[media] || 'letter';
   const { channels = 1, bitsPerColor = 8, cupsColorSpace = 18 } = colorParams || {};
+  const { bin: gsPath, device } = await resolveGhostscript({
+    format, colorParams: { channels, bitsPerColor, cupsColorSpace }, gsBin,
+  });
 
   const dir = await mkdtemp(path.join(tmpdir(), 'laser-print-'));
   try {
@@ -277,7 +370,7 @@ export async function rasterizePdf(pdf, {
       const pageRange = Number.isInteger(maxPages) && maxPages > 0
         ? ['-dFirstPage=1', `-dLastPage=${maxPages}`]
         : [];
-      await execFileAsync(gsBin, [
+      await execFileAsync(gsPath, [
         '-q', '-dNOPAUSE', '-dBATCH', '-dSAFER',
         `-sDEVICE=${device}`,
         `-r${dpi}`,

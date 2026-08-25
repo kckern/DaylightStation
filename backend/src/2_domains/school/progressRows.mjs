@@ -44,4 +44,16 @@ export function inProgressSegments({ completed, total, currentComplete } = {}) {
   return currentComplete === true ? 0 : 1;
 }
 
+/**
+ * The compact fraction is a location marker, not a completion counter.
+ * Solid segments remain completed work and hatched segments remain active
+ * work, but their shared label names the learner's present position.
+ */
+export function activeProgressPosition({ completed, total, inProgress } = {}) {
+  if (!Number.isInteger(completed) || !Number.isInteger(total)) return 0;
+  if (completed < 0 || total <= 0) return 0;
+  const active = Number.isInteger(inProgress) && inProgress > 0 ? inProgress : 0;
+  return Math.min(total, completed + active);
+}
+
 export default inProgressSegments;

@@ -44,7 +44,8 @@ import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { inProgressSegments } from '#domains/school/progressRows.mjs';
+import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import { moduleOrdinal } from './BuildAgenda.mjs';
 
@@ -207,6 +208,14 @@ export class CloseSessionOutcome {
       });
     }
 
+    if (state.state === 'external_activity_assessed') {
+      return this.#recordOutcomeAndSettle({
+        sessionId, state, unit, nowIso, signedOff, rewardOverride,
+        result: state.externalActivity?.result ?? 'needs_remediation',
+        reason: 'external_activity_assessed',
+      });
+    }
+
     if (state.state !== 'graded') {
       return this.#unavailable(sessionId, 'That work has not been marked yet.');
     }
@@ -318,15 +327,14 @@ export class CloseSessionOutcome {
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
     const learnerAssignment = await this.#assignments.get(state.learnerId);
     const enrollment = learnerAssignment?.courses?.find((course) => course.courseId === unit?.courseId)?.enrollment;
-    // 1-based, via the same helper `BuildAgenda` uses — this printed line was
-    // reading `.indexOf()` directly (0-based) and disagreeing with the
-    // progress label on the same receipt (was "Unit 0", regression fix).
-    const unitOrdinal = moduleOrdinal({ enrollment, entry: unit });
-    const moduleTitle = work?.modules?.find((module) => module.module === unit?.module)?.title;
+    const courseLabel = courseDisplay({ work, enrollment, fallback: unit?.courseId ?? 'Independent study' });
+    const moduleLabel = moduleDisplay({
+      work, enrollment, moduleId: unit?.module, fallbackTitle: unit?.module ?? unit?.title ?? state.unitId,
+    });
     const taxonomy = {
       subject: unit?.subject ? unit.subject[0].toUpperCase() + unit.subject.slice(1) : 'School',
-      course: work?.title ?? unit?.courseId ?? 'Independent study',
-      unit: unitOrdinal !== null ? `Unit ${unitOrdinal}: ${moduleTitle}` : (moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId),
+      course: courseLabel.title,
+      unit: moduleLabel.taxonomyLabel,
       lesson: unit?.title ?? state.unitId,
     };
     const worksheet = await this.#worksheetInstances?.findBySession?.(sessionId) ?? null;
@@ -350,7 +358,7 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
-    const document = state.state === 'program_dispatched' ? null : resultDocument({
+    const document = ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
@@ -378,7 +386,8 @@ export class CloseSessionOutcome {
     });
 
     let receiptArtifact = null;
-    let printing = document ? { printed: false, printReason: 'not_wired' } : { printed: false, printReason: 'program' };
+    let printing = document ? { printed: false, printReason: 'not_wired' }
+      : { printed: false, printReason: state.state === 'external_activity_assessed' ? 'digital_activity' : 'program' };
     if (document) {
       const artifactId = `receipt/${sessionId}/${outcome.outcomeId}`;
       try {
@@ -396,7 +405,7 @@ export class CloseSessionOutcome {
       // Older installs deliberately retain their existing ReceiptPrinting
       // fallback, which is still truthful but cannot promise byte identity.
       printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
-        ? await this.#printCapturedReceipt(receiptArtifact.artifact)
+        ? await this.#printCapturedReceipt(receiptArtifact.artifact, document)
         : await this.#printed(document);
       if (receiptArtifact?.created) {
         const built = createEvent({ type: 'result_receipt_captured', at: nowIso, sessionId,
@@ -454,12 +463,20 @@ export class CloseSessionOutcome {
     return { printed: outcome.printed, printReason: outcome.reason };
   }
 
-  async #printCapturedReceipt(artifact) {
+  /**
+   * `sourceDocument` rides along so the printer can say what the bytes SAY, not
+   * just print them: a raster job has no text item, so without it the operator
+   * transcript for every captured result receipt was empty. It is the same
+   * document that was rasterized, so the harvested words describe exactly these
+   * bytes.
+   */
+  async #printCapturedReceipt(artifact, sourceDocument = null) {
     try {
       const confirmed = await this.#receiptArtifactPrinter.print({
         bytes: artifact.bytes,
         representation: artifact.manifest.representation,
         jobName: `school-result-${artifact.manifest.artifactId}`,
+        sourceDocument,
       });
       if (confirmed === true) return { printed: true, printReason: null };
       return { printed: false, printReason: 'printer_unconfirmed' };
@@ -614,20 +631,21 @@ export class CloseSessionOutcome {
     if (!next || next.status === 'locked') return null;
     const assignmentCourse = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
     const course = (works ?? []).find((work) => work.work === next.courseId);
-    // Same "Unit N" bug, third site in this file (not part of the original
-    // two-site audit that prompted this fix, found while reusing the helper
-    // above — fixed the same way rather than left as a third divergent
-    // `.indexOf()`).
-    const nextUnitOrdinal = moduleOrdinal({ enrollment: assignmentCourse?.enrollment, entry: next });
-    const nextModuleTitle = course?.modules?.find((module) => module.module === next.module)?.title;
+    const courseLabel = courseDisplay({
+      work: course, enrollment: assignmentCourse?.enrollment, fallback: next.courseId,
+    });
+    const moduleLabel = moduleDisplay({
+      work: course, enrollment: assignmentCourse?.enrollment, moduleId: next.module,
+      fallbackTitle: next.module ?? next.title,
+    });
     return {
       unitId: next.unitId, title: next.title, description: next.description ?? null,
       taxonomy: {
         subject: (next.subject ?? unit.subject)
           ? (next.subject ?? unit.subject)[0].toUpperCase() + (next.subject ?? unit.subject).slice(1)
           : 'School',
-        course: course?.title ?? next.courseId,
-        unit: nextUnitOrdinal !== null ? `Unit ${nextUnitOrdinal}: ${nextModuleTitle}` : (nextModuleTitle ?? next.module ?? next.title),
+        course: courseLabel.title,
+        unit: moduleLabel.taxonomyLabel,
         lesson: next.title,
       },
     };
@@ -641,51 +659,10 @@ export class CloseSessionOutcome {
       this.#sessions.listForLearner(state.learnerId),
       this.#curriculum.listWorks?.() ?? [],
     ]);
-    const coursePolicies = Object.fromEntries((works ?? [])
-      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-    const plan = planLearnerWork({
-      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
+    return lessonProgressRows({
+      learnerId: state.learnerId, unit, assignment, units, sessions: history,
+      works, now: nowIso, timezone: this.#timezone,
     });
-    const course = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
-    const enrollment = course?.enrollment;
-    const optionalModules = new Set(enrollment?.optionalModules ?? []);
-    const requiredModules = (enrollment?.moduleOrder ?? []).filter((module) => !optionalModules.has(module));
-    const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
-    const completedModules = requiredModules.filter((module) => {
-      const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module);
-      return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
-    }).length;
-    // 1-based, via the same helper as the taxonomy block above (was "Unit 0",
-    // same regression, second site).
-    const unitOrdinal = moduleOrdinal({ enrollment, entry: unit });
-    // PAST, PRESENT, FUTURE. The course bar used to have only two states —
-    // units done and units not — which quietly filed the unit the child is
-    // ACTUALLY IN with the ones they have never opened. They just finished a
-    // lesson inside it, so "not started" is the one thing it certainly is
-    // not. One segment is marked underway: the current module, whenever it
-    // is not itself complete (a module that just finished is already in
-    // `completedModules`, and a finished course has no present tense at all).
-    const currentModuleComplete = moduleEntries.length > 0
-      && moduleEntries.every((entry) => entry.status === 'completed');
-    const courseInProgress = inProgressSegments({
-      completed: completedModules,
-      total: requiredModules.length,
-      currentComplete: currentModuleComplete,
-    });
-    const rows = [
-      {
-        label: 'Course',
-        completed: completedModules,
-        total: requiredModules.length,
-        ...(courseInProgress ? { inProgress: courseInProgress } : {}),
-      },
-      {
-        label: unitOrdinal !== null ? `Unit ${unitOrdinal}` : 'Unit',
-        completed: moduleEntries.filter((entry) => entry.status === 'completed').length,
-        total: moduleEntries.length,
-      },
-    ].filter((row) => row.total > 0);
-    return rows.length ? rows : null;
   }
 
   async #unavailable(sessionId, line) {

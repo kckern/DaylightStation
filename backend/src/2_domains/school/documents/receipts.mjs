@@ -522,7 +522,10 @@ export function resultDocument({
   }
   // Keep the session-derived id for persistence and diagnostics, but never
   // expose it as the renderer's fallback heading on a child's receipt.
-  return receipt(`result-${slugify(sessionId, 'session')}`, blocks, { title: 'Worksheet Result' });
+  const learner = isNonEmptyString(learnerName) ? learnerName.trim() : null;
+  return receipt(`result-${slugify(sessionId, 'session')}`, blocks, {
+    title: learner ? `${learner}’s Result` : 'Worksheet Result',
+  });
 }
 
 /**

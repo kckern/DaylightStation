@@ -201,6 +201,13 @@ describe('the progress line on a result summary (regression: Milo, 2026-08-22)',
     expect(text).not.toContain('undefined');
   });
 
+  it('prints the active position while preserving the completed count in the row', () => {
+    const row = { label: 'Come Follow Me', completed: 0, total: 17, inProgress: 1 };
+    const text = textOf(renderer.render(withProgress([row])));
+    expect(text).toContain('Come Follow Me · 1 of 17');
+    expect(row.completed).toBe(0);
+  });
+
   it('prints NOTHING for a row missing its fields, rather than "undefined · undefined of undefined"', () => {
     const text = textOf(renderer.render(withProgress([{}])));
     expect(text).not.toContain('undefined');

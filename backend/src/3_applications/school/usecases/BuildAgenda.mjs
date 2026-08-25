@@ -40,6 +40,7 @@ import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate,
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -67,63 +68,8 @@ function withAttestedPasses(history, attestations, learnerId) {
   ];
 }
 
-/**
- * Pure: a module's 1-based position within `enrollment.moduleOrder`, or
- * `null` when the module isn't in that order (unknown module, no
- * enrollment, etc). SINGLE source of truth for "which unit number is this"
- * — `moduleProgressLabel` and the taxonomy block below both call this
- * rather than each running their own `indexOf` + off-by-one, which is
- * exactly how the progressLabel/taxonomy strings drifted apart (1-based vs
- * 0-based) on the same printed receipt.
- *
- * @param {object} params
- * @param {{moduleOrder?: string[]}|null|undefined} params.enrollment
- * @param {{module?: string}|null|undefined} params.entry
- * @returns {number|null}
- */
-export function moduleOrdinal({ enrollment, entry }) {
-  const index = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
-  return index >= 0 ? index + 1 : null;
-}
 
-/**
- * Pure: the "Unit N · M/of" progress label printed under a subject's next
- * lesson. Both indices are 1-based on paper. Any missing/unmatched index
- * (module not in `moduleOrder`, unit not in that module's `lessonOrder`,
- * absent enrollment) falls back to the caller's existing label unchanged.
- *
- * @param {object} params
- * @param {{moduleOrder?: string[], lessonOrder?: Record<string, string[]>}|null|undefined} params.enrollment
- * @param {{module?: string, unitId?: string}|null|undefined} params.entry
- * @param {string|null} [params.fallback]
- * @returns {string|null}
- */
-export function moduleProgressLabel({ enrollment, entry, fallback = null }) {
-  const ordinal = moduleOrdinal({ enrollment, entry });
-  const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
-  const lessonIndex = lessons.indexOf(entry?.unitId);
-  return ordinal !== null && lessonIndex >= 0
-    ? `Unit ${ordinal} · ${lessonIndex + 1}/${lessons.length}`
-    : fallback;
-}
 
-/**
- * Pure: the taxonomy block's "Unit N: {title}" line — the sibling of
- * `moduleProgressLabel` that shares the same `moduleOrdinal` lookup so the
- * two printed labels for one lesson cannot disagree on which unit number
- * it is. When the module isn't in `moduleOrder`, falls back to whatever
- * title/name is available rather than printing "Unit 0" or "Unit NaN".
- *
- * @param {object} params
- * @param {{moduleOrder?: string[]}|null|undefined} params.enrollment
- * @param {{module?: string}|null|undefined} params.entry
- * @param {string|null|undefined} params.moduleTitle
- * @returns {string|null|undefined}
- */
-export function moduleTaxonomyUnitLabel({ enrollment, entry, moduleTitle }) {
-  const ordinal = moduleOrdinal({ enrollment, entry });
-  return ordinal !== null ? `Unit ${ordinal}: ${moduleTitle}` : (moduleTitle ?? entry?.module ?? entry?.title);
-}
 
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
@@ -421,25 +367,36 @@ export class BuildAgenda {
           const entry = section.next;
           const work = worksById.get(entry?.courseId);
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
-          const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
           if (entry?.programContext) return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
             unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
             lesson: entry.programContext.lesson?.title ?? entry.title,
           };
+          const courseLabel = courseDisplay({ work, enrollment, fallback: entry?.courseId ?? 'Independent study' });
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
-            course: work?.title ?? entry?.courseId ?? 'Independent study',
-            unit: moduleTaxonomyUnitLabel({ enrollment, entry, moduleTitle }),
+            course: courseLabel.title,
+            unit: moduleLabel.taxonomyLabel,
             lesson: entry?.title,
           };
         })(),
-        progressLabel: moduleProgressLabel({
-          enrollment: assignment?.courses?.find((course) => course.courseId === section.next?.courseId)?.enrollment,
-          entry: section.next,
-          fallback: section.progressLabel,
-        }),
+        progressLabel: (() => {
+          const entry = section.next;
+          const work = worksById.get(entry?.courseId);
+          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
+          const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
+          const lessonIndex = lessons.indexOf(entry?.unitId);
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
+          return Number.isInteger(moduleLabel.number) && lessonIndex >= 0
+            ? `Unit ${moduleLabel.number} · ${lessonIndex + 1}/${lessons.length}`
+            : section.progressLabel;
+        })(),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)
           ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }

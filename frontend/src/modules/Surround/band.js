@@ -853,13 +853,16 @@ export const SEGMENT_FLOOR_PX = 72;
  * IT IS ALSO WIDER THAN THE 72px SWEEP IMPLIED, and that is the re-derivation
  * doing its job rather than a disagreement. 72 minus the Eroica's furniture
  * leaves ~30px of run, which is enough for `Sch…` and not enough for `Mar…`
- * — the widest three-glyph opening in the corpus, measured at 37px. The old
- * sweep read one string; a floor derived from one string floors every other
- * name in the set on that string's letterforms. The Eroica's named floor
- * therefore moves from 72px to ~79px, in the direction that shows MORE of a
+ * — the widest three-glyph opening in the corpus, measured at 38.3px (it was
+ * 37 when first derived; the face's rendered metrics have moved since, and
+ * the constant follows the measurement — band.measure.test.jsx re-derives it
+ * against the shipped stylesheet in real Chromium and fails this number when
+ * it drifts). The old sweep read one string; a floor derived from one string
+ * floors every other name in the set on that string's letterforms. The
+ * Eroica's named floor therefore moves in the direction that shows MORE of a
  * compressed name.
  */
-export const SEGMENT_NAME_RUN_PX = 37;
+export const SEGMENT_NAME_RUN_PX = 39;
 
 /**
  * The narrowest an inactive segment may be drawn and still be a NAMED segment,

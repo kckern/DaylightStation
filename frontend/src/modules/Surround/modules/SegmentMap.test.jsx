@@ -1398,29 +1398,6 @@ describe('SegmentMap — logging the new decisions', () => {
    * that render no name at all (chip mode), and because a number read off a live
    * segment is read off a box the previous solve already resized.
    */
-  const withRailGeometry = (rects, run) => {
-    const rect = Element.prototype.getBoundingClientRect;
-    const RO = globalThis.ResizeObserver;
-    Element.prototype.getBoundingClientRect = function stub() {
-      const hit = Object.keys(rects).find((cls) => this.classList?.contains(cls));
-      const width = hit ? rects[hit] : 0;
-      return { width, height: width ? 40 : 0, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 40 };
-    };
-    // happy-dom ships a ResizeObserver that never fires, so the rule is never
-    // measured and `railPx` stays at its "no measurement yet" zero. This one
-    // delivers the rule's width once, synchronously, which is what the browser
-    // does on the first frame.
-    globalThis.ResizeObserver = class {
-      constructor(cb) { this.cb = cb; }
-      observe(el) { this.cb([{ target: el, contentRect: { width: rects.RAIL ?? 0 } }]); }
-      disconnect() {}
-      unobserve() {}
-    };
-    try { return run(); } finally {
-      Element.prototype.getBoundingClientRect = rect;
-      globalThis.ResizeObserver = RO;
-    }
-  };
 
   it('reports the accordion’s measured width for the sounding segment', () => {
     withRailGeometry({
@@ -1654,6 +1631,30 @@ describe('SegmentMap — logging the new decisions', () => {
    passes here is a spec about the payload the frame is handed, not about a
    shape invented for a test.
    --------------------------------------------------------------------------- */
+const withRailGeometry = (rects, run) => {
+  const rect = Element.prototype.getBoundingClientRect;
+  const RO = globalThis.ResizeObserver;
+  Element.prototype.getBoundingClientRect = function stub() {
+    const hit = Object.keys(rects).find((cls) => this.classList?.contains(cls));
+    const width = hit ? rects[hit] : 0;
+    return { width, height: width ? 40 : 0, x: 0, y: 0, top: 0, left: 0, right: width, bottom: 40 };
+  };
+  // happy-dom ships a ResizeObserver that never fires, so the rule is never
+  // measured and `railPx` stays at its "no measurement yet" zero. This one
+  // delivers the rule's width once, synchronously, which is what the browser
+  // does on the first frame.
+  globalThis.ResizeObserver = class {
+    constructor(cb) { this.cb = cb; }
+    observe(el) { this.cb([{ target: el, contentRect: { width: rects.RAIL ?? 0 } }]); }
+    disconnect() {}
+    unobserve() {}
+  };
+  try { return run(); } finally {
+    Element.prototype.getBoundingClientRect = rect;
+    globalThis.ResizeObserver = RO;
+  }
+};
+
 describe('SegmentMap — the composed rail', () => {
   /** Two études in one episode, one in another: three segments, two groups. */
   const TWO_OPUS = {
@@ -1762,10 +1763,26 @@ describe('SegmentMap — the composed rail', () => {
         hierarchy: { part: { index: index < 2 ? 0 : 1, title: index < 2 ? 'Part One' : 'Part Two' } },
       })),
     };
-    const { container } = renderMap({ data: hierarchy, position: 5, duration: 40 });
+    // Measured geometry, deliberately: since the three-tier labels an
+    // UNMEASURED rail sets no part label at all — blank until measured beats a
+    // heading cut mid-word — so asserting the full titles means supplying the
+    // widths a browser's first layout pass would. 60px labels on a 1000px rail
+    // put every part comfortably in the full tier.
+    const { container } = withRailGeometry({
+      RAIL: 1000,
+      'surround-segment-map__text-row': 197,
+      'surround-segment-map__heading': 149,
+      'surround-segment-map__text': 149,
+      'surround-segment-map__group': 60,
+    }, () => renderMap({ data: hierarchy, position: 5, duration: 40 }));
     expect([...container.querySelectorAll('[data-testid="surround-part-group-label"]')].map((e) => e.textContent))
       .toEqual(['Part One', 'Part Two']);
-    expect(labels(container)).toEqual(['Scene 1', 'Scene 2']);
+    // The legacy `hierarchy.part` transport draws the PART row only. The scene
+    // row is the nested (`groupPath`/`ancestors`) rail's — the compat comment in
+    // `groupLevels` frames this shape as transitional ("until all cached clients
+    // have crossed the generic-groups seam"), and the two-row experience for
+    // current payloads is covered by the fold suite's nested cases below.
+    expect(labels(container)).toEqual([]);
   });
 
   /**
@@ -2105,7 +2122,13 @@ describe('SegmentMap — the composed rail', () => {
     expect(block, 'the grouped rail’s floor no longer accounts for the row').toMatch(/min-height:\s*calc\([^)]*--group-row/);
     const label = rule.match(/\.surround-segment-map__group\s*\{[^}]*\}/)?.[0] ?? '';
     expect(label, 'a heading that wraps is a band that changes height').toMatch(/white-space:\s*nowrap/);
-    expect(label, 'a heading with no ellipsis is a heading cut mid-word').toMatch(/text-overflow:\s*ellipsis/);
+    // NO ellipsis, by design (three-tier labels, 2026-08-20): a heading that
+    // does not fit drops a TIER — full name, then the mini designation, then
+    // nothing — it is never cut. `overflow: hidden` stays as the backstop for
+    // the one unmeasured frame before the tier chooser has widths.
+    expect(label, 'the tier system needs the overflow backstop').toMatch(/overflow:\s*hidden/);
+    expect(label, 'ellipsis is the pre-tier design — a heading drops a tier, it is never cut')
+      .not.toMatch(/text-overflow:\s*ellipsis/);
   });
 });
 

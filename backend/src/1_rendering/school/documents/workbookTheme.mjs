@@ -414,6 +414,11 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       spacingClass: 'body',
     },
 
+    /** Vertical breathing room between the subject mark and progress rail. */
+    lessonCard: {
+      progressGapPt: 10,
+    },
+
     /** Lines a flowable fragment may not be broken below, on either side of a page break. */
     widowOrphan: { minLinesBeforeBreak: 2, minLinesAfterBreak: 2 },
 

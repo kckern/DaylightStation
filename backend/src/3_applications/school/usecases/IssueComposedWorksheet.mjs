@@ -12,6 +12,7 @@ import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/repri
 import { slugify } from '#domains/school/documents/receipts.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { worksheetPresentation } from '#domains/school/curriculum/worksheetPresentation.mjs';
 
 // Derived from the transition table, not hand-copied — see `IssueDocument`'s
 // own ISSUABLE for why the answer is the union of these two events' states.
@@ -61,18 +62,6 @@ function chunksForCard(sections, capacity) {
   return chunks;
 }
 
-function learnerSourceTitle(value) {
-  if (typeof value !== 'string') return null;
-  return value.replace(/\s+\b(?:EPUB|PDF|MOBI|HTML)\b/giu, '').trim() || null;
-}
-
-function learnerReading(value) {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const cleaned = value.trim();
-  if (/\bassigned section\b|\b(?:EPUB|MOBI|HTML)\b|\.(?:epub|mobi|html?)\b/iu.test(cleaned)) return null;
-  return /^read\s*:/iu.test(cleaned) ? cleaned : `Read: ${cleaned}`;
-}
-
 export class IssueComposedWorksheet {
   #curriculum; #sessions; #assignments; #worksheetInstances; #bankReader;
   #printDocuments; #render; #allocations; #publish; #printer; #issuedArtifacts; #teacherGate; #clock; #logger; #policy;
@@ -105,10 +94,11 @@ export class IssueComposedWorksheet {
       userId: issuedBy, pin, action: 'worksheet.compose', context: { sessionIds: ids },
     });
     const nowIso = this.#clock().toISOString();
+    const works = await this.#curriculum.listWorks?.() ?? [];
     const prepared = [];
     for (const sessionId of ids) {
       // eslint-disable-next-line no-await-in-loop
-      prepared.push(await this.#prepareSection({ sessionId, nowIso }));
+      prepared.push(await this.#prepareSection({ sessionId, nowIso, works }));
     }
     const learnerId = prepared[0].state.learnerId;
     if (!learnerId || prepared.some((entry) => entry.state.learnerId !== learnerId)) {
@@ -125,7 +115,7 @@ export class IssueComposedWorksheet {
     return { learnerId, parts: outputs, sessionIds: ids };
   }
 
-  async #prepareSection({ sessionId, nowIso }) {
+  async #prepareSection({ sessionId, nowIso, works }) {
     const state = reduceSession(await this.#sessions.readEvents(sessionId));
     if (!state.sessionId || !ISSUABLE.has(state.state)) throw new Error(`session '${sessionId}' is not issuable`);
     const unit = await this.#curriculum.getUnit(state.unitId);
@@ -136,6 +126,8 @@ export class IssueComposedWorksheet {
     const enrollmentId = course?.enrollment?.enrollmentId;
     const profile = course?.profile ?? course?.enrollment?.profile;
     if (!enrollmentId || !profile) throw new Error(`session '${sessionId}' has no active enrollment`);
+    const work = (works ?? []).find((candidate) => candidate?.work === unit.courseId) ?? null;
+    const presentation = worksheetPresentation({ unit, work, enrollment: course?.enrollment });
 
     let instance = await this.#worksheetInstances.findBySession(sessionId);
     let created = false;
@@ -161,11 +153,11 @@ export class IssueComposedWorksheet {
       // once more before the printer is touched (see #issueChunk).
       eventType: composedEventTypeFor(state.state),
       subjectId: unit.subject ?? 'school', courseId: unit.courseId ?? null,
-      subject: unit.subject ?? 'School', course: unit.courseTitle ?? unit.courseId ?? null,
-      breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
-      title: unit.title, reading: learnerReading(unit.reading),
-      sourceTitle: unit.sourceTitle ?? learnerSourceTitle(unit.provenance?.source), passPercent: unit.passing?.percent ?? null,
-      printedPages: unit.provenance?.printed_pages ?? [],
+      subject: unit.subject ?? 'School', course: work?.title ?? unit.courseTitle ?? unit.courseId ?? null,
+      breadcrumb: presentation.breadcrumb,
+      title: unit.title, reading: presentation.reading, citation: presentation.citation,
+      sourceTitle: presentation.sourceTitle, passPercent: unit.passing?.percent ?? null,
+      printedPages: presentation.printedPages,
     };
   }
 

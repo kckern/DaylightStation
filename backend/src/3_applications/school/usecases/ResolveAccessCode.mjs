@@ -52,6 +52,7 @@ import { reduceSession, createEvent } from '#domains/school/sessions/sessionEven
 import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
@@ -308,11 +309,13 @@ export class ResolveAccessCode {
     const course = unit?.courseId ? works.find((candidate) => (
       candidate.work === unit.courseId || `${candidate.subject}/${candidate.work}` === unit.courseId
     )) ?? null : null;
-    const moduleRow = course?.modules?.find((candidate) => candidate.module === unit?.module) ?? null;
     const enrollment = facts?.assignment?.courses?.find?.((candidate) => (
       typeof candidate === 'object' && candidate.courseId === unit?.courseId
     ))?.enrollment ?? null;
-    const moduleIndex = enrollment?.moduleOrder?.indexOf?.(unit?.module) ?? -1;
+    const courseLabel = courseDisplay({ work: course, enrollment, fallback: unit?.courseId ?? 'Course' });
+    const moduleLabel = moduleDisplay({
+      work: course, enrollment, moduleId: unit?.module, fallbackTitle: unit?.module ?? unit?.title,
+    });
     let progress = null;
     if (unit && facts) {
       try {
@@ -352,11 +355,11 @@ export class ResolveAccessCode {
       // A valid unit already proves the course association. Catalog metadata
       // enriches its label, but a missing/temporarily-invalid work index must
       // not erase that context from the learner's card.
-      course: programContext?.course ?? (unit?.courseId ? { id: unit.courseId, title: course?.title ?? unit.courseId } : null),
+      course: programContext?.course ?? (unit?.courseId ? { id: unit.courseId, title: courseLabel.title } : null),
       module: programContext?.unit ?? (unit?.module ? {
         id: unit.module,
-        title: moduleRow?.title ?? unit.module,
-        position: moduleIndex >= 0 ? moduleIndex + 1 : null,
+        title: moduleLabel.title,
+        position: moduleLabel.number,
       } : null),
       lesson: programContext?.lesson ?? (unit?.unitId ? { id: unit.unitId, title: unit.title } : null),
       progress: unit?.programProgress ?? progress?.map((row, index) => ({
