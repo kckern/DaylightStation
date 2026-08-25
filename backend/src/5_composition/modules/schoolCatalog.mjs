@@ -35,11 +35,13 @@ export function createSchoolCatalog({
       config.content?.document_directories, [path.join(contentRoot, 'documents')], 'catalog.content.document_directories');
     const questionBankDirectories = resolveDirectoryList(dataDirectory,
       config.content?.question_bank_directories, [path.join(contentRoot, 'question-banks')], 'catalog.content.question_bank_directories');
+    const deckDirectories = resolveDirectoryList(dataDirectory,
+      config.content?.flashcard_deck_directories, [path.join(contentRoot, 'flashcard-decks')], 'catalog.content.flashcard_deck_directories');
     const actionDirectories = resolveDirectoryList(dataDirectory,
       config.content?.action_directories, [path.join(contentRoot, 'actions')], 'catalog.content.action_directories');
     const authoredCatalogs = new YamlLearningCatalogRepository({ directories: catalogDirectories });
     const authoredContent = new YamlLearningContentRepository({
-      documentDirectories, bankDirectories: questionBankDirectories, actionDirectories,
+      documentDirectories, bankDirectories: questionBankDirectories, deckDirectories, actionDirectories,
     });
 
     // Generated shelves join the authored ones behind the same two ports, because
@@ -71,6 +73,7 @@ export function createSchoolCatalog({
         catalogDirectories: Object.freeze(catalogDirectories),
         documentDirectories: Object.freeze(documentDirectories),
         questionBankDirectories: Object.freeze(questionBankDirectories),
+        deckDirectories: Object.freeze(deckDirectories),
         actionDirectories: Object.freeze(actionDirectories),
         generatedSources: Object.freeze(generated.map((source) => source.catalogId)),
       }),

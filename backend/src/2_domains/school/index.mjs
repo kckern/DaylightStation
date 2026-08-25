@@ -30,3 +30,4 @@ export * from './schoolcalc/index.mjs';
 export * from './progress/index.mjs';
 export * from './remediation/index.mjs';
 export * from './generatedBanks/index.mjs';
+export * from './flashcards/index.mjs';

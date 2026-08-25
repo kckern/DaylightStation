@@ -13,6 +13,11 @@ export class ILearningContentRepository {
     throw new Error('ILearningContentRepository.getQuestionBank must be implemented');
   }
 
+  /** @returns {Promise<object|null>} authored rich flashcard deck */
+  async getFlashcardDeck(deckId) { // eslint-disable-line no-unused-vars
+    throw new Error('ILearningContentRepository.getFlashcardDeck must be implemented');
+  }
+
   /** @returns {Promise<object|null>} server-side learning-action definition */
   async getLearningAction(actionId) { // eslint-disable-line no-unused-vars
     throw new Error('ILearningContentRepository.getLearningAction must be implemented');

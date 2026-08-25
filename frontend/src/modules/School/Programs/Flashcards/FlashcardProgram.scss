@@ -1,0 +1,10 @@
+.flashcard-program { max-width: 760px; margin: 0 auto; padding: 24px; color: #172238; }
+.flashcard-program header, .flashcard-program nav, .flashcard-program__controls, .flashcard-program__ratings { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.flashcard-program header { justify-content: space-between; } .flashcard-program header p { margin: 0; text-transform: uppercase; font-size: .75rem; letter-spacing: .08em; }
+.flashcard-program button { min-height: 48px; border: 0; border-radius: 12px; padding: 10px 16px; font: inherit; background: #e9edf5; color: inherit; cursor: pointer; }
+.flashcard-program nav { margin: 20px 0; } .flashcard-program nav .is-active, .flashcard-program__primary { background: #2d56d7; color: white; }
+.flashcard-program__progress { color: #58657b; } .flashcard-program__card { min-height: 280px; border: 2px solid #d9e0ef; border-radius: 22px; padding: 32px; display: grid; place-content: center; gap: 18px; background: white; font-size: clamp(1.15rem, 3vw, 1.6rem); }
+.flashcard-program__card img, .flashcard-program__card video { max-width: 100%; max-height: 360px; object-fit: contain; } .flashcard-program__ratings { margin-top: 18px; justify-content: space-between; }
+.flashcard-program__ratings button:first-child { background: #ffddd8; } .flashcard-program__ratings button:last-child { background: #d8f6dc; }.flashcard-program__complete { color: #166534; font-weight: 700; }
+.flashcard-program__card .is-correct { background: #d8f6dc; }.flashcard-program__card .is-wrong { background: #ffddd8; }
+@media (max-width: 600px) { .flashcard-program { padding: 16px; }.flashcard-program button { min-height: 56px; }.flashcard-program__card { min-height: 320px; padding: 22px; } }
