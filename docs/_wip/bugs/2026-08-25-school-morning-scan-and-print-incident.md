@@ -228,6 +228,42 @@ an error"), which is exactly why nothing ever explained the empty member list.
 a planner-side hint distinguishing "no units exist" from "all units are drafts" — the
 silence here cost a full investigation.
 
+**2026-08-25 — Resolved (Task 4).** User decision: **option (a), approve all units**
+(not the narrower "near-term weeks only" option, despite `HANDOFF.md`'s note that
+Days 2–5 of week 37+ were deliberately left draft — the user judged the content
+reviewed and wanted the whole course live).
+
+The actual count flipped was **85**, not 86 — the pre-change grep's 86th match was
+`reviewState: draft` inside `_authoring-harness.mjs` (a JS authoring script) and
+`HANDOFF.md` (prose), neither of which is a unit YAML; both were correctly left
+untouched. All 85 real lesson YAMLs under
+`data/content/school/scripture/come-follow-me-ot-2026/` were flipped
+`provenance.reviewState: draft -> approved` via a targeted line-wise `perl` replace
+(no YAML round-trip), verified byte-for-byte identical apart from the `reviewState`
+line, then the container was redeployed (`docker stop/rm` + `deploy-daylight`; plain
+`docker restart` is not in the NOPASSWD sudoers on this host) to clear the in-memory
+config/content cache.
+
+**Verified fixed:** `GET /api/v1/school/lifecycle/learners/milo/completion` now
+returns `"state":"complete"`, `"faults":[]` — the `plan_error` fault that blocked
+Milo's piano-games unlock is gone. `felix` similarly shows `"faults":[]`.
+
+**Verified improved, not fully clean:** `school.agenda.plan-errors` dropped from
+~41/hr (9 non-preview + 32 preview) to ~16/hr, but **0 non-preview + 4 preview**
+in the last 15 minutes post-restart. All remaining rows carry `context.preview:
+"true"` — they come from the **teacher planning-preview** BuildAgenda instance
+(`schoolLifecycle.mjs:588-610`, `logger.child({ preview: true })`), not the real
+learner agenda path, which is now clean. That preview instance is passed the same
+`curriculum` object as the real one (`schoolLifecycle.mjs:590` vs `:547`) yet still
+reports "assigned but no published units belong to it" — differs from the real path
+in `previewSessions`, `previewOnly: true`, and `curriculumExceptions:
+curriculumExceptionStore`; root cause not chased, flagging for a follow-up.
+
+**Also observed:** on both learners, scripture now shows
+`"excused":[{"subject":"scripture","reason":"blocked_no_offer"}]` — approving the
+units cleared the `plan_error` fault but the course still doesn't offer a lesson.
+This is a second, distinct gap (not addressed by O-2) worth its own investigation.
+
 ### O-1 — the "not expiry" rule-out is **RETRACTED [rev2]**
 
 The first revision inspected only the **nine tokens written today** and concluded expiry
@@ -356,7 +392,10 @@ Nothing here is fixed yet; these are the checks each fix must pass.
   module-mocking `escpos-network` opens a real socket and wastes paper.
 - **RC-5:** queue three ~37 KB jobs back-to-back against the real printer ⇒ three complete
   receipts, zero `thermalPrinter.timeout`.
-- **O-2:** after approval, `plan-errors` stops and the course offers lessons.
+- **O-2:** after approval, `plan-errors` stops and the course offers lessons. **Partial**
+  (2026-08-25): the `plan_error` fault is gone and completion state is correct, but
+  preview-path `plan-errors` persist and scripture still doesn't offer a lesson
+  (`blocked_no_offer`) — see the O-2 resolution note above.
 - **RC-3:** teacher board shows one session for that lesson.
 - **L-2:** one link per distinct destination.
 
