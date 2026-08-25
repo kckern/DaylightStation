@@ -425,7 +425,7 @@ export class ResolveAccessCode {
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
     const { sections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
+      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone, logger: this.#logger,
     });
 
     const projection = { assignment, units, sessions: rawHistory, works, nowIso };
