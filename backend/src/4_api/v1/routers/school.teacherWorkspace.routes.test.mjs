@@ -84,12 +84,12 @@ describe('teacher workspace routes', () => {
     }));
   });
 
-  it('refuses teacher history and original artifacts while the teacher session is locked', async () => {
+  it('keeps ordinary teacher reads available before a write-capability is unlocked', async () => {
     const teacherCapabilitySessions = { status: vi.fn(() => ({ active: false })) };
-    await request(app({ getLearnerTimeline: { execute: vi.fn() }, teacherCapabilitySessions }))
-      .get('/api/v1/school/teacher/learners/kid/timeline').expect(403);
-    await request(app({ issuedArtifactStore: { get: vi.fn() }, teacherCapabilitySessions }))
-      .get('/api/v1/school/teacher/artifacts/art_1/original.pdf').expect(403);
+    await request(app({ getLearnerTimeline: { execute: vi.fn(async () => ({ items: [] })) }, teacherCapabilitySessions }))
+      .get('/api/v1/school/teacher/learners/kid/timeline').expect(200);
+    await request(app({ issuedArtifactStore: { get: vi.fn(async () => ({ manifest: { artifactId: 'art_1' }, bytes: Buffer.from('%PDF') })) }, teacherCapabilitySessions }))
+      .get('/api/v1/school/teacher/artifacts/art_1/original.pdf').expect(200);
   });
 
   it('gates and attributes a teacher-opened remediation session', async () => {

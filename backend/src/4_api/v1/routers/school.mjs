@@ -144,14 +144,6 @@ export function createSchoolRouter({
     const secure = req.secure || String(req.get('X-Forwarded-Proto') ?? '').split(',')[0].trim() === 'https';
     return `daylight_teacher_session=${value}; Path=/api/v1/school; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
   };
-  const requireTeacherRead = (req, res) => {
-    const status = teacherCapabilitySessions?.status(cookieValue(req, 'daylight_teacher_session'), { touch: true });
-    if (!status?.active) {
-      res.status(403).json({ error: 'Unlock teacher tools to view this student record.' });
-      return null;
-    }
-    return status;
-  };
   // Cookie capabilities ride the existing `pin` argument into TeacherGate.
   // A literal body PIN always wins, preserving every deployed client/CLI.
   router.use((req, _res, next) => {
@@ -1306,7 +1298,6 @@ export function createSchoolRouter({
   // V2 teacher workspace read models. These are intentionally additive to the
   // older lifecycle routes so rollout/cutback never changes student behavior.
   router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
       learnerId: req.params.learnerId,
@@ -1331,7 +1322,6 @@ export function createSchoolRouter({
     }));
   }));
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
   }));
@@ -1339,7 +1329,6 @@ export function createSchoolRouter({
   // published document revision and the issued worksheet instance. It never
   // allocates a card, creates an artifact, or changes session state.
   router.get('/teacher/sessions/:sessionId/worksheet.pdf', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo) {
       throw new EntityNotFoundError('worksheet render', 'not configured');
     }
@@ -1389,14 +1378,12 @@ export function createSchoolRouter({
     res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
   }));
   router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
@@ -1408,7 +1395,6 @@ export function createSchoolRouter({
       .send(artifact.bytes);
   }));
   router.get('/teacher/artifacts/:artifactId/original', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
@@ -1419,7 +1405,6 @@ export function createSchoolRouter({
       .send(artifact.bytes);
   }));
   router.get('/teacher/artifacts/:artifactId/replay.png', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore || !renderReceiptArtifact) throw new EntityNotFoundError('receipt replay', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact?.manifest?.sourceDocument) throw new EntityNotFoundError('frozen receipt source', req.params.artifactId);
@@ -1444,7 +1429,6 @@ export function createSchoolRouter({
     res.status(body.apply === true ? 201 : 200).json(receipt);
   }));
   router.get('/teacher/artifacts/:artifactId/postview.pdf', wrap(async (req, res) => {
-    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore || !getTeacherSession || !renderArtifactPostview) {
       return res.status(501).json({ error: 'artifact postview is not configured' });
     }

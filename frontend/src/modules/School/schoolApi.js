@@ -68,7 +68,9 @@ export const schoolApi = {
   // The teacher's one-glance "today" digest (Task 6, `GetTeacherToday`):
   // a plain array, one row per roster learner — NOT wrapped in `{learners}`.
   teacherToday: () => req('/teacher/today'),
-  teacherDay: (studyDay) => req(`/teacher/day?${new URLSearchParams({ studyDay })}`),
+  // An omitted day means "today" to the server. Never serialize it as the
+  // literal string `undefined`, which is rightly rejected as a malformed date.
+  teacherDay: (studyDay = null) => req(`/teacher/day${studyDay ? `?${new URLSearchParams({ studyDay })}` : ''}`),
   // Teacher console reads (teacher-console spec §4.3). `teachers` answers
   // `{configured, teachers: [{id, name}]}` — configured:false means the
   // school.yml `teachers:` key is absent entirely.

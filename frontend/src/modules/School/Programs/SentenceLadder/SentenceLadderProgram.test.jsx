@@ -42,7 +42,7 @@ vi.mock('./languageApi.js', () => ({
 
 const LANGUAGES = { source: 'EN', target: 'KR' };
 
-const entry = (seq, rung, done = false) => ({
+const entry = (seq, rung, done = false, options = {}) => ({
   seq,
   rung,
   done,
@@ -54,6 +54,7 @@ const entry = (seq, rung, done = false) => ({
     : rung === 'interpretation' ? { role: 'source', modality: 'text', language: 'EN' }
       : rung === 'recording' ? { role: 'target', modality: 'audio', language: 'KR' }
         : null,
+  ...options,
 });
 
 function dayPayload({
@@ -158,6 +159,20 @@ describe('the day', () => {
     expect(screen.getByRole('button', { name: 'Listen, then record' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Interpretation/ }));
     expect(screen.getByLabelText(/Type what it means/i)).toBeTruthy();
+  });
+
+  it('reveals one target glyph ahead for an enrollment-owned copy dictation', async () => {
+    dayMock.mockResolvedValue(dayPayload({
+      chain: ['dictation'],
+      queue: [entry(1, 'dictation', false, { copyPrompt: true })],
+    }));
+    render(<SentenceLadderProgram studyGrant="test-grant" userId="kckern" corpusId="glossika-korean" />);
+
+    expect(await screen.findByText('한')).toBeTruthy();
+    const input = screen.getByLabelText('Copy the sentence');
+    fireEvent.change(input, { target: { value: '한' } });
+    expect(screen.getByText('한국')).toBeTruthy();
+    expect(screen.queryByText('한국어 1')).toBeNull();
   });
 
   it('NEVER renders a rung the device cannot perform', async () => {

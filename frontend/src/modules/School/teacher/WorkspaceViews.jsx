@@ -26,6 +26,31 @@ import StaleSessions from './panels/StaleSessions.jsx';
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
 const stateOf = (session) => session?.state ?? session?.status ?? session?.outcome?.result ?? session?.result ?? 'unknown';
+const humanDate = (value) => {
+  if (!value) return null;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', {
+    weekday: 'long', month: 'short', day: 'numeric',
+  }).format(date);
+};
+const humanDateTime = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(date);
+};
+const scoreLine = (session) => {
+  const score = session?.effectiveScore ?? session?.machineScore;
+  if (!score || score.correctCount == null || score.totalCount == null) return null;
+  return `${score.correctCount} of ${score.totalCount} correct${score.percent == null ? '' : ` · ${score.percent}%`}`;
+};
+const outcomeLabel = (sessionState) => {
+  const outcome = sessionState?.outcome?.result;
+  if (outcome === 'passed' || ['closed', 'completed'].includes(sessionState?.state)) return 'Completed';
+  if (outcome === 'needs_remediation') return 'Needs review';
+  return labelize(sessionState?.state ?? outcome ?? 'Recorded');
+};
 
 function CapabilityNotice({ children }) {
   return <p className="teacher-capability-notice">{children}</p>;
@@ -52,6 +77,17 @@ function AgendaPreview({ learnerId, learnerName }) {
   const [dispatchError, setDispatchError] = useState(null);
   const [dispatchKey, setDispatchKey] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'agenda-dispatch' });
+  const day = usePanelFetch(() => (schoolApi.teacherDay
+    ? schoolApi.teacherDay()
+    : Promise.resolve({ ok: true, status: 200, data: { learners: [] } })), {
+    deps: [learnerId], panel: 'workspace-agenda-day', notFoundAs: 'unavailable',
+  });
+  const completedBySubject = useMemo(() => {
+    const learner = (day.data?.learners ?? []).find((row) => row.learnerId === learnerId);
+    return new Map((learner?.sessions ?? [])
+      .filter((session) => session.outcome?.result === 'passed')
+      .map((session) => [session.subject, session]));
+  }, [day.data, learnerId]);
   const previewDispatch = async () => {
     setDispatchError(null);
     const response = await teacherWorkspaceApi.agendaDispatchPreview(learnerId, learnerName);
@@ -92,19 +128,24 @@ function AgendaPreview({ learnerId, learnerName }) {
       <ol className="teacher-agenda-list">
         {(plan.data?.sections ?? []).map((section) => (
           <li key={section.subject ?? section.id}>
-            <strong>{section.subject ?? 'School'}</strong>
+            <strong>{labelize(section.subject ?? 'School')}</strong>
             <span>{section.servedToday
-              ? 'Complete today'
+              ? (() => {
+                const completed = completedBySubject.get(section.subject);
+                return completed
+                  ? `${completed.lessonTitle ?? 'Lesson'} completed today${scoreLine(completed) ? ` · ${scoreLine(completed)}` : ''}`
+                  : 'Today’s work is complete';
+              })()
               : section.suppressed
                 ? `Deferred for ${section.suppressed.bySubject} focus`
-                : section.next?.title ?? section.next?.label ?? section.next?.unitId ?? section.lockedRemedy ?? section.timingNotice ?? 'No work offered'}</span>
+                : section.next?.title ?? section.next?.label ?? section.lockedRemedy ?? section.timingNotice ?? 'No work offered'}</span>
           </li>
         ))}
       </ol>
       <div className="teacher-action-row">
-        <button type="button" onClick={() => setImageOpen((open) => !open)}>{imageOpen ? 'Hide rendered agenda' : 'Preview rendered agenda'}</button>
-        <a href={pngUrl} target="_blank" rel="noreferrer">Open PNG</a>
-        <button type="button" onClick={previewDispatch}>Print agenda…</button>
+        <button type="button" onClick={() => setImageOpen((open) => !open)}>{imageOpen ? 'Hide print preview' : 'View print preview'}</button>
+        <a href={pngUrl} target="_blank" rel="noreferrer">Open printable agenda</a>
+        <button type="button" className="teacher-primary" onClick={previewDispatch}>Print {learnerName}&rsquo;s agenda</button>
       </div>
       {dispatchError && <p className="teacher-panel__error">{dispatchError}</p>}
       {dispatchReceipt && <p className="teacher-action-receipt">{dispatchReceipt.printed ? 'Agenda printed.' : `Printer did not accept the agenda${dispatchReceipt.reason ? `: ${dispatchReceipt.reason}` : '.'}`} <small>Receipt {dispatchReceipt.idempotencyKey}</small></p>}
@@ -138,7 +179,13 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sessions = usePanelFetch(async () => {
-    if (window) return schoolApi.learnerSessions(learnerId, { window });
+    if (window === 'today') {
+      if (!schoolApi.teacherDay) return schoolApi.learnerSessions(learnerId, { window });
+      const response = await schoolApi.teacherDay();
+      if (!response.ok) return response;
+      const learner = (response.data?.learners ?? []).find((row) => row.learnerId === learnerId);
+      return { ...response, data: { sessions: learner?.sessions ?? [] } };
+    }
     const timeline = await authorizedRead(() => teacherWorkspaceApi.timeline(learnerId));
     if (timeline.status !== 404) return { ...timeline, data: timeline.data ? { sessions: timeline.data.items ?? [], nextCursor: timeline.data.nextCursor } : null };
     return schoolApi.learnerSessions(learnerId);
@@ -166,8 +213,8 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
           return (
             <li key={id ?? index}>
               <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
-                <span><strong>{session.title ?? labelize(session.unitId) ?? 'Session'}</strong><small>{dateOf(session) ? String(dateOf(session)).slice(0, 10) : 'No date'}</small></span>
-                <span className={`teacher-status teacher-status--${stateOf(session)}`}>{labelize(stateOf(session))}</span>
+                <span><strong>{session.lessonTitle ?? session.title ?? labelize(session.unitId) ?? 'Session'}</strong><small>{[labelize(session.subject), session.courseTitle, session.moduleTitle].filter(Boolean).join(' · ')}</small><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
+                <span className={`teacher-status teacher-status--${stateOf(session)}`}>{session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
               </button>
             </li>
           );
@@ -540,11 +587,12 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   }), { onSuccess: () => setAttempt((n) => n + 1) });
   const ownerName = kids.find((kid) => kid.id === result.ownerId)?.name ?? result.ownerId;
   const events = useMemo(() => session?.events ?? sessionState?.events ?? sessionState?.history ?? [], [session, sessionState]);
+  const updatedAt = dateOf(session) ?? session?.updatedAt ?? events.at(-1)?.at ?? null;
 
   return (
     <div className="teacher-view teacher-session-inspector">
       <button type="button" className="teacher-back" onClick={onBack}>← Back to history</button>
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">{session?.taxonomy?.subject ?? 'Session record'}</p><h2>{session?.taxonomy?.lessonTitle ?? sessionState?.title ?? 'Lesson'}</h2><p>{[ownerName, session?.taxonomy?.courseTitle, session?.taxonomy?.moduleTitle].filter(Boolean).join(' · ')}</p></div></div>
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">{labelize(session?.taxonomy?.subject ?? 'Session record')}</p><h2>{session?.taxonomy?.lessonTitle ?? sessionState?.title ?? 'Lesson'}</h2><p>{[ownerName, session?.taxonomy?.courseTitle, labelize(session?.taxonomy?.moduleTitle)].filter(Boolean).join(' · ')}</p></div></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
       {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
       {result.state === 'empty' && <CapabilityNotice>This session is not present in the available learner-history window. A dedicated session read endpoint is required to inspect older records.</CapabilityNotice>}
@@ -554,17 +602,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
           <section className="teacher-panel teacher-session-summary">
             <h3 className="teacher-panel__title">Outcome</h3>
             <dl>
-              <div><dt>Status</dt><dd>{labelize(stateOf(sessionState))}</dd></div>
+              <div><dt>Status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
               <div><dt>Machine grade</dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
               <div><dt>Effective grade</dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
-              <div><dt>Updated</dt><dd>{dateOf(session) ? new Date(dateOf(session)).toLocaleString() : 'Unknown'}</dd></div>
+              <div><dt>Updated</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
             </dl>
             <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {session?.assignment && <section className="teacher-panel">
             <h3 className="teacher-panel__title">Paper issued</h3>
-            <p className="teacher-muted">Created {session.assignment.createdAt ? new Date(session.assignment.createdAt).toLocaleString() : 'at session start'} · immutable published worksheet revision</p>
+            <p className="teacher-muted">Created {humanDateTime(session.assignment.createdAt) ?? 'at session start'} · immutable published worksheet revision</p>
             <ol className="teacher-event-list teacher-question-list">
               {session.assignment.questions.map((question) => <li key={question.itemId ?? question.number}>
                 <strong>{question.number}. {question.prompt ?? 'Question text unavailable'}</strong>
@@ -593,7 +641,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             </div>) : <CapabilityNotice>No worksheet artifact is linked to this session.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
-          <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{event.at ? new Date(event.at).toLocaleString() : ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>
+          <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>
         </>
       )}
     </div>

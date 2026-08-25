@@ -104,6 +104,7 @@ export class GetTeacherToday {
         const unit = unitsById.get(state.unitId) ?? null;
         const courseId = unit?.courseId ?? null;
         const work = worksById.get(courseId) ?? null;
+        const module = work?.modules?.find((entry) => entry.module === unit?.module) ?? null;
         const summary = {
           sessionId: row.sessionId,
           learnerId: state.learnerId,
@@ -114,7 +115,7 @@ export class GetTeacherToday {
           courseId,
           courseTitle: work?.title ?? courseId,
           moduleId: unit?.module ?? null,
-          moduleTitle: unit?.module ?? null,
+          moduleTitle: module?.title ?? unit?.module ?? null,
           posterUrl: courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(courseId)}/poster.jpg` : null,
           studyDay: originalStudyDay,
           createdAt,

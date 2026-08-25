@@ -5,11 +5,11 @@
  * Everything is scoped by corpus, because a learner may study more than one
  * course and their day counters, queues and recordings must not collide:
  *
- *   corpus:     <dataDir>/content/language/{corpusId}.yml
+ *   corpus:     <dataDir>/content/school/language/{corpusId}.yml
  *   progress:   <userDir>/apps/school/language/{corpusId}/progress.yml
  *   log:        <userDir>/apps/school/language/{corpusId}/log/{YYYY-MM-DD}.yml   (append-only)
- *   audio:      <mediaDir>/audio/language/{corpusId}/{NNNN}-{LANG}.mp3
- *   recordings: <mediaDir>/audio/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.{ext}
+ *   audio:      <mediaDir>/school/language/{corpusId}/{NNNN}-{LANG}.mp3
+ *   recordings: <mediaDir>/school/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.{ext}
  *
  * Mirrors YamlSchoolDatastore's shape so the two read alike. Progress is the
  * ONLY mutable per-user file; the log is append-only and is the evidence the
@@ -44,7 +44,7 @@ export class YamlLanguageStudyDatastore {
   // -- paths ---------------------------------------------------------------
 
   #corpusDir() {
-    return path.join(this.#configService.getDataDir(), 'content', 'language');
+    return path.join(this.#configService.getDataDir(), 'content', 'school', 'language');
   }
 
   #userDir(userId, corpusId) {
@@ -59,7 +59,7 @@ export class YamlLanguageStudyDatastore {
 
   #mediaDir(corpusId) {
     if (!ID_RE.test(String(corpusId))) return null;
-    return path.join(this.#configService.getMediaDir(), 'audio', 'language', String(corpusId));
+    return path.join(this.#configService.getMediaDir(), 'school', 'language', String(corpusId));
   }
 
   // -- corpus (shared, read-only) ------------------------------------------

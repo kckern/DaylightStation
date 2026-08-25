@@ -252,9 +252,13 @@ export class SentenceLadderService {
       missingCreditRungs: policy.chain
         ? policy.chain.filter((rung) => !chainFor(allowed, corpus.languages).includes(rung))
         : [],
-      enrollment: policy.enrollment ? { lessonSize: policy.enrollment.lessonSize, rungs: policy.enrollment.rungs } : null,
+      enrollment: policy.enrollment ? {
+        lessonSize: policy.enrollment.lessonSize,
+        rungs: policy.enrollment.rungs,
+        ...(policy.enrollment.dictationMode ? { dictationMode: policy.enrollment.dictationMode } : {}),
+      } : null,
       gate: { level: gate.level, message: gateMessage(gate), missing: gate.missing },
-      queue: queue.map((entry) => this.#decorate(entry, corpus)),
+      queue: queue.map((entry) => this.#decorate(entry, corpus, policy.enrollment?.dictationMode)),
       summary: summarizeQueue(queue),
       rollover: roll,
     };
@@ -265,7 +269,7 @@ export class SentenceLadderService {
    * audio each prompt step should play — resolved from roles to concrete
    * language codes HERE, so no frontend component ever hardcodes EN or KR.
    */
-  #decorate(entry, corpus) {
+  #decorate(entry, corpus, dictationMode = null) {
     const sentence = corpus.index.get(entry.seq) ?? null;
     const rung = rungById(entry.rung);
     const prompt = (rung?.prompt ?? []).map((role) => ({
@@ -282,6 +286,9 @@ export class SentenceLadderService {
       text: sentence?.text ?? null,
       prompt,
       response,
+      // Copy mode preserves the target-language typing practice while making
+      // the text visible. It is an enrollment policy, not a client choice.
+      copyPrompt: entry.rung === 'dictation' && dictationMode === 'copy',
     };
   }
 

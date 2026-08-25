@@ -10,11 +10,19 @@ describe('validateProgramEnrollment', () => {
   it('normalizes a valid per-learner policy', () => {
     expect(validateProgramEnrollment({
       programId: 'language', corpusId: 'glossika-korean', lessonSize: 10,
-      rungs: ['repetition'], scope: ['fluency-1'], reward: { amount: 2 },
+      rungs: ['repetition'], dictationMode: 'copy', scope: ['fluency-1'], reward: { amount: 2 },
     }, { corpus })).toEqual({ errors: [], enrollment: {
       programId: 'language', corpusId: 'glossika-korean', lessonSize: 10,
-      rungs: ['repetition'], unitSize: 10, scope: ['fluency-1'], reward: { amount: 2 },
+      rungs: ['repetition'], dictationMode: 'copy', unitSize: 10, scope: ['fluency-1'], reward: { amount: 2 },
     } });
+  });
+
+  it('rejects an unknown dictation mode', () => {
+    const result = validateProgramEnrollment({
+      programId: 'sentence-ladder', corpusId: 'glossika-korean', lessonSize: 1,
+      dictationMode: 'hint',
+    }, { corpus });
+    expect(result.errors).toContain('dictationMode must be listen or copy');
   });
 
   it('rejects signoff rewards and out-of-bounds ranges', () => {

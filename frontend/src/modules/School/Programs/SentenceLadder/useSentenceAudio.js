@@ -28,6 +28,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
   const elementRef = useRef(null);
   const preloadRef = useRef([]);
   const queueRef = useRef([]);
+  const loopRef = useRef(null);
   const timerRef = useRef(null);
   const endRef = useRef(onSequenceEnd);
 
@@ -68,6 +69,7 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
       el.onended = null;
     }
     queueRef.current = [];
+    loopRef.current = null;
     setPlaying(false);
     setStep(-1);
   }, []);
@@ -81,6 +83,12 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
     const queue = queueRef.current;
 
     if (queue.length === 0) {
+      if (loopRef.current?.length) {
+        queueRef.current = [...loopRef.current];
+        setStep(-1);
+        advance();
+        return;
+      }
       setPlaying(false);
       setStep(-1);
       languageLog.audio('ended', {});
@@ -119,14 +127,17 @@ export function useSentenceAudio({ onSequenceEnd } = {}) {
 
   /**
    * @param {Array<{url: string, gapMs?: number}>} clips
+   * @param {{loop?: boolean}} [options] Repeat the complete sequence until
+   * stopped. Used only by the typing rungs after a learner gesture.
    */
-  const playSequence = useCallback((clips) => {
+  const playSequence = useCallback((clips, { loop = false } = {}) => {
     if (!clips?.length) {
       endRef.current?.();
       return;
     }
     clearTimer();
     setBlocked(false);
+    loopRef.current = loop ? [...clips] : null;
     queueRef.current = [...clips];
     setStep(-1);
     setPlaying(true);

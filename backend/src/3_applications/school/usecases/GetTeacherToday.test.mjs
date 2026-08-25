@@ -20,7 +20,7 @@ function useCase() {
     },
     curriculum: {
       listUnits: async () => [{ unitId: 'lesson-1', title: 'Lesson One', subject: 'math', courseId: 'course-1', module: 'unit-a' }],
-      listWorks: async () => [{ work: 'course-1', title: 'Course One', subject: 'math' }],
+      listWorks: async () => [{ work: 'course-1', title: 'Course One', subject: 'math', modules: [{ module: 'unit-a', title: 'Unit A' }] }],
     },
     timezone: 'UTC', boundaryHour: 4,
     clock: () => new Date('2026-08-24T18:00:00.000Z'), logger: { debug() {} },
@@ -32,7 +32,7 @@ describe('GetTeacherToday v2', () => {
     const august23 = await useCase().execute({ studyDay: '2026-08-23', version: 'v2' });
     expect(august23.learners[0]).toMatchObject({
       effectiveScoreTotals: { correct: 1, total: 2, percent: 50 },
-      sessions: [{ sessionId: 'ses_felix', studyDay: '2026-08-23' }],
+      sessions: [{ sessionId: 'ses_felix', studyDay: '2026-08-23', lessonTitle: 'Lesson One', courseTitle: 'Course One', moduleTitle: 'Unit A' }],
       processedToday: [],
     });
 

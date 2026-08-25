@@ -24,6 +24,15 @@ credit, and all attempts must match an outstanding entry in the current queue
 under the current gate and device capabilities. Recordings validate the same
 queue before audio is persisted.
 
+## Enrollment options
+
+`programs[]` enrollment records may set `dictationMode: copy`. This reveals one
+target-script glyph ahead of the learner's matching typed prefix, while the
+target-language prompt audio loops after the learner presses Play or starts
+typing. It supports script-entry practice before a learner can transcribe from
+audio alone. The default (`listen`) remains audio-only dictation. The mode is
+resolved by the server and is not learner-controlled.
+
 The frontend requires explicit learner, corpus, and grant. It cancels stale
 loads, re-derives after each write, and directs a learner to a capable device
 when an enrollment-owned credit rung cannot be completed locally.

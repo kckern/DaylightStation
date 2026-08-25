@@ -116,7 +116,7 @@ export function programStatusFor(programStatuses, entry) {
  * @param {object} args.plan              `planLearnerWork()` result — reads `.entries`
  * @param {Array}  [args.sessions]        derived session facts — same shape the planner consumes,
  *                                         plus `gradedPercent: number|null`
- * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, progressLabel, score } | { error: true } }`
+ * @param {object} [args.programStatuses] `{ [programStatusKey]: { doneToday, terminal?, progressLabel, score } | { error: true } }`
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
@@ -166,7 +166,16 @@ export function planDailyAgenda({
     const unavailableProgramKeys = new Set(
       programs.filter((e) => programStatusFor(programStatuses, e)?.error === true).map(programStatusKey),
     );
-    const eligible = list.filter((e) => !(e.program && unavailableProgramKeys.has(programStatusKey(e))));
+    // A once-only program owns completion evidence outside a School work
+    // session. Once its launcher says the instance is terminal, it must leave
+    // future agendas rather than being offered again every study day.
+    const terminalProgramKeys = new Set(
+      programs.filter((e) => e.cadence === 'once' && programStatusFor(programStatuses, e)?.terminal === true)
+        .map(programStatusKey),
+    );
+    const eligible = list.filter((e) => !(e.program && (
+      unavailableProgramKeys.has(programStatusKey(e)) || terminalProgramKeys.has(programStatusKey(e))
+    )));
     const candidate = [...eligible.filter((e) => e.status === 'in_progress'), ...eligible.filter((e) => e.status === 'available')]
       .sort(byEntryPriority)[0] ?? null;
     const subjectPassedToday = list.some((e) => passedTodayIds.has(e.unitId));

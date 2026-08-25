@@ -39,7 +39,7 @@ describe('constructor', () => {
 describe('resolveAudioPath', () => {
   it('builds the expected slug path', () => {
     expect(ds.resolveAudioPath('glossika-korean', 1, 'KR'))
-      .toBe(path.join(MEDIA, 'audio/language/glossika-korean/0001-KR.mp3'));
+      .toBe(path.join(MEDIA, 'school/language/glossika-korean/0001-KR.mp3'));
   });
 
   it('upper-cases the language so casing cannot fork the filename', () => {
@@ -63,7 +63,7 @@ describe('resolveAudioPath', () => {
 describe('resolveRecordingPath', () => {
   it('scopes a recording to its corpus and learner', () => {
     expect(ds.resolveRecordingPath('glossika-korean', 'kckern', 2, 'KR', 'webm'))
-      .toBe(path.join(MEDIA, 'audio/language/glossika-korean/recordings/kckern/0002-KR.webm'));
+      .toBe(path.join(MEDIA, 'school/language/glossika-korean/recordings/kckern/0002-KR.webm'));
   });
 
   it('refuses an unknown learner, so a typo cannot mint a directory tree', () => {

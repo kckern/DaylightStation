@@ -652,9 +652,9 @@ supplier is an adapter.
 | Frontend (sentence-ladder pedagogy) | `frontend/src/modules/School/Programs/SentenceLadder/` |
 | Legacy dump reader | `backend/src/1_adapters/glossika/LegacyDumpReader.mjs` |
 | Ingest CLI | `cli/glossika.cli.mjs` (`import-db` is authoritative) |
-| Corpus | `data/content/language/{corpusId}.yml` |
+| Corpus | `data/content/school/language/{corpusId}.yml` |
 | Per-user | `data/users/{id}/apps/school/language/{corpusId}/` (progress + append-only log) |
-| Media | `media/apps/school/language/{corpusId}/` (audio + per-user recordings) |
+| Media | `media/school/language/{corpusId}/` (audio + per-user recordings) |
 
 **Design spec:** [`2026-07-21-glossika-program-design.md`](../../_wip/plans/2026-07-21-glossika-program-design.md)
 

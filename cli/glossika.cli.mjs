@@ -8,13 +8,13 @@
  * docs/_wip/plans/2026-07-21-glossika-program-design.md §2 and §6.
  *
  * Everything is scoped by corpus id, so a learner studying two courses never
- * has their counters or recordings collide. `content/language/{corpusId}.yml`
+ * has their counters or recordings collide. `content/school/language/{corpusId}.yml`
  * mirrors the existing `content/quizzes/{bankId}.yml` convention — type
  * directory, id as filename.
  *
- *   corpus      data/content/language/{corpusId}.yml
- *   audio       media/audio/language/{corpusId}/{NNNN}-{LANG}.mp3
- *   recordings  media/audio/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.mp3
+ *   corpus      data/content/school/language/{corpusId}.yml
+ *   audio       media/school/language/{corpusId}/{NNNN}-{LANG}.mp3
+ *   recordings  media/school/language/{corpusId}/recordings/{userId}/{NNNN}-{LANG}.mp3
  *   log         data/users/{userId}/apps/school/language/{corpusId}/log/{YYYY-MM-DD}.yml
  *
  * Language codes are **data, never literals**: the corpus binds the ladder's
@@ -232,12 +232,12 @@ function localDateKey(date) {
 function paths(corpusId) {
   const dataDir = configService.getDataDir();
   const mediaDir = configService.getMediaDir();
-  const audioBase = `audio/language/${corpusId}`;
+  const audioBase = `school/language/${corpusId}`;
   return {
     dataDir,
     mediaDir,
     audioBase,
-    corpus: join(dataDir, 'content', 'language', `${corpusId}.yml`),
+    corpus: join(dataDir, 'content', 'school', 'language', `${corpusId}.yml`),
     audioDir: join(mediaDir, ...audioBase.split('/')),
     recordingsDir: join(mediaDir, ...audioBase.split('/'), 'recordings'),
     userLogDir: (userId) =>
