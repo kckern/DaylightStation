@@ -29,6 +29,22 @@ export function createArtifactPostviewRenderer() {
   };
 }
 
+/** Render the first page of an issued PDF for a non-mutating history preview. */
+export async function renderPdfFirstPagePng(originalPdf, { width = 320 } = {}) {
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const source = await pdfjs.getDocument({ data: new Uint8Array(originalPdf) }).promise;
+  try {
+    const page = await source.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const viewport = page.getViewport({ scale: width / base.width });
+    const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    return canvas.toBuffer('image/png');
+  } finally {
+    await source.destroy();
+  }
+}
+
 function compose(pages, session) {
   return new Promise((resolve, reject) => {
     const out = new PDFDocument({ autoFirstPage: false, margin: 0, info: { CreationDate: new Date('2000-01-01T00:00:00Z') } });

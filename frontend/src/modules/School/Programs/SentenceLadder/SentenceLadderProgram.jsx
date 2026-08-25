@@ -30,7 +30,7 @@ const RUNG_LABELS = {
  * shows a sign-in prompt rather than a drill that silently discards work.
  */
 export default function SentenceLadderProgram({
-  userId, corpusId, studyGrant, onSignIn, onExit = null, locked = false,
+  userId, corpusId, studyGrant, onSignIn, onExit = null, locked = false, preview = false,
 }) {
   const [day, setDay] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | error | empty
@@ -51,14 +51,14 @@ export default function SentenceLadderProgram({
   } = useCapabilities(corpusId, languages);
 
   const load = useCallback(async () => {
-    if (!userId || !corpusId || !studyGrant) return;
+    if (!corpusId || (!preview && (!userId || !studyGrant))) return;
     const generation = ++loadGeneration.current;
     loadController.current?.abort();
     const controller = new AbortController();
     loadController.current = controller;
-    const { ok, status: httpStatus, data } = await languageApi.day(
-      userId, corpusId, capabilities, studyGrant, controller.signal,
-    );
+    const { ok, status: httpStatus, data } = preview
+      ? await languageApi.previewDay(corpusId, capabilities, controller.signal)
+      : await languageApi.day(userId, corpusId, capabilities, studyGrant, controller.signal);
     if (generation !== loadGeneration.current) return;
     if (!ok) {
       languageLog.programError('day-failed', { corpus: corpusId, status: httpStatus });
@@ -70,7 +70,7 @@ export default function SentenceLadderProgram({
     languageLog.program('day-loaded', {
       corpus: corpusId, day: data.day, total: data.summary.total, done: data.summary.done,
     });
-  }, [userId, corpusId, capabilities, studyGrant]);
+  }, [userId, corpusId, capabilities, studyGrant, preview]);
 
   useEffect(() => {
     languageLog.program('mounted', { corpus: corpusId, userId });
@@ -150,6 +150,20 @@ export default function SentenceLadderProgram({
    * how a learner loses a session's work without knowing.
    */
   const onComplete = useCallback(async ({ seq, rung, given, blob }) => {
+    if (preview) {
+      // The preview has no identity, grant, or mutable endpoint.  Completion
+      // is a browser-only affordance so a teacher can experience the ladder
+      // without manufacturing learner evidence or retaining a recording.
+      setDay((current) => {
+        if (!current) return current;
+        const queue = current.queue.map((item) => (
+          item.seq === seq && item.rung === rung ? { ...item, done: true } : item
+        ));
+        const done = queue.filter((item) => item.done).length;
+        return { ...current, queue, summary: { total: queue.length, done } };
+      });
+      return { ok: true, preview: true };
+    }
     setSaving(true);
     setNotice(null);
     const result = blob
@@ -169,7 +183,7 @@ export default function SentenceLadderProgram({
     languageLog.attempt('saved', { corpus: corpusId, seq, rung });
     await load();
     return result;
-  }, [userId, corpusId, capabilities, studyGrant, load]);
+  }, [userId, corpusId, capabilities, studyGrant, load, preview]);
 
   const onRoll = useCallback(async () => {
     const { ok, data } = await languageApi.roll(userId, corpusId, capabilities, studyGrant);
@@ -195,7 +209,7 @@ export default function SentenceLadderProgram({
 
   // A guest is stopped, but never stranded: the picker lives one level up and
   // was previously reachable only by knowing the header chip was tappable.
-  if (!userId || !corpusId || !studyGrant) {
+  if (!preview && (!userId || !corpusId || !studyGrant)) {
     const needsLaunch = Boolean(userId) && (!corpusId || !studyGrant);
     return (
       <div className="lang-program lang-program--guest">
@@ -240,11 +254,11 @@ export default function SentenceLadderProgram({
           first. */}
       <header className="lang-program__header">
         <div className="lang-program__identity">
-          <span className="lang-program__eyebrow">Today&apos;s session</span>
+          <span className="lang-program__eyebrow">{preview ? 'Guest preview — nothing is saved' : 'Today\'s session'}</span>
           <h2 className="lang-program__day">Day {day?.day}</h2>
         </div>
         <div className="lang-program__actions">
-          {!locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
+          {!preview && !locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}
           {!locked && <DeviceSettings
             languages={languages}
             capabilities={capabilities}
@@ -300,20 +314,20 @@ export default function SentenceLadderProgram({
             </button>
           );
         })}
-        <button
+        {!preview && <button
           type="button"
           className={`lang-tab${tab === 'review' ? ' is-active' : ''}`}
           aria-pressed={tab === 'review'}
           onClick={() => setTab('review')}
         >
           Review
-        </button>
+        </button>}
       </nav>
 
       {notice && <p className="lang-program__notice" role="alert">{notice}</p>}
 
       <main className="lang-program__body">
-        {tab === 'review' && <ReviewPanel userId={userId} corpusId={corpusId} studyGrant={studyGrant} />}
+        {tab === 'review' && !preview && <ReviewPanel userId={userId} corpusId={corpusId} studyGrant={studyGrant} />}
 
         {tab === 'study' && (allDone || noSteps) && (
           <div className="lang-program__complete">
@@ -325,13 +339,15 @@ export default function SentenceLadderProgram({
               <p role="status">Nothing is due in this course today.</p>
             ) : (
               <p role="status">
-                Day {day?.day} complete. All {summary.total} steps are saved and count toward today&apos;s School progress.
+                {preview
+                  ? `Preview complete. These ${summary.total} steps were only tried in this browser and were not saved.`
+                  : `Day ${day?.day} complete. All ${summary.total} steps are saved and count toward today’s School progress.`}
               </p>
             )}
             {sessionFinished && locked && exitHandler && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={exitHandler}>Done</button>
             )}
-            {allDone && !blockedByDevice && !locked && (
+            {allDone && !preview && !blockedByDevice && !locked && (
               <button type="button" className="lang-btn lang-btn--primary" onClick={onRoll}>Start the next day</button>
             )}
           </div>

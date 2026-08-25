@@ -212,6 +212,10 @@ export function parseSchoolPath(urlBase) {
   if (seg[0] === 'typing') return { section: 'typing', materialPath: [] };
   if (seg[0] === 'geography') return { section: 'geography', materialPath: [] };
   if (seg[0] === 'chess') return { section: 'chess', materialPath: [] };
+  // Teacher-only entry into a stateless runner.  This is explicitly separate
+  // from the learner launch below: no learner can be reconstructed from a
+  // deep link and no grant is accepted here.
+  if (seg[0] === 'sentence-ladder-preview' && seg[1]) return { section: `sentence-ladder-preview:${seg[1]}`, materialPath: [] };
   // Sentence Ladder authority is memory-only. A direct URL or reload must
   // return to School rather than reconstructing a learner-scoped launch.
   return empty;
@@ -228,6 +232,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'typing') return `${urlBase}/typing`;
   if (section === 'geography') return `${urlBase}/geography`;
   if (section === 'chess') return `${urlBase}/chess`;
+  if (section.startsWith('sentence-ladder-preview:')) return `${urlBase}/sentence-ladder-preview/${encodeURIComponent(section.slice(24))}`;
   if (section.startsWith('sentence-ladder:')) return `${urlBase}/sentence-ladder/${encodeURIComponent(section.slice(16))}`;
   return urlBase;
 }
@@ -607,6 +612,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
   const courseId = section?.startsWith('sentence-ladder:') ? section.slice(16) : null;
+  const previewCourseId = section?.startsWith('sentence-ladder-preview:') ? section.slice(24) : null;
+  const languageCourseId = courseId ?? previewCourseId;
   const sectionLabel = !section ? null
       : subjectId ? subjectLabel(subjectId)
       : section === 'library' ? 'Library'
@@ -616,7 +623,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             : section === 'print' ? 'Print'
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
-                  : courseId ? (courses.find((c) => c.id === courseId)?.label ?? 'Language')
+                  : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
                     : section;
 
   // The apple is the one fixed control in the header, so it carries the one
@@ -865,6 +872,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onSignIn={lock.locked ? goHome : openPicker}
             onExit={lock.locked ? goHome : null}
             locked={lock.locked}
+          />
+        )}
+        {previewCourseId && courses.some((course) => course.id === previewCourseId) && (
+          <SentenceLadderProgram
+            corpusId={previewCourseId}
+            preview
+            onExit={goHome}
           />
         )}
         {section === 'language-reels' && reelLaunch && reelLaunch.learnerId === currentUser?.id && (

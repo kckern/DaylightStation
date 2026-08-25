@@ -16,6 +16,9 @@ import PanelFrame from './PanelFrame.jsx';
 export default function QuizRequestBacklog({ kids }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests' });
+  // A degraded/older endpoint must leave this auxiliary panel empty, never
+  // take down the whole dashboard.  The server contract is an array.
+  const items = Array.isArray(requests.data) ? requests.data : [];
   const { run, busy, errors } = useTeacherWrite({ panel: 'quiz-requests' });
   const [asking, setAsking] = useState(null); // row key whose reason box is open
   const [reason, setReason] = useState('');
@@ -33,7 +36,7 @@ export default function QuizRequestBacklog({ kids }) {
   return (
     <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting.">
       <ul className="teacher-quizreq">
-        {(requests.data ?? []).map((r, i) => {
+        {items.map((r, i) => {
           const key = `${r.kind ?? 'quiz'}:${r.unitId ?? r.bankId}:${r.sessionId ?? ''}:${r.userId}`;
           return (
             <li key={`${key}:${i}`} className="teacher-quizreq__row">
@@ -76,7 +79,7 @@ export default function QuizRequestBacklog({ kids }) {
           );
         })}
       </ul>
-      {(requests.data ?? []).length > 0 && (
+      {items.length > 0 && (
         <p className="teacher-panel__empty">
           Fulfilling a request means authoring a quiz bank YAML bound to that
           unit (data/content/quizzes/, `unit:` backlink) — the badge flips the

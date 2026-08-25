@@ -31,6 +31,17 @@ describe('Sentence Ladder route authority', () => {
       section: null, materialPath: [],
     });
   });
+
+  it('allows only the explicit stateless guest-preview route to deep-link', () => {
+    window.history.replaceState({}, '', '/school/sentence-ladder-preview/glossika-korean');
+    try {
+      expect(parseSchoolPath('/school')).toEqual({
+        section: 'sentence-ladder-preview:glossika-korean', materialPath: [],
+      });
+    } finally {
+      window.history.replaceState({}, '', '/');
+    }
+  });
 });
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
@@ -75,6 +86,7 @@ vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: vi.fn(async () => ({ ok: true, status: 200, data: null })),
+    previewDay: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },

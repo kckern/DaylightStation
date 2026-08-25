@@ -112,6 +112,7 @@ export class GetTeacherToday {
           lessonId: state.unitId,
           lessonTitle: unit?.title ?? state.unitId,
           subject: unit?.subject ?? work?.subject ?? null,
+          subjectIcon: unit?.subject ?? work?.subject ?? 'school',
           courseId,
           courseTitle: work?.title ?? courseId,
           moduleId: unit?.module ?? null,

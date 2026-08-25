@@ -31,6 +31,7 @@ function toVariables(outcome) {
   return {
     result: o.result ?? null,
     learner_id: o.learnerId ?? null,
+    student: o.student ?? o.learnerId ?? null,
     test_id: o.testId ?? null,
     session_id: o.sessionId ?? null,
     percent: o.percent ?? null,
@@ -40,12 +41,17 @@ function toVariables(outcome) {
     reasons: o.reasons ?? [],
     items: o.items ?? [],
     code: o.code ?? null,
+    subject: o.subject ?? null,
+    course: o.course ?? null,
+    unit: o.unit ?? null,
+    lesson: o.lesson ?? null,
   };
 }
 
 export class SchoolGradingHookAdapter {
   #gateway;
   #loadSchoolConfig;
+  #resolveStudent;
   #logger;
 
   constructor(config) {
@@ -61,6 +67,7 @@ export class SchoolGradingHookAdapter {
     }
     this.#gateway = config.gateway;
     this.#loadSchoolConfig = config.loadSchoolConfig;
+    this.#resolveStudent = config.resolveStudent || null;
     this.#logger = config.logger || console;
 
     this.failureCount = 0;
@@ -100,6 +107,9 @@ export class SchoolGradingHookAdapter {
       // A bare `school_graded` is used as the service name as-is.
       const service = script.startsWith('script.') ? script.slice('script.'.length) : script;
       const variables = toVariables(outcome);
+      if (this.#resolveStudent && variables.learner_id && !outcome?.student) {
+        try { variables.student = (await this.#resolveStudent(variables.learner_id)) ?? variables.learner_id; } catch { /* identifier remains useful */ }
+      }
 
       try {
         const result = await this.#gateway.callService('script', service, variables);

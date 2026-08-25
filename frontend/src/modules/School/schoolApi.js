@@ -84,10 +84,6 @@ export const schoolApi = {
   learnerSessions: (learnerId, { window = null } = {}) => req(
     `/lifecycle/learners/${encodeURIComponent(learnerId)}/sessions${window ? `?window=${encodeURIComponent(window)}` : ''}`,
   ),
-  printableWorksheetSessions: (learnerId) => req(
-    `/lifecycle/learners/${encodeURIComponent(learnerId)}/printable-sessions?window=today`,
-  ),
-  composeWorksheets: (body) => req('/lifecycle/worksheets/compose', body),
   assignments: (learnerId) => req(`/lifecycle/assignments/${encodeURIComponent(learnerId)}`),
   allAssignments: () => req('/lifecycle/assignments'),
   staleSessions: () => req('/lifecycle/sessions/stale'),

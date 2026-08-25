@@ -352,7 +352,12 @@ export class RecordCardScanOutcome {
         });
       }
     }
-    return { recorded: true, attemptIds, ...(session ? { session } : {}) };
+    return {
+      recorded: true,
+      attemptIds,
+      curriculum: { subjectId, courseId, unitId, lessonId: card.lessonId ?? null },
+      ...(session ? { session } : {}),
+    };
   }
 
   /**

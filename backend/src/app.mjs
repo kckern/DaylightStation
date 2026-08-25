@@ -327,11 +327,12 @@ import { GetLearnerRecord } from '#apps/school/usecases/GetLearnerRecord.mjs';
 import { RegradeBankAttempts } from '#apps/school/usecases/RegradeBankAttempts.mjs';
 import { AdjustSessionGrade, RetractSessionGradeAdjustment } from '#apps/school/usecases/AdjustSessionGrade.mjs';
 import { GetTeacherSession, GetLearnerTimeline } from '#apps/school/usecases/GetTeacherSession.mjs';
+import { PreviewTeacherLessonMaterial } from '#apps/school/usecases/PreviewTeacherLessonMaterial.mjs';
 import { TeacherCapabilitySessions } from '#apps/school/TeacherCapabilitySessions.mjs';
 import { YamlUserVideoProgressStore as SchoolUserVideoProgressStore } from '#adapters/persistence/yaml/YamlUserVideoProgressStore.mjs';
 import { PrintService } from './3_applications/school/PrintService.mjs';
 import { renderBankWorksheet } from './1_rendering/school/WorksheetRenderer.mjs';
-import { createArtifactPostviewRenderer } from '#rendering/school/documents/ArtifactPostviewRenderer.mjs';
+import { createArtifactPostviewRenderer, renderPdfFirstPagePng } from '#rendering/school/documents/ArtifactPostviewRenderer.mjs';
 import { createContentFilterRouter } from './4_api/v1/routers/contentFilter.mjs';
 import { FeedbackService } from './3_applications/common/feedback/FeedbackService.mjs';
 import { NotificationConfigService } from './3_applications/notification/NotificationConfigService.mjs';
@@ -3390,6 +3391,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
             // same `school.yml` — the household-id arg is accepted for the
             // adapter's contract but this module always resolves against `null`.
             loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+            resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
             logger: rootLogger.child({ module: 'school-grading-hook' }),
           });
         } catch (err) {
@@ -3706,6 +3708,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
         printDocuments: schoolLifecycle.stores.printDocuments ?? null,
       }) : null,
+    previewTeacherLessonMaterial: schoolLifecycle.stores?.curriculum && schoolLifecycle.stores?.printDocuments && schoolLifecycle.renderPrintDocument
+      ? new PreviewTeacherLessonMaterial({
+        curriculum: schoolLifecycle.stores.curriculum,
+        printDocuments: schoolLifecycle.stores.printDocuments,
+        renderPrintDocument: schoolLifecycle.renderPrintDocument,
+      }) : null,
     getLearnerTimeline: schoolLifecycle.stores?.sessions
       ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions }) : null,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
@@ -3739,6 +3747,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     teacherGate: schoolTeacherGate,
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
+    renderWorksheetThumbnail: renderPdfFirstPagePng,
     renderSessionResult: renderSessionResultPng,
     renderReceiptArtifact: schoolLifecycle.renderReceiptArtifact ?? null,
     sessionResultArtifacts: schoolSessionResultArtifacts,

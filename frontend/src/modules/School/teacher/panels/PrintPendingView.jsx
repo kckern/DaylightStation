@@ -13,6 +13,7 @@ import { waitAge } from './ReviewQueueView.jsx';
 export default function PrintPendingView({ kids }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const pending = usePanelFetch(() => schoolApi.printPending(), { panel: 'print-pending' });
+  const jobs = Array.isArray(pending.data) ? pending.data : [];
   const { run, busy, errors } = useTeacherWrite({ panel: 'print-pending' });
 
   const decide = (job, decision) => run(job.id, ({ actorId, pin }) => (
@@ -24,7 +25,7 @@ export default function PrintPendingView({ kids }) {
   return (
     <PanelFrame title="Print approvals" state={pending.state} retry={pending.retry} emptyCopy="No prints waiting.">
       <ul className="teacher-prints">
-        {(pending.data ?? []).map((job) => (
+        {jobs.map((job) => (
           <li key={job.id} className="teacher-prints__job">
             <span>{nameFor(job.userId)}</span>
             <span>{job.label ?? job.printableId}</span>
