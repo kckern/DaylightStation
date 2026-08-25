@@ -12,6 +12,7 @@ import PianoProgramsPanel from './panels/PianoProgramsPanel.jsx';
 import MilestonesPanel from './panels/MilestonesPanel.jsx';
 import SchoolMatrix from './panels/SchoolMatrix.jsx';
 import CurriculumBrowser from './panels/CurriculumBrowser.jsx';
+import CurriculumCatalog from './panels/CurriculumCatalog.jsx';
 import ActiveOverrides from './panels/ActiveOverrides.jsx';
 import PeriodsTimeline from './panels/PeriodsTimeline.jsx';
 import EnrichmentPanel from './panels/EnrichmentPanel.jsx';
@@ -369,7 +370,6 @@ export function CoursesView({ learnerId, learnerName, courseId, kids }) {
       <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
       <PianoProgramsPanel learnerId={learnerId} />
       <MilestonesPanel learnerId={learnerId} />
-      <SchoolMatrix kids={kids} />
     </div>
   );
 }
@@ -402,7 +402,21 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
 }
 
 export function CurriculumView({ kids, courseId = null, lessonId = null }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>{courseId && <CourseContext courseId={courseId} lessonId={lessonId} />}<CurriculumExceptionPanel kids={kids} courseId={courseId ?? ''} lessonId={lessonId ?? ''} /><SchoolMatrix kids={kids} /><CurriculumBrowser /><PeriodsTimeline /><EnrichmentPanel kids={kids} /></div>;
+  // Landing state = the course catalog (cards, one per course). Lessons and
+  // per-lesson pass bars live on the drill-in page only (UX audit C10).
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>
+    {courseId ? <>
+      <CourseContext courseId={courseId} lessonId={lessonId} />
+      <CurriculumBrowser courseId={courseId} />
+      <CurriculumExceptionPanel kids={kids} courseId={courseId} lessonId={lessonId ?? ''} />
+    </> : <>
+      <CurriculumCatalog />
+      <SchoolMatrix kids={kids} />
+      <CurriculumExceptionPanel kids={kids} courseId="" lessonId="" />
+      <PeriodsTimeline />
+      <EnrichmentPanel kids={kids} />
+    </>}
+  </div>;
 }
 
 export function OperationsView({ kids }) {
