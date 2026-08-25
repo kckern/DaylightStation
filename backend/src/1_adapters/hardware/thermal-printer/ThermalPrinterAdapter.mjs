@@ -648,14 +648,44 @@ export class ThermalPrinterAdapter {
       const device = this.#createTransport(config.host, config.port);
 
       return new Promise((resolve) => {
+        // A timed-out job must be ABANDONED, not merely reported.
+        //
+        // This guard covers CONNECT only — `device.open`'s callback clears it.
+        // `escpos-network`'s `open()` is a bare `net.Socket.connect` with no
+        // connect timeout of its own, so before this flag existed the pending
+        // connect stayed live after `resolve(false)`: when it finally landed,
+        // the entire job body ran against a scratch PNG that ReceiptPrinting's
+        // `finally` had already deleted. The printer got headers + footer + cut
+        // and no raster — blank paper, auto-cut, while the caller had been told
+        // the print was refused. 2026-08-25 incident.
+        //
+        // `close()` is a `socket.destroy()`, which also aborts a connect that
+        // is still in progress. That is the point: it frees the printer's
+        // single connection slot instead of leaving a zombie queued ahead of
+        // the next legitimate job.
+        let aborted = false;
         const timeoutId = setTimeout(() => {
+          aborted = true;
           this.#needsResync = true;
           this.#logger.error?.('thermalPrinter.timeout', { timeout: config.timeout });
+          try { device.close(); } catch { /* never connected — nothing to destroy */ }
           resolve(false);
         }, config.timeout);
 
         device.open(async (error) => {
           clearTimeout(timeoutId);
+
+          if (aborted) {
+            // The connect landed after we gave up. Named, not silently dropped:
+            // this distinguishes a printer that is merely SLOW from one that is
+            // unreachable, and it is the only signal that the timeout is tuned
+            // too tight.
+            this.#logger.warn?.('thermalPrinter.open.after-abort', {
+              target: `${config.host}:${config.port}`,
+            });
+            try { device.close(); } catch { /* best effort */ }
+            return;
+          }
 
           if (error) {
             this.#logger.error?.('thermalPrinter.connect.failed', { error: error.message });
