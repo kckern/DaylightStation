@@ -70,6 +70,13 @@ export function isEventBus(obj) {
  * onClientMessage(callback: (clientId, message) => void): void
  *   Register handler for incoming messages from clients.
  *
+ * onClientSubscription(callback: (clientId, topics) => void): void
+ *   Register handler for a client's `subscribe` bus command. A `bus_command`
+ *   message is intercepted before the generic message-handler list, so this
+ *   is the only way application code observes a subscription taking effect
+ *   (used by liveness checks that need to tell "connected" apart from
+ *   "connected AND listening").
+ *
  * Metrics:
  *
  * getClientCount(): number
@@ -100,6 +107,7 @@ export const IEventBus = {
   onClientConnection(callback) {},
   onClientDisconnection(callback) {},
   onClientMessage(callback) {},
+  onClientSubscription(callback) {},
 
   // Metrics
   getClientCount() {},
