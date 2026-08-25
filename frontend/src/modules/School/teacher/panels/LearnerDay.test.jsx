@@ -15,7 +15,7 @@ describe('LearnerDay issued records', () => {
   it('names a missing historical original instead of pretending nothing was issued', async () => {
     render(<LearnerDay sessions={[{ sessionId: 'ses_legacy', lessonTitle: 'Illinois' }]} />);
     await waitFor(() => expect(screen.getByText('Illinois worksheet')).toBeTruthy());
-    expect(screen.getByText('Original print was not archived')).toBeTruthy();
+    expect(screen.getByText(/Original print was not archived/)).toBeTruthy();
     expect(screen.queryByText('No issued worksheet or result receipt is linked to this session.')).toBeNull();
   });
 });

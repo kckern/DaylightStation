@@ -1,4 +1,5 @@
 import Icon from '../home/icons/Icon.jsx';
+import SafeImg from './panels/SafeImg.jsx';
 import { SUBJECTS, subjectLabel } from '../home/subjects.js';
 import { labelize } from './labelize.js';
 
@@ -24,7 +25,7 @@ export function LessonIdentity({
   const courseLabel = courseTitle ?? 'Course unavailable';
   return <div className={`teacher-lesson-identity${compact ? ' teacher-lesson-identity--compact' : ''}`}>
     <SubjectIdentity subject={subject} />
-    {posterUrl && <img className="teacher-lesson-identity__poster" src={posterUrl} alt={`${courseLabel} cover`} />}
+    {posterUrl && <SafeImg className="teacher-lesson-identity__poster" src={posterUrl} alt={`${courseLabel} cover`} fallback="" />}
     <div className="teacher-lesson-identity__copy">
       <Title>{lessonTitle ?? 'Lesson'}</Title>
       <span>{courseLabel}</span>
