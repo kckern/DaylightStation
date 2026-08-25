@@ -3,10 +3,11 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import Keypad from './Keypad.jsx';
 
 const screenOff = vi.hoisted(() => vi.fn());
+const launchAndroidTarget = vi.hoisted(() => vi.fn());
 const selfService = vi.hoisted(() => vi.fn());
 const selfServiceError = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../lib/fkb.js', () => ({ screenOff }));
+vi.mock('../../../lib/fkb.js', () => ({ screenOff, launchAndroidTarget }));
 vi.mock('../schoolLog.js', () => ({
   schoolLog: { selfService, selfServiceError },
 }));
@@ -24,6 +25,7 @@ describe('School self-service keypad screen off', () => {
       json: async () => ({ presence: { devices: [] } }),
     }));
     screenOff.mockReset().mockReturnValue(true);
+    launchAndroidTarget.mockReset().mockReturnValue(true);
     selfService.mockClear();
     selfServiceError.mockClear();
   });
@@ -37,12 +39,34 @@ describe('School self-service keypad screen off', () => {
   it('shows a green LED when the paired BK-3001 is connected', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ presence: { devices: [{ name: 'BK-3001', connected: true }] } }),
+      json: async () => ({ presence: { devices: [{ name: 'Bluetooth 5.1 Keyboard', connected: true }] } }),
     });
     renderKeypad();
     await act(async () => {});
     expect(screen.getByText('Keyboard connected')).toBeInTheDocument();
     expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
+  });
+
+  it('opens Android Bluetooth settings when pairing is needed', async () => {
+    renderKeypad();
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Pair keyboard' }));
+    expect(launchAndroidTarget).toHaveBeenCalledWith({
+      package: 'com.android.tv.settings', activity: '.accessories.AddAccessoryActivity',
+    });
+    expect(selfService).toHaveBeenCalledWith('keyboard.pairing.requested', {});
+  });
+
+  it('accepts Bluetooth HID digits, backspace, and Enter', async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ resolved: true });
+    renderKeypad({ onSubmit });
+    for (const key of ['1', '2', '3', '4', '5', '6']) fireEvent.keyDown(window, { key });
+    expect(screen.getByRole('button', { name: 'Go' })).toBeEnabled();
+    fireEvent.keyDown(window, { key: 'Backspace' });
+    expect(screen.getByRole('button', { name: 'Go' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: '6' });
+    await act(async () => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    expect(onSubmit).toHaveBeenCalledWith('123456');
   });
 
   it('requires two taps for the manual screen-off action', () => {
