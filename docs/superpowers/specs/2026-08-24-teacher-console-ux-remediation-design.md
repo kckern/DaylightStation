@@ -47,6 +47,13 @@
 23. **Origin-aware back.** Session inspector back returns to the view that opened it (History or Today) via a `from` search param.
 24. **Small copy/affordance fixes.** Marked vs Current score labeled with a one-line explanation; report card shows both percent and units per course; Study day input labeled "Next school day"; disabled "Completion credit…" ghost becomes a link to the Operations tab; truncated header context gets `title`; phone insight titles wrap instead of clipping.
 
+## Wave 5 — School kiosk split home (added 2026-08-24 by owner direction)
+
+25. **Split lock screen.** On the locked Portal panel, the keypad no longer takes the full width: the resting state becomes a two-pane layout — the keypad in one pane, a **read-only household status board** in the other. The board lists every student with a compact, visual summary of their school day: how many agenda lessons exist, how many are done (ticks/pills/progress bar), and a status word (Not started / In progress / Done for the day). Touching the board does nothing — codes and printed agendas remain the only entry path. It is a reminder/preview surface, deliberately non-interactive.
+26. **Shared data, shared component.** The board reads the same models the teacher console uses: the agenda dry-run preview (plan per learner) and the teacher day digest (sessions + outcomes today). It ships as an exported component under the School module so the teacher dashboard can mount a more interactive variant later; the kiosk mounts it read-only. Refresh is periodic (minutes, not seconds) and failure degrades to hiding the board — the keypad must never be blocked by a status fetch.
+27. **Burn-in rotation.** The two panes swap sides on a fixed cadence (~90s). The swap is a layout flip only — no animation dependence, no state loss in the keypad entry (a half-typed code survives the flip).
+28. **Screen-off restoration.** The automatic keypad screen-off (`school.screenOffTimeoutSeconds` → FKB `screenOff()`) has stopped working on the Portal — investigate (config missing in the screen YAML vs. FKB call failing vs. suppression bug), fix, and verify via the `screen-off.requested/succeeded/failed` log events. The status board must not count as activity and must not suppress idle screen-off.
+
 ## Error handling
 
 Read-model resolution failures degrade to labelized fallbacks, never raw ids or "unavailable" walls. Image failures render the module's "not available" card. Legacy/removed routes 404 with JSON bodies. No new silent catches: failures log through `teacherLog`/backend logger.
