@@ -59,12 +59,29 @@ describe.runIf(hasGs)('rasterizePdf (real ghostscript)', () => {
   });
 
   it('cleans up its temp directory even on failure', async () => {
-    const { readdir } = await import('node:fs/promises');
+    const { readdir, mkdtemp, rm } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
-    const before = (await readdir(tmpdir())).filter((f) => f.startsWith('laser-print-')).length;
-    await expect(rasterizePdf(Buffer.from('not a pdf at all'), { format: 'image/urf' })).rejects.toThrow();
-    const after = (await readdir(tmpdir())).filter((f) => f.startsWith('laser-print-')).length;
-    expect(after).toBe(before);
+    const { join } = await import('node:path');
+    // A PRIVATE tmpdir for the duration. This used to count `laser-print-*`
+    // entries in the shared OS temp directory, which is only correct if nothing
+    // else is rasterizing at the same moment — and vitest runs this file
+    // concurrently with laserPrinterAdapter.test.mjs, which rasterizes plenty.
+    // The count then moved under the test's feet and it failed roughly one run
+    // in three. `os.tmpdir()` reads TMPDIR on every call, so pointing it at a
+    // directory only this test uses makes the assertion about THIS call again.
+    const scratch = await mkdtemp(join(tmpdir(), 'laser-cleanup-'));
+    const previousTmp = process.env.TMPDIR;
+    process.env.TMPDIR = scratch;
+    try {
+      const before = (await readdir(tmpdir())).filter((f) => f.startsWith('laser-print-')).length;
+      expect(before).toBe(0);
+      await expect(rasterizePdf(Buffer.from('not a pdf at all'), { format: 'image/urf' })).rejects.toThrow();
+      const after = (await readdir(tmpdir())).filter((f) => f.startsWith('laser-print-')).length;
+      expect(after).toBe(before);
+    } finally {
+      if (previousTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previousTmp;
+      await rm(scratch, { recursive: true, force: true });
+    }
   });
 
   // ── Incident #2 coverage: negotiated container was right, pixel params weren't ──
@@ -119,10 +136,21 @@ describe.runIf(hasGs)('rasterizePdf (real ghostscript)', () => {
   });
 });
 
-describe('rasterizePdf without ghostscript on PATH', () => {
-  it('surfaces a RASTERIZE_FAILED InfrastructureError rather than hanging or crashing the process', async () => {
-    await expect(rasterizePdf(MINIMAL_PDF, { format: 'image/urf', gsBin: '/nonexistent/gs-binary' }))
-      .rejects.toThrow(/ghostscript rasterize failed/i);
+describe('rasterizePdf without a usable ghostscript', () => {
+  // The failure now lands at CAPABILITY RESOLUTION rather than at exec, so the
+  // code is RASTERIZE_NO_DEVICE, not RASTERIZE_FAILED. That is the point of the
+  // change: an absent binary and a binary lacking the device are the same
+  // problem — "nothing here can produce this format" — and both used to arrive
+  // as an opaque "Command failed: gs …" that did not name the device.
+  it('names what it tried instead of hanging, crashing, or reporting a bare exec failure', async () => {
+    const failure = await rasterizePdf(MINIMAL_PDF, { format: 'image/urf', gsBin: '/nonexistent/gs-binary' })
+      .then(() => null, (err) => err);
+    expect(failure).toBeTruthy();
+    expect(failure.code).toBe('RASTERIZE_NO_DEVICE');
+    // The two facts that were missing from the old message, and the reason a
+    // ghostscript upgrade could take printing down near-silently.
+    expect(failure.message).toMatch(/urf/);
+    expect(failure.message).toMatch(/nonexistent\/gs-binary/);
   });
 });
 
