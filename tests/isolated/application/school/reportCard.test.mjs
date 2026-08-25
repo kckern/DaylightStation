@@ -696,11 +696,16 @@ describe('GetTeacherToday', () => {
   it('counts only TODAY\'s (study-day, 4am boundary) attempts and sessions per roster learner', async () => {
     const clock = () => new Date('2026-09-10T10:00:00.000Z'); // well after the 4am boundary
     const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
+    // Distinct `itemId`s, deliberately: `uniqueAttempts` collapses rows sharing
+    // a session+item+scan identity (the same question re-read off one rescanned
+    // sheet is ONE attempt). Two identity-less rows would dedupe to one and the
+    // count below would silently measure the dedup rather than the window.
     const attempts = {
       kid1: [
-        { at: '2026-09-10T09:00:00.000Z', correct: true },
-        { at: '2026-09-10T09:05:00.000Z', correct: false },
-        { at: '2026-09-09T23:00:00.000Z', correct: true }, // before today's 4am boundary — must NOT count
+        { at: '2026-09-10T09:00:00.000Z', correct: true, sessionId: 'ses_today', itemId: 'q1' },
+        { at: '2026-09-10T09:05:00.000Z', correct: false, sessionId: 'ses_today', itemId: 'q2' },
+        // Before today's 4am boundary — must NOT count.
+        { at: '2026-09-09T23:00:00.000Z', correct: true, sessionId: 'ses_yesterday', itemId: 'q3' },
       ],
     };
     const rows = [
@@ -711,25 +716,43 @@ describe('GetTeacherToday', () => {
         sessionId: 'ses_yesterday', unitId: 'frac.02', state: 'outcome_recorded', updatedAt: '2026-09-09T09:00:00.000Z',
       }),
     ];
+    // The use case reduces the EVENT STREAM (an index row alone is skipped —
+    // `if (!events.length) continue`), and derives a session's study day from
+    // its `created` event rather than from `updatedAt`. Supplying the stream is
+    // what makes "which day does this session belong to" a real assertion.
+    const events = {
+      ses_today: [
+        { seq: 1, type: 'created', at: '2026-09-10T09:00:00.000Z', sessionId: 'ses_today', learnerId: 'kid1', unitId: 'frac.01' },
+      ],
+      ses_yesterday: [
+        { seq: 1, type: 'created', at: '2026-09-09T09:00:00.000Z', sessionId: 'ses_yesterday', learnerId: 'kid1', unitId: 'frac.02' },
+      ],
+    };
     const reviewQueue = { listPending: async () => [{ learnerId: 'kid1', itemId: 'q1' }] };
     const useCase = new GetTeacherToday({
       learnerDirectory,
       datastore: fakeSchoolDatastore({ attempts }),
-      sessions: fakeSessions(rows),
+      sessions: fakeSessions(rows, events),
       reviewQueue,
       clock,
       logger: silent,
     });
 
     const digest = await useCase.execute();
-    expect(digest).toEqual([{
+    expect(digest).toHaveLength(1);
+    const [row] = digest;
+    expect(row).toMatchObject({
       learnerId: 'kid1',
       attemptsToday: 2,
       correctToday: 1,
-      sessionsToday: [{ unitId: 'frac.01', state: 'in_progress' }],
       pendingReview: 1,
       reflectionsToday: [],
-    }]);
+    });
+    // Only today's session is listed; yesterday's is filed by ITS created-day
+    // and must not leak into today's digest.
+    expect(row.sessionsToday).toEqual([
+      expect.objectContaining({ unitId: 'frac.01', state: 'created', studyDay: '2026-09-10' }),
+    ]);
   });
 
   it('surfaces today\'s reflections (kid\'s own words) when an evidence repo is wired; failures degrade to []', async () => {
@@ -780,16 +803,28 @@ describe('GetTeacherToday', () => {
     const learnerDirectory = { listLearners: () => ROSTER.filter((r) => r.id === 'kid1') };
     const attempts = { kid1: [{ at: '2026-09-10T03:15:00.000Z', correct: true }] };
     const rows = [sessionRow({ sessionId: 'ses_edge', unitId: 'frac.01', updatedAt: '2026-09-10T03:15:00.000Z' })];
+    // The reduced state comes from the event chain, not the index row: the
+    // shortest legal path to `outcome_recorded` is created -> dispatched ->
+    // recorded (see TRANSITIONS in sessionEvents.mjs).
+    const events = {
+      ses_edge: [
+        { seq: 1, type: 'created', at: '2026-09-10T03:15:00.000Z', sessionId: 'ses_edge', learnerId: 'kid1', unitId: 'frac.01' },
+        { seq: 2, type: 'program_dispatched', at: '2026-09-10T03:16:00.000Z', sessionId: 'ses_edge', programId: 'demo' },
+        { seq: 3, type: 'outcome_recorded', at: '2026-09-10T03:17:00.000Z', sessionId: 'ses_edge', outcome: { result: 'passed' } },
+      ],
+    };
     const useCase = new GetTeacherToday({
       learnerDirectory,
       datastore: fakeSchoolDatastore({ attempts }),
-      sessions: fakeSessions(rows),
+      sessions: fakeSessions(rows, events),
       clock,
       logger: silent,
     });
     const digest = await useCase.execute();
     expect(digest[0].attemptsToday).toBe(1);
-    expect(digest[0].sessionsToday).toEqual([{ unitId: 'frac.01', state: 'outcome_recorded' }]);
+    expect(digest[0].sessionsToday).toEqual([
+      expect.objectContaining({ unitId: 'frac.01', state: 'outcome_recorded', studyDay: '2026-09-09' }),
+    ]);
   });
 
   it('a 02:00Z attempt is NOT counted after the boundary rolls at 04:30Z — same raw date as "today", but before the boundary so it is YESTERDAY\'s study day', async () => {
