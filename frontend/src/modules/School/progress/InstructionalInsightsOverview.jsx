@@ -82,15 +82,17 @@ function RecommendationBasis({ recommendation }) {
       <strong>Why this is suggested</strong>
       <span>{basisLabel(basis)}</span>
       <small>
-        Policy {policy?.version ?? '—'} · reassess when evidence changes · expires {dateLabel(policy?.expiresAt)}
+        Suggested automatically from answer history · reassess when evidence changes{policy?.expiresAt ? ` · expires ${dateLabel(policy.expiresAt)}` : ''}
       </small>
     </aside>
   );
 }
 
+const counted = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
 function basisLabel(basis) {
   if (basis?.kind === 'evidence_aggregate') {
-    return `${basis.correctCount}/${basis.responseCount} correct across ${basis.evidenceCount} records and ${basis.learnerCount} learners.`;
+    return `${basis.correctCount}/${basis.responseCount} correct across ${counted(basis.evidenceCount, 'record')} and ${counted(basis.learnerCount, 'learner')}.`;
   }
   if (basis?.kind === 'authored_expectation') {
     return `${basis.completedLearnerCount}/${basis.learnerCount} learners completed an authored ${basis.expectedCompletedPercent}% expectation due ${dateLabel(basis.dueAt)}.`;
@@ -99,7 +101,11 @@ function basisLabel(basis) {
 }
 
 function displayId(value) {
-  return String(value ?? '').replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const raw = String(value ?? '');
+  // A bare bank item id like "q2" is not a name — say what it is.
+  const question = /^q(\d+)$/i.exec(raw);
+  if (question) return `Question ${question[1]}`;
+  return raw.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function dateLabel(value) {
