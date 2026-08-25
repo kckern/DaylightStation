@@ -788,6 +788,10 @@ export async function createSchoolLifecycle({
     // ResolvePersonalCard's own 15-minute default.
     cooldown: stores.agendaCooldown,
     cooldownMinutes: cfg.agenda?.cooldownMinutes,
+    // L-5: a suppressed tap still built an agenda, which mints a live access
+    // code — this hands it back to the registry instead of leaving it live
+    // for a receipt nobody holds.
+    tokens: stores.tokens,
     clock,
     logger,
   });

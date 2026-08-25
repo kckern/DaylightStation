@@ -75,7 +75,20 @@ function agendaFingerprint(agenda) {
 }
 
 export class ResolvePersonalCard {
-  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock;
+  #buildAgenda; #receipts; #roster; #logger; #cooldown; #cooldownMinutes; #clock; #tokens;
+
+  /**
+   * One in-flight resolution per learner.
+   *
+   * `execute` is check-then-act — it reads the cooldown, then awaits a build
+   * and a print, and only then arms the cooldown. Callers do not await it
+   * (`nfcTapIngress.mjs:138` dispatches with a bare `Promise.resolve`), so on
+   * 2026-08-25 five concurrent taps all passed the gate before any armed it:
+   * five prints, four duplicate sessions.
+   *
+   * Keyed by learner so two children scanning at once still run in parallel.
+   */
+  #inFlightByLearner = new Map(); // learnerId -> Promise
 
   /**
    * @param {object} deps
@@ -90,10 +103,14 @@ export class ResolvePersonalCard {
    *   (default 15). `0` disables the cooldown outright.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
+   * @param {import('../ports/ITokenRegistry.mjs').ITokenRegistry} [deps.tokens] -
+   *   used ONLY to revoke a token minted by a tap that then got suppressed
+   *   (L-5); a household that has not wired self-service access codes simply
+   *   never has anything to revoke.
    */
   constructor({
     buildAgenda, receipts, roster = null, cooldown = null, cooldownMinutes = null,
-    clock = () => new Date(), logger = console,
+    clock = () => new Date(), logger = console, tokens = null,
   } = {}) {
     if (!buildAgenda || !receipts) throw new Error('ResolvePersonalCard requires buildAgenda and receipts');
     this.#buildAgenda = buildAgenda;
@@ -103,6 +120,7 @@ export class ResolvePersonalCard {
     this.#cooldownMinutes = normalizeCooldownMinutes(cooldownMinutes);
     this.#clock = clock;
     this.#logger = logger;
+    this.#tokens = tokens;
   }
 
   /**
@@ -113,6 +131,28 @@ export class ResolvePersonalCard {
    *                     message: string, sinceMinutes?: number, cooldownMinutes?: number }>}
    */
   async execute({ learnerId } = {}) {
+    if (typeof learnerId !== 'string' || !learnerId.trim()) {
+      return this.#executeInner({ learnerId });   // invalid-input path needs no lock
+    }
+    const prior = this.#inFlightByLearner.get(learnerId) ?? Promise.resolve();
+    // Chain rather than reject: a second tap must WAIT and then see the armed
+    // cooldown, so it reports `agenda_suppressed` — the honest answer the panel
+    // already knows how to acknowledge — instead of failing.
+    //
+    // The waiter runs #executeInner AFTER the first call completes, so it
+    // builds a FRESH agenda and re-reads the now-armed cooldown. That is the
+    // whole point: a queued caller must not reuse state captured before the
+    // print it was waiting on.
+    const run = prior.catch(() => {}).then(() => this.#executeInner({ learnerId }));
+    this.#inFlightByLearner.set(learnerId, run);
+    try {
+      return await run;
+    } finally {
+      if (this.#inFlightByLearner.get(learnerId) === run) this.#inFlightByLearner.delete(learnerId);
+    }
+  }
+
+  async #executeInner({ learnerId }) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       const printed = await this.#receipts.print(noticeDocument({
         id: 'card-unknown',
@@ -184,6 +224,21 @@ export class ResolvePersonalCard {
     this.#logger.info?.('school.card.agenda-suppressed', {
       learnerId, sinceMinutes, cooldownMinutes: this.#cooldownMinutes,
     });
+    // A suppressed tap still BUILT an agenda, and building mints a live access
+    // code — the check has to run after the build because the fingerprint needs
+    // it. Left alone that quietly inflates the pool of live codes for a receipt
+    // that never printed (three such tokens on 2026-08-25). Hand them back.
+    for (const token of agenda.mintedTokens ?? []) {
+      try {
+        // `revoke(token, opts)`'s documented option is `{ at }` — an injected
+        // ISO time, because the port reads no clock of its own
+        // (ITokenRegistry.mjs:99). Do not invent a `reason` field here.
+        await this.#tokens?.revoke?.(token, { at: this.#clock().toISOString() });
+        this.#logger.info?.('school.card.suppressed-token-revoked', { learnerId, token });
+      } catch (err) {
+        this.#logger.warn?.('school.card.token-revoke-failed', { learnerId, token, error: err?.message });
+      }
+    }
     return {
       status: 'agenda_suppressed',
       learnerId,
