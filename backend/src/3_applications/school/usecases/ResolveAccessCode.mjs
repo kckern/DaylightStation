@@ -99,7 +99,7 @@ const NOT_ANSWERING = Object.freeze({
 
 export class ResolveAccessCode {
   #tokens; #curriculum; #assignments; #sessions; #launchers; #attestations; #curriculumExceptions;
-  #issueDocument; #mediaSurface; #timezone; #clock; #logger;
+  #issueDocument; #companions; #mediaSurface; #timezone; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -122,7 +122,7 @@ export class ResolveAccessCode {
    */
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
-    attestations = null, curriculumExceptions = null, issueDocument = null, selfService = null,
+    attestations = null, curriculumExceptions = null, issueDocument = null, companions = null, selfService = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -136,6 +136,7 @@ export class ResolveAccessCode {
     this.#attestations = attestations;
     this.#curriculumExceptions = curriculumExceptions;
     this.#issueDocument = issueDocument;
+    this.#companions = companions;
     this.#mediaSurface = selfService?.mediaSurface ?? null;
     this.#timezone = timezone;
     this.#clock = clock;
@@ -186,6 +187,7 @@ export class ResolveAccessCode {
       return { card: this.#faulted('lookup', { error: error?.message ?? String(error) }), resolution: null };
     }
 
+    if (record?.tokenClass === 'worksheet_companion') return this.#resolveCompanion(record);
     const learnerId = record?.subject?.learnerId ?? null;
     const subject = record?.subject?.subject ?? null;
     if (!record || !learnerId || !subject) {
@@ -246,6 +248,19 @@ export class ResolveAccessCode {
         resolution: null,
       };
     }
+  }
+
+  async #resolveCompanion(record) {
+    const offer = await this.#companions?.get?.(record.subject.companionId);
+    if (!offer || offer.learnerId !== record.subject.learnerId) return { card: TRY_AGAIN, resolution: null };
+    return {
+      card: {
+        ok: true, learner: offer.learnerId, subject: null, title: offer.companion?.payload?.playlist?.title ?? 'Lesson companion',
+        sentence: 'Open this lesson companion whenever you are ready.',
+        actions: [{ kind: 'companion', label: offer.companion?.label ?? 'Open companion' }, { kind: 'exit', label: 'Go back' }],
+      },
+      resolution: { kind: 'companion', offer, record },
+    };
   }
 
   /**

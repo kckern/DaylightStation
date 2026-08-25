@@ -35,6 +35,8 @@
  */
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
+import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
+import { studyDayWindow } from '#domains/school/studyDay.mjs';
 import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 import { walkBlocks } from '#domains/school/documents/documentValidation.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
@@ -44,6 +46,7 @@ import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/repri
 import { slugify } from '#domains/school/documents/receipts.mjs';
 import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { resolveScripturePlaylist } from '../readalong/resolveScripturePlaylist.mjs';
 
 /** States in which handing over a sheet still means something. */
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
@@ -138,10 +141,10 @@ const FAILURE_COPY = Object.freeze({
 export class IssueDocument {
   #curriculum; #sessions; #tokens; #renderer; #printer; #formMaps; #bankReader;
   #printDocuments; #renderPrintDocument; #allocationStore;
-  #assignments; #worksheetInstances; #publishPrintDocument;
+  #assignments; #worksheetInstances; #publishPrintDocument; #companions;
   #issuedArtifacts; #curriculumExceptions;
   #answerSheetPolicy; #printCooldownMinutes;
-  #clock; #rng; #newArtifactId; #logger;
+  #clock; #rng; #newArtifactId; #timezone; #logger;
 
   /**
    * @param {object} deps
@@ -179,10 +182,10 @@ export class IssueDocument {
   constructor({
     curriculum, sessions, tokens, renderer, printer, formMaps, bankReader = null,
     printDocuments = null, renderPrintDocument = null, allocationStore = null,
-    assignments = null, worksheetInstances = null, publishPrintDocument = null,
+    assignments = null, worksheetInstances = null, publishPrintDocument = null, companions = null,
     issuedArtifacts = null, curriculumExceptions = null,
     answerSheetPolicy = null, printCooldownMinutes = null,
-    clock = () => new Date(), rng = Math.random,
+    clock = () => new Date(), rng = Math.random, timezone = null,
     newArtifactId = () => `art_${shortId(8)}`, logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !renderer || !printer || !formMaps) {
@@ -200,6 +203,7 @@ export class IssueDocument {
     this.#allocationStore = allocationStore;
     this.#assignments = assignments;
     this.#worksheetInstances = worksheetInstances;
+    this.#companions = companions;
     this.#issuedArtifacts = issuedArtifacts;
     this.#curriculumExceptions = curriculumExceptions;
     this.#answerSheetPolicy = normalizeAnswerSheetPolicy(answerSheetPolicy);
@@ -209,6 +213,7 @@ export class IssueDocument {
     this.#clock = clock;
     this.#rng = rng;
     this.#newArtifactId = newArtifactId;
+    this.#timezone = timezone;
     this.#logger = logger;
   }
 
@@ -461,6 +466,7 @@ export class IssueDocument {
         lessonId: unit.unitId, profile, seed: `${sessionId}:${state.variant ?? 0}`, issuedAt: nowIso,
         itemIds: state.remediationOf && state.remediationItemIds?.length ? state.remediationItemIds : null,
       });
+      const companion = await this.#prepareCompanion({ instance, unit, nowIso });
       const published = await this.#publishPrintDocument.execute({
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
@@ -472,6 +478,7 @@ export class IssueDocument {
           breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
           passPercent: unit.passing?.percent ?? null,
           progress: await this.#lessonProgress({ state, unit, nowIso }),
+          companionCode: companion?.accessCode ?? null,
         }),
       });
       instance = { ...instance, documentId: published.id, documentRevision: published.rev };
@@ -577,6 +584,36 @@ export class IssueDocument {
       pageCount: rendered.pageCount, tokens: {}, allocation: rendered.allocation,
       document: null, message: 'Printing your worksheet.',
     };
+  }
+
+  /** Create the optional offer before rendering, so the retained PDF owns its code. */
+  async #prepareCompanion({ instance, unit, nowIso }) {
+    if (!this.#companions || unit?.companion?.enabled === false) return null;
+    const configured = unit.companion ?? {};
+    const playlist = configured.handler && configured.handler !== 'readalong'
+      ? null : resolveScripturePlaylist(unit?.provenance?.reading);
+    const companion = configured.handler && configured.handler !== 'readalong'
+      ? { handler: configured.handler, label: configured.label ?? 'Open companion', payload: configured.payload ?? {} }
+      : playlist ? { handler: 'readalong', label: configured.label ?? 'Read along', payload: { playlist } } : null;
+    if (!companion) return null;
+    const live = await this.#tokens.liveAccessCodes();
+    const accessCode = mintAccessCode({ rng: this.#rng, taken: (code) => live.has(code) });
+    const id = `ral_${shortId(12)}`;
+    const expiresAt = new Date(Date.parse(nowIso) + 7 * 24 * 3_600_000).toISOString();
+    const accessCodeExpiresAt = new Date(studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone, boundaryHour: 4 }).endAtMs).toISOString();
+    const token = mintToken({
+      tokenClass: 'worksheet_companion',
+      subject: { learnerId: instance.learnerId, sessionId: instance.sessionId, worksheetInstanceId: instance.id, lessonId: instance.lessonId, companionId: id },
+      at: nowIso, expiresAt, accessCode, accessCodeExpiresAt, rng: this.#rng,
+    });
+    await this.#companions.put({
+      schema: 'school.lesson-companion/v1', id, createdAt: nowIso,
+      learnerId: instance.learnerId, sessionId: instance.sessionId, worksheetInstanceId: instance.id,
+      lessonId: instance.lessonId,
+      companion, participation: configured.participation ?? 'optional', state: {},
+    });
+    await this.#tokens.put(token);
+    return { accessCode };
   }
 
   async #lessonProgress({ state, unit, nowIso }) {

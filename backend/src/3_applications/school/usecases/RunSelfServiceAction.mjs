@@ -98,7 +98,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 });
 
 export class RunSelfServiceAction {
-  #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers;
+  #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
   #newSessionId; #clock; #logger;
 
   /**
@@ -132,7 +132,7 @@ export class RunSelfServiceAction {
   constructor({
     resolveAccessCode, sessions,
     issueDocument = null, dispatchMedia = null, openRemediation = null,
-    donow = null, closeSessionOutcome = null, launchers = new Map(),
+    donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -147,6 +147,8 @@ export class RunSelfServiceAction {
     this.#donow = donow;
     this.#close = closeSessionOutcome;
     this.#launchers = launchers instanceof Map ? launchers : new Map();
+    this.#companions = companions;
+    this.#companionHandlers = companionHandlers;
     this.#newSessionId = newSessionId;
     this.#clock = clock;
     this.#logger = logger;
@@ -230,6 +232,11 @@ export class RunSelfServiceAction {
     // The way out of the card. No session, no use case, nothing recorded —
     // the code stays valid and the panel goes back to the keypad.
     if (kind === 'exit') return { outcome: 'done', sentence: 'Okay — see you next time.' };
+
+    if (kind === 'companion' && resolution?.kind === 'companion') {
+      const answer = await this.#companionHandlers?.open?.({ offer: resolution.offer });
+      return answer ?? { outcome: 'failed', sentence: TELL_A_GROWN_UP };
+    }
 
     if (kind === 'program') {
       return this.#program({

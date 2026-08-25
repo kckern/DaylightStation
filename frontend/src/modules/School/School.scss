@@ -690,6 +690,19 @@
   }
 }
 
+.readalong-playlist {
+  min-height: 100%; display: flex; flex-direction: column; background: var(--school-bg); color: var(--school-fg);
+  &__header { display:flex; gap:1rem; align-items:center; padding:1rem; border-bottom:1px solid var(--school-border); }
+  &__header button, &__picker button, &__controls button { min-height:44px; padding:0.5rem 0.8rem; border:1px solid var(--school-border); border-radius:8px; background:var(--school-surface); color:var(--school-fg); font:inherit; }
+  &__header span { display:block; color:var(--school-muted); font-size:0.9rem; margin-top:0.2rem; }
+  &__segments { display:flex; gap:4px; padding:0.7rem 1rem; }
+  &__segments button { flex:1; height:12px; padding:0; overflow:hidden; border:0; background:var(--school-surface-2); cursor:pointer; }
+  &__segments i { display:block; height:100%; background:var(--school-fg); }
+  &__picker { display:flex; flex-wrap:wrap; gap:0.4rem; padding:0 1rem 0.8rem; }
+  &__stage { flex:1; min-height:0; }
+  &__controls { display:flex; flex-wrap:wrap; justify-content:center; gap:0.5rem; padding:0.8rem; border-top:1px solid var(--school-border); }
+}
+
 // --- program report: every program x every learner, one shape ---------------
 // Renders purely from the closed report contract, so nothing here is specific
 // to quizzes, courses or the sentence ladder. No animation (kiosk WebView).

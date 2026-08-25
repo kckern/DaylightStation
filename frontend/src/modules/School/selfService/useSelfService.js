@@ -119,6 +119,11 @@ const isBackendFault = (payload) => payload?.reason !== 'unknown_code';
  */
 function launchTarget(action, effect) {
   if (effect?.kind === 'bank' && effect.bankId) return { kind: 'bank', bankId: effect.bankId };
+  if (effect?.kind === 'companion' && effect.companionId) return {
+    kind: 'companion', companionId: effect.companionId, presentation: effect.presentation ?? null,
+    title: effect.title ?? null, parts: effect.parts ?? [], state: effect.state ?? {},
+    participation: effect.participation ?? 'optional', learnerId: effect.learnerId ?? null,
+  };
   if (effect?.kind === 'program') {
     return {
       kind: 'program', program: effect.programId ?? action.target ?? null,
