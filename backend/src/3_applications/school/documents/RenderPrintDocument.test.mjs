@@ -1500,6 +1500,20 @@ describe('RenderPrintDocument — card allocation context (spec §5.3/§5.4, Tas
     expect(stored[0].recordId).toBe(result.allocation.recordId);
   });
 
+  it('replays a frozen card mapping without calling the allocation store', async () => {
+    const allocationStore = { allocate: () => { throw new Error('history reads must not allocate'); } };
+    const useCase = new RenderPrintDocument({ allocationStore });
+    const result = await useCase.execute({
+      document: omrSourceDoc(2),
+      context: { cardId: '4071314', startRow: 19, historicalCard: true, learnerName: 'Milo' },
+    });
+
+    expect(isPdf(result.bytes)).toBe(true);
+    expect(result.allocation).toEqual({
+      cardId: '4071314', rowRange: { start: 19, end: 20 }, recordId: null, status: 'historical-replay',
+    });
+  });
+
   it('persists immutable section row ownership for a composed card', async () => {
     const allocationStore = fakeAllocationStore();
     const useCase = new RenderPrintDocument({ allocationStore });

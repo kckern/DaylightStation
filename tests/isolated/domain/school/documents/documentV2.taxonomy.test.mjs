@@ -3,7 +3,7 @@ import { validateDocumentV2 } from '../../../../../backend/src/2_domains/school/
 
 const base = {
   schema: 'school.document/v2',
-  id: 'arts/pokemon-identification/quiz-1',
+  id: 'arts/creature-identification/quiz-1',
   seed: 7,
   target: ['letter'],
   archetype: 'worksheet',
@@ -32,10 +32,10 @@ describe('documentV2 taxonomy (hierarchical ids + subject/topics)', () => {
   });
 
   it('normalizes subject and topics; rejects malformed shapes', () => {
-    const ok = validateDocumentV2({ ...base, subject: 'arts', topics: ['pokemon', 'identification'] });
+    const ok = validateDocumentV2({ ...base, subject: 'arts', topics: ['creature', 'identification'] });
     expect(ok.errors).toEqual([]);
     expect(ok.document.subject).toBe('arts');
-    expect(ok.document.topics).toEqual(['pokemon', 'identification']);
+    expect(ok.document.topics).toEqual(['creature', 'identification']);
     expect(validateDocumentV2({ ...base, subject: 'Arts!' }).errors.join()).toMatch(/subject/);
     // A hierarchical id's first segment IS the subject — contradiction rejected.
     expect(validateDocumentV2({ ...base, subject: 'science' }).errors.join())

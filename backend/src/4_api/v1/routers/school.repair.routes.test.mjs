@@ -26,8 +26,8 @@ function appWith(over = {}) {
       return { moved: 3, ...args };
     }) },
     attemptsStore: { readAttemptDay: vi.fn(() => [
-      { sessionId: 'ses_1', itemId: 'q1', at: '2026-08-06T10:00:00Z', bankId: 'pokemon-quiz-1' },
-      { sessionId: 'ses_1', itemId: 'q2', at: '2026-08-06T10:01:00Z', bankId: 'pokemon-quiz-1' },
+      { sessionId: 'ses_1', itemId: 'q1', at: '2026-08-06T10:00:00Z', bankId: 'creature-quiz-1' },
+      { sessionId: 'ses_1', itemId: 'q2', at: '2026-08-06T10:01:00Z', bankId: 'creature-quiz-1' },
       { provenance: { recordId: 'card_9' }, itemId: 'q1', at: '2026-08-06T11:00:00Z' },
     ]) },
     reviewQueue: { listForLearner: vi.fn(async () => [
@@ -61,7 +61,7 @@ describe('wave-5 repair routes', () => {
     const res = await request(appWith()).get('/api/v1/school/attempts-summary?learnerId=felix&day=2026-08-06');
     expect(res.status).toBe(200);
     expect(res.body.assessments).toEqual(expect.arrayContaining([
-      expect.objectContaining({ assessmentId: 'ses_1', count: 2, bankId: 'pokemon-quiz-1' }),
+      expect.objectContaining({ assessmentId: 'ses_1', count: 2, bankId: 'creature-quiz-1' }),
       expect.objectContaining({ assessmentId: 'card_9', count: 1 }),
     ]));
   });

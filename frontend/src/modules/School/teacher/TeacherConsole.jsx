@@ -103,7 +103,9 @@ function TeacherShell() {
 
   const noTeachers = !configured || teachers.length === 0;
   let view;
-  if (route.kind === 'session') {
+  if (route.kind === 'not-found') {
+    view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
+  } else if (route.kind === 'session') {
     view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids} onBack={() => route.learnerId ? goLearner(route.learnerId, 'history') : goGlobal('dashboard')} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
@@ -136,7 +138,7 @@ function TeacherShell() {
           ) : (
             <div className="teacher-console__identity">
               <button type="button" className="teacher-console__chip" onClick={openPicker} title={authorization.active ? 'Teacher tools unlocked' : 'Choose teacher'}>
-                {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span><i aria-label={authorization.active ? 'Unlocked' : 'Locked'}>{authorization.active ? '●' : '○'}</i></> : <span>Sign in</span>}
+                {currentTeacher ? <><ProfileAvatar id={currentTeacher.id} name={currentTeacher.name} /><span>{currentTeacher.name}</span><i aria-label={authorization.active ? 'Unlocked' : 'Locked'}>{authorization.active ? '●' : '○'}</i></> : <span>Teacher tools</span>}
               </button>
               {currentTeacher && <button type="button" className="teacher-console__lock" onClick={release}>Lock</button>}
             </div>

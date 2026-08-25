@@ -28,6 +28,7 @@ describe('IssueComposedWorksheet', () => {
     const instances = new Map();
     const published = new Map();
     const cards = new Map();
+    const issuedArtifacts = { put: vi.fn(async (artifact) => ({ manifest: artifact, bytes: artifact.bytes })) };
     const teacherGate = { assert: vi.fn() };
     const printer = { jobs: [], async printPdf(bytes, options) { this.jobs.push({ bytes, options }); return { ok: true }; } };
     const curriculum = {
@@ -59,7 +60,7 @@ describe('IssueComposedWorksheet', () => {
       },
       bankReader: { getBank(id) { return bank(id); } },
       printDocuments: { async getPublished(id, rev) { return published.get(`${id}@${rev}`) ?? null; } },
-      renderPrintDocument: render, allocationStore: allocations, printer, publishPrintDocument: publish,
+      renderPrintDocument: render, allocationStore: allocations, printer, publishPrintDocument: publish, issuedArtifacts,
       teacherGate, clock: () => new Date('2026-08-21T09:00:00.000Z'), logger: { info() {} },
     });
 
@@ -71,6 +72,10 @@ describe('IssueComposedWorksheet', () => {
       userId: 'kckern', pin: '2468', action: 'worksheet.compose', context: { sessionIds: ['s-one', 's-two'] },
     });
     expect(instances.size).toBe(2);
+    expect(issuedArtifacts.put).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'worksheet-composition', sessionIds: ['s-one', 's-two'],
+      allocation: { cardId: '1234567', recordId: 'rec-1', rowRange: { start: 1, end: 12 } },
+    }));
     expect([...instances.values()].map((instance) => instance.omr.rowRange)).toEqual([
       { start: 1, end: 6 }, { start: 7, end: 12 },
     ]);

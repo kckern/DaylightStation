@@ -123,45 +123,37 @@ describe('TeacherConsole workspace', () => {
     expect(teacherWorkspaceApi.adjustGrade).toHaveBeenLastCalledWith('ses_1', expect.objectContaining({ apply: true, pin: null }), 'grant-1');
   });
 
-  it('re-unlocks and retries a protected session read after server capability expiry', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
+  it('reads a bookmarked session without a local teacher claim', async () => {
     const priorSessionReads = teacherWorkspaceApi.session.mock.calls.length;
     teacherWorkspaceApi.session
-      .mockResolvedValueOnce({ ok: false, status: 403, data: { error: 'expired' } })
       .mockResolvedValueOnce({ ok: true, status: 200, data: {
-        schema: 'school.teacher-session/v1', sessionId: 'ses_expired', revision: 1, artifactIds: [],
-        state: { learnerId: 'felix', unitId: 'chemistry', state: 'closed', machineGrade: { percent: 83 }, gradedPercent: 83 }, events: [],
+        schema: 'school.teacher-session/v3', sessionId: 'ses_direct', revision: 1, artifacts: [],
+        taxonomy: { subject: 'Science', courseTitle: 'Chemistry', lessonTitle: 'Atoms' },
+        state: { learnerId: 'felix', state: 'closed', machineGrade: { percent: 83 }, gradedPercent: 83 }, events: [],
       } });
-    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_expired');
+    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_direct');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Unlock teacher tools')).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(screen.getByText('Machine grade').nextSibling.textContent).toBe('83%'));
-    expect(teacherWorkspaceApi.session.mock.calls.length - priorSessionReads).toBe(2);
-    expect(teacherWorkspaceApi.unlock).toHaveBeenCalledWith('teacher', '4321');
+    expect(teacherWorkspaceApi.session.mock.calls.length - priorSessionReads).toBe(1);
+    expect(screen.getByRole('heading', { name: 'Atoms' })).toBeTruthy();
   });
 
-  it('prepares a protected artifact postview after resource-scoped confirmation', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
-    const createObjectURL = vi.fn(() => 'blob:postview');
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+  it('shows an immutable worksheet and its recorded answers rather than generic assessments', async () => {
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
-      schema: 'school.teacher-session/v1', sessionId: 'ses_2', revision: 1, artifactIds: ['art_2'],
-      state: { learnerId: 'felix', unitId: 'geometry', state: 'closed', machineGrade: { percent: 80 }, gradedPercent: 80 }, events: [],
+      schema: 'school.teacher-session/v3', sessionId: 'ses_2', revision: 1,
+      taxonomy: { subject: 'Civilization', courseTitle: 'United States', lessonTitle: 'Illinois' },
+      state: { learnerId: 'felix', state: 'closed', machineGrade: { percent: 100 }, gradedPercent: 100 }, events: [],
+      assignment: { createdAt: '2026-08-24T14:28:43.031Z', questions: [{ itemId: 'q1', number: 19, prompt: 'Which state is Illinois?', choices: [{ text: 'Illinois' }, { text: 'Ohio' }] }] },
+      assessment: { items: [{ itemId: 'q1', questionNumber: 19, prompt: 'Which state is Illinois?', given: 'Illinois', verdict: 'correct' }] },
+      artifacts: [],
     } });
-    teacherWorkspaceApi.artifactPostview.mockResolvedValueOnce({ ok: true, status: 200, data: new Blob(['pdf']) });
     window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_2');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Prepare postview PDF…' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Prepare postview PDF…' }));
-    fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Open postview PDF' }).getAttribute('href')).toBe('blob:postview'));
-    expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({ pin: '4321', action: 'artifact.postview', resource: 'art_2' });
-    expect(teacherWorkspaceApi.artifactPostview).toHaveBeenCalledWith('art_2', 'grant-1');
+    await waitFor(() => expect(screen.getByText('Paper issued')).toBeTruthy());
+    expect(screen.getByText('Which state is Illinois?')).toBeTruthy();
+    expect(screen.getByText('Question 19')).toBeTruthy();
+    expect(screen.getByText('Answers and result')).toBeTruthy();
+    expect(screen.queryByText('assessment')).toBeNull();
   });
 
   it('previews and protects retraction of an existing grade correction', async () => {

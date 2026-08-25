@@ -202,11 +202,11 @@ describe('flagConcern (kid-safe "this seems wrong" — advocacy wave 7)', () => 
 describe('requestRetake (kid-safe — advocacy A2)', () => {
   it('a signed-in kid files a retake row; guests are refused; dedupe holds', () => {
     const svc = makeService();
-    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/pokemon-basics/01-quiz', title: 'Pokemon Basics Quiz' }))
+    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' }))
       .toEqual({ requested: true, duplicate: false });
-    expect(saved.at(-1)).toMatchObject({ kind: 'retake', userId: 'felix', bankId: 'science/pokemon-basics/01-quiz' });
+    expect(saved.at(-1)).toMatchObject({ kind: 'retake', userId: 'felix', bankId: 'science/creature-basics/01-quiz' });
     requests = saved;
-    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/pokemon-basics/01-quiz' }))
+    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/creature-basics/01-quiz' }))
       .toEqual({ requested: true, duplicate: true });
     expect(() => svc.requestRetake({ userId: null, bankId: 'x' })).toThrow(GuestForbiddenError);
   });

@@ -907,7 +907,13 @@ export class RenderPrintDocument {
     let document = dropRedundantTitleHeading(prepared);
     let allocationRecord = null;
     if (cardContext) {
-      const allocation = await this.#allocateCard(prepared, bank, cardContext);
+      // Teacher history may replay a frozen card mapping, but it must never
+      // call the allocation store. The historical record is deliberately a
+      // render-only snapshot: it supplies the same printed row numbers while
+      // making a GET incapable of minting or reusing a physical card.
+      const allocation = cardContext.historical
+        ? this.#historicalCard(prepared, bank, cardContext)
+        : await this.#allocateCard(prepared, bank, cardContext);
       allocationRecord = allocation.record;
       document = dropRedundantTitleHeading(this.#renumberQuestions(prepared, allocation.rows));
     } else if (prepared.archetype === 'quiz') {
@@ -1184,12 +1190,18 @@ export class RenderPrintDocument {
    */
   #resolveCardContext(context) {
     const {
-      cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution,
+      cardId, freshCard, startRow, learnerId, sessionId, sectionAttribution, historicalCard,
     } = context;
     if (cardId === undefined && freshCard !== true) return null;
+    if (historicalCard === true && (typeof cardId !== 'string' || freshCard === true)) {
+      throw new ValidationError('historical card replay requires an existing cardId and may not request a fresh card', {
+        code: 'HISTORICAL_CARD_CONTEXT_INVALID',
+      });
+    }
     return {
       cardId,
       freshCard: freshCard === true,
+      historical: historicalCard === true,
       startRow: startRow ?? 1,
       learnerId: learnerId ?? null,
       // Work-session lineage (review wave B1): IssueDocument's tracked-quiz
@@ -1297,6 +1309,26 @@ export class RenderPrintDocument {
     };
     const record = await this.#allocationStore.allocate({ cardId: freshCard ? undefined : cardId, request });
     return { record, rows: plan.rows };
+  }
+
+  /** Build the card geometry for a historical replay without touching storage. */
+  #historicalCard(document, bank, { cardId, startRow }) {
+    const plan = planRows({ document, bank, startRow });
+    if (plan.errors || plan.rows.length === 0) {
+      throw new ValidationError(
+        `document '${document.id}' cannot replay its historical card mapping`,
+        { code: 'HISTORICAL_CARD_PLAN_INVALID', details: { documentId: document.id, errors: plan.errors ?? [] } },
+      );
+    }
+    return {
+      record: {
+        cardId,
+        recordId: null,
+        status: 'historical-replay',
+        rowRange: { start: plan.rows[0].row, end: plan.rows.at(-1).row },
+      },
+      rows: plan.rows,
+    };
   }
 
   /**

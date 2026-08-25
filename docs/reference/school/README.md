@@ -721,7 +721,7 @@ Lessons come in three kinds — *watch* (play through a line), *try* (find the
 move), and *play* (a full game against the bundled opponent, at three
 difficulties). The board and the rules are shared with the piano kiosk's Piano
 Chess rather than reimplemented: `frontend/src/modules/Chess/ChessBoard.jsx`
-renders both, and the rules come from `shared/gaming/chess/`. School passes
+renders both, and the rules come from `shared/gaming/rulesets/chess/`. School passes
 algebraic coordinates; the kiosk passes chord names for the same squares.
 
 | What | Where |
@@ -729,7 +729,7 @@ algebraic coordinates; the kiosk passes chord names for the same squares.
 | Curriculum (units, lessons, kinds) | `frontend/src/modules/School/chess/chessCurriculum.js` |
 | Course shell | `frontend/src/modules/School/chess/ChessLessons.jsx` |
 | Board (shared with the kiosk) | `frontend/src/modules/Chess/ChessBoard.jsx` |
-| Rules and opponent | `shared/gaming/chess/` |
+| Rules and opponent | `shared/gaming/rulesets/chess/` |
 
 ## Teacher check-in workspace
 
