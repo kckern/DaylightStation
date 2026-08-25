@@ -88,4 +88,58 @@ describe('joinLearnerDay', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].subject).toBeNull();
   });
+
+  it('matches an "other"-bucketed section to its session by unit, not subject', () => {
+    // The planner buckets non-canonical subjects into 'other'; the day
+    // projection keeps the raw subject. One activity must yield ONE row.
+    const { rows, counts } = joinLearnerDay({
+      sections: [{ subject: 'other', next: { title: 'Piano Lesson 3', unitId: 'piano.03' } }],
+      sessions: [{ subject: 'piano', sessionId: 'ses_p', unitId: 'piano.03', lessonTitle: 'Piano Lesson 3' }],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'done', matchedOn: 'unit' });
+    expect(rows[0].session.sessionId).toBe('ses_p');
+    expect(counts.total).toBe(1);
+    expect(counts.extra).toBeUndefined();
+  });
+
+  it('lets two sections sharing a subject each claim their own unit', () => {
+    const { rows } = joinLearnerDay({
+      sections: [
+        { subject: 'math', next: { title: 'A', unitId: 'math.01' } },
+        { subject: 'math', next: { title: 'B', unitId: 'math.02' } },
+      ],
+      sessions: [
+        { subject: 'math', sessionId: 'ses_2', unitId: 'math.02' },
+        { subject: 'math', sessionId: 'ses_1', unitId: 'math.01' },
+      ],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ planned: 'A' });
+    expect(rows[0].session.sessionId).toBe('ses_1');
+    expect(rows[1]).toMatchObject({ planned: 'B' });
+    expect(rows[1].session.sessionId).toBe('ses_2');
+  });
+
+  it('never lets two sections claim the same session', () => {
+    const { rows } = joinLearnerDay({
+      sections: [
+        { subject: 'math', next: { title: 'A', unitId: 'math.01' } },
+        { subject: 'math', next: { title: 'B', unitId: 'math.01' } },
+      ],
+      sessions: [{ subject: 'math', sessionId: 'ses_1', unitId: 'math.01' }],
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((row) => row.session).length).toBe(1);
+    expect(rows[1]).toMatchObject({ status: 'planned', session: null });
+  });
+
+  it('still treats a genuinely unplanned session as extra', () => {
+    const { rows } = joinLearnerDay({
+      sections: [{ subject: 'math', next: { title: 'A', unitId: 'math.01' } }],
+      sessions: [{ subject: 'art', sessionId: 'ses_x', unitId: 'art.09' }],
+    });
+    expect(rows.find((row) => row.status === 'extra').session.sessionId).toBe('ses_x');
+    expect(rows.find((row) => row.status === 'planned')).toBeTruthy();
+  });
 });
