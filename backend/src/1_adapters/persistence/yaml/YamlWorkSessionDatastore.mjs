@@ -12,7 +12,7 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import yaml from 'js-yaml';
 import { IWorkSessionRepository } from '#apps/school/ports/IWorkSessionRepository.mjs';
-import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { reduceSession, transitionViolation } from '#domains/school/sessions/sessionEvents.mjs';
 import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 
 // Single flat segment, starting alphanumeric: "..", a leading "/", a hidden name
@@ -142,6 +142,29 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
       if (expectedSeq !== undefined && expectedSeq !== maxSeq) {
         throw new DomainInvariantError(`session ${sessionId} changed after this preview`, {
           code: 'STALE_SAVE', details: { expected: expectedSeq, actual: maxSeq },
+        });
+      }
+      // LEGALITY IS DECIDED HERE, not by each of the two dozen callers that
+      // reach this method. `TRANSITIONS` used to be authoritative only inside
+      // `reduceSession`, at read time, where an illegal event is recorded in
+      // `errors[]` and skipped. Read-total is right for READS — a damaged log
+      // must still yield up whatever record of a child's work survives — but
+      // applied to writes it means the log accepts facts that never happened,
+      // and callers each carried their own hand-copied projection of what was
+      // legal. That is how a session came to hold an `issued` event for an
+      // artifact that was never produced, and became permanently unprintable.
+      //
+      // The check runs INSIDE the write queue, against the state as it stands
+      // at this instant, because two appends racing on the same session would
+      // otherwise each validate against a state the other is about to move on.
+      const from = reduceSession(events).state;
+      const violation = transitionViolation(from, event.type);
+      if (violation) {
+        this.#logger.warn?.('school.session.illegal-transition', {
+          sessionId, from, type: event.type, reason: violation,
+        });
+        throw new DomainInvariantError(`session ${sessionId}: ${violation}`, {
+          code: 'ILLEGAL_TRANSITION', details: { from, type: event.type, seq: maxSeq + 1 },
         });
       }
       const stored = { ...event, sessionId, seq: maxSeq + 1 };

@@ -4,7 +4,11 @@
  * session opened today: video/program lessons cannot become paper merely
  * because their ids happen to be on the same agenda.
  */
-const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
+import { statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
+
+// Derived from the transition table, not hand-copied — see `IssueDocument`'s
+// own ISSUABLE for why the answer is the union of these two events' states.
+const ISSUABLE = new Set([...statesAccepting('issued'), ...statesAccepting('reprinted')]);
 
 export class ListPrintableWorksheetSessions {
   #listSessions; #curriculum;

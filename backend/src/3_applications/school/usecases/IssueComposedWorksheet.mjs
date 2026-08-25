@@ -4,7 +4,7 @@
  * and allocation records: composition changes paper layout, never grading
  * ownership.
  */
-import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { reduceSession, createEvent, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
 import { createWorksheetInstance, worksheetInstanceDocument, composedWorksheetDocument } from '#domains/school/questionBankV2.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
@@ -12,7 +12,9 @@ import { slugify } from '#domains/school/documents/receipts.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 
-const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
+// Derived from the transition table, not hand-copied — see `IssueDocument`'s
+// own ISSUABLE for why the answer is the union of these two events' states.
+const ISSUABLE = new Set([...statesAccepting('issued'), ...statesAccepting('reprinted')]);
 
 function answerSheetPolicy(raw) {
   const reuse = raw?.reuse ?? 'after_scan';

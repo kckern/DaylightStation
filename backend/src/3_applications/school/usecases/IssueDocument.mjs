@@ -33,7 +33,7 @@
  * actually lands even earlier than the legacy slot, not later, and why that
  * is still the same guarantee.
  */
-import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
+import { reduceSession, createEvent, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
 import { mintToken, TOKEN_CLASSES } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
@@ -48,8 +48,18 @@ import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { resolveScripturePlaylist } from '../readalong/resolveScripturePlaylist.mjs';
 
-/** States in which handing over a sheet still means something. */
-const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
+/**
+ * States in which handing over a sheet still means something — DERIVED from the
+ * transition table, never written out by hand.
+ *
+ * Issuing appends either an `issued` (first sheet) or a `reprinted` (same
+ * artifact again), so the answer is exactly the union of the states from which
+ * those two events are legal. It used to be a literal four-element set here, a
+ * second one in `IssueComposedWorksheet`, and a third in
+ * `ListPrintableWorksheetSessions` — three copies of a projection that nothing
+ * held to the table, free to drift the moment an edge moved.
+ */
+const ISSUABLE = new Set([...statesAccepting('issued'), ...statesAccepting('reprinted')]);
 
 /**
  * `print/<id>@<rev>` — a curriculum unit's `document` field pointing at a
