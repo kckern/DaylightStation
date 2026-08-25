@@ -101,13 +101,24 @@ export class CurriculumAccess {
 
     const validUnits = new Map();
     const errors = [];
+    // A draft is not an error — it is simply not for a learner yet. But it is
+    // dropped from what this class serves just the same, and a silent drop
+    // here is exactly what sent the planner.mjs investigation into loaders,
+    // manifests and schemas instead of `reviewState`: the only downstream
+    // symptom was "assigned but no published units belong to it", which names
+    // the wrong cause. Logging it beside invalid-units, same level and shape,
+    // is what keeps the real cause visible instead of relocated.
+    const droppedDraftIds = [];
     (units.items ?? []).forEach(({ id, raw }) => {
       const result = validateUnit(raw, sets);
       if (result.errors.length) { errors.push(`units/${id}: ${result.errors.join('; ')}`); return; }
-      // A draft is not an error — it is simply not for a learner yet.
       if (isPublishable(result.unit)) validUnits.set(id, result.unit);
+      else droppedDraftIds.push(id);
     });
     if (errors.length) this.#logger.warn?.('school.curriculum.invalid-units', { count: errors.length, errors });
+    if (droppedDraftIds.length) {
+      this.#logger.warn?.('school.curriculum.drafts-dropped', { count: droppedDraftIds.length, ids: droppedDraftIds });
+    }
 
     // Works are validated against the shelf and folder they were found in, which
     // is the only check that can catch a config claiming to be somewhere it is
