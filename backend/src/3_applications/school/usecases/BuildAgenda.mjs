@@ -67,11 +67,29 @@ function withAttestedPasses(history, attestations, learnerId) {
 }
 
 /**
+ * Pure: a module's 1-based position within `enrollment.moduleOrder`, or
+ * `null` when the module isn't in that order (unknown module, no
+ * enrollment, etc). SINGLE source of truth for "which unit number is this"
+ * — `moduleProgressLabel` and the taxonomy block below both call this
+ * rather than each running their own `indexOf` + off-by-one, which is
+ * exactly how the progressLabel/taxonomy strings drifted apart (1-based vs
+ * 0-based) on the same printed receipt.
+ *
+ * @param {object} params
+ * @param {{moduleOrder?: string[]}|null|undefined} params.enrollment
+ * @param {{module?: string}|null|undefined} params.entry
+ * @returns {number|null}
+ */
+export function moduleOrdinal({ enrollment, entry }) {
+  const index = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
+  return index >= 0 ? index + 1 : null;
+}
+
+/**
  * Pure: the "Unit N · M/of" progress label printed under a subject's next
- * lesson. Both indices are 1-based on paper — `moduleIndex` needs the same
- * `+ 1` `lessonIndex` already gets. Any missing/unmatched index (module not
- * in `moduleOrder`, unit not in that module's `lessonOrder`, absent
- * enrollment) falls back to the caller's existing label unchanged.
+ * lesson. Both indices are 1-based on paper. Any missing/unmatched index
+ * (module not in `moduleOrder`, unit not in that module's `lessonOrder`,
+ * absent enrollment) falls back to the caller's existing label unchanged.
  *
  * @param {object} params
  * @param {{moduleOrder?: string[], lessonOrder?: Record<string, string[]>}|null|undefined} params.enrollment
@@ -80,12 +98,30 @@ function withAttestedPasses(history, attestations, learnerId) {
  * @returns {string|null}
  */
 export function moduleProgressLabel({ enrollment, entry, fallback = null }) {
-  const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
+  const ordinal = moduleOrdinal({ enrollment, entry });
   const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
   const lessonIndex = lessons.indexOf(entry?.unitId);
-  return moduleIndex >= 0 && lessonIndex >= 0
-    ? `Unit ${moduleIndex + 1} · ${lessonIndex + 1}/${lessons.length}`
+  return ordinal !== null && lessonIndex >= 0
+    ? `Unit ${ordinal} · ${lessonIndex + 1}/${lessons.length}`
     : fallback;
+}
+
+/**
+ * Pure: the taxonomy block's "Unit N: {title}" line — the sibling of
+ * `moduleProgressLabel` that shares the same `moduleOrdinal` lookup so the
+ * two printed labels for one lesson cannot disagree on which unit number
+ * it is. When the module isn't in `moduleOrder`, falls back to whatever
+ * title/name is available rather than printing "Unit 0" or "Unit NaN".
+ *
+ * @param {object} params
+ * @param {{moduleOrder?: string[]}|null|undefined} params.enrollment
+ * @param {{module?: string}|null|undefined} params.entry
+ * @param {string|null|undefined} params.moduleTitle
+ * @returns {string|null|undefined}
+ */
+export function moduleTaxonomyUnitLabel({ enrollment, entry, moduleTitle }) {
+  const ordinal = moduleOrdinal({ enrollment, entry });
+  return ordinal !== null ? `Unit ${ordinal}: ${moduleTitle}` : (moduleTitle ?? entry?.module ?? entry?.title);
 }
 
 export class BuildAgenda {
@@ -397,12 +433,11 @@ export class BuildAgenda {
           const entry = section.next;
           const work = worksById.get(entry?.courseId);
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
-          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
           const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: work?.title ?? entry?.courseId ?? 'Independent study',
-            unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? entry?.module ?? entry?.title),
+            unit: moduleTaxonomyUnitLabel({ enrollment, entry, moduleTitle }),
             lesson: entry?.title,
           };
         })(),
