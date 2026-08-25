@@ -7,6 +7,19 @@ import SegmentMap from './SegmentMap.jsx';
 import { ACCORDION_MS } from '../band.js';
 import { LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 /**
  * The gloss's size in rem AT THE ANCHOR ROOT, read out of the compiled rule.
  *
@@ -305,7 +318,7 @@ describe('SegmentMap', () => {
 describe('SegmentMap — the band’s shipped design', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'SegmentMap.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -567,7 +580,7 @@ describe('SegmentMap — the band’s shipped design', () => {
 describe('SegmentMap — the segment translations', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'SegmentMap.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -792,7 +805,7 @@ describe('SegmentMap — the segment translations', () => {
 describe('SegmentMap — the bond', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'SegmentMap.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -1212,7 +1225,7 @@ describe('SegmentMap — the accordion', () => {
    * fix is that one of the two clocks no longer exists.
    */
   it('drives the widths and the head from ONE clock — no CSS transition on either width', () => {
-    const compiled = sass.compile(path.join(__dirname, 'SegmentMap.scss')).css;
+    const compiled = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss')).css;
     const seg = compiled.match(/\.surround-segment-map__segment\s*\{[^}]*\}/)[0];
     expect(
       seg,
@@ -1310,7 +1323,7 @@ describe('SegmentMap — the accordion', () => {
 describe('SegmentMap — the compact rail', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'SegmentMap.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'SegmentMap.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);

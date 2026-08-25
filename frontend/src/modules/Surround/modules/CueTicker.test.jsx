@@ -17,6 +17,19 @@ import { ACCORDION_MS } from '../band.js';
 // label floor below was derived on, so the two are comparable here and only here.
 import { PROSE_FLOOR_ANCHOR_PX, LABEL_FLOOR_ANCHOR_PX } from '../fit.js';
 
+// COMPILE EACH SHEET ONCE PER FILE. A stylesheet cannot change mid-run, but
+// `withStyles()` recompiled it on every call — up to 20 times in this file
+// alone, across nine specs that each do the same. `sass.compile` is
+// synchronous and CPU-heavy, and under a full parallel sweep (~1,000 files on
+// every core) that redundant work is what starves a worker past its timeout,
+// failing whichever timing-shaped test it was inside. Memoised by path.
+const __sassCache = new Map();
+const compileSheetOnce = (file) => {
+  if (!__sassCache.has(file)) __sassCache.set(file, sass.compile(file));
+  return __sassCache.get(file);
+};
+
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const makeLogger = () => ({
@@ -281,7 +294,7 @@ describe('CueTicker', () => {
 describe('CueTicker — reserved height and centred setting', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'CueTicker.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -874,7 +887,7 @@ describe('CueTicker — the split band (design wave 6)', () => {
 describe('CueTicker — the split band’s shipped design', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'CueTicker.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -1002,7 +1015,7 @@ describe('CueTicker — the split band’s shipped design', () => {
 describe('CueTicker — the bond, the header and the standing label (design wave 7)', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'CueTicker.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -1133,7 +1146,7 @@ describe('CueTicker — which side the NOW register sits on (design wave 7)', ()
   afterEach(() => { vi.useRealTimers(); });
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'CueTicker.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
@@ -1294,7 +1307,7 @@ describe('CueTicker — smart quotes at the render seam (design wave 7)', () => 
 describe('CueTicker — review round (I1, I3, I5)', () => {
   let injected = null;
   const withStyles = () => {
-    const compiled = sass.compile(path.join(__dirname, 'CueTicker.scss'));
+    const compiled = compileSheetOnce(path.join(__dirname, 'CueTicker.scss'));
     injected = document.createElement('style');
     injected.textContent = compiled.css;
     document.head.appendChild(injected);
