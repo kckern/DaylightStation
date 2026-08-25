@@ -1257,6 +1257,11 @@ describe('the band, measured against the shipped stylesheet', () => {
     '1920x1080': 17.28,   // 1.08rem
   });
 
+/** The stylesheet's chip-mark scale: `font-size: calc(var(--label-floor) * 1.35)`
+ * on `.surround-segment-map__chip`. One constant here, one calc there — this
+ * spec fails when either side moves alone. */
+const CHIP_MARK_SCALE = 1.35;
+
   it.each(FLEET)('$name — the standing label takes this root’s floor, and prose still clears it', async ({ width, height, name }) => {
     const { fit } = await layout(page, css, { width, height, data: EROICA_FULL });
 
@@ -2044,13 +2049,19 @@ describe('the band, measured against the shipped stylesheet', () => {
      * DIFFERENT custom property than the one every other label in the frame
      * reads.
      */
+    // FLOOR-ANCHORED, SCALED. The chip reads the same published `--label-floor`
+    // every other label in the frame reads — that is still the contract — but
+    // since the fold-pill wave the stylesheet sets the mark at floor × 1.35
+    // (`calc(var(--label-floor) * 1.35)`), a deliberate step up from sitting
+    // exactly at the floor. The red conditions are unchanged: a rem literal on
+    // the chip, or a size read from anything but the floor, breaks the ratio.
     inactive.forEach((p) => {
       expect(
-        p.fontSizePx,
+        Math.abs(p.fontSizePx - LABEL_FLOORS[name] * CHIP_MARK_SCALE) < 0.02,
         `chip ${p.i}'s numeral paints at ${p.fontSizePx}px at ${name}, where this root's `
-        + `ten-foot label floor is ${LABEL_FLOORS[name]}px — the number in the circle is smaller `
-        + 'than the frame\'s own floor for a label',
-      ).toBe(LABEL_FLOORS[name]);
+        + `floor-anchored mark size is ${(LABEL_FLOORS[name] * CHIP_MARK_SCALE).toFixed(2)}px `
+        + `(label floor ${LABEL_FLOORS[name]}px × ${CHIP_MARK_SCALE})`,
+      ).toBe(true);
     });
 
     // ...AND THE CHIPS DO NOT OVERRUN THE SEGMENTS THEY MARK. A chip wider than
@@ -2679,11 +2690,14 @@ describe('the band, measured against the shipped stylesheet', () => {
       const inactive = painted.filter((p) => p.state !== 'active');
       expect(inactive, 'twenty-six segments should be inactive while one sounds').toHaveLength(26);
 
-      const wrongFloor = inactive.filter((p) => p.chipFontPx !== LABEL_FLOORS[name]);
+      // Floor-anchored × the stylesheet's mark scale — see the nocturne case.
+      const wrongFloor = inactive.filter((p) => (
+        Math.abs(p.chipFontPx - LABEL_FLOORS[name] * CHIP_MARK_SCALE) >= 0.02));
       expect(
         wrongFloor,
         `${wrongFloor.length} of 26 chips at ${name} do not paint at this root's `
-        + `${LABEL_FLOORS[name]}px label floor: ${JSON.stringify(wrongFloor)}`,
+        + `floor-anchored ${(LABEL_FLOORS[name] * CHIP_MARK_SCALE).toFixed(2)}px mark size: `
+        + `${JSON.stringify(wrongFloor)}`,
       ).toEqual([]);
     }, 90000);
 
@@ -2956,10 +2970,10 @@ describe('the lyric rail, measured', () => {
     return {
       rail: r(pick('[data-testid="surround-lyric-rail"]')),
       region: r(pick('.surround-frame__region--lyric')),
-      panel: r(pick('[data-testid="surround-libretto"]')),
-      text: r(pick('[data-testid="surround-libretto-text"]')),
-      heading: r(pick('[data-testid="surround-libretto-heading"]')),
-      plate: r(pick('[data-testid="surround-libretto-plate"]')),
+      panel: r(pick('[data-testid="surround-script-rail"]')),
+      text: r(pick('[data-testid="surround-script-rail-text"]')),
+      heading: r(pick('[data-testid="surround-script-rail-heading"]')),
+      plate: r(pick('[data-testid="surround-script-rail-plate"]')),
       card: r(pick('[data-testid="surround-composer-card"]')),
       footer: r(pick('[data-testid="surround-footer"]')),
       programme: r(pick('[data-testid="surround-rail"]')),
