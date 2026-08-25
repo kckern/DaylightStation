@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { pianoLearningApi } from '../../../Piano/PianoKiosk/modes/Exercises/pianoLearningApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 
 async function load(learnerId) {
@@ -29,12 +30,9 @@ export default function PianoProgramsPanel({ learnerId }) {
   }), { onSuccess: () => { setEditing(false); record.retry(); } });
 
   return (
-    <section className="teacher-panel" data-state={record.state}>
-      <h2 className="teacher-panel__title">Piano programs</h2>
-      {record.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {record.state === 'unavailable' && <p className="teacher-panel__empty">Piano learning is not installed on this station.</p>}
-      {record.state === 'error' && <p className="teacher-panel__error">Couldn&rsquo;t load piano programs. <button type="button" onClick={record.retry}>Retry</button></p>}
-      {record.state === 'empty' && <p className="teacher-panel__empty">No piano programs are published yet.</p>}
+    <PanelFrame title="Piano programs" state={record.state} retry={record.retry}
+      unavailableCopy="Piano learning is not installed on this station."
+      emptyCopy="No piano programs are published yet.">
       {record.state === 'ok' && !editing && (
         <>
           {(assignment.programs ?? []).length ? (
@@ -65,6 +63,6 @@ export default function PianoProgramsPanel({ learnerId }) {
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
         </div>
       )}
-    </section>
+    </PanelFrame>
   );
 }

@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { curriculumTitles } from '../curriculumTitles.js';
 import { teacherDate } from '../teacherDates.js';
@@ -38,15 +39,7 @@ export default function AttestationPanel({ learnerId, learnerName }) {
   }), { onSuccess: () => { setOpen(false); setReason(''); log.retry(); } });
 
   return (
-    <section className="teacher-panel" data-state={log.state}>
-      <h2 className="teacher-panel__title">Attestations</h2>
-      {log.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {log.state === 'error' && (
-        <p className="teacher-panel__error">
-          Couldn&rsquo;t load Attestations.
-          <button type="button" className="teacher-panel__retry" onClick={log.retry}>Retry</button>
-        </p>
-      )}
+    <PanelFrame title="Attestations" state={log.state} retry={log.retry} alwaysRender>
       {(log.state === 'ok' || log.state === 'empty') && (
         <>
           {log.state === 'empty' ? (
@@ -88,6 +81,6 @@ export default function AttestationPanel({ learnerId, learnerName }) {
           )}
         </>
       )}
-    </section>
+    </PanelFrame>
   );
 }

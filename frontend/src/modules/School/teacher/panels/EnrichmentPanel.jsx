@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { SUBJECTS, subjectLabel } from '../../home/subjects.js';
 import { teacherDateRange } from '../teacherDates.js';
@@ -39,15 +40,7 @@ export default function EnrichmentPanel({ kids = [] }) {
   }), { onSuccess: () => { setForm(EMPTY_FORM); setOpen(false); entries.retry(); } });
 
   return (
-    <section className="teacher-panel" data-state={entries.state}>
-      <h2 className="teacher-panel__title">Enrichment log</h2>
-      {entries.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {entries.state === 'error' && (
-        <p className="teacher-panel__error">
-          Couldn&rsquo;t load the Enrichment log.
-          <button type="button" className="teacher-panel__retry" onClick={entries.retry}>Retry</button>
-        </p>
-      )}
+    <PanelFrame title="Enrichment log" state={entries.state} retry={entries.retry} alwaysRender>
       {(entries.state === 'ok' || entries.state === 'empty') && (
         <>
           {entries.state === 'empty' ? (
@@ -112,6 +105,6 @@ export default function EnrichmentPanel({ kids = [] }) {
           )}
         </>
       )}
-    </section>
+    </PanelFrame>
   );
 }
