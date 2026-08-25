@@ -1094,6 +1094,22 @@
   tr.is-unenrolled { th[scope=row] { color: #a15b16; } td { color: #b8a888; } }
 }
 .teacher-matrix__legend { margin: 0.4rem 0 0; color: #8a7c5c; font-size: 0.8rem; }
+
+// Course catalog cards — the curriculum landing state.
+.teacher-course-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.75rem; }
+.teacher-course-catalog__card { border: 1px solid #e7dcc3; border-radius: 12px; background: #fffdf7; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.teacher-course-catalog__open { text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 0.35rem;
+  img { width: 100%; height: 7rem; object-fit: cover; border-radius: 8px; }
+  &:hover strong, &:focus-visible strong { text-decoration: underline; }
+}
+.teacher-course-catalog__card--standalone { justify-content: center; color: #6b5d33; }
+.teacher-curriculum__bulk-pass input { width: 4.5rem; }
+
+// Feedback roll-up rows: summary line + quiet date, expandable.
+.teacher-feedback__group summary { display: flex; justify-content: space-between; gap: 0.75rem; cursor: pointer; padding: 0.35rem 0;
+  .teacher-feedback__meta { white-space: nowrap; }
+}
+.teacher-feedback__group ul { list-style: none; margin: 0.25rem 0 0.5rem; padding: 0 0 0 1rem; }
 // Every matrix cell is a <button> (including empty, unassigned intersections)
 // so the whole grid is keyboard/tap reachable — reset it to read as table
 // text, not a default browser button, while keeping a visible clickable cue.

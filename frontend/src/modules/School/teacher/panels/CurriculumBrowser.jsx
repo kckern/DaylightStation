@@ -57,7 +57,46 @@ function PassOverride({ unit, override, onSaved }) {
   );
 }
 
-export default function CurriculumBrowser() {
+/**
+ * Course-level pass bar: one input, applied to every lesson via the existing
+ * per-unit override store (which stays the SSOT — this is a bulk write, not a
+ * new concept), behind the module's arm→confirm.
+ */
+function CourseBulkPassBar({ courseId, units, onSaved }) {
+  const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override-bulk' });
+  const [value, setValue] = useState('');
+  const [armed, setArmed] = useState(false);
+  const key = `bulk:${courseId}`;
+  const percent = Number.parseInt(value, 10);
+  const valid = Number.isInteger(percent) && percent >= 1 && percent <= 100;
+  const apply = () => run(key, async ({ actorId, pin }) => {
+    let last = { ok: true, status: 200, data: {} };
+    for (const unit of units) {
+      // Sequential on purpose: override writes share one store file.
+      // eslint-disable-next-line no-await-in-loop
+      last = await schoolApi.putPassOverride(unit.unitId, { percent, editedBy: actorId, pin });
+      if (!last.ok) return last;
+    }
+    return last;
+  }, { onSuccess: () => { setArmed(false); setValue(''); onSaved(); } });
+  return (
+    <div className="teacher-action-row teacher-curriculum__bulk-pass">
+      <label>Course pass bar
+        <input aria-label={`Course pass bar for ${courseId}`} inputMode="numeric" placeholder="%" value={value} onChange={(event) => { setValue(event.target.value); setArmed(false); }} />
+      </label>
+      {!armed
+        ? <button type="button" disabled={!valid || busy === key} onClick={() => setArmed(true)}>Set all {units.length} lessons</button>
+        : <span className="teacher-close-period__confirm">
+          <span>Set the pass bar to {percent}% on all {units.length} lessons?</span>
+          <button type="button" disabled={busy === key} onClick={apply}>Confirm</button>
+          <button type="button" onClick={() => setArmed(false)}>Cancel</button>
+        </span>}
+      {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
+    </div>
+  );
+}
+
+export default function CurriculumBrowser({ courseId = null }) {
   const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
     panel: 'curriculum',
@@ -68,7 +107,10 @@ export default function CurriculumBrowser() {
   const languageCourses = usePanelFetch(() => languageApi.courses(), { panel: 'sentence-ladder-preview', nullAs: 'empty' });
   const overrideMap = overrides.data?.overrides ?? {};
 
-  const units = catalog.data?.units ?? [];
+  const allUnits = catalog.data?.units ?? [];
+  // Scoped to ONE course when a courseId is given (the drill-in page). The
+  // all-courses flat render is retired — the catalog page owns discovery.
+  const units = courseId ? allUnits.filter((unit) => unit.courseId === courseId) : allUnits;
   const byCourse = new Map();
   const standalone = [];
   for (const unit of units) {
@@ -133,19 +175,20 @@ export default function CurriculumBrowser() {
       unavailableCopy="The curriculum catalog isn't available on this install."
     >
       <div className="teacher-curriculum">
-        {[...byCourse.entries()].map(([courseId, list]) => (
-          <div key={courseId} className="teacher-curriculum__course">
+        {[...byCourse.entries()].map(([id, list]) => (
+          <div key={id} className="teacher-curriculum__course">
             <h3>
-              <a href={`${base}/curriculum/${encodeURIComponent(courseId)}`}>{list.find((unit) => unit.courseTitle)?.courseTitle ?? 'Course'}</a>
+              <a href={`${base}/curriculum/${encodeURIComponent(id)}`}>{list.find((unit) => unit.courseTitle)?.courseTitle ?? 'Course'}</a>
               <a
                 className="teacher-reportcard__pdf"
-                href={`/api/v1/school/syllabus?courseId=${encodeURIComponent(courseId)}&format=pdf`}
+                href={`/api/v1/school/syllabus?courseId=${encodeURIComponent(id)}&format=pdf`}
                 target="_blank"
                 rel="noreferrer"
               >
                 Syllabus
               </a>
             </h3>
+            <CourseBulkPassBar courseId={id} units={list} onSaved={overrides.retry} />
             <ol>{list.map(row)}</ol>
           </div>
         ))}
