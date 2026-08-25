@@ -1,8 +1,15 @@
 import Icon from '../home/icons/Icon.jsx';
+import { SUBJECTS, subjectLabel } from '../home/subjects.js';
 import { labelize } from './labelize.js';
 
 export function SubjectIdentity({ subject, className = '' }) {
-  const title = labelize(subject ?? 'school');
+  // `subject` is a stable shelf id.  It is never presentation copy: the
+  // canonical shelf label owns punctuation and capitalization (e.g.
+  // "English & Literature").  Keep the fallback for third-party catalogues
+  // whose subject has not yet been promoted to a school shelf.
+  const title = subject
+    ? (SUBJECTS.some((s) => s.id === subject) ? subjectLabel(subject) : labelize(subject))
+    : 'School';
   return <span className={`teacher-subject-identity ${className}`.trim()}>
     <Icon name={subject ?? 'school'} className="teacher-subject-identity__icon" />
     <span>{title}</span>
@@ -21,7 +28,9 @@ export function LessonIdentity({
     <div className="teacher-lesson-identity__copy">
       <Title>{lessonTitle ?? 'Lesson'}</Title>
       <span>{courseLabel}</span>
-      {moduleTitle && <small>{labelize(moduleTitle)}</small>}
+      {/* This is authored display copy, not an id.  `labelize` would quietly
+          damage capitalization such as US or a proper unit name. */}
+      {moduleTitle && <small>{moduleTitle}</small>}
     </div>
   </div>;
 }

@@ -7,7 +7,7 @@
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
 
 export default function ReportCardView({ learnerId, periodId }) {
   const card = usePanelFetch(() => schoolApi.reportCard({ learnerId, periodId }), {
@@ -18,10 +18,12 @@ export default function ReportCardView({ learnerId, periodId }) {
   // Material display names live in the materials catalog (advocacy B6): the
   // card's own label is deliberately the honest raw id, so the join to a
   // human name happens here, presentation-side.
-  const catalog = usePanelFetch(() => schoolApi.materials(), { panel: 'materials-labels' });
+  const materials = usePanelFetch(() => schoolApi.materials(), { panel: 'materials-labels' });
+  const curriculum = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'report-card-catalog', notFoundAs: 'unavailable' });
+  const titles = curriculumTitles(curriculum.data?.units ?? []);
   const materialLabel = (id) => {
-    const hit = (catalog.data?.materials ?? []).find((m) => m.id === id);
-    return hit?.label ?? hit?.title ?? id;
+    const hit = (materials.data?.materials ?? []).find((m) => m.id === id);
+    return hit?.label ?? hit?.title ?? 'Material title unavailable';
   };
   const data = card.data;
   return (
@@ -48,7 +50,7 @@ export default function ReportCardView({ learnerId, periodId }) {
           <ul className="teacher-reportcard__courses">
             {(data.courses ?? []).map((c) => (
               <li key={c.courseId}>
-                <span>{labelize(c.courseId)}</span>
+                <span>{titles.course(c.courseId)}</span>
                 <span>
                   {typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}
                   {typeof c.coursePercent === 'number' && (
@@ -75,7 +77,7 @@ export default function ReportCardView({ learnerId, periodId }) {
               <ul>
                 {data.unresolvedUnits.map((u) => (
                   <li key={u.unitId}>
-                    <span>{u.unitId}</span>
+                    <span>{titles.lesson(u.unitId)}</span>
                     <span>{u.sessions} session{u.sessions === 1 ? '' : 's'} · best {u.bestPercent}%</span>
                   </li>
                 ))}
@@ -96,7 +98,7 @@ export default function ReportCardView({ learnerId, periodId }) {
             <ul className="teacher-reportcard__arcs">
               {data.remediationArcs.map((arc) => (
                 <li key={`${arc.originalSessionId}:${arc.remediationSessionId}`}>
-                  <span>{arc.unitId}</span>
+                  <span>{titles.lesson(arc.unitId)}</span>
                   <span>remediation {arc.result ?? 'open'}</span>
                 </li>
               ))}

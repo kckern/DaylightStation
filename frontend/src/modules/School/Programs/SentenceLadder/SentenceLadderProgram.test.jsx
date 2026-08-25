@@ -105,7 +105,7 @@ describe('identity', () => {
     previewDayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'dictation')], chain: ['dictation'] }));
     render(<SentenceLadderProgram corpusId="glossika-korean" preview />);
 
-    expect(await screen.findByText(/Guest preview — nothing is saved/i)).toBeTruthy();
+    expect(await screen.findByText(/Sentence Ladder · guest preview — nothing is saved/i)).toBeTruthy();
     expect(dayMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
 

@@ -52,7 +52,7 @@ beforeEach(() => {
     { unitId: 'math-fractions.02', title: 'Adding Fractions', courseId: 'math-fractions' },
   ] }));
   schoolApi.attemptsSummary.mockResolvedValue(ok({ assessments: [
-    { assessmentId: 'ses_9', count: 8, bankId: 'creature-quiz-1', firstAt: 't' },
+    { assessmentId: 'ses_9', count: 8, bankId: 'creature-quiz-1', title: 'Creature Quiz 1', firstAt: 't' },
   ] }));
   schoolApi.reassign.mockResolvedValue(ok({ moved: 8 }));
   schoolApi.attemptDays.mockResolvedValue(ok({ days: ['2026-08-06', '2026-08-05'] }));

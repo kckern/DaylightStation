@@ -9,6 +9,8 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { curriculumTitles } from '../curriculumTitles.js';
+import { teacherDate } from '../teacherDates.js';
 
 export default function AttestationPanel({ learnerId, learnerName }) {
   const log = usePanelFetch(() => schoolApi.attestations(learnerId), {
@@ -30,6 +32,7 @@ export default function AttestationPanel({ learnerId, learnerName }) {
   const [reason, setReason] = useState('');
 
   const units = catalog.data?.units ?? [];
+  const titles = curriculumTitles(units);
   const save = () => run('save', ({ actorId, pin }) => schoolApi.postAttestation({
     learnerId, unitId, reason, attestedBy: actorId, pin,
   }), { onSuccess: () => { setOpen(false); setReason(''); log.retry(); } });
@@ -52,8 +55,8 @@ export default function AttestationPanel({ learnerId, learnerName }) {
             <ul className="teacher-enrichment">
               {[...log.data.entries].reverse().map((a) => (
                 <li key={a.id} className="teacher-enrichment__row">
-                  <span className="teacher-enrichment__title">{a.unitId}</span>
-                  <span className="teacher-enrichment__dates">{String(a.at).slice(0, 10)} — {a.attestedBy}</span>
+                  <span className="teacher-enrichment__title">{titles.lesson(a.unitId)}</span>
+                  <span className="teacher-enrichment__dates">{teacherDate(a.at)} — {a.attestedBy}</span>
                   <span className="teacher-enrichment__note">{a.reason}</span>
                   <button type="button" disabled={busy === `retract:${a.id}`} onClick={() => retract(a)}>Retract</button>
                   {errors[`retract:${a.id}`] && <p className="teacher-panel__error">{errors[`retract:${a.id}`]}</p>}
@@ -68,7 +71,7 @@ export default function AttestationPanel({ learnerId, learnerName }) {
             <div className="teacher-enrichment__form">
               <select aria-label="Unit to attest" value={unitId} onChange={(e) => setUnitId(e.target.value)}>
                 <option value="">Pick a unit…</option>
-                {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.title ?? u.unitId}</option>)}
+                {units.map((u) => <option key={u.unitId} value={u.unitId}>{titles.lesson(u.unitId)}</option>)}
               </select>
               <textarea
                 aria-label="Reason"

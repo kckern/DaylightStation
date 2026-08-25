@@ -16,7 +16,7 @@ function appWith(over = {}) {
   app.use(express.json());
   app.use('/api/v1/school', createSchoolRouter({
     schoolErrors: { GuestForbiddenError },
-    schoolService: { listBankSourceSummaries: () => [] },
+    schoolService: { listBankSourceSummaries: () => [], listBanks: () => [{ id: 'creature-quiz-1', title: 'Creature Quiz 1' }] },
     attestationLog: { list: vi.fn(() => [{ id: 'att_1', learnerId: 'felix', unitId: 'u1' }]) },
     recordAttestation: { execute: vi.fn(async (args) => ({ entry: { id: 'att_2', ...args } })) },
     teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'felix', note: 'Hi', from: 'kckern', at: 't' }]) },
@@ -61,7 +61,7 @@ describe('wave-5 repair routes', () => {
     const res = await request(appWith()).get('/api/v1/school/attempts-summary?learnerId=felix&day=2026-08-06');
     expect(res.status).toBe(200);
     expect(res.body.assessments).toEqual(expect.arrayContaining([
-      expect.objectContaining({ assessmentId: 'ses_1', count: 2, bankId: 'creature-quiz-1' }),
+      expect.objectContaining({ assessmentId: 'ses_1', count: 2, bankId: 'creature-quiz-1', title: 'Creature Quiz 1' }),
       expect.objectContaining({ assessmentId: 'card_9', count: 1 }),
     ]));
   });

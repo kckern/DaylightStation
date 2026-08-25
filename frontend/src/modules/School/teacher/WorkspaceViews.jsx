@@ -25,6 +25,7 @@ import StaleSessions from './panels/StaleSessions.jsx';
 import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor } from './teacherUrl.js';
+import { curriculumTitles } from './curriculumTitles.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -74,22 +75,16 @@ function useAuthorizedTeacherRead() {
 
 const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}:${Math.random().toString(36).slice(2)}`}`;
 
-function AgendaPreview({ learnerId, learnerName }) {
-  const plan = usePanelFetch(() => schoolApi.agendaPreview(learnerId), {
-    deps: [learnerId], panel: 'workspace-agenda', notFoundAs: 'unavailable',
+function AgendaPreview({ learnerId, learnerName, studyDay, onStudyDayChange }) {
+  const plan = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
+    deps: [learnerId, studyDay], panel: 'workspace-agenda', notFoundAs: 'unavailable',
     isEmpty: (data) => !(data?.sections ?? []).length,
   });
   const [imageOpen, setImageOpen] = useState(false);
-  const [dispatchOpen, setDispatchOpen] = useState(false);
-  const [dispatchPreview, setDispatchPreview] = useState(null);
-  const [dispatchReceipt, setDispatchReceipt] = useState(null);
-  const [dispatchError, setDispatchError] = useState(null);
-  const [dispatchKey, setDispatchKey] = useState(null);
-  const { run, busy, errors } = useTeacherWrite({ panel: 'agenda-dispatch' });
   const day = usePanelFetch(() => (schoolApi.teacherDay
-    ? schoolApi.teacherDay()
+    ? schoolApi.teacherDay(studyDay)
     : Promise.resolve({ ok: true, status: 200, data: { learners: [] } })), {
-    deps: [learnerId], panel: 'workspace-agenda-day', notFoundAs: 'unavailable',
+    deps: [learnerId, studyDay], panel: 'workspace-agenda-day', notFoundAs: 'unavailable',
   });
   const completedBySubject = useMemo(() => {
     const learner = (day.data?.learners ?? []).find((row) => row.learnerId === learnerId);
@@ -97,36 +92,22 @@ function AgendaPreview({ learnerId, learnerName }) {
       .filter((session) => session.outcome?.result === 'passed')
       .map((session) => [session.subject, session]));
   }, [day.data, learnerId]);
-  const previewDispatch = async () => {
-    setDispatchError(null);
-    const response = await teacherWorkspaceApi.agendaDispatchPreview(learnerId, learnerName);
-    if (!response.ok) { setDispatchError(response.status === 404 ? 'Teacher dispatch is not enabled on this install.' : 'Couldn’t check printer readiness.'); return; }
-    setDispatchPreview(response.data);
-    setDispatchKey(newIdempotencyKey(`agenda:${learnerId}`));
-    setDispatchOpen(true);
-  };
-  const dispatch = () => {
-    // Keep one key for this preview/attempt. If printing succeeded but its HTTP
-    // response was lost, Confirm again must replay the receipt, not print twice.
-    const idempotencyKey = dispatchKey;
-    if (!idempotencyKey) return;
-    run(`agenda:${learnerId}`, ({ actorId, pin, stepUpToken }) => teacherWorkspaceApi.agendaDispatch(learnerId, {
-      learnerName, dispatchedBy: actorId, pin,
-    }, idempotencyKey, stepUpToken), {
-      onSuccess: (receipt) => { setDispatchReceipt(receipt); setDispatchOpen(false); setDispatchKey(null); },
-      stepUp: { action: 'agenda.dispatch', resource: learnerId },
-    });
-  };
-  const pngUrl = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview`;
+  const pngUrl = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({ studyDay })}`;
 
   return (
-    <PanelFrame
-      title="Today's agenda"
-      state={plan.state}
-      retry={plan.retry}
-      emptyCopy="Nothing is scheduled for today."
-      unavailableCopy="Agenda planning is not enabled on this install."
-    >
+    <section className="teacher-agenda-preview-panel" aria-label="Agenda planning preview">
+      <div className="teacher-action-row teacher-agenda-preview__day-picker">
+        <label htmlFor={`agenda-study-day-${learnerId}`}>Study day</label>
+        <input id={`agenda-study-day-${learnerId}`} type="date" value={studyDay} onChange={(event) => onStudyDayChange(event.target.value)} />
+      </div>
+      <p className="teacher-caption">Planning preview only — this never creates a session, agenda artifact, print record, working QR, or digit code.</p>
+      <PanelFrame
+        title={`Agenda preview for ${humanDate(studyDay) ?? 'selected day'}`}
+        state={plan.state}
+        retry={plan.retry}
+        emptyCopy="Nothing is scheduled for this study day."
+        unavailableCopy="Agenda planning is not enabled on this install."
+      >
       {(plan.data?.errors ?? []).length > 0 && (
         <ul className="teacher-workspace__alerts">
           {plan.data.errors.map((error, index) => (
@@ -142,8 +123,8 @@ function AgendaPreview({ learnerId, learnerName }) {
               ? (() => {
                 const completed = completedBySubject.get(section.subject);
                 return completed
-                  ? `${completed.lessonTitle ?? 'Lesson'} completed today${scoreLine(completed) ? ` · ${scoreLine(completed)}` : ''}`
-                  : 'Today’s work is complete';
+                  ? `${completed.lessonTitle ?? 'Lesson'} completed on this study day${scoreLine(completed) ? ` · ${scoreLine(completed)}` : ''}`
+                  : 'This study day is complete';
               })()
               : section.suppressed
                 ? `Deferred for ${section.suppressed.bySubject} focus`
@@ -153,44 +134,23 @@ function AgendaPreview({ learnerId, learnerName }) {
       </ol>
       <div className="teacher-action-row">
         <button type="button" onClick={() => setImageOpen((open) => !open)}>{imageOpen ? 'Hide print preview' : 'View print preview'}</button>
-        <a href={pngUrl} target="_blank" rel="noreferrer">Open printable agenda</a>
-        <button type="button" className="teacher-primary" onClick={previewDispatch}>Print {learnerName}&rsquo;s agenda</button>
+        <a href={pngUrl} target="_blank" rel="noreferrer">Open preview image</a>
       </div>
-      {dispatchError && <p className="teacher-panel__error">{dispatchError}</p>}
-      {dispatchReceipt && <p className="teacher-action-receipt">{dispatchReceipt.printed ? 'Agenda printed.' : `Printer did not accept the agenda${dispatchReceipt.reason ? `: ${dispatchReceipt.reason}` : '.'}`} <small>Receipt {dispatchReceipt.idempotencyKey}</small></p>}
       {imageOpen && <img className="teacher-agenda-preview" src={pngUrl} alt="Rendered agenda preview" />}
-      {dispatchOpen && (
-        <div className="teacher-action-preview" role="dialog" aria-label="Agenda dispatch preview">
-          <strong>Dispatch preview</strong>
-          <p>{dispatchPreview?.ready ? 'The rendered agenda above is ready for the School receipt printer.' : 'The agenda is not ready to print.'}</p>
-          {(dispatchPreview?.errors ?? []).length > 0 && <ul className="teacher-workspace__alerts">{dispatchPreview.errors.map((error, index) => <li key={index}>{typeof error === 'string' ? error : error?.message}</li>)}</ul>}
-          {dispatchPreview?.ready ? (
-            <div className="teacher-action-row">
-              <button type="button" disabled={busy === `agenda:${learnerId}`} onClick={dispatch}>Confirm print</button>
-              <button type="button" onClick={() => setDispatchOpen(false)}>Cancel</button>
-            </div>
-          ) : (
-            <>
-              <CapabilityNotice>Previewing did not allocate or print anything. Resolve the listed planner errors before dispatching.</CapabilityNotice>
-              <button type="button" onClick={() => setDispatchOpen(false)}>Close</button>
-            </>
-          )}
-          {errors[`agenda:${learnerId}`] && <p className="teacher-panel__error">{errors[`agenda:${learnerId}`]}</p>}
-        </div>
-      )}
-    </PanelFrame>
+      </PanelFrame>
+    </section>
   );
 }
 
-function SessionList({ learnerId, onOpenSession, window = null }) {
+function SessionList({ learnerId, onOpenSession, window = null, studyDay = null }) {
   const authorizedRead = useAuthorizedTeacherRead();
   const [additional, setAdditional] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sessions = usePanelFetch(async () => {
-    if (window === 'today') {
+    if (window === 'today' || studyDay) {
       if (!schoolApi.teacherDay) return schoolApi.learnerSessions(learnerId, { window });
-      const response = await schoolApi.teacherDay();
+      const response = await schoolApi.teacherDay(studyDay);
       if (!response.ok) return response;
       const learner = (response.data?.learners ?? []).find((row) => row.learnerId === learnerId);
       return { ...response, data: { sessions: learner?.sessions ?? [] } };
@@ -199,7 +159,7 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
     if (timeline.status !== 404) return { ...timeline, data: timeline.data ? { sessions: timeline.data.items ?? [], nextCursor: timeline.data.nextCursor } : null };
     return schoolApi.learnerSessions(learnerId);
   }, {
-    deps: [learnerId, window], panel: 'workspace-sessions', notFoundAs: 'unavailable',
+    deps: [learnerId, window, studyDay], panel: 'workspace-sessions', notFoundAs: 'unavailable',
     isEmpty: (data) => !(data?.sessions ?? []).length,
   });
   useEffect(() => { setAdditional([]); setNextCursor(sessions.data?.nextCursor ?? null); }, [learnerId, sessions.data]);
@@ -215,14 +175,14 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
   };
   const rows = [...(sessions.data?.sessions ?? []), ...additional];
   return (
-    <PanelFrame title={window === 'today' ? 'Today’s sessions' : 'Session history'} state={sessions.state} retry={sessions.retry} emptyCopy="No sessions recorded." unavailableCopy="Session history is not enabled on this install.">
+    <PanelFrame title={studyDay ? `Sessions for ${humanDate(studyDay) ?? 'selected day'}` : window === 'today' ? 'Today’s sessions' : 'Session history'} state={sessions.state} retry={sessions.retry} emptyCopy="No sessions recorded." unavailableCopy="Session history is not enabled on this install.">
       <ul className="teacher-session-list">
         {rows.map((session, index) => {
           const id = sessionIdOf(session);
           return (
             <li key={id ?? index}>
               <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
-                <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? labelize(session.unitId)} posterUrl={session.posterUrl} compact /><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
+                <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact /><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
                 <span className={`teacher-status teacher-status--${stateOf(session)}`}>{session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
               </button>
             </li>
@@ -267,11 +227,12 @@ export function QueueView({ kids }) {
 }
 
 export function LearnerOverview({ learnerId, learnerName, onOpenSession }) {
+  const [studyDay, setStudyDay] = useState(() => new Date().toISOString().slice(0, 10));
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student workspace</p><h2>{learnerName} today</h2><p>Plan, progress, blockers, and the next useful teacher action.</p></div></div>
-      <AgendaPreview learnerId={learnerId} learnerName={learnerName} />
-      <SessionList learnerId={learnerId} window="today" onOpenSession={onOpenSession} />
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student workspace</p><h2>{learnerName}&rsquo;s workspace</h2><p>Preview a chosen day, then inspect its progress, blockers, and useful teacher actions.</p></div></div>
+      <AgendaPreview learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} onStudyDayChange={setStudyDay} />
+      <SessionList learnerId={learnerId} studyDay={studyDay} onOpenSession={onOpenSession} />
       <MilestonesPanel learnerId={learnerId} />
     </div>
   );
@@ -294,18 +255,27 @@ function CourseContext({ courseId, lessonId = null, learnerId = null }) {
         {(course?.posterUrl ?? data?.posterUrl) && <img src={course.posterUrl ?? data.posterUrl} alt={`${course?.courseTitle ?? course?.title ?? 'Course'} cover`} />}
         <div>
           <SubjectIdentity subject={course?.subject} />
-          <p>{[course?.moduleTitle, course?.lessonTitle].filter(Boolean).map(labelize).join(' · ')}</p>
+          <p>{[course?.moduleTitle, course?.lessonTitle].filter(Boolean).join(' · ')}</p>
           {data?.total != null && <p><strong>{data.completed} of {data.total}</strong> lessons complete</p>}
           <ol>
             {units.map((unit) => (
               <li key={unit.unitId ?? unit.lessonId}>
-                <a href={`${base}/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(unit.unitId ?? unit.lessonId)}`}>{unit.title}</a>
+                <a href={`${base}/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(unit.unitId ?? unit.lessonId)}`}>
+                  <LessonIdentity
+                    compact
+                    subject={unit.subject ?? course?.subject}
+                    courseTitle={unit.courseTitle ?? course?.courseTitle ?? course?.title}
+                    moduleTitle={unit.moduleTitle ?? null}
+                    lessonTitle={unit.title ?? 'Lesson title unavailable'}
+                    posterUrl={unit.posterUrl ?? course?.posterUrl ?? data?.posterUrl}
+                  />
+                </a>
                 {unit.hasDocument && (
                   <a className="teacher-curriculum__preview" href={teacherWorkspaceApi.lessonPreviewUrl(courseId, unit.unitId ?? unit.lessonId)} target="_blank" rel="noreferrer">
                     Preview worksheet
                   </a>
                 )}
-                <span className={`teacher-status teacher-status--${unit.status ?? 'remaining'}`}>{labelize(unit.status ?? unit.module ?? 'remaining')}</span>
+                <span className={`teacher-status teacher-status--${unit.status ?? 'remaining'}`}>{labelize(unit.status ?? 'remaining')}</span>
               </li>
             ))}
           </ol>
@@ -321,14 +291,26 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   const exceptions = usePanelFetch(() => authorizedRead(() => teacherWorkspaceApi.curriculumExceptions()), {
     deps: [refresh], panel: 'curriculum-exceptions', notFoundAs: 'unavailable',
   });
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
+    panel: 'curriculum-exceptions-catalog', notFoundAs: 'unavailable',
+  });
+  const units = catalog.data?.units ?? [];
+  const titles = curriculumTitles(units);
+  const courseIds = [...new Set(units.map((unit) => unit.courseId).filter(Boolean))];
+  const modules = [...new Set(units.map((unit) => unit.module).filter(Boolean))];
   const [form, setForm] = useState({ kind: 'paused', learnerId: '', targetType: 'lesson',
     targetId: lessonId, courseId, replacementLessonId: '', reason: 'broken' });
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'curriculum-exceptions' });
   const change = (field) => (event) => {
     const value = event.target.value;
-    setForm((current) => ({ ...current, [field]: value,
-      ...(field === 'kind' && value === 'paused' ? { learnerId: '', reason: 'broken' } : {}) }));
+    setForm((current) => {
+      const selectedUnit = field === 'targetId' && current.targetType === 'lesson'
+        ? units.find((unit) => unit.unitId === value) : null;
+      return { ...current, [field]: value,
+        ...(selectedUnit ? { courseId: selectedUnit.courseId ?? '' } : {}),
+        ...(field === 'kind' && value === 'paused' ? { learnerId: '', reason: 'broken' } : {}) };
+    });
     setPreview(null);
   };
   const valid = form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
@@ -351,21 +333,21 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
     <label>Decision<select value={form.kind} onChange={change('kind')}><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
     {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
     <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
-    <label>Target ID<input value={form.targetId} onChange={change('targetId')} /></label>
-    <label>Course ID<input value={form.courseId} onChange={change('courseId')} /></label>
-    {form.kind === 'replaced' && <label>Replacement lesson ID<input value={form.replacementLessonId} onChange={change('replacementLessonId')} /></label>}
+    <label>{form.targetType === 'lesson' ? 'Lesson' : 'Unit / module'}<select value={form.targetId} onChange={change('targetId')}><option value="">Choose…</option>{form.targetType === 'lesson' ? units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>) : modules.map((module) => <option key={module} value={module}>{labelize(module)}</option>)}</select></label>
+    <label>Course<select value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</select></label>
+    {form.kind === 'replaced' && <label>Replacement lesson<select value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</select></label>}
     <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
   </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
-  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType} {exception.targetId} · {exception.reason} <button type="button" disabled={busy} onClick={() => retract(exception)}>Retract</button></li>)}</ul>
+  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} <button type="button" disabled={busy} onClick={() => retract(exception)}>Retract</button></li>)}</ul>
   </div></PanelFrame>;
 }
 
 export function CoursesView({ learnerId, learnerName, courseId, kids }) {
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? labelize(courseId) : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Courses & enrollment</p><h2>{courseId ? 'Course details' : `${learnerName}’s program`}</h2><p>Operate published courses, enrollment, timing, pass bars, and milestones.</p></div></div>
       {courseId && <CourseContext courseId={courseId} learnerId={learnerId} />}
       <AssignmentsView learnerId={learnerId} learnerName={learnerName} />
       <PianoProgramsPanel learnerId={learnerId} />
@@ -623,7 +605,6 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               </li>)}
             </ol>
           </section>}
-          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Score record</h3><p className="teacher-muted">The first score and the current score are available here when they differ. The printed result receipt is above.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Original score record" /></a><figcaption>Original score</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current score record" /></a><figcaption>Current score</figcaption></figure></div></section>}
           {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
           <section className="teacher-panel teacher-session-materials">
             <h3 className="teacher-panel__title">Issued materials and results</h3>

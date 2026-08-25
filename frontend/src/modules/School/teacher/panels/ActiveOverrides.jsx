@@ -8,12 +8,15 @@
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
+import { teacherDate } from '../teacherDates.js';
 
 export default function ActiveOverrides({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
   const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'active-overrides', nullAs: 'empty' });
   const attestations = usePanelFetch(() => schoolApi.attestations(), { panel: 'active-attestations', nullAs: 'empty' });
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'active-overrides-catalog', notFoundAs: 'unavailable' });
+  const titles = curriculumTitles(catalog.data?.units ?? []);
 
   // The current API returns `{ overrides: { [unitId]: percent|record } }`.
   // Keep accepting the earlier array projection so mixed-version installs
@@ -41,11 +44,11 @@ export default function ActiveOverrides({ kids = [] }) {
           <ul>
             {overrideRows.map((o) => (
               <li key={o.unitId}>
-                <span>{labelize(o.unitId)}</span>
+                <span>{titles.lesson(o.unitId)}</span>
                 <span>
                   bar {o.percent}%
                   {o.setBy ? ` · by ${o.setBy}` : ''}
-                  {o.at ? ` · since ${String(o.at).slice(0, 10)}` : ''}
+                  {o.at ? ` · since ${teacherDate(o.at)}` : ''}
                 </span>
               </li>
             ))}
@@ -58,8 +61,8 @@ export default function ActiveOverrides({ kids = [] }) {
           <ul>
             {attestationRows.map((a) => (
               <li key={a.id}>
-                <span>{nameFor(a.learnerId)} · {labelize(a.unitId)}</span>
-                <span>by {a.attestedBy ?? 'unknown'}{a.at ? ` · ${String(a.at).slice(0, 10)}` : ''}</span>
+                <span>{nameFor(a.learnerId)} · {titles.lesson(a.unitId)}</span>
+                <span>by {a.attestedBy ?? 'unknown'}{a.at ? ` · ${teacherDate(a.at)}` : ''}</span>
               </li>
             ))}
           </ul>

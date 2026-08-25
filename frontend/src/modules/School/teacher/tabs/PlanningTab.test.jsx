@@ -69,8 +69,8 @@ beforeEach(() => {
   schoolApi.putPeriods.mockResolvedValue(ok({ periods: [] }));
   schoolApi.periodsMeta.mockResolvedValue(ok({ historyLength: 2 }));
   schoolApi.curriculumUnits.mockResolvedValue(ok({ units: [
-    { unitId: 'math-fractions.02', title: 'Adding Fractions', subject: 'math', courseId: 'math-fractions', sequence: 2, hasBank: true, passingPercent: 80 },
-    { unitId: 'math-fractions.01', title: 'What Is a Fraction', subject: 'math', courseId: 'math-fractions', sequence: 1, hasBank: true, passingPercent: 80 },
+    { unitId: 'math-fractions.02', title: 'Adding Fractions', subject: 'math', courseId: 'math-fractions', courseTitle: 'Fractions', sequence: 2, hasBank: true, passingPercent: 80 },
+    { unitId: 'math-fractions.01', title: 'What Is a Fraction', subject: 'math', courseId: 'math-fractions', courseTitle: 'Fractions', sequence: 1, hasBank: true, passingPercent: 80 },
     { unitId: 'language-daily', title: 'Daily Language', subject: 'language', courseId: null, sequence: null, hasBank: false, passingPercent: null },
   ] }));
   schoolApi.syllabi.mockResolvedValue(ok({ syllabi: [] }));
@@ -92,7 +92,7 @@ beforeEach(() => {
 describe('PlanningTab (wave 3, all live)', () => {
   it('renders assignments and offers edit; saving PUTs with the stamp and pin', async () => {
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
-    await waitFor(() => expect(screen.getAllByText('Math Fractions').length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText('Fractions').length).toBeGreaterThan(0));
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Edit assignments' })); });
     await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0));
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Save' })); });
@@ -194,15 +194,15 @@ describe('PlanningTab (wave 3, all live)', () => {
     expect(document.querySelectorAll('[data-todo]').length).toBe(0);
   });
 
-  it('standalone units handles object-form entries with unitId property', async () => {
+  it('standalone units handles object-form entries without exposing an unknown ID as a title', async () => {
     schoolApi.assignments.mockResolvedValue(ok({
       learnerId: 'felix', courses: ['math-fractions'], units: ['language-daily', { unitId: 'poetry-study' }], assignedBy: 'kckern', updatedAt: '2026-08-01T00:00:00Z',
     }));
     mount(<PlanningTab learnerId="felix" kids={KIDS} />);
     const standaloneSection = screen.getByRole('heading', { name: 'Standalone work' }).closest('section');
     await waitFor(() => {
-      expect(within(standaloneSection).getByText('Language Daily')).toBeTruthy();
-      expect(within(standaloneSection).getByText('Poetry Study')).toBeTruthy();
+      expect(within(standaloneSection).getByText('Daily Language')).toBeTruthy();
+      expect(within(standaloneSection).getByText('Lesson title unavailable')).toBeTruthy();
     });
   });
 

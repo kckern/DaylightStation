@@ -8,6 +8,9 @@ vi.mock('../schoolApi.js', () => {
     teachers: vi.fn(async () => ({ ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] } })),
     roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }] })),
     teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'felix', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
+    teacherDay: vi.fn(async (studyDay = null) => ({ ok: true, status: 200, data: {
+      schema: 'school.teacher-day/v2', studyDay: studyDay ?? new Date().toISOString().slice(0, 10), learners: [],
+    } })),
     lifecycleReview: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
     learnerSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     progress: vi.fn(async () => ({ ok: true, status: 200, data: { recentScores: [] } })),
@@ -211,32 +214,16 @@ describe('TeacherConsole workspace', () => {
     expect(schoolApi.regradeAttempts).toHaveBeenLastCalledWith(expect.objectContaining({ apply: true, pin: null }), 'grant-1');
   });
 
-  it('reuses one agenda idempotency key when a failed response is confirmed again', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'teacher');
-    const priorDispatches = teacherWorkspaceApi.agendaDispatch.mock.calls.length;
-    schoolApi.agendaPreview.mockResolvedValueOnce({ ok: true, status: 200, data: {
-      sections: [{ subject: 'science', next: { title: 'How Chemistry Surrounds You' } }],
-    } });
-    teacherWorkspaceApi.agendaDispatchPreview.mockResolvedValueOnce({ ok: true, status: 200, data: { ready: true } });
-    teacherWorkspaceApi.agendaDispatch
-      .mockResolvedValueOnce({ ok: false, status: 500, data: { error: 'response lost' } })
-      .mockResolvedValueOnce({ ok: true, status: 201, data: { printed: true, idempotencyKey: 'replayed' } });
+  it('offers an arbitrary-day agenda as a non-recording planning preview', async () => {
     window.history.pushState({}, '', '/school/teacher/students/felix/overview');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Print Felix’s agenda' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Print Felix’s agenda' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm print' })).toBeTruthy());
-
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm print' }));
-      await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
-      fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } });
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-      if (attempt === 0) await waitFor(() => expect(screen.getByText('response lost')).toBeTruthy());
-    }
-    await waitFor(() => expect(screen.getByText('Agenda printed.')).toBeTruthy());
-    const calls = teacherWorkspaceApi.agendaDispatch.mock.calls.slice(priorDispatches);
-    expect(calls).toHaveLength(2);
-    expect(calls[0][2]).toBe(calls[1][2]);
+    await waitFor(() => expect(screen.getByLabelText('Study day')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Study day'), { target: { value: '2026-08-25' } });
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenLastCalledWith('felix', '2026-08-25'));
+    expect(screen.getByText(/never creates a session, agenda artifact, print record/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /print .* agenda/i })).toBeNull();
+    expect(teacherWorkspaceApi.agendaDispatchPreview).not.toHaveBeenCalled();
+    expect(teacherWorkspaceApi.agendaDispatch).not.toHaveBeenCalled();
   });
+
 });

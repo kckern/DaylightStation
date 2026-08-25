@@ -8,9 +8,10 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
+import { teacherDate } from '../teacherDates.js';
 
-function FrozenRecord({ learnerId, periodId }) {
+function FrozenRecord({ learnerId, periodId, titles }) {
   const record = usePanelFetch(() => schoolApi.reportCardFrozen({ learnerId, periodId }), {
     deps: [learnerId, periodId],
     panel: 'frozen-record',
@@ -31,7 +32,7 @@ function FrozenRecord({ learnerId, periodId }) {
       <ul className="teacher-reportcard__courses">
         {(data.courses ?? []).map((c) => (
           <li key={c.courseId}>
-            <span>{labelize(c.courseId)}</span>
+            <span>{titles.course(c.courseId)}</span>
             <span>{typeof c.coursePercent === 'number' ? `${Math.round(c.coursePercent)}%` : '—'}</span>
           </li>
         ))}
@@ -50,6 +51,8 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
     panel: 'frozen-history',
     isEmpty: (d) => !(Array.isArray(d) ? d : []).length,
   });
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'frozen-history-catalog', notFoundAs: 'unavailable' });
+  const titles = curriculumTitles(catalog.data?.units ?? []);
   return (
     <PanelFrame title="Closed periods" state={frozen.state} retry={frozen.retry} emptyCopy="No periods closed yet.">
       <ul className="teacher-frozen">
@@ -60,12 +63,12 @@ export default function FrozenHistory({ learnerId, refreshKey = 0 }) {
               className="teacher-frozen__toggle"
               onClick={() => setOpenPeriodId((cur) => (cur === rec.periodId ? null : rec.periodId))}
             >
-              <span className="teacher-frozen__period">{rec.period?.label ?? labelize(rec.periodId)}</span>
+              <span className="teacher-frozen__period">{rec.period?.label ?? 'Academic period'}</span>
               <span className="teacher-frozen__meta">
-                FROZEN — Closed by {rec.closedBy ?? 'unknown'}{rec.closedAt ? ` on ${String(rec.closedAt).slice(0, 10)}` : ''}
+                FROZEN — Closed by {rec.closedBy ?? 'unknown'}{rec.closedAt ? ` on ${teacherDate(rec.closedAt)}` : ''}
               </span>
             </button>
-            {openPeriodId === rec.periodId && <FrozenRecord learnerId={learnerId} periodId={rec.periodId} />}
+            {openPeriodId === rec.periodId && <FrozenRecord learnerId={learnerId} periodId={rec.periodId} titles={titles} />}
           </li>
         ))}
       </ul>

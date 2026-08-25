@@ -28,7 +28,7 @@ export default function PrintPendingView({ kids }) {
         {jobs.map((job) => (
           <li key={job.id} className="teacher-prints__job">
             <span>{nameFor(job.userId)}</span>
-            <span>{job.label ?? job.printableId}</span>
+            <span>{job.label ?? job.title ?? 'Print request with no published title'}</span>
             <span>{job.pages} pages × {job.copies}</span>
             {waitAge(job.at) && <span className="teacher-review__age">waiting {waitAge(job.at)}</span>}
             <span className="teacher-prints__actions">

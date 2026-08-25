@@ -45,7 +45,6 @@ export const teacherWorkspaceApi = {
     return request(`/learners/${encodeURIComponent(learnerId)}/timeline?${query}`);
   },
   session: (sessionId) => request(`/sessions/${encodeURIComponent(sessionId)}`),
-  worksheetPdf: (sessionId) => requestBlob(`/sessions/${encodeURIComponent(sessionId)}/worksheet.pdf`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
   lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),
   lessonPreviewUrl: (courseId, lessonId, { answerKey = false } = {}) => (

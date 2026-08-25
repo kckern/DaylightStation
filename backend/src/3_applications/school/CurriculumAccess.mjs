@@ -192,13 +192,17 @@ export class CurriculumAccess {
    *            passingPercent: number|null, hasBank: boolean, hasDocument: boolean,
    *            hasMedia: boolean}}
    */
-  static summarise(unit) {
+  static summarise(unit, courseTitle = null) {
     return {
       unitId: unit.unitId,
       title: unit.title,
       subject: unit.subject,
       objectives: [...(unit.objectives ?? [])],
       courseId: unit.courseId ?? null,
+      // A course id is an internal join key, never a display label.  Teacher
+      // surfaces need the resolved title to name an assignment or enrollment
+      // without guessing from a slug.
+      courseTitle: courseTitle ?? null,
       sequence: unit.sequence ?? null,
       module: unit.module ?? null,
       grades: [...(unit.grades ?? [])],
@@ -211,13 +215,30 @@ export class CurriculumAccess {
 
   /** @returns {Promise<object[]>} every publishable unit, summarised */
   async listUnitSummaries() {
-    return (await this.listUnits()).map((unit) => CurriculumAccess.summarise(unit));
+    const current = await this.#current();
+    return [...current.units.values()].map((unit) => CurriculumAccess.summarise(
+      unit,
+      this.#courseFor(current, unit.courseId)?.title ?? null,
+    ));
   }
 
   /** @returns {Promise<object|null>} null for an unknown or unpublished unit */
   async getUnitSummary(unitId) {
-    const unit = await this.getUnit(unitId);
-    return unit ? CurriculumAccess.summarise(unit) : null;
+    const current = await this.#current();
+    const unit = current.units.get(unitId) ?? null;
+    return unit ? CurriculumAccess.summarise(unit, this.#courseFor(current, unit.courseId)?.title ?? null) : null;
+  }
+
+  // Unit authors historically used both `course` and `subject/course` ids.
+  // The full curriculum model already accepts either for its join; its public
+  // summary must do the same or title-bearing responses disappear depending
+  // on which harmless spelling an author chose.
+  #courseFor(current, courseId) {
+    if (!courseId) return null;
+    return current.works.get(courseId)
+      ?? [...current.works.values()].find((work) => work.work === courseId
+        || `${work.subject}/${work.work}` === courseId)
+      ?? null;
   }
 }
 

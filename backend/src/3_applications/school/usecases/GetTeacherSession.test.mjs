@@ -9,7 +9,7 @@ const events = [
 ];
 
 describe('GetTeacherSession artifact read-through', () => {
-  it('exposes a legacy published worksheet as immutable session history without writing', async () => {
+  it('does not misrepresent a published revision as the original historical worksheet', async () => {
     const getPublished = vi.fn(async () => ({ id: 'civilization/young-peoples-atlas-us/ws-ses-illinois', rev: 'frozen-rev', title: 'Illinois' }));
     const useCase = new GetTeacherSession({
       sessions: {
@@ -40,10 +40,10 @@ describe('GetTeacherSession artifact read-through', () => {
       },
       assignment: { documentRevision: 'frozen-rev', questions: [{ prompt: 'Which state is Illinois?' }] },
       assessment: { items: [{ given: 'Illinois', verdict: 'correct' }] },
-      artifacts: [{ kind: 'assignment', origin: 'published-document', exactBytesRetained: false }],
+      artifacts: [{ artifactId: 'civilization/young-peoples-atlas-us/ws-ses-illinois', availability: 'unavailable', exactBytesRetained: false }],
     });
-    expect(result.artifacts[0].originalPdfUrl).toContain('/sessions/ses_illinois/worksheet.pdf');
-    expect(result.artifacts[0].thumbnailUrl).toContain('/sessions/ses_illinois/worksheet.thumbnail.png');
+    expect(result.artifacts[0].originalPdfUrl).toBeUndefined();
+    expect(result.artifacts[0].thumbnailUrl).toBeUndefined();
     expect(getPublished).toHaveBeenCalledWith('civilization/young-peoples-atlas-us/ws-ses-illinois', 'frozen-rev');
   });
 });

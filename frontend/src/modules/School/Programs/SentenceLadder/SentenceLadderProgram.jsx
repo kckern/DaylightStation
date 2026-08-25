@@ -254,8 +254,8 @@ export default function SentenceLadderProgram({
           first. */}
       <header className="lang-program__header">
         <div className="lang-program__identity">
-          <span className="lang-program__eyebrow">{preview ? 'Guest preview — nothing is saved' : 'Today\'s session'}</span>
-          <h2 className="lang-program__day">Day {day?.day}</h2>
+          <span className="lang-program__eyebrow">{preview ? 'Sentence Ladder · guest preview — nothing is saved' : 'Today\'s session'}</span>
+          <h2 className="lang-program__day">{preview ? `${day?.corpus?.label ?? 'Sentence Ladder'} · Day ${day?.day}` : `Day ${day?.day}`}</h2>
         </div>
         <div className="lang-program__actions">
           {!preview && !locked && <PacingControl value={day?.dailyLimit} onChange={onPacing} />}

@@ -111,15 +111,6 @@ const SchoolDeepLinkRedirect = () => {
   return <Navigate to={`/app${pathname}${search}`} replace />;
 };
 
-// /app/school/teacher[/…] → /school/teacher[/…]: the teacher console is a
-// standalone surface, never the school app widget — but the /app spelling is
-// one redirect away for anyone who lands there, sub-path and query preserved
-// (a phone home-screen shortcut may deep-link a tab + learner).
-const TeacherDeepLinkRedirect = () => {
-  const { pathname, search } = useLocation();
-  return <Navigate to={`${pathname.replace(/^\/app/, '')}${search}`} replace />;
-};
-
 // Standalone /app/:appId route — renders a registered app directly without the TV shell.
 // Used for testing and direct linking to specific apps (e.g. /app/weekly-review).
 const AppDirectRoute = () => {
@@ -190,16 +181,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             static routes outrank the /school/* splat (v6 ranking), so the
             kids' shell never parses a /school/teacher URL. */}
         <Route path="/school/teacher" element={<TeacherConsoleRoute />} />
-        <Route path="/school/teacher/dashabord" element={<Navigate to="/school/teacher/dashboard" replace />} />
         <Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />
-        {/* Temporary rollout alias for teacher-workspace validation. It uses
-            the same route-aware shell, so bookmarks remain valid at cutover. */}
-        <Route path="/school/teacher-next" element={<TeacherConsoleRoute />} />
-        <Route path="/school/teacher-next/*" element={<TeacherConsoleRoute />} />
-        <Route path="/app/school/teacher" element={<TeacherDeepLinkRedirect />} />
-        <Route path="/app/school/teacher/*" element={<TeacherDeepLinkRedirect />} />
-        <Route path="/app/school/teacher-next" element={<TeacherDeepLinkRedirect />} />
-        <Route path="/app/school/teacher-next/*" element={<TeacherDeepLinkRedirect />} />
         <Route path="/school/*" element={<SchoolDeepLinkRedirect />} />
         <Route path="/app/:appId/*" element={<AppDirectRoute />} />
         <Route path="/app/:appId" element={<AppDirectRoute />} />

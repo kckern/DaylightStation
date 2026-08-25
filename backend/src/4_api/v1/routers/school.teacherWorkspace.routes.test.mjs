@@ -69,42 +69,36 @@ describe('teacher workspace routes', () => {
       });
   });
 
-  it('renders a read-only first-page thumbnail from the frozen worksheet replay', async () => {
-    const getTeacherSession = { execute: vi.fn(async () => ({
-      state: { learnerId: 'milo' }, assignment: { documentId: 'civilization/atlas', documentRevision: 3 },
-      worksheetSnapshot: { learnerId: 'milo', issuedAt: '2026-08-24T14:00:00.000Z' },
-    })) };
-    const printDocumentsRepo = { getPublished: vi.fn(async () => ({ id: 'atlas' })) };
+  it('renders a thumbnail only from retained original worksheet bytes', async () => {
     const renderPrintDocument = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF frozen worksheet') })) };
+    const issuedArtifactStore = { get: vi.fn(async () => ({
+      manifest: { artifactId: 'worksheet_1', representation: { mediaType: 'application/pdf', extension: 'pdf' } },
+      bytes: Buffer.from('%PDF exact worksheet'),
+    })) };
     const renderWorksheetThumbnail = vi.fn(async (pdf) => {
-      expect(Buffer.compare(pdf, Buffer.from('%PDF frozen worksheet'))).toBe(0);
-      return Buffer.from('first page png');
+      expect(Buffer.compare(pdf, Buffer.from('%PDF exact worksheet'))).toBe(0);
+      return Buffer.from('exact first page png');
     });
-    await request(app({ getTeacherSession, printDocumentsRepo, renderPrintDocument, renderWorksheetThumbnail }))
-      .get('/api/v1/school/teacher/sessions/ses_1/worksheet.thumbnail.png')
-      .expect(200).expect('Content-Type', /image\/png/).expect('X-School-Artifact', 'deterministic-replay-preview')
-      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('first page png'))).toBe(0));
-    expect(getTeacherSession.execute).toHaveBeenCalledWith({ sessionId: 'ses_1' });
-    expect(renderPrintDocument.execute).toHaveBeenCalledWith(expect.objectContaining({ document: { id: 'atlas' } }));
+    await request(app({ issuedArtifactStore, renderPrintDocument, renderWorksheetThumbnail }))
+      .get('/api/v1/school/teacher/artifacts/worksheet_1/thumbnail.png')
+      .expect(200).expect('Content-Type', /image\/png/).expect('X-School-Artifact', 'exact-thumbnail')
+      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('exact first page png'))).toBe(0));
+    expect(renderPrintDocument.execute).not.toHaveBeenCalled();
+    expect(renderWorksheetThumbnail).toHaveBeenCalledTimes(1);
   });
 
-  it('serves a retained receipt PNG and a separately labelled frozen replay', async () => {
+  it('serves the retained receipt PNG without offering a reconstruction route', async () => {
     const issuedArtifactStore = { get: vi.fn(async () => ({
       manifest: { artifactId: 'receipt_1', kind: 'result-receipt',
-        representation: { mediaType: 'image/png', extension: 'png' }, sourceDocument: { id: 'receipt_1' } },
+        representation: { mediaType: 'image/png', extension: 'png' } },
       bytes: Buffer.from('original raster'),
     })) };
-    const renderReceiptArtifact = vi.fn(async () => ({ bytes: Buffer.from('frozen replay') }));
-    const server = app({ issuedArtifactStore, renderReceiptArtifact, teacherCapabilitySessions: activeCapability() });
+    const server = app({ issuedArtifactStore, teacherCapabilitySessions: activeCapability() });
     await teacherCookie(request(server).get('/api/v1/school/teacher/artifacts/receipt_1/original'))
       .expect(200).expect('Content-Type', /image\/png/).expect((response) => {
         expect(Buffer.compare(response.body, Buffer.from('original raster'))).toBe(0);
       });
-    await teacherCookie(request(server).get('/api/v1/school/teacher/artifacts/receipt_1/replay.png'))
-      .expect(200).expect('X-School-Artifact', 'frozen-replay').expect((response) => {
-        expect(Buffer.compare(response.body, Buffer.from('frozen replay'))).toBe(0);
-      });
-    expect(renderReceiptArtifact).toHaveBeenCalledWith({ id: 'receipt_1' });
+    await teacherCookie(request(server).get('/api/v1/school/teacher/artifacts/receipt_1/replay.png')).expect(404);
   });
 
   it('dispatches receipt reprints to the retained-raster printer path', async () => {

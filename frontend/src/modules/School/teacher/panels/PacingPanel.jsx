@@ -7,7 +7,8 @@
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
+import { teacherDate, teacherDateRange } from '../teacherDates.js';
 
 export default function PacingPanel({ learnerId, periodId }) {
   const report = usePanelFetch(() => schoolApi.progressReport({ learnerId, periodId }), {
@@ -15,6 +16,8 @@ export default function PacingPanel({ learnerId, periodId }) {
     panel: 'progress-report',
     nullAs: 'unavailable',
   });
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'pacing-catalog', notFoundAs: 'unavailable' });
+  const titles = curriculumTitles(catalog.data?.units ?? []);
   const data = report.data;
   return (
     <PanelFrame
@@ -37,8 +40,8 @@ export default function PacingPanel({ learnerId, periodId }) {
           <ul className="teacher-milestones">
             {(data.milestones ?? []).map((m) => (
               <li key={m.id} className="teacher-milestones__row" data-status={m.effectiveStatus}>
-                <span className="teacher-milestones__unit">{m.label ?? labelize(m.unitId)}</span>
-                <span className="teacher-milestones__due">by {m.dueBy}</span>
+                <span className="teacher-milestones__unit">{m.label ?? titles.lesson(m.unitId)}</span>
+                <span className="teacher-milestones__due">by {teacherDate(m.dueBy)}</span>
                 <span className="teacher-milestones__status">
                   {m.effectiveStatus === 'excused'
                     ? `excused — ${m.excusedDays} enrichment day${m.excusedDays === 1 ? '' : 's'}`
@@ -58,7 +61,7 @@ export default function PacingPanel({ learnerId, periodId }) {
               {data.enrichment.entries.map((e) => (
                 <li key={e.id} className="teacher-enrichment__row">
                   <span className="teacher-enrichment__title">{e.title}</span>
-                  <span className="teacher-enrichment__dates">{e.from}{e.to && e.to !== e.from ? ` → ${e.to}` : ''}</span>
+                  <span className="teacher-enrichment__dates">{teacherDateRange(e.from, e.to)}</span>
                 </li>
               ))}
             </ul>

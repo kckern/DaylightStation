@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { teacherDateRange } from '../teacherDates.js';
 
 const day = (iso) => (typeof iso === 'string' ? iso.slice(0, 10) : '');
 // Re-attach the ORIGINAL instant's time-of-day to an edited date; a new row
@@ -102,7 +103,7 @@ export default function PeriodsTimeline() {
                 return (
                   <li key={p.periodId} className="teacher-periods__period" data-current={current ? '' : undefined}>
                     <span className="teacher-periods__label">{p.label}</span>
-                    <span className="teacher-periods__range">{day(p.startsAt)} → {day(p.endsAt)}</span>
+                    <span className="teacher-periods__range">{teacherDateRange(p.startsAt, p.endsAt)}</span>
                     {narrowestCurrent && <span className="teacher-periods__now">current</span>}
                   </li>
                 );

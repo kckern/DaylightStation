@@ -14,7 +14,7 @@ import PianoProgramsPanel from '../panels/PianoProgramsPanel.jsx';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from '../panels/PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
 
 /**
  * Work belonging to no course — program units (daily language study) and
@@ -29,6 +29,10 @@ function StandaloneUnits({ learnerId }) {
     isEmpty: (d) => !(d?.units ?? []).length,
   });
   const idOf = (e) => (typeof e === 'string' ? e : e?.unitId);
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
+    panel: 'standalone-units-catalog', notFoundAs: 'unavailable',
+  });
+  const titles = curriculumTitles(catalog.data?.units ?? []);
   return (
     <PanelFrame
       title="Standalone work"
@@ -38,7 +42,7 @@ function StandaloneUnits({ learnerId }) {
     >
       <ul className="teacher-standalone">
         {(record.data?.units ?? []).map(idOf).filter(Boolean).map((id) => (
-          <li key={id}>{labelize(id)}</li>
+          <li key={id}>{titles.lesson(id)}</li>
         ))}
       </ul>
     </PanelFrame>

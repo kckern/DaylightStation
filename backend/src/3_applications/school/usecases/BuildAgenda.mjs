@@ -35,7 +35,7 @@ import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
-import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayForInstant } from '#domains/school/studyDay.mjs';
+import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
@@ -69,7 +69,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService; #curriculumExceptions; #languageReelService;
+  #selfService; #curriculumExceptions; #languageReelService; #previewOnly;
 
   /**
    * @param {object} deps
@@ -110,6 +110,11 @@ export class BuildAgenda {
     attestations = null, teacherNotes = null,
     schoolCalcStudies = null, schoolCalcMode = 'off',
     selfService = null, curriculumExceptions = null, languageReelService = null,
+    // A planning preview may render the same agenda without manufacturing a
+    // plausible-looking scan ticket.  It is deliberately distinct from
+    // `selfService`: even when self-service is enabled for real paper, a
+    // preview has no actionable QR or digit code at all.
+    previewOnly = false,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -136,6 +141,7 @@ export class BuildAgenda {
     this.#schoolCalcMode = schoolCalcMode;
     this.#curriculumExceptions = curriculumExceptions;
     this.#languageReelService = languageReelService;
+    this.#previewOnly = previewOnly === true;
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
     // byte for byte — no code minted, no key on the record, no line on the paper.
     this.#selfService = selfService?.enabled === true;
@@ -158,7 +164,7 @@ export class BuildAgenda {
    *                     token: string, tokenClass: 'subject_next', label: string}>,
    *                     createdSessions: string[], document: object }>}
    */
-  async execute({ learnerId, learnerName = null } = {}) {
+  async execute({ learnerId, learnerName = null, studyDay = null } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       // No identity means no session and no records (§ guest path). The child
       // still gets paper — an explanation is the whole point of the slip.
@@ -176,7 +182,20 @@ export class BuildAgenda {
       };
     }
 
-    const now = this.#clock();
+    // A dry-run caller may ask what a particular *study day* would offer.
+    // Choose the midpoint of that day rather than treating YYYY-MM-DD as UTC:
+    // the planner and printed heading must agree with the household's 4am
+    // study-day boundary, including DST. Normal issuance never passes this
+    // argument and continues to use the live clock.
+    const window = studyDay == null ? null : studyDayWindowForDate(studyDay, {
+      timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR,
+    });
+    if (studyDay != null && !window) {
+      throw new ValidationError('studyDay must be a real date in YYYY-MM-DD form');
+    }
+    const now = window
+      ? new Date(window.startAtMs + Math.floor((window.endAtMs - window.startAtMs) / 2))
+      : this.#clock();
     const nowIso = now.toISOString();
     const [assignment, units, works, rawHistory] = await Promise.all([
       this.#assignments.get(learnerId),
@@ -271,6 +290,16 @@ export class BuildAgenda {
         offers.push({
           subject: section.subject, unitId: entry.unitId, sessionId,
           token: null, tokenClass: 'schoolcalc_study', calculator,
+          label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
+        });
+        continue;
+      }
+
+      if (this.#previewOnly) {
+        actionLabelBySubject.set(section.subject, 'Preview only — ask a grown-up to start this lesson.');
+        offers.push({
+          subject: section.subject, unitId: entry.unitId, sessionId,
+          token: null, tokenClass: 'preview',
           label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
         });
         continue;

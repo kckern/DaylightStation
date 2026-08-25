@@ -42,7 +42,7 @@ export default function QuizRequestBacklog({ kids }) {
             <li key={`${key}:${i}`} className="teacher-quizreq__row">
               {r.kind === 'retake' && <span className="teacher-quizreq__kind">retake</span>}
               {r.kind === 'flag' && <span className="teacher-quizreq__kind teacher-quizreq__kind--flag">flag</span>}
-              <span>{r.unitTitle ?? r.title ?? r.unitId ?? r.bankId}</span>
+              <span>{r.unitTitle ?? r.title ?? r.bankTitle ?? 'Requested work with no published title'}</span>
               <span className="teacher-quizreq__meta">
                 {r.kind === 'retake'
                   ? `wants another try — asked by ${nameFor(r.userId)}`

@@ -32,7 +32,7 @@ const session = {
     items: [{ itemId: 'illinois-capital', questionNumber: 1, prompt: 'What is the capital of Illinois?', given: 'Springfield', verdict: 'correct' }],
   },
   artifacts: [
-    { artifactId: 'worksheet-illinois', kind: 'assignment', availability: 'deterministic-replay', originalPdfUrl: '/api/v1/school/teacher/sessions/ses_a6NVUhN9/worksheet.pdf', thumbnailUrl: '/api/v1/school/teacher/sessions/ses_a6NVUhN9/worksheet.thumbnail.png' },
+    { artifactId: 'worksheet-illinois', kind: 'assignment', availability: 'exact', originalPdfUrl: '/api/v1/school/teacher/artifacts/worksheet-illinois/original.pdf', thumbnailUrl: '/api/v1/school/teacher/artifacts/worksheet-illinois/thumbnail.png' },
     { artifactId: 'receipt-illinois', kind: 'result-receipt', availability: 'exact', originalUrl: '/api/v1/school/teacher/artifacts/receipt-illinois/original' },
   ],
 };
@@ -58,11 +58,27 @@ async function installTeacherReadModel(page) {
   });
   await page.route('**/api/v1/school/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
-    if (pathname.endsWith('/worksheet.thumbnail.png')) {
+    if (pathname.endsWith('/sentence-ladder/courses')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+        { id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 },
+      ]) });
+      return;
+    }
+    if (pathname.endsWith('/sentence-ladder/preview/glossika-korean/day')) {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        schema: 'school.sentence-ladder-guest-preview/v1',
+        corpus: { id: 'glossika-korean', label: 'Glossika Korean', languages: { source: 'EN', target: 'KR' }, size: 3000 },
+        day: 1, dailyLimit: 5, chain: ['repetition'], creditChain: ['repetition'], missingCreditRungs: [],
+        queue: [{ seq: 1, rung: 'repetition', done: false, text: { EN: 'Hello.', KR: '안녕하세요.' }, prompt: [{ role: 'source', language: 'EN' }, { role: 'target', language: 'KR' }], response: null }],
+        summary: { total: 1, done: 0 }, rollover: { roll: false, reason: 'guest-preview' },
+      }) });
+      return;
+    }
+    if (pathname.endsWith('/artifacts/worksheet-illinois/thumbnail.png')) {
       await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="210"><rect width="100%" height="100%" fill="#fff"/><text x="22" y="55" font-size="22">Illinois</text><text x="22" y="88" font-size="14">6 questions</text></svg>' });
       return;
     }
-    if (pathname.endsWith('/worksheet.pdf')) {
+    if (pathname.endsWith('/artifacts/worksheet-illinois/original.pdf')) {
       await route.fulfill({ status: 200, contentType: 'application/pdf', body: onePagePdf });
       return;
     }
@@ -74,10 +90,22 @@ async function installTeacherReadModel(page) {
       await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="120"><rect width="100%" height="100%" fill="#b8873b"/><text x="10" y="58" font-size="12">Atlas</text></svg>' });
       return;
     }
+    if (pathname.endsWith('/agenda/preview')) {
+      const studyDay = new URL(route.request().url()).searchParams.get('studyDay');
+      if (new URL(route.request().url()).searchParams.get('format') === 'json') {
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          learnerId: 'milo', studyDay,
+          sections: [{ subject: 'civilization', next: { title: 'Illinois' } }], entries: [], errors: [],
+        }) });
+      } else {
+        await route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="100%" height="100%" fill="#fff"/><text x="24" y="70" font-size="24">Milo agenda preview</text></svg>' });
+      }
+      return;
+    }
     const data = pathname.endsWith('/roster') ? [milo]
       : pathname.endsWith('/teachers') ? { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] }
         : pathname.endsWith('/teacher/auth/status') ? { active: false }
-          : pathname.endsWith('/teacher/day') ? day
+        : pathname.endsWith('/teacher/day') ? { schema: 'school.teacher-day/v2', studyDay: new URL(route.request().url()).searchParams.get('studyDay') ?? '2026-08-24', learners: day }
           : pathname.endsWith('/lifecycle/review') ? { items: [] }
               : pathname.endsWith('/print/pending') || pathname.endsWith('/quiz-requests') ? []
               : pathname.endsWith('/teacher/sessions/ses_a6NVUhN9') ? session
@@ -87,6 +115,23 @@ async function installTeacherReadModel(page) {
 }
 
 test.describe('Teacher workspace route contracts', () => {
+  test('opens Sentence Ladder as a stateless guest preview', async ({ page }) => {
+    const learnerWrites = [];
+    page.on('request', (request) => {
+      if (/\/sentence-ladder\/users\//.test(new URL(request.url()).pathname)) learnerWrites.push(request.url());
+    });
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await installTeacherReadModel(page);
+    await page.goto('/school/sentence-ladder-preview/glossika-korean');
+
+    await expect(page.getByText('Sentence Ladder · guest preview — nothing is saved', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Glossika Korean · Day 1' })).toBeVisible();
+    await expect(page.getByText('Hello.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Review' })).toHaveCount(0);
+    expect(learnerWrites).toEqual([]);
+    await page.screenshot({ path: path.join(OUT_DIR, 'sentence-ladder-guest-preview.png'), fullPage: true });
+  });
+
   test('opens a historical session read-only with the real lesson taxonomy', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await installTeacherReadModel(page);
@@ -97,13 +142,16 @@ test.describe('Teacher workspace route contracts', () => {
     await expect(page.getByText('Milo completed this lesson', { exact: false })).toBeVisible();
     await expect(page.getByText('United States Regions and States', { exact: true })).toBeVisible();
     await expect(page.getByText('Midwest', { exact: true })).toBeVisible();
+    await expect(page.locator('.teacher-subject-identity .teacher-subject-identity__icon')).toHaveCount(1);
+    await expect(page.locator('.teacher-lesson-identity__poster')).toHaveAttribute('src', /teacher\/curriculum\/.*\/poster\.jpg$/);
     await expect(page.getByText('Couldn’t load this session.')).not.toBeVisible();
     await expect(page.getByText('Worksheet and questions', { exact: true })).toBeVisible();
     await expect(page.getByText('Answers and result', { exact: true })).toBeVisible();
     await expect(page.getByText('Issued materials and results', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /worksheet\.pdf$/);
+    await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
     await expect(page.getByRole('link', { name: 'Open receipt' })).toHaveAttribute('href', /receipt-illinois\/original$/);
-    await expect(page.getByText(/Artifact lineage|Historical document|Open replayed worksheet/i)).toHaveCount(0);
+    await expect(page.getByText(/Artifact lineage|Historical document|Open replayed worksheet|Score record/i)).toHaveCount(0);
+    await expect(page.locator('a[href*="/results/"]')).toHaveCount(0);
 
     await page.screenshot({ path: path.join(OUT_DIR, 'session-inspector.png'), fullPage: true });
   });
@@ -118,7 +166,9 @@ test.describe('Teacher workspace route contracts', () => {
 
     await expect(page.getByText('Illinois', { exact: true })).toBeVisible();
     await expect(page.getByText('Civilization', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /worksheet\.pdf$/);
+    await expect(page.locator('.teacher-roster__details .teacher-subject-identity__icon')).toHaveCount(1);
+    await expect(page.locator('.teacher-roster__details .teacher-lesson-identity__poster')).toHaveAttribute('src', /teacher\/curriculum\/.*\/poster\.jpg$/);
+    await expect(page.getByRole('link', { name: 'Open worksheet' })).toHaveAttribute('href', /artifacts\/worksheet-illinois\/original\.pdf$/);
     await expect(page.getByRole('link', { name: 'Download PDF' })).toHaveAttribute('download', '');
     await expect(page.getByRole('link', { name: 'Open receipt' })).toHaveAttribute('href', /receipt-illinois\/original$/);
     await expect(page.getByText(/No printable lessons/i)).toHaveCount(0);
@@ -126,5 +176,26 @@ test.describe('Teacher workspace route contracts', () => {
     await expect(page.getByText(/P044/i)).toHaveCount(0);
 
     await page.locator('.teacher-roster__details').screenshot({ path: path.join(OUT_DIR, 'today-issued-artifacts.png') });
+  });
+
+  test('lets a teacher preview any agenda day without creating an agenda record or printer dispatch', async ({ page }) => {
+    const writes = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (request.method() !== 'GET' && /\/agenda\/(dispatch|preview)/.test(url.pathname)) writes.push({ method: request.method(), path: url.pathname });
+    });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await installTeacherReadModel(page);
+    await page.goto('/school/teacher/students/milo/overview');
+
+    const studyDay = page.locator('input[type="date"]');
+    await expect(studyDay).toHaveCount(1);
+    await studyDay.fill('2099-01-01');
+    await expect(page.getByText('Agenda preview for Thursday, Jan 1', { exact: true })).toBeVisible();
+    await expect(page.getByText('Planning preview only — this never creates a session, agenda artifact, print record, working QR, or digit code.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Print Milo’s agenda' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /print .* agenda/i })).toHaveCount(0);
+    expect(writes).toEqual([]);
+    await page.screenshot({ path: path.join(OUT_DIR, 'future-agenda-preview.png'), fullPage: true });
   });
 });

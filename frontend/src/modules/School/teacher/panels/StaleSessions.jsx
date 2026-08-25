@@ -13,7 +13,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
+import { teacherDate } from '../teacherDates.js';
 
 export default function StaleSessions({ kids = [] }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
@@ -43,11 +43,11 @@ export default function StaleSessions({ kids = [] }) {
         {(stale.data?.sessions ?? []).map((row) => (
           <li key={row.sessionId} className="teacher-stale__row">
             <span className="teacher-stale__who">{nameFor(row.learnerId)}</span>
-            <span className="teacher-stale__what">{labelize(row.unitId) || row.sessionId}</span>
+            <span className="teacher-stale__what">{row.unitTitle ?? row.title ?? 'Session with no published lesson title'}</span>
             <span className="teacher-stale__meta">
               {/* Human copy (audit): 'created since 2026-07-30' was written by
                   string concatenation, not a person. */}
-              waiting since {String(row.updatedAt ?? '').slice(0, 10)} ({row.state ?? 'open'})
+              waiting since {teacherDate(row.updatedAt)} ({row.state ?? 'open'})
             </span>
             {asking === row.sessionId ? (
               <span className="teacher-stale__reason">

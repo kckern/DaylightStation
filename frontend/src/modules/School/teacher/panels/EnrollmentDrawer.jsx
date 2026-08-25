@@ -8,10 +8,9 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import { labelize } from '../labelize.js';
 import { teacherLog } from '../teacherLog.js';
 
-export default function EnrollmentDrawer({ learner, courseId, cell, syllabi = [], baseUpdatedAt = null, onClose, onChanged }) {
+export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Course title unavailable', cell, syllabi = [], baseUpdatedAt = null, onClose, onChanged }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrollment' });
   const offered = syllabi.filter((s) => s.courseId === courseId);
   const [choice, setChoice] = useState(cell?.syllabusId ?? offered[0]?.syllabusId ?? '');
@@ -34,9 +33,9 @@ export default function EnrollmentDrawer({ learner, courseId, cell, syllabi = []
   }), { onSuccess: after('enrollment-removed') });
 
   return (
-    <aside className="teacher-drawer" data-testid="enrollment-drawer" role="dialog" aria-label={`${learner.name} — ${labelize(courseId)}`}>
+    <aside className="teacher-drawer" data-testid="enrollment-drawer" role="dialog" aria-label={`${learner.name} — ${courseTitle}`}>
       <header className="teacher-drawer__head">
-        <h3>{learner.name} · {labelize(courseId)}</h3>
+        <h3>{learner.name} · {courseTitle}</h3>
         <button type="button" onClick={onClose} aria-label="Close">✕</button>
       </header>
 

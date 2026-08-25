@@ -23,6 +23,7 @@ vi.mock('../../schoolApi.js', () => ({
     progressReport: vi.fn(),
     closePeriod: vi.fn(),
     materials: vi.fn(),
+    curriculumUnits: vi.fn(),
   },
 }));
 const { schoolApi } = await import('../../schoolApi.js');
@@ -70,6 +71,9 @@ beforeEach(() => {
   }));
   schoolApi.closePeriod.mockResolvedValue(ok({ closedBy: 'kckern', closedAt: '2026-08-06T12:00:00Z' }));
   schoolApi.materials.mockResolvedValue(ok({ materials: [{ id: 'plex:384855', label: 'I Survived (audio)' }] }));
+  schoolApi.curriculumUnits.mockResolvedValue(ok({ units: [
+    { unitId: 'math-fractions.02', title: 'Adding Fractions', subject: 'math', courseId: 'math-fractions', courseTitle: 'Fractions' },
+  ] }));
 });
 
 afterEach(() => {
@@ -83,7 +87,7 @@ describe('RecordsTab', () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
     await waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-fall' }));
     await waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
-    expect(screen.getAllByText(/math-fractions/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Fractions').length).toBeGreaterThan(0);
     expect(screen.getByText(/88%/)).toBeTruthy();
     expect(screen.getByText(/best-of-unit-mean-v1/)).toBeTruthy();
     // Spec 4.2: materials progress and remediation arcs are part of the card.

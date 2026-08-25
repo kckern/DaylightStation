@@ -238,6 +238,7 @@ export function createSchoolLifecycleRouter({
       const result = await previewAgenda.execute({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
+        studyDay: req.query.studyDay ?? null,
       });
       await sendAgendaPng(res, result);
     }));
@@ -265,9 +266,11 @@ export function createSchoolLifecycleRouter({
     }));
   }
 
-  // --- agenda preview (dry-run PNG, real QR) ---------------------------------
+  // --- agenda preview (dry-run PNG, no working ticket) ----------------------
   // A parent/planning surface, not the console: same document `buildAgenda`
-  // would print, rendered straight to a PNG rather than issued to paper. Both
+  // would print, rendered straight to a PNG rather than issued to paper. The
+  // preview builder is configured without a ticket/code, so this image cannot
+  // masquerade as a usable learner agenda. Both
   // `previewAgenda` (composition's dry-run twin of `buildAgenda`, spec §3 —
   // never opens a session, never mints a live ticket) and `receiptPngRenderer`
   // (the `1_rendering` PNG renderer) are required; either alone is a
@@ -277,14 +280,17 @@ export function createSchoolLifecycleRouter({
       const result = await previewAgenda.execute({
         learnerId: req.params.learnerId,
         learnerName: learnerName(req),
+        studyDay: req.query.studyDay ?? null,
       });
       // The teacher console's morning drill-in (advocacy A3): the same
       // dry-run plan as DATA — subject sections with next/served — instead
       // of the printed PNG. No side effects either way (previewAgenda never
       // opens a session or mints a live ticket).
       if (req.query.format === 'json') {
-        return res.set('Cache-Control', 'no-store').json({
+        return res.set('Cache-Control', 'private, no-store')
+          .set('X-School-Preview', 'agenda-non-recording').json({
           learnerId: req.params.learnerId,
+          studyDay: req.query.studyDay ?? null,
           sections: result.sections ?? [],
           entries: result.plan?.entries ?? [],
           // Planner refusals (admin advocacy A4): a dead course id used to
@@ -292,6 +298,7 @@ export function createSchoolLifecycleRouter({
           errors: result.plan?.errors ?? [],
         });
       }
+      res.set('Cache-Control', 'private, no-store').set('X-School-Preview', 'agenda-non-recording');
       await sendAgendaPng(res, result);
     }));
   } else if (previewAgenda || receiptPngRenderer) {
