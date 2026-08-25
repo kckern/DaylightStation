@@ -18,7 +18,7 @@ describe('GetTeacherSession artifact read-through', () => {
       },
       curriculum: {
         getUnit: vi.fn(async () => ({ unitId: 'atlas-us-p044-illinois', title: 'Illinois', subject: 'Civilization', courseId: 'young-peoples-atlas-us', module: 'United States' })),
-        listWorks: vi.fn(async () => [{ work: 'young-peoples-atlas-us', title: 'Young People’s Atlas of the United States', subject: 'Civilization' }]),
+        listWorks: vi.fn(async () => [{ work: 'young-peoples-atlas-us', title: 'Young People’s Atlas of the United States', subject: 'Civilization', modules: [{ module: 'United States', title: 'United States Regions and States' }] }]),
         listUnits: vi.fn(async () => [{ unitId: 'atlas-us-p044-illinois', title: 'Illinois', courseId: 'young-peoples-atlas-us' }]),
       },
       worksheetInstances: { findBySession: vi.fn(async () => ({
@@ -34,7 +34,7 @@ describe('GetTeacherSession artifact read-through', () => {
 
     expect(result).toMatchObject({
       schema: 'school.teacher-session/v4',
-      taxonomy: { lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States' },
+      taxonomy: { lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States', moduleTitle: 'United States Regions and States' },
       assignment: { documentRevision: 'frozen-rev', questions: [{ prompt: 'Which state is Illinois?' }] },
       assessment: { items: [{ given: 'Illinois', verdict: 'correct' }] },
       artifacts: [{ kind: 'assignment', origin: 'published-document', exactBytesRetained: false }],

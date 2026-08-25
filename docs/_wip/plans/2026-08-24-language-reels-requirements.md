@@ -27,6 +27,15 @@ from context, understand the scene, and answer questions about its meaning. When
 speaking is enabled, the learner also hears their voice participate in the reel.
 This is a low-pressure experience, never a pronunciation assessment.
 
+## Daily assignment policy
+
+An enrolled learner may receive one Language Reel per School study day. At
+agenda creation the server chooses a category first, then a reel from that
+category; the selected pair is persisted against the study-day key so a
+reprinted agenda does not reshuffle the learner's work. Only reviewed,
+`approved` reels enter that selection pool. An empty approved pool produces no
+Language Reel offer rather than exposing an unreviewed import.
+
 ## Scope
 
 ### In scope

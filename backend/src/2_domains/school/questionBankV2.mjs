@@ -48,6 +48,8 @@ export function normalizeQuestionBankV2(raw) {
 function profileSpec(profile) {
   if (profile === 'lower') return { count: 6, visible: [3, 4], multiMin: 0, multiMax: 0 };
   if (profile === 'upper') return { count: 10, visible: [5], multiMin: 1, multiMax: 2 };
+  if (profile === 'lower-3') return { count: 3, visible: [3, 4], multiMin: 0, multiMax: 0 };
+  if (profile === 'upper-5') return { count: 5, visible: [5], multiMin: 0, multiMax: 0 };
   throw new Error(`unknown worksheet profile: ${profile}`);
 }
 
@@ -77,7 +79,8 @@ export function issueWorksheet({ bank, learnerId, enrollmentId, lessonId, profil
   const normalized = bank.revision ? bank : normalizeQuestionBankV2(bank);
   const spec = profileSpec(profile);
   const random = seeded(seed ?? `${normalized.revision}:${learnerId}:${enrollmentId}:${lessonId}`);
-  let eligible = normalized.items.filter((item) => !item.levels || item.levels.includes(profile));
+  const baseProfile = profile.startsWith('lower') ? 'lower' : profile.startsWith('upper') ? 'upper' : profile;
+  let eligible = normalized.items.filter((item) => !item.levels || item.levels.includes(profile) || item.levels.includes(baseProfile));
   if (itemIds) {
     const wanted = new Set(itemIds);
     eligible = eligible.filter((item) => wanted.has(item.id));
