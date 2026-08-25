@@ -790,10 +790,14 @@ Civilization globe), while every artifact names the complete learning path:
 **Subject → Course → Unit → Lesson**. A lesson action places its QR at the left
 and the hierarchy, lesson description, and progress at the right; the opaque
 scan token is encoded in the QR but is not printed as redundant text.
-Course names describe the curriculum rather than duplicating a source-book
-title. Unit numbers follow the enrollment's durable shuffled module order, so
-the required opening block is Unit 0 and the learner's first regional block is
-Unit 1 even when its book order differs.
+Course and module presentation is authored at three levels: the durable
+`work`/`module` id, a compact `short_title` for narrow labels and progress
+rails, and the full `title` for hierarchy text. Internal ids never become
+learner-facing copy while an authored title exists. Displayed Unit numbers use
+an explicit module `number`, otherwise `progression.module_number_start` plus
+the module's authored course position; only legacy courses without either
+fall back to a one-based enrollment position. This lets a calendar course
+begin at Unit 35 without renumbering a learner who enrolls later.
 
 A worksheet result also carries the learner name, local date, local time, and
 Student No. in a compact identity strip so a loose receipt remains attributable.
@@ -801,8 +805,11 @@ Its bordered result panel is the visual lead: exact correct/total and earned
 percentage share the first line, the pass/retry verdict follows with its icon,
 and the smaller final line states the percentage needed to pass. Item checks or
 X marks are vertically centered beside that summary. Two progress
-scales provide both context and detail: course progress counts completed units,
-while unit progress counts completed lessons. A single-lesson unit collapses
+scales provide both context and detail: the compact course title labels the
+current unit position, while the compact module title labels the current
+lesson position. The fraction counts the active segment (`1/17` on the first
+unit), while solid ink still means completed and hatching means underway; it
+does not record an active lesson as completed. A single-lesson unit collapses
 to a compact complete/progress row instead of drawing a meaningless one-segment
 bar. Assessments up to ten items show one box per item; larger exams
 switch to a compact ten-segment score bar beside the exact fraction rather than
@@ -810,8 +817,9 @@ shrinking dozens of boxes past legibility. A passing result offers the next less
 only a retry, lists hints for missed items according to the profile disclosure
 policy, and never unlocks or advertises the next lesson.
 
-The agenda and next/retry cards reuse one two-row taxonomy component: the
-subject icon spans `Subject › Course` and the bold `Unit › Lesson` row. Action
+The agenda and next/retry cards reuse one taxonomy component: the subject icon
+anchors `Subject › Course`, the bold Unit row follows, and Lesson always starts
+on its own deeper-indented row. Action
 state is separate from subject identity (`NEXT UP` uses a forward marker,
 `TRY AGAIN` a retry marker), and the footer uses a scan-corner symbol with a
 plain-language instruction. That instruction names what THIS card's scan
@@ -823,6 +831,15 @@ own location hint (`ON THE PORTAL`, `IN THE GARAGE`). It is never hardcoded to
 "print": a card that says print but plays a film sends the child to the wrong
 machine. Descriptions use compact leading so the QR and hierarchy, rather than
 wrapped supporting copy, determine card height.
+
+The Letter worksheet lesson card deliberately uses compact course/module
+titles (`COME FOLLOW ME › UNIT 35 · PSALMS 49–86`), while its lesson title
+remains full. Its reading line names the printed text the learner actually
+opens: explicit unit `sourceTitle`, then the course's `source.reader` display
+title, then `provenance.source` as a bibliographic
+fallback. The course's pacing `source.title` is never a worksheet
+reading source. Single and composed worksheets share that rule. Already-issued
+artifacts remain immutable and exact reprints retain their original wording.
 
 ## 8. Scan-back: grading and the lifecycle
 

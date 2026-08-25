@@ -44,7 +44,8 @@ import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { inProgressSegments } from '#domains/school/progressRows.mjs';
+import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
 
 export class CloseSessionOutcome {
@@ -325,12 +326,14 @@ export class CloseSessionOutcome {
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
     const learnerAssignment = await this.#assignments.get(state.learnerId);
     const enrollment = learnerAssignment?.courses?.find((course) => course.courseId === unit?.courseId)?.enrollment;
-    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit?.module) ?? -1;
-    const moduleTitle = work?.modules?.find((module) => module.module === unit?.module)?.title;
+    const courseLabel = courseDisplay({ work, enrollment, fallback: unit?.courseId ?? 'Independent study' });
+    const moduleLabel = moduleDisplay({
+      work, enrollment, moduleId: unit?.module, fallbackTitle: unit?.module ?? unit?.title ?? state.unitId,
+    });
     const taxonomy = {
       subject: unit?.subject ? unit.subject[0].toUpperCase() + unit.subject.slice(1) : 'School',
-      course: work?.title ?? unit?.courseId ?? 'Independent study',
-      unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId),
+      course: courseLabel.title,
+      unit: moduleLabel.taxonomyLabel,
       lesson: unit?.title ?? state.unitId,
     };
     const worksheet = await this.#worksheetInstances?.findBySession?.(sessionId) ?? null;
@@ -627,16 +630,21 @@ export class CloseSessionOutcome {
     if (!next || next.status === 'locked') return null;
     const assignmentCourse = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
     const course = (works ?? []).find((work) => work.work === next.courseId);
-    const nextModuleIndex = assignmentCourse?.enrollment?.moduleOrder?.indexOf(next.module) ?? -1;
-    const nextModuleTitle = course?.modules?.find((module) => module.module === next.module)?.title;
+    const courseLabel = courseDisplay({
+      work: course, enrollment: assignmentCourse?.enrollment, fallback: next.courseId,
+    });
+    const moduleLabel = moduleDisplay({
+      work: course, enrollment: assignmentCourse?.enrollment, moduleId: next.module,
+      fallbackTitle: next.module ?? next.title,
+    });
     return {
       unitId: next.unitId, title: next.title, description: next.description ?? null,
       taxonomy: {
         subject: (next.subject ?? unit.subject)
           ? (next.subject ?? unit.subject)[0].toUpperCase() + (next.subject ?? unit.subject).slice(1)
           : 'School',
-        course: course?.title ?? next.courseId,
-        unit: nextModuleIndex >= 0 ? `Unit ${nextModuleIndex}: ${nextModuleTitle}` : (nextModuleTitle ?? next.module ?? next.title),
+        course: courseLabel.title,
+        unit: moduleLabel.taxonomyLabel,
         lesson: next.title,
       },
     };
@@ -650,49 +658,10 @@ export class CloseSessionOutcome {
       this.#sessions.listForLearner(state.learnerId),
       this.#curriculum.listWorks?.() ?? [],
     ]);
-    const coursePolicies = Object.fromEntries((works ?? [])
-      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-    const plan = planLearnerWork({
-      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
+    return lessonProgressRows({
+      learnerId: state.learnerId, unit, assignment, units, sessions: history,
+      works, now: nowIso, timezone: this.#timezone,
     });
-    const course = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
-    const enrollment = course?.enrollment;
-    const optionalModules = new Set(enrollment?.optionalModules ?? []);
-    const requiredModules = (enrollment?.moduleOrder ?? []).filter((module) => !optionalModules.has(module));
-    const moduleEntries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === unit.module);
-    const completedModules = requiredModules.filter((module) => {
-      const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module);
-      return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
-    }).length;
-    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit.module) ?? -1;
-    // PAST, PRESENT, FUTURE. The course bar used to have only two states —
-    // units done and units not — which quietly filed the unit the child is
-    // ACTUALLY IN with the ones they have never opened. They just finished a
-    // lesson inside it, so "not started" is the one thing it certainly is
-    // not. One segment is marked underway: the current module, whenever it
-    // is not itself complete (a module that just finished is already in
-    // `completedModules`, and a finished course has no present tense at all).
-    const currentModuleComplete = moduleEntries.length > 0
-      && moduleEntries.every((entry) => entry.status === 'completed');
-    const courseInProgress = inProgressSegments({
-      completed: completedModules,
-      total: requiredModules.length,
-      currentComplete: currentModuleComplete,
-    });
-    const rows = [
-      {
-        label: 'Course',
-        completed: completedModules,
-        total: requiredModules.length,
-        ...(courseInProgress ? { inProgress: courseInProgress } : {}),
-      },
-      {
-        label: moduleIndex >= 0 ? `Unit ${moduleIndex}` : 'Unit',
-        completed: moduleEntries.filter((entry) => entry.status === 'completed').length,
-        total: moduleEntries.length,
-      },
-    ].filter((row) => row.total > 0);
-    return rows.length ? rows : null;
   }
 
   async #unavailable(sessionId, line) {

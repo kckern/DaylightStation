@@ -33,6 +33,8 @@
  * @module rendering/school/documents/DocumentEscPosRenderer
  */
 
+import { activeProgressPosition } from '#domains/school/progressRows.mjs';
+
 /** Blocks that can go on tape. Anything else is refused BY NAME, never dropped. */
 const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action', 'result_summary']);
 
@@ -183,7 +185,7 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
                 || !Number.isFinite(row.completed) || !Number.isFinite(row.total)) return;
             items.push({
               type: 'text', align: 'center',
-              content: `${row.label} · ${row.completed} of ${row.total}`,
+              content: `${row.label} · ${activeProgressPosition(row)} of ${row.total}`,
             });
           });
         continue;

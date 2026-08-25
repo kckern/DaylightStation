@@ -68,6 +68,21 @@ describe('chess: schemeForAddressing through the resolver', () => {
     const scheme = schemeForAddressing({ addressing: { scheme: broken } }, DEFAULT_CHORD_SCHEME);
     expect(scheme).toBe(DEFAULT_CHORD_SCHEME);
   });
+
+  it('keeps a configured chords board in chords when the player is on a reading rung', () => {
+    // The live regression, end to end: household says chords + never; the
+    // player's sparse file adds only a ladder position on a reading rung. The
+    // board must come out chords — roots as note letters, qualities as chord
+    // qualities — with no staff kind and no shuffle. What actually shipped was
+    // a rim of raw MIDI numbers over eight ranks of `maj`, unaddressable.
+    const merged = {
+      addressing: { vocabulary: 'chords', shuffle: 'never', ladder: { unlocked_through: 1 } },
+    };
+    const scheme = schemeForAddressing(merged, DEFAULT_CHORD_SCHEME);
+    expect(scheme.kind).toBeUndefined();
+    expect(scheme.roots).toEqual([...DEFAULT_CHORD_SCHEME.roots]);
+    expect(scheme.qualities).toEqual([...DEFAULT_CHORD_SCHEME.qualities]);
+  });
 });
 
 describe('checkers: configured addressing overrides', () => {

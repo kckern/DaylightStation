@@ -108,6 +108,7 @@ export class EnrollLearner {
       units: courseUnits,
       modules: work?.modules ?? [],
       policy,
+      display: work ? { title: work.title, shortTitle: work.short_title } : null,
       today,
       rng: this.#rng,
     });

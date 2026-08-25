@@ -214,7 +214,7 @@ export function formatPageSpans(pages) {
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
   sourceTitle = null, printedPages = [], subjectIcon = 'school', subjectName = null, breadcrumb = null,
-  passPercent = null, progress = null, companionCode = null,
+  reading = null, passPercent = null, progress = null, companionCode = null,
 } = {}) {
   const numericSeed = [...String(instance.seed || instance.id)]
     .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
@@ -260,7 +260,7 @@ export function worksheetInstanceDocument(instance, {
         subjectName: subjectName ?? subjectIcon,
         breadcrumb: breadcrumb ?? instance.lessonId,
         lessonTitle: title,
-        ...(sourceTitle && printedPages.length ? {
+        ...(reading ? { reading } : sourceTitle && printedPages.length ? {
           reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${formatPageSpans(printedPages)}.`,
         } : {}),
         citation: description,
@@ -327,9 +327,11 @@ export function composedWorksheetDocument({
       lessonTitle: section.title ?? instance.lessonId,
       // A card may omit this line when the lesson title/course already tell
       // the learner what to open. Never substitute a vague fake instruction.
-      ...(section.reading ? { reading: section.reading } : (printedPages
-        ? { reading: `Read: pages ${printedPages}` } : {})),
-      citation: section.sourceTitle ?? null,
+      ...(section.reading ? { reading: section.reading }
+        : section.sourceTitle && printedPages
+          ? { reading: `Read: ${section.sourceTitle}, ${String(printedPages).includes(',') || String(printedPages).includes('–') ? 'pages' : 'page'} ${printedPages}.` }
+          : printedPages ? { reading: `Read: pages ${printedPages}` } : {}),
+      citation: section.citation ?? section.description ?? null,
       questionCount: instance.questions.length,
       passPercent: section.passPercent ?? null,
       ...(Array.isArray(section.progress) && section.progress.length ? { progress: section.progress } : {}),

@@ -40,6 +40,7 @@ import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate,
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
+import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
 const HOUR_MS = 3_600_000;
@@ -358,29 +359,34 @@ export class BuildAgenda {
           const entry = section.next;
           const work = worksById.get(entry?.courseId);
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
-          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
-          const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
           if (entry?.programContext) return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
             unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
             lesson: entry.programContext.lesson?.title ?? entry.title,
           };
+          const courseLabel = courseDisplay({ work, enrollment, fallback: entry?.courseId ?? 'Independent study' });
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
-            course: work?.title ?? entry?.courseId ?? 'Independent study',
-            unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? entry?.module ?? entry?.title),
+            course: courseLabel.title,
+            unit: moduleLabel.taxonomyLabel,
             lesson: entry?.title,
           };
         })(),
         progressLabel: (() => {
           const entry = section.next;
+          const work = worksById.get(entry?.courseId);
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
-          const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
           const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
           const lessonIndex = lessons.indexOf(entry?.unitId);
-          return moduleIndex >= 0 && lessonIndex >= 0
-            ? `Unit ${moduleIndex} · ${lessonIndex + 1}/${lessons.length}`
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
+          return Number.isInteger(moduleLabel.number) && lessonIndex >= 0
+            ? `Unit ${moduleLabel.number} · ${lessonIndex + 1}/${lessons.length}`
             : section.progressLabel;
         })(),
         actionLabel: actionLabelBySubject.get(section.subject),

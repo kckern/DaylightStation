@@ -98,6 +98,18 @@ describe('chord addressing', () => {
     expect(dealt.roots, 'seed 7 must actually move the roots').not.toEqual(DEFAULT_CHORD_SCHEME.roots);
   });
 
+  it('re-deals a scheme without stripping what it is', () => {
+    // A staff scheme that loses `kind` on the first re-deal turns into "chord"
+    // lookups over MIDI numbers: a rim of raw numbers over a rank of `maj`, and
+    // no key able to address any square. The regression that motivated this was
+    // exactly that board, live on the kiosk.
+    const staff = { id: 'staff-test', kind: 'staff', roots: [60, 62, 64, 65, 67, 69, 71, 72], qualities: [47, 48, 50, 52, 53, 55, 57, 59] };
+    const dealtStaff = shuffleChordScheme(staff, 5);
+    expect(dealtStaff.kind).toBe('staff');
+    const inverted = { ...DEFAULT_CHORD_SCHEME, inversions: 'root' };
+    expect(shuffleChordScheme(inverted, 5).inversions, 'the inversion policy survives a re-deal').toBe('root');
+  });
+
   it('cannot make a scheme ambiguous by re-dealing it', () => {
     // Collisions depend on which chords are in play, never on where they sit —
     // so a collision-free scheme stays collision-free however it is dealt.

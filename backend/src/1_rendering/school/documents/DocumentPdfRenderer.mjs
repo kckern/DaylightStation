@@ -37,6 +37,7 @@ import {
 import { documentPdfTheme } from './documentPdfTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
 import { drawFurniture, contentBox } from './furniture.mjs';
+import { activeProgressPosition } from '#domains/school/progressRows.mjs';
 
 /** Contract version for the form map. Bump when mark geometry semantics change. */
 const FORM_VERSION = 'school-document-1';
@@ -524,12 +525,13 @@ export function createDocumentPdfRenderer({
       // the full-height subject SVG instead of visually slicing through it.
       .moveTo(textX, cursorY - 4).lineTo(railX - 12, cursorY - 4).stroke().restore();
     drawLines(out, node.success.lines, { xPt: textX, yPt: cursorY, styleKey: 'label' });
-    let progressY = innerY + node.subjectLabelHeightPt + node.icon.heightPt + 5;
+    let progressY = innerY + node.subjectLabelHeightPt + node.icon.heightPt + node.progressGapPt;
     for (const progress of node.progress ?? []) {
       setFont(out, 'bold', 6.5, 'muted');
       out.text(progress.label.toUpperCase(), railX, progressY, { width: node.railPt, lineBreak: false });
       setFont(out, 'regular', 6.5, 'muted');
-      out.text(`${progress.completed}/${progress.total}`, railX, progressY, { width: node.railPt, align: 'right', lineBreak: false });
+      const position = activeProgressPosition(progress);
+      out.text(`${position}/${progress.total}`, railX, progressY, { width: node.railPt, align: 'right', lineBreak: false });
       const trackY = progressY + 8;
       out.save().lineWidth(1.4).strokeColor(theme.ink.rule)
         .moveTo(railX, trackY).lineTo(railX + node.railPt, trackY).stroke().restore();

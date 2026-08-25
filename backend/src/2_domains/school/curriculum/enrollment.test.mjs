@@ -87,6 +87,20 @@ describe('dated module schedules', () => {
     });
   });
 
+  it('snapshots compact labels and course-relative numbering before dropping closed modules', () => {
+    const enrollment = createCourseEnrollment({
+      courseId: 'cfm', units: datedUnits, modules,
+      policy: { ...datedPolicy, module_number_start: 35 },
+      display: { title: 'Come Follow Me — Old Testament 2026', shortTitle: 'Come Follow Me' },
+      today: '2026-09-08',
+    });
+    expect(enrollment.display).toEqual({
+      courseTitle: 'Come Follow Me — Old Testament 2026',
+      courseShortTitle: 'Come Follow Me',
+      modules: { w37: { number: 37, title: 'Week 37' } },
+    });
+  });
+
   it('omits modules that closed before enrollment — they were never assigned', () => {
     const enrollment = createCourseEnrollment({
       courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-09-08',
