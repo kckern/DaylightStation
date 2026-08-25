@@ -1291,3 +1291,11 @@
   ul { margin: 1rem 0 0; padding-left: 1.25rem; }
   li { margin-block: 0.5rem; }
 }
+
+// Dashboard backlog summary — counts only; the queue owns the lists.
+.teacher-backlog-strip {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid #e7dcc3; border-radius: 12px; background: #fffdf7;
+  padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #6b5d33; cursor: pointer;
+  &:hover, &:focus-visible { background: #fbf4e6; }
+}

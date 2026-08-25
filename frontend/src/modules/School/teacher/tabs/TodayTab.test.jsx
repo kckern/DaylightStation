@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import TodayTab from './TodayTab.jsx';
+import { QueueView } from '../WorkspaceViews.jsx';
 import { TeacherProfileProvider, useTeacherProfile } from '../TeacherProfileContext.jsx';
 import PinPrompt from '../panels/PinPrompt.jsx';
 
@@ -97,11 +98,10 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/^assessment$/i)).toBeNull();
   });
 
-  it('one failing panel leaves its siblings rendered', async () => {
+  it('one failing panel leaves its siblings rendered (queue)', async () => {
     schoolApi.printPending.mockResolvedValue(fail(500));
-    mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
-    expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy();
+    mount(<QueueView kids={KIDS} />);
+    await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     expect(screen.getAllByText(/couldn.t load/i).length).toBe(1);
   });
 
@@ -120,8 +120,8 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/lifecycle is not enabled/i)).toBe(null);
   });
 
-  it('pending prints and quiz requests render their rows', async () => {
-    mount(<TodayTab kids={KIDS} />);
+  it('pending prints and quiz requests render their rows (queue)', async () => {
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     expect(screen.getByText(/Fractions Ep\. 4/)).toBeTruthy();
   });
@@ -137,7 +137,7 @@ describe('wave-2 mutations', () => {
 
   it('resolving posts the claimed teacher stamp (null pin until entered) and refreshes server-side', async () => {
     await claim();
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
@@ -153,7 +153,7 @@ describe('wave-2 mutations', () => {
     schoolApi.resolveReview.mockResolvedValue({ ok: false, status: 403, data: {
       ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' }, traceId: 'unknown',
     } });
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Incorrect' })); });
@@ -162,7 +162,7 @@ describe('wave-2 mutations', () => {
   });
 
   it('with no claimed teacher, a write opens the picker instead of posting', async () => {
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(screen.getByText("Who's teaching?")).toBeTruthy());
@@ -171,7 +171,7 @@ describe('wave-2 mutations', () => {
 
   it('a note rides the resolve, trimmed', async () => {
     await claim();
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     await waitForClaim();
     act(() => {
@@ -184,7 +184,7 @@ describe('wave-2 mutations', () => {
 
   it('print approve/deny post the approver and refresh', async () => {
     await claim();
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/US State Capitals/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })); });
@@ -198,7 +198,7 @@ describe('wave-2 mutations', () => {
     schoolApi.quizRequests.mockResolvedValue(ok([
       { at: 't', userId: 'milo', unitId: 'plex:123', unitTitle: 'Fractions Ep. 4', materialTitle: 'Math Course', fulfilled: true },
     ]));
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/bank authored/)).toBeTruthy());
     await waitForClaim();
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Dismiss…' })); });
@@ -218,7 +218,7 @@ describe('wave-2 mutations', () => {
     schoolApi.quizRequests.mockResolvedValue(ok([
       { at: 't', kind: 'retake', userId: 'milo', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' },
     ]));
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText('retake')).toBeTruthy());
     expect(screen.getByText('Creature Basics Quiz')).toBeTruthy();
     expect(screen.getByText(/wants another try — asked by Milo/)).toBeTruthy();
@@ -234,7 +234,7 @@ describe('advocacy wave 6A', () => {
       given: 'plants eat light', questionNumber: 3, reason: 'free_response',
       rubric: 'Full credit for light + chlorophyll + sugar', enqueuedAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
     }] }));
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Marking guide: Full credit/)).toBeTruthy());
     expect(screen.getByText(/written answer needs a human mark/)).toBeTruthy();
     expect(screen.getByText(/waiting 3h/)).toBeTruthy();
@@ -245,7 +245,7 @@ describe('advocacy wave 6A', () => {
     schoolApi.resolveReview
       .mockResolvedValueOnce({ ok: false, status: 403, data: { ok: false, error: { type: 'GuestForbiddenError', message: 'The teacher PIN is missing or wrong.' } } })
       .mockResolvedValue(ok({ verdict: 'correct' }));
-    mount(<TodayTab kids={KIDS} />);
+    mount(<QueueView kids={KIDS} />);
     await waitFor(() => expect(screen.getByText(/Explain photosynthesis/)).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Correct' })); });
     await waitFor(() => expect(screen.getByRole('dialog', { name: 'Teacher PIN' })).toBeTruthy());
