@@ -86,7 +86,7 @@ const NAMESPACES = {
   },
   omr: {
     module: './school/omr.mjs',
-    blurb: 'rebuild decoded quiz day files from the raw OMR manifest',
+    blurb: 'rebuild decoded quiz day files, or replay a scan the relay never delivered',
   },
   ops: {
     module: './school/ops.mjs',
