@@ -53,6 +53,7 @@
 | How do I inspect or repair live state? | [Operations](./operations.md) |
 | How do external programs plug in? | [Programs](./programs.md) |
 | How does the sentence sequence work? | [Sentence Ladder](./sentence-ladder.md) |
+| What happens when content or a collaborator is missing? | [Failure policy](./failure-policy.md) |
 
 The remainder of this file is the detailed subsystem inventory. The focused
 pages above are authoritative for lifecycle vocabulary and current behavior;
