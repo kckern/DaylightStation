@@ -155,10 +155,11 @@ function progressStatus(unitId, learnerId, completedIds, exceptions) {
 }
 
 export class GetLearnerTimeline {
-  #sessions;
-  constructor({ sessions } = {}) {
+  #sessions; #curriculum;
+  constructor({ sessions, curriculum = null } = {}) {
     if (!sessions) throw new Error('GetLearnerTimeline requires sessions');
     this.#sessions = sessions;
+    this.#curriculum = curriculum;
   }
 
   async execute({ learnerId, limit = 50, before = null, unitId = null } = {}) {
@@ -171,9 +172,38 @@ export class GetLearnerTimeline {
       .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
     const page = filtered.slice(0, safeLimit);
     return {
-      schema: 'school.learner-timeline/v1', learnerId, items: page,
+      schema: 'school.learner-timeline/v1', learnerId, items: await this.#enrich(page),
       nextCursor: filtered.length > page.length ? page.at(-1)?.updatedAt ?? null : null,
     };
+  }
+
+  // Session records store only ids; titles are a catalog concern resolved at
+  // read time — the same join the detail and Today read models already do.
+  async #enrich(page) {
+    if (!this.#curriculum?.getUnit) return page;
+    try {
+      const works = await (this.#curriculum.listWorks?.() ?? []);
+      const courseOf = (courseId) => works.find((candidate) => candidate.work === courseId
+        || `${candidate.subject}/${candidate.work}` === courseId) ?? null;
+      return await Promise.all(page.map(async (row) => {
+        const unit = await this.#curriculum.getUnit(row.unitId);
+        if (!unit) return row;
+        const course = courseOf(unit.courseId ?? null);
+        const module = course?.modules?.find((entry) => entry.module === unit.module) ?? null;
+        return {
+          ...row,
+          lessonTitle: unit.title ?? null,
+          courseId: unit.courseId ?? null,
+          courseTitle: course?.title ?? null,
+          subject: unit.subject ?? course?.subject ?? null,
+          moduleTitle: module?.title ?? null,
+          posterUrl: unit.courseId
+            ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(unit.courseId)}/poster.jpg` : null,
+        };
+      }));
+    } catch {
+      return page;
+    }
   }
 }
 
