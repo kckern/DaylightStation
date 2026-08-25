@@ -304,6 +304,11 @@ describe('resultDocument', () => {
     expect(doc.id).toBe('result-ses-a');
   });
 
+  it('makes the learner the receipt title while retaining the generic fallback', () => {
+    expect(resultDocument({ ...pass, learnerName: 'Felix' }).title).toBe('Felix’s Result');
+    expect(resultDocument(pass).title).toBe('Worksheet Result');
+  });
+
   it('prints the score rounded', () => {
     expect(summaryOf(resultDocument(pass)).percent).toBe(83.4);
   });

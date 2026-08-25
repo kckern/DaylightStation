@@ -98,6 +98,7 @@ export function validateWork(raw, ctx = {}) {
   else if (ctx.work && raw.work !== ctx.work) errors.push(`work is "${raw.work}" but the directory is "${ctx.work}"`);
 
   if (!isStr(raw.title)) errors.push('title is required');
+  if (isPresent(raw.short_title) && !isStr(raw.short_title)) errors.push('short_title must be a non-empty string');
 
   if (!SUBJECT_IDS.includes(raw.subject)) {
     errors.push(`subject must be one of ${SUBJECT_IDS.join('|')}, got: ${raw.subject}`);
@@ -211,6 +212,10 @@ export function validateWork(raw, ctx = {}) {
         else if (seen.has(m.module)) errors.push(`${at}: duplicate module "${m.module}"`);
         else seen.add(m.module);
         if (!isStr(m.title)) errors.push(`${at}.title is required`);
+        if (isPresent(m.short_title) && !isStr(m.short_title)) errors.push(`${at}.short_title must be a non-empty string`);
+        if (isPresent(m.number) && (!Number.isInteger(m.number) || m.number < 0)) {
+          errors.push(`${at}.number must be a non-negative integer`);
+        }
         if (isPresent(m.media) && !isStr(m.media)) errors.push(`${at}.media must be a locator string`);
         if (isDated) {
           if (!isDay(m.opensOn)) errors.push(`${at}.opensOn must be YYYY-MM-DD for dated_modules`);
@@ -273,6 +278,10 @@ export function validateWork(raw, ctx = {}) {
       if (p.required_opening_module !== undefined && !isStr(p.required_opening_module)) {
         errors.push('progression.required_opening_module must be a string');
       }
+      if (isPresent(p.module_number_start)
+          && (!Number.isInteger(p.module_number_start) || p.module_number_start < 0)) {
+        errors.push('progression.module_number_start must be a non-negative integer');
+      }
       progression = p;
     }
   }
@@ -287,7 +296,14 @@ export function validateWork(raw, ctx = {}) {
     if (!isObj(raw.source)) errors.push('source must be an object');
     else if (!isStr(raw.source.title) || (!courseV2 && (!isStr(raw.source.publisher) || !isStr(raw.source.isbn)))) {
       errors.push('source requires title, publisher, and isbn');
-    } else source = raw.source;
+    } else {
+      if (isPresent(raw.source.reader)) {
+        if (!isObj(raw.source.reader) || !isStr(raw.source.reader.title)) {
+          errors.push('source.reader must be an object with a title');
+        }
+      }
+      source = raw.source;
+    }
   }
   let sources;
   if (isPresent(raw.sources)) {
@@ -305,6 +321,7 @@ export function validateWork(raw, ctx = {}) {
       schema: raw.schema,
       poster: raw.poster,
       title: raw.title,
+      short_title: raw.short_title,
       subject: raw.subject,
       category: raw.category,
       medium: raw.medium,

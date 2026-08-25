@@ -42,6 +42,7 @@ courses:
         mode: dated_modules
         module_order: fixed
         lesson_order: shuffle_once
+        module_number_start: 35
       moduleOrder: [w35-aug24, w36-aug31]
       optionalModules: []
       lessonOrder:
@@ -50,6 +51,12 @@ courses:
       moduleSchedule:
         w35-aug24: { opensOn: '2026-08-24', closesOn: '2026-08-30' }
         w36-aug31: { opensOn: '2026-08-31', closesOn: '2026-09-06' }
+      display:
+        courseTitle: Come Follow Me — Old Testament 2026
+        courseShortTitle: Come Follow Me
+        modules:
+          w35-aug24: { number: 35, title: 'Aug 24–30 · Psalms 49–86', shortTitle: 'Psalms 49–86' }
+          w36-aug31: { number: 36, title: 'Aug 31–Sep 6 · Psalms 102–150', shortTitle: 'Psalms 102–150' }
 ```
 
 `createCourseEnrollment` snapshots:
@@ -60,9 +67,13 @@ courses:
 - optional modules;
 - the once-only lesson order inside every module;
 - dated module windows, when the course uses `dated_modules`.
+- learner-facing course/module titles, compact titles, and displayed numbers.
 
 That snapshot prevents later catalog edits from reordering an active learner or
-moving their calendar. Legacy v1 enrollments remain readable. A v1 enrollment
+moving their calendar or silently relabeling their existing course. A module
+may author an explicit `number`; otherwise `module_number_start` is added to
+its position in the complete authored module list, so a later mid-course
+enrollment does not restart numbering at one. Legacy v1 enrollments remain readable. A v1 enrollment
 with `moduleSchedule` is treated as `dated_modules`, because the schedule itself
 is durable evidence of the original policy.
 

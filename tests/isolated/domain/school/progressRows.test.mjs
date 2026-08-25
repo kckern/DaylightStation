@@ -7,7 +7,7 @@
  * receipt that is plainly wrong: they had just finished a lesson inside it.
  */
 import { describe, it, expect } from 'vitest';
-import { inProgressSegments } from '#domains/school/progressRows.mjs';
+import { activeProgressPosition, inProgressSegments } from '#domains/school/progressRows.mjs';
 
 describe('inProgressSegments', () => {
   it('marks one segment underway mid-course', () => {
@@ -56,5 +56,23 @@ describe('inProgressSegments', () => {
     // A result receipt is printed the moment a lesson closes, so the module is
     // underway unless something says otherwise.
     expect(inProgressSegments({ completed: 2, total: 7 })).toBe(1);
+  });
+});
+
+describe('activeProgressPosition', () => {
+  it('labels the first active segment as 1 while completion remains zero', () => {
+    expect(activeProgressPosition({ completed: 0, total: 17, inProgress: 1 })).toBe(1);
+  });
+
+  it('advances through an active segment without changing the completed count', () => {
+    expect(activeProgressPosition({ completed: 4, total: 17, inProgress: 1 })).toBe(5);
+  });
+
+  it('uses the completed position when no segment is active', () => {
+    expect(activeProgressPosition({ completed: 5, total: 17, inProgress: 0 })).toBe(5);
+  });
+
+  it('never displays a position beyond the total', () => {
+    expect(activeProgressPosition({ completed: 17, total: 17, inProgress: 1 })).toBe(17);
   });
 });

@@ -29,6 +29,25 @@ describe('mergeChessConfig', () => {
     expect(merged.feedback).toEqual({ hint_level: 'off', toast: true });
   });
 
+  it('merges the addressing block key by key, so a sparse user override keeps the household vocabulary', () => {
+    // The regression: a user file holding only `addressing.ladder` replaced the
+    // household addressing wholesale, erasing `vocabulary: chords` and
+    // `shuffle: never` — and the board came up in the wrong notation, shuffling.
+    const house = { ...HOUSE, addressing: { vocabulary: 'chords', shuffle: 'never' } };
+    const merged = mergeChessConfig(house, { addressing: { ladder: { unlocked_through: 1 } } });
+    expect(merged.addressing).toEqual({
+      vocabulary: 'chords',
+      shuffle: 'never',
+      ladder: { unlocked_through: 1 },
+    });
+  });
+
+  it('replaces addressing.ladder wholesale, like the top-level ladder', () => {
+    const house = { ...HOUSE, addressing: { vocabulary: 'chords', ladder: { unlocked_through: 4, pinned: 2 } } };
+    const merged = mergeChessConfig(house, { addressing: { ladder: { unlocked_through: 1 } } });
+    expect(merged.addressing.ladder).toEqual({ unlocked_through: 1 });
+  });
+
   it('replaces the ladder wholesale rather than merging it element-wise', () => {
     const merged = mergeChessConfig(HOUSE, { rungs: [{ id: 'only', label: 'Only', skill: 5, movetime_ms: 100 }] });
     expect(merged.rungs).toHaveLength(1);

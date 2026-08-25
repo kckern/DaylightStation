@@ -258,6 +258,35 @@ node cli/bible-page-index-pdf.mjs /tmp/nirv-page-index.pdf
 
 Override the default edition index with `PAGE_INDEX=/path/to/page-index.yml`.
 
+#### Inferred edition index
+
+When a physical printing has a table of contents but no complete scan,
+`bible-page-infer` builds a separately identified, confidence-aware page index
+from the NIrV corpus and the legacy scanned edition. It never overwrites the
+observed edition index.
+
+```bash
+# Build the inferred 2014 Early Readers index and its density report
+node cli/bible-page-infer.mjs estimate
+node cli/bible-page-infer.mjs analyze
+
+# Validate coverage, physical anchors, and the independent Mark holdout
+node cli/bible-page-infer.mjs validate
+
+# Apply paper-verified chapter anchors later (checks.yml contains
+# `anchors: [{ ref: 'Isaiah 40:1', page: 873 }]`)
+node cli/bible-page-infer.mjs calibrate --anchors checks.yml
+
+# Preview or apply a course locator migration
+node cli/bible-page-infer.mjs rewrite-course --index /path/to/page-index.yml
+node cli/bible-page-infer.mjs rewrite-course --index /path/to/page-index.yml --apply
+```
+
+The generated index carries `observed`, `inferred-high`,
+`inferred-medium`, or `inferred-low` evidence. Learner worksheets keep the
+ordinary `Page N` wording; the evidence is retained in source metadata for
+adult review.
+
 #### Worksheet authoring check
 
 Course lessons use the worksheet pipeline:

@@ -124,7 +124,7 @@ const EMPTY_OBJECT = Object.freeze({});
  * most beginners, for years — and it is the same 64 squares, so nothing else in
  * the game changes.
  */
-export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME) {
+export function chessAddressingFor(addressing, fallback = DEFAULT_CHORD_SCHEME, gameSeed = 0) {
   const stated = (addressing && typeof addressing === 'object') ? addressing : {};
   // The fallback carries what this game was already using, so a config that
   // says nothing about vocabulary keeps it rather than dropping to the house
@@ -137,17 +137,28 @@ export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME)
     axisSize: 8,
   });
 
-  // Seed 0, deliberately: chess re-deals per turn through its OWN
-  // `shuffleEachTurn` machinery inside `createChessGameState`, and letting the
-  // cadence deal here as well would shuffle an already-shuffled board. The
-  // resolver supplies the base material and its layout; chess supplies when it
-  // moves.
-  const built = schemeFor(resolved, { size: 8, seed: 0, fallback });
+  // The cadence is the RESOLVED one — config and ladder rung, through the same
+  // layering as everything else — never read raw off the config, where a sparse
+  // user file used to leave it undefined and the prop default (shuffle ON) won.
+  //
+  // `each_turn` re-deals per turn through chess's OWN machinery inside
+  // `createChessGameState`, so the builder seeds at 0 — dealing here as well
+  // would shuffle an already-shuffled board. `each_game` has no chess-side
+  // machinery, so it IS dealt here, from the game's seed, which changes on
+  // restart.
+  const seed = resolved.shuffle === 'each_game' ? (Number(gameSeed) >>> 0) : 0;
+  const shuffleEachTurn = resolved.shuffle === 'each_turn';
+  const built = schemeFor(resolved, { size: 8, seed, fallback });
   if (!built.valid) {
     logger().warn('addressing.scheme-rejected', { errors: built.errors, source: built.source });
-    return fallback;
+    return { scheme: fallback, shuffleEachTurn };
   }
-  return built.scheme;
+  return { scheme: built.scheme, shuffleEachTurn };
+}
+
+/** The scheme alone, for callers with no stake in the cadence. */
+export function schemeForAddressing(addressing, fallback = DEFAULT_CHORD_SCHEME) {
+  return chessAddressingFor(addressing, fallback).scheme;
 }
 
 /** A chord takes three notes to name a square; a staff address takes two. */
@@ -240,9 +251,14 @@ export function PianoChessGame({
   const timing = useMemo(() => resolveTiming(chessConfig), [chessConfig]);
   // Shuffle takes effect on the NEXT game: createChessGameState captures it at
   // construction, so a mid-game change never re-deals the board mid-read.
-  const shuffleEachTurn = chessConfig?.addressing?.shuffle === 'each_turn'
-    ? true
-    : chessConfig?.addressing?.shuffle === 'never' ? false : shuffleEachTurnProp;
+  // Scheme and cadence resolve together, through the addressing layers, so the
+  // board and its shuffle can never come from two different opinions of the
+  // config.
+  const loadedAddressing = useMemo(
+    () => (chessConfig ? chessAddressingFor(chessConfig, scheme, gameSeed) : null),
+    [chessConfig, scheme, gameSeed],
+  );
+  const shuffleEachTurn = loadedAddressing ? loadedAddressing.shuffleEachTurn : shuffleEachTurnProp;
   const rung = chessConfig?.rungs?.find((entry) => entry.id === rungId);
   // Maps the active rung to a bundled difficulty the same way the server adapter
   // would, so a dropped request doesn't quietly change who the player is facing.
@@ -301,25 +317,21 @@ export function PianoChessGame({
   // move; once a chord or move has landed the board must not rearrange under
   // them, and the captured value stands until the next game.
   useEffect(() => {
-      if (!chessConfig) return;
-      const loadedCadence = chessConfig.addressing?.shuffle;
+      if (!loadedAddressing) return;
       // The addressing vocabulary is a per-player setting, so it can only be
       // known once that player's config layer has resolved — after the game was
       // built. Same rule as the shuffle: adopt it while the game is untouched,
       // never rearrange the board under a player mid-move.
-      const loadedScheme = schemeForAddressing(chessConfig, scheme);
+      const { scheme: loadedScheme, shuffleEachTurn: nextShuffle } = loadedAddressing;
       setGame((current) => {
         const untouched = current.history.length === 0 && !current.origin;
-        const nextShuffle = loadedCadence === 'each_turn'
-          ? true
-          : loadedCadence === 'never' ? false : current.shuffleEachTurn;
         if (!untouched) return current;
         if (current.shuffleEachTurn === nextShuffle && current.scheme?.id === loadedScheme.id) return current;
         return createChessGameState({
           fen: fen ?? undefined, playerColor, scheme: loadedScheme, seed: gameSeed, shuffleEachTurn: nextShuffle,
         });
       });
-  }, [chessConfig, fen, gameSeed, playerColor, scheme]);
+  }, [loadedAddressing, fen, gameSeed, playerColor]);
 
   const heldNotes = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
 
@@ -532,8 +544,20 @@ export function PianoChessGame({
 
   const restart = useCallback(async () => {
     const nextSession = beginNextGame();
+    // The next game keeps the player's resolved addressing. Rebuilding from the
+    // raw props here used to silently reset a configured player to the shipped
+    // defaults on "play again" — resolved from the ref so a restart never
+    // recomputes the callback, and with the NEW seed so an each_game cadence
+    // actually re-deals.
+    const loaded = chessConfigRef.current
+      ? chessAddressingFor(chessConfigRef.current, scheme, nextSession.seed)
+      : null;
     const nativeInitial = createChessGameState({
-      fen: fen ?? undefined, playerColor, scheme, seed: nextSession.seed, shuffleEachTurn: shuffleEachTurnProp,
+      fen: fen ?? undefined,
+      playerColor,
+      scheme: loaded?.scheme ?? scheme,
+      seed: nextSession.seed,
+      shuffleEachTurn: loaded?.shuffleEachTurn ?? shuffleEachTurnProp,
     });
     // Clear terminal UI in the same render as the identity changes so the
     // persistence effect cannot record the finished board under the new id.

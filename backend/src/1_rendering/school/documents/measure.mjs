@@ -1004,7 +1004,9 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   const iconSizePt = Math.min(46, railPt - 12);
   const subjectLabelHeightPt = 10;
   const progressRowHeightPt = 14;
-  const sideRailHeightPt = subjectLabelHeightPt + iconSizePt + (progress.length ? 5 + progress.length * progressRowHeightPt : 0);
+  const progressGapPt = theme.lessonCard.progressGapPt;
+  const sideRailHeightPt = subjectLabelHeightPt + iconSizePt
+    + (progress.length ? progressGapPt + progress.length * progressRowHeightPt : 0);
   let breadcrumb;
   let title;
   let reading;
@@ -1030,7 +1032,8 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
     radiusPt: theme.box.radiusPt, borderWidthPt: theme.box.borderWidthPt,
     icon: { svg: resolved.svg, widthPt: iconSizePt, heightPt: iconSizePt }, railPt,
     subjectName: String(block.subjectName ?? block.subjectIcon ?? 'School').toUpperCase(), subjectLabelHeightPt,
-    breadcrumb, title, reading, citation, companionCode, success, progress, progressRowHeightPt, gap, bandGap,
+    breadcrumb, title, reading, citation, companionCode, success, progress, progressRowHeightPt,
+    progressGapPt, gap, bandGap,
   };
 }
 

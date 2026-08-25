@@ -6,7 +6,12 @@
  * what anyone means.
  */
 
-const MERGE_BLOCKS = ['feedback', 'personality'];
+// `addressing` merges per-key so a user's sparse override (typically just
+// `addressing.ladder`) cannot erase the household's `vocabulary` and `shuffle`.
+// Its `ladder` key still replaces wholesale, because the block merge is one
+// level deep — which is the same rule the top-level ladder gets, and for the
+// same reason: a half-merged ladder is never what anyone means.
+const MERGE_BLOCKS = ['feedback', 'personality', 'addressing'];
 
 export function mergeChessConfig(household, user) {
   const base = household || {};

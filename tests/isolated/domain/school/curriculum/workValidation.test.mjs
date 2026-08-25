@@ -24,6 +24,27 @@ describe('dated_modules progression', () => {
     expect(validateWork(dated()).errors).toEqual([]);
   });
 
+  it('accepts compact labels and a non-one module numbering start', () => {
+    const raw = dated({ short_title: 'Come Follow Me' });
+    raw.progression.module_number_start = 35;
+    raw.modules[0].short_title = 'Psalms 49–86';
+    raw.modules[1].number = 80;
+    const result = validateWork(raw);
+    expect(result.errors).toEqual([]);
+    expect(result.work).toMatchObject({ short_title: 'Come Follow Me' });
+  });
+
+  it('rejects malformed compact labels and module numbers', () => {
+    const raw = dated({ short_title: ' ' });
+    raw.progression.module_number_start = -1;
+    raw.modules[0].short_title = '';
+    raw.modules[0].number = 2.5;
+    const errors = validateWork(raw).errors.join('\n');
+    expect(errors).toMatch(/short_title must be a non-empty string/);
+    expect(errors).toMatch(/modules\[0\]\.number must be a non-negative integer/);
+    expect(errors).toMatch(/module_number_start must be a non-negative integer/);
+  });
+
   it('rejects a module with no window', () => {
     const raw = dated();
     delete raw.modules[1].opensOn;

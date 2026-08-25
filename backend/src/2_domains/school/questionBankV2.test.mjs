@@ -109,6 +109,23 @@ describe('question-bank/v2', () => {
     expect(composed.source.blocks[0].reading).toBe('Read: pages 8–10');
   });
 
+  it('pairs a composed worksheet page range with the printed reading source', () => {
+    const instance = createWorksheetInstance({
+      id: 'ws-source-range', sessionId: 'session-source', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'psalms', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    const composed = composedWorksheetDocument({
+      id: 'source-pages', sections: [{
+        instance, title: 'Psalms', sourceTitle: 'NIrV Adventure Bible', printedPages: [681, 682],
+        citation: 'Weekday 2 of the assigned week.',
+      }],
+    });
+    expect(composed.source.blocks[0]).toMatchObject({
+      reading: 'Read: NIrV Adventure Bible, pages 681–682.',
+      citation: 'Weekday 2 of the assigned week.',
+    });
+  });
+
   it('composes immutable lesson instances with scoped item identities and attribution', () => {
     const first = createWorksheetInstance({
       id: 'ws-first', sessionId: 'session-first', bank, learnerId: 'milo', enrollmentId: 'enr',

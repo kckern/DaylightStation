@@ -194,10 +194,17 @@ export function validateChordScheme(scheme, { qualities: table = CHORD_QUALITIES
  * A permutation cannot introduce ambiguity, because collisions depend on which
  * roots and qualities are in play, not on their order. A scheme that is
  * collision-free stays collision-free however it is dealt.
+ *
+ * Everything else about the scheme rides along untouched. This must spread the
+ * base scheme, not rebuild it: dropping `kind: 'staff'` on a re-deal turned a
+ * staff board into "chord" lookups over MIDI numbers — a rim of raw numbers
+ * over a rank column of `maj`, and no key able to address any square. The
+ * `inversions` policy survives a re-deal for the same reason.
  */
 export function shuffleChordScheme(scheme = DEFAULT_CHORD_SCHEME, seed = 0) {
   const base = Number(seed) >>> 0;
   return {
+    ...scheme,
     id: `${scheme.id}:shuffled:${base}`,
     // Two independent draws so the axes do not move together across turns.
     roots: shuffle(scheme.roots, base).items,
