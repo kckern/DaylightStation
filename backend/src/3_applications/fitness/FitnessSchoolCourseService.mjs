@@ -112,12 +112,18 @@ export class FitnessSchoolCourseService {
 
 export function deriveObservations({ record, learnerId, sessions }) {
   let totalTicks = 0; let hrTicks = 0; let cadenceTicks = 0;
-  const hr = []; const rpm = []; const zoneSeconds = {}; const ranges = [];
+  const hr = []; const rpm = []; const zoneSeconds = {};
+  const hrRanges = requestedRanges(record.successPolicy, 'heart_rate.seconds_in_range');
+  const cadenceRanges = requestedRanges(record.successPolicy, 'cadence.seconds_in_range');
+  const hrRangeSeconds = new Map(hrRanges.map((range) => [range.join(':'), 0]));
+  const cadenceRangeSeconds = new Map(cadenceRanges.map((range) => [range.join(':'), 0]));
   let voiceCount = 0; let voiceDuration = 0; let completedSteps = 0; let plannedSteps = 0;
-  let mediaSeconds = 0;
+  let mediaSeconds = 0; let mediaItems = 0; let participantSeen = false;
+  const completedWorkoutIds = new Set();
   for (const session of sessions) {
     const participant = session.participants?.[learnerId] ?? null;
     const summaryParticipant = session.summary?.participants?.[learnerId] ?? null;
+    participantSeen ||= Boolean(participant || summaryParticipant);
     const interval = Number(session.timeline?.interval_seconds ?? session.timeline?.timebase?.intervalSeconds
       ?? ((session.timeline?.timebase?.intervalMs ?? 5000) / 1000)) || 5;
     const tickCount = Number(session.timeline?.tick_count ?? session.timeline?.timebase?.tickCount ?? 0);
@@ -126,32 +132,61 @@ export function deriveObservations({ record, learnerId, sessions }) {
     const rpmSeries = decodedMetric(session, learnerId, 'rpm', 'rpm');
     hr.push(...hrSeries.filter(Number.isFinite));
     rpm.push(...rpmSeries.filter(Number.isFinite));
+    accumulateRangeSeconds(hrSeries, interval, hrRanges, hrRangeSeconds);
+    accumulateRangeSeconds(rpmSeries, interval, cadenceRanges, cadenceRangeSeconds);
     hrTicks += hrSeries.filter(Number.isFinite).length || Math.round((participant?.active_seconds ?? 0) / interval);
     cadenceTicks += rpmSeries.filter(Number.isFinite).length;
     for (const [zone, seconds] of Object.entries(participant?.zone_time_seconds ?? {})) zoneSeconds[zone] = (zoneSeconds[zone] ?? 0) + Number(seconds || 0);
-    const memos = session.summary?.voiceMemos ?? session.events?.voice_memos ?? [];
+    const rosterIds = Object.keys(session.participants ?? {});
+    const memos = (session.summary?.voiceMemos ?? session.events?.voice_memos ?? []).filter((memo) => {
+      const attributedTo = memo?.learnerId ?? memo?.userId ?? memo?.attributedTo ?? null;
+      if (attributedTo) return String(attributedTo) === String(learnerId);
+      // Legacy memos carry no author. They are safely attributable only when
+      // the saved Fitness session itself has exactly this one participant.
+      return rosterIds.length === 1 && String(rosterIds[0]) === String(learnerId);
+    });
     voiceCount += memos.length;
     voiceDuration += memos.reduce((sum, memo) => sum + Number(memo.durationSeconds ?? memo.duration_seconds ?? 0), 0);
     for (const run of session.strength?.runs ?? []) {
       completedSteps += Number(run.completedCount ?? run.completed_steps?.length ?? run.completedSteps?.length ?? 0);
       plannedSteps += Number(run.plannedCount ?? run.planned_steps?.length ?? run.plannedSteps?.length ?? 0);
+      const workoutId = run.workoutId ?? run.workout_id ?? run.id ?? null;
+      if (workoutId) completedWorkoutIds.add(String(workoutId));
     }
-    mediaSeconds += (session.summary?.media ?? []).reduce((sum, media) => sum + Number(media.durationMs ?? 0) / 1000, 0);
+    const sessionMedia = Array.isArray(session.summary?.media) ? session.summary.media : [];
+    mediaItems += sessionMedia.length;
+    mediaSeconds += sessionMedia.reduce((sum, media) => sum + Number(media.durationMs ?? 0) / 1000, 0);
     if (!hr.length && Number.isFinite(summaryParticipant?.hr_avg)) hr.push(summaryParticipant.hr_avg);
   }
   const plannedMedia = record.segments.filter((segment) => segment.kind === 'plex-video' && segment.required !== false)
     .reduce((sum, segment) => sum + Number(segment.durationSeconds ?? 0), 0);
+  let remainingMediaItems = mediaItems;
+  const completedSegments = record.segments.reduce((count, segment) => {
+    if (segment.kind === 'plex-video') {
+      if (remainingMediaItems <= 0) return count;
+      remainingMediaItems -= 1;
+      return count + 1;
+    }
+    if (segment.kind === 'saved-workout') {
+      return count + (completedWorkoutIds.has(String(segment.workoutId)) || completedSteps > 0 ? 1 : 0);
+    }
+    if (segment.kind === 'sensor-block') return count + (participantSeen && totalTicks > 0 ? 1 : 0);
+    if (segment.kind === 'voice-reflection') return count + (voiceCount > 0 ? 1 : 0);
+    return count;
+  }, 0);
   return {
-    segments: { completed: sessions.length ? record.segments.length : 0, in_order: sessions.length > 0 },
+    segments: { completed: completedSegments, in_order: sessions.length > 0 },
     media: { elapsed_seconds: mediaSeconds, completion_ratio: plannedMedia > 0 ? Math.min(1, mediaSeconds / plannedMedia) : 0 },
     heart_rate: {
       coverage_ratio: totalTicks > 0 ? Math.min(1, hrTicks / totalTicks) : 0,
-      average_bpm: average(hr), max_bpm: maximum(hr), seconds_in_range: ranges,
+      average_bpm: average(hr), max_bpm: maximum(hr),
+      seconds_in_range: rangeObservations(hrRanges, hrRangeSeconds),
       seconds_in_zone: zoneSeconds,
     },
     cadence: {
       coverage_ratio: totalTicks > 0 ? Math.min(1, cadenceTicks / totalTicks) : 0,
-      average_rpm: average(rpm), max_rpm: maximum(rpm), seconds_in_range: [],
+      average_rpm: average(rpm), max_rpm: maximum(rpm),
+      seconds_in_range: rangeObservations(cadenceRanges, cadenceRangeSeconds),
     },
     strength: { completed_steps: completedSteps, planned_steps: plannedSteps },
     voice_memo: { count: voiceCount, duration_seconds: voiceDuration },
@@ -176,9 +211,37 @@ function mergeClientPlaybackObservations(trusted, client) {
 }
 
 function decodedMetric(session, learnerId, metric, compact) {
-  const series = session.timeline?.series ?? session.timeline?.participants?.[learnerId] ?? {};
-  const value = series[`user:${learnerId}:${metric}`] ?? series[`${learnerId}:${compact}`] ?? series[metric] ?? [];
+  const series = session.timeline?.series ?? {};
+  const participantSeries = session.timeline?.participants?.[learnerId] ?? {};
+  const value = series[`user:${learnerId}:${metric}`]
+    ?? series[`${learnerId}:${compact}`]
+    ?? participantSeries[metric]
+    ?? participantSeries[compact]
+    ?? [];
   return Array.isArray(value) ? value : [];
+}
+function requestedRanges(policy, metric) {
+  const found = new Map();
+  const visit = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (node.metric === metric && Array.isArray(node.range) && node.range.length === 2) {
+      found.set(node.range.join(':'), node.range.map(Number));
+    }
+    for (const child of node.all ?? node.any ?? node.atLeast?.of ?? []) visit(child);
+  };
+  visit(policy);
+  return [...found.values()];
+}
+function accumulateRangeSeconds(series, interval, ranges, totals) {
+  for (const value of series) {
+    if (!Number.isFinite(value)) continue;
+    for (const [min, max] of ranges) {
+      if (value >= min && value <= max) totals.set(`${min}:${max}`, totals.get(`${min}:${max}`) + interval);
+    }
+  }
+}
+function rangeObservations(ranges, totals) {
+  return ranges.map(([min, max]) => ({ min, max, seconds: totals.get(`${min}:${max}`) ?? 0 }));
 }
 const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 const maximum = (values) => values.length ? Math.max(...values) : null;

@@ -71,6 +71,7 @@ const FitnessApp = () => {
   // pointer contains no grade; it only lets the final Fitness session save be
   // reconciled against the frozen attempt prepared by the backend.
   const [activeSchoolAttempt, setActiveSchoolAttempt] = useState(() => loadActiveSchoolAttempt());
+  const activeSchoolAttemptRef = useRef(activeSchoolAttempt);
   const [menuMusicTracks, setMenuMusicTracks] = useState([]);
   // Quiet pre-fetch default: the configured menu_music.volume arrives async from
   // /menu-music. Defaulting low means a fetch failure/latency degrades quieter
@@ -85,6 +86,7 @@ const FitnessApp = () => {
     else clearActiveSession();
   }, [fitnessPlayQueue]);
   useEffect(() => {
+    activeSchoolAttemptRef.current = activeSchoolAttempt;
     if (activeSchoolAttempt) saveActiveSchoolAttempt(activeSchoolAttempt);
     else clearActiveSchoolAttempt();
   }, [activeSchoolAttempt]);
@@ -923,7 +925,34 @@ const FitnessApp = () => {
       // It must not bounce back to the Plex show browser's ordinary sequential
       // gate, so load it with the same bypass used by vetted resume traffic.
       const playableSegments = (plan.segments ?? []).filter((segment) => segment.kind === 'plex-video');
-      if (!playableSegments.length) throw new Error('School Fitness plan has no playable video segment');
+      const workoutSegments = (plan.segments ?? []).filter((segment) => segment.kind === 'saved-workout');
+      if (!playableSegments.length && workoutSegments.length === 1) {
+        setFitnessPlayQueue([]);
+        setActiveModule({
+          id: 'fitness_instruction',
+          config: {
+            initialWorkoutId: workoutSegments[0].workoutId,
+            onSchoolWorkoutComplete: async ({ fitnessSessionId }) => {
+              const reconciled = await handleSchoolAttemptClosed({
+                fitnessSessionId,
+                observations: { segments: { completed: 1, in_order: true } },
+              });
+              if (reconciled) {
+                setActiveModule(null);
+                setCurrentView('menu');
+                navigate('/fitness', { replace: true });
+              }
+            },
+          },
+        });
+        setCurrentView('module');
+        navigate('/fitness/module/fitness_instruction', { replace: true });
+        logger.info('school-fitness-workout-started', {
+          workSessionId, learnerId, workoutId: workoutSegments[0].workoutId,
+        });
+        return;
+      }
+      if (!playableSegments.length) throw new Error('School Fitness plan has no playable video or saved workout segment');
       for (const [index, segment] of playableSegments.entries()) {
         // Preserve authored warmup/main/cooldown order in one Fitness queue.
         // eslint-disable-next-line no-await-in-loop
@@ -959,8 +988,8 @@ const FitnessApp = () => {
   });
 
   const handleSchoolAttemptClosed = useCallback(async ({ fitnessSessionId, observations }) => {
-    const attempt = activeSchoolAttempt;
-    if (!attempt?.workSessionId) return;
+    const attempt = activeSchoolAttemptRef.current;
+    if (!attempt?.workSessionId) return false;
     try {
       const assessed = await DaylightAPI(
         `api/v1/fitness/school-attempts/${attempt.workSessionId}/assess`,
@@ -977,14 +1006,16 @@ const FitnessApp = () => {
         result: assessed?.assessment?.result ?? null,
       });
       setActiveSchoolAttempt(null);
+      return true;
     } catch (error) {
       // Keep the pointer so a retry/recovery path can still reconcile the
       // already-persisted Fitness session; never manufacture a School result.
       logger.error('school-fitness-attempt-assess-failed', {
         workSessionId: attempt.workSessionId, fitnessSessionId, error: error?.message,
       });
+      return false;
     }
-  }, [activeSchoolAttempt, logger]);
+  }, [logger]);
 
   const handleHomePlay = useCallback((queueItem) => {
     // Boundary normalize: queueItem comes from upstream caller (widgets that
@@ -1652,6 +1683,7 @@ const FitnessApp = () => {
                   <FitnessModuleContainer
                     moduleId={activeModule.id}
                     mode="standalone"
+                    config={activeModule.config ?? {}}
                     onClose={handleModuleClose}
                   />
                 )}
@@ -1665,6 +1697,7 @@ const FitnessApp = () => {
                 <FitnessModuleContainer
                   moduleId={activeModule.id}
                   mode="standalone"
+                  config={activeModule.config ?? {}}
                   onClose={handleModuleClose}
                 />
               </div>

@@ -5,6 +5,7 @@ import WorkoutRunner from './WorkoutRunner.jsx';
 import ExerciseBrowser from './ExerciseBrowser.jsx';
 import WorkoutBuilder from './WorkoutBuilder.jsx';
 import { logStrengthRun } from './strengthRunLog.js';
+import { DaylightAPI } from '@/lib/api.mjs';
 import './FitnessInstructionContainer.scss';
 
 /**
@@ -48,7 +49,7 @@ const ALLOWED_TRANSITIONS = {
 
 const INITIAL_STATE = 'browse';
 
-export default function FitnessInstructionContainer({ onMount, logRun = logStrengthRun } = {}) {
+export default function FitnessInstructionContainer({ onMount, logRun = logStrengthRun, config = {} } = {}) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-instruction' }), []);
 
   // The live fitness session, when there is a fitness app around us. Optional on
@@ -94,6 +95,31 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
     logger.info('mounted', { view: INITIAL_STATE });
     onMountRef.current?.();
   }, [logger]);
+
+  // A School course may name a saved Fitness workout directly. Prepare it
+  // through the same server-owned expansion used by the normal builder, then
+  // enter Run without manufacturing a second workout-ordering implementation.
+  useEffect(() => {
+    const workoutId = config?.initialWorkoutId;
+    if (!workoutId) return undefined;
+    let active = true;
+    DaylightAPI(`api/v1/fitness/workouts/${workoutId}/run`)
+      .then((result) => {
+        if (!active) return;
+        const plan = {
+          ...(result.workout ?? {}), steps: result.steps ?? [],
+          exercises: Object.entries(result.exercises ?? {}).map(([slug, display]) => ({ slug, ...display })),
+        };
+        workoutRef.current = plan;
+        viewRef.current = 'run';
+        runStartedAtRef.current = new Date();
+        setWorkout(plan);
+        setView('run');
+        logger.info('school-workout-run-prepared', { workoutId, steps: plan.steps.length });
+      })
+      .catch((error) => logger.error('school-workout-run-prepare-failed', { workoutId, error: error?.message }));
+    return () => { active = false; };
+  }, [config?.initialWorkoutId, logger]);
 
   const transition = useCallback((to) => {
     const from = viewRef.current;
@@ -181,6 +207,10 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
         savedWorkout: result.savedWorkout
       });
       setRunLog({ status: 'ok', message: null });
+      config?.onSchoolWorkoutComplete?.({
+        fitnessSessionId: result.sessionId ?? fitnessSessionRef.current?.sessionId ?? null,
+        workoutId: result.workoutId ?? plan?.id ?? null,
+      });
       return;
     }
 
@@ -191,7 +221,7 @@ export default function FitnessInstructionContainer({ onMount, logRun = logStren
       error: result?.message ?? null
     });
     setRunLog({ status: 'failed', message: result?.message ?? null });
-  }, [logger, logRun]);
+  }, [logger, logRun, config]);
 
   // The runner consumes a FLAT, already-ordered step list — `expandWorkout`
   // (backend/src/2_domains/fitness/workout/workout.mjs) owns that ordering and

@@ -3,6 +3,7 @@ import {
   FITNESS_SCHOOL_ACCEPTED_TOPIC,
   FITNESS_SCHOOL_ASSESSED_TOPIC,
   FitnessSchoolCourseService,
+  deriveObservations,
 } from '#apps/fitness/FitnessSchoolCourseService.mjs';
 import { defaultFitnessSuccessPolicy, revisionFor } from '#domains/school/fitnessCourse.mjs';
 
@@ -93,5 +94,28 @@ describe('FitnessSchoolCourseService', () => {
     const second = await service.assess({ workSessionId: 'ses_1', learnerId: 'kid1' });
     expect(second.assessment).toEqual(first.assessment);
     expect(publish).toHaveBeenCalledTimes(calls);
+  });
+
+  it('derives configured HR ranges and counts only learner-attributed voice reflection', () => {
+    const record = {
+      segments: [{ kind: 'sensor-block' }, { kind: 'voice-reflection' }],
+      successPolicy: { all: [
+        { metric: 'heart_rate.seconds_in_range', range: [120, 130], op: 'gte', value: 10 },
+        { metric: 'voice_memo.count', op: 'gte', value: 1 },
+      ] },
+    };
+    const result = deriveObservations({
+      record, learnerId: 'kid1', sessions: [{
+        participants: { kid1: {}, kid2: {} },
+        timeline: { interval_seconds: 5, tick_count: 3, series: { 'kid1:hr': [119, 125, 130] } },
+        summary: { participants: { kid1: {} }, media: [], voiceMemos: [
+          { transcript: 'group memo', durationSeconds: 30 },
+          { userId: 'kid1', transcript: 'mine', durationSeconds: 12 },
+          { userId: 'kid2', transcript: 'not mine', durationSeconds: 20 },
+        ] },
+      }],
+    });
+    expect(result.heart_rate.seconds_in_range).toEqual([{ min: 120, max: 130, seconds: 10 }]);
+    expect(result.voice_memo).toEqual({ count: 1, duration_seconds: 12 });
   });
 });

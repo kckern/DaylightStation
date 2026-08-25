@@ -84,6 +84,12 @@ The supported segment vocabulary is `plex-video`, `saved-workout`,
 `sensor-block`, and `voice-reflection`, with the roles `warmup`, `main`,
 `cooldown`, `drill`, and `reflection`.
 
+A lesson can queue several Plex video segments (for example warmup, main, and
+cooldown), or launch one saved workout through Fitness's normal workout runner.
+Sensor and voice-reflection requirements can accompany either. One lesson does
+not mix a saved workout and Plex videos: author those as adjacent School lessons
+so each kiosk run has one unambiguous executor and its own assessment boundary.
+
 Grouping and course-internal scheduling use School's existing vocabulary:
 `progression.mode` may be `sequential`, `module_blocks`, or `dated_modules`.
 For `dated_modules`, every declared module carries non-overlapping `opensOn`

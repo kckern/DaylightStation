@@ -121,6 +121,14 @@ export function compileFitnessCourse(raw, sourceProjection, ctx = {}) {
 
   units.forEach((unit, index) => {
     if (!moduleIds.has(unit.module)) errors.push(`units[${index}].module "${unit.module}" is not declared`);
+    const videoSegments = unit.activity.segments.filter((segment) => segment.kind === 'plex-video');
+    const workoutSegments = unit.activity.segments.filter((segment) => segment.kind === 'saved-workout');
+    if (videoSegments.length && workoutSegments.length) {
+      errors.push(`units[${index}].segments cannot mix Plex videos and a saved workout in one kiosk run`);
+    }
+    if (workoutSegments.length > 1) {
+      errors.push(`units[${index}].segments may reference only one saved workout`);
+    }
     for (const segment of unit.activity.segments) {
       if (segment.kind === 'plex-video' && !byId.has(String(segment.sourceId))) {
         errors.push(`units[${index}].segments: Plex source "${segment.sourceId}" is not selected`);
@@ -375,6 +383,12 @@ function validatePolicy(node, errors, at) {
     errors.push(`${at}.range must be [min,max]`);
   }
   if (node.zone !== undefined && !isString(node.zone)) errors.push(`${at}.zone must be a string`);
+  if (['heart_rate.seconds_in_range', 'cadence.seconds_in_range'].includes(node.metric) && node.range === undefined) {
+    errors.push(`${at}.range is required for ${node.metric}`);
+  }
+  if (node.metric === 'heart_rate.seconds_in_zone' && !isString(node.zone)) {
+    errors.push(`${at}.zone is required for heart_rate.seconds_in_zone`);
+  }
 }
 
 function safeId(value) {
