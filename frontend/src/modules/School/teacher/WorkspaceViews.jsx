@@ -205,19 +205,17 @@ function SessionList({ learnerId, onOpenSession, window = null, studyDay = null 
 }
 
 export function DashboardView({ kids, onSelectLearner, onOpenQueue }) {
+  // The sidebar/students nav already navigates to workspaces; a duplicate
+  // card grid promising "agenda … and repair" (names the tabs don't use)
+  // was pure drift (UX audit F25/F26). The dashboard is the Today digest
+  // plus a compact backlog summary — the queue owns the full lists.
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading">
         <div><p className="teacher-view__eyebrow">Household school</p><h2>Today at a glance</h2><p>Start with what needs a grown-up, then move into a learner’s day.</p></div>
         <button type="button" className="teacher-primary" onClick={onOpenQueue}>Open action queue</button>
       </div>
-      <TodayTab kids={kids} />
-      <section className="teacher-panel">
-        <h2 className="teacher-panel__title">Student workspaces</h2>
-        <div className="teacher-student-grid">
-          {kids.map((kid) => <button type="button" key={kid.id} onClick={() => onSelectLearner(kid.id)}><strong>{kid.name}</strong><span>Agenda, courses, history, reports, and repair →</span></button>)}
-        </div>
-      </section>
+      <TodayTab kids={kids} onOpenQueue={onOpenQueue} />
     </div>
   );
 }
