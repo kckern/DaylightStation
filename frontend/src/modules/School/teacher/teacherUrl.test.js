@@ -19,13 +19,9 @@ describe('teacher workspace URL model', () => {
     });
   });
 
-  it('supports the temporary rollout base', () => {
-    expect(parseTeacherPath('/school/teacher-next/queue')).toMatchObject({ base: '/school/teacher-next', section: 'queue' });
-    expect(teacherSectionPath('operations', '/school/teacher-next')).toBe('/school/teacher-next/operations');
-  });
-
-  it('interprets useful legacy bookmarks', () => {
-    expect(parseTeacherPath('/school/teacher/records/user_2')).toMatchObject({ kind: 'learner', learnerId: 'user_2', section: 'reports' });
-    expect(parseTeacherPath('/school/teacher/planning/user_2')).toMatchObject({ kind: 'learner', learnerId: 'user_2', section: 'courses' });
+  it('rejects removed rollout and legacy aliases', () => {
+    expect(parseTeacherPath('/school/teacher-next/queue')).toMatchObject({ kind: 'not-found' });
+    expect(parseTeacherPath('/school/teacher/records/user_2')).toMatchObject({ kind: 'not-found' });
+    expect(parseTeacherPath('/school/teacher/planning/user_2')).toMatchObject({ kind: 'not-found' });
   });
 });

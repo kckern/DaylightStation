@@ -13,7 +13,7 @@ import axios from 'axios';
 import { existsSync, readdirSync } from 'fs';
 import { execSync } from 'child_process';
 import path, { join } from 'path';
-import { renderSessionResultPng, renderMachineScanResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
+import { renderMachineScanResultPng } from '#rendering/school/documents/SessionResultRenderer.mjs';
 import { renderCoursePosterFallback } from '#rendering/school/documents/CoursePosterFallbackRenderer.mjs';
 import { YamlSessionResultArtifactStore } from '#adapters/persistence/yaml/YamlSessionResultArtifactStore.mjs';
 
@@ -3748,9 +3748,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
     renderWorksheetThumbnail: renderPdfFirstPagePng,
-    renderSessionResult: renderSessionResultPng,
-    renderReceiptArtifact: schoolLifecycle.renderReceiptArtifact ?? null,
-    sessionResultArtifacts: schoolSessionResultArtifacts,
     renderCoursePosterFallback,
     milestoneStore: schoolMilestoneStore,
     assignmentsStore: schoolLifecycle.stores?.assignments ?? null,

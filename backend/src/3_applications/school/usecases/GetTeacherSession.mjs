@@ -33,7 +33,9 @@ export class GetTeacherSession {
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
         return artifact ? { ...artifact.manifest, availability: 'exact', exactBytesRetained: true,
-          originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf` }
+          originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf`,
+          thumbnailUrl: (artifact.manifest.representation?.mediaType ?? 'application/pdf') === 'application/pdf'
+            ? `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/thumbnail.png` : null }
           : { artifactId, availability: 'unavailable', exactBytesRetained: false };
       })),
       Promise.all((state.resultReceiptArtifacts ?? []).map(async (receipt) => {
@@ -41,47 +43,21 @@ export class GetTeacherSession {
         return artifact ? {
           ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
           originalUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(receipt.artifactId)}/original`,
-          replayUrl: artifact.manifest.sourceDocument
-            ? `/api/v1/school/teacher/artifacts/${encodeURIComponent(receipt.artifactId)}/replay.png` : null,
           printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
         } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false };
       })),
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
     ]);
-    // A worksheet has always been an immutable work-session artifact, even
-    // before the byte-retention store existed. Resolve its published document
-    // revision here rather than making old history look as though it never
-    // produced paper. This is read-through only: opening teacher history must
-    // never mint or alter an artifact.
+    // The published revision remains useful for question/evidence context,
+    // but it is not a substitute for what was physically issued. History
+    // may only call a worksheet an artifact when its immutable bytes were
+    // captured. Re-rendering a current/published document here used to create
+    // a convincing but false "original" for legacy sessions.
     const publishedWorksheet = worksheet?.documentId && worksheet?.documentRevision
       ? await this.#printDocuments?.getPublished?.(worksheet.documentId, worksheet.documentRevision)
       : null;
-    const legacyArtifact = publishedWorksheet ? {
-      schema: 'school.session-artifact/v2',
-      artifactId: worksheet.id ?? `${sessionId}:worksheet`,
-      kind: 'assignment', origin: 'published-document',
-      documentId: worksheet.documentId, documentRevision: worksheet.documentRevision,
-      title: publishedWorksheet.title ?? unit?.title ?? null,
-      createdAt: worksheet.issuedAt ?? state.createdAt ?? null,
-      originalPdfUrl: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/worksheet.pdf`,
-      thumbnailUrl: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/worksheet.thumbnail.png`,
-      exactBytesRetained: false,
-      availability: 'deterministic-replay',
-      rendererRevision: worksheet.rendererRevision ?? null,
-    } : null;
-    let artifactRows = [...issuedArtifactRows, ...receiptArtifactRows];
-    if (legacyArtifact) {
-      const legacyIndex = artifactRows.findIndex((artifact) => artifact.artifactId === legacyArtifact.artifactId
-        || (artifact.documentId === legacyArtifact.documentId && artifact.documentRevision === legacyArtifact.documentRevision));
-      // `issuedArtifacts` deliberately leaves a lightweight `{artifactId}`
-      // placeholder when an old byte archive is absent. Enrich that placeholder
-      // with the published-document artifact instead of allowing it to hide
-      // the worksheet's real historical representation.
-      if (legacyIndex >= 0 && !artifactRows[legacyIndex].originalPdfUrl) {
-        artifactRows[legacyIndex] = { ...artifactRows[legacyIndex], ...legacyArtifact };
-      } else if (legacyIndex < 0) artifactRows = [...artifactRows, legacyArtifact];
-    }
+    const artifactRows = [...issuedArtifactRows, ...receiptArtifactRows];
     const courseId = unit?.courseId ?? null;
     const course = works.find((candidate) => candidate.work === courseId
       || `${candidate.subject}/${candidate.work}` === courseId) ?? null;
@@ -111,9 +87,9 @@ export class GetTeacherSession {
       taxonomy: {
         subject: unit?.subject ?? course?.subject ?? null,
         subjectIcon: unit?.subject ?? course?.subject ?? 'school',
-        courseId, courseTitle: course?.title ?? courseId,
-        moduleId: unit?.module ?? null, moduleTitle: module?.title ?? unit?.module ?? null,
-        lessonId: state.unitId, lessonTitle: unit?.title ?? state.unitId,
+        courseId, courseTitle: course?.title ?? 'Course title unavailable',
+        moduleId: unit?.module ?? null, moduleTitle: module?.title ?? 'Unit title unavailable',
+        lessonId: state.unitId, lessonTitle: unit?.title ?? 'Lesson title unavailable',
         posterUrl: courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(courseId)}/poster.jpg` : null,
       },
       scores: {
@@ -158,11 +134,6 @@ export class GetTeacherSession {
           given: item.given ?? null, verdict: item.verdict ?? null, attemptId: item.attemptId ?? null })),
       artifacts: artifactRows,
       answerSheets,
-      results: {
-        machine: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/results/machine.png`,
-        effective: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/results/effective.png?revision=${events.length}`,
-        rendered: true,
-      },
       progress: {
         courseId, completed: progressUnits.filter((candidate) => ['mastered', 'passed', 'excused', 'replaced'].includes(candidate.status)).length,
         total: courseUnits.length,

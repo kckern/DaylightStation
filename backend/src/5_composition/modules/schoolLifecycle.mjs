@@ -568,8 +568,8 @@ export async function createSchoolLifecycle({
   // A parent-facing "what would print right now" view. It runs the exact same
   // algorithm as `buildAgenda` above — same curriculum, same planner, same
   // program launchers — but against dry-run stand-ins for sessions and tokens,
-  // so a preview can never open a real work session or mint a scannable
-  // ticket. `appendEvent` is a no-op because `ensureSession` only needs to
+  // so a preview can never open a real work session or mint/display a
+  // scannable ticket. `appendEvent` is a no-op because `ensureSession` only needs to
   // REDUCE a session's events to decide what is next; it never has to persist
   // one for a preview to be accurate.
   const previewSessions = {
@@ -595,6 +595,9 @@ export async function createSchoolLifecycle({
     schoolCalcStudies,
     schoolCalcMode: schoolCalcStudies ? 'preview' : 'off',
     selfService: cfg.selfService,
+    // Teacher planning is a non-recording view.  Its document must not carry
+    // a token or panel code that resembles an issued agenda ticket.
+    previewOnly: true,
     curriculumExceptions: curriculumExceptionStore,
     logger: logger.child ? logger.child({ preview: true }) : logger,
   });

@@ -60,11 +60,4 @@ describe('teacherWorkspaceApi', () => {
     }));
   });
 
-  it('opens a historical worksheet through its session rather than creating a new print', async () => {
-    const result = await teacherWorkspaceApi.worksheetPdf('ses/1');
-    expect(result.ok).toBe(true);
-    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/sessions/ses%2F1/worksheet.pdf', expect.objectContaining({
-      method: 'GET', credentials: 'same-origin', headers: {},
-    }));
-  });
 });

@@ -9,8 +9,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
-
-const day = (iso) => (typeof iso === 'string' ? iso.slice(0, 10) : '');
+import { teacherDate } from '../teacherDates.js';
 
 export default function FeedbackNotes({ learnerId, learnerName }) {
   const [limit, setLimit] = useState(20);
@@ -33,9 +32,9 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
         {(Array.isArray(feedback.data) ? feedback.data : []).map((item) => (
           <li key={`${item.sessionId ?? 'note'}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict ?? 'note'}>
             <span className="teacher-feedback__verdict">{item.kind === 'note' ? 'note' : item.verdict}</span>
-            <span className="teacher-feedback__unit">{item.unitId ?? item.sessionId ?? ''}</span>
+            <span className="teacher-feedback__unit">{item.unitTitle ?? item.title ?? (item.kind === 'note' ? '' : 'Lesson feedback')}</span>
             <span className="teacher-feedback__meta">
-              {day(item.gradedAt)}{item.gradedBy ? ` — ${item.gradedBy}` : ''}
+              {teacherDate(item.gradedAt)}{item.gradedBy ? ` — ${item.gradedBy}` : ''}
             </span>
             {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
             {item.kind === 'note' && (

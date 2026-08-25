@@ -12,6 +12,40 @@ a preview look like a learner's history.
 
 ## Two entry points
 
+### Student agenda
+
+The learner workspace must let a teacher select any valid **study day** and
+inspect the planned agenda as data or a rendered image. This is planning, not
+issuance:
+
+- the selected `YYYY-MM-DD` is resolved using the household's study-day
+  boundary (including DST), rather than treated as a UTC calendar date;
+- it uses the dry-run agenda builder, whose session and token writes are
+  no-ops and which does not mint or render an agenda ticket at all;
+- the response is `private, no-store` and names itself
+  `X-School-Preview: agenda-non-recording`;
+- it contains no QR or digit code, usable or otherwise;
+- this planning surface has no print/issue action for any date.
+
+The workspace defaults to the current study day; changing the date lets a
+teacher inspect tomorrow or another day without changing any learner record.
+Issue/print remains a separate, explicit workflow, never an escalation from
+this preview. The study day is resolved by the server's household boundary,
+not the browser's calendar, including the 4am rollover and DST.
+
+## Immutable issued artifacts
+
+An artifact is exact only when its retained bytes are present. Teacher history
+may show the original PDF/receipt, a thumbnail derived from those retained PDF
+bytes, download, and reprint for that record. It must never rebuild a worksheet
+or receipt from current curriculum and label it as historical.
+
+The issuance path follows the same rule: a rescan/reprint uses the retained
+artifact bytes directly. If an older session predates retention and its source
+bytes are absent, the system returns an explicit original-unavailable notice;
+it does not render current data under the old artifact ID. A correction or
+regrade is a separate, newly captured artifact with its own lineage.
+
 ### Lesson material
 
 From a published lesson in Teacher > Curriculum, **Preview worksheet** opens
@@ -61,3 +95,5 @@ component state only.
    recordings, artifact store, and DoNow log unchanged.
 5. The teacher interface distinguishes Preview from Issue/Print with exact,
    non-ambiguous labels.
+6. A future agenda preview does not create an agenda artifact, work session,
+   token, QR/digit credential, dispatch receipt, or printer request.

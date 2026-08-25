@@ -8,7 +8,8 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
+import { teacherDate } from '../teacherDates.js';
 
 export default function MilestonesPanel({ learnerId }) {
   const statuses = usePanelFetch(() => schoolApi.milestones(learnerId), {
@@ -26,6 +27,7 @@ export default function MilestonesPanel({ learnerId }) {
   const [draft, setDraft] = useState([]);
 
   const units = catalog.data?.units ?? [];
+  const titles = curriculumTitles(units);
 
   const startEditing = () => {
     setDraft((statuses.data?.milestones ?? []).map(({ status, ...m }) => m));
@@ -70,8 +72,8 @@ export default function MilestonesPanel({ learnerId }) {
             <ul className="teacher-milestones">
               {statuses.data.milestones.map((m) => (
                 <li key={m.id} className="teacher-milestones__row" data-status={m.status}>
-                  <span className="teacher-milestones__unit">{m.label ?? labelize(m.unitId)}</span>
-                  <span className="teacher-milestones__due">by {m.dueBy}</span>
+                  <span className="teacher-milestones__unit">{m.label ?? titles.lesson(m.unitId)}</span>
+                  <span className="teacher-milestones__due">by {teacherDate(m.dueBy)}</span>
                   <span className="teacher-milestones__status">{m.status}</span>
                 </li>
               ))}
@@ -87,7 +89,7 @@ export default function MilestonesPanel({ learnerId }) {
           {draft.map((row, i) => (
             <div key={row.id} className="teacher-periods__editrow">
               <select aria-label={`Unit ${i}`} value={row.unitId} onChange={(e) => patch(i, 'unitId', e.target.value)}>
-                {units.map((u) => <option key={u.unitId} value={u.unitId}>{u.title ?? u.unitId}</option>)}
+                {units.map((u) => <option key={u.unitId} value={u.unitId}>{titles.lesson(u.unitId)}</option>)}
               </select>
               <input aria-label={`Due ${i}`} type="date" value={row.dueBy} onChange={(e) => patch(i, 'dueBy', e.target.value)} />
               <button type="button" onClick={() => setDraft((d) => d.filter((_, idx) => idx !== i))}>Remove</button>

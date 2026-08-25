@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
 
 /** Stored entries can be strings or {courseId|unitId, elective} objects
  * (CurriculumPlanner.toStored always writes the object form). Everything in
@@ -55,6 +55,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
   const units = catalog.data?.units ?? [];
   const courseIds = [...new Set(units.filter((u) => u.courseId).map((u) => u.courseId))];
   const standaloneIds = units.filter((u) => !u.courseId).map((u) => u.unitId);
+  const titles = curriculumTitles(units);
 
   const startEditing = () => {
     setDraft({
@@ -99,13 +100,13 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               {(record.data.courses ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Courses</h3>
-                  <ul>{idsOf(record.data.courses, 'courseId').map((c) => <li key={c}>{labelize(c)}</li>)}</ul>
+                  <ul>{idsOf(record.data.courses, 'courseId').map((c) => <li key={c}>{titles.course(c)}</li>)}</ul>
                 </div>
               )}
               {(record.data.units ?? []).length > 0 && (
                 <div className="teacher-assignments__group">
                   <h3>Standalone units</h3>
-                  <ul>{idsOf(record.data.units, 'unitId').map((u) => <li key={u}>{labelize(u)}</li>)}</ul>
+                  <ul>{idsOf(record.data.units, 'unitId').map((u) => <li key={u}>{titles.lesson(u)}</li>)}</ul>
                 </div>
               )}
               {record.data.assignedBy && (
@@ -128,7 +129,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
             {[...courseIds, ...draft.courses.filter((id) => !courseIds.includes(id))].map((id) => (
               <label key={id} className={`teacher-assignments__pick${courseIds.includes(id) ? '' : ' is-stale'}`}>
                 <input type="checkbox" checked={draft.courses.includes(id)} onChange={() => toggle('courses', id)} />
-                {labelize(id)}
+                {titles.course(id)}
                 {!courseIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}
@@ -138,7 +139,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
               ))
               .map((id) => (
                 <p key={`enr-${id}`} className="teacher-assignments__enrolled-note">
-                  {labelize(id)} has an enrollment — order and profile are edited from The whole school.
+                  {titles.course(id)} has an enrollment — order and profile are edited from The whole school.
                 </p>
               ))}
           </div>
@@ -147,7 +148,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
             {[...standaloneIds, ...draft.units.filter((id) => !standaloneIds.includes(id))].map((id) => (
               <label key={id} className={`teacher-assignments__pick${standaloneIds.includes(id) ? '' : ' is-stale'}`}>
                 <input type="checkbox" checked={draft.units.includes(id)} onChange={() => toggle('units', id)} />
-                {labelize(id)}
+                {titles.lesson(id)}
                 {!standaloneIds.includes(id) && <span className="teacher-assignments__stale-tag">not in catalog</span>}
               </label>
             ))}

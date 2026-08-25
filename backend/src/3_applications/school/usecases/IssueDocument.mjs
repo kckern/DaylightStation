@@ -294,6 +294,15 @@ export class IssueDocument {
       };
     }
 
+    // An issued artifact is the physical record, not a recipe to be rendered
+    // again.  In particular, an older session may predate byte retention.  A
+    // later scan must not manufacture a current rendering and file it under
+    // the original artifact id: that would make teacher history lie about
+    // what the learner received.  Reprint exact retained bytes or stop.
+    if (state.issuedArtifacts.length > 0) {
+      return this.#reprintExact({ sessionId, nowIso, state });
+    }
+
     const unit = await this.#curriculum.getUnit(state.unitId);
 
     // V2 bank-only lessons are printable worksheets. Their authored bank is
@@ -324,8 +333,7 @@ export class IssueDocument {
       return this.#unavailable(sessionId, 'no-document', 'There is no sheet to print for this one. Tell a grown-up.');
     }
 
-    const reprinting = state.issuedArtifacts.length > 0;
-    const artifactId = reprinting ? state.issuedArtifacts.at(-1) : this.#newArtifactId();
+    const artifactId = this.#newArtifactId();
     const tokens = await this.#mintSheetTokens(document, sessionId, nowIso);
 
     let rendered;
@@ -355,7 +363,7 @@ export class IssueDocument {
       });
     }
 
-    rendered.pdf = await this.#retainIssuedPdf({ artifactId, rendered, reprinting, nowIso, sessionId, state });
+    rendered.pdf = await this.#retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state });
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.pdf, {
@@ -369,7 +377,7 @@ export class IssueDocument {
     // Written first-wins and BEFORE the issue event: see the header.
     if (rendered.formMap) await this.#formMaps.put(artifactId, rendered.formMap);
 
-    const type = reprinting ? 'reprinted' : 'issued';
+    const type = 'issued';
     const { errors, event } = createEvent({
       type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
     });
@@ -377,7 +385,7 @@ export class IssueDocument {
     await this.#sessions.appendEvent(sessionId, event);
 
     this.#logger.info?.('school.issue.printed', {
-      sessionId, unitId: state.unitId, artifactId, reprint: reprinting, pages: rendered.pageCount ?? null,
+      sessionId, unitId: state.unitId, artifactId, reprint: false, pages: rendered.pageCount ?? null,
     });
 
     return {
@@ -388,7 +396,42 @@ export class IssueDocument {
       tokens,
       formMap: rendered.formMap ?? null,
       document: null,
-      message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
+      message: 'Printing your sheet.',
+    };
+  }
+
+  async #reprintExact({ sessionId, nowIso, state }) {
+    const artifactId = state.issuedArtifacts.at(-1);
+    const retained = await this.#issuedArtifacts?.get?.(artifactId) ?? null;
+    if (!retained) {
+      this.#logger.warn?.('school.issue.exact-artifact-unavailable', {
+        sessionId, unitId: state.unitId, artifactId,
+      });
+      return this.#unavailable(sessionId, 'original-unavailable',
+        'The original worksheet was not retained, so we cannot print a substitute as though it were the same sheet.');
+    }
+    let printResult;
+    try {
+      printResult = await this.#printer.printPdf(retained.bytes, {
+        jobName: `school-${state.unitId}-${artifactId}`,
+        user: state.learnerId ?? 'daylight',
+        duplex: retained.manifest?.renderContext?.duplex ?? undefined,
+      });
+    } catch (err) {
+      return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
+    }
+    const { errors, event } = createEvent({
+      type: 'reprinted', at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
+    });
+    if (errors.length) throw new Error(`IssueDocument: could not record exact reprint: ${errors.join('; ')}`);
+    await this.#sessions.appendEvent(sessionId, event);
+    this.#logger.info?.('school.issue.exact-reprinted', {
+      sessionId, unitId: state.unitId, artifactId, pages: retained.manifest?.pageCount ?? null,
+    });
+    return {
+      status: 'reprinted', sessionId, artifactId,
+      pageCount: retained.manifest?.pageCount ?? null, tokens: {}, allocation: retained.manifest?.allocation ?? null,
+      document: null, message: 'Printing that exact worksheet again.',
     };
   }
 
@@ -408,7 +451,7 @@ export class IssueDocument {
     }
 
     let instance = await this.#worksheetInstances.findBySession(sessionId);
-    const reprinting = Boolean(instance);
+    const existingInstance = Boolean(instance);
     if (!instance) {
       const id = `${slugify(unit.subject ?? 'school')}/${slugify(course.courseId)}/ws-${slugify(sessionId)}`;
       const bank = this.#bankReader?.getBank(unit.bank);
@@ -437,7 +480,7 @@ export class IssueDocument {
     const publishedDocument = await this.#printDocuments.getPublished(instance.documentId, instance.documentRevision);
     const learnerName = deriveLearnerName(instance.learnerId);
     const issueDate = deriveIssueDate(instance.issuedAt);
-    const reusableCard = !reprinting && typeof this.#allocationStore.findReusableCard === 'function'
+    const reusableCard = !existingInstance && typeof this.#allocationStore.findReusableCard === 'function'
       ? await this.#allocationStore.findReusableCard({
         learnerId: instance.learnerId,
         rowsNeeded: instance.questions.length,
@@ -455,23 +498,10 @@ export class IssueDocument {
     // see `RenderPrintDocument`'s `buildManifestText`.
     const passPercent = unit.passing?.percent ?? null;
     let rendered;
-    // A retained artifact is already the exact paper that was issued. Do not
-    // render merely to prove it still renders: card-attached rendering writes
-    // allocation state, which makes a reprint a mutation and can burn a card.
-    const retained = reprinting && this.#issuedArtifacts
-      ? await this.#issuedArtifacts.get(instance.id) : null;
-    if (retained) {
-      rendered = {
-        pdf: retained.bytes,
-        pageCount: retained.manifest.pageCount ?? null,
-        formMap: null,
-        allocation: retained.manifest.allocation ?? null,
-        duplex: retained.manifest.renderContext?.duplex ?? null,
-      };
-    } else try {
+    try {
       const result = await this.#renderPrintDocument.execute({
         document: publishedDocument,
-        context: reprinting && instance.omr?.cardId
+        context: existingInstance && instance.omr?.cardId
           ? {
             cardId: instance.omr.cardId, startRow: instance.omr.rowRange.start, learnerId: state.learnerId, learnerName, date: issueDate, sessionId, passPercent,
           }
@@ -494,7 +524,7 @@ export class IssueDocument {
       return this.#recordFailure({ sessionId, stage: 'render', reason: err.message, nowIso, state, cause: 'render' });
     }
 
-    if (!reprinting) {
+    if (!existingInstance) {
       // Card identity only. The answer key — every question's visible options,
       // their printed A–E letters, and which are `correct` — already lives once
       // on `instance.questions[].options` (minted by `issueWorksheet`), and that
@@ -515,7 +545,7 @@ export class IssueDocument {
     }
 
     rendered.pdf = await this.#retainIssuedPdf({
-      artifactId: instance.id, rendered, reprinting, nowIso, sessionId, state,
+      artifactId: instance.id, rendered, nowIso, sessionId, state,
       worksheetInstanceId: instance.id, allocation: rendered.allocation,
       document: publishedDocument,
     });
@@ -536,7 +566,7 @@ export class IssueDocument {
       await this.#orphanAllocation(rendered.allocation, { sessionId, unitId: state.unitId, stage: 'print' });
       return this.#recordFailure({ sessionId, stage: 'print', reason: err.message, nowIso, state, cause: 'printer' });
     }
-    const type = reprinting ? 'reprinted' : 'issued';
+    const type = 'issued';
     const { errors, event } = createEvent({
       type, at: nowIso, sessionId, artifactId: instance.id, confirmed: this.#printConfirmed(printResult),
     });
@@ -545,7 +575,7 @@ export class IssueDocument {
     return {
       status: type, sessionId, artifactId: instance.id, worksheetInstanceId: instance.id,
       pageCount: rendered.pageCount, tokens: {}, allocation: rendered.allocation,
-      document: null, message: reprinting ? 'Printing that exact worksheet again.' : 'Printing your worksheet.',
+      document: null, message: 'Printing your worksheet.',
     };
   }
 
@@ -609,15 +639,10 @@ export class IssueDocument {
    * therefore a log line, not a write — the persistence already happened, in
    * the same role, before the sheet could physically reach a scanner.
    *
-   * REPRINTS GET A FRESH CARD TOO: `RenderPrintDocument` is always called
-   * with `freshCard: true`, even when `reprinting` reuses the ORIGINAL
-   * artifact id for the session's own lineage. This matches, rather than
-   * invents, the allocation store's own documented stance
-   * (`YamlAllocationStore`'s "SUPERSEDE SCOPE" note): a reprint issued
-   * against a different card simply strands the original card's record as an
-   * uncollected allocation, which is the accepted, simpler behaviour there
-   * already — a lost or damaged physical card needs a NEW one regardless of
-   * what the session calls the artifact.
+   * Exact reprints never reach this method: `execute()` reads retained bytes
+   * before it selects an issuing branch. This branch exists only for an
+   * initial print (including retry after a failure before an issue event), so
+   * a fresh card is the only honest allocation.
    *
    * ORPHANED ALLOCATIONS ON A LATE FAILURE (Task 7 review, Finding 2): the
    * write-before-print ordering above means a fit rejection or a print jam
@@ -655,22 +680,11 @@ export class IssueDocument {
       return this.#unavailable(sessionId, 'no-document', 'There is no sheet to print for this one. Tell a grown-up.');
     }
 
-    const reprinting = state.issuedArtifacts.length > 0;
-    const artifactId = reprinting ? state.issuedArtifacts.at(-1) : this.#newArtifactId();
+    const artifactId = this.#newArtifactId();
     const tokens = await this.#mintSheetTokens(published, sessionId, nowIso);
 
     let rendered;
-    const retained = reprinting && this.#issuedArtifacts
-      ? await this.#issuedArtifacts.get(artifactId) : null;
-    if (retained) {
-      rendered = {
-        pdf: retained.bytes,
-        pageCount: retained.manifest.pageCount ?? null,
-        formMap: null,
-        allocation: retained.manifest.allocation ?? null,
-        duplex: retained.manifest.renderContext?.duplex ?? null,
-      };
-    } else try {
+    try {
       const result = await this.#renderPrintDocument.execute({
         // The session's own `variant` overrides the published document's,
         // exactly like the legacy path below (`state.variant === (document.variant
@@ -717,7 +731,7 @@ export class IssueDocument {
     }
 
     rendered.pdf = await this.#retainIssuedPdf({
-      artifactId, rendered, reprinting, nowIso, sessionId, state, allocation: rendered.allocation,
+      artifactId, rendered, nowIso, sessionId, state, allocation: rendered.allocation,
       document: published,
     });
     let printResult;
@@ -755,7 +769,7 @@ export class IssueDocument {
       });
     }
 
-    const type = reprinting ? 'reprinted' : 'issued';
+    const type = 'issued';
     const { errors, event } = createEvent({
       type, at: nowIso, sessionId, artifactId, confirmed: this.#printConfirmed(printResult),
     });
@@ -763,7 +777,7 @@ export class IssueDocument {
     await this.#sessions.appendEvent(sessionId, event);
 
     this.#logger.info?.('school.issue.printed', {
-      sessionId, unitId: state.unitId, artifactId, reprint: reprinting, pages: rendered.pageCount ?? null,
+      sessionId, unitId: state.unitId, artifactId, reprint: false, pages: rendered.pageCount ?? null,
     });
 
     return {
@@ -778,37 +792,19 @@ export class IssueDocument {
       // ResolveScanAction/receipts, none of which read this field today.
       allocation: rendered.allocation ?? null,
       document: null,
-      message: reprinting ? 'Printing that again for you.' : 'Printing your sheet.',
+      message: 'Printing your sheet.',
     };
   }
 
-  /** Persist before dispatch; a reprint always reads the retained bytes. */
-  async #retainIssuedPdf({ artifactId, rendered, reprinting, nowIso, sessionId, state,
+  /** Persist original bytes before physical dispatch. */
+  async #retainIssuedPdf({ artifactId, rendered, nowIso, sessionId, state,
     worksheetInstanceId = null, allocation = null, document = null }) {
     const renderedBytes = Buffer.isBuffer(rendered.pdf) ? rendered.pdf : Buffer.from(rendered.pdf);
     if (!this.#issuedArtifacts) return renderedBytes;
-    if (reprinting) {
-      const retained = await this.#issuedArtifacts.get(artifactId);
-      if (retained) {
-        // Some renderers allocate an OMR card while proving the source still
-        // renders. If that allocation differs from the card printed into the
-        // retained PDF, release it and keep the original allocation lineage;
-        // otherwise the store would claim the reprint carried a card that is
-        // not actually visible on its exact bytes.
-        if (allocation?.recordId
-            && allocation.recordId !== retained.manifest?.allocation?.recordId) {
-          await this.#orphanAllocation(allocation, {
-            sessionId, unitId: state.unitId, stage: 'retained-reprint',
-          });
-          rendered.allocation = retained.manifest?.allocation ?? null;
-        }
-        return retained.bytes;
-      }
-    }
     const retained = await this.#issuedArtifacts.put({
       artifactId, bytes: renderedBytes, pageCount: rendered.pageCount ?? null,
       issuedAt: nowIso, sessionId, learnerId: state.learnerId, unitId: state.unitId,
-      captureKind: reprinting ? 'reconstructed' : 'original', worksheetInstanceId, allocation,
+      captureKind: 'original', worksheetInstanceId, allocation,
       kind: 'worksheet', document,
       renderContext: {
         learnerId: state.learnerId ?? null, sessionId,

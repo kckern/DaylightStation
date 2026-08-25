@@ -11,9 +11,9 @@ import { languageApi } from '../../Programs/SentenceLadder/languageApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
-import { labelize } from '../labelize.js';
 import { teacherBaseFor } from '../teacherUrl.js';
 import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
+import { LessonIdentity } from '../CurriculumIdentity.jsx';
 
 function PassOverride({ unit, override, onSaved }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override' });
@@ -90,7 +90,14 @@ export default function CurriculumBrowser() {
           <span className="teacher-curriculum__unit-line1">
             <span className="teacher-curriculum__unit-title">
               {!u.hasBank && <span className="teacher-curriculum__nobank-dot" title="No quiz bank yet" aria-label="No quiz bank yet" />}
-              {u.title}
+              <LessonIdentity
+                compact
+                subject={u.subject}
+                courseTitle={u.courseTitle}
+                moduleTitle={u.moduleTitle}
+                lessonTitle={u.title}
+                posterUrl={u.courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(u.courseId)}/poster.jpg` : null}
+              />
             </span>
           </span>
           <span className="teacher-curriculum__unit-line2">

@@ -19,7 +19,7 @@ import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
 import EnrollmentDrawer from './EnrollmentDrawer.jsx';
-import { labelize } from '../labelize.js';
+import { curriculumTitles } from '../curriculumTitles.js';
 
 /** Pure model: rows per learner, columns per course, plus the flag sets. */
 export function deriveMatrix({ assignments, units, kids, syllabi = [] }) {
@@ -86,6 +86,7 @@ export default function SchoolMatrix({ kids }) {
   const state = assignments.state === 'ok' && units.state === 'ok' ? 'ok'
     : assignments.state === 'loading' || units.state === 'loading' ? 'loading'
       : assignments.state === 'ok' || units.state === 'ok' ? 'ok' : units.state;
+  const titles = curriculumTitles(units.data?.units ?? (Array.isArray(units.data) ? units.data : []));
 
   return (
     <PanelFrame title="The whole school" state={state} retry={() => { assignments.retry(); units.retry(); }} emptyCopy="No courses published yet.">
@@ -96,7 +97,7 @@ export default function SchoolMatrix({ kids }) {
               <th aria-label="Learner" />
               {model.courseIds.map((id) => (
                 <th key={id} className={model.unenrolled.includes(id) ? 'is-unenrolled' : ''}>
-                  {labelize(id)}
+                  {titles.course(id)}
                 </th>
               ))}
             </tr>
@@ -113,7 +114,7 @@ export default function SchoolMatrix({ kids }) {
                         type="button"
                         className="teacher-matrix__cell"
                         onClick={() => setOpen({ learnerId: row.learnerId, courseId: id })}
-                        aria-label={`${row.name}, ${labelize(id)}`}
+                        aria-label={`${row.name}, ${titles.course(id)}`}
                       >
                         {cell
                           ? `${cell.syllabusTitle ?? '—'}${cell.profile ? ` · ${cell.profile}` : ''}${(cell.hasEnrollment && !cell.managed) ? ' ⚑' : ''}`
@@ -131,6 +132,7 @@ export default function SchoolMatrix({ kids }) {
             key={`${open.learnerId}:${open.courseId}`}
             learner={kids.find((k) => k.id === open.learnerId) ?? { id: open.learnerId, name: open.learnerId }}
             courseId={open.courseId}
+            courseTitle={titles.course(open.courseId)}
             cell={model.rows.find((r) => r.learnerId === open.learnerId)?.cells[open.courseId] ?? null}
             syllabi={syllabi.data?.syllabi ?? []}
             baseUpdatedAt={(assignments.data?.assignments ?? []).find((a) => a.learnerId === open.learnerId)?.updatedAt ?? null}
@@ -150,7 +152,7 @@ export default function SchoolMatrix({ kids }) {
         )}
         {model.unenrolled.length > 0 && (
           <p className="teacher-matrix__note" data-testid="matrix-unenrolled">
-            Nobody is enrolled in: {model.unenrolled.map(labelize).join(', ')}
+            Nobody is enrolled in: {model.unenrolled.map(titles.course).join(', ')}
           </p>
         )}
         {model.orphanLearners.length > 0 && (

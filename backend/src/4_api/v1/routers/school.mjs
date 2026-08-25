@@ -9,7 +9,6 @@ import { splatPath } from '#api/utils/wildcard.mjs';
 // filename/document-id — see receipts.mjs:30. Reused here (not replicated) so
 // the two Content-Disposition-adjacent id-sanitizing call sites can't drift.
 import { slugify } from '#domains/school/documents/receipts.mjs';
-import { buildReprintContext, deriveIssueDate, deriveLearnerName } from '#apps/school/documents/reprintContext.mjs';
 
 export function createSchoolRouter({
   schoolErrors = {},
@@ -45,9 +44,6 @@ export function createSchoolRouter({
   teacherAgendaDispatch = null,
   renderArtifactPostview = null,
   renderWorksheetThumbnail = null,
-  renderSessionResult = null,
-  renderReceiptArtifact = null,
-  sessionResultArtifacts = null,
   reprintIssuedArtifact = null,
   reprintResultReceiptArtifact = null,
   manageCurriculumException = null,
@@ -1095,11 +1091,23 @@ export function createSchoolRouter({
     if (!attemptsStore) return res.json({ assessments: [] });
     const learnerId = requiredTextQuery(req.query.learnerId, 'learnerId');
     const day = requiredTextQuery(req.query.day, 'day');
+    // Reassignment is an adult repair action, but the picker still needs a
+    // human name for the work.  An opaque bank ID is only useful to the write
+    // command and must not be promoted into the visible label.
+    const bankTitleById = new Map((schoolService?.listBanks?.() ?? [])
+      .filter((bank) => bank?.id && bank?.title)
+      .map((bank) => [bank.id, bank.title]));
     const byAssessment = new Map();
     for (const attempt of attemptsStore.readAttemptDay(learnerId, day)) {
       const id = attempt.sessionId ?? attempt.provenance?.recordId ?? null;
       if (!id) continue;
-      const entry = byAssessment.get(id) ?? { assessmentId: id, count: 0, bankId: attempt.bankId ?? null, firstAt: attempt.at };
+      const entry = byAssessment.get(id) ?? {
+        assessmentId: id,
+        count: 0,
+        bankId: attempt.bankId ?? null,
+        title: attempt.title ?? attempt.unitTitle ?? bankTitleById.get(attempt.bankId) ?? null,
+        firstAt: attempt.at,
+      };
       entry.count += 1;
       if (attempt.at < entry.firstAt) entry.firstAt = attempt.at;
       byAssessment.set(id, entry);
@@ -1340,83 +1348,6 @@ export function createSchoolRouter({
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
   }));
-  // Historical worksheet viewing is a pure reconstruction from the immutable
-  // published document revision and the issued worksheet instance. It never
-  // allocates a card, creates an artifact, or changes session state.
-  router.get('/teacher/sessions/:sessionId/worksheet.pdf', wrap(async (req, res) => {
-    if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo) {
-      throw new EntityNotFoundError('worksheet render', 'not configured');
-    }
-    const session = await getTeacherSession.execute({ sessionId: req.params.sessionId });
-    const assignment = session.assignment;
-    if (!assignment?.documentId || !assignment?.documentRevision) {
-      throw new EntityNotFoundError('worksheet artifact', req.params.sessionId);
-    }
-    const document = await printDocumentsRepo.getPublished(assignment.documentId, assignment.documentRevision);
-    if (!document) throw new EntityNotFoundError('published worksheet', assignment.documentId);
-    const instance = session.worksheetSnapshot;
-    const cardContext = instance?.omr?.cardId && instance?.omr?.rowRange
-      ? { ...buildReprintContext(instance), historicalCard: true }
-      : {
-        learnerId: instance?.learnerId ?? session.state?.learnerId ?? null,
-        learnerName: deriveLearnerName(instance?.learnerId ?? session.state?.learnerId ?? ''),
-        date: instance?.issuedAt ? deriveIssueDate(instance.issuedAt) : null,
-        sessionId: req.params.sessionId,
-      };
-    const result = await renderPrintDocument.execute({ document, context: {
-      ...cardContext,
-      passPercent: instance?.passingPercent ?? session.state?.gradedPassingPercent ?? null,
-    } });
-    res.set('Cache-Control', 'private, no-store')
-      .set('X-School-Artifact', 'deterministic-replay')
-      .set('Content-Disposition', `inline; filename="worksheet-${slugify(req.params.sessionId)}.pdf"`)
-      .type('application/pdf').send(Buffer.from(result.bytes));
-  }));
-  // This is a small visual representation of the same frozen worksheet PDF,
-  // not a new artifact. The original/replay PDF remains the downloadable
-  // source of record.
-  router.get('/teacher/sessions/:sessionId/worksheet.thumbnail.png', wrap(async (req, res) => {
-    if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo || !renderWorksheetThumbnail) {
-      throw new EntityNotFoundError('worksheet preview', 'not configured');
-    }
-    const session = await getTeacherSession.execute({ sessionId: req.params.sessionId });
-    const assignment = session.assignment;
-    if (!assignment?.documentId || !assignment?.documentRevision) {
-      throw new EntityNotFoundError('worksheet artifact', req.params.sessionId);
-    }
-    const document = await printDocumentsRepo.getPublished(assignment.documentId, assignment.documentRevision);
-    if (!document) throw new EntityNotFoundError('published worksheet', assignment.documentId);
-    const instance = session.worksheetSnapshot;
-    const cardContext = instance?.omr?.cardId && instance?.omr?.rowRange
-      ? { ...buildReprintContext(instance), historicalCard: true }
-      : {
-        learnerId: instance?.learnerId ?? session.state?.learnerId ?? null,
-        learnerName: deriveLearnerName(instance?.learnerId ?? session.state?.learnerId ?? ''),
-        date: instance?.issuedAt ? deriveIssueDate(instance.issuedAt) : null,
-        sessionId: req.params.sessionId,
-      };
-    const rendered = await renderPrintDocument.execute({ document, context: {
-      ...cardContext,
-      passPercent: instance?.passingPercent ?? session.state?.gradedPassingPercent ?? null,
-    } });
-    const png = await renderWorksheetThumbnail(Buffer.from(rendered.bytes));
-    res.set('Cache-Control', 'private, no-store')
-      .set('X-School-Artifact', 'deterministic-replay-preview')
-      .type('image/png').send(png);
-  }));
-  router.get('/teacher/sessions/:sessionId/results/:kind.png', wrap(async (req, res) => {
-    if (!getTeacherSession || !renderSessionResult) throw new EntityNotFoundError('rendered session result', 'not configured');
-    if (!['machine', 'effective'].includes(req.params.kind)) throw new ValidationError('result kind must be machine or effective');
-    const retained = req.params.kind === 'machine'
-      ? await sessionResultArtifacts?.getMachine?.(req.params.sessionId) : null;
-    const session = retained ? null : await getTeacherSession.execute({ sessionId: req.params.sessionId });
-    const png = retained ?? await renderSessionResult(session, { kind: req.params.kind });
-    res.set('Cache-Control', 'private, no-store')
-      .set('Content-Type', 'image/png')
-      .set('X-School-Result-Artifact', retained ? 'rendered-retained' : 'rendered-reconstructed')
-      .set('Content-Disposition', `inline; filename="result-${slugify(req.params.sessionId)}-${req.params.kind}.png"`)
-      .send(png);
-  }));
   router.post('/teacher/sessions/:sessionId/remediation', wrap(async (req, res) => {
     if (!openRemediation || !teacherGate) throw new EntityNotFoundError('teacher remediation', 'not configured');
     const body = req.body || {};
@@ -1441,6 +1372,22 @@ export function createSchoolRouter({
       .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.pdf"`)
       .send(artifact.bytes);
   }));
+  // A thumbnail is a view of retained bytes, never a fresh worksheet render.
+  // It gives the history card the visual affordance of paper without making a
+  // historical reconstruction look like an original artifact.
+  router.get('/teacher/artifacts/:artifactId/thumbnail.png', wrap(async (req, res) => {
+    if (!issuedArtifactStore || !renderWorksheetThumbnail) {
+      throw new EntityNotFoundError('artifact thumbnail', 'not configured');
+    }
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
+    if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
+    const png = await renderWorksheetThumbnail(artifact.bytes);
+    res.set('Cache-Control', 'private, no-store')
+      .set('X-School-Artifact', 'exact-thumbnail')
+      .type('image/png').send(png);
+  }));
   router.get('/teacher/artifacts/:artifactId/original', wrap(async (req, res) => {
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
@@ -1450,17 +1397,6 @@ export function createSchoolRouter({
       .set('Content-Type', representation.mediaType)
       .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.${representation.extension}"`)
       .send(artifact.bytes);
-  }));
-  router.get('/teacher/artifacts/:artifactId/replay.png', wrap(async (req, res) => {
-    if (!issuedArtifactStore || !renderReceiptArtifact) throw new EntityNotFoundError('receipt replay', 'not configured');
-    const artifact = await issuedArtifactStore.get(req.params.artifactId);
-    if (!artifact?.manifest?.sourceDocument) throw new EntityNotFoundError('frozen receipt source', req.params.artifactId);
-    const rendered = await renderReceiptArtifact(artifact.manifest.sourceDocument);
-    res.set('Cache-Control', 'private, no-store')
-      .set('Content-Type', 'image/png')
-      .set('X-School-Artifact', 'frozen-replay')
-      .set('Content-Disposition', `inline; filename="replay-${slugify(req.params.artifactId)}.png"`)
-      .send(rendered.bytes);
   }));
   router.post('/teacher/artifacts/:artifactId/reprint', wrap(async (req, res) => {
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');

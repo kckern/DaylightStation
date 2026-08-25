@@ -8,7 +8,6 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import { labelize } from '../labelize.js';
 
 export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
   const [day, setDay] = useState('');
@@ -65,7 +64,7 @@ export default function ReassignPanel({ learnerId, learnerName, kids = [] }) {
         <ul className="teacher-quizreq">
           {assessments.map((a) => (
             <li key={a.assessmentId} className="teacher-quizreq__row">
-              <span>{a.bankId ? labelize(a.bankId.split('/').pop()) : a.assessmentId}</span>
+              <span>{a.title ?? a.bankTitle ?? 'Recorded work with no published title'}</span>
               <span className="teacher-quizreq__meta">{a.count} answer{a.count === 1 ? '' : 's'}</span>
               <button type="button" disabled={!target || busy === a.assessmentId} onClick={() => move(a)}>Reassign</button>
               {errors[a.assessmentId] && <p className="teacher-panel__error">{errors[a.assessmentId]}</p>}

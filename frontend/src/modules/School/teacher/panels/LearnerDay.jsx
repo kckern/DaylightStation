@@ -11,6 +11,8 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
 import IssuedArtifactCard from './IssuedArtifactCard.jsx';
 
+const isReceipt = (artifact) => artifact.kind === 'result-receipt' || artifact.role === 'result-receipt';
+
 function SessionArtifacts({ summary }) {
   const sessionId = summary.sessionId;
   const detail = usePanelFetch(
@@ -20,8 +22,11 @@ function SessionArtifacts({ summary }) {
   const session = detail.data;
   const taxonomy = session?.taxonomy ?? summary;
   const artifacts = session?.artifacts ?? [];
-  const worksheet = artifacts.find((artifact) => artifact.originalPdfUrl);
-  const receipt = artifacts.find((artifact) => artifact.kind === 'result-receipt' && (artifact.originalUrl || artifact.replayUrl));
+  // An unavailable artifact is still important evidence: hiding it behind a
+  // generic empty state implies nothing was issued.  Show its honest archival
+  // status beside retained originals instead.
+  const worksheet = artifacts.find((artifact) => !isReceipt(artifact));
+  const receipt = artifacts.find(isReceipt);
   const lessonTitle = taxonomy.lessonTitle ?? summary.lessonTitle ?? 'Lesson';
 
   return <section className="teacher-today-record">
@@ -40,7 +45,7 @@ export default function LearnerDay({ sessions = [] }) {
   if (!sessions.length) return null;
   return <section className="teacher-issued-records" aria-label="Today’s issued materials and results">
     <h3>Today&rsquo;s paper and results</h3>
-    <p>Open the same worksheet and result receipt that belong to each completed lesson.</p>
+    <p>Open retained originals for each completed lesson. If an older print was not archived, that record says so plainly.</p>
     {sessions.filter((session) => session.sessionId).map((session) => (
       <SessionArtifacts key={session.sessionId} summary={session} />
     ))}

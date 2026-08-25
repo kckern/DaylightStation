@@ -62,6 +62,15 @@ function scriptedPrinter(confirmed) {
 
 async function buildAndCreateSession({ printer, clock }) {
   const sessions = new FakeSessionRepository();
+  const artifactRecords = new Map();
+  const issuedArtifacts = {
+    get: async (id) => artifactRecords.get(id) ?? null,
+    put: async (artifact) => {
+      const retained = { manifest: { artifactId: artifact.artifactId, pageCount: artifact.pageCount, renderContext: artifact.renderContext }, bytes: Buffer.from(artifact.bytes) };
+      artifactRecords.set(artifact.artifactId, retained);
+      return retained;
+    },
+  };
   const issueDocument = new IssueDocument({
     curriculum: fakeCurriculum(),
     sessions,
@@ -69,6 +78,7 @@ async function buildAndCreateSession({ printer, clock }) {
     renderer: new FakeDocumentRenderer(),
     printer,
     formMaps: new FakeFormMapStore(),
+    issuedArtifacts,
     clock: clock.now,
     logger: silentLogger,
   });

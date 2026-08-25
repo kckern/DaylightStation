@@ -9,7 +9,8 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
-import { SUBJECTS } from '../../home/subjects.js';
+import { SUBJECTS, subjectLabel } from '../../home/subjects.js';
+import { teacherDateRange } from '../teacherDates.js';
 
 const EMPTY_FORM = { title: '', from: '', to: '', note: '', learnerIds: [], subjectIds: [], kind: 'enrichment' };
 
@@ -56,9 +57,9 @@ export default function EnrichmentPanel({ kids = [] }) {
               {[...entries.data.entries].reverse().map((e) => (
                 <li key={e.id} className="teacher-enrichment__row">
                   <span className="teacher-enrichment__title">{e.title}{e.kind === 'absence' ? ' (excused absence)' : ''}</span>
-                  <span className="teacher-enrichment__dates">{e.from}{e.to !== e.from ? ` → ${e.to}` : ''}</span>
+                  <span className="teacher-enrichment__dates">{teacherDateRange(e.from, e.to)}</span>
                   <span className="teacher-enrichment__meta">
-                    {(e.learnerIds ?? []).join(', ')}{(e.subjectIds ?? []).length ? ` · ${e.subjectIds.join(', ')}` : ''}
+                    {(e.learnerIds ?? []).join(', ')}{(e.subjectIds ?? []).length ? ` · ${(e.subjectIds ?? []).map(subjectLabel).join(', ')}` : ''}
                   </span>
                   {e.note && <span className="teacher-enrichment__note">{e.note}</span>}
                   <button type="button" disabled={busy === `retract:${e.id}`} onClick={() => retract(e)}>Retract</button>

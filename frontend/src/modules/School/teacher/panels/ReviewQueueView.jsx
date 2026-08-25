@@ -54,7 +54,7 @@ export default function ReviewQueueView({ items, kids, onResolved }) {
               return (
                 <li key={key} className="teacher-review__item">
                   {item.questionNumber != null && <span className="teacher-review__qnum">Q{item.questionNumber}</span>}
-                  <span className="teacher-review__prompt">{item.prompt ?? item.itemId}</span>
+                  <span className="teacher-review__prompt">{item.prompt ?? 'Question text unavailable'}</span>
                   {waitAge(item.enqueuedAt) && (
                     <span className="teacher-review__age">waiting {waitAge(item.enqueuedAt)}</span>
                   )}

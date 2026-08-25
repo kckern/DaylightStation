@@ -9,13 +9,12 @@ function isReceipt(artifact) {
 
 function availabilityLabel(artifact) {
   if (artifact.availability === 'exact') return 'Exact issued file';
-  if (artifact.availability === 'deterministic-replay') return 'Recreated from the frozen issued worksheet';
-  return 'Historical file unavailable';
+  return 'Original print was not archived';
 }
 
 export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' }) {
   const receipt = isReceipt(artifact);
-  const url = receipt ? (artifact.originalUrl ?? artifact.replayUrl) : artifact.originalPdfUrl;
+  const url = receipt ? artifact.originalUrl : artifact.originalPdfUrl;
   const title = receipt ? 'Result receipt' : `${lessonTitle} worksheet`;
   if (!url) {
     return <article className="teacher-issued-artifact teacher-issued-artifact--unavailable">
@@ -31,7 +30,7 @@ export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' })
     <div className="teacher-issued-artifact__copy">
       <strong>{title}</strong>
       <small>{receipt
-        ? (artifact.originalUrl ? 'Exact printed result file' : 'Recreated from its frozen receipt data')
+        ? 'Exact printed result file'
         : availabilityLabel(artifact)}</small>
       <div className="teacher-issued-artifact__actions">
         <a href={url} target="_blank" rel="noreferrer">Open {receipt ? 'receipt' : 'worksheet'}</a>

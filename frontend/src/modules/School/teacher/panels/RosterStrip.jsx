@@ -8,6 +8,7 @@ import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import LearnerDay from './LearnerDay.jsx';
 import { teacherBaseFor, teacherSessionPath } from '../teacherUrl.js';
 import { LessonIdentity } from '../CurriculumIdentity.jsx';
+import { teacherDate } from '../teacherDates.js';
 
 function humanDay(value) {
   if (!value) return null;
@@ -87,7 +88,10 @@ export default function RosterStrip({ rows, kids }) {
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title} posterUrl={session.posterUrl} compact />
               <small className="teacher-day-session__outcome">{[humanDay(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
             </a>)}</div>}
-            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}><strong>{session.lessonTitle ?? 'Lesson'}</strong><span>Work from {session.studyDay} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span></a>)}</section>}
+            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
+              <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact />
+              <span>Work from {teacherDate(session.studyDay)} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span>
+            </a>)}</section>}
             <LearnerDay sessions={sessions} />
           </div>}
           </>; })()}

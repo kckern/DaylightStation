@@ -63,7 +63,7 @@ beforeEach(() => {
   teacherWorkspaceApi.session.mockResolvedValue(ok({
     sessionId: 'ses_1', taxonomy: { subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', lessonTitle: 'Illinois', posterUrl: '/course-poster.jpg' },
     artifacts: [
-      { artifactId: 'worksheet-1', kind: 'assignment', availability: 'deterministic-replay', originalPdfUrl: '/issued/illinois.pdf' },
+      { artifactId: 'worksheet-1', kind: 'assignment', availability: 'exact', originalPdfUrl: '/issued/illinois.pdf' },
       { artifactId: 'receipt-1', kind: 'result-receipt', availability: 'exact', originalUrl: '/issued/illinois-receipt.png' },
     ],
   }));
