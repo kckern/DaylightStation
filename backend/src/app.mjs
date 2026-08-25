@@ -162,6 +162,7 @@ import { initUnlockService } from '#apps/fitness/unlockService.mjs';
 import { initManageService } from '#apps/fitness/manageService.mjs';
 import { createFoodScaleRelay } from '#apps/hardware/foodScaleRelay.mjs';
 import { createOmrRelay } from '#apps/hardware/omrRelay.mjs';
+import { createOmrReaderLiveness } from '#apps/hardware/omrReaderLiveness.mjs';
 import { createPressureMatRelay } from '#apps/hardware/pressureMatRelay.mjs';
 import { PressureMatAdapter } from '#adapters/hardware/pressure-mat/index.mjs';
 import { createPressureMatRouter } from '#api/v1/routers/pressureMat.mjs';
@@ -795,6 +796,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     timezone: configService.getHouseholdTimezone?.(householdId),
     logger: rootLogger.child({ module: 'omr-relay' }),
   });
+
+  // OMR reader liveness — a DIFFERENT failure mode than relayWatchdog's
+  // silence check: on 2026-08-25 a reader flapped, and on some reconnects
+  // the backend held a live socket for it that never subscribed to its own
+  // topic. The reader believed it was online; a scan produced no backend
+  // event at all. relayWatchdog can't catch this (a connected-but-mute
+  // socket looks identical to a quiet one); this is a short-grace-period
+  // check on the connect->subscribe handshake instead, so it fires within
+  // seconds rather than hours and never pages for ordinary term-time quiet.
+  const omrReaderLiveness = createOmrReaderLiveness({
+    eventBus,
+    logger: rootLogger.child({ module: 'omr-reader-liveness' }),
+  });
+  const omrReaderLivenessTimer = setInterval(() => omrReaderLiveness.check(), 2000);
+  omrReaderLivenessTimer.unref?.();
 
   // Quiz-sheet decoder — the form-specific consumer of those scans. Subscribes
   // to the same topic and double-processes each card: the relay keeps the raw

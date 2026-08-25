@@ -50,6 +50,7 @@ export class WebSocketEventBus {
   #connectionHandlers = [];
   #disconnectionHandlers = [];
   #messageHandlers = [];
+  #subscriptionHandlers = [];
 
   // Metrics
   #metrics = {
@@ -619,6 +620,17 @@ export class WebSocketEventBus {
     this.#messageHandlers.push(callback);
   }
 
+  /**
+   * Register subscription handler — fired when a client's `subscribe`
+   * bus_command takes effect. `bus_command` messages are handled inside
+   * `#handleBusCommand` and never reach `#messageHandlers`, so this is the
+   * only way application code can observe a subscription.
+   * @param {Function} callback - (clientId, topics) => void
+   */
+  onClientSubscription(callback) {
+    this.#subscriptionHandlers.push(callback);
+  }
+
   // ===========================================================================
   // Metrics
   // ===========================================================================
@@ -832,6 +844,13 @@ export class WebSocketEventBus {
       case 'subscribe':
         this.subscribeClient(clientId, targetTopics);
         this.#logger.info?.('eventbus.client_subscribed', { clientId, topics: targetTopics });
+        for (const handler of this.#subscriptionHandlers) {
+          try {
+            handler(clientId, targetTopics);
+          } catch (err) {
+            this.#logger.error?.('eventbus.subscription_handler_error', { error: err.message });
+          }
+        }
         break;
       case 'unsubscribe':
         this.unsubscribeClient(clientId, targetTopics);
