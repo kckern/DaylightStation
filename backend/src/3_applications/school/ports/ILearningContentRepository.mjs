@@ -18,6 +18,11 @@ export class ILearningContentRepository {
     throw new Error('ILearningContentRepository.getFlashcardDeck must be implemented');
   }
 
+  /** @returns {Promise<object[]>} authored rich flashcard decks visible on this content source */
+  async listFlashcardDecks() {
+    throw new Error('ILearningContentRepository.listFlashcardDecks must be implemented');
+  }
+
   /** @returns {Promise<object|null>} server-side learning-action definition */
   async getLearningAction(actionId) { // eslint-disable-line no-unused-vars
     throw new Error('ILearningContentRepository.getLearningAction must be implemented');

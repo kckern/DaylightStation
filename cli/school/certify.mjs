@@ -52,6 +52,7 @@ import { sortKeys, writeManifest } from '#apps/school/surfaces/certificationMani
 import {
   listCatalogLessons, validateLearningCatalog,
 } from '#domains/school/catalog/index.mjs';
+import { validateFlashcardDeck } from '#domains/school/flashcards/index.mjs';
 import { isRegisteredCapability } from '#domains/school/surfaces/index.mjs';
 import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 
@@ -67,6 +68,7 @@ const VALUE_FLAGS = new Set([
   'catalog-directories',
   'document-directories',
   'question-bank-directories',
+  'flashcard-deck-directories',
   'surfaces-directory',
   'assets-directory',
   'surface',
@@ -88,6 +90,7 @@ Options:
   --catalog-directories <a,b>        override Catalog mount directories
   --document-directories <a,b>       override learning-document mount directories
   --question-bank-directories <a,b>  override question-bank mount directories
+  --flashcard-deck-directories <a,b> override rich flashcard-deck mount directories
   --surfaces-directory <path>        override surface-profile directory
                                      (default: household/school/surfaces)
   --assets-directory <path>          override asset directory (default: <content-root>/assets)
@@ -175,8 +178,18 @@ export function resolveCertifyPaths({ flags = {}, env = process.env } = {}) {
     ...base,
     surfacesDirectory,
     assetsDirectory,
+    deckDirectories: resolveDirectoryList(
+      flags['flashcard-deck-directories'], [path.join(base.contentRoot, 'flashcard-decks')], base.dataDir, 'flashcard-deck-directories',
+    ),
     manifestPath: path.join(base.contentRoot, 'certification-manifest.json'),
   };
+}
+
+function resolveDirectoryList(value, fallback, dataDir, name) {
+  const raw = valueFlag(value, name);
+  const entries = raw === undefined ? fallback : raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+  if (!entries.length) throw new Error(`--${name} needs at least one directory`);
+  return [...new Set(entries.map((entry) => path.isAbsolute(entry) ? path.resolve(entry) : path.resolve(dataDir, entry)))];
 }
 
 /** Sort rows so `--json` output (and the printed table) is byte-stable across runs. */
@@ -229,7 +242,12 @@ function collectAssetKeys(assetsDirectory) {
       if (entry.name.startsWith('.')) return;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
-      else keys.add(rel.replace(/\.[^./]+$/, ''));
+      else {
+        // Historical question banks use extensionless content refs, while rich
+        // flashcard media uses the concrete served filename. Both are valid.
+        keys.add(rel);
+        keys.add(rel.replace(/\.[^./]+$/, ''));
+      }
     });
   };
   walk(assetsDirectory, '');
@@ -277,7 +295,7 @@ function collectItemAssetRefs(item) {
  * through catalog references) so a stray unreferenced document/bank with a
  * dangling ref is still caught.
  */
-function validateAssetReferences({ documentDirectories, bankDirectories, assetsDirectory }) {
+function validateAssetReferences({ documentDirectories, bankDirectories, deckDirectories = [], assetsDirectory }) {
   const assetKeys = collectAssetKeys(assetsDirectory);
   const errors = [];
   documentDirectories.forEach((directory) => {
@@ -303,6 +321,36 @@ function validateAssetReferences({ documentDirectories, bankDirectories, assetsD
           }
         });
       });
+    });
+  });
+  deckDirectories.forEach((directory) => {
+    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
+      const deck = loadYaml(path.join(directory, relative));
+      if (!deck || !Array.isArray(deck.cards)) return;
+      deck.cards.forEach((card) => ['front', 'back'].forEach((face) => {
+        (card?.[face]?.blocks ?? []).forEach((block, index) => {
+          if (!['image', 'audio', 'video'].includes(block?.type)) return;
+          if (!assetKeys.has(block.assetId)) errors.push(`flashcard deck '${deck.id ?? relative}': card '${card.cardId ?? '?'}' ${face}.blocks[${index}] references missing asset '${block.assetId}'`);
+          if (block.type === 'video' && !assetKeys.has(block.posterAssetId)) errors.push(`flashcard deck '${deck.id ?? relative}': card '${card.cardId ?? '?'}' ${face}.blocks[${index}] references missing poster asset '${block.posterAssetId}'`);
+        });
+      }));
+    });
+  });
+  return errors;
+}
+
+function validateFlashcardDecks(deckDirectories) {
+  const errors = [];
+  const ids = new Map();
+  deckDirectories.forEach((directory) => {
+    [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
+      const file = path.join(directory, relative);
+      const raw = loadYaml(file);
+      if (!raw) return;
+      const result = validateFlashcardDeck(raw, { path: `flashcard deck '${raw.id ?? relative}'` });
+      result.errors.forEach((message) => errors.push(message));
+      if (raw.id && ids.has(raw.id)) errors.push(`flashcard deck '${raw.id}' is duplicated in '${ids.get(raw.id)}' and '${file}'`);
+      else if (raw.id) ids.set(raw.id, file);
     });
   });
   return errors;
@@ -500,8 +548,10 @@ async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
   const assetErrors = validateAssetReferences({
     documentDirectories: paths.documentDirectories,
     bankDirectories: paths.bankDirectories,
+    deckDirectories: paths.deckDirectories,
     assetsDirectory: paths.assetsDirectory,
   });
+  const deckErrors = validateFlashcardDecks(paths.deckDirectories);
   const capabilityErrors = await validateRequiredCapabilityReferences({
     catalogs: corpus.catalogs,
     customCapabilities: corpus.moduleRegistry.list().map((definition) => definition.capability),
@@ -511,6 +561,7 @@ async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
   const errors = [
     ...flattenValidationErrors(validation),
     ...assetErrors,
+    ...deckErrors,
     ...capabilityErrors,
     ...(strictConcepts ? conceptMessages : []),
   ].sort();

@@ -58,13 +58,14 @@ function useCase({ rawCatalog = catalog, rawBank = bank, rawDeck = null, documen
 }
 
 describe('BuildLearningLesson', () => {
-  it('resolves a rich deck and its optional learning bank for a flashcard module', async () => {
+  it('resolves a rich deck and its optional deck-owned assessment for a flashcard module', async () => {
     const rawCatalog = structuredClone(catalog);
     rawCatalog.subjects[0].courses[0].units[0].lessons[0].modules = [{
-      moduleId: 'cards', type: 'flashcards', deckId: 'finance:compound-cards', bankId: bank.id,
+      moduleId: 'cards', type: 'flashcards', deckId: 'finance:compound-cards',
     }];
     const rawDeck = {
       schema: 'school.flashcard-deck/v1', id: 'finance:compound-cards', title: 'Compound cards',
+      assessment: { bankId: bank.id },
       cards: [{ cardId: 'q1', front: { blocks: [{ type: 'text', text: 'What grows?' }] }, back: { blocks: [{ type: 'text', text: 'Principal plus interest' }] } }],
     };
     const bundle = await useCase({ rawCatalog, rawDeck }).execute({

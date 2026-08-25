@@ -47,10 +47,19 @@ export const schoolApi = {
   geoDecks: () => req('/geography/decks'),
   // `fresh: true` is the deliberate-restart flag (Task 17): the server wipes
   // any persisted mid-quiz sitting before opening, so the run starts at q1.
-  openSession: ({ userId = null, bankId, mode, learning = null, fresh = false }) => req('/sessions', {
-    userId, bankId, mode, ...(learning ? { learning } : {}), ...(fresh ? { fresh: true } : {}),
+  openSession: ({ userId = null, bankId, mode, learning = null, purpose = null, deckId = null, testPlan = null, fresh = false }) => req('/sessions', {
+    userId, bankId, mode, ...(learning ? { learning } : {}), ...(purpose ? { purpose } : {}), ...(deckId ? { deckId } : {}), ...(testPlan ? { testPlan } : {}), ...(fresh ? { fresh: true } : {}),
   }),
   answer: (sessionId, body = {}) => req(`/sessions/${encodeURIComponent(sessionId)}/answer`, body),
+  flashcardOpen: ({ userId, deckId, policy = {} }) => req('/flashcards/open', { userId, deckId, policy }),
+  flashcardDecks: () => req('/flashcards'),
+  flashcardAssetUrl: (assetId) => `/api/v1/school/flashcards/assets/${String(assetId).split('/').map(encodeURIComponent).join('/')}`,
+  flashcardSummary: (deckId, userId) => req(`/flashcards/${encodeURIComponent(deckId)}/summary?userId=${encodeURIComponent(userId)}`),
+  flashcardReport: (userId) => req(`/flashcards/report?userId=${encodeURIComponent(userId)}`),
+  flashcardDeck: (deckId) => req(`/flashcards/${encodeURIComponent(deckId)}`),
+  flashcardAssessment: (deckId, { userId, testPlan = null } = {}) => req(`/flashcards/${encodeURIComponent(deckId)}/assessment`, { userId, ...(testPlan ? { testPlan } : {}) }),
+  flashcardReview: (sessionId, { userId, cardId, rating, mode, direction }) => req(`/flashcards/${encodeURIComponent(sessionId)}/review`, { userId, cardId, rating, mode, direction }),
+  flashcardHeartbeat: (sessionId, { userId, seconds }) => req(`/flashcards/${encodeURIComponent(sessionId)}/heartbeat`, { userId, seconds }),
   remediationOffer: (sessionId, learnerId) => req(
     `/sessions/${encodeURIComponent(sessionId)}/remediation-offer`, { learnerId },
   ),

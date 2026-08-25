@@ -96,6 +96,9 @@ export function validateLearningModule(raw, { path = 'module' } = {}) {
     if (!REFERENCE_ID.test(raw.deckId || '') && !REFERENCE_ID.test(raw.bankId || '')) {
       push('deckId or bankId must be a lowercase content reference');
     }
+    if (REFERENCE_ID.test(raw.deckId || '') && raw.bankId !== undefined) {
+      push('rich flashcard modules declare Test assessment on the deck, not module.bankId');
+    }
   } else if (raw.type === 'quiz') {
     if (!REFERENCE_ID.test(raw.bankId || '')) push('bankId must be a lowercase content reference');
     if (raw.passingPercent !== undefined && (!Number.isInteger(raw.passingPercent) || raw.passingPercent < 1 || raw.passingPercent > 100)) {

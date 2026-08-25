@@ -75,6 +75,15 @@ describe('SchoolCalc learning-module contracts', () => {
     }).errors).toEqual(expect.arrayContaining([expect.stringMatching(/249999/)]));
   });
 
+  it('keeps a rich deck assessment on the deck rather than the catalog module', () => {
+    expect(validateLearningModule({
+      moduleId: 'cards', type: 'flashcards', deckId: 'geography/us-state-capitals',
+    }).errors).toEqual([]);
+    expect(validateLearningModule({
+      moduleId: 'cards', type: 'flashcards', deckId: 'geography/us-state-capitals', bankId: 'geo:us-state-capitals',
+    }).errors).toEqual(expect.arrayContaining([expect.stringMatching(/assessment on the deck/)]));
+  });
+
   it('defines a subject-neutral, immediately explained learning probe', () => {
     const module = {
       moduleId: 'concept-check', type: 'learning_probe', bankId: 'rates/check-1',

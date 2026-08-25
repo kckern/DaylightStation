@@ -109,6 +109,7 @@ async function buildFixture(root, {
     catalogs: path.join(root, 'catalogs'),
     documents: path.join(root, 'documents'),
     banks: path.join(root, 'question-banks'),
+    decks: path.join(root, 'flashcard-decks'),
     surfaces: path.join(root, 'surfaces'),
     assets: path.join(root, 'assets'),
   };
@@ -185,6 +186,21 @@ function flagsToArgv(flags) {
 }
 
 describe('school-certify CLI', () => {
+  it('rejects malformed rich flashcard decks and dangling media assets in gate mode', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'school-certify-'));
+    try {
+      const dirs = await buildFixture(root);
+      await writeFile(path.join(dirs.decks, 'bad.yml'), dump({
+        schema: 'school.flashcard-deck/v1', id: 'science/cards', title: 'Cards', cards: [{
+          cardId: 'cell', front: { blocks: [{ type: 'image', assetId: 'missing.png', alt: 'cell' }] },
+          back: { blocks: [{ type: 'text', text: 'Cell' }] },
+        }],
+      }));
+      const { exitCode, report } = await runCertify(flagsToArgv(certifyFlags(root)));
+      expect(exitCode).toBe(1);
+      expect(report.errors.join('\n')).toMatch(/missing asset 'missing\.png'/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
   it('(a) gate mode exits 1 on a schema error, certifying nothing', async () => {
     await withTmpDir(async (root) => {
       await buildFixture(root, { schemaError: true });

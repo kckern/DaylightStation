@@ -527,7 +527,7 @@ export class RunSelfServiceAction {
       let target;
       try {
         target = typeof launcher.issueLaunchTarget === 'function'
-          ? launcher.issueLaunchTarget({ userId: learnerId, corpusId, programInstance: corpusId, unitId })
+          ? await launcher.issueLaunchTarget({ userId: learnerId, corpusId, programInstance: corpusId, unitId })
           : { kind: 'program', program: programId, corpusId };
       } catch (error) {
         this.#logger.warn?.('school.selfservice.program.grant-failed', {

@@ -159,6 +159,15 @@ function ProgramCard({ report }) {
   );
 }
 
+function FlashcardProgress({ report }) {
+  const decks = report?.decks ?? [];
+  if (!decks.length) return null;
+  return <section className="school-report__flashcards" aria-label="Flashcard progress"><h3>Flashcards</h3><div className="school-report__cards">{decks.map((deck) => {
+    const counts = deck.summary?.counts ?? {};
+    return <article className="school-report__card" key={deck.id}><h4 className="school-report__program">{deck.title}</h4><p className="school-report__headline">{counts.due ?? 0} due · {counts.new ?? 0} new · {counts.mastered ?? 0} mastered</p><p className="school-report__seen">{counts.reviewed ?? 0} reviews · {Math.floor((counts.activeSeconds ?? 0) / 60)} active min</p></article>;
+  })}</div></section>;
+}
+
 function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId, setSubjectId, coreOnly, setCoreOnly, focus, onFollowUp, kidMode = false }) {
   if (!snapshot) return null;
   const summary = snapshot.summary;
@@ -255,6 +264,8 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
   const [periodId, setPeriodId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [coreOnly, setCoreOnly] = useState(false);
+  const [flashcardReport, setFlashcardReport] = useState(null);
+  const [householdFlashcards, setHouseholdFlashcards] = useState({});
   const { byLearner: todayByLearner, status: todayStatus } = useTeacherToday();
 
   useEffect(() => { setFocus(userId); }, [userId]);
@@ -270,6 +281,9 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
   useEffect(() => {
     let alive = true;
     setStatus('loading');
+    const flashcards = focus && typeof schoolApi.flashcardReport === 'function'
+      ? schoolApi.flashcardReport(focus)
+      : Promise.resolve({ ok: true, data: null });
     Promise.all([
       schoolApi.report(focus),
       schoolApi.progress({
@@ -278,8 +292,8 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
         ...(subjectId ? { subjectIds: [subjectId] } : {}),
         ...(coreOnly ? { excludeClassifications: ['elective'] } : {}),
         groupBy: ['subject'], recentLimit: 12,
-      }),
-    ]).then(([reportResponse, progressResponse]) => {
+      }), flashcards,
+    ]).then(([reportResponse, progressResponse, flashcardResponse]) => {
       if (!alive) return;
       if ((!reportResponse.ok || !reportResponse.data) && (!progressResponse.ok || !progressResponse.data)) {
         schoolLog.materialsError('report-failed', { userId: focus });
@@ -288,12 +302,34 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
       }
       setData(reportResponse.ok ? reportResponse.data : { learners: [] });
       setProgress(progressResponse.ok ? progressResponse.data : null);
+      setFlashcardReport(flashcardResponse.ok ? flashcardResponse.data : null);
       const hasReports = reportResponse.ok && reportResponse.data?.learners?.length > 0;
       const hasEvidence = progressResponse.ok && progressResponse.data?.summary?.evidenceCount > 0;
-      setStatus(hasReports || hasEvidence ? 'ready' : 'empty');
+      const hasFlashcards = (flashcardResponse.data?.decks ?? []).some((deck) => (deck.summary?.counts?.reviewed ?? 0) > 0);
+      setStatus(hasReports || hasEvidence || hasFlashcards ? 'ready' : 'empty');
     });
     return () => { alive = false; };
   }, [focus, periodId, subjectId, coreOnly]);
+
+  // Household reporting remains server-scoped per learner: the same endpoint
+  // that drives a child's report is called for roster ids returned by the
+  // ordinary household report, never by accepting an arbitrary client roster.
+  useEffect(() => {
+    let alive = true;
+    if (focus || typeof schoolApi.flashcardReport !== 'function') {
+      setHouseholdFlashcards({});
+      return () => { alive = false; };
+    }
+    const learners = data?.learners ?? [];
+    Promise.all(learners.map(async (learner) => [learner.id, await schoolApi.flashcardReport(learner.id)]))
+      .then((rows) => {
+        if (!alive) return;
+        setHouseholdFlashcards(Object.fromEntries(rows
+          .filter(([, response]) => response.ok && response.data)
+          .map(([id, response]) => [id, response.data])));
+      });
+    return () => { alive = false; };
+  }, [focus, data]);
 
   useEffect(() => {
     let alive = true;
@@ -334,6 +370,8 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
         kidMode={kidMode}
       />
 
+      {focus && <FlashcardProgress report={flashcardReport} />}
+
       {!focus && <InstructionalInsightsOverview insights={insights} />}
 
       {(data?.learners ?? []).map((learner) => (
@@ -353,6 +391,7 @@ export default function ReportPanel({ userId = null, onFollowUp = null, kidMode 
             )}
           </header>
           <TodayStrip digest={todayByLearner.get(learner.id)} status={todayStatus} kidMode={kidMode} />
+          {!focus && <FlashcardProgress report={householdFlashcards[learner.id]} />}
           <div className="school-report__cards">
             {learner.reports.map((r) => <ProgramCard key={`${r.program}:${r.label}`} report={r} />)}
           </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignmentSatisfied, cardFace, learnPrompt, resolvePolicy } from './flashcardEngine.js';
+import { assignmentSatisfied, cardFace, learnPrompt, recallMatches, recallMatchesAny, resolvePolicy } from './flashcardEngine.js';
 
 describe('flashcard assignment policy', () => {
   it('requires each configured overlay target', () => {
@@ -17,7 +17,14 @@ describe('flashcard presentation helpers', () => {
     expect(cardFace(card, 'back_to_front', false)).toBe(card.back);
     expect(cardFace(card, 'back_to_front', true)).toBe(card.front);
   });
-  it('uses an objective bank item for progressive recognition', () => {
-    expect(learnPrompt(card, { id: 'x', prompt: 'Which?', choices: ['a', 'b'], answer: 'a' })).toMatchObject({ kind: 'choice', answer: 'a' });
+  it('derives progressive recall from the card pair, not a bank item', () => {
+    expect(learnPrompt(card)).toMatchObject({ kind: 'recall', prompt: 'front', acceptedAnswers: ['back'] });
+  });
+  it('moves from recognition into tolerant typed recall', () => {
+    expect(learnPrompt({ ...card, learn: { front_to_back: { acceptedAnswers: ['second face', 'back'] } } }))
+      .toMatchObject({ kind: 'recall', acceptedAnswers: ['second face', 'back'] });
+    expect(recallMatches('Back!', 'back')).toBe(true);
+    expect(recallMatches('other', 'back')).toBe(false);
+    expect(recallMatchesAny('Back!', ['other', 'back'])).toBe(true);
   });
 });

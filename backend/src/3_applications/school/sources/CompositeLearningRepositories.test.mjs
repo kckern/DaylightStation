@@ -93,6 +93,14 @@ describe('CompositeLearningContentRepository', () => {
     expect(await repo.getLearningAction('any')).toBeNull();
   });
 
+  it('lists rich decks with first-source precedence', async () => {
+    const repo = new CompositeLearningContentRepository({ sources: [
+      { async listFlashcardDecks() { return [{ id: 'cells', title: 'Authored' }]; } },
+      { async listFlashcardDecks() { return [{ id: 'cells', title: 'Generated' }, { id: 'atoms', title: 'Atoms' }]; } },
+    ] });
+    await expect(repo.listFlashcardDecks()).resolves.toEqual([{ id: 'cells', title: 'Authored' }, { id: 'atoms', title: 'Atoms' }]);
+  });
+
   it('skips a source that throws', async () => {
     const logger = recordingLogger();
     const broken = { async getDocument() { throw new Error('disk gone'); } };

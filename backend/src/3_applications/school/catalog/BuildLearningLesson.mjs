@@ -128,11 +128,12 @@ export class BuildLearningLesson {
       const deckResult = validateFlashcardDeck(rawDeck);
       if (deckResult.errors.length) throw new Error(`School flashcard deck '${module.deckId}' is invalid: ${deckResult.errors.join('; ')}`);
       if (deckResult.deck.id !== module.deckId) throw new Error(`School flashcard deck '${module.deckId}' declares id '${deckResult.deck.id}'`);
-      if (!module.bankId) return { ...module, deck: deckResult.deck };
-      const rawBank = await this.#content.getQuestionBank(module.bankId);
-      if (!rawBank) throw new Error(`School question bank '${module.bankId}' was not found`);
+      const bankId = deckResult.deck.assessment?.bankId ?? null;
+      if (!bankId) return { ...module, deck: deckResult.deck };
+      const rawBank = await this.#content.getQuestionBank(bankId);
+      if (!rawBank) throw new Error(`School question bank '${bankId}' was not found`);
       const bankResult = validateQuestionBank(rawBank);
-      if (!bankResult.ok) throw new Error(`School question bank '${module.bankId}' is invalid: ${bankResult.errors.join('; ')}`);
+      if (!bankResult.ok) throw new Error(`School question bank '${bankId}' is invalid: ${bankResult.errors.join('; ')}`);
       return { ...module, deck: deckResult.deck, bank: bankResult.bank };
     }
     if (BANK_MODULES.has(module.type)) {

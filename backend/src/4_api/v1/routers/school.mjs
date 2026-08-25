@@ -13,6 +13,8 @@ import { slugify } from '#domains/school/documents/receipts.mjs';
 export function createSchoolRouter({
   schoolErrors = {},
   schoolService,
+  flashcardStudy = null,
+  flashcardAssets = null,
   getMaterialCatalog = null,
   getMaterialUnits = null,
   getMaterialProgressSummary = null,
@@ -709,13 +711,19 @@ export function createSchoolRouter({
   router.post('/sessions', wrap((req, res) => {
     // `fresh` is the deliberate-restart flag (Task 17): it wipes any persisted
     // sitting before opening, so "Try again" never resumes the run it replaces.
-    const { userId = null, bankId, mode, learning = null, fresh = false } = req.body || {};
+    const { userId = null, bankId, mode, learning = null, purpose = null, testPlan = null, fresh = false } = req.body || {};
+    if (purpose === 'flashcard_assessment') {
+      if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+      const { deckId } = req.body || {};
+      return Promise.resolve(flashcardStudy.assessment({ userId, deckId, testPlan, open: true }))
+        .then((result) => res.json(result));
+    }
     if (learning !== null) {
       if (!openCatalogLearningSession) {
         throw new EntityNotFoundError('School Catalog sessions', 'not configured');
       }
       return Promise.resolve(openCatalogLearningSession.execute({
-        learnerId: userId, bankId, mode, learning, fresh: fresh === true,
+        learnerId: userId, bankId, mode, learning, purpose, testPlan, fresh: fresh === true,
       })).then((result) => res.json(result));
     }
     return res.json(schoolService.openSession({ userId, bankId, mode, fresh: fresh === true }));
@@ -728,6 +736,50 @@ export function createSchoolRouter({
       sessionId: req.params.sessionId, itemId, given, selfGrade,
       probeAttemptNumber, responseId,
     }));
+  }));
+  // Rich flashcard study is intentionally separate from question-bank sessions:
+  // its ratings are formative scheduling data, never server-graded quiz evidence.
+  router.post('/flashcards/open', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { userId, deckId, policy = {} } = req.body || {};
+    res.json(await flashcardStudy.open({ userId, deckId, policy }));
+  }));
+  router.post('/flashcards/:deckId/assessment', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { userId, testPlan = null } = req.body || {};
+    res.json(await flashcardStudy.assessment({ userId, deckId: req.params.deckId, testPlan }));
+  }));
+  router.post('/flashcards/:sessionId/review', wrap((req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { userId, cardId, rating, mode, direction } = req.body || {};
+    res.json(flashcardStudy.review({ userId, sessionId: req.params.sessionId, cardId, rating, mode, direction }));
+  }));
+  router.post('/flashcards/:sessionId/heartbeat', wrap((req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { userId, seconds } = req.body || {};
+    res.json(flashcardStudy.heartbeat({ userId, sessionId: req.params.sessionId, seconds }));
+  }));
+  router.get('/flashcards', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    res.json({ decks: await flashcardStudy.listDecks() });
+  }));
+  router.get('/flashcards/assets/*assetId', wrap((req, res) => {
+    if (!flashcardAssets) throw new EntityNotFoundError('flashcard assets', 'not configured');
+    const asset = flashcardAssets.get(splatPath(req, 'assetId'));
+    if (!asset) throw new EntityNotFoundError('flashcard asset', splatPath(req, 'assetId'));
+    return res.type(asset.contentType).sendFile(asset.file);
+  }));
+  router.get('/flashcards/report', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    res.json(await flashcardStudy.report({ userId: req.query.userId }));
+  }));
+  router.get('/flashcards/:deckId/summary', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    res.json(await flashcardStudy.summary({ userId: req.query.userId, deckId: req.params.deckId }));
+  }));
+  router.get('/flashcards/:deckId', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    res.json({ deck: await flashcardStudy.getDeck(req.params.deckId) });
   }));
   router.post('/sessions/:sessionId/remediation-offer', wrap(async (req, res) => {
     if (!offerCatalogQuizRemediation) {
