@@ -14,6 +14,9 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
   const { run, busy, errors } = useTeacherWrite({ panel: 'enrollment' });
   const offered = syllabi.filter((s) => s.courseId === courseId);
   const [choice, setChoice] = useState(cell?.syllabusId ?? offered[0]?.syllabusId ?? '');
+  // Structural changes to a child's program are two-tap (the module's
+  // arm→confirm house pattern): first tap names the consequence, second acts.
+  const [armed, setArmed] = useState(null); // 'enroll' | 'rematerialize' | 'unenroll' | null
 
   // These are state changes, not fetches — and the syllabus is the whole point
   // of the change, so it travels with them. `teacher.write.*` filtered to one
@@ -67,17 +70,35 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
         </label>
       )}
 
-      <div className="teacher-drawer__actions">
-        {!cell?.enrolled && (
-          <button type="button" disabled={!choice || busy === 'enroll'} onClick={() => enroll(false)}>Enroll</button>
-        )}
-        {cell?.enrolled && (
-          <button type="button" disabled={!choice || busy === 'rematerialize'} onClick={() => enroll(true)}>Re-materialize</button>
-        )}
-        {cell?.enrolled && (
-          <button type="button" disabled={busy === 'unenroll'} onClick={unenroll}>Unenroll</button>
-        )}
-      </div>
+      {armed ? (
+        <div className="teacher-drawer__actions teacher-drawer__confirm" role="alert">
+          <span>
+            {armed === 'enroll' && `Enroll ${learner.name} from "${offered.find((s) => s.syllabusId === choice)?.title ?? choice}"? This replaces any hand-authored order.`}
+            {armed === 'rematerialize' && 'Rebuild from the current syllabus? The existing order is replaced.'}
+            {armed === 'unenroll' && `Remove ${courseTitle} from ${learner.name}’s program?`}
+          </span>
+          <button
+            type="button"
+            disabled={busy === armed}
+            onClick={() => { const action = armed; setArmed(null); if (action === 'unenroll') unenroll(); else enroll(action === 'rematerialize'); }}
+          >
+            Confirm
+          </button>
+          <button type="button" onClick={() => setArmed(null)}>Cancel</button>
+        </div>
+      ) : (
+        <div className="teacher-drawer__actions">
+          {!cell?.enrolled && (
+            <button type="button" disabled={!choice || busy === 'enroll'} onClick={() => setArmed('enroll')}>Enroll</button>
+          )}
+          {cell?.enrolled && (
+            <button type="button" disabled={!choice || busy === 'rematerialize'} onClick={() => setArmed('rematerialize')}>Re-materialize</button>
+          )}
+          {cell?.enrolled && (
+            <button type="button" disabled={busy === 'unenroll'} onClick={() => setArmed('unenroll')}>Unenroll</button>
+          )}
+        </div>
+      )}
 
       {['enroll', 'rematerialize', 'unenroll'].map((key) => errors[key] && (
         <p key={key} className="teacher-panel__error">{errors[key]}</p>
