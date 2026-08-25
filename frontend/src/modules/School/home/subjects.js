@@ -23,7 +23,7 @@ export const SUBJECTS = [
   //   Row 1 — the three Rs: English & Literature, Writing & Typing, Math & Money.
   //   Row 2 — Civilization (left), Scripture & Gospel (dead centre),
   //           Science & Nature (right).
-  //   Row 3 — the rest: Language & Culture, Life & Skills, Art & Music.
+  //   Row 3 — the rest: Language & Culture, Life & Skills, Arts & Culture.
   { id: 'english', label: 'English & Literature', hint: 'Reading, grammar, and great books' },
   { id: 'writing', label: 'Writing & Typing', hint: 'Put it in your own words' },
   { id: 'math', label: 'Math & Money', hint: 'Numbers, patterns, and money' },
@@ -32,7 +32,7 @@ export const SUBJECTS = [
   { id: 'science', label: 'Science & Nature', hint: 'How the world and nature work' },
   { id: 'language', label: 'Language & Culture', hint: 'Hear it, say it, write it' },
   { id: 'skills', label: 'Life & Skills', hint: 'Hands-on — cooking, making, life' },
-  { id: 'arts', label: 'Art & Music', hint: 'Draw, paint, sing, and play' },
+  { id: 'arts', label: 'Arts & Culture', hint: 'Draw, paint, sing, and play' },
 ];
 
 const SUBJECT_IDS = new Set(SUBJECTS.map((s) => s.id));

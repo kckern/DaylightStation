@@ -1,19 +1,24 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
-import yaml from 'js-yaml';
 import { applyMove, applySequence, createCube, cubeFaces, goalReached, inverseMove, isSolved, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
 import { RUBIKS_CUBE_COURSE, RUBIKS_CUBE_COURSE_ID, RUBIKS_CUBE_REVISION, activities, activityById, publicActivity } from './courseCatalog.mjs';
 import { parsePhysicalCube } from './physicalCube.mjs';
 
-const load = (file, fallback) => fs.existsSync(file) ? yaml.load(fs.readFileSync(file, 'utf8')) : fallback;
-const save = (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, yaml.dump(value, { noRefs: true })); };
 const day = (now) => now.toISOString().slice(0, 10);
 
 /** Server authority for the learner's actual cube, progress, hints, and quiz score. */
 export class RubiksCubeCourseService {
-  #config; #clock; #packetPlanner;
-  constructor({ configService, recoverySolver = null, packetPlanner = null, clock = () => new Date() } = {}) { this.#config = configService; this.recoverySolver = recoverySolver; this.#packetPlanner = packetPlanner; this.#clock = clock; }
+  #config; #clock; #packetPlanner; #store;
+  /**
+   * `store` is INJECTED (`apps-no-fs`): this service decides WHERE a learner's
+   * progress lives and what a valid record is; the adapter owns turning that
+   * path into bytes. Required — a silent no-op store would look like a learner
+   * whose progress never saves.
+   */
+  constructor({ configService, store, recoverySolver = null, packetPlanner = null, clock = () => new Date() } = {}) {
+    if (!store) throw new Error('RubiksCubeCourseService requires a document store');
+    this.#config = configService; this.#store = store; this.recoverySolver = recoverySolver; this.#packetPlanner = packetPlanner; this.#clock = clock;
+  }
   #file(userId) {
     // No course.yml authored yet (RUBIKS_CUBE_COURSE_ID is null): fail with a
     // clear message rather than `path.join(..., null, ...)`'s TypeError. The
@@ -30,14 +35,14 @@ export class RubiksCubeCourseService {
   }
   #read(userId) {
     const file = this.#file(userId); if (!file) throw new Error('identified learner is required');
-    const record = load(file, this.#fresh(userId));
+    const record = this.#store.read(file, this.#fresh(userId));
     // Course content is version-pinned. A revision is a new course contract,
     // never a silent reinterpretation of a learner's saved sticker state.
     if (record?.schema !== 'school.rubiks-cube-progress/v1' || record.revision !== RUBIKS_CUBE_REVISION) return this.#fresh(userId);
     record.completed ||= {}; record.attempts ||= {}; record.challengeResults ||= {}; record.physical ||= { draft: null, coach: null, verified: {} }; record.physical.verified ||= {}; record.packets ||= {};
     return record;
   }
-  #write(userId, record) { const file = this.#file(userId); if (!file) throw new Error('identified learner is required'); record.updatedAt = this.#clock().toISOString(); save(file, record); return record; }
+  #write(userId, record) { const file = this.#file(userId); if (!file) throw new Error('identified learner is required'); record.updatedAt = this.#clock().toISOString(); this.#store.write(file, record); return record; }
   #unlocked(record, lessonId) {
     const index = activities().findIndex((lesson) => lesson.id === lessonId);
     return index >= 0 && (index === 0 || Boolean(record.completed[activities()[index - 1].id]));

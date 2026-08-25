@@ -95,6 +95,11 @@ describe('DoNow Policy — dispatch decision', () => {
     });
 
     describe('unknown occupancy', () => {
+      it('explicit interrupt dispatches even when occupancy is unknown', () => {
+        expect(decideDispatch({
+          occupancy: { state: 'unknown', occupantId: null }, learnerId: 'alice', force: 'interrupt',
+        })).toBe('dispatch');
+      });
       it('unknown state → pending_approval', () => {
         const result = decideDispatch({
           occupancy: { state: 'unknown', occupantId: null },

@@ -16,7 +16,7 @@ const SUBJECT_LABELS = Object.freeze({
   science: 'Science & Nature',
   language: 'Language & Culture',
   skills: 'Life & Skills',
-  arts: 'Art & Music',
+  arts: 'Arts & Culture',
 });
 
 export const schoolSubjectLabel = (id) => SUBJECT_LABELS[id] ?? id ?? 'School';

@@ -19,7 +19,7 @@ needed.
 | skills | Life & Skills | `svg/skills.svg` | plant-leaf |
 | civilization | Civilization | `svg/civilization.svg` | globe-stand |
 | scripture | Scripture & Gospel | `svg/scripture.svg` | sunlight |
-| arts | Art & Music | `svg/arts.svg` | art-palette |
+| arts | Arts & Culture | `svg/arts.svg` | art-palette |
 | geography | Geography | `svg/geography.svg` | placeholder line-art (globe) — swap later |
 | states | Geography | `svg/states.svg` | placeholder line-art (map grid) — swap later |
 | capitals | Geography | `svg/capitals.svg` | placeholder line-art (star) — swap later |

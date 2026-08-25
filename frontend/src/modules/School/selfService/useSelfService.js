@@ -334,6 +334,11 @@ export function useSelfService({
       return;
     }
 
+    if (transition === 'close') {
+      toLock();
+      return;
+    }
+
     // During the additive rollout an old backend has no `transition`, so keep
     // the previous inference only for that wire shape. V2 decides the next UI
     // state server-side from what ACTUALLY happened, which matters for a

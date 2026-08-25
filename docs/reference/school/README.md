@@ -266,7 +266,7 @@ never a recorded attempt — those are already on disk.
 School's landing surface is the **subject wall**: nine fixed paired subjects —
 English & Literature, Writing & Typing, Language & Culture, Math & Money,
 Science & Nature, Life & Skills, History & Geography, Scripture & Gospel,
-Art & Music — in a 3×3 grid on the left two-thirds, each tile carrying an
+Arts & Culture — in a 3×3 grid on the left two-thirds, each tile carrying an
 inline-SVG shelf icon (`home/icons/`, household SVG Repo set), and a
 meta rail on the right third holding the **student panel** (identity, up-next
 action, latest score, done-for-today flip; tap = the full progress board), the
@@ -729,7 +729,7 @@ latest-score summary — drill is practice, not an assessment.
 
 ### Chess
 
-**Chess is an app tile on the Art & Music shelf**, registered the same way
+**Chess is an app tile on the Arts & Culture shelf**, registered the same way
 Typing and Geography are (`SUBJECT_PROGRAMS` in `home/SubjectPage.jsx`, opening
 a top-level section at `/school/chess`). It is a curriculum, not a game surface:
 eight units from naming a square to beating an opponent, thirty lessons,

@@ -29,4 +29,11 @@ export function isSheetMusicContentId(contentId) {
   return i > 0 && i < s.length - 1;
 }
 
+export function isPianoCourseLessonAction(raw) {
+  return raw?.kind === 'course-lesson'
+    && /^plex:\d+$/.test(raw.courseId ?? '')
+    && /^plex:\d+$/.test(raw.lessonId ?? '')
+    && typeof raw.learnerId === 'string' && raw.learnerId.trim().length > 0;
+}
+
 export default isSheetMusicContentId;

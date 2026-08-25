@@ -1,11 +1,19 @@
 import express from 'express';
-import { RUBIKS_CUBE_REVISION } from '#apps/school/rubiksCube/courseCatalog.mjs';
 
-export function createRubiksCubeRouter({ service, grants, logger = null } = {}) {
+/**
+ * `revision` is INJECTED rather than imported from the course catalog: the API
+ * layer may not reach into `3_applications` (`api-no-apps`), and a router that
+ * imports a domain constant to compare against is deciding curriculum policy in
+ * the transport layer. Composition owns which revision is current.
+ */
+export function createRubiksCubeRouter({ service, grants, revision, logger = null } = {}) {
+  if (revision === undefined || revision === null) {
+    throw new Error('createRubiksCubeRouter requires the current cube-course revision');
+  }
   const router = express.Router();
   const authorized = (req, res) => {
     const result = grants?.verify(req.get('X-School-Cube-Grant'), { learnerId: req.params.userId, courseId: req.params.courseId });
-    if (!result?.ok || result.payload.revision !== RUBIKS_CUBE_REVISION) { res.status(403).json({ error: 'A current assigned cube-course launch is required' }); return null; }
+    if (!result?.ok || result.payload.revision !== revision) { res.status(403).json({ error: 'A current assigned cube-course launch is required' }); return null; }
     return result.payload;
   };
   const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (error) { logger?.warn?.('school.rubiks-cube.request-failed', { path: req.path, error: error.message }); res.status(400).json({ error: error.message }); } };

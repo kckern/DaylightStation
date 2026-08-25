@@ -63,6 +63,8 @@ import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
+import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
+import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
 import { GetLearnerDayCompletion } from '#apps/school/GetLearnerDayCompletion.mjs';
@@ -183,6 +185,13 @@ export async function createSchoolLifecycle({
   studyGrants = null,
   languageReelService = null,
   languageReelGrants = null,
+  // Piano's `GetPlayableUnits` use case, injected so the piano-course program
+  // reads the SAME course/progress/lock projection the kiosk itself renders.
+  // Null in a composition without Piano: the program simply never registers.
+  pianoPlayableUnits = null,
+  learningEvidenceRepository = null,
+  // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
+  pianoLessonHook = null,
   flashcardStudyService = null,
   rubiksCubeService = null,
   rubiksCubeGrants = null,
@@ -440,6 +449,18 @@ export async function createSchoolLifecycle({
   // into "no launcher" instead of a registered program that fails on use.
   if (rubiksCubeService && rubiksCubeGrants && RUBIKS_CUBE_COURSE_ID) {
     launchers.set('rubiks-cube', new RubiksCubeProgramLauncher({ service: rubiksCubeService, grants: rubiksCubeGrants, donow }));
+  }
+  // Registered BEFORE the `school.yml` `programs:` loop below, so a config
+  // entry that reuses this id trips that loop's collision check rather than
+  // silently replacing an evidence-backed launcher with an honour-system one.
+  let pianoCourseLauncher = null;
+  if (pianoPlayableUnits) {
+    pianoCourseLauncher = new PianoCourseProgramLauncher({
+      getPlayableUnits: pianoPlayableUnits, donow, timezone, clock, logger,
+    });
+    launchers.set(pianoCourseLauncher.id, pianoCourseLauncher);
+  } else {
+    logger.warn?.('school.lifecycle.piano-course-unwired', { reason: 'no pianoPlayableUnits' });
   }
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
@@ -875,11 +896,29 @@ export async function createSchoolLifecycle({
   // Absent an eventBus, completion is still readable directly via
   // `getLearnerDayCompletion`; only the push notification is unavailable.
   let schoolCompletionBridge = null;
+  let pianoLessonCeremonyBridge = null;
   if (eventBus && typeof eventBus.subscribe === 'function') {
     schoolCompletionBridge = new SchoolCompletionBridge({
       eventBus, getLearnerDayCompletion, clock, logger,
     });
     schoolCompletionBridge.start();
+    // The daily piano requirement's own announcement — distinct from the
+    // day-completion bridge above, which fires when the WHOLE day settles.
+    // Constructible only with both a launcher and a bus; the HA limb is
+    // optional (a household with no Home Assistant still gets the Portal
+    // banner).
+    if (pianoCourseLauncher) {
+      pianoLessonCeremonyBridge = new PianoLessonCeremonyBridge({
+        eventBus,
+        assignments: stores.assignments,
+        launcher: pianoCourseLauncher,
+        evidenceRepository: learningEvidenceRepository,
+        hook: pianoLessonHook,
+        resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+        timezone, clock, logger,
+      });
+      pianoLessonCeremonyBridge.start();
+    }
   } else {
     logger.warn?.('school.lifecycle.completion-bridge-unwired', { reason: 'no eventBus' });
   }
@@ -922,6 +961,23 @@ export async function createSchoolLifecycle({
         } catch {
           return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
         }
+      }]] : []),
+      ...(pianoCourseLauncher ? [['piano-course', (raw) => {
+        // The course id is a Plex compound id (`plex:675689`); there is no
+        // School catalog to check it against, so the shape is what is
+        // validated. A course that does not exist surfaces as the launcher's
+        // own `error: true` (agenda reads `program_unavailable`) rather than
+        // being silently accepted as an empty obligation.
+        const courseId = raw?.courseId ?? raw?.corpusId;
+        if (typeof courseId !== 'string' || !/^plex:\d+$/.test(courseId)) {
+          return { errors: ['piano-course requires a courseId of the form plex:<ratingKey>'] };
+        }
+        const subject = raw?.subject ?? 'arts';
+        if (typeof subject !== 'string' || !subject) return { errors: ['piano-course subject must be a string'] };
+        return { errors: [], enrollment: {
+          programId: 'piano-course', corpusId: courseId, courseId, subject,
+          ...(raw?.title ? { title: String(raw.title) } : {}),
+        } };
       }]] : []),
       // Same RUBIKS_CUBE_COURSE_ID gate as the launcher registration above:
       // no course.yml authored means no valid courseId ever exists, so don't
@@ -1158,6 +1214,7 @@ export async function createSchoolLifecycle({
     // optional-chained-on-shutdown convention as `donowSchoolBridge` above.
     getLearnerDayCompletion,
     schoolCompletionBridge,
+    pianoLessonCeremonyBridge,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without
