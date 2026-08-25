@@ -89,28 +89,27 @@ export default function SchoolMatrix({ kids }) {
       : assignments.state === 'ok' || units.state === 'ok' ? 'ok' : units.state;
   const titles = curriculumTitles(units.data?.units ?? (Array.isArray(units.data) ? units.data : []));
 
+  // Courses are the axis that grows; students are fixed at a handful.
+  // Transposed, full course titles read left-aligned and the student columns
+  // stay narrow at any catalog size (UX audit C11).
   return (
     <PanelFrame title="The whole school" state={state} retry={() => { assignments.retry(); units.retry(); }} emptyCopy="No courses published yet.">
       <div className="teacher-matrix" data-testid="school-matrix">
-        <table className="teacher-matrix__grid">
+        <table className="teacher-matrix__grid teacher-matrix__grid--courses-as-rows">
           <thead>
             <tr>
-              <th aria-label="Learner" />
-              {model.courseIds.map((id) => (
-                <th key={id} className={model.unenrolled.includes(id) ? 'is-unenrolled' : ''}>
-                  {titles.course(id)}
-                </th>
-              ))}
+              <th className="teacher-matrix__course-head">Course</th>
+              {model.rows.map((row) => <th key={row.learnerId}>{row.name}</th>)}
             </tr>
           </thead>
           <tbody>
-            {model.rows.map((row) => (
-              <tr key={row.learnerId}>
-                <th scope="row">{row.name}</th>
-                {model.courseIds.map((id) => {
+            {model.courseIds.map((id) => (
+              <tr key={id} className={model.unenrolled.includes(id) ? 'is-unenrolled' : ''}>
+                <th scope="row" className="teacher-matrix__course-title">{titles.course(id)}</th>
+                {model.rows.map((row) => {
                   const cell = row.cells[id];
                   return (
-                    <td key={id} className={cell ? 'is-assigned' : ''}>
+                    <td key={row.learnerId} className={cell ? 'is-assigned' : ''}>
                       <button
                         type="button"
                         className="teacher-matrix__cell"
@@ -118,8 +117,8 @@ export default function SchoolMatrix({ kids }) {
                         aria-label={`${row.name}, ${titles.course(id)}`}
                       >
                         {cell
-                          ? `${cell.syllabusTitle ?? '—'}${cell.profile ? ` · ${cell.profile}` : ''}${(cell.hasEnrollment && !cell.managed) ? ' ⚑' : ''}`
-                          : ''}
+                          ? `${cell.syllabusTitle ?? 'Enrolled'}${cell.profile ? ` · ${cell.profile}` : ''}${(cell.hasEnrollment && !cell.managed) ? ' ⚑' : ''}`
+                          : '—'}
                       </button>
                     </td>
                   );
@@ -128,6 +127,7 @@ export default function SchoolMatrix({ kids }) {
             ))}
           </tbody>
         </table>
+        <p className="teacher-matrix__legend">⚑ hand-authored enrollment · — not enrolled</p>
         {open && (
           <EnrollmentDrawer
             key={`${open.learnerId}:${open.courseId}`}
@@ -153,7 +153,7 @@ export default function SchoolMatrix({ kids }) {
         )}
         {model.unenrolled.length > 0 && (
           <p className="teacher-matrix__note" data-testid="matrix-unenrolled">
-            Nobody is enrolled in: {model.unenrolled.map(titles.course).join(', ')}
+            Unassigned courses ({model.unenrolled.length}) — tap a — cell above to enroll someone.
           </p>
         )}
         {model.orphanLearners.length > 0 && (

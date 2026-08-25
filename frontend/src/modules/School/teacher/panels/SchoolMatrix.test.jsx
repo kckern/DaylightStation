@@ -1,5 +1,25 @@
-import { describe, it, expect } from 'vitest';
-import { deriveMatrix } from './SchoolMatrix.jsx';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import SchoolMatrix, { deriveMatrix } from './SchoolMatrix.jsx';
+
+vi.mock('../../schoolApi.js', () => ({
+  schoolApi: {
+    allAssignments: vi.fn(), curriculumUnits: vi.fn(), syllabi: vi.fn(), enroll: vi.fn(), unenroll: vi.fn(),
+  },
+}));
+vi.mock('../TeacherProfileContext.jsx', () => ({
+  useTeacherProfile: () => ({
+    currentTeacher: { id: 'kckern', name: 'KC' },
+    pin: null,
+    openPicker: vi.fn(),
+    openPinPrompt: vi.fn(),
+    requestAuthorization: vi.fn(async () => ({ ok: true, grantToken: null })),
+    invalidateAuthorization: vi.fn(),
+    pinPromptOpen: false,
+    pickerOpen: false,
+  }),
+}));
+import { schoolApi } from '../../schoolApi.js';
 
 const KIDS = [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }];
 const UNITS = [
@@ -107,5 +127,42 @@ describe('deriveMatrix — enrollment cells', () => {
   it('leaves an unassigned intersection absent from cells', () => {
     const m = deriveMatrix({ kids: KIDS, units: UNITS, syllabi: [], assignments: [] });
     expect(m.rows[0].cells['math-fractions']).toBeUndefined();
+  });
+});
+
+describe('SchoolMatrix — transposed render', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    schoolApi.allAssignments.mockResolvedValue({ ok: true, status: 200, data: { assignments: [
+      { learnerId: 'felix', courses: [{ courseId: 'history-capitals', syllabusId: 'atlas-upper', profile: 'upper', enrollment: {} }] },
+    ] } });
+    schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [
+      { unitId: 'caps.01', courseId: 'history-capitals', courseTitle: 'History Capitals' },
+      { unitId: 'poke.01', courseId: 'creature-basics', courseTitle: 'Creature Basics' },
+    ] } });
+    schoolApi.syllabi.mockResolvedValue({ ok: true, status: 200, data: { syllabi: [
+      { syllabusId: 'atlas-upper', title: 'Atlas — upper', courseId: 'history-capitals' },
+    ] } });
+  });
+
+  it('renders courses as rows and students as columns, with a legend', async () => {
+    render(<SchoolMatrix kids={[{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }]} />);
+    await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent);
+    expect(headers).toEqual(['Course', 'Felix', 'Milo']);
+    const rowHeaders = screen.getAllByRole('rowheader').map((th) => th.textContent);
+    expect(rowHeaders).toEqual(['Creature Basics', 'History Capitals']);
+    expect(screen.getByText('⚑ hand-authored enrollment · — not enrolled')).toBeInTheDocument();
+    expect(screen.getByText(/Atlas — upper · upper/)).toBeInTheDocument();
+    // The old run-on text wall is gone; the unassigned note counts instead.
+    expect(screen.queryByText(/Nobody is enrolled in/)).toBeNull();
+    expect(screen.getByTestId('matrix-unenrolled').textContent).toMatch(/Unassigned courses \(1\)/);
+  });
+
+  it('an unenrolled intersection renders — and still opens the drawer', async () => {
+    render(<SchoolMatrix kids={[{ id: 'felix', name: 'Felix' }]} />);
+    await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
+    const cell = screen.getByRole('button', { name: 'Felix, Creature Basics' });
+    expect(cell.textContent).toBe('—');
   });
 });

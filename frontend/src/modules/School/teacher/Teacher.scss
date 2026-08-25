@@ -1084,6 +1084,16 @@
   thead th.is-unenrolled { color: #a15b16; }
   td.is-assigned { color: #3d6a3d; font-weight: 800; }
 }
+// Transposed orientation: courses as rows (the axis that grows), one narrow
+// column per student. Full titles wrap rather than clip; unassigned rows read
+// muted, and their — cells are the enrollment affordance.
+.teacher-matrix__grid--courses-as-rows {
+  th[scope=row].teacher-matrix__course-title { white-space: normal; max-width: 22rem; font-weight: 700; }
+  thead th { text-align: center; min-width: 6rem; }
+  .teacher-matrix__course-head { text-align: left; }
+  tr.is-unenrolled { th[scope=row] { color: #a15b16; } td { color: #b8a888; } }
+}
+.teacher-matrix__legend { margin: 0.4rem 0 0; color: #8a7c5c; font-size: 0.8rem; }
 // Every matrix cell is a <button> (including empty, unassigned intersections)
 // so the whole grid is keyboard/tap reachable — reset it to read as table
 // text, not a default browser button, while keeping a visible clickable cue.

@@ -47,8 +47,8 @@ describe('SchoolMatrix — switching the open cell without a key remount (regres
       status: 200,
       data: {
         units: [
-          { unitId: 'x-unit', courseId: 'course-x' },
-          { unitId: 'y-unit', courseId: 'course-y' },
+          { unitId: 'x-unit', courseId: 'course-x', courseTitle: 'Course X' },
+          { unitId: 'y-unit', courseId: 'course-y', courseTitle: 'Course Y' },
         ],
       },
     });
@@ -81,8 +81,9 @@ describe('SchoolMatrix — switching the open cell without a key remount (regres
     fireEvent.click(screen.getByRole('button', { name: 'Felix, Course Y' }));
     await waitFor(() => expect(screen.getByRole('option', { name: 'Syllabus Y' })).toBeInTheDocument());
 
-    // Submit immediately.
+    // Submit immediately (through the arm→confirm added by the UX wave).
     fireEvent.click(screen.getByRole('button', { name: 'Enroll' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
     await waitFor(() => expect(schoolApi.enroll).toHaveBeenCalled());
     const [, body] = schoolApi.enroll.mock.calls[0];
