@@ -43,6 +43,9 @@ AGENTS.md
 *.yml
 !config/*.yml
 !backend/config/*.yml
+# Rubik's Cube course content — must reach the image if authored (mirrors the
+# .gitignore negation); courseCatalog.mjs degrades gracefully when absent.
+!backend/src/3_applications/school/rubiksCube/course.yml
 secrets.dev.yaml
 values.dev.yaml
 **/charts

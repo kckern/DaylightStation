@@ -433,7 +433,12 @@ export async function createSchoolLifecycle({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
     }));
   }
-  if (rubiksCubeService && rubiksCubeGrants) {
+  // RUBIKS_CUBE_COURSE_ID is null when course.yml hasn't been authored yet
+  // (courseCatalog.mjs degrades rather than throwing at import) — the
+  // service and grants are still constructed unconditionally upstream
+  // (app.mjs), so this guard is the actual point where "no course" turns
+  // into "no launcher" instead of a registered program that fails on use.
+  if (rubiksCubeService && rubiksCubeGrants && RUBIKS_CUBE_COURSE_ID) {
     launchers.set('rubiks-cube', new RubiksCubeProgramLauncher({ service: rubiksCubeService, grants: rubiksCubeGrants, donow }));
   }
 
@@ -918,7 +923,10 @@ export async function createSchoolLifecycle({
           return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
         }
       }]] : []),
-      ...(rubiksCubeService ? [['rubiks-cube', (raw) => {
+      // Same RUBIKS_CUBE_COURSE_ID gate as the launcher registration above:
+      // no course.yml authored means no valid courseId ever exists, so don't
+      // offer the validator at all rather than have it reject every attempt.
+      ...(rubiksCubeService && RUBIKS_CUBE_COURSE_ID ? [['rubiks-cube', (raw) => {
         const courseId = raw?.courseId ?? raw?.corpusId;
         return courseId === RUBIKS_CUBE_COURSE_ID
           ? { errors: [], enrollment: { programId: 'rubiks-cube', corpusId: courseId, courseId } }

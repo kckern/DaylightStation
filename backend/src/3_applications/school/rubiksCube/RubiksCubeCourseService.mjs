@@ -15,6 +15,11 @@ export class RubiksCubeCourseService {
   #config; #clock; #packetPlanner;
   constructor({ configService, recoverySolver = null, packetPlanner = null, clock = () => new Date() } = {}) { this.#config = configService; this.recoverySolver = recoverySolver; this.#packetPlanner = packetPlanner; this.#clock = clock; }
   #file(userId) {
+    // No course.yml authored yet (RUBIKS_CUBE_COURSE_ID is null): fail with a
+    // clear message rather than `path.join(..., null, ...)`'s TypeError. The
+    // service is still constructed and mounted so the rest of school boots;
+    // this only surfaces when someone actually reaches this program.
+    if (!RUBIKS_CUBE_COURSE_ID) throw new Error('The Rubik’s Cube course is not installed.');
     if (!this.#config.getUserProfile?.(userId)) return null;
     return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'rubiks-cube', RUBIKS_CUBE_COURSE_ID, 'progress.yml');
   }
