@@ -96,6 +96,15 @@ export function createOmrRelay({ eventBus, dataDir, dayLog, config = {}, timezon
   // Every distinct topic we must persist from (default + any per-reader overrides).
   const topics = new Set([DEFAULT_TOPIC, ...Object.values(readerDefs).map((r) => r?.topic).filter(Boolean)]);
 
+  // Dedup for the BROADCAST path. The persist-path guard further down
+  // (`lastNfc`) runs in `onPayload`, i.e. AFTER this broadcast has already gone
+  // out — so it only ever protected the day-log. Everything that ACTS on a tap
+  // (printing an agenda, opening a session) subscribes to the broadcast, which
+  // is how one bouncing card produced five receipts and four sessions on
+  // 2026-08-25. Keyed per reader AND uid so two different cards presented back
+  // to back both get through; only a repeat of the SAME card is suppressed.
+  const lastBroadcastNfc = new Map(); // `${id}::${uid}` -> atMs
+
   // ---- 1) INGEST: relay device client → bus ------------------------------
   eventBus.onClientMessage((clientId, message) => {
     if (!message || !INGEST_SOURCES.has(message.source)) return;
@@ -159,8 +168,10 @@ export function createOmrRelay({ eventBus, dataDir, dayLog, config = {}, timezon
 
     // An NFC card tapped on the reader's Grove-port NFC unit — a student
     // announcing "I'm ready", which downstream turns into a session start. The
-    // relay already debounces in hardware (it HLTAs the card, so one physical tap
-    // produces exactly one message), so anything arriving here is a real tap.
+    // relay was ASSUMED to debounce in hardware (it HLTAs the card, so one
+    // physical tap should produce one message). On 2026-08-25 a single tap
+    // produced five messages in 103ms, so that assumption is not load-bearing
+    // any more — the window below is.
     if (message.type === 'nfc') {
       const uid = typeof message.uid === 'string' ? message.uid.trim().toUpperCase() : '';
       // A UID is the whole payload — without one there is nothing to resolve to a
@@ -169,6 +180,18 @@ export function createOmrRelay({ eventBus, dataDir, dayLog, config = {}, timezon
         logger.warn?.('omr.ingest.bad_nfc_uid', { clientId, id, uid: message.uid });
         return;
       }
+      const dedupKey = `${id}::${uid}`;
+      const prevBroadcastMs = lastBroadcastNfc.get(dedupKey);
+      const nfcNowMs = Date.now();
+      if (prevBroadcastMs !== undefined && nfcNowMs - prevBroadcastMs < dedupWindowMs) {
+        // `info`, not `debug`: debug events are never shipped to the log store,
+        // and a suppressed tap must remain visible in production.
+        logger.info?.('omr.ingest.nfc_debounced', {
+          clientId, id, uid, sinceMs: nfcNowMs - prevBroadcastMs,
+        });
+        return;
+      }
+      lastBroadcastNfc.set(dedupKey, nfcNowMs);
       logger.info?.('omr.ingest.nfc', { clientId, id, uid, piccType: message.piccType });
       eventBus.broadcast(topic, {
         id,

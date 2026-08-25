@@ -236,6 +236,35 @@ describe('createOmrRelay', () => {
     expect(recs.map((r) => r.uid)).toEqual(['04669C0FCB2A81', '04AABBCCDDEE01']);
   });
 
+  it('broadcasts one nfc event for a bouncing card, not five', async () => {
+    const bus = wire();
+
+    // One physical tap that the reader reported five times in ~100ms —
+    // the 2026-08-25 incident, replayed.
+    for (let i = 0; i < 5; i += 1) {
+      bus.emit({
+        source: 'omr-relay', type: 'nfc', id: READER_ID,
+        uid: '04DB930CCB2A81', piccType: 'NTAG 215',
+      });
+    }
+
+    const nfcBroadcasts = bus.broadcasts.filter((b) => b.payload?.event === 'nfc');
+    expect(nfcBroadcasts).toHaveLength(1);
+    expect(nfcBroadcasts[0].payload.uid).toBe('04DB930CCB2A81');
+  });
+
+  it('does not suppress a DIFFERENT card tapped immediately after', async () => {
+    const bus = wire();
+
+    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '04DB930CCB2A81' });
+    bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID, uid: '048BA600CC2A81' });
+
+    const uids = bus.broadcasts
+      .filter((b) => b.payload?.event === 'nfc')
+      .map((b) => b.payload.uid);
+    expect(uids).toEqual(['04DB930CCB2A81', '048BA600CC2A81']);
+  });
+
   it('backdates a queued tap by ageMs so it carries the TAP time', async () => {
     const bus = wire({ timezone: 'UTC' });
     bus.emit(nfcFrame('04669C0FCB2A81', { ageMs: 90_000 }));
