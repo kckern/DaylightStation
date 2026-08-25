@@ -224,7 +224,9 @@ public class ControlServer extends NanoWSD {
 
         // One key per call, never a whole-blob replace — see Config's note on the
         // piano-bridge config clobber.
-        if (Config.KEY_SCREEN_TOGGLE_ENABLED.equals(key) || Config.KEY_CONSUME_VOLUME.equals(key)) {
+        if (Config.KEY_SCREEN_TOGGLE_ENABLED.equals(key)
+                || Config.KEY_CONSUME_VOLUME.equals(key)
+                || Config.KEY_BLOCK_CONTROL_CENTER.equals(key)) {
             config.setBoolean(key, "true".equalsIgnoreCase(value));
         } else if (Config.KEY_DOUBLE_PRESS_MS.equals(key)) {
             try {

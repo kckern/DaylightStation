@@ -37,12 +37,24 @@ describe('School self-service keypad screen off', () => {
   it('shows a green LED when the paired BK-3001 is connected', async () => {
     fetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ presence: { devices: [{ name: 'BK-3001', connected: true }] } }),
+      json: async () => ({ presence: { devices: [{ name: 'Bluetooth 5.1 Keyboard', connected: true }] } }),
     });
     renderKeypad();
     await act(async () => {});
     expect(screen.getByText('Keyboard connected')).toBeInTheDocument();
     expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
+  });
+
+  it('accepts Bluetooth HID digits, backspace, and Enter', async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ resolved: true });
+    renderKeypad({ onSubmit });
+    for (const key of ['1', '2', '3', '4', '5', '6']) fireEvent.keyDown(window, { key });
+    expect(screen.getByRole('button', { name: 'Go' })).toBeEnabled();
+    fireEvent.keyDown(window, { key: 'Backspace' });
+    expect(screen.getByRole('button', { name: 'Go' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: '6' });
+    await act(async () => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    expect(onSubmit).toHaveBeenCalledWith('123456');
   });
 
   it('requires two taps for the manual screen-off action', () => {

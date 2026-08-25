@@ -39,9 +39,12 @@ when an enrollment-owned credit rung cannot be completed locally.
 
 On the Portal's locked keypad, a small status LED polls the existing Portal
 Keys Bluetooth-presence report every 15 seconds. It recognizes the BK-3001
-keyboard by its reported model name and says whether it is connected, off, not
-paired, or temporarily unavailable. The server gate configuration remains the
-authority for the keyboard MAC and for which typing rungs are permitted.
+keyboard by its reported model name (including Android's generic `Bluetooth
+5.1 Keyboard` name) and says whether it is connected, off, not paired, or
+temporarily unavailable. Pairing stays in the Portal's OS Control Center. A
+connected keyboard enters PIN digits, Backspace, and Enter directly into the
+keypad. The server gate configuration remains the authority for the keyboard
+MAC and for which typing rungs are permitted.
 
 ## School lifecycle
 

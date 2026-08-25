@@ -57,7 +57,10 @@ const PRESENCE_POLL_MS = 15_000;
 // The Portal's companion APK reports its bonded HID devices to this endpoint.
 // This model string is intentionally only the display-side matcher: pairing
 // policy and the authoritative keyboard MAC remain in the server's gate config.
-const KEYBOARD_MODEL = 'bk3001';
+// The BK-3001 has appeared under both its product name and the generic Android
+// name below. These are *display* aliases only; the server gate is still the
+// authority that allowlists a keyboard by MAC address.
+const KEYBOARD_NAMES = ['bk3001', 'bluetooth51keyboard'];
 
 function portalDeviceId() {
   const match = window.location.pathname.match(/^\/screens?\/([^/]+)/);
@@ -66,7 +69,9 @@ function portalDeviceId() {
 
 function keyboardConnection(presence) {
   const keyboard = presence?.devices?.find((device) => (
-    String(device?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(KEYBOARD_MODEL)
+    KEYBOARD_NAMES.some((name) => (
+      String(device?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(name)
+    ))
   ));
   if (!keyboard) return 'not-paired';
   return keyboard.connected === true ? 'connected' : 'disconnected';
@@ -293,6 +298,36 @@ export default function Keypad({
     }
   }, [busy, entry, length, onSubmit, playReject]);
 
+  // A bonded BK-3001 is a normal Android HID keyboard: its keys reach the
+  // WebView as browser keydown events. Keep this listener on the keypad, not
+  // SchoolApp, so typing can never leak into a runner or an open School page.
+  // Preventing default on Enter also avoids activating whichever touch button
+  // happened to retain focus after the child last used the screen.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        noteActivity();
+        press(event.key);
+        return;
+      }
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        noteActivity();
+        backspace();
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'NumpadEnter') {
+        event.preventDefault();
+        noteActivity();
+        submit();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [backspace, noteActivity, press, submit]);
+
   const cells = reject
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
     : Array.from({ length }, (_, i) => entry[i] ?? null);
@@ -318,7 +353,6 @@ export default function Keypad({
         {keyboardState === 'checking' && 'Checking keyboard'}
         {keyboardState === 'unavailable' && 'Keyboard status unavailable'}
       </p>
-
       <div
         className={`school-selfservice__entry${reject ? ' is-rejected' : ''}${reject?.phase === 'shake' ? ' is-shaking' : ''}`}
         data-testid="selfservice-entry"
