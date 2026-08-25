@@ -240,6 +240,11 @@ export class RunSelfServiceAction {
 
     if (kind === 'companion' && resolution?.kind === 'companion') {
       const answer = await this.#companionHandlers?.open?.({ offer: resolution.offer });
+      if (!answer) {
+        this.#logger.warn?.('school.selfservice.companion.unwired', {
+          offerId: resolution.offer?.id ?? null,
+        });
+      }
       return answer ?? { outcome: 'failed', sentence: TELL_A_GROWN_UP };
     }
 
@@ -453,6 +458,7 @@ export class RunSelfServiceAction {
       return { outcome: 'failed', sentence: TELL_A_GROWN_UP, sessionId, effect: null };
     }
     if (!this.#donow) {
+      this.#logger.warn?.('school.selfservice.launch.unwired', { sessionId, surface: launch.surface });
       return {
         outcome: 'failed',
         sentence: 'Ask a grown-up to set this up.',
@@ -496,8 +502,14 @@ export class RunSelfServiceAction {
       }
     }
 
+    const outcome = LAUNCH_OUTCOMES[decision] ?? 'failed';
+    if (decision !== 'dispatched') {
+      this.#logNotDispatched('school.selfservice.launch.not-dispatched', result?.decision, outcome, {
+        sessionId, surface, message: result?.message ?? null,
+      });
+    }
     return {
-      outcome: LAUNCH_OUTCOMES[decision] ?? 'failed',
+      outcome,
       // DoNow's wording, verbatim — it names the real surface via that
       // surface's own adapter label.
       sentence: result?.message || 'Could not start that. Ask a grown-up to set this up.',
@@ -591,9 +603,22 @@ export class RunSelfServiceAction {
       result = { decision: 'failed', message: 'Could not start that. Ask a grown-up to set this up.' };
     }
 
-    const decision = result?.decision ?? 'failed';
+    const rawDecision = result?.decision;
+    const decision = rawDecision ?? 'failed';
+    const outcome = LAUNCH_OUTCOMES[decision] ?? 'failed';
+    if (decision !== 'dispatched') {
+      // THE REASON is now on record. Before this, every non-dispatched
+      // decision reached `school.selfservice.action.run` as bare
+      // `outcome:"failed"` with nothing else anywhere — a launcher's clean,
+      // correct refusal (a co-progress lock, an occupancy denial) was
+      // indistinguishable in the logs from a launcher that threw (already
+      // covered by `program.launch-threw`) or one that returned garbage.
+      this.#logNotDispatched('school.selfservice.program.not-dispatched', rawDecision, outcome, {
+        programId, unitId, surface, message: result?.message ?? null,
+      });
+    }
     return {
-      outcome: LAUNCH_OUTCOMES[decision] ?? 'failed',
+      outcome,
       // DoNow's own wording, verbatim — it names the real surface through
       // that surface's adapter label, which is why nothing here re-words it.
       sentence: result?.message || 'Could not start that. Ask a grown-up to set this up.',
@@ -633,6 +658,21 @@ export class RunSelfServiceAction {
         learnerId,
       },
     };
+  }
+
+  /**
+   * A launcher/DoNow decision that did not dispatch — logged so a clean
+   * refusal (`denied`/`pending_approval`) is never indistinguishable in the
+   * logs from a decision that is missing or that nothing in `LAUNCH_OUTCOMES`
+   * recognises. `info`: the decision is a known shape, so a refusal here is
+   * the system working as designed. `warn`: the launcher/DoNow returned a
+   * shape nobody taught this file about — a contract defect, not an ordinary
+   * "not now". Shared by `#program` and `#launch`, the two places a decision
+   * outside `dispatched` can otherwise vanish into a bare `outcome:"failed"`.
+   */
+  #logNotDispatched(event, rawDecision, outcome, context) {
+    const known = rawDecision !== undefined && rawDecision in LAUNCH_OUTCOMES;
+    this.#logger[known ? 'info' : 'warn']?.(event, { ...context, decision: rawDecision, outcome });
   }
 
   #unwired(action, sessionId) {

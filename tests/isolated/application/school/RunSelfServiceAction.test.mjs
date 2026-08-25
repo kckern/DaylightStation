@@ -57,6 +57,23 @@ const spy = (reply) => {
   return fn;
 };
 
+/**
+ * A logger that records every call instead of discarding it, so a test can
+ * assert on WHAT was logged, not just that nothing threw. `silentLogger`
+ * (the default the rest of this file uses) cannot answer that question — it
+ * is a pure no-op — which is exactly why the diagnostic gap this file's
+ * `program.not-dispatched` tests cover went unnoticed for so long.
+ */
+const recordingLogger = () => {
+  const calls = { info: [], warn: [], error: [] };
+  return {
+    info: (event, data) => calls.info.push({ event, data }),
+    warn: (event, data) => calls.warn.push({ event, data }),
+    error: (event, data) => calls.error.push({ event, data }),
+    calls,
+  };
+};
+
 const build = ({
   assignmentSeed = [{ learnerId: 'kid1', courses: ['math-fractions'] }],
   units,
@@ -652,6 +669,106 @@ describe('screen and program', () => {
     expect(result.outcome).toBe('failed');
     expect(result.sentence.length).toBeGreaterThan(0);
     expect(result.sentence).not.toMatch(/on the screen/);
+  });
+
+  // -------------------------------------------------------------------------
+  // the diagnostic gap: a non-dispatched decision must say WHY, every time.
+  // A child pressed the green button and nothing happened; the log carried
+  // outcome:failed with no reason, and none of #program's four named
+  // warnings fired because the launcher had refused CLEANLY. That refusal
+  // must be indistinguishable in the code from a launcher returning garbage
+  // — but never in the log.
+  // -------------------------------------------------------------------------
+  describe('a program decision that does not dispatch', () => {
+    it('logs a clean refusal at info, with the decision and the launcher\'s own words', async () => {
+      const logger = recordingLogger();
+      await build({
+        ...programUnit({
+          surface: 'garage-fitness',
+          launch: { decision: 'denied', message: 'Waiting for Milo to catch up' },
+        }),
+        wire: { logger },
+      });
+
+      const result = await useCase.execute({ code: CODE, action: 'program' });
+
+      expect(result.outcome).toBe('refused');
+      expect(logger.calls.warn).toEqual([]);
+      expect(logger.calls.info).toContainEqual({
+        event: 'school.selfservice.program.not-dispatched',
+        data: expect.objectContaining({
+          programId: PROGRAM_ID,
+          unitId: WORKSHEET_UNIT,
+          surface: 'garage-fitness',
+          decision: 'denied',
+          outcome: 'refused',
+          message: 'Waiting for Milo to catch up',
+        }),
+      });
+    });
+
+    it('stays quiet on the happy path — a dispatch logs no not-dispatched event', async () => {
+      const logger = recordingLogger();
+      await build({
+        ...programUnit({
+          surface: 'garage-fitness',
+          launch: { decision: 'dispatched', message: 'Starting the garage bike now.' },
+        }),
+        wire: { logger },
+      });
+
+      const result = await useCase.execute({ code: CODE, action: 'program' });
+
+      expect(result.outcome).toBe('done');
+      const notDispatched = [...logger.calls.info, ...logger.calls.warn]
+        .filter((call) => call.event === 'school.selfservice.program.not-dispatched');
+      expect(notDispatched).toEqual([]);
+    });
+
+    it('logs a missing decision at warn — a launcher contract violation, not an ordinary refusal', async () => {
+      const logger = recordingLogger();
+      await build({
+        ...programUnit({ surface: 'garage-fitness', launch: {} }),
+        wire: { logger },
+      });
+
+      const result = await useCase.execute({ code: CODE, action: 'program' });
+
+      expect(result.outcome).toBe('failed');
+      expect(logger.calls.info.some((c) => c.event === 'school.selfservice.program.not-dispatched')).toBe(false);
+      expect(logger.calls.warn).toContainEqual({
+        event: 'school.selfservice.program.not-dispatched',
+        data: expect.objectContaining({
+          programId: PROGRAM_ID,
+          unitId: WORKSHEET_UNIT,
+          surface: 'garage-fitness',
+          decision: undefined,
+          outcome: 'failed',
+        }),
+      });
+    });
+
+    it('logs an unrecognised decision at warn, mapping the outcome to failed', async () => {
+      const logger = recordingLogger();
+      await build({
+        ...programUnit({ surface: 'garage-fitness', launch: { decision: 'wat' } }),
+        wire: { logger },
+      });
+
+      const result = await useCase.execute({ code: CODE, action: 'program' });
+
+      expect(result.outcome).toBe('failed');
+      expect(logger.calls.warn).toContainEqual({
+        event: 'school.selfservice.program.not-dispatched',
+        data: expect.objectContaining({
+          programId: PROGRAM_ID,
+          unitId: WORKSHEET_UNIT,
+          surface: 'garage-fitness',
+          decision: 'wat',
+          outcome: 'failed',
+        }),
+      });
+    });
   });
 });
 
