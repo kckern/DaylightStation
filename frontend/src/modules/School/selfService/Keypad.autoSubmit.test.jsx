@@ -22,16 +22,9 @@ const PAST_SETTLE_MS = 500;
 describe('School self-service keypad auto-submit (no Go button)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.history.replaceState({}, '', '/screens/portal');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ presence: { devices: [] } }),
-    }));
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    window.history.replaceState({}, '', '/');
     vi.useRealTimers();
   });
 

@@ -18,31 +18,13 @@ const renderKeypad = (props = {}) => render(
 describe('School self-service keypad screen off', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    window.history.replaceState({}, '', '/screens/portal');
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ presence: { devices: [] } }),
-    }));
     screenOff.mockReset().mockReturnValue(true);
     selfService.mockClear();
     selfServiceError.mockClear();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
-    window.history.replaceState({}, '', '/');
     vi.useRealTimers();
-  });
-
-  it('shows a green LED when the paired BK-3001 is connected', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ presence: { devices: [{ name: 'Bluetooth 5.1 Keyboard', connected: true }] } }),
-    });
-    renderKeypad();
-    await act(async () => {});
-    expect(screen.getByText('Keyboard connected')).toBeInTheDocument();
-    expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
   });
 
   it('accepts HID keyboard digits, backspace, and an explicit Enter submit', async () => {
@@ -104,5 +86,31 @@ describe('School self-service keypad screen off', () => {
     expect(selfServiceError).toHaveBeenCalledWith('screen-off.failed', {
       source: 'manual', reason: 'fkb_unavailable',
     });
+  });
+
+  // The household moved to a plugged-in 2.4GHz USB-dongle keyboard, so the
+  // retired "pair/turn on the Bluetooth keyboard" warning must be gone for
+  // good — not just hidden by a condition — in every state the panel renders.
+  it('never renders the retired bluetooth keyboard warning', () => {
+    const assertNoBluetoothWarning = () => {
+      expect(screen.queryByTestId('selfservice-keyboard-status')).not.toBeInTheDocument();
+      expect(document.querySelector('.school-selfservice__keyboard')).toBeNull();
+      expect(screen.queryByText(/bluetooth/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/keyboard/i)).not.toBeInTheDocument();
+    };
+
+    const { rerender } = renderKeypad();
+    assertNoBluetoothWarning();
+
+    rerender(<Keypad onSubmit={vi.fn()} busy />);
+    assertNoBluetoothWarning();
+
+    rerender(<Keypad
+      onSubmit={vi.fn()}
+      degraded
+      message="Something broke. Try again."
+      onRetry={vi.fn()}
+    />);
+    assertNoBluetoothWarning();
   });
 });
