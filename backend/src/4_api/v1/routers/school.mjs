@@ -1605,23 +1605,30 @@ export function createSchoolRouter({
     const learnerId = requiredTextQuery(req.params.learnerId, 'learnerId');
     const limit = boundedIntegerQuery(req.query.limit, 20, 1, 100, 'limit');
     const items = await reviewQueue.listForLearner(learnerId, { limit });
+    // Titles are a catalog concern joined at read time; a failed lookup just
+    // leaves unitTitle null and the row still serves.
+    const titleOf = async (unitId) => {
+      if (!unitId) return null;
+      try { return (await curriculumForSyllabus?.getUnitSummary?.(unitId))?.title ?? null; } catch { return null; }
+    };
     // Standalone teacher notes (spec D3) join the same child-visible feed,
     // marked kind:'note' so a renderer can tell them from verdicts.
     const standaloneNotes = (teacherNotesStore?.list?.({ learnerId }) ?? []).map((n) => ({
-      itemId: n.id, sessionId: null, unitId: null, verdict: null, kind: 'note',
+      itemId: n.id, sessionId: null, unitId: null, unitTitle: null, verdict: null, kind: 'note',
       note: n.note, gradedBy: n.from ?? null, gradedAt: n.at,
     }));
-    res.set('Cache-Control', 'no-store').json([...items.map((item) => ({
+    res.set('Cache-Control', 'no-store').json([...await Promise.all(items.map(async (item) => ({
       itemId: item.itemId,
       sessionId: item.sessionId,
       unitId: item.unitId ?? null,
+      unitTitle: await titleOf(item.unitId),
       verdict: item.verdict,
       note: item.note ?? null,
       gradedBy: item.gradedBy ?? null,
       gradedAt: item.gradedAt ?? null,
       prompt: item.prompt ?? null,
       questionNumber: item.questionNumber ?? null,
-    })), ...standaloneNotes]
+    }))), ...standaloneNotes]
       .sort((a, b) => String(b.gradedAt ?? '').localeCompare(String(a.gradedAt ?? '')))
       .slice(0, limit));
   }));

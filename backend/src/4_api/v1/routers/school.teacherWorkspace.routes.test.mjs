@@ -189,4 +189,18 @@ describe('teacher workspace routes', () => {
       pin: { capabilityToken: 'session-1', stepUpToken: 'grant-1' },
     }));
   });
+
+  it('joins unitTitle onto review rows so the feedback lane can name the lesson', async () => {
+    const reviewQueue = { listForLearner: vi.fn(async () => [
+      { itemId: 'i1', sessionId: 'ses_1', unitId: 'atlas-us-p044-illinois', verdict: 'correct', gradedBy: 'engine', gradedAt: '2026-08-24T15:20:00Z' },
+    ]) };
+    const teacherNotesStore = { list: vi.fn(() => [
+      { id: 'n1', note: 'Nice work', from: 'kckern', at: '2026-08-23T10:00:00Z' },
+    ]) };
+    const curriculumForSyllabus = { getUnitSummary: vi.fn(async () => ({ unitId: 'atlas-us-p044-illinois', title: 'Illinois' })) };
+    const response = await request(app({ reviewQueue, teacherNotesStore, curriculumForSyllabus }))
+      .get('/api/v1/school/review/learner/milo').expect(200);
+    expect(response.body[0]).toMatchObject({ itemId: 'i1', unitTitle: 'Illinois' });
+    expect(response.body[1]).toMatchObject({ itemId: 'n1', kind: 'note', unitTitle: null });
+  });
 });

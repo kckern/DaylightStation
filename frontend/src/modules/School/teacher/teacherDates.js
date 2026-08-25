@@ -13,6 +13,12 @@ export function teacherDate(value, { weekday = false } = {}) {
   }).format(date);
 }
 
+/** Today (or a given Date) as YYYY-MM-DD in LOCAL time — toISOString() is UTC
+ * and flips to tomorrow every evening. */
+export function localDay(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function teacherDateRange(from, to = null) {
   if (!to || to === from) return teacherDate(from);
   const start = dateFor(from);

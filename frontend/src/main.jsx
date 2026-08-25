@@ -45,11 +45,6 @@ const getWebSocketUrl = () => {
   return `${protocol}//${window.location.host}/ws`;
 };
 
-// ========== PHASE 4 DEBUG: Check if code reloads ==========
-console.error('🔥 PHASE 4 CODE LOADED - main.jsx timestamp:', new Date().toISOString());
-console.error('🔥 VERSION: Added EFFECTIVE_ROSTER and ACTIVE_PARTICIPANTS logging');
-// ===========================================================
-
 // Bootstrap DaylightLogger and expose a shared frontend logger
 configureDaylightLogger({
   websocket: true,

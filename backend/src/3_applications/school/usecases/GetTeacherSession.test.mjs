@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { GetTeacherSession } from './GetTeacherSession.mjs';
+import { GetTeacherSession, GetLearnerTimeline } from './GetTeacherSession.mjs';
 
 const events = [
   { type: 'created', seq: 1, at: '2026-08-24T14:27:36.519Z', learnerId: 'milo', unitId: 'atlas-us-p044-illinois' },
@@ -45,5 +45,53 @@ describe('GetTeacherSession artifact read-through', () => {
     expect(result.artifacts[0].originalPdfUrl).toBeUndefined();
     expect(result.artifacts[0].thumbnailUrl).toBeUndefined();
     expect(getPublished).toHaveBeenCalledWith('civilization/young-peoples-atlas-us/ws-ses-illinois', 'frozen-rev');
+  });
+});
+
+describe('GetLearnerTimeline catalog join', () => {
+  const sessions = {
+    listForLearner: vi.fn(async () => [
+      { sessionId: 's1', learnerId: 'milo', unitId: 'atlas-us-p044-illinois', state: 'closed', updatedAt: '2026-08-24T15:20:00Z' },
+    ]),
+  };
+  const curriculum = {
+    getUnit: vi.fn(async () => ({
+      unitId: 'atlas-us-p044-illinois', title: 'Illinois', subject: 'Civilization',
+      courseId: 'young-peoples-atlas-us', module: 'United States',
+    })),
+    listWorks: vi.fn(async () => [{
+      work: 'young-peoples-atlas-us', title: 'United States Regions and States', subject: 'Civilization',
+      modules: [{ module: 'United States', title: 'Midwest' }],
+    }]),
+  };
+
+  it('joins the catalog so timeline rows carry the taxonomy the list renders', async () => {
+    const useCase = new GetLearnerTimeline({ sessions, curriculum });
+    const { items } = await useCase.execute({ learnerId: 'milo' });
+    expect(items[0]).toMatchObject({
+      sessionId: 's1',
+      lessonTitle: 'Illinois',
+      courseId: 'young-peoples-atlas-us',
+      courseTitle: 'United States Regions and States',
+      subject: 'Civilization',
+      moduleTitle: 'Midwest',
+      posterUrl: '/api/v1/school/teacher/curriculum/young-peoples-atlas-us/poster.jpg',
+    });
+  });
+
+  it('returns raw rows untouched when no curriculum is wired', async () => {
+    const useCase = new GetLearnerTimeline({ sessions });
+    const { items } = await useCase.execute({ learnerId: 'milo' });
+    expect(items[0].sessionId).toBe('s1');
+    expect(items[0].lessonTitle).toBeUndefined();
+  });
+
+  it('degrades to raw rows when the catalog read throws', async () => {
+    const useCase = new GetLearnerTimeline({
+      sessions,
+      curriculum: { getUnit: vi.fn(async () => { throw new Error('catalog down'); }), listWorks: vi.fn(async () => { throw new Error('catalog down'); }) },
+    });
+    const { items } = await useCase.execute({ learnerId: 'milo' });
+    expect(items[0].sessionId).toBe('s1');
   });
 });
