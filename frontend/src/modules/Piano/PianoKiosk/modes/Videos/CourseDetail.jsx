@@ -161,6 +161,12 @@ export default function CourseDetail({ course, onPlay, playable, speakerDisabled
 
   // Co-progress lock: if the backend says the user is too far ahead, the first
   // available (unwatched) LESSON episode gets a navigation gate instead of playing.
+  //
+  // ...unless the backend also marked that episode as today's assigned school
+  // lesson (`exemptLessonIds`). Pacing is for discretionary practice; work the
+  // household assigned must always be startable, or a child cannot finish their
+  // day because a sibling is behind. Only the named lesson is let through — the
+  // linear `lockedIds` gate above still holds every lesson after it.
   const coProgressLockedId = useMemo(() => {
     if (!coProgressLock?.locked || !isSequential || !lessonItems.length) return null;
     const seasonIndex = (parentId) => seasons.find((s) => String(s.id) === String(parentId))?.index ?? 0;
@@ -170,7 +176,11 @@ export default function CourseDetail({ course, onPlay, playable, speakerDisabled
       return (a.itemIndex ?? Infinity) - (b.itemIndex ?? Infinity);
     });
     const next = sorted.find((ep) => !lectureUserStatus(ep).watched);
-    return next ? (next.plex || next.id) : null;
+    if (!next) return null;
+    const key = next.plex || next.id;
+    const exempt = coProgressLock.exemptLessonIds;
+    if (Array.isArray(exempt) && exempt.some((id) => String(id) === String(key))) return null;
+    return key;
   }, [coProgressLock, isSequential, lessonItems, seasons]);
 
   // Unlock ceremony: when the complete lesson-unit set grows, toast + chime the newly

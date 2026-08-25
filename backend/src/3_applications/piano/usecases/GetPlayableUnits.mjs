@@ -1,3 +1,19 @@
+import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+
+/** School's program id for a sequential piano VIDEO course. */
+const PIANO_COURSE_PROGRAM = 'piano-course';
+
+/** The household's study day rolls at 4am, same as the rest of the agenda. */
+const STUDY_DAY_BOUNDARY_HOUR = 4;
+
+/** Assignments store `plex:12345`; a bare course id means the same course. */
+const normalizeCourseId = (value) => {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const id = String(value);
+  return id.startsWith('plex:') ? id : `plex:${id}`;
+};
+
+const numericOrder = (value) => (Number.isFinite(Number(value)) ? Number(value) : Number.MAX_SAFE_INTEGER);
 
 /**
  * GetPlayableUnits — a course's playable units for one kiosk user.
@@ -8,6 +24,22 @@
  * reference-unit matching (config-flagged, never-gated units), and the
  * co-progress lock (block the ahead user in a paired sequential course until the
  * gap falls below `rule.buffer`).
+ *
+ * PACING NEVER OUTRANKS AN ASSIGNMENT. The co-progress lock paces DISCRETIONARY
+ * practice: it keeps paired learners moving together and stops one racing ahead.
+ * It must not decide whether a child can finish the schoolwork the household gave
+ * them — a lesson nobody but a sibling can unblock is an obligation that cannot be
+ * discharged. So when School has enrolled this learner in a `piano-course` program
+ * for THIS course and they have not yet completed a lesson today, the ONE lesson
+ * that discharges today's obligation is named in `coProgressLock.exemptLessonIds`
+ * and the surfaces let it through.
+ *
+ * The exemption is PER-LESSON, not per-course, and it costs nothing to the pacing
+ * rule: the existing linear gate already locks every lesson past the first unwatched
+ * one, so exempting that first one buys exactly one lesson. The moment it is
+ * completed the exemption is withdrawn (the day's obligation is discharged) and
+ * pacing governs the rest of the day. `exemptLessonIds` is absent, not empty, when
+ * no override applies — the lock's shape is unchanged for every ordinary lockout.
  *
  * Returns a discriminated result so the router keeps HTTP mapping thin:
  *   { ok: false, reason: 'invalid_user' }         → router 400
@@ -23,22 +55,35 @@ export class GetPlayableUnits {
   #logger;
   #learningService;
   #curriculumIndex;
+  #schoolAssignments;
+  #clock;
 
   /**
    * `curriculumIndex` is INJECTED (Decision D1: a use case never imports a
    * concrete adapter — no exceptions). It supplies `getCurriculumIndex` and
    * `mergeSeason`, which read Plex's curriculum layout; bootstrap owns which
    * implementation that is.
+   *
+   * `schoolAssignments` is School's learner assignment store (`get(learnerId)`
+   * → `{ programs: [...] }`), injected for the same reason and read ONLY to
+   * decide whether a locked-out lesson is today's assigned schoolwork. Null in
+   * a composition without School: the co-progress lock then behaves exactly as
+   * it always has. The raw store is deliberate — asking School's
+   * `PianoCourseProgramLauncher` instead would recurse, since the launcher's
+   * own status() is built on this use case.
    */
   constructor({
     fitnessPlayableService, userVideoProgressStore = null, configService,
-    learningService = null, curriculumIndex = null, logger = console,
+    learningService = null, curriculumIndex = null, schoolAssignments = null,
+    clock = () => new Date(), logger = console,
   } = {}) {
     this.#curriculumIndex = curriculumIndex;
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#configService = configService;
     this.#learningService = learningService;
+    this.#schoolAssignments = schoolAssignments;
+    this.#clock = clock;
     this.#logger = logger;
   }
 
@@ -187,6 +232,20 @@ export class GetPlayableUnits {
               waitingForId: partnerIds[slowestIndex],
               buffer: rule.buffer,
             };
+            // ...unless School assigned this learner a lesson today. Only then
+            // do we pay for the assignment lookup — free-play in an unlocked
+            // course never touches School at all.
+            const exempt = await this.#assignedLessonId({
+              userId, compoundId, items: playable.items || [], referenceUnitIds,
+            });
+            if (exempt) {
+              coProgressLock.exemptLessonIds = [exempt];
+              // A parent WILL ask why the pacing rule let this one through.
+              this.#logger.info?.('piano.co-progress.assigned-override', {
+                userId, courseId: compoundId, lessonId: exempt,
+                waitingForId: coProgressLock.waitingForId, aheadBy, buffer: rule.buffer,
+              });
+            }
           }
         }
       }
@@ -194,6 +253,56 @@ export class GetPlayableUnits {
 
     this.#logger.info?.('piano.courses.playable', { courseId, userId: userId || null, isSequential });
     return { ok: true, result: { ...playable, isSequential, coProgressLock, referenceUnitIds: [...referenceUnitIds] } };
+  }
+
+  /**
+   * The one lesson a co-progress lockout must not block: today's assigned
+   * schoolwork. Returns the episode key (the same `plex || id` the kiosk grids
+   * on), or null when nothing is assigned, the day's lesson is already done, or
+   * School is not wired.
+   */
+  async #assignedLessonId({ userId, compoundId, items, referenceUnitIds }) {
+    if (!this.#schoolAssignments?.get) return null;
+
+    let programs;
+    try {
+      programs = (await this.#schoolAssignments.get(userId))?.programs ?? [];
+    } catch (error) {
+      // A missing or corrupt assignment file must fail CLOSED: an unreadable
+      // agenda is not evidence that a lesson was assigned.
+      this.#logger.warn?.('piano.co-progress.assignment-lookup-failed', {
+        userId, courseId: compoundId, error: error?.message ?? String(error),
+      });
+      return null;
+    }
+
+    const enrolled = programs.some((row) => row?.programId === PIANO_COURSE_PROGRAM
+      && normalizeCourseId(row.courseId ?? row.corpusId) === compoundId);
+    if (!enrolled) return null;
+
+    // Reference/practice units carry no credit in the kiosk's progression, so
+    // they cannot be the assigned lesson and cannot discharge the obligation.
+    const credit = items
+      .filter((item) => item && !referenceUnitIds.has(String(item.parentId)))
+      .sort((left, right) => numericOrder(left.parentIndex) - numericOrder(right.parentIndex)
+        || numericOrder(left.itemIndex) - numericOrder(right.itemIndex));
+
+    // Already did today's lesson: the obligation is discharged and everything
+    // after it is discretionary practice again, which pacing rightly governs.
+    const nowMs = this.#nowMs();
+    const timezone = this.#configService.getTimezone?.() ?? null;
+    const doneToday = credit.some((item) => item.userCompletedAt
+      && isSameStudyDay(Date.parse(item.userCompletedAt), nowMs, { timezone, boundaryHour: STUDY_DAY_BOUNDARY_HOUR }));
+    if (doneToday) return null;
+
+    const next = credit.find((item) => !item.userWatched);
+    const key = next?.plex ?? next?.id ?? null;
+    return key == null ? null : String(key);
+  }
+
+  #nowMs() {
+    const now = this.#clock();
+    return now instanceof Date ? now.getTime() : Number(now);
   }
 }
 

@@ -27,13 +27,14 @@ export class PianoContainer {
   #configService;
   #plexClient;
   #learningService;
+  #schoolAssignments;
   #logger;
 
   #getCourseProgress;
   #getPlayableUnits;
   #getRecentCourseActivity;
 
-  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, learningService = null, logger = console } = {}) {
+  constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configService, plexClient = null, learningService = null, schoolAssignments = null, logger = console } = {}) {
     this.#curriculumIndex = arguments[0]?.curriculumIndex ?? null;
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configService) throw new Error('PianoContainer: configService required');
@@ -44,6 +45,10 @@ export class PianoContainer {
     this.#configService = configService;
     this.#plexClient = plexClient;
     this.#learningService = learningService;
+    // School's learner assignment store, read only to tell whether a
+    // co-progress lockout is standing in front of today's assigned lesson.
+    // Null in a composition without School — the lock then behaves as before.
+    this.#schoolAssignments = schoolAssignments;
     this.#logger = logger;
   }
 
@@ -82,6 +87,7 @@ export class PianoContainer {
         configService: this.#configService,
         learningService: this.#learningService,
         curriculumIndex: this.#curriculumIndex,
+        schoolAssignments: this.#schoolAssignments,
         logger: this.#logger,
       });
     }

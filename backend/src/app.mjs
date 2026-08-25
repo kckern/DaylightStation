@@ -2502,9 +2502,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     teacherGate: schoolTeacherGate,
     logger: rootLogger.child({ module: 'piano-learning' }),
   });
+  // School's learner assignments, read by Piano's `GetPlayableUnits` for one
+  // decision only: whether a co-progress lockout is standing in front of the
+  // lesson School assigned today, which pacing must never block. Its own
+  // instance for the same reason `flashcardAssignments` has one — the store is
+  // a stateless reader of parent-editable YAML, and School's lifecycle is built
+  // later in this file (it consumes the piano use case, so piano cannot wait
+  // on it).
+  const pianoSchoolAssignments = new YamlAssignmentStore({
+    configService, logger: rootLogger.child({ module: 'piano-school-assignments' }),
+  });
   const pianoContainer = new PianoContainer({
     // D1: the use case receives the Plex curriculum reader, never imports it.
     curriculumIndex: { getCurriculumIndex, mergeSeason },
+    schoolAssignments: pianoSchoolAssignments,
     studioDatastore: pianoStudioDatastore,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,

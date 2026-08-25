@@ -26,6 +26,13 @@
  * who ALREADY completed a lesson today is done on the evidence, and the
  * lock never enters into it.
  *
+ * AN EXEMPTED LESSON IS NOT AN EXCUSE. Piano marks the one lesson that
+ * discharges today's obligation in `coProgressLock.exemptLessonIds` whenever the
+ * learner is enrolled here and still owes the day. Pacing governs discretionary
+ * practice; it must never settle assigned work as excused, so a lock carrying
+ * that exemption leaves the day OWED and launchable. Everything past that one
+ * lesson stays paced.
+ *
  * @module applications/school/PianoCourseProgramLauncher
  */
 import { isSameStudyDay } from '#domains/school/studyDay.mjs';
@@ -42,6 +49,22 @@ const plexId = (value) => {
 const lessonId = (item) => plexId(item?.plex ?? item?.id ?? item?.contentId);
 
 const numericOrder = (value) => Number.isFinite(Number(value)) ? Number(value) : Number.MAX_SAFE_INTEGER;
+
+/** Piano names exempt lessons by their raw episode key; we carry `plex:` ids. */
+const bareId = (value) => String(value ?? '').replace(/^plex:/, '');
+
+/**
+ * Does the co-progress lock actually stand between this learner and THIS
+ * lesson? A lock that exempts the lesson is a pacing note about the rest of the
+ * course, not an obstacle to today's assigned work — see the class doc.
+ */
+const lockBlocks = (lock, item) => {
+  if (!lock?.locked) return false;
+  const exempt = lock.exemptLessonIds;
+  if (!Array.isArray(exempt) || !exempt.length) return true;
+  const key = bareId(lessonId(item));
+  return !key || !exempt.some((id) => bareId(id) === key);
+};
 
 const orderedCreditItems = (result) => (result?.items ?? [])
   .filter((item) => item && !item.isReference)
@@ -151,9 +174,11 @@ export class PianoCourseProgramLauncher {
       };
     }
 
-    // Locked out by the partner's pace: nothing this child can do today.
+    // Locked out by the partner's pace: nothing this child can do today —
+    // UNLESS the lock exempts the very lesson they were assigned, in which case
+    // the day is still owed and perfectly finishable.
     const lock = result.coProgressLock;
-    if (lock?.locked) {
+    if (lockBlocks(lock, next)) {
       return {
         ...common,
         doneToday: true,
@@ -180,10 +205,15 @@ export class PianoCourseProgramLauncher {
     if (!userId || !courseId) throw new Error('piano-course launch requires learner and course');
     const answer = await this.#getPlayableUnits.execute({ courseId, userId });
     if (!answer?.ok) throw new Error(`piano-course is unavailable: ${answer?.reason ?? 'unknown'}`);
-    if (answer.result?.coProgressLock?.locked) throw new Error('piano-course is waiting for the paired learner');
     const result = { ...answer.result, compoundId: answer.result?.compoundId ?? courseId };
     const next = orderedCreditItems(result).find((item) => !item.userWatched);
     if (!next) throw new Error('piano-course has no unfinished lesson');
+    // The lock is evaluated against the resolved lesson, not the course: an
+    // assigned lesson is launchable however far ahead of their partner the
+    // learner has run.
+    if (lockBlocks(result.coProgressLock, next)) {
+      throw new Error('piano-course is waiting for the paired learner');
+    }
     const context = this.#lessonContext({ result, item: next });
     if (!context.lesson?.id) throw new Error('piano-course next lesson has no reachable Plex id');
     return {

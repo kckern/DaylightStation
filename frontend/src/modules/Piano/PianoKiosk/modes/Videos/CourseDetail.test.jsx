@@ -184,6 +184,46 @@ describe('co-progress lock', () => {
     expect(screen.getByRole('status').textContent).toContain('5 episodes ahead');
   });
 
+  it("lets today's assigned lesson through the lock and plays it on tap", () => {
+    // The incident: a child's last item of the day was a piano lesson and the
+    // kiosk refused to start it because his co-learner was behind.
+    const onPlay = vi.fn();
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'user_2', buffer: 5, exemptLessonIds: ['2'] },
+      items: [
+        { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
+        { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
+        { plex: '3', label: 'C', itemIndex: 3, userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
+    expect(screen.queryByLabelText('Waiting for partner')).toBeNull();
+    fireEvent.click(screen.getByText('B').closest('button'));
+    expect(onPlay).toHaveBeenCalled();
+    // ...and only that lesson: C is still behind the linear gate.
+    expect(screen.getByLabelText('Locked')).toBeTruthy();
+    fireEvent.click(screen.getByText('C').closest('button'));
+    expect(onPlay).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the lock when the exemption names a different lesson', () => {
+    const onPlay = vi.fn();
+    hookReturn = {
+      ...baseHook,
+      isSequential: true,
+      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'user_2', buffer: 5, exemptLessonIds: ['99'] },
+      items: [
+        { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
+        { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
+      ],
+    };
+    render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
+    fireEvent.click(screen.getByText('B').closest('button'));
+    expect(onPlay).not.toHaveBeenCalled();
+  });
+
   it('does not apply the co-progress lock when coProgressLock is null', () => {
     const onPlay = vi.fn();
     hookReturn = {
