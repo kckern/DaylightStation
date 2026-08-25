@@ -33,7 +33,17 @@ describe('InstructionalInsightsOverview copy', () => {
   it('renders q-ids as Question N and leaves slug ids prettified', () => {
     renderInsights([item('q2'), item('illinois-labor-unions', 'limited_evidence')]);
     expect(screen.getAllByText('Question 2').length).toBeGreaterThan(0);
-    expect(screen.getByText('Illinois Labor Unions')).toBeTruthy();
+    expect(screen.getAllByText('Illinois Labor Unions').length).toBeGreaterThan(0);
+  });
+
+  it('groups by signal, severity first, only the top group open', () => {
+    const { container } = renderInsights([
+      item('q1', 'monitor'), item('q2'), item('q3'), item('q4', 'limited_evidence'),
+    ]);
+    const groups = [...container.querySelectorAll('details.school-insights__group')];
+    const summaries = groups.map((g) => g.querySelector('summary').textContent);
+    expect(summaries).toEqual(['Review instruction (2)', 'More evidence needed (1)', 'On track (1)']);
+    expect(groups.map((g) => g.open)).toEqual([true, false, false]);
   });
 });
 
