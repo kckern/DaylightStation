@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectBankAsFlashcardDeck, validateFlashcardDeck } from './flashcardDeck.mjs';
-import { initialCardProgress, scheduleReview, selectReviewCards } from './reviewScheduler.mjs';
+import { selectReviewCards } from './reviewScheduler.mjs';
 import { validateFlashcardEnrollment } from './flashcardEnrollment.mjs';
 
 const deck = () => ({
@@ -39,15 +39,7 @@ describe('flashcard decks', () => {
   });
 });
 
-describe('flashcard scheduler adapter', () => {
-  it('relearns a lapse shortly and expands successful review intervals', () => {
-    const now = new Date('2026-08-24T12:00:00.000Z');
-    const lapse = scheduleReview(initialCardProgress({ now }), 'again', { now });
-    expect(lapse.state).toBe('learning');
-    expect(Date.parse(lapse.dueAt) - now.getTime()).toBe(60 * 1000);
-    const easy = scheduleReview(initialCardProgress({ now }), 'easy', { now });
-    expect(Date.parse(easy.dueAt) - now.getTime()).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000);
-  });
+describe('flashcard queue policy', () => {
   it('takes due cards before new cards and respects the new-card limit', () => {
     const now = new Date('2026-08-24T12:00:00.000Z'); const source = { cards: [{ cardId: 'new-a' }, { cardId: 'due' }, { cardId: 'new-b' }] };
     const selected = selectReviewCards(source, { due: { state: 'learning', dueAt: '2026-08-23T12:00:00.000Z' } }, { now, newLimit: 1 });

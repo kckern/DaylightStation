@@ -1,0 +1,29 @@
+schema: school.flashcard-deck/v1
+id: geography/us-state-capitals
+title: US State Capitals
+description: Learn state-and-capital pairs before taking the geography check.
+revision: 1
+assessment:
+  bankId: geo:us-state-capitals
+cards:
+  - cardId: alabama
+    front: { blocks: [{ type: text, text: Alabama }] }
+    back: { blocks: [{ type: text, text: Montgomery }, { type: tts, text: Montgomery, lang: en-US }] }
+    directions: [front_to_back, back_to_front]
+    learn: { front_to_back: { acceptedAnswers: [Montgomery], recognitionChoices: [Montgomery, Birmingham, Mobile] } }
+  - cardId: alaska
+    front: { blocks: [{ type: text, text: Alaska }] }
+    back: { blocks: [{ type: text, text: Juneau }, { type: tts, text: Juneau, lang: en-US }] }
+    directions: [front_to_back, back_to_front]
+  - cardId: arizona
+    front: { blocks: [{ type: text, text: Arizona }] }
+    back: { blocks: [{ type: text, text: Phoenix }, { type: tts, text: Phoenix, lang: en-US }] }
+    directions: [front_to_back, back_to_front]
+  - cardId: california
+    front: { blocks: [{ type: text, text: California }] }
+    back: { blocks: [{ type: text, text: Sacramento }, { type: tts, text: Sacramento, lang: en-US }] }
+    directions: [front_to_back, back_to_front]
+  - cardId: washington
+    front: { blocks: [{ type: text, text: Washington }] }
+    back: { blocks: [{ type: text, text: Olympia }, { type: tts, text: Olympia, lang: en-US }] }
+    directions: [front_to_back, back_to_front]

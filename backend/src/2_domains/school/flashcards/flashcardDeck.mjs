@@ -60,6 +60,15 @@ function validateLearn(learn, path, errors) {
       || config.acceptedAnswers.some((answer) => !text(answer))) {
       errors.push(`${path}.${direction}.acceptedAnswers: must be a non-empty text array`);
     }
+    if (config?.recognitionChoices !== undefined) {
+      if (!Array.isArray(config.recognitionChoices) || config.recognitionChoices.length < 2
+        || config.recognitionChoices.some((choice) => !text(choice))
+        || new Set(config.recognitionChoices.map((choice) => choice.trim().toLocaleLowerCase())).size !== config.recognitionChoices.length) {
+        errors.push(`${path}.${direction}.recognitionChoices: must contain at least two unique text choices`);
+      } else if (!config.acceptedAnswers?.some((answer) => config.recognitionChoices.some((choice) => choice.trim().toLocaleLowerCase() === answer.trim().toLocaleLowerCase()))) {
+        errors.push(`${path}.${direction}.recognitionChoices: must include an accepted answer`);
+      }
+    }
   });
 }
 

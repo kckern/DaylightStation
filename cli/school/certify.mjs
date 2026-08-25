@@ -339,9 +339,13 @@ function validateAssetReferences({ documentDirectories, bankDirectories, deckDir
   return errors;
 }
 
-function validateFlashcardDecks(deckDirectories) {
+function validateFlashcardDecks(deckDirectories, bankDirectories = []) {
   const errors = [];
   const ids = new Map();
+  const bankIds = new Set();
+  bankDirectories.forEach((directory) => [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
+    const raw = loadYaml(path.join(directory, relative)); if (raw?.id) bankIds.add(raw.id);
+  }));
   deckDirectories.forEach((directory) => {
     [...listYamlFiles(directory, { recursive: true })].sort().forEach((relative) => {
       const file = path.join(directory, relative);
@@ -349,6 +353,8 @@ function validateFlashcardDecks(deckDirectories) {
       if (!raw) return;
       const result = validateFlashcardDeck(raw, { path: `flashcard deck '${raw.id ?? relative}'` });
       result.errors.forEach((message) => errors.push(message));
+      const bankId = result.deck?.assessment?.bankId;
+      if (bankId && !bankIds.has(bankId)) errors.push(`flashcard deck '${raw.id ?? relative}' references missing assessment bank '${bankId}'`);
       if (raw.id && ids.has(raw.id)) errors.push(`flashcard deck '${raw.id}' is duplicated in '${ids.get(raw.id)}' and '${file}'`);
       else if (raw.id) ids.set(raw.id, file);
     });
@@ -551,7 +557,7 @@ async function validateCorpusScope({ corpus, paths, strictConcepts = false }) {
     deckDirectories: paths.deckDirectories,
     assetsDirectory: paths.assetsDirectory,
   });
-  const deckErrors = validateFlashcardDecks(paths.deckDirectories);
+  const deckErrors = validateFlashcardDecks(paths.deckDirectories, paths.bankDirectories);
   const capabilityErrors = await validateRequiredCapabilityReferences({
     catalogs: corpus.catalogs,
     customCapabilities: corpus.moduleRegistry.list().map((definition) => definition.capability),

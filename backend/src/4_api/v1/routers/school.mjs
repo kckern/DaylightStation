@@ -715,7 +715,7 @@ export function createSchoolRouter({
     if (purpose === 'flashcard_assessment') {
       if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
       const { deckId } = req.body || {};
-      return Promise.resolve(flashcardStudy.assessment({ userId, deckId, testPlan, open: true }))
+      return Promise.resolve(flashcardStudy.assessment({ userId, deckId, testPlan, learning, open: true }))
         .then((result) => res.json(result));
     }
     if (learning !== null) {
@@ -741,18 +741,33 @@ export function createSchoolRouter({
   // its ratings are formative scheduling data, never server-graded quiz evidence.
   router.post('/flashcards/open', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-    const { userId, deckId, policy = {} } = req.body || {};
-    res.json(await flashcardStudy.open({ userId, deckId, policy }));
+    const { userId, deckId, learning = null } = req.body || {};
+    res.json(await flashcardStudy.open({ userId, deckId, learning }));
   }));
   router.post('/flashcards/:deckId/assessment', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
-    const { userId, testPlan = null } = req.body || {};
-    res.json(await flashcardStudy.assessment({ userId, deckId: req.params.deckId, testPlan }));
+    const { userId, testPlan = null, learning = null } = req.body || {};
+    res.json(await flashcardStudy.assessment({ userId, deckId: req.params.deckId, testPlan, learning }));
   }));
   router.post('/flashcards/:sessionId/review', wrap((req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
     const { userId, cardId, rating, mode, direction } = req.body || {};
     res.json(flashcardStudy.review({ userId, sessionId: req.params.sessionId, cardId, rating, mode, direction }));
+  }));
+  router.post('/flashcards/:sessionId/preview', wrap((req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { userId, cardId } = req.body || {};
+    res.json(flashcardStudy.preview({ userId, sessionId: req.params.sessionId, cardId }));
+  }));
+  router.post('/flashcards/:deckId/repair', wrap((req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { learnerId, cardId, action, actorId, pin = null } = req.body || {};
+    res.json(flashcardStudy.repair({ learnerId, deckId: req.params.deckId, cardId, action, actorId, pin }));
+  }));
+  router.post('/flashcards/:deckId/migrate-profile', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { learnerId, actorId, pin = null, dryRun = true } = req.body || {};
+    res.json(await flashcardStudy.migrateProfile({ learnerId, deckId: req.params.deckId, actorId, pin, dryRun: dryRun !== false }));
   }));
   router.post('/flashcards/:sessionId/heartbeat', wrap((req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
@@ -772,6 +787,11 @@ export function createSchoolRouter({
   router.get('/flashcards/report', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
     res.json(await flashcardStudy.report({ userId: req.query.userId }));
+  }));
+  router.post('/flashcards/teacher-report', wrap(async (req, res) => {
+    if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');
+    const { learnerId, actorId, pin = null } = req.body || {};
+    res.json(await flashcardStudy.teacherReport({ learnerId, actorId, pin }));
   }));
   router.get('/flashcards/:deckId/summary', wrap(async (req, res) => {
     if (!flashcardStudy) throw new EntityNotFoundError('flashcard study', 'not configured');

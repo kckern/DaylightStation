@@ -6,6 +6,7 @@ frontend/dist
 frontend/build
 backend/node_modules
 *.yml
+!content/seeds/**/*.yml
 !docker-compose.test.yml
 /shared/gaming/fixtures/
 /shared/presentation/fixtures/

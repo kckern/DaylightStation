@@ -409,7 +409,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       // A catalog-resolved rich deck is rendered by the reusable program; old
       // bank-only modules keep their established runner and session contract.
       if (module.deck && module.deck.schema === 'school.flashcard-deck/v1') {
-        setActive({ mode: 'flashcard_program', descriptor: { deck: module.deck, bank: module.bank ?? null, policy: module.policy ?? {}, userId: currentUser?.id ?? null }, learning });
+        setActive({ mode: 'flashcard_program', descriptor: { deck: module.deck, bank: module.bank ?? null, policy: module.policy ?? {}, userId: currentUser?.id ?? null, learning }, learning });
       } else setActive({ mode: 'flashcard', bank: module.bank, learning });
     }
     else if (module.type === 'quiz') setActive({ mode: 'quiz', bank: module.bank, learning });

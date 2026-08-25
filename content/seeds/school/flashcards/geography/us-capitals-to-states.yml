@@ -1,0 +1,21 @@
+schema: school.flashcard-deck/v1
+id: geography/us-capitals-to-states
+title: US Capitals to States
+description: A separately scheduled inverse deck for recognizing each state from its capital.
+revision: 1
+cards:
+  - cardId: montgomery-alabama
+    front: { blocks: [{ type: text, text: Montgomery }, { type: tts, text: Montgomery, lang: en-US }] }
+    back: { blocks: [{ type: text, text: Alabama }] }
+  - cardId: juneau-alaska
+    front: { blocks: [{ type: text, text: Juneau }, { type: tts, text: Juneau, lang: en-US }] }
+    back: { blocks: [{ type: text, text: Alaska }] }
+  - cardId: phoenix-arizona
+    front: { blocks: [{ type: text, text: Phoenix }, { type: tts, text: Phoenix, lang: en-US }] }
+    back: { blocks: [{ type: text, text: Arizona }] }
+  - cardId: sacramento-california
+    front: { blocks: [{ type: text, text: Sacramento }, { type: tts, text: Sacramento, lang: en-US }] }
+    back: { blocks: [{ type: text, text: California }] }
+  - cardId: olympia-washington
+    front: { blocks: [{ type: text, text: Olympia }, { type: tts, text: Olympia, lang: en-US }] }
+    back: { blocks: [{ type: text, text: Washington }] }
