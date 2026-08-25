@@ -33,29 +33,31 @@
  * a trap for whoever acts on this card next, and opening one for real is
  * `/act`'s job, not this one's.
  *
- * DUPLICATION, DELIBERATELY. The plan computation below mirrors
- * `ResolveSubjectNext.execute`. Keep the two in step: a change to the planner
- * inputs, the attestation gate-unlock, or the daily sectioning belongs in both.
- * The alternative — a `writes: false` flag threaded through the scan-time
- * resolver — puts the no-write guarantee inside the file whose default is to
- * write, where a later edit can drop it with nothing to notice.
+ * NO LONGER DUPLICATED. The plan computation below used to be a hand-copy of
+ * `ResolveSubjectNext.execute`, kept in step by a comment asking whoever edited
+ * one to remember the other. It is now the same `PlanProjection` call, so the
+ * two resolvers cannot answer differently — while the thing that genuinely
+ * differs, the session, stays in this file where it is visible. That was always
+ * the real argument against a `writes: false` flag threaded through the
+ * scan-time resolver: it puts the no-write guarantee inside the file whose
+ * default is to write. Sharing the ASSEMBLY costs nothing there; sharing the
+ * session handling would have cost everything.
  *
  * NEVER A DEAD END. Every failure — an unknown code, an expired one, a revoked
  * one, junk, or a catalog that will not load — comes back as a card with a
  * sentence on it. This use case does not throw; a keypad that says nothing is
  * the failure the whole subsystem exists to avoid.
  */
-import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
-import { collectProgramStatuses } from '../programStatusCollection.mjs';
+import { programStatusFor } from '#domains/school/agenda.mjs';
+import { PlanProjection } from '../PlanProjection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { nextMove } from './offerSession.mjs';
-import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
-import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
+import { projectProgramEntry } from '../assignedProgramPlan.mjs';
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -102,8 +104,13 @@ const NOT_ANSWERING = Object.freeze({
 });
 
 export class ResolveAccessCode {
-  #tokens; #curriculum; #assignments; #sessions; #launchers; #attestations; #curriculumExceptions;
-  #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger;
+  // `assignments`, `launchers`, `attestations` and `curriculumExceptions` are
+  // not held: every read of them happens inside the shared projection now.
+  // `curriculum` stays for `getUnit` on the companion path, which is not a plan
+  // read at all; `sessions` stays because reading events read-only is the one
+  // step this resolver deliberately does differently from the scan path.
+  #tokens; #curriculum; #sessions; #assignments;
+  #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection;
 
   /**
    * @param {object} deps
@@ -127,6 +134,9 @@ export class ResolveAccessCode {
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
     attestations = null, curriculumExceptions = null, issueDocument = null, companions = null, roster = null, selfService = null,
+    // Shared with `BuildAgenda` and `ResolveSubjectNext` in composition: the
+    // digits printed beside the QR must mean what the QR means.
+    planProjection = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -136,9 +146,13 @@ export class ResolveAccessCode {
     this.#curriculum = curriculum;
     this.#assignments = assignments;
     this.#sessions = sessions;
-    this.#launchers = launchers;
-    this.#attestations = attestations;
-    this.#curriculumExceptions = curriculumExceptions;
+    this.#planProjection = planProjection ?? new PlanProjection({
+      curriculum, assignments, sessions, attestations, curriculumExceptions,
+      launchers, timezone, clock,
+      planErrorEvent: 'school.selfservice.plan-errors',
+      launcherFailedEvent: 'school.selfservice.launcher-failed',
+      logger,
+    });
     this.#issueDocument = issueDocument;
     this.#companions = companions;
     this.#roster = roster;
@@ -396,42 +410,17 @@ export class ResolveAccessCode {
    * session. See the file header for why the two are not one function.
    */
   async #resolve({ learnerId, subject, continueToday = false }) {
-    const nowIso = this.#clock().toISOString();
-    const [assignment, units, rawHistory, works] = await Promise.all([
-      this.#assignments.get(learnerId),
-      this.#curriculum.listUnits(),
-      this.#sessions.listForLearner(learnerId),
-      this.#curriculum.listWorks?.() ?? [],
-    ]);
-
-    // Same attestation gate-unlock as BuildAgenda/ResolveSubjectNext: the
-    // PLANNER sees an attested unit as passed so its successor unlocks, while
-    // the daily-serving layer below reads RAW history only.
-    const attested = (this.#attestations?.list?.({ learnerId }) ?? []).map((a) => ({
-      sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
-      outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
-    }));
-    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
-    const history = withCurriculumExceptions(
-      attested.length ? [...rawHistory, ...attested] : rawHistory, activeExceptions, learnerId,
-    );
-
-    const coursePolicies = Object.fromEntries((works ?? [])
-      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-    const plan = planLearnerWork({
-      learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
+    // The SAME assembly the agenda printed from and the scan path resolves
+    // through. The `projection` shape this file already returned is the shape
+    // `PlanProjection` returns, so nothing downstream of `#resolve` changes.
+    const {
+      plan, sections, activeExceptions, programStatuses, projection,
+    } = await this.#planProjection.project({
+      learnerId,
+      planErrorEvent: 'school.selfservice.plan-errors',
+      launcherFailedEvent: 'school.selfservice.launcher-failed',
     });
-    appendAssignedProgramEntries(plan, assignment);
-    if (plan.errors.length) {
-      this.#logger.warn?.('school.selfservice.plan-errors', { learnerId, subject, errors: plan.errors });
-    }
-
-    const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
-    const { sections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone, logger: this.#logger,
-    });
-
-    const projection = { assignment, units, sessions: rawHistory, works, nowIso };
+    const { units, nowIso } = projection;
     const withProjection = (value) => ({ ...value, projection });
     const section = sections.find((s) => s.subject === subject);
     if (!section) return withProjection({ kind: 'empty' });
@@ -485,19 +474,6 @@ export class ResolveAccessCode {
     });
     if (errors.length) throw new Error(`ResolveAccessCode: could not model a fresh session: ${errors.join('; ')}`);
     return { sessionId: null, state: reduceSession([{ ...event, seq: 1 }]) };
-  }
-
-  /**
-   * One read-only `status()` per distinct program instance, mirroring
-   * `ResolveSubjectNext#collectProgramStatuses`. A program that throws or was
-   * never registered degrades to `{ error: true }`, which `planDailyAgenda`
-   * turns into `programUnavailable` — never a blank card.
-   */
-  async #collectProgramStatuses(plan, learnerId) {
-    return collectProgramStatuses({
-      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
-      logEvent: 'school.selfservice.launcher-failed',
-    });
   }
 
   #faulted(stage, data) {
