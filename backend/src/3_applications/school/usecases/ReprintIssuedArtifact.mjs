@@ -1,7 +1,16 @@
 import { ValidationError, EntityNotFoundError, DomainInvariantError } from '#domains/core/errors/index.mjs';
-import { createEvent, reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
+import { createEvent, reduceSession, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
 
 const present = (value) => typeof value === 'string' && value.trim();
+
+// Derived from the transition table, never hand-copied: the states a `reprinted`
+// event may legally be appended from. `YamlWorkSessionDatastore.appendEvent`
+// refuses every other one, and it refuses AFTER `printPdf` has already put paper
+// in the tray — so this use case has to ask the same question BEFORE it prints,
+// or a teacher reprinting handed-in work gets a sheet, a 500, and another sheet
+// on every retry (the `reprinted` event carrying the idempotency key never lands,
+// so the replay short-circuit can never fire either).
+const REPRINTABLE = statesAccepting('reprinted');
 
 /** Reprint immutable retained bytes without allocating a new card or artifact. */
 export class ReprintIssuedArtifact {
@@ -30,6 +39,19 @@ export class ReprintIssuedArtifact {
     const prior = events.find((event) => event.type === 'reprinted' && event.idempotencyKey === idempotencyKey);
     if (prior) return { schema: 'school.artifact-reprint-receipt/v1', applied: true, idempotent: true,
       artifactId, sessionId, cardId: allocation?.cardId ?? null, sha256: artifact.manifest.sha256 };
+    // Ordered AFTER the idempotency replay above on purpose: a retried request
+    // for a reprint that already happened is still answerable from the log, even
+    // once the child has handed the sheet back in. It is a NEW reprint of work
+    // that has moved on that has nowhere to be recorded.
+    if (!REPRINTABLE.has(state.state)) {
+      this.#logger.warn?.('school.artifact.reprint-refused', {
+        artifactId, sessionId, reprintedBy, state: state.state,
+      });
+      throw new DomainInvariantError(
+        `this work is already ${state.state ?? 'unrecorded'} and can no longer be reprinted`,
+        { code: 'SESSION_NOT_REPRINTABLE', details: { sessionId, state: state.state } },
+      );
+    }
     const preview = { schema: 'school.artifact-reprint-receipt/v1', applied: false, idempotent: false,
       artifactId, sessionId, cardId: allocation?.cardId ?? null, rowRange: allocation?.rowRange ?? null,
       byteLength: artifact.bytes.length, sha256: artifact.manifest.sha256 };
