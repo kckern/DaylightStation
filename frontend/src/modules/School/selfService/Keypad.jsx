@@ -54,6 +54,13 @@ const HOLD_MS = 900;
 const WIPE_MS = 70;
 const PRESENCE_POLL_MS = 15_000;
 
+// The pause between the 6th digit landing and auto-submit firing. `submit`
+// (below) is a real round trip — it resolves the code, may open a card, and
+// soft-claims a learner — so it is not free to retry. This settle window is
+// what lets a child who overshoots the last digit backspace before that
+// request ever goes out, without adding a noticeable delay for a correct code.
+const AUTO_SUBMIT_SETTLE_MS = 300;
+
 // The Portal's companion APK reports its bonded HID devices to this endpoint.
 // This model string is intentionally only the display-side matcher: pairing
 // policy and the authoritative keyboard MAC remain in the server's gate config.
@@ -328,6 +335,28 @@ export default function Keypad({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [backspace, noteActivity, press, submit]);
 
+  // `submit` is recreated on every keystroke (it closes over `entry`), so
+  // routing the auto-submit timer through a ref — rather than depending on
+  // `submit` directly — keeps this effect's own deps down to the two
+  // primitives that actually define "a code just completed": `entry` and
+  // `length`. Depending on `submit` instead would re-arm (and, worse,
+  // re-cancel) the settle timer on every unrelated re-render that changes its
+  // identity (e.g. `busy` flipping), which is exactly the "re-render
+  // re-triggers it" failure mode to avoid.
+  const submitRef = useRef(submit);
+  useEffect(() => { submitRef.current = submit; }, [submit]);
+
+  // Auto-submit: the 6th digit is the only decision left, so there is nothing
+  // for "Go" to add. A short settle (see AUTO_SUBMIT_SETTLE_MS) sits between
+  // the completed code and the actual request so a child who overshoots the
+  // last digit can backspace before anything irreversible fires — the timer
+  // is cancelled by the same cleanup that runs on every backspace/clear.
+  useEffect(() => {
+    if (entry.length !== length) return undefined;
+    const timer = setTimeout(() => submitRef.current(), AUTO_SUBMIT_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [entry, length]);
+
   const cells = reject
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
     : Array.from({ length }, (_, i) => entry[i] ?? null);
@@ -446,15 +475,6 @@ export default function Keypad({
           ⌫
         </button>
       </div>
-
-      <button
-        type="button"
-        className="school-selfservice__go"
-        disabled={busy || entry.length !== length}
-        {...tap(submit)}
-      >
-        Go
-      </button>
 
       <button
         type="button"
