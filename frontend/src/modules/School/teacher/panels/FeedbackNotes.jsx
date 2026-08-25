@@ -100,7 +100,7 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
 /**
  * NoteComposer — write a note to a learner OUTSIDE the review flow (wave 5,
  * spec D3); it reaches the same agenda/receipt/feedback surfaces the review
- * notes do. Rendered by RepairTab beside FeedbackNotes.
+ * notes do. Rendered by HistoryView beside FeedbackNotes.
  */
 export function NoteComposer({ learnerId, learnerName, onSent }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'note-composer' });
