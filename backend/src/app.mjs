@@ -3715,7 +3715,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         renderPrintDocument: schoolLifecycle.renderPrintDocument,
       }) : null,
     getLearnerTimeline: schoolLifecycle.stores?.sessions
-      ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions }) : null,
+      ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions, curriculum: schoolLifecycle.stores.curriculum ?? null }) : null,
     adjustSessionGrade: schoolLifecycle.stores?.sessions && schoolTeacherGate
       ? new AdjustSessionGrade({
         sessions: schoolLifecycle.stores.sessions,
