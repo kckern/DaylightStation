@@ -76,7 +76,7 @@ function bySequence(a, b) {
  * @returns {{
  *   learnerId: string|null, generatedAt: string|null, entries: object[],
  *   assigned: object[], available: object[], locked: object[],
- *   inProgress: object[], completed: object[], next: object|null, errors: string[],
+ *   inProgress: object[], completed: object[], errors: string[],
  * }}
  */
 export function planLearnerWork({ learnerId = null, assignment = null, units = [], sessions = [], now = null, timezone = null, coursePolicies = {} } = {}) {
@@ -381,7 +381,17 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
     available,
     locked: of('locked'),
     completed: of('completed'),
-    next: [...inProgress, ...available].sort(byEffectivePriority)[0] ?? null,
+    // There is deliberately NO `next` here. `planLearnerWork` used to publish
+    // `[...inProgress, ...available].sort(byEffectivePriority)[0]` under that
+    // name, nothing ever read it, and a plausible-looking unread answer to the
+    // most consequential question in this subsystem is a trap: it has no
+    // served-today suppression, no program done-today status, no focus
+    // displacement, no paused-content exception, and it cannot see entries a
+    // caller appends after the planner runs. A surface that read it would
+    // offer work the agenda had already withdrawn — the 2026-08-25 12:15
+    // failure exactly. The real answer is per SUBJECT and lives on the
+    // sections `PlanProjection` returns. Callers order with `available`, which
+    // is already sorted by `byEffectivePriority`.
     errors,
   };
 }

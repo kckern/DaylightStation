@@ -185,14 +185,18 @@ after `planLearnerWork` runs (`:213-237`); `ResolveSubjectNext` does not. The re
 acceptable — those are not tokened worksheet offers — but it must be stated so the two surfaces'
 difference is a decision rather than a surprise.
 
-### What `plan.next` is not
+### What `plan.next` was not — now deleted
 
-`planLearnerWork` exposes `next` (`planner.mjs:384`) as
-`[...inProgress, ...available].sort(byEffectivePriority)[0]`. **Nothing in the codebase reads it**
-(grep-verified across backend and frontend). It is not the agenda's answer, and it must not become
+`planLearnerWork` exposed `next` as
+`[...inProgress, ...available].sort(byEffectivePriority)[0]`. Nothing in the codebase read it
+(grep-verified across backend and frontend). It was not the agenda's answer and could not become
 one — it lacks served-today suppression, program done-today status, focus displacement, and
-paused-content exceptions, and it cannot name flashcard or language-reel entries appended after it
-is computed (`BuildAgenda.mjs:213-237`).
+paused-content exceptions, and it cannot see entries a caller appends after the planner runs.
+
+It has been **removed** from the planner's return value. A plausible-looking unread answer to the
+most consequential question in the subsystem is a trap, and the receipt design below was about to
+walk into it. The real answer is per SUBJECT, on the sections `PlanProjection` returns; callers that
+need ordering read `available`, which is already sorted by `byEffectivePriority`.
 
 ---
 
