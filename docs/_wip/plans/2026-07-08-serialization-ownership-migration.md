@@ -96,6 +96,7 @@ Counts: `grep -rln "toJSON()" backend/src/2_domains --include='*.mjs' | grep -v 
 | 13 | `notification/entities/NotificationIntent`, `NotificationPreference` | `notification/AppNotificationAdapter` (1 — broadcast DTO, not storage; dehydrate in the adapter) | 9 |
 | 14 | `messaging/entities/Notification`, `value-objects/ConversationId`, `ResolvedIdentity` | no adapter call site — `toJSON` consumed by API/response DTOs | 10 (API DTO mapping) |
 | 15 | `journalist/entities/*` (5 files), `barcode/BarcodePayload`, `entropy/EntropyItem`, `finance/entities/*` (4), `health/HealthMetric`, `WorkoutEntry`, `HealthAggregationService`, `livestream/StreamChannel`, `playback-hub/value-objects/*` (6) | no 1_adapters call site found — consumers are application/API layers or the entity's own aggregate; audit each when its domain is touched | 10 (as touched) |
+| 16 | `automotive/entities/{Document,FuelLog,Journey,ServiceRecord}` + `value-objects/{GeoFix,OdometerReading,Place}` | `YamlVehicleRecordDatastore`, `YamlPlaceDatastore`; API DTOs moved to the automotive router and journey use case | **done 2026-08-24** (stored shapes retained; 7 definitions removed) |
 
 (`1_adapters/agents/YamlWorkingMemoryAdapter` round-trips `WorkingMemoryState`, which lives outside `2_domains` — out of scope for this ratchet but same pattern applies.)
 

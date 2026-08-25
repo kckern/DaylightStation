@@ -93,7 +93,7 @@ function makeGate(initialStatus = { state: 'playing' }) {
 }
 
 const baseGame = {
-  id: 'pokemon-red',
+  id: 'example-quest',
   system: 'gb',
   romUrl: '/rom.gb',
   states: {},

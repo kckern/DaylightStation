@@ -77,6 +77,14 @@ describe('LogFoodFromScale', () => {
     expect(messaging.sendMessage).toHaveBeenCalledWith('c', '⚖️ 340 g', expect.objectContaining({ inline: true }));
   });
 
+  it('rejects an invalid reading with a typed application error', async () => {
+    await expect(useCase.execute({
+      userId: 'kckern', conversationId: 'c', grams: 0, unit: 'g', scaleId: 'kitchen',
+    })).rejects.toMatchObject({ code: 'NUTRIBOT_SCALE_BAD_GRAMS', message: 'bad grams' });
+    expect(foodLogStore.save).not.toHaveBeenCalled();
+    expect(messaging.sendMessage).not.toHaveBeenCalled();
+  });
+
   it('edit mode updates an untouched pending scale log in place (no new send)', async () => {
     const existing = {
       id: 'log1', status: 'pending',

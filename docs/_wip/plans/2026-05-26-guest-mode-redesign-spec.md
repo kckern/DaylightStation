@@ -17,10 +17,10 @@ Eight discrete work items, organized in three phases. Total scope is meaningful 
 | W1 | Continuous-usage threshold (replaces 60s grace) | 1 | High (touches persistence) | L |
 | W2 | Generic Guest device-keyed alias | 1 | Medium (data model) | M |
 | W3 | INACTIVE governance exclusion enforcement | 1 | Low (likely already correct) | S |
-| W4 | HR device color rendering (Pikachu visibility) | 2 | Low (UI only) | M |
+| W4 | HR device color rendering (untagged placeholder visibility) | 2 | Low (UI only) | M |
 | W5 | UX state model fixes (Original fallback, error feedback, dedup race) | 2 | Low | M |
 | W6 | Pre-session participant lobby | 3 | High (new UI + new entry point) | XL |
-| W7 | In-app config writeback (promote Pikachu → permanent) | 3 | High (config mutation API) | L |
+| W7 | In-app config writeback (promote untagged placeholder → permanent) | 3 | High (config mutation API) | L |
 | W8 | Silent-swap detection (HR anomaly check) | 3 | Medium (heuristic, false positives) | M |
 
 **Phase 1** (W1+W2+W3): mechanical correctness — current code does the wrong thing; fix it.
@@ -63,14 +63,14 @@ Decision branch (lines 133–185):
 
 Transfer execution lives in `FitnessSession.js:802-887` (`transferSessionEntity`) and `FitnessTimeline.js:267-295` (`transferUserSeries` — copies series, nullifies source).
 
-Late tagging (Pikachu earned 10 min of data, then tagged) ALWAYS exceeds the 60s window, so currently produces a phantom `#<deviceId>` participant in the saved session — no merge.
+Late tagging (untagged placeholder earned 10 min of data, then tagged) ALWAYS exceeds the 60s window, so currently produces a phantom `#<deviceId>` participant in the saved session — no merge.
 
 ### To-Be
 
 Per Decision §7:
 - `T` is **configurable** in `fitness.yml` (`governance.usage_threshold_seconds`, default 300)
 - The rule applies symmetrically to ALL device-occupant transitions: Guest→Guest, Mapped→Guest, Guest→Mapped (restore), Mapped→Mapped (e.g. accidentally-User B briefly, then User A).
-- Late-tagged Pikachus auto-merge via the same backfill mechanism (Decision §5 falls out for free).
+- Late-tagged untagged placeholders auto-merge via the same backfill mechanism (Decision §5 falls out for free).
 
 ### Δ Gap
 
@@ -101,7 +101,7 @@ Plumbed through `FitnessConfigService` → fitness context → `GuestAssignmentS
 2. **`PersistenceManager.js` (new logic at session-end)**
    - Walk the `EventJournal` ASSIGN_GUEST + GUEST_REPLACED events to reconstruct each device's segment timeline
    - For any final segment that ran `< T`, retroactively backfill its data into the NEXT segment (or the previous, per OI-1 resolution)
-   - This handles the late-tagged Pikachu case automatically: the synthetic Pikachu segment is < T relative to the eventually-tagged user, so it backfills forward at save time
+   - This handles the late-tagged untagged placeholder case automatically: the synthetic untagged placeholder segment is < T relative to the eventually-tagged user, so it backfills forward at save time
    - Output: only honored segments appear in `participants:` block
 
 3. **Threshold visibility** (small UX adjustment, ties to W5)
@@ -250,7 +250,7 @@ This is **cadence-only**. The corresponding `heartRateColorMap` (from `device_co
 Per Decision §3:
 - Saturated, recognizable color on every HR card (avatar ring or border)
 - Color **name** as label text for unmapped devices ("Purple strap" instead of "#10366")
-- Deterministic per-deviceId hash-color fallback when no `device_colors` entry exists (so each Pikachu is at least visually distinct)
+- Deterministic per-deviceId hash-color fallback when no `device_colors` entry exists (so each untagged placeholder is at least visually distinct)
 - Same prominence as the RPM cadence color treatment
 
 ### Δ Gap
@@ -290,7 +290,7 @@ function deterministicColor(deviceId) {
 
 ### Test plan
 
-- Visual regression: render three Pikachu cards with different deviceIds → assert three different hash colors
+- Visual regression: render three untagged placeholder cards with different deviceIds → assert three different hash colors
 - Manual: with three colored straps configured, eyeball-match in the actual app
 
 ---
@@ -337,7 +337,7 @@ const baseName = activeAssignment?.metadata?.baseUserName
   || getUserByDevice(deviceIdStr)?.name
   || getConfiguredOwnerName(deviceIdStr);  // NEW: derive from devices.heart_rate
 ```
-Adds one more rung to the resolution. If still undefined, the device truly has no configured owner (e.g. a Pikachu) — in which case "Original" should not appear (correct behavior).
+Adds one more rung to the resolution. If still undefined, the device truly has no configured owner (e.g. a untagged placeholder) — in which case "Original" should not appear (correct behavior).
 
 **5b. Empty-state message:**
 After the candidate grid:
@@ -531,4 +531,4 @@ These three answers (or the user's preferred alternatives) finalize the W1 desig
 - [`2026-05-26-guest-mode-ux-audit.md`](../audits/2026-05-26-guest-mode-ux-audit.md) — audit producing the directives this spec implements
 - [`guest-mode.md`](../../reference/fitness/guest-mode.md) — current behavior umbrella
 - [`assign-guest.md`](../../reference/fitness/assign-guest.md) — current guest assignment specification
-- [`unknown-hr-monitors.md`](../../reference/fitness/unknown-hr-monitors.md) — Pikachu detail
+- [`unknown-hr-monitors.md`](../../reference/fitness/unknown-hr-monitors.md) — untagged placeholder detail

@@ -77,7 +77,4 @@ export class OdometerReading {
   /** Is this an estimate rather than an observation? Drives the UI's hedging. */
   get isEstimate() { return this.#source !== 'dash'; }
 
-  toJSON() {
-    return { km: this.#km, source: this.#source, observed_at: this.#observedAt.toISOString() };
-  }
 }

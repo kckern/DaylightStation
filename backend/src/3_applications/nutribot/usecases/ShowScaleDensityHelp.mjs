@@ -4,6 +4,7 @@
 // The Help/Back button state is carried in the callback (h:1 = show, h:0 = back).
 
 import { buildDensityKeyboard, densityPromptText, densityHelpText } from '../lib/scaleNutribotConfig.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 
 export class ShowScaleDensityHelp {
   #messagingGateway; #foodLogStore; #scaleConfig; #logger; #encodeCallback;
@@ -24,11 +25,11 @@ export class ShowScaleDensityHelp {
 
   async execute(input) {
     const { userId, conversationId, logUuid, showHelp, messageId, responseContext } = input;
-    if (!messageId) return { success: false, error: 'no message' };
+    if (!messageId) throw scaleError('no message', 'MESSAGE_REQUIRED');
     const messaging = this.#getMessaging(responseContext, conversationId);
 
     const log = await this.#foodLogStore.findByUuid(logUuid, userId);
-    if (!log || !log.items?.length) return { success: false, error: 'log not found' };
+    if (!log || !log.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
     const item0 = typeof log.items[0].toJSON === 'function' ? log.items[0].toJSON() : { ...log.items[0] };
     const grams = Math.round(Number(item0.grams));
 
@@ -42,6 +43,10 @@ export class ShowScaleDensityHelp {
 
     return { success: true, showHelp: !!showHelp };
   }
+}
+
+function scaleError(message, reason, details = {}) {
+  return new ApplicationError(message, { code: `NUTRIBOT_SCALE_${reason}`, ...details });
 }
 
 export default ShowScaleDensityHelp;

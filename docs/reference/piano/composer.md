@@ -118,7 +118,7 @@ evidence. Design accordingly:
 | Caret overlay pattern | `SheetMusic/ScorePlayer.jsx` cursor-band overlay | + synthetic pending-geometry mode |
 | Selection recolor | `SheetMusic/NoteHighlightLayer.jsx` | model-anchored re-binding |
 | Instant preview staff | `MusicNotation/renderers/SvgStaffRenderer.jsx` | extend: durations/rests/dots layout in a measure |
-| MIDI note-on loop | pattern in `SheetMusic/useFollowTracker.js` | new consumer |
+| MIDI note-on loop | pattern in `SheetMusic/useLearnAssessmentProjection.js` | new consumer |
 | Pitch/staff/key math | `MusicNotation/model/` | none |
 | Count-in, click, transport | `SheetMusic/` `countIn.js`, `clickScheduler.js`, `useScoreTransport.js` | **promote to shared** (below) |
 | Playback timeline | `SheetMusic/playParts.js` `buildPlayTimeline` | **adapter required**: it consumes the OSMD geometry extract, not a model — see §10 |
@@ -234,7 +234,7 @@ Two sources, one dispatcher:
   "NumLock"). P0 verifies keycode delivery *and* the three iconed keys'
   actual codes in the FKB WebView before stickers are printed (§14).
 - **MIDI** — note-on subscription via the existing kiosk pipeline (same
-  pattern as `useFollowTracker`).
+  pattern as `useLearnAssessmentProjection`).
 
 ### 5.1 Key map (sticker map v1 — final pass against the physical device in P0)
 

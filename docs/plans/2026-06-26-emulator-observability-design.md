@@ -6,7 +6,7 @@
 
 ## Problem
 
-A live session (Pokémon Crystal → Super Mario Land, garage Firefox kiosk) exposed
+A live session (franchise theme Crystal → Super Mario Land, garage Firefox kiosk) exposed
 failures that prod logs reported as *successes*:
 
 1. **SML never rendered**, yet logs showed `boot.ready`, `emulator.console.started`,

@@ -29,9 +29,9 @@ Out of scope:
 | **Family / Friends** | Inline-defined non-primary users in `users.family` / `users.friends` |
 | **Mapped device** | ANT+/BLE device ID with a `devices.heart_rate: id: user` binding |
 | **Color-slot** | Device ID with `device_colors.heart_rate: id: color` but NO user mapping (e.g. 10366=purple). Pre-allocated for recurring unknowns. |
-| **Pikachu** | Visual fallback — generic `/static/img/users/user.jpg` (literally a Pikachu face) rendered when no `profileId` resolves OR when a mapped user's photo is missing |
+| **untagged placeholder** | Visual fallback — generic `/static/img/users/user.jpg` (literally a untagged placeholder face) rendered when no `profileId` resolves OR when a mapped user's photo is missing |
 | **Tagged** | A device card has a guest assignment OR resolves to a configured user |
-| **Untagged** | A device card with no resolved user — Pikachu face, `#<deviceId>` label |
+| **Untagged** | A device card with no resolved user — untagged placeholder face, `#<deviceId>` label |
 | **Grace window** | First 60 seconds after assignment creation; replacements within this window transfer data, replacements after end the previous entity as `dropped` |
 | **Silent swap** | A physical strap changes wearer without the menu being touched — undetectable |
 | **Entity** | In-memory bookkeeping object for one (device, occupant, window) tuple; ends up flattened to per-user series in saved YAML |
@@ -58,10 +58,10 @@ flowchart TD
 
     H -->|Yes| I{User has<br/>profile photo?}
     I -->|Yes| J[Card: real name + photo]
-    I -->|No file on disk| K[Card: real name + PIKACHU<br/>via onError fallback]
+    I -->|No file on disk| K[Card: real name + UNTAGGED PLACEHOLDER<br/>via onError fallback]
 
-    H -->|No, but in device_colors| L[Card: #deviceId + PIKACHU<br/>+ colored border]
-    H -->|No, no color either| M[Card: #deviceId + PIKACHU<br/>no color]
+    H -->|No, but in device_colors| L[Card: #deviceId + UNTAGGED PLACEHOLDER<br/>+ colored border]
+    H -->|No, no color either| M[Card: #deviceId + UNTAGGED PLACEHOLDER<br/>no color]
 
     J --> N[Card visible in sidebar<br/>HR data flows<br/>Counts toward governance]
     K --> N
@@ -76,7 +76,7 @@ flowchart TD
 
 **Three notable branches:**
 - **F (BLE silent drop)** — the user has zero signal that their watch is broadcasting and being ignored
-- **K (named Pikachu)** — confusing: name says "Family A", face says Pikachu
+- **K (named untagged placeholder)** — confusing: name says "Family A", face says untagged placeholder
 - **L/M (unknown ANT+)** — appears immediately, counts toward governance whether you want it to or not
 
 ---
@@ -88,7 +88,7 @@ stateDiagram-v2
     [*] --> BROADCASTING : First HR reading
 
     BROADCASTING --> MAPPED : devices.heart_rate match
-    BROADCASTING --> UNTAGGED : no match → Pikachu card
+    BROADCASTING --> UNTAGGED : no match → untagged placeholder card
 
     UNTAGGED --> TAGGED : user taps card,<br/>picks identity
     TAGGED --> TAGGED : retag to different identity
@@ -146,14 +146,14 @@ HR signal #88888  ──→  card: "Family A" + photo + orange border
 **Setup:** Friend C is in `users.friends` but her ANT+ strap (#99999) is not in `devices.heart_rate`.
 
 ```
-HR signal #99999  ──→  PIKACHU card: "#99999" + no color
+HR signal #99999  ──→  UNTAGGED PLACEHOLDER card: "#99999" + no color
                   ──→  someone notices, taps card
                   ──→  menu opens (mode='guest', target=99999)
                   ──→  Friends tab → tap Friend C
                   ──→  card swaps to: "Friend C" + Friend C's photo
                        data attribution depends on grace window:
-                         < 1 min: Friend C inherits Pikachu coins/timeline
-                         ≥ 1 min: BOTH "#99999" Pikachu AND Friend C in saved YAML
+                         < 1 min: Friend C inherits untagged placeholder coins/timeline
+                         ≥ 1 min: BOTH "#99999" untagged placeholder AND Friend C in saved YAML
 ```
 
 **Status:** Works but with footguns — see gaps G2, G4, G7, G12.
@@ -180,7 +180,7 @@ HR signal #22222  ──→  card: "User B" + photo + red border (already mapped
 **Setup:** Visitor arrives with own ANT+ strap, nobody tags them all session.
 
 ```
-HR signal #51234  ──→  PIKACHU card: "#51234" + no color
+HR signal #51234  ──→  UNTAGGED PLACEHOLDER card: "#51234" + no color
                   ──→  ... 45 minutes of workout, nobody tags ...
                        earns coins under synthetic user-id (`#51234`)
                        counts toward governance "active: all"
@@ -214,12 +214,12 @@ Grannie opens Workout app on watch
 
 ```
 t=15:00  Session in progress, governance unlocked
-t=15:30  Friend C's strap broadcasts → Pikachu #99999 card appears
+t=15:30  Friend C's strap broadcasts → untagged placeholder #99999 card appears
          ⚠️ Friend C just entered governance pool with HR=0
          ⚠️ If policy is "active: all", her HR=0 will LOCK the video
 t=15:45  Friend C's HR climbs to active zone
          ⚠️ Governance evaluates her as a participant; she must clear active
-t=16:30  Someone tags Pikachu → Friend C
+t=16:30  Someone tags untagged placeholder → Friend C
          ⚠️ AFTER grace window since first reading (60s)
          ⚠️ Phantom #99999 participant persists in saved YAML
 ```
@@ -249,9 +249,9 @@ t=10:05  Bob has strap on, HR=150
 **Setup:** Visitor uses a strap with ID 10366 (in `device_colors.heart_rate` as purple, not in `devices.heart_rate`).
 
 ```
-HR signal #10366  ──→  PIKACHU card: "#10366" + PURPLE border
+HR signal #10366  ──→  UNTAGGED PLACEHOLDER card: "#10366" + PURPLE border
                   ──→  identical UX to Journey B
-                       purple border helps human eye distinguish from other Pikachus
+                       purple border helps human eye distinguish from other untagged placeholders
                        still requires manual tap-to-tag
                        no hint that "purple" has any pre-allocated meaning
 ```
@@ -305,7 +305,7 @@ Options:
   a) Take strap back from Friend C → tap card → "Original" (User B). Friend C now strapless.
   b) Grab a different unused household strap → if mapped, appears as that owner.
      If User A is away and User B grabs #11111 (→ user-a) → card says "User A" until retagged.
-  c) User B uses a Pikachu device → manual tag → "User B" (returnee path)
+  c) User B uses a untagged placeholder device → manual tag → "User B" (returnee path)
 
          ❓ Does the returnee pool surface in the UX as "User B is waiting for a device"?
          ❓ Is there a one-tap "give User B back his device" anywhere?
@@ -324,8 +324,8 @@ The full space is roughly **timing × device source × identity source**. Cells 
 | **Own mapped device** | n/a (no card pre-broadcast) | ✅ A | ✅ A + F-mild | ✅ A + F-strong |
 | **Own BLE auto-matched** | n/a | ✅ E-happy | ✅ E-happy + F-mild | ✅ E-happy + F-strong |
 | **Own BLE unmatched** | n/a | ❌ E-silent-drop | ❌ E-silent-drop | ❌ E-silent-drop |
-| **Own unmapped ANT+** | n/a | ⚠️ B (Pikachu, tag) | ⚠️ B + F (governance impact) | ⚠️ B + F |
-| **Color-slot ANT+** | n/a | ⚠️ H (purple Pikachu) | ⚠️ H + F | ⚠️ H + F |
+| **Own unmapped ANT+** | n/a | ⚠️ B (untagged placeholder, tag) | ⚠️ B + F (governance impact) | ⚠️ B + F |
+| **Color-slot ANT+** | n/a | ⚠️ H (purple untagged placeholder) | ⚠️ H + F | ⚠️ H + F |
 | **Borrow household device** | n/a (need active device) | ✅ C | ✅ C | ✅ C |
 | **Borrow other guest's device** | n/a | ⚠️ C-variant | ⚠️ C-variant | ⚠️ C-variant |
 | **Generic "Guest" tag** | n/a | ⚠️ J (uncertain) | ⚠️ J | ⚠️ J |
@@ -345,7 +345,7 @@ Every event that can happen to a device card, with system state and persistence 
 
 | Event | UX trigger | System effect | Saved YAML effect |
 |-------|-----------|---------------|-------------------|
-| First HR reading from unknown ANT+ | Pikachu card animates in via FlipMove (300ms, no toast) | DeviceManager registers; synthetic user created | New participant entry on save |
+| First HR reading from unknown ANT+ | untagged placeholder card animates in via FlipMove (300ms, no toast) | DeviceManager registers; synthetic user created | New participant entry on save |
 | First HR reading from mapped ID | Real-name card animates in | DeviceManager registers; UserManager resolves | Participant entry as configured user |
 | BLE auto-match success | Card animates in as matched user | Match logged in `hrMatched` map | Same as mapped |
 | BLE auto-match failure | **Nothing visible** | Drop at `ble.mjs:~415`; warning in extension logs | Nothing |
@@ -358,7 +358,7 @@ Every event that can happen to a device card, with system state and persistence 
 | 30s no HR | Card disappears (`removed` flag) | Removed from active set | Assignment ledger state **unclear** (Open Q1) |
 | Strap put back on after timeout | Card returns | DeviceManager re-registers | Behavior depends on Open Q1 |
 | Session ends (autosave + final save) | Roster frozen | All entities finalized | Full `participants:` block persisted |
-| Avatar image 404s mid-session | Avatar swaps to Pikachu via onError | No data change | No persistence change |
+| Avatar image 404s mid-session | Avatar swaps to untagged placeholder via onError | No data change | No persistence change |
 | Camera/pose mode activates | Sidebar margin shrinks | No guest-mode interaction | No change |
 | Silent owner swap | **Nothing visible** | **No detection** | Effort attributed to wrong user |
 
@@ -371,7 +371,7 @@ Twenty gaps identified, prioritized by impact.
 ### Critical
 
 **G1. No pre-session lobby / check-in.**
-You cannot tag any guest before they put on a strap. If three guests arrive together, you must wait for all three Pikachus to appear, then tap-tag each one individually. Severely complicates real-world setup ("everybody put your straps on, then I'll go figure out who's who").
+You cannot tag any guest before they put on a strap. If three guests arrive together, you must wait for all three untagged placeholders to appear, then tap-tag each one individually. Severely complicates real-world setup ("everybody put your straps on, then I'll go figure out who's who").
 *Fix idea:* Pre-session "expected participants" picker that pre-allocates guest slots, so the first matching unknown device auto-assigns.
 
 **G3. Silent owner swap is undetectable.**
@@ -384,33 +384,33 @@ A guest opens their Apple Watch, starts a Workout, watches their HR climb to 130
 
 ### High
 
-**G2. Pikachu cards have no introductory animation or toast.**
+**G2. untagged placeholder cards have no introductory animation or toast.**
 A new device appearing during a busy workout (video fullscreen) is easy to miss. The card slides in via FlipMove (300ms, 20ms stagger) with no other affordance.
 *Fix idea:* Brief animated "new device" badge on the card for ~5s, or a one-line toast at the top of the sidebar.
 
 **G4. Grace window is invisible to the user.**
 The system has a 60-second backfill window — but the UX never tells you "tap within 47 seconds to inherit data." Users miss the window because they don't know it exists.
-*Fix idea:* Show a soft countdown badge on Pikachu cards (and reassignment menu items): "55s • Tag now to inherit data."
+*Fix idea:* Show a soft countdown badge on untagged placeholder cards (and reassignment menu items): "55s • Tag now to inherit data."
 
-**G7. Pikachu meaning is implicit.**
-A new user seeing a Pikachu card has no idea why or what to do. There's no tooltip, no first-time hint, no documentation surfaced in-product.
+**G7. untagged placeholder meaning is implicit.**
+A new user seeing a untagged placeholder card has no idea why or what to do. There's no tooltip, no first-time hint, no documentation surfaced in-product.
 *Fix idea:* Tap-to-open menu shows a header explanation: "Unidentified heart-rate device on channel #99999. Pick a person below or 'Guest' if unknown."
 
 **G10. No in-app workflow to promote a stranger to permanent config.**
-If a Pikachu visits twice and you want to make them permanent, you must SSH to the server, edit `fitness.yml`, and restart Docker. High friction discourages the cleanup.
+If a untagged placeholder visits twice and you want to make them permanent, you must SSH to the server, edit `fitness.yml`, and restart Docker. High friction discourages the cleanup.
 *Fix idea:* In the assign menu, a "Save as new friend/family member" action that writes to `fitness.yml` via API (with restart-prompt at end of session).
 
 **G11. Stray ANT+ devices count toward governance immediately.**
 A neighbor's broadcast or a forgotten strap on a shelf can lock the video unless someone tags it as Guest or removes it.
-*Fix idea:* Untagged Pikachus default-excluded from `active: all` for the first 60s; or auto-exempt all Pikachus until tagged, with a visible "1 untagged device not affecting governance" indicator.
+*Fix idea:* Untagged untagged placeholders default-excluded from `active: all` for the first 60s; or auto-exempt all untagged placeholders until tagged, with a visible "1 untagged device not affecting governance" indicator.
 
 **G12. Phantom participants in saved sessions.**
 Late tagging leaves a `#99999` participant alongside the real user in saved YAML. Aggregate stats and historical charts treat the phantom as a separate person.
-*Fix idea:* Post-session "review participants" step that lets you merge phantoms into tagged users. Or: extend grace window for the explicit case "Pikachu → identified for the first time."
+*Fix idea:* Post-session "review participants" step that lets you merge phantoms into tagged users. Or: extend grace window for the explicit case "untagged placeholder → identified for the first time."
 
 ### Medium
 
-**G5. Three causes of Pikachu look identical.**
+**G5. Three causes of untagged placeholder look identical.**
 Untagged unknown, missing photo file, and color-slot visitor all render the same yellow face. The user can't troubleshoot.
 *Fix idea:* Small status icon overlay on the avatar — `?` for untagged, `📷` for missing photo, etc.
 
@@ -420,7 +420,7 @@ Untagged unknown, missing photo file, and color-slot visitor all render the same
 
 **G9. No batch tagging.**
 3 visitors → 3 sequential menu interactions. No "tag multiple devices at once" mode.
-*Fix idea:* Pre-session lobby (G1) solves this. Otherwise: long-press a Pikachu to enter "tag mode" with all Pikachus highlighted, then tap each.
+*Fix idea:* Pre-session lobby (G1) solves this. Otherwise: long-press a untagged placeholder to enter "tag mode" with all untagged placeholders highlighted, then tap each.
 
 **G13. No detection of ghost assignments.**
 If someone wears the wrong strap (e.g. family-a's #88888 on family-b), no system signal that the HR profile doesn't match the user's baseline.
@@ -442,8 +442,8 @@ When User B's device has been Friend C's for 12 minutes and User B shows up want
 A guest finishing early just removes their strap. No "Friend C is done" button that ends her entity cleanly, sends a summary, etc.
 *Fix idea:* Long-press card → "End session for this person" — flushes entity, optionally prints receipt.
 
-**G18. Avatar fallback edge cases (named Pikachu).**
-"Family A" name + Pikachu face from missing file is confusing — looks like a bug, isn't.
+**G18. Avatar fallback edge cases (named untagged placeholder).**
+"Family A" name + untagged placeholder face from missing file is confusing — looks like a bug, isn't.
 *Fix idea:* Different fallback for "user resolved but image missing" vs "no user resolved." E.g. initials-on-color avatar for the former.
 
 **G19. Color-slot intent is invisible.**
@@ -451,7 +451,7 @@ The user creating `10366: purple # guest1` knew what they meant, but the running
 *Fix idea:* In the assign menu for a color-slot device, show "Reserved color-slot 'purple' (guest1) — pick a person to bind." Optionally let user write the binding back to config.
 
 **G20. Config changes require container restart.**
-Adding a new recurring visitor to `fitness.yml` is a multi-step ops chore. Discourages permanent fixes; encourages relying on ad-hoc Pikachu tagging.
+Adding a new recurring visitor to `fitness.yml` is a multi-step ops chore. Discourages permanent fixes; encourages relying on ad-hoc untagged placeholder tagging.
 *Fix idea:* Hot-reload `fitness.yml` on file change (already a small file, fast parse); or an in-app "manage participants" UI that writes the file via an API.
 
 ---
@@ -481,12 +481,12 @@ The open questions from the first draft have been resolved. Several answers turn
 
 **Decision:** Each unregistered/color-allocated HR strap has a **physical colored sticker** on it; the matching color is configured in `device_colors.heart_rate`. The card UI must surface this color prominently enough that a human in the room can match physical sticker → on-screen card at a glance.
 
-**Why this matters:** When three guests turn on three straps simultaneously, all you currently see is three Pikachus with different `#<deviceId>` labels — useless for "Friend C, you're the purple one." With visible color (avatar ring, card border, color name as label), the disambiguation is immediate.
+**Why this matters:** When three guests turn on three straps simultaneously, all you currently see is three untagged placeholders with different `#<deviceId>` labels — useless for "Friend C, you're the purple one." With visible color (avatar ring, card border, color name as label), the disambiguation is immediate.
 
 **Scope of work:**
 - Avatar ring or card-border treatment in a saturated, recognizable color (not the subtle existing border)
 - Color **name** displayed alongside or instead of `#<deviceId>` when no name resolves (e.g. "Purple strap" instead of "#10366")
-- Same treatment applies to **all** unmapped devices, even ones without a `device_colors` entry — fall back to a deterministic per-deviceId color (hash-based) so each Pikachu is at least *visually distinct* from the others
+- Same treatment applies to **all** unmapped devices, even ones without a `device_colors` entry — fall back to a deterministic per-deviceId color (hash-based) so each untagged placeholder is at least *visually distinct* from the others
 
 This subsumes / reshapes gaps **G5, G8, G19** into a single coordinated piece of work.
 
@@ -496,9 +496,9 @@ This subsumes / reshapes gaps **G5, G8, G19** into a single coordinated piece of
 
 **Code area to inspect/fix:** `GovernanceEngine.evaluate` + `ActivityMonitor`'s definition of "active." Likely already correct (the gap was flagged as unverified), but the directive locks in the intent.
 
-### 5. Late-tagged Pikachus should de-duplicate at session close — DIRECTIVE 🛠
+### 5. Late-tagged untagged placeholders should de-duplicate at session close — DIRECTIVE 🛠
 
-**Decision:** When a Pikachu earns data and is later tagged as a real user, the Pikachu identity should **merge into the tagged user** in the saved session — no phantom `#<deviceId>` participant in the YAML.
+**Decision:** When a untagged placeholder earns data and is later tagged as a real user, the untagged placeholder identity should **merge into the tagged user** in the saved session — no phantom `#<deviceId>` participant in the YAML.
 
 **This is the same mechanism as the grace-period transfer**, but applied retroactively at session save time. Late tagging = "I'm telling you now who this was the whole time" = merge.
 
@@ -544,7 +544,7 @@ This is the biggest change from the first-draft model.
 The current 60s grace window is a special case of `T = 60`. The directive is to:
 1. Make `T` configurable in `fitness.yml` (e.g. `governance.usage_threshold_seconds: 300`)
 2. Raise the default to ~5 min so the common "wrong owner at start" mistake auto-corrects without user action
-3. Apply the rule symmetrically to ALL transitions (not just guest-mode reassignments) — Decision §5 (late-tagged Pikachus) falls out automatically
+3. Apply the rule symmetrically to ALL transitions (not just guest-mode reassignments) — Decision §5 (late-tagged untagged placeholders) falls out automatically
 
 #### Open issues with this rule
 
@@ -583,14 +583,14 @@ Several gaps shift status based on Part 7 decisions:
 |-----|-----------|------------|
 | **G3** Silent owner swap | Critical | **Critical, partially mitigated by §7** — short un-tagged windows get absorbed automatically; long undetected swaps still misattribute |
 | **G4** Grace window invisible | High | **Re-scoped:** the threshold (§7) is much longer (5 min), and most segments end with the right user via backfill — the countdown may not be needed at all. Replace with a "this segment will be permanent in N min" indicator visible only for borderline-duration segments |
-| **G5 + G8 + G19** Pikachu disambiguation | Medium cluster | **Subsumed by §3** — one coordinated "device color visibility" pass |
+| **G5 + G8 + G19** untagged placeholder disambiguation | Medium cluster | **Subsumed by §3** — one coordinated "device color visibility" pass |
 | **G12** Phantom participants | High | **Resolved by §5 / §7** — late-tag merge happens automatically via threshold rule |
 | **G15** Generic Guest ambiguity | Medium | **Resolved by §2** — device-keyed alias |
-| **G18** Named Pikachu (missing photo) | Medium | Unchanged |
+| **G18** Named untagged placeholder (missing photo) | Medium | Unchanged |
 | **G16** Returnee surfacing | Medium | Unchanged |
 | **G1** Pre-session lobby | Critical | Unchanged — still the biggest leap |
 | **G6** BLE silent drop | Critical | **Deferred (§6)** until BLE hardware is in use |
-| **G11** Stray-Pikachu governance | High | Unchanged (orthogonal to §7) |
+| **G11** Stray-untagged placeholder governance | High | Unchanged (orthogonal to §7) |
 
 ---
 
@@ -604,10 +604,10 @@ Priority order rewritten based on Part 7:
 4. **Decision §2 verification + fix** — confirm/fix that generic Guest is device-keyed not user-keyed (G15).
 5. **Decision §4 verification** — confirm INACTIVE cards are already excluded from governance, or fix if not.
 6. **G3 silent-swap detection** — HR-baseline anomaly check (still needed; threshold helps but doesn't cover long swaps).
-7. **G11 stray-Pikachu governance opt-out** — default-exclude untagged devices for first `T` seconds (now aligned with the new threshold).
+7. **G11 stray-untagged placeholder governance opt-out** — default-exclude untagged devices for first `T` seconds (now aligned with the new threshold).
 8. **G1 pre-session lobby** — biggest UX leap; enables expected-participants pre-allocation.
 9. **G10 in-app promotion to config** — closes "discovered → permanent" loop.
-10. **G18 named-Pikachu fix** — initials-on-color avatar for resolved-but-image-missing case.
+10. **G18 named-untagged placeholder fix** — initials-on-color avatar for resolved-but-image-missing case.
 11. **G16 returnee surfacing** — small polish.
 
 (G6 deferred per §6.)
@@ -618,6 +618,6 @@ Priority order rewritten based on Part 7:
 
 - [`guest-mode.md`](../../reference/fitness/guest-mode.md) — umbrella reference
 - [`assign-guest.md`](../../reference/fitness/assign-guest.md) — borrowed-device flow specification
-- [`unknown-hr-monitors.md`](../../reference/fitness/unknown-hr-monitors.md) — Pikachu detail
+- [`unknown-hr-monitors.md`](../../reference/fitness/unknown-hr-monitors.md) — untagged placeholder detail
 - [`ble-heart-rate.md`](../../reference/fitness/ble-heart-rate.md) — BLE matching cascade
 - [`display-name-resolver.md`](../../reference/fitness/display-name-resolver.md) — naming priority chain

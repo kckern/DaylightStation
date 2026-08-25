@@ -21,11 +21,11 @@ vi.mock('./useKioskLaunchTargets.js', () => ({
 import ConsoleDetail from './ConsoleDetail.jsx';
 
 const ALLOWED = 'retroarch:gb/super-mario-land';
-const EXCLUDED = 'retroarch:gb/pokemon-red';
+const EXCLUDED = 'retroarch:gb/example-quest';
 
 const GAMES = [
   { id: ALLOWED, title: 'Super Mario Land', metadata: { parentTitle: 'Game Boy' } },
-  { id: EXCLUDED, title: 'Pokemon Red', metadata: { parentTitle: 'Game Boy' } },
+  { id: EXCLUDED, title: 'Example Quest', metadata: { parentTitle: 'Game Boy' } },
 ];
 
 const wrap = (ui) => render(<MantineProvider>{ui}</MantineProvider>);
@@ -52,7 +52,7 @@ describe('ConsoleDetail launch controls', () => {
   });
 
   it('disables titles outside the device allowlist', async () => {
-    // Pokemon Red has a live save on another device — offering it here is the
+    // Example Quest has a live save on another device — offering it here is the
     // exact mistake the allowlist exists to prevent.
     wrap(<ConsoleDetail />);
     const excluded = await screen.findByRole('button', { name: 'Not on device' });

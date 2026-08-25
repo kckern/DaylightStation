@@ -84,8 +84,9 @@ describe('AuthService', () => {
 
       // Household config written
       expect(mockDataService.household.write).toHaveBeenCalledWith(
-        'config/household',
+        'household',
         expect.objectContaining({
+          household_id: 'default',
           name: 'Test Family',
           head: 'admin',
           users: ['admin']

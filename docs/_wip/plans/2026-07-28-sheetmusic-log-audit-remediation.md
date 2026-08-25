@@ -1684,7 +1684,7 @@ Both must be green before this branch is considered done.
 
 Per `feedback_dont_ask_check_yourself` and the module's history, unit tests are not sufficient evidence for this component. On the piano tablet (10.0.0.245):
 
-1. Open a heavy score (pokemon-trainer-battle) and confirm the log file for one session is now **hundreds** of lines, not tens of thousands:
+1. Open a heavy score (creature-trainer-battle) and confirm the log file for one session is now **hundreds** of lines, not tens of thousands:
    ```bash
    ssh {env.prod_host} "cd {dropbox}/Apps/DaylightStation/media/logs/piano-sheetmusic && wc -l \$(ls -t *.jsonl | head -1)"
    ```

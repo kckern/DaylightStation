@@ -65,4 +65,12 @@ public class KioskWatchdogTest {
         assertFalse(KioskWatchdog.escalatesPastL1(Verdict.BUILDING));
         assertFalse(KioskWatchdog.escalatesPastL1(Verdict.SCREEN_OFF));
     }
+
+    @Test
+    public void activeGame_neverEscalatesIntoDisruptiveRecovery() {
+        assertFalse("a child mid-game must not have their SPA reloaded",
+                KioskWatchdog.escalatesPastL1(Verdict.DEAD, true));
+        assertTrue("the same genuine dead-page condition can recover outside a game",
+                KioskWatchdog.escalatesPastL1(Verdict.DEAD, false));
+    }
 }

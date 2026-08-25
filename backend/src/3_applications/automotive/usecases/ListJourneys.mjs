@@ -88,7 +88,18 @@ function present(journey, places, motionEvents = []) {
     : [];
 
   return {
-    ...journey.toJSON(),
+    id: journey.id,
+    classification: journey.classification,
+    clock_recoverable: journey.clockRecoverable,
+    started_at: iso(journey.startedAt),
+    ended_at: iso(journey.endedAt),
+    elapsed_s: journey.elapsedS,
+    driving_s: journey.drivingS,
+    distance_km: journey.distanceKm,
+    max_speed_kph: journey.maxSpeedKph,
+    has_ecu: journey.hasEcu,
+    leg_count: journey.legs.length,
+    stop_count: journey.stops.length,
     title: buildTitle(origin, stops, destination),
     harsh_events: events.map((e) => ({
       at: e.at.toISOString(),
@@ -122,7 +133,7 @@ function describePoint(fix, places) {
     label: place?.label || null,
     kind: place?.kind || null,
     is_fuel_stop: Boolean(place?.isFuelStop),
-    fix: fix ? fix.toJSON() : null,
+    fix: fix ? { lat: fix.lat, lon: fix.lon } : null,
   };
 }
 

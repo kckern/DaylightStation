@@ -88,7 +88,7 @@ outcome for a parent standing in another room.
 
 **Decision: an explicit per-device allowlist in `games.yml`**, not a discovered filesystem
 fact. The three titles were chosen deliberately — the companion doc's *one-game-one-device
-rule* excludes Pokémon Red, Pokémon Crystal, and Wario Land because they carry live saves on
+rule* excludes Creature Red, Creature Crystal, and Wario Land because they carry live saves on
 the Shield and there is no save-sync mechanism. That reasoning is a curation decision, so it
 belongs in config where it can be read and audited, not inferred from what happens to be on
 disk.
@@ -103,7 +103,7 @@ launch:
       allow:
         - retroarch:gb/super-mario-land
         - retroarch:gb/super-mario-land-2
-        - retroarch:gb/pokemon-yellow
+        - retroarch:gb/creature-yellow
 ```
 
 Admin hides non-allowed titles for that target; the kiosk hook re-checks on receipt, so the
@@ -119,7 +119,7 @@ uri += `S.${key}=${value};`;
 ```
 
 Android's `Intent.parseUri` expects URL-encoded values, and **all three chosen ROMs have
-spaces and brackets** — e.g. `Super Mario Land (JUE) (V1.1) [!].gb`, `Pokemon - Yellow Version
+spaces and brackets** — e.g. `Super Mario Land (JUE) (V1.1) [!].gb`, `Creature - Yellow Version
 (USA, Europe).gbc`. A `;` in a path would terminate the field and inject intent structure.
 Encode values and reject separator characters, mirroring the `#validateIntentParam` guard
 `AdbLauncher.mjs` already applies on the shell side.

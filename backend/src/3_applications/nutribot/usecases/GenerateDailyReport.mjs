@@ -161,7 +161,7 @@ export class GenerateDailyReport {
             } catch (e) {
               this.#logger.debug?.('report.sendPendingNotice.failed', { error: e.message });
             }
-            return { success: false, skippedReason: `${pendingLogs.length} pending log(s)` };
+            return { success: true, skipped: true, skippedReason: `${pendingLogs.length} pending log(s)` };
           }
         }
       }
@@ -186,7 +186,7 @@ export class GenerateDailyReport {
 
       if (summary.logCount === 0) {
         this.#logger.info?.('report.generate.skipped', { userId, date, reason: 'no_logs' });
-        return { success: false, skippedReason: 'No food logged for this date' };
+        return { success: true, skipped: true, skippedReason: 'No food logged for this date' };
       }
 
       // 3. Create status indicator for report generation

@@ -47,7 +47,7 @@ describe('TI-86 mixed terminal screen decoder', () => {
 
   it('keeps every answer in a crowded compact assessment surface ahead of icon heuristics', () => {
     const screen = Buffer.alloc(1024);
-    drawText(screen, 'compact-3x5', 'WHICH POKEMON EVOLVES', 2, 11);
+    drawText(screen, 'compact-3x5', 'WHICH CREATURE EVOLVES', 2, 11);
     drawText(screen, 'compact-3x5', 'DIRECTLY FROM DRATINI?', 2, 17);
     for (const [index, choice] of ['DRAGONAIR', 'DRAGONITE', 'GYARADOS', 'BAGON'].entries()) {
       drawText(screen, 'compact-3x5', `${String.fromCharCode(65 + index)})`, 2, 23 + (index * 6));
@@ -56,7 +56,7 @@ describe('TI-86 mixed terminal screen decoder', () => {
 
     const decoded = decodeTi86Screen(screen);
     expect(decoded.text.map(({ text }) => text)).toEqual(expect.arrayContaining([
-      'WHICH POKEMON EVOLVES', 'DIRECTLY FROM DRATINI?',
+      'WHICH CREATURE EVOLVES', 'DIRECTLY FROM DRATINI?',
       'DRAGONAIR', 'DRAGONITE', 'GYARADOS', 'BAGON',
     ]));
     expect(decoded.symbols).toEqual([]);

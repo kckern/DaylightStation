@@ -21,7 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * and (b) act on it.
  *
  * Health signal: the page POSTs a per-second heartbeat to /kiosk/beat
- * ({fps, visibility, url}). That beat stream is the one liveness signal that
+ * ({fps, visibility, url, activity}). `activity` carries only an active game id,
+ * never player identity or game position. That beat stream is the one liveness signal that
  * reflects the WebView's real event-loop health — if the loop starves the fps
  * drops; if it latches the beats stop entirely.
  *
@@ -62,6 +63,11 @@ public final class KioskWatchdog {
     private volatile String lastVisibility = "unknown";
     private volatile String lastUrl = "";
     private volatile long beatCount = 0;
+    // The page reports this only while a game route is open. It is intentionally
+    // identity-free: recovery needs to preserve the game, not know who is playing
+    // or what their position is.
+    private volatile String activeGameId = null;
+    private volatile long activeGameSinceWallTs = 0;
 
     private final long startedAtRt = SystemClock.elapsedRealtime();
     private long lowMs = 0;                       // accumulated ms of visible-low-fps
@@ -77,6 +83,8 @@ public final class KioskWatchdog {
     private volatile String lastAction = null;
     private volatile long lastActionWallTs = 0;
     private volatile String lastOutcome = null;
+    private volatile String lastDecision = null;
+    private volatile long lastDecisionWallTs = 0;
 
     private final ExecutorService recoveryExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "kiosk-recovery"); t.setDaemon(true); return t;
@@ -115,6 +123,16 @@ public final class KioskWatchdog {
         lastFps = beat.optInt("fps", -1);
         lastVisibility = beat.optString("visibility", "unknown");
         lastUrl = beat.optString("url", "");
+        JSONObject activity = beat.optJSONObject("activity");
+        String gameId = activity != null && "game".equals(activity.optString("type"))
+                ? activity.optString("id", "").trim() : "";
+        if (!gameId.isEmpty()) {
+            if (!gameId.equals(activeGameId)) activeGameSinceWallTs = lastBeatWallTs;
+            activeGameId = gameId;
+        } else {
+            activeGameId = null;
+            activeGameSinceWallTs = 0;
+        }
         beatCount++;
     }
 
@@ -148,7 +166,12 @@ public final class KioskWatchdog {
      * does not raise fps (proven on-device) and only manifests as a dropped piano
      * connection — the 2026-07-15 outage. Kept here so the policy is one obvious line.
      */
-    static boolean escalatesPastL1(Verdict trigger) { return trigger == Verdict.DEAD; }
+    static boolean escalatesPastL1(Verdict trigger) { return escalatesPastL1(trigger, false); }
+
+    /** A game is a hard user-work boundary: never reload/restart/reboot it automatically. */
+    static boolean escalatesPastL1(Verdict trigger, boolean activeGame) {
+        return trigger == Verdict.DEAD && !activeGame;
+    }
 
     private void tick(long periodMs) {
         DeviceConfig c = cfg;
@@ -195,6 +218,7 @@ public final class KioskWatchdog {
 
     private void runLadder(Verdict trigger) {
         DeviceConfig c = cfg;
+        final String gameAtTrigger = activeGameId;
 
         // INSTALL HOLD — suppress the WHOLE ladder, L1 included, while a self-update
         // is awaiting its on-device confirmation.
@@ -214,13 +238,15 @@ public final class KioskWatchdog {
         // recovery off permanently.
         long sinceUpdate = System.currentTimeMillis() - service.lastUpdateRequestAtMs();
         if (service.lastUpdateRequestAtMs() > 0 && sinceUpdate < INSTALL_HOLD_MS) {
-            CrashLog.note("RECOVERY", "LADDER skipped — install confirm pending ("
+            decide("ladder-suppressed", "install confirm pending ("
                     + (sinceUpdate / 1000) + "s since /update; holding "
                     + (INSTALL_HOLD_MS / 1000) + "s)");
             return;
         }
 
-        CrashLog.note("RECOVERY", "LADDER start (trigger=" + trigger + " fps=" + lastFps + ")");
+        decide("ladder-start", "trigger=" + trigger + " fps=" + lastFps
+                + " beatAgeMs=" + (SystemClock.elapsedRealtime() - lastBeatAtRt)
+                + " activeGame=" + (gameAtTrigger == null ? "none" : gameAtTrigger));
         // Two independent safety gates on the DISRUPTIVE rungs (L2 reload / L3 restart
         // / L4 reboot): the daily quiet window, AND FKB's authoritative screen state.
         // screenOn guards the common "screen off at night, rAF throttled to ~1fps" case
@@ -248,7 +274,12 @@ public final class KioskWatchdog {
         // bridge WS and reading to the user as "the piano disconnected AGAIN." So the
         // disruptive rungs (reload/restart/reboot) are reserved for DEAD (beat-silence
         // = the JS loop is actually dead / WebView latched, which soft rungs CAN clear).
-        if (!escalatesPastL1(trigger)) {
+        if (!escalatesPastL1(trigger, gameAtTrigger != null)) {
+            if (gameAtTrigger != null) {
+                finish("L1 only — active game '" + gameAtTrigger
+                        + "' protected; automatic reload/restart/reboot suppressed");
+                return;
+            }
             finish("L1 only — DECAYED (slow but alive, still beating); disruptive rungs reserved for DEAD");
             return;
         }
@@ -319,6 +350,13 @@ public final class KioskWatchdog {
         CrashLog.note("RECOVERY", "→ " + action);
     }
 
+    /** Durable, human-readable explanation for the latest recovery policy choice. */
+    private void decide(String decision, String reason) {
+        lastDecision = decision + " — " + reason;
+        lastDecisionWallTs = System.currentTimeMillis();
+        CrashLog.note("RECOVERY", "DECISION " + lastDecision);
+    }
+
     private void finish(String outcome) {
         lastOutcome = outcome;
         CrashLog.note("RECOVERY", "LADDER end: " + outcome);
@@ -387,6 +425,9 @@ public final class KioskWatchdog {
             o.put("lastFps", lastFps); // deprecated alias of pageRafFps (kept for old dashboards/queries)
             o.put("lastVisibility", lastVisibility);
             o.put("lastUrl", lastUrl);
+            o.put("activeGame", activeGameId == null ? JSONObject.NULL : activeGameId);
+            o.put("activeGameSinceWallTs", activeGameSinceWallTs == 0 ? JSONObject.NULL : activeGameSinceWallTs);
+            o.put("midGameRecoveryProtected", activeGameId != null);
             o.put("beatCount", beatCount);
             o.put("lastBeatAgoMs", sawAny ? now - lastBeatAtRt : JSONObject.NULL);
             o.put("lastBeatWallTs", sawAny ? lastBeatWallTs : JSONObject.NULL);
@@ -405,6 +446,8 @@ public final class KioskWatchdog {
             o.put("lastAction", lastAction == null ? JSONObject.NULL : lastAction);
             o.put("lastActionWallTs", lastActionWallTs == 0 ? JSONObject.NULL : lastActionWallTs);
             o.put("lastOutcome", lastOutcome == null ? JSONObject.NULL : lastOutcome);
+            o.put("lastDecision", lastDecision == null ? JSONObject.NULL : lastDecision);
+            o.put("lastDecisionWallTs", lastDecisionWallTs == 0 ? JSONObject.NULL : lastDecisionWallTs);
             o.put("lastRebootAt", CrashLog.lastRebootAt());
             o.put("prevDeathUnclean", CrashLog.prevDeathUnclean());
             o.put("ok", true);

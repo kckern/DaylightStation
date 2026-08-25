@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make HR devices that broadcast over ANT+ but have no `fitness.yml` mapping and no guest-assignment ledger entry appear in the fitness UI as anonymous Pikachu cards labelled `#<deviceId>`, so the existing assignment UX (`FitnessSidebarMenu` in `mode='guest'`) can be used to tag them.
+**Goal:** Make HR devices that broadcast over ANT+ but have no `fitness.yml` mapping and no guest-assignment ledger entry appear in the fitness UI as anonymous untagged placeholder cards labelled `#<deviceId>`, so the existing assignment UX (`FitnessSidebarMenu` in `mode='guest'`) can be used to tag them.
 
-**Architecture:** Single-file change at the SSOT for participant roster construction. `ParticipantRoster._buildRosterEntry` currently returns `null` when no participantName resolves, dropping every anonymous device before it reaches `SidebarFooter` / `FitnessUsers`. The fix synthesizes a `#<deviceId>` name and a `device:<deviceId>` profile ID for anonymous devices and removes the early return. Downstream components (`SidebarFooter.jsx:387-389`, `FitnessUsers.jsx:896-907`) already fall through to the Pikachu fallback image when `profileId` doesn't resolve to a real avatar file — no UI changes needed.
+**Architecture:** Single-file change at the SSOT for participant roster construction. `ParticipantRoster._buildRosterEntry` currently returns `null` when no participantName resolves, dropping every anonymous device before it reaches `SidebarFooter` / `FitnessUsers`. The fix synthesizes a `#<deviceId>` name and a `device:<deviceId>` profile ID for anonymous devices and removes the early return. Downstream components (`SidebarFooter.jsx:387-389`, `FitnessUsers.jsx:896-907`) already fall through to the untagged placeholder fallback image when `profileId` doesn't resolve to a real avatar file — no UI changes needed.
 
 **Tech Stack:** React 18 frontend, vitest for colocated frontend tests (`*.test.js` next to source, import from `'vitest'`), Playwright for live verification, `npx vitest run <path>` to execute a single test file.
 
@@ -180,7 +180,7 @@ Replace with:
 
 ```javascript
       } else {
-        // Truly anonymous — no user, no ledger. Rendered as a Pikachu
+        // Truly anonymous — no user, no ledger. Rendered as a untagged placeholder
         // card with name `#<deviceId>` so the user can tap to assign
         // via FitnessSidebarMenu. See _buildRosterEntry synthesis path.
         anonymousDevices.push(device);
@@ -236,7 +236,7 @@ Synthesize a '#<deviceId>' name and 'device:<deviceId>' profile id when
 neither lookup resolves, matching the behavior documented in
 docs/reference/fitness/unknown-hr-monitors.md and the audit in
 docs/_wip/audits/2026-05-26-guest-mode-ux-audit.md. The downstream
-avatar fallback (user.jpg / Pikachu) already handles unknown profileIds."
+avatar fallback (user.jpg / untagged placeholder) already handles unknown profileIds."
 ```
 
 ---
@@ -383,7 +383,7 @@ If `rosterLen` is still 0, but `getMemoryStats().deviceCount` is 1, the fix did 
 
 - [ ] **Step 4: Visually inspect the screenshots**
 
-Open `/tmp/anon-fitness-bottomleft.png` via the Read tool. Expected: a small HR-style card visible in the bottom-left of the sidebar (where the gear-only state used to be), with the Pikachu avatar and a `#10366` label or aria-label.
+Open `/tmp/anon-fitness-bottomleft.png` via the Read tool. Expected: a small HR-style card visible in the bottom-left of the sidebar (where the gear-only state used to be), with the untagged placeholder avatar and a `#10366` label or aria-label.
 
 - [ ] **Step 5: Clean up the script**
 
@@ -403,7 +403,7 @@ This script is throwaway diagnostic only — do not commit it.
 This is a human-driven check, but Claude should narrate what to expect:
 
 1. Open `http://localhost:3111/fitness/users` in a browser on the household TV (or kckern-server's browser).
-2. Locate the `#10366` Pikachu card in the participants sidebar.
+2. Locate the `#10366` untagged placeholder card in the participants sidebar.
 3. Tap the card. `FitnessSidebarMenu` should open in `mode='guest'` with the header `#10366` (per `FitnessSidebarMenu.jsx:62` — `monitorLabel = deviceIdStr ? \`#${deviceIdStr}\` : 'Unknown'`).
 4. Pick any candidate (e.g., the generic "Guest" button on the Friends/Family tab).
 5. The card should immediately switch to the assigned identity (per `e1fba8088` device-keyed alias: profileId becomes `guest_10366`).
@@ -431,7 +431,7 @@ No commit for this task — purely a verification gate.
 
 These were identified during debugging but are intentionally not in scope:
 
-1. **Governance impact:** Once anonymous devices render, they will also count toward `governance.base_requirement: [{active: all}]` evaluation. This is the documented "Pikachu cards count toward governance" tradeoff in `docs/reference/fitness/unknown-hr-monitors.md` line 215 and audit gap G19. If this becomes a UX problem in practice, the resolution is either (a) `Remove User` from the sidebar menu to suppress until the next reading, or (b) extend `GovernanceEngine` with an `excludeAnonymous` policy option. Decide separately.
+1. **Governance impact:** Once anonymous devices render, they will also count toward `governance.base_requirement: [{active: all}]` evaluation. This is the documented "untagged placeholder cards count toward governance" tradeoff in `docs/reference/fitness/unknown-hr-monitors.md` line 215 and audit gap G19. If this becomes a UX problem in practice, the resolution is either (a) `Remove User` from the sidebar menu to suppress until the next reading, or (b) extend `GovernanceEngine` with an `excludeAnonymous` policy option. Decide separately.
 
 2. **Session-start gating:** There is no "known user required" gate on session start — any HR>0 broadcast can trigger a session. A random cyclist passing by with a working strap would still start a session even before this fix. If privacy against passersby is a goal, gate `_isValidPreSessionSample` on `mappedUser || ledgerEntry || guestSlot`. Separate plan.
 

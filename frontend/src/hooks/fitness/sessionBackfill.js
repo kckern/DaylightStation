@@ -6,8 +6,8 @@
  *
  * Three rules per audit Decision §7 (OI-1, OI-2, OI-3):
  *
- *   Rule 1 — Late-tag Pikachu merge (Decision §5)
- *     A synthetic (Pikachu) occupant followed by a real configured user is
+ *   Rule 1 — Late-tag untagged placeholder merge (Decision §5)
+ *     A synthetic (untagged placeholder) occupant followed by a real configured user is
  *     ALWAYS absorbed forward, regardless of duration. Late tagging means
  *     "I'm telling you now who this was" → merge.
  *
@@ -28,14 +28,14 @@
  */
 
 /**
- * Conservative detector for synthetic / "Pikachu" occupant IDs.
+ * Conservative detector for synthetic / "untagged placeholder" occupant IDs.
  *
  * Synthetic IDs come from two paths:
  *   - `guest-<timestamp>` from GuestAssignmentService.assignGuest when no
  *     profileId is provided (see line 129 of GuestAssignmentService.js).
- *   - `#<deviceId>` legacy form used by older Pikachu cards.
+ *   - `#<deviceId>` legacy form used by older untagged placeholder cards.
  *
- * NOT considered Pikachu:
+ * NOT considered untagged placeholder:
  *   - `guest_<deviceId>` (W2 — explicit device-keyed generic Guest tag; this
  *     is an intentional anonymous identity, not an unidentified device).
  *   - Anything else (real configured user IDs).
@@ -43,7 +43,7 @@
  * @param {string} id
  * @returns {boolean}
  */
-export function isPikachuId(id) {
+export function isSyntheticOccupantId(id) {
   if (typeof id !== 'string' || !id) return false;
   return id.startsWith('guest-') || id.startsWith('#');
 }
@@ -156,7 +156,7 @@ export function detectCyclingSegments(segments, thresholdMs) {
  * the timeline series.
  *
  * Rules (per Decision §7):
- *   Rule 1 — Late-tag Pikachu merge (forward, regardless of duration).
+ *   Rule 1 — Late-tag untagged placeholder merge (forward, regardless of duration).
  *   OI-3   — Sub-threshold non-final segment absorbs forward into successor.
  *   OI-1   — Sub-threshold FINAL segment absorbs backward into prior honored.
  *   OI-2   — Honored (cycling) segments are skipped entirely.
@@ -178,16 +178,16 @@ export function applyAbsorbRules(segments, thresholdMs) {
 
     const next = i + 1 < segments.length ? segments[i + 1] : null;
 
-    // Rule 1: late-tag Pikachu (Pikachu followed by a real configured user).
-    const isLatePikachuTag = isPikachuId(seg.occupantId)
+    // Rule 1: late-tag untagged placeholder (untagged placeholder followed by a real configured user).
+    const isLateIdentityClaim = isSyntheticOccupantId(seg.occupantId)
       && next != null
       && !next.honored
       && !next.inSessionTransferred
-      && !isPikachuId(next.occupantId);
+      && !isSyntheticOccupantId(next.occupantId);
 
     const isSubT = seg.durationMs < t;
 
-    if (!isLatePikachuTag && !isSubT) continue;
+    if (!isLateIdentityClaim && !isSubT) continue;
 
     if (next && !next.inSessionTransferred) {
       // Forward absorb into successor.
@@ -195,7 +195,7 @@ export function applyAbsorbRules(segments, thresholdMs) {
         transfers.push({
           fromOccupantId: seg.occupantId,
           toOccupantId: next.occupantId,
-          reason: isLatePikachuTag ? 'late-pikachu-tag' : 'sub-threshold-forward'
+          reason: isLateIdentityClaim ? 'late-identity-claim' : 'sub-threshold-forward'
         });
       }
       seg.absorbed = true;
@@ -310,8 +310,8 @@ export function isInsignificantEffort(effort, cfg = DEFAULT_INSIGNIFICANT_USAGE)
  * Predicate: is this a known configured user (not a synthetic guest)?
  *
  * Returns false for:
- *   - `guest-*` (Pikachu unidentified form)
- *   - `#*` (legacy Pikachu form)
+ *   - `guest-*` (untagged placeholder unidentified form)
+ *   - `#*` (legacy untagged placeholder form)
  *   - `guest_*` (device-keyed explicit generic Guest)
  *
  * Returns true for configured user IDs.
@@ -321,7 +321,7 @@ export function isInsignificantEffort(effort, cfg = DEFAULT_INSIGNIFICANT_USAGE)
  */
 export function isKnownUserId(id) {
   if (typeof id !== 'string' || !id) return false;
-  if (isPikachuId(id)) return false;      // guest-* / #*
+  if (isSyntheticOccupantId(id)) return false;      // guest-* / #*
   if (id.startsWith('guest_')) return false; // device-keyed generic guest
   return true;
 }
@@ -464,27 +464,27 @@ export function applyKnownUserDeviceMerge(perDevice, knownUserAliases = {}) {
 }
 
 /**
- * Rule 1 (Decision §5) — late-tag Pikachu merge.
+ * Rule 1 (Decision §5) — late-tag untagged placeholder merge.
  *
- * A synthetic (Pikachu) occupant immediately followed on the SAME device by a
+ * A synthetic (untagged placeholder) occupant immediately followed on the SAME device by a
  * real configured user is merged FORWARD into that user, regardless of
  * duration or effort. Late tagging means "I'm telling you now who this was" →
  * merge. This replaces the identity half of the old `applyAbsorbRules` Rule 1
  * on the effort/series path.
  *
- * Runs AFTER `applyEffortAbsorb` so an INSIGNIFICANT Pikachu is already folded
+ * Runs AFTER `applyEffortAbsorb` so an INSIGNIFICANT untagged placeholder is already folded
  * (marked `absorbed`) and skipped here; this pass exists to catch a
- * SIGNIFICANT / high-effort Pikachu that effort-absorb legitimately keeps but
+ * SIGNIFICANT / high-effort untagged placeholder that effort-absorb legitimately keeps but
  * whose late tag says it was actually the following configured user.
  *
  * "Immediately followed" = the next non-transferred, non-absorbed segment on
- * the same device. Honored (cycling turn-taking) Pikachu segments are left
+ * the same device. Honored (cycling turn-taking) untagged placeholder segments are left
  * alone so we don't dissolve a shared-device rotation.
  *
  * @param {Map<string, Array<Object>>} perDevice
- * @returns {Array<{ fromOccupantId: string, toOccupantId: string, reason: 'late-pikachu-tag' }>}
+ * @returns {Array<{ fromOccupantId: string, toOccupantId: string, reason: 'late-identity-claim' }>}
  */
-export function applyLateTagPikachuMerge(perDevice) {
+export function applyLateIdentityClaimMerge(perDevice) {
   const merges = [];
   if (!perDevice || typeof perDevice.values !== 'function') return merges;
   for (const segments of perDevice.values()) {
@@ -492,14 +492,14 @@ export function applyLateTagPikachuMerge(perDevice) {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
       if (seg.absorbed || seg.honored || seg.inSessionTransferred) continue;
-      if (!isPikachuId(seg.occupantId)) continue;
+      if (!isSyntheticOccupantId(seg.occupantId)) continue;
       const next = segments.slice(i + 1)
         .find(s => !s.inSessionTransferred && !s.absorbed);
       if (!next || !isKnownUserId(next.occupantId)) continue;
       merges.push({
         fromOccupantId: seg.occupantId,
         toOccupantId: next.occupantId,
-        reason: 'late-pikachu-tag'
+        reason: 'late-identity-claim'
       });
       seg.absorbed = true;
       seg.absorbedInto = next.occupantId;
@@ -517,8 +517,8 @@ export function applyLateTagPikachuMerge(perDevice) {
  * segments; the legacy `applyAbsorbRules` (OI-1 backward / OI-3 forward,
  * duration-driven) is deliberately NOT run on this path because it absorbs
  * brief-but-REAL bursts and can produce reciprocal transfers that lose real
- * data. Late-tag Pikachu identity (Decision §5) is preserved as a dedicated
- * MERGE via `applyLateTagPikachuMerge`, alongside cross-device known-user
+ * data. Late-tag untagged placeholder identity (Decision §5) is preserved as a dedicated
+ * MERGE via `applyLateIdentityClaimMerge`, alongside cross-device known-user
  * merging. This mirrors the backend `SessionIdentityHealer` (effort-only).
  * When `series` is omitted, falls back to the legacy duration-only path
  * (`applyAbsorbRules`) — existing callers unaffected.
@@ -568,13 +568,13 @@ export function runSessionBackfill({ entities, series, thresholdMs, sessionEndTi
     // Only INSIGNIFICANT (near-zero coins/HR/active-zone) segments fold.
     allTransfers.push(...applyEffortAbsorb(segments, cfg));
   }
-  // Rule 1 (Decision §5): a Pikachu immediately followed on the same device by
+  // Rule 1 (Decision §5): a untagged placeholder immediately followed on the same device by
   // a real configured user is merged forward regardless of duration/effort —
   // removing applyAbsorbRules above dropped this, so it is reinstated here as a
-  // dedicated MERGE. Runs after effort absorb so an insignificant Pikachu is
-  // already folded; this catches a significant/high-effort late-tagged Pikachu.
-  const pikachuMerges = applyLateTagPikachuMerge(perDevice);
-  const merges = [...pikachuMerges, ...applyKnownUserDeviceMerge(perDevice, knownUserAliases)];
+  // dedicated MERGE. Runs after effort absorb so an insignificant untagged placeholder is
+  // already folded; this catches a significant/high-effort late-tagged untagged placeholder.
+  const identityClaimMerges = applyLateIdentityClaimMerge(perDevice);
+  const merges = [...identityClaimMerges, ...applyKnownUserDeviceMerge(perDevice, knownUserAliases)];
   const mergedFromIds = merges.map(m => m.fromOccupantId);
   const keptOccupants = collectKeptOccupants(perDevice);
   for (const id of mergedFromIds) keptOccupants.delete(id);

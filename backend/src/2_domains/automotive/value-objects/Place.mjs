@@ -105,14 +105,4 @@ export class Place {
     return this.#fix.distanceKmTo(fix) * 1000;
   }
 
-  toJSON() {
-    return {
-      id: this.#id,
-      label: this.#label,
-      lat: this.#fix.lat,
-      lon: this.#fix.lon,
-      radius_m: this.#radiusM,
-      kind: this.#kind,
-    };
-  }
 }

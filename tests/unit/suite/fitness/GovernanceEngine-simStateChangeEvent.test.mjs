@@ -59,7 +59,7 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
     engine._latestInputs = {
       activeParticipants: ['user_1'],
       userZoneMap: { user_1: 'hot' },
-      equipmentCadenceMap: { cycle_ace: { rpm: 35, connected: true } }
+      equipmentCadenceMap: { cycle_ace: { rpm: 0, ts: 100, connected: true } }
     };
     engine.challengeState = {
       activeChallenge: {
@@ -79,11 +79,12 @@ describe('GovernanceEngine.onCycleStateChange callback', () => {
         selection: { init: { minRpm: 30 } }
       }
     };
-    // First evaluate establishes baseline signature.
+    // First evaluate establishes the init signature with a fresh, sub-threshold sample.
     engine.evaluate({});
     const callsAfterFirst = cb.mock.calls.length;
 
-    // Second evaluate with rpm=35 should advance init → ramp, changing the signature.
+    // A newer cadence sample whose filtered value clears the threshold advances init → ramp.
+    engine._latestInputs.equipmentCadenceMap.cycle_ace = { rpm: 100, ts: 101, connected: true };
     engine.evaluate({});
     expect(cb.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });

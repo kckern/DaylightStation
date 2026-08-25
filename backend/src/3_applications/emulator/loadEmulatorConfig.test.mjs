@@ -12,10 +12,10 @@ const gameboyManifest = {
   },
   games: [
     {
-      id: 'pokemon-red',
-      title: 'Pokémon Red',
-      rom: 'roms/Pokemon Red (UE) [S][!].gb',
-      save: 'saves/Pokemon Red (UE) [S][!].srm',
+      id: 'example-quest',
+      title: 'Example Quest',
+      rom: 'roms/Example Quest (UE) [S][!].gb',
+      save: 'saves/Example Quest (UE) [S][!].srm',
       cover: 'cover.png',
       bezel: 'bezel.png',
       governance: { mode: 'credit', required_zone: 'warm', earn_rate: 1.5 },
@@ -55,18 +55,18 @@ describe('loadEmulatorConfig', () => {
 
   it('renames cover->boxart and carries rom/save/bezel/title/id', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.boxart).toBe('cover.png');
     expect(game.bezel).toBe('bezel.png');
-    expect(game.rom).toBe('roms/Pokemon Red (UE) [S][!].gb');
-    expect(game.save).toBe('saves/Pokemon Red (UE) [S][!].srm');
-    expect(game.title).toBe('Pokémon Red');
+    expect(game.rom).toBe('roms/Example Quest (UE) [S][!].gb');
+    expect(game.save).toBe('saves/Example Quest (UE) [S][!].srm');
+    expect(game.title).toBe('Example Quest');
     expect(game.system).toBe('gb');
   });
 
   it('merges system defaults UNDER game governance (game override wins)', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.governance.mode).toBe('credit'); // game override
     expect(game.governance.required_zone).toBe('warm'); // game override
     expect(game.governance.earn_rate).toBe(1.5); // game override
@@ -76,7 +76,7 @@ describe('loadEmulatorConfig', () => {
 
   it('derives shader/chrome from presentation when game lacks them', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.shader).toBe('dotmatrix');
     expect(game.chrome).toBe('gb-bezel');
   });
@@ -86,14 +86,14 @@ describe('loadEmulatorConfig', () => {
     m.games[0].shader = 'crt';
     m.games[0].chrome = 'custom';
     const cfg = makeLoader([{ system: 'gb', manifest: m }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.shader).toBe('crt');
     expect(game.chrome).toBe('custom');
   });
 
   it('carries watches and hooks through', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.watches).toHaveLength(1);
     expect(game.watches[0].id).toBe('in_battle');
     expect(game.hooks[0].on).toBe('in_battle');
@@ -127,7 +127,7 @@ describe('loadEmulatorConfig', () => {
 
   it('defaults saveMode to "none" when the game omits save_mode', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: gameboyManifest }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.saveMode).toBe('none');
   });
 
@@ -135,7 +135,7 @@ describe('loadEmulatorConfig', () => {
     const m = JSON.parse(JSON.stringify(gameboyManifest));
     m.games[0].save_mode = 'battery';
     const cfg = makeLoader([{ system: 'gb', manifest: m }]);
-    expect(cfg.games.find((g) => g.id === 'pokemon-red').saveMode).toBe('battery');
+    expect(cfg.games.find((g) => g.id === 'example-quest').saveMode).toBe('battery');
   });
 
   it('defaults the bezel to the shared system asset when a game omits it', () => {
@@ -144,7 +144,7 @@ describe('loadEmulatorConfig', () => {
     m.games.push({ id: 'mk', title: 'Mario Kart', rom: 'roms/mk.gba', core: 'gba' });
     const cfg = makeLoader([{ system: 'gb', manifest: m }]);
     // Both the un-bezeled original game and the new one inherit the system bezel.
-    expect(cfg.games.find((g) => g.id === 'pokemon-red').bezel).toBe('bezel.png');
+    expect(cfg.games.find((g) => g.id === 'example-quest').bezel).toBe('bezel.png');
     expect(cfg.games.find((g) => g.id === 'mk').bezel).toBe('bezel.png');
   });
 
@@ -154,7 +154,7 @@ describe('loadEmulatorConfig', () => {
     delete m.games[0].bezel;
     m.games.push({ id: 'special', title: 'Special', rom: 'r.gb', bezel: 'special-bezel.png' });
     const cfg = makeLoader([{ system: 'gb', manifest: m }]);
-    expect(cfg.games.find((g) => g.id === 'pokemon-red').bezel).toBe('system-bezel.png'); // system default
+    expect(cfg.games.find((g) => g.id === 'example-quest').bezel).toBe('system-bezel.png'); // system default
     expect(cfg.games.find((g) => g.id === 'special').bezel).toBe('special-bezel.png');    // per-game override
   });
 
@@ -235,7 +235,7 @@ describe('loadEmulatorConfig', () => {
     const { systems, games } = buildCatalog(cfg, { warn() {}, info() {}, debug() {}, error() {} });
     expect(systems.gb).toBeTruthy();
     expect(games).toHaveLength(1);
-    const rules = resolveGameRules(cfg, 'pokemon-red', null);
+    const rules = resolveGameRules(cfg, 'example-quest', null);
     expect(rules.governance.mode).toBe('credit');
     expect(rules.governance.grace_seconds).toBe(20);
     expect(rules.shader).toBe('dotmatrix');
@@ -270,8 +270,8 @@ describe('presentation passthrough (bezel hotspots + overlays)', () => {
     },
     games: [
       {
-        id: 'pokemon-red',
-        title: 'Pokémon Red',
+        id: 'example-quest',
+        title: 'Example Quest',
         rom: 'roms/red.gb',
         governance: { mode: 'credit' },
         // per-game override: add a badge overlay
@@ -284,7 +284,7 @@ describe('presentation passthrough (bezel hotspots + overlays)', () => {
 
   it('attaches the system presentation (screen/hotspots/overlays) to each game, game-merged', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: withPresentation }]);
-    const game = cfg.games.find((g) => g.id === 'pokemon-red');
+    const game = cfg.games.find((g) => g.id === 'example-quest');
     expect(game.presentation.screen).toEqual({ x: 29, y: 10, width: 41, height: 66 });
     expect(game.presentation.hotspots.map((h) => h.id)).toEqual(['speaker']);
     // system 'hr' overlay + game 'badges' overlay both present
@@ -293,7 +293,7 @@ describe('presentation passthrough (bezel hotspots + overlays)', () => {
 
   it('resolveGameRules exposes the merged presentation to the browser catalog', () => {
     const cfg = makeLoader([{ system: 'gb', manifest: withPresentation }]);
-    const resolved = resolveGameRules(cfg, 'pokemon-red', null);
+    const resolved = resolveGameRules(cfg, 'example-quest', null);
     expect(resolved.presentation.hotspots[0].id).toBe('speaker');
     expect(resolved.presentation.overlays.map((o) => o.id).sort()).toEqual(['badges', 'hr']);
   });

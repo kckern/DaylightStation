@@ -22,7 +22,7 @@ describe('readValue', () => {
     expect(readValue(heap, 0, 'gb', { addr: 0xd057, size: 2, endian: 'big' })).toBe(0x1234);
   });
 
-  it('decodes 3-byte big-endian BCD (Pokémon money)', () => {
+  it('decodes 3-byte big-endian BCD (Creature money)', () => {
     const heap = new Uint8Array(0x2000);
     // gb 0xD347 → offset 0x1347
     heap[0x1347] = 0x01;

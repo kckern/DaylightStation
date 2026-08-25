@@ -7,11 +7,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 /**
  * Get the data path from environment
@@ -45,7 +41,7 @@ function getEnvName() {
   if (process.env.DAYLIGHT_ENV) return process.env.DAYLIGHT_ENV;
 
   // Fallback: try to find .env in project root
-  const projectRoot = path.resolve(__dirname, '../..');
+  const projectRoot = process.cwd();
   const envPath = path.join(projectRoot, '.env');
 
   if (fs.existsSync(envPath)) {

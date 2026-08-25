@@ -6,11 +6,13 @@ import { AdbAdapter } from './AdbAdapter.mjs';
 export class AdbLauncher extends IDeviceLauncher {
   #configService;
   #logger;
+  #createAdb;
 
   constructor(config) {
     super();
     this.#configService = config.configService;
     this.#logger = config.logger || console;
+    this.#createAdb = config.createAdb || ((connection, options) => new AdbAdapter(connection, options));
   }
 
   #getAdbConfig(deviceId) {
@@ -35,7 +37,7 @@ export class AdbLauncher extends IDeviceLauncher {
       });
     }
 
-    const adb = new AdbAdapter(
+    const adb = this.#createAdb(
       { host: adbConfig.host, port: adbConfig.port },
       { logger: this.#logger }
     );

@@ -65,7 +65,7 @@ function makeScheduler() {
 }
 
 const GAME = {
-  id: 'pokemon-red',
+  id: 'example-quest',
   system: 'gb',
   romUrl: 'apps/fitness/roms/red.gb',
   states: {

@@ -1,5 +1,5 @@
 // Placeholder avatar tiers (audit N5 / guest-mode Part 4):
-//   untagged device            → 'user'        (Pikachu — unchanged, means "tag me")
+//   untagged device            → 'user'        (untagged placeholder — unchanged, means "tag me")
 //   generic Guest, adult       → 'guest-adult' (claimed-but-anonymous)
 //   generic Guest, kid         → 'guest-kid'
 // Assets live server-side at /static/img/users/<id>.jpg. If an asset is

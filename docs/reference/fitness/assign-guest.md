@@ -375,13 +375,13 @@ threshold; production code paths always provide a value.
 | **OI-3 — Symmetric forward absorption** | A segment of duration `< T` is followed by ANY other segment on the same device | The sub-T segment is absorbed forward into the successor (coins, timeline, start time). Applies to ALL transition types — Guest→Mapped, Mapped→Guest, **Mapped→Mapped**, Guest→Guest. There is intentionally NO "previous occupant must be a guest" gate. |
 | **OI-1 — Final-segment backward absorption** | The LAST segment on a device is `< T` and has no successor to absorb into | Absorbed BACKWARD into the immediately prior honored segment (the "I just put it down" case). |
 | **OI-2 — Cycling / turn-taking detection** | 3+ consecutive sub-T segments alternating between 2+ distinct occupants on one device | All segments honored as a "shared device" pattern — neither cascading forward-absorption nor the OI-1 backward rule applies. Both occupants survive in the saved YAML. |
-| **§5 — Late-tag Pikachu merge** | A synthetic untagged (Pikachu) occupant is followed by a configured user, regardless of duration | The Pikachu segment is absorbed into the configured user. Per Decision §5, late tagging means "I'm telling you now who this was" — duration is irrelevant. |
+| **§5 — Late-tag untagged placeholder merge** | A synthetic untagged (untagged placeholder) occupant is followed by a configured user, regardless of duration | The untagged placeholder segment is absorbed into the configured user. Per Decision §5, late tagging means "I'm telling you now who this was" — duration is irrelevant. |
 
 ### Live vs Save-Time Application
 
 | Layer | What it does | What it can't catch |
 |-------|--------------|---------------------|
-| **`GuestAssignmentService`** (live, per reassignment) | Compares `previousDuration` against `thresholdMs`; emits `SEGMENT_ABSORBED` (sub-T, calls `session.transferSessionEntity` / `session.transferUserSeries`) or `GUEST_REPLACED` (≥ T, calls `session.endSessionEntity({ status: 'dropped' })`). | Final-segment backward absorption (OI-1 — no further reassignment exists), cycling-detection (OI-2 — would already have cascaded), late Pikachu merges (Decision §5 — the in-session check sees them as already-expired). |
+| **`GuestAssignmentService`** (live, per reassignment) | Compares `previousDuration` against `thresholdMs`; emits `SEGMENT_ABSORBED` (sub-T, calls `session.transferSessionEntity` / `session.transferUserSeries`) or `GUEST_REPLACED` (≥ T, calls `session.endSessionEntity({ status: 'dropped' })`). | Final-segment backward absorption (OI-1 — no further reassignment exists), cycling-detection (OI-2 — would already have cascaded), late untagged placeholder merges (Decision §5 — the in-session check sees them as already-expired). |
 | **`PersistenceManager._applyBackfill`** (session save time) | Walks every device's entity history with `runSessionBackfill({ entities, thresholdMs, sessionEndTime })`. Applies OI-1, OI-2, OI-3, and §5 against the full timeline. Mutates `sessionData.timeline.series` in place via `_mergeUserSeriesInPlace` (destination-wins cell-by-cell). | (Save-time is the final word — anything wrong at this layer is wrong on disk.) |
 
 The save-time pass skips entities whose `status === 'transferred'` — those
@@ -585,7 +585,7 @@ gate. See `PersistenceManager.symmetricTransitions.test.js`.
 
 Save-time catches what live misses: if the in-session pass doesn't fire
 (e.g. the final segment with no successor — OI-1, or 3+ alternating
-sub-T segments — OI-2, or late-tag Pikachu merges — Decision §5), the
+sub-T segments — OI-2, or late-tag untagged placeholder merges — Decision §5), the
 session-end backfill pass in PersistenceManager applies the same rules
 against the full timeline at save time.
 ```

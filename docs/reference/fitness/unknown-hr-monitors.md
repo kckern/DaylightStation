@@ -1,6 +1,6 @@
 # Unknown Heart Rate Monitors
 
-How the fitness app reacts when an HR sensor broadcasts a signal that isn't pre-registered in `fitness.yml`. Covers the **Pikachu fallback avatar**, the difference between ANT+ and BLE handling, and how to claim an unknown device mid-session.
+How the fitness app reacts when an HR sensor broadcasts a signal that isn't pre-registered in `fitness.yml`. Covers the **untagged placeholder fallback avatar**, the difference between ANT+ and BLE handling, and how to claim an unknown device mid-session.
 
 For pre-registered guest flows, see [`assign-guest.md`](./assign-guest.md) and [`guest-mode.md`](./guest-mode.md). For BLE pairing technicals, see [`ble-heart-rate.md`](./ble-heart-rate.md).
 
@@ -13,8 +13,8 @@ The system treats an inbound HR signal at one of three recognition tiers, depend
 | Tier | Config presence | Card appears? | Avatar | Name |
 |------|----------------|---------------|--------|------|
 | **1. Mapped** | `devices.heart_rate: {id: userId}` AND user has profile | Yes | User's profile photo | User's name |
-| **2. Color-allocated** | `device_colors.heart_rate: {id: color}` only, no user mapping | Yes | **Pikachu** + sticker-color avatar ring | **"Purple strap"** (color-name label) |
-| **3. Wild** | Not in config at all | ANT+: yes / BLE: no | **Pikachu** + deterministic hash-color ring | `#<deviceId>` |
+| **2. Color-allocated** | `device_colors.heart_rate: {id: color}` only, no user mapping | Yes | **untagged placeholder** + sticker-color avatar ring | **"Purple strap"** (color-name label) |
+| **3. Wild** | Not in config at all | ANT+: yes / BLE: no | **untagged placeholder** + deterministic hash-color ring | `#<deviceId>` |
 
 Tier 2 is a pattern for recurring visitors — the device gets a stable color (so the human eye can identify "the orange one") without committing the device ID to a permanent user. From `fitness.yml`:
 
@@ -27,13 +27,13 @@ device_colors:
     10266: teal     # guest3
 ```
 
-These three IDs have colors but no `devices.heart_rate` entry — they're reserved slots for "someone visiting wearing an unknown strap." Cards render with a Pikachu face but the sticker color surfaces three ways (via `frontend/src/modules/Fitness/lib/strapColors.js`): a **matching heart emoji** (💜/🤎/🩵 — the full palette resolves, not just the six legacy colors), a **saturated 3px inset ring around the avatar** in the sticker color, and a **color-name card label** ("Purple strap" instead of `#10366`). Tier 3 wild devices, which have no configured color, get a **deterministic per-device hash-color ring** instead — so simultaneous Pikachus are still visually distinct.
+These three IDs have colors but no `devices.heart_rate` entry — they're reserved slots for "someone visiting wearing an unknown strap." Cards render with a untagged placeholder face but the sticker color surfaces three ways (via `frontend/src/modules/Fitness/lib/strapColors.js`): a **matching heart emoji** (💜/🤎/🩵 — the full palette resolves, not just the six legacy colors), a **saturated 3px inset ring around the avatar** in the sticker color, and a **color-name card label** ("Purple strap" instead of `#10366`). Tier 3 wild devices, which have no configured color, get a **deterministic per-device hash-color ring** instead — so simultaneous untagged placeholders are still visually distinct.
 
 ---
 
-## The Pikachu Fallback
+## The untagged placeholder Fallback
 
-The fallback avatar for any HR device that can't resolve a `profileId` is `/static/img/users/user.jpg` — which is literally a Pikachu face. There's no special code path; this is just the contents of the generic fallback image file.
+The fallback avatar for any HR device that can't resolve a `profileId` is `/static/img/users/user.jpg` — which is literally a untagged placeholder face. There's no special code path; this is just the contents of the generic fallback image file.
 
 **Where the fallback fires** (`FitnessUsers.jsx:896-907`):
 
@@ -51,36 +51,36 @@ const profileId = isHeartRate
   : (equipmentInfo?.id || 'equipment');
 ```
 
-When everything in the resolution chain returns null, `profileId = 'user'`, and the avatar URL becomes `/static/img/users/user.jpg` — Pikachu.
+When everything in the resolution chain returns null, `profileId = 'user'`, and the avatar URL becomes `/static/img/users/user.jpg` — untagged placeholder.
 
-**The Pikachu signal:** any time you see Pikachu on a card, it means the device is broadcasting HR but the system has no idea whose chest it's on. The device is real and the data is flowing into the session; it's just unattributed.
+**The untagged placeholder signal:** any time you see untagged placeholder on a card, it means the device is broadcasting HR but the system has no idea whose chest it's on. The device is real and the data is flowing into the session; it's just unattributed.
 
-The signal got stronger: devices tagged as a generic **Guest** no longer Pikachu — they show a distinct placeholder (`/static/img/users/guest-adult` or `guest-kid`, per `guestPlaceholders.js`; degrades to Pikachu only until those asset files exist). So Pikachu now specifically means **untagged** (or a named user with a missing photo), not "anonymous but claimed."
+The signal got stronger: devices tagged as a generic **Guest** no longer untagged placeholder — they show a distinct placeholder (`/static/img/users/guest-adult` or `guest-kid`, per `guestPlaceholders.js`; degrades to untagged placeholder only until those asset files exist). So untagged placeholder now specifically means **untagged** (or a named user with a missing photo), not "anonymous but claimed."
 
 **Asset location:** `data/household/.../media/img/users/user.jpg`. Replacing this file changes the fallback for the whole household.
 
 ---
 
-## When Does Pikachu Appear?
+## When Does untagged placeholder Appear?
 
-Pikachu shows up whenever the avatar URL resolves to `/static/img/users/user.jpg`. That happens in three distinct situations:
+untagged placeholder shows up whenever the avatar URL resolves to `/static/img/users/user.jpg`. That happens in three distinct situations:
 
 **1. Unmapped ANT+ HR device** (the main case)
-The device broadcasts but has no entry in `devices.heart_rate`. The `profileId` resolution chain at `FitnessUsers.jsx:896-907` falls through to the literal `'user'` fallback. Card label shows `#<deviceId>`. This is the only case that creates a *new* Pikachu card from nothing.
+The device broadcasts but has no entry in `devices.heart_rate`. The `profileId` resolution chain at `FitnessUsers.jsx:896-907` falls through to the literal `'user'` fallback. Card label shows `#<deviceId>`. This is the only case that creates a *new* untagged placeholder card from nothing.
 
 **2. Color-allocated visitor slots**
-Same mechanism as #1 — IDs like `10366` / `11521` / `10266` are in `device_colors.heart_rate` but NOT in `devices.heart_rate`. The card gets the sticker-color treatment (heart emoji + inset avatar ring + "Purple strap" label) but no user, so the avatar Pikachus.
+Same mechanism as #1 — IDs like `10366` / `11521` / `10266` are in `device_colors.heart_rate` but NOT in `devices.heart_rate`. The card gets the sticker-color treatment (heart emoji + inset avatar ring + "Purple strap" label) but no user, so the avatar untagged placeholders.
 
 **3. Mapped user with a missing avatar file**
-The `profileId` resolves correctly (e.g. `family-a`), the URL `/static/img/users/family-a.jpg` is requested, the file 404s, and the `<img onError>` handler swaps to `user.jpg`. The card's *name* is still correct — only the avatar Pikachus. This is the "silent" Pikachu: easy to miss because the label looks fine.
+The `profileId` resolves correctly (e.g. `family-a`), the URL `/static/img/users/family-a.jpg` is requested, the file 404s, and the `<img onError>` handler swaps to `user.jpg`. The card's *name* is still correct — only the avatar untagged placeholders. This is the "silent" untagged placeholder: easy to miss because the label looks fine.
 
-**Where Pikachu does NOT appear:**
-- Tagged generic Guests — once a card is tagged "Guest" / "Guest (kid)", the avatar swaps to the `guest-adult` / `guest-kid` placeholder (falling back to Pikachu only while those assets are missing).
-- Unmapped BLE devices — dropped at `ble.mjs:~415` (`if (!userId) return;`) before reaching the frontend. No card, no Pikachu.
+**Where untagged placeholder does NOT appear:**
+- Tagged generic Guests — once a card is tagged "Guest" / "Guest (kid)", the avatar swaps to the `guest-adult` / `guest-kid` placeholder (falling back to untagged placeholder only while those assets are missing).
+- Unmapped BLE devices — dropped at `ble.mjs:~415` (`if (!userId) return;`) before reaching the frontend. No card, no untagged placeholder.
 - Non-HR equipment with no mapping — falls back to `equipment`, not `user`.
 - Before the first HR reading from a device — cards are only rendered after `DeviceManager.registerDevice()` fires.
 
-In plain terms: **Pikachu = "an ANT+ HR strap is broadcasting and I have no idea whose chest it's on, OR I know whose chest it is but their photo is missing."** A claimed-but-anonymous Guest is no longer part of that set.
+In plain terms: **untagged placeholder = "an ANT+ HR strap is broadcasting and I have no idea whose chest it's on, OR I know whose chest it is but their photo is missing."** A claimed-but-anonymous Guest is no longer part of that set.
 
 ---
 
@@ -94,12 +94,12 @@ ANT+ devices broadcast a numeric device ID over the wireless protocol. The backe
 
 **Result for an unknown ANT+ device:**
 - A device card appears in the sidebar immediately on the first reading
-- Avatar = Pikachu (`user.jpg`)
+- Avatar = untagged placeholder (`user.jpg`)
 - Name = `#<deviceId>` (e.g. `#99999`)
 - Zone, coin awards, and timeline recording all work — the device gets a synthetic user identity keyed off the device ID
 - The device counts toward the participant roster and toward governance evaluation
 
-This means an ANT+ stranger wandering past with an HR strap will literally show up as a Pikachu in your session. (In practice this is mostly an indoor concern — ANT+ range is short.)
+This means an ANT+ stranger wandering past with an HR strap will literally show up as a untagged placeholder in your session. (In practice this is mostly an indoor concern — ANT+ range is short.)
 
 ### BLE (BLEManager)
 
@@ -116,7 +116,7 @@ BLE handling is the opposite — best-effort matching happens BEFORE data is bro
 - No data reaches the frontend
 - A warning is logged: `⚠️ BLE HR device {addr} found but N unmatched users — cannot auto-assign`
 
-The asymmetry is intentional: BLE devices (Apple Watches, phones) are common in the ambient environment and you don't want every neighbor's watch creating phantom Pikachu cards. ANT+ devices are deliberately worn for fitness, so admitting them by default is reasonable.
+The asymmetry is intentional: BLE devices (Apple Watches, phones) are common in the ambient environment and you don't want every neighbor's watch creating phantom untagged placeholder cards. ANT+ devices are deliberately worn for fitness, so admitting them by default is reasonable.
 
 ---
 
@@ -124,24 +124,24 @@ The asymmetry is intentional: BLE devices (Apple Watches, phones) are common in 
 
 The avatar on a device card updates in real time as soon as the device's assignment changes. The interesting questions are about what gets *recorded* and what doesn't get *caught*.
 
-### Pikachu → tagged user
+### untagged placeholder → tagged user
 
-Tap a Pikachu card → `FitnessSidebarMenu` opens in `mode='guest'` (header shows `#<deviceId>` from `FitnessSidebarMenu.jsx:62`) → pick a candidate from Friends/Family or generic "Guest" → the card immediately swaps to the assigned person's avatar and name.
+Tap a untagged placeholder card → `FitnessSidebarMenu` opens in `mode='guest'` (header shows `#<deviceId>` from `FitnessSidebarMenu.jsx:62`) → pick a candidate from Friends/Family or generic "Guest" → the card immediately swaps to the assigned person's avatar and name.
 
 Saved-session attribution depends on the configurable continuous-usage
 threshold `T` (default 5 min / 300 s, from `fitness.yml →
 governance.usage_threshold_seconds` — see [`assign-guest.md`](./assign-guest.md)
 § Continuous-Usage Threshold):
 
-- **Tagged within T (live `SEGMENT_ABSORBED`)** → the new user inherits the Pikachu's coins, timeline, and start time. The Pikachu identity vanishes from the saved YAML.
-- **Tagged after T (live `GUEST_REPLACED`, save-time Decision §5 merge)** → the live pass treats this as a normal replacement, but the save-time backfill in `PersistenceManager._applyBackfill` recognises the Pikachu→configured-user transition and absorbs the Pikachu data regardless of duration. Per audit Decision §5, late tagging means "I'm telling you now who this was" — so the Pikachu identity is removed from the saved YAML.
-- **Never tagged** → the Pikachu becomes a permanent entry in `participants:` (typically keyed by device ID) with whatever stats it earned.
+- **Tagged within T (live `SEGMENT_ABSORBED`)** → the new user inherits the untagged placeholder's coins, timeline, and start time. The untagged placeholder identity vanishes from the saved YAML.
+- **Tagged after T (live `GUEST_REPLACED`, save-time Decision §5 merge)** → the live pass treats this as a normal replacement, but the save-time backfill in `PersistenceManager._applyBackfill` recognises the untagged placeholder→configured-user transition and absorbs the untagged placeholder data regardless of duration. Per audit Decision §5, late tagging means "I'm telling you now who this was" — so the untagged placeholder identity is removed from the saved YAML.
+- **Never tagged** → the untagged placeholder becomes a permanent entry in `participants:` (typically keyed by device ID) with whatever stats it earned.
 
 The original "1 minute" framing reflected an older hardcoded 60 s window
 plus no save-time backfill. Both have changed:
 1. The threshold is now configurable and defaults to 5 minutes.
-2. The save-time backfill catches late-tagged Pikachus unconditionally, so
-   a Pikachu that lingered ten minutes before being tagged is still
+2. The save-time backfill catches late-tagged untagged placeholders unconditionally, so
+   a untagged placeholder that lingered ten minutes before being tagged is still
    absorbed into the configured user at save time — no phantom
    participant in the YAML.
 
@@ -161,7 +161,7 @@ There's no automatic detection. Mitigation is procedural: tag the swap in the me
 
 ### Tagged user with broken avatar mid-session
 
-If a user's profile photo gets deleted or moved while a session is live, the next time the `<img>` element re-renders (component remount, page reload), the avatar will fall through to Pikachu via the `onError` handler. The name stays correct; the timeline/coins/governance are unaffected. The fix is to restore the file — the card recovers on next remount.
+If a user's profile photo gets deleted or moved while a session is live, the next time the `<img>` element re-renders (component remount, page reload), the avatar will fall through to untagged placeholder via the `onError` handler. The name stays correct; the timeline/coins/governance are unaffected. The fix is to restore the file — the card recovers on next remount.
 
 ---
 
@@ -195,7 +195,7 @@ Three changes:
 2. **`device_colors.heart_rate`** — give the card a recognizable color
 3. **`users.family`** (or `users.friends`) — define the user's display name and zone overrides
 
-Drop a matching `data/household/.../media/img/users/family-a.jpg` and the Pikachu is replaced by their photo next time the device broadcasts.
+Drop a matching `data/household/.../media/img/users/family-a.jpg` and the untagged placeholder is replaced by their photo next time the device broadcasts.
 
 **Config reload:** changes to `fitness.yml` require a backend restart (`docker restart {env.docker_container}`) to take effect — config is loaded at container startup.
 
@@ -214,11 +214,11 @@ ble_users:
 
 ## Things to Know (Footguns)
 
-- **"Type: unknown" is a different concept.** `FitnessUsers.jsx:38` and `FitnessSidebar.scss:838` reference an `unknown` class — that's for device payloads of an *unrecognized sensor type* (not heart_rate, not cadence, not power), styled with a gray `📡` icon. It is NOT the same as "HR device with unknown owner." The latter is Pikachu, the former is `📡`.
-- **Pikachu cards count toward governance.** An ANT+ stranger walking past will be evaluated for the `active: all` base requirement and can prevent the video from unlocking. If this happens, tag the device as "Guest" to clear the noise, or use "⛔ Ignore This Strap" (formerly "Remove User") to suppress it until the next reading.
+- **"Type: unknown" is a different concept.** `FitnessUsers.jsx:38` and `FitnessSidebar.scss:838` reference an `unknown` class — that's for device payloads of an *unrecognized sensor type* (not heart_rate, not cadence, not power), styled with a gray `📡` icon. It is NOT the same as "HR device with unknown owner." The latter is untagged placeholder, the former is `📡`.
+- **untagged placeholder cards count toward governance.** An ANT+ stranger walking past will be evaluated for the `active: all` base requirement and can prevent the video from unlocking. If this happens, tag the device as "Guest" to clear the noise, or use "⛔ Ignore This Strap" (formerly "Remove User") to suppress it until the next reading.
 - **`device_colors` works on un-mapped devices.** You don't need a `devices.heart_rate` entry to set a color — Tier 2 (color-only) is a valid config state and is used intentionally for visitor slots.
-- **The Pikachu image is shared with non-fitness apps.** `user.jpg` is the general household fallback avatar — replacing it affects every place a user avatar can fall through to the default (Gratitude, governance overlays, etc.).
-- **BLE silence is real silence.** If you expect a registered user's Apple Watch to show up and it doesn't, the failure mode is "no card at all," not "Pikachu card." Check the fitness extension logs (`_extensions/fitness/src/ble.mjs` output) for `BLE HR device ... found but ...` warnings.
+- **The untagged placeholder image is shared with non-fitness apps.** `user.jpg` is the general household fallback avatar — replacing it affects every place a user avatar can fall through to the default (Gratitude, governance overlays, etc.).
+- **BLE silence is real silence.** If you expect a registered user's Apple Watch to show up and it doesn't, the failure mode is "no card at all," not "untagged placeholder card." Check the fitness extension logs (`_extensions/fitness/src/ble.mjs` output) for `BLE HR device ... found but ...` warnings.
 - **Apple Watch requires an active Workout** to broadcast HR over BLE. A registered `ble_users` entry won't help if the watch isn't in a workout.
 
 ---
@@ -227,13 +227,13 @@ ble_users:
 
 | Trigger | Effect |
 |---------|--------|
-| First HR reading from unknown ANT+ ID | Pikachu card appears immediately |
+| First HR reading from unknown ANT+ ID | untagged placeholder card appears immediately |
 | User taps card → assigns identity | Card switches to assigned person's avatar/name; data from this point attributes to them |
 | User taps "⛔ Ignore This Strap" | Card disappears until next HR reading from same device |
 | No HR data for `ant_devices.timeout.inactive` (10s in current config) | Card grays out |
 | No HR data for `ant_devices.timeout.remove` (30s in current config) | Card removed |
 | BLE device fails best-effort match | Never shown; logged as warning, data discarded |
-| Session ends | Pikachu identity persists in saved session YAML as `participants["#<deviceId>"]` with whatever stats it accrued |
+| Session ends | untagged placeholder identity persists in saved session YAML as `participants["#<deviceId>"]` with whatever stats it accrued |
 
 ---
 
@@ -241,13 +241,13 @@ ble_users:
 
 | File | Role |
 |------|------|
-| `FitnessUsers.jsx:896-907` | The `profileId || 'user'` fallback that triggers the Pikachu avatar |
+| `FitnessUsers.jsx:896-907` | The `profileId || 'user'` fallback that triggers the untagged placeholder avatar |
 | `FitnessSidebarMenu.jsx:62` | `#<deviceId>` label shown in the menu header for unmapped devices |
 | `DeviceManager.js` | Accepts any device ID; registers tracking entry on first reading |
 | `UserManager.js` | `resolveUserForDevice()` returns null for unmapped IDs; `#ensureUserFromAssignment()` creates synthetic users on guest assignment |
 | `DisplayNameResolver.js` | Priority chain that falls through to device ID when nothing else matches |
 | `_extensions/fitness/src/ble.mjs:~415` | The `if (!userId) return;` that drops unmatched BLE data |
-| `data/household/.../media/img/users/user.jpg` | The Pikachu image itself |
+| `data/household/.../media/img/users/user.jpg` | The untagged placeholder image itself |
 | `data/household/config/fitness.yml` | `devices.heart_rate`, `device_colors.heart_rate`, `ble_users`, `users.friends`, `users.family` |
 
 ---

@@ -248,7 +248,7 @@ The pulse period is driven from the computed think time through a CSS custom
 property (`--pc-think-period`), so a strong opponent visibly broods slower and
 heavier than a weak one — the latency and the animation say the same thing.
 
-Rosters that ship artwork (the Pokémon override) have no cells to animate and get
+Rosters that ship artwork (the franchise theme override) have no cells to animate and get
 a gentle breathing `transform: scale()` on the image instead. Both paths are
 guarded by `prefers-reduced-motion`.
 

@@ -2,7 +2,7 @@
 import { KeyboardAdapter } from './adapters/KeyboardAdapter.js';
 import { NumpadAdapter } from './adapters/NumpadAdapter.js';
 import { RemoteAdapter } from './adapters/RemoteAdapter.js';
-import { GamepadAdapter } from './adapters/GamepadAdapter.js';
+import { acquireGamepadInputHost } from './adapters/GamepadAdapter.js';
 import { TouchAdapter } from './adapters/TouchAdapter.js';
 
 export function createInputManager(actionBus, inputConfig) {
@@ -13,6 +13,7 @@ export function createInputManager(actionBus, inputConfig) {
   const type = inputConfig?.type;
   const keyboard_id = inputConfig?.keyboard_id;
   let adapter;
+  let gamepadLease = null;
 
   switch (type) {
     case 'numpad':
@@ -22,7 +23,8 @@ export function createInputManager(actionBus, inputConfig) {
       adapter = new RemoteAdapter(actionBus, { keyboardId: keyboard_id });
       break;
     case 'gamepad':
-      adapter = new GamepadAdapter(actionBus, { gamepadIndex: inputConfig.gamepad_index ?? null });
+      gamepadLease = acquireGamepadInputHost(actionBus, { gamepadIndex: inputConfig.gamepad_index ?? null });
+      adapter = gamepadLease.adapter;
       break;
     case 'touch':
       adapter = new TouchAdapter();
@@ -33,24 +35,22 @@ export function createInputManager(actionBus, inputConfig) {
       break;
   }
 
-  const attachResult = adapter.attach();
+  const attachResult = type === 'gamepad' ? undefined : adapter.attach();
   const ready = attachResult instanceof Promise ? attachResult : Promise.resolve();
 
   // Always attach a GamepadAdapter alongside the primary adapter.
   // It only polls when a gamepad is connected, so there's no overhead.
   // This ensures face/shoulder buttons work even without explicit gamepad config.
-  let gamepadAdapter = null;
   if (type !== 'gamepad') {
-    gamepadAdapter = new GamepadAdapter(actionBus, { gamepadIndex: inputConfig?.gamepad_index ?? null });
-    gamepadAdapter.attach();
+    gamepadLease = acquireGamepadInputHost(actionBus, { gamepadIndex: inputConfig?.gamepad_index ?? null });
   }
 
   return {
     adapter,
     ready,
     destroy() {
-      adapter.destroy();
-      gamepadAdapter?.destroy();
+      if (type !== 'gamepad') adapter.destroy();
+      gamepadLease?.release();
     },
   };
 }

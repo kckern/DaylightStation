@@ -19,7 +19,7 @@ The configured roster includes the **grandparents — "Grannie" (`grannie`) and 
 | 2 | Explicit guest assignment destroyed by cycle-game session reset | Confirmed bug | High | Persist ledger across reset |
 | 3 | `anonymousHrFloor` is hardcoded — never wired to config | Confirmed | High | Wire to fitness config |
 | 4 | Fullscreen vitals overlay abandons the HR zone for any unmapped device (no zone, not even default) | Confirmed bug | High | Don't early-return in `resolveUserZone` |
-| 5 | Fullscreen overlay shows a default ("Pikachu") avatar for unmapped device | Confirmed (symptom of #2) | High | Fixed by #2; cosmetic otherwise |
+| 5 | Fullscreen overlay shows a default ("untagged placeholder") avatar for unmapped device | Confirmed (symptom of #2) | High | Fixed by #2; cosmetic otherwise |
 | 6 | Roster and fullscreen overlay disagree on how to treat unregistered devices | Confirmed inconsistency | High | Product decision (consume roster vs. raw) |
 | 7 | Debug-level log storm: 460 drops in 18s + 10,297 `auto_assign_skip` | Confirmed | High | Revert app log level; sample the drop log |
 
@@ -154,7 +154,7 @@ Isolated, low-risk, and restores a real HR-derived zone ring for any broadcastin
 
 **Confidence: High (symptom of Issue 2).**
 
-`getProfileSlug(null)` returns `'user'` (`FullscreenVitalsOverlay.jsx:81-92`), so `avatarSrc = /static/img/users/user` — the default Pikachu placeholder. This is arguably "correct" for a genuinely anonymous device, but it's the visible tell that the user was never resolved. Its real cause is Issue 2 (the lost assignment): Grannie *should* have resolved to her profile avatar. Fixing Issue 2 removes the default-avatar symptom; fixing Issue 4 removes the blank-zone symptom independent of identity.
+`getProfileSlug(null)` returns `'user'` (`FullscreenVitalsOverlay.jsx:81-92`), so `avatarSrc = /static/img/users/user` — the default untagged placeholder placeholder. This is arguably "correct" for a genuinely anonymous device, but it's the visible tell that the user was never resolved. Its real cause is Issue 2 (the lost assignment): Grannie *should* have resolved to her profile avatar. Fixing Issue 2 removes the default-avatar symptom; fixing Issue 4 removes the blank-zone symptom independent of identity.
 
 ---
 

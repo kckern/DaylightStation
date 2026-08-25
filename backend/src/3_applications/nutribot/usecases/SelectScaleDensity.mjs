@@ -3,6 +3,7 @@
 // calories = round(netGrams × kcal_per_g). Then show Accept/Revise/Discard.
 
 import { densityForLevel, buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 
 export class SelectScaleDensity {
   #messagingGateway; #foodLogStore; #conversationStateStore; #scaleConfig; #logger; #encodeCallback;
@@ -27,11 +28,11 @@ export class SelectScaleDensity {
     const messaging = this.#getMessaging(responseContext, conversationId);
 
     const lvl = densityForLevel(this.#scaleConfig, level);
-    if (!lvl) return { success: false, error: 'unknown level' };
+    if (!lvl) throw scaleError('unknown level', 'UNKNOWN_LEVEL', { level });
 
     const nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
-    if (!nutriLog || !nutriLog.items?.length) return { success: false, error: 'log not found' };
-    if (nutriLog.status !== 'pending') return { success: false, error: 'already processed' };
+    if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
+    if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
     const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
     const grams = Math.round(Number(item0.grams));
@@ -58,6 +59,10 @@ export class SelectScaleDensity {
     this.#logger.info?.('selectDensity.done', { logUuid, grams, level: lvl.level, calories });
     return { success: true, calories };
   }
+}
+
+function scaleError(message, reason, details) {
+  return new ApplicationError(message, { code: `NUTRIBOT_SCALE_${reason}`, ...details });
 }
 
 export default SelectScaleDensity;

@@ -13,7 +13,7 @@
 
 ## What this is
 
-A governance-gated game-console emulator (EmulatorJS / gambatte GB core) for the Fitness app: you must keep exercising to keep playing. Controlled by a Bluetooth gamepad (native Gamepad API) or keyboard. Plus a config-driven **memory-watch** system that detects in-game states (e.g. "in a Pokémon battle") from console RAM and fires actions (governance changes, music/chimes, animations, Home Assistant scenes). Decoupled `<EmulatorConsole>` so it can be hosted outside FitnessApp.
+A governance-gated game-console emulator (EmulatorJS / gambatte GB core) for the Fitness app: you must keep exercising to keep playing. Controlled by a Bluetooth gamepad (native Gamepad API) or keyboard. Plus a config-driven **memory-watch** system that detects in-game states (e.g. "in a franchise theme battle") from console RAM and fires actions (governance changes, music/chimes, animations, Home Assistant scenes). Decoupled `<EmulatorConsole>` so it can be hosted outside FitnessApp.
 
 ---
 
@@ -24,7 +24,7 @@ A governance-gated game-console emulator (EmulatorJS / gambatte GB core) for the
   - `GET /rom/:system/:gameId`, `GET /art/:system/:gameId/:kind(cover|bezel)`
   - `GET|PUT /save/:system/:gameId?user=`, `GET|PUT /state/:system/:gameId/:slot?user=`
   - `GET /engine/*` — serves the vendored EmulatorJS bundle (EJS_pathtodata target), typed by extension
-- **Seed media** (on the Dropbox media mount → syncs to prod): `media/emulation/gb/` (Pokémon Red ROM/save/cover/bezel + `gameboy.yml` manifest with the semantic state map), `media/emulation/_engine/` (vendored ~1.7 MB GB EmulatorJS bundle), `media/emulation/input.yml` (keyboard + controllers).
+- **Seed media** (on the Dropbox media mount → syncs to prod): `media/emulation/gb/` (franchise theme Red ROM/save/cover/bezel + `gameboy.yml` manifest with the semantic state map), `media/emulation/_engine/` (vendored ~1.7 MB GB EmulatorJS bundle), `media/emulation/input.yml` (keyboard + controllers).
 
 ## What is BUILT but NOT WIRED (no UI entry point yet)
 
@@ -59,7 +59,7 @@ All under `frontend/src/modules/Emulator/` (host-agnostic — zero FitnessContex
 In rough order:
 
 1. **Wire input → controls in EmulatorConsole:** fetch `/library`, read `input.keyboard`, call `buildEjsControls()`, pass `controls` into `loadEmulatorJS`/`EmulatorSession`/`EmulatorEngine.boot`. Wire `AudioFx` into the session (create it after boot from `engine`'s AudioContext tap; add an `audio_fx` binding action that calls `fx.apply()`).
-2. **Live standalone boot (decoupling proof):** render `<EmulatorConsole>` with `createOpenGate()` on a dev route; boot Pokémon Red headed; verify governance overlay, audio, and the `$D057` battle hook firing. (Harness `tests/_scratch/emulator-spike/` already proves the raw mechanics.)
+2. **Live standalone boot (decoupling proof):** render `<EmulatorConsole>` with `createOpenGate()` on a dev route; boot franchise theme Red headed; verify governance overlay, audio, and the `$D057` battle hook firing. (Harness `tests/_scratch/emulator-spike/` already proves the raw mechanics.)
 3. **Fitness host binding — `EmulatorGameWidget`** (`frontend/src/modules/Fitness/widgets/EmulatorGame/`): build the `governanceGate` from `FitnessContext` (`gate` ← `governanceState.phase`; `credit` ← `getUserVitals` zone accumulator); `identity` from `IdentityProvider`; `resolveMediaUrl` = `DaylightMediaPath`; action handlers (`haScene` → HA adapter, `governance` → live gate update, `toast` → fitness toast); subscribe the `bt_inventory` WS topic in `FitnessContext` and pass `btInventory` down to `ControllerStatus`. Register `fitness:emulator` in `frontend/src/modules/Fitness/index.js`.
 4. **Library browser** (`EmulatorLibrary.jsx`) + the **gamepad-capture seam**: while a game runs, set `window.__emulatorCapturingGamepad = true` and add a guard at the top of `GamepadAdapter._pollGamepad()` (`if (window.__emulatorCapturingGamepad) { this._invalidateAllSeeds(); this._lastPollAt = now; return; }`) so the menu adapter doesn't fight EmulatorJS input. Mount `ControllerStatus` in the library/a debug panel.
 5. **Dot-matrix shader + JSX bezel** (Phase 7): EmulatorJS has NO LCD shader built-in (only 6 CRT/scale) and NO bezel — both are ours. Add a custom GLSL dot-matrix shader to the self-hosted `_engine/` (data/src/shaders.js is editable) or a WebGL pass; render `bezel.png` as a JSX chrome layer. Tune to match the RetroArch `gameboy-color-dot-matrix` intent recorded in `gameboy.yml`'s `retroarch_reference`.

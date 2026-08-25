@@ -4,7 +4,7 @@
 
 **Goal:** Implement Phase 1 of the guest-mode redesign — replace the hardcoded 60-second grace window with a configurable continuous-usage threshold (W1), fix generic "Guest" tags so simultaneous Guests on different devices stay distinct (W2), and make INACTIVE-device exclusion from governance evaluation explicit (W3).
 
-**Architecture:** All three work items are service-layer or local UI-state changes. No schema migration. W1 introduces one config field (`governance.usage_threshold_seconds`, default 300) plumbed through the existing `FitnessConfigService` chain. W2 is a 3-line fix to `FitnessSidebarMenu.handleAssignGuest`. W3 is a verify-and-make-explicit filter at the governance boundary. Late-tag Pikachu deduplication (Decision §5) falls out automatically from W1's session-end backfill pass — no separate work item needed.
+**Architecture:** All three work items are service-layer or local UI-state changes. No schema migration. W1 introduces one config field (`governance.usage_threshold_seconds`, default 300) plumbed through the existing `FitnessConfigService` chain. W2 is a 3-line fix to `FitnessSidebarMenu.handleAssignGuest`. W3 is a verify-and-make-explicit filter at the governance boundary. Late-tag untagged placeholder deduplication (Decision §5) falls out automatically from W1's session-end backfill pass — no separate work item needed.
 
 **Tech Stack:** React 18 frontend, Node.js backend, fitness.yml config loaded via `FitnessConfigService.mjs`, vitest for colocated frontend tests (`*.test.js`), vitest for centralized backend tests (`tests/unit/fitness/*.test.mjs`), Playwright for live flow tests (not used in this plan).
 
@@ -580,14 +580,14 @@ governance.usage_threshold_seconds (fitness.yml, default 300).
 
 Plumbed from FitnessConfigService → FitnessContext → GuestAssignmentService
 constructor. The next subphase (W1.B) adds the session-end backfill pass
-that makes late-tagged Pikachus auto-merge using this same threshold.
+that makes late-tagged untagged placeholders auto-merge using this same threshold.
 
 Per audit Decision §7 / W1 spec."
 ```
 
 ### W1.B — Session-end backfill pass
 
-#### Task 12: Test — late-tagged Pikachu merges at session save (OI-1 backward backfill)
+#### Task 12: Test — late-tagged untagged placeholder merges at session save (OI-1 backward backfill)
 
 **Files:**
 - Test: `frontend/src/hooks/fitness/PersistenceManager.lateTagMerge.test.js` (create)
@@ -599,7 +599,7 @@ Per audit Decision §7 / W1 spec."
 import { describe, it, expect, beforeEach } from 'vitest';
 import { FitnessSession } from './FitnessSession.js';
 
-describe('PersistenceManager — late-tag Pikachu merge (W1.B / OI-1)', () => {
+describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / OI-1)', () => {
   let session;
   beforeEach(() => {
     session = new FitnessSession();
@@ -612,16 +612,16 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / OI-1)', () => {
     });
   });
 
-  it('merges a 10-min Pikachu segment into a 5-min tagged-Friend C segment when Friend C is tagged late', () => {
+  it('merges a 10-min untagged placeholder segment into a 5-min tagged-Friend C segment when Friend C is tagged late', () => {
     const t0 = Date.now();
-    // 10 min of Pikachu HR data
+    // 10 min of untagged placeholder HR data
     for (let i = 0; i < 120; i++) {  // 120 readings at 5s intervals = 10 min
       session.ingestData({
         type: 'ant', profile: 'HR', deviceId: '99999',
         data: { ComputedHeartRate: 130 }, timestamp: t0 + i * 5000
       });
     }
-    // Late tag: assign Friend C at t0 + 10min (well past 5-min threshold for the Pikachu segment)
+    // Late tag: assign Friend C at t0 + 10min (well past 5-min threshold for the untagged placeholder segment)
     session.assignGuestToDevice('99999', {
       name: 'Friend C', profileId: 'friend-c', candidateId: 'friend-c', source: 'Friend',
       baseUserName: null
@@ -637,9 +637,9 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / OI-1)', () => {
     const summary = session.summary;
     const participantIds = (summary.participants || []).map(p => p.id);
 
-    // Pikachu segment (10 min) is the final-without-next case → backfills BACKWARD into Friend C per OI-1.
-    // Wait: Pikachu is FIRST, Friend C is SECOND. So Pikachu segment ends when Friend C tagged.
-    // Pikachu duration was 10 min (>= 5 min threshold), so it SHOULD be honored — but Decision §5
+    // untagged placeholder segment (10 min) is the final-without-next case → backfills BACKWARD into Friend C per OI-1.
+    // Wait: untagged placeholder is FIRST, Friend C is SECOND. So untagged placeholder segment ends when Friend C tagged.
+    // untagged placeholder duration was 10 min (>= 5 min threshold), so it SHOULD be honored — but Decision §5
     // says late tagging means "I'm telling you now who this was" → merge.
     // Per spec: late-tag merge IS the special case that forces forward absorption regardless of duration.
     // → Saved YAML has ONLY Friend C, with full 15 min of data.
@@ -653,7 +653,7 @@ describe('PersistenceManager — late-tag Pikachu merge (W1.B / OI-1)', () => {
 **Step 2: Run to verify FAIL**
 
 Run: `npx vitest run frontend/src/hooks/fitness/PersistenceManager.lateTagMerge.test.js`
-Expected: FAIL — currently produces both `#99999` Pikachu and `friend-c` in summary.
+Expected: FAIL — currently produces both `#99999` untagged placeholder and `friend-c` in summary.
 
 #### Task 13: Implement session-end backfill in PersistenceManager
 
@@ -828,7 +828,7 @@ the prior honored segment if the short segment is the final one (OI-1).
 Detects cycling/turn-taking (3+ consecutive sub-T segments alternating
 between 2+ occupants) and honors all of them (OI-2 — 'shared device' case).
 
-Late-tagged Pikachu merge falls out automatically: a Pikachu segment
+Late-tagged untagged placeholder merge falls out automatically: a untagged placeholder segment
 followed by a tagged segment is treated as a short-pre-tag absorb regardless
 of nominal duration (per Decision §5).
 
@@ -1006,7 +1006,7 @@ After all tasks complete, verify the following before declaring Phase 1 done:
 
 ## Out of Scope (Deferred to Phase 2/3)
 
-- W4 (HR device color visibility — Pikachu disambiguation)
+- W4 (HR device color visibility — untagged placeholder disambiguation)
 - W5 (UX state model fixes — Original-fallback, error feedback, etc.)
 - W6 (Pre-session participant lobby)
 - W7 (In-app config writeback)

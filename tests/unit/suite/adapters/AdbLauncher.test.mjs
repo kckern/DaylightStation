@@ -5,7 +5,7 @@ import { ValidationError } from '#domains/core/errors/index.mjs';
 
 describe('AdbLauncher', () => {
   let launcher;
-  let mockDeviceService;
+  let mockConfigService;
   let mockAdb;
 
   beforeEach(() => {
@@ -14,13 +14,15 @@ describe('AdbLauncher', () => {
       amStart: jest.fn().mockResolvedValue({ ok: true, output: 'Starting: Intent' })
     };
 
-    mockDeviceService = {
-      getDeviceConfig: jest.fn().mockReturnValue({ adb: { host: '10.0.0.11', port: 5555 } }),
-      getAdbAdapter: jest.fn().mockReturnValue(mockAdb)
+    mockConfigService = {
+      getDeviceConfig: jest.fn().mockReturnValue({
+        content_control: { fallback: { provider: 'adb', host: '10.0.0.11', port: 5555 } }
+      })
     };
 
     launcher = new AdbLauncher({
-      deviceService: mockDeviceService,
+      configService: mockConfigService,
+      createAdb: jest.fn().mockReturnValue(mockAdb),
       logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
     });
   });
@@ -31,12 +33,12 @@ describe('AdbLauncher', () => {
     });
 
     it('returns false when device has no adb config', async () => {
-      mockDeviceService.getDeviceConfig.mockReturnValue({});
+      mockConfigService.getDeviceConfig.mockReturnValue({});
       expect(await launcher.canLaunch('phone')).toBe(false);
     });
 
     it('returns false when device not found', async () => {
-      mockDeviceService.getDeviceConfig.mockReturnValue(null);
+      mockConfigService.getDeviceConfig.mockReturnValue(null);
       expect(await launcher.canLaunch('unknown')).toBe(false);
     });
   });
@@ -56,8 +58,8 @@ describe('AdbLauncher', () => {
       expect(mockAdb.connect).toHaveBeenCalled();
       expect(mockAdb.amStart).toHaveBeenCalledWith([
         'start', '-n', intent.target,
-        '--es', 'ROM', intent.params.ROM,
-        '--es', 'LIBRETRO', intent.params.LIBRETRO
+        '--es', 'ROM', `'${intent.params.ROM}'`,
+        '--es', 'LIBRETRO', `'${intent.params.LIBRETRO}'`
       ]);
     });
 
@@ -79,7 +81,7 @@ describe('AdbLauncher', () => {
 
       await launcher.launch('shield-tv', quoteIntent);
       expect(mockAdb.amStart).toHaveBeenCalledWith(
-        expect.arrayContaining(["--es", "ROM", "/path/to/Kirby's Adventure.nes"])
+        expect.arrayContaining(["--es", "ROM", "'/path/to/Kirby'\\''s Adventure.nes'"])
       );
     });
   });

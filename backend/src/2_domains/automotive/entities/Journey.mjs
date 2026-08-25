@@ -123,22 +123,6 @@ export class Journey {
    */
   get clockRecoverable() { return this.startedAt instanceof Date; }
 
-  toJSON() {
-    return {
-      id: this.#id,
-      classification: this.#classification,
-      clock_recoverable: this.clockRecoverable,
-      started_at: this.startedAt ? this.startedAt.toISOString() : null,
-      ended_at: this.endedAt ? this.endedAt.toISOString() : null,
-      elapsed_s: this.elapsedS,
-      driving_s: this.drivingS,
-      distance_km: this.distanceKm,
-      max_speed_kph: this.maxSpeedKph,
-      has_ecu: this.hasEcu,
-      leg_count: this.#legs.length,
-      stop_count: this.#stops.length,
-    };
-  }
 }
 
 const round = (n, places) => Number(n.toFixed(places));

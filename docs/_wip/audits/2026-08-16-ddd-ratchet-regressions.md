@@ -1,7 +1,7 @@
 # Two DDD ratchets went red, and it is real debt
 
 **Date:** 2026-08-16
-**Status:** diagnosed, not fixed. Owner needed.
+**Status:** resolved 2026-08-24.
 **Gate:** `npm run audit:layers`
 
 ```
@@ -104,6 +104,20 @@ does the rule need to distinguish a refusal from an empty result?
 1. **Automotive `toJSON`** — contained, planned, four worked examples. Round-trip test first.
 2. **The three stray `toJSON`** — one file each.
 3. **Nutribot** — only after deciding the question above. Not a mechanical sweep.
+
+## Resolution (2026-08-24)
+
+- Automotive serialization moved to `YamlVehicleRecordDatastore`,
+  `YamlPlaceDatastore`, the automotive router presenters, and the journey use
+  case. All seven automotive domain `toJSON()` definitions were removed while
+  preserving the existing YAML and response shapes.
+- Nutribot scale guard clauses now throw coded `ApplicationError`s. The input
+  adapter translates expected refusals back to its transport result, and the
+  hardware bridge treats those same codes as a safe no-commit. Report
+  “nothing to do” outcomes are explicitly successful skips rather than false
+  failures.
+- `npm run audit:layers` is green. The ratchets were tightened to
+  `domains-tojson: 67` and `apps-success-false: 47`.
 
 ## Also fixed while diagnosing this
 

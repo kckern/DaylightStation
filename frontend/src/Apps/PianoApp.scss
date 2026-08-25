@@ -2877,7 +2877,7 @@
     // That replaces an animated drop-shadow halo, which said the same thing far
     // more expensively. Filters animate on the PAINT path, never the compositor,
     // so a breathing halo re-rasterised a blur every single frame — the same
-    // defect that pinned Scale Stadium's scale drills to a flat 37fps on the
+    // defect that pinned the scale-drill surface to a flat 37fps on the
     // kiosk tablet with zero JS on the main thread. Stroke-width is an ordinary
     // paint over a glyph-sized region: no convolution, no expanded filter box.
     path, rect, ellipse, text {

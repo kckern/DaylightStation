@@ -19,7 +19,7 @@ TI-OS.
 | `07-math-quiz-result-qr` | Direct answer keys, local result queue, and result QR |
 | `08-science-notes-scroll` | A second subject's reading flow and dense terminology |
 | `09-history-quiz-result-qr` | Subject-neutral quiz behavior with non-math content |
-| `10-pokemon-quiz-result-qr` | One-module auto-skip and six-question quiz through QR receipt |
+| `10-creature-quiz-result-qr` | One-module auto-skip and six-question quiz through QR receipt |
 
 The currently refreshed release cases are `01`, `03`, `04`, `05`, `07`, `09`,
 and `10` for `caacecbbb8b6`. Case `07` deliberately ends with `2nd` + EXIT so the

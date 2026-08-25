@@ -84,7 +84,7 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
   }
 
   async saveServiceRecord(vehicleId, record) {
-    return this.#upsert(vehicleId, 'service', record);
+    return this.#upsert(vehicleId, 'service', record, dehydrateServiceRecord);
   }
 
   async deleteServiceRecord(vehicleId, recordId) {
@@ -105,7 +105,7 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
   }
 
   async saveFuelLog(vehicleId, log) {
-    return this.#upsert(vehicleId, 'fuel', log);
+    return this.#upsert(vehicleId, 'fuel', log, dehydrateFuelLog);
   }
 
   async deleteFuelLog(vehicleId, logId) {
@@ -125,7 +125,7 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
   }
 
   async saveDocument(vehicleId, document) {
-    return this.#upsert(vehicleId, 'documents', document);
+    return this.#upsert(vehicleId, 'documents', document, dehydrateDocument);
   }
 
   // ---- internals -----------------------------------------------------------
@@ -162,11 +162,11 @@ export class YamlVehicleRecordDatastore extends IVehicleRecordRepository {
   }
 
   /** Insert or replace by id, keeping the file sorted newest-first by date. */
-  #upsert(vehicleId, name, entity) {
+  #upsert(vehicleId, name, entity, dehydrate) {
     this.#ensureVehicleDir(vehicleId);
     const file = this.#file(vehicleId, name);
     const rows = loadYamlSafe(file) || [];
-    const next = entity.toJSON();
+    const next = dehydrate(entity);
     const index = rows.findIndex((row) => row?.id === next.id);
     if (index === -1) rows.push(next); else rows[index] = next;
     rows.sort(byDateDescending);
@@ -196,3 +196,44 @@ function byDateDescending(a, b) {
 
 const numberOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 const sanitize = (s) => String(s).replace(/[^a-zA-Z0-9_-]/g, '_');
+
+function dehydrateServiceRecord(record) {
+  return {
+    id: record.id,
+    date: record.date.toISOString().slice(0, 10),
+    type: record.type,
+    vendor: record.vendor,
+    cost: record.cost,
+    odometer_km: record.odometerKm,
+    interval_months: record.intervalMonths,
+    interval_km: record.intervalKm,
+    notes: record.notes,
+    attachments: record.attachments,
+  };
+}
+
+function dehydrateFuelLog(log) {
+  return {
+    id: log.id,
+    date: log.date.toISOString().slice(0, 10),
+    odometer_km: log.odometerKm,
+    volume_l: log.volumeL,
+    price_total: log.priceTotal,
+    price_per_litre: log.pricePerLitre,
+    place: log.placeId,
+    partial: log.partial,
+    notes: log.notes,
+  };
+}
+
+function dehydrateDocument(document) {
+  return {
+    id: document.id,
+    kind: document.kind,
+    label: document.label,
+    file: document.file,
+    issued: document.issued?.toISOString().slice(0, 10) ?? null,
+    expires: document.expires?.toISOString().slice(0, 10) ?? null,
+    notes: document.notes,
+  };
+}

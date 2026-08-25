@@ -810,10 +810,10 @@ export class PersistenceManager {
   /**
    * Encode all series for persistence.
    * @param {Object} series
-   * @param {number} [tickCount]
+   * @param {number} [_tickCount]
    * @returns {{ encodedSeries: Object }}
    */
-  encodeSeries(series = {}, tickCount = null) {
+  encodeSeries(series = {}, _tickCount = null) {
     const encodedSeries = {};
     Object.entries(series).forEach(([key, arr]) => {
       if (!Array.isArray(arr)) {
@@ -997,7 +997,7 @@ export class PersistenceManager {
     // W1.B — session-end backfill pass.
     // Walks per-device segment history (sessionData.entities) and resolves
     // sub-threshold transitions the in-session GuestAssignmentService couldn't
-    // catch: late-tag Pikachu merges (Decision §5), final-segment backward
+    // catch: late-tag untagged placeholder merges (Decision §5), final-segment backward
     // absorption (OI-1), forward absorption (OI-3), and cycling detection
     // (OI-2). Returns a list of (from→to) transfers that we apply to the
     // timeline series and a set of occupants to drop from the participant list.
@@ -1212,7 +1212,7 @@ export class PersistenceManager {
         }
       })
       .then(() => this._persistApi('api/v1/fitness/save_session', { sessionData: persistSessionData }, 'POST'))
-      .then(resp => {
+      .then(_resp => {
         this.markSaveSucceeded(sessionData.sessionId);
         this._lastSuccessfulSaveAt = Date.now();
         // DEBUG: Log success (throttled)
@@ -1242,7 +1242,7 @@ export class PersistenceManager {
    * applies the resulting timeline-series transfers IN PLACE on
    * `sessionData.timeline.series`. This is the save-time counterpart to the
    * in-session GuestAssignmentService flow — it catches transitions the
-   * in-session pass couldn't (late-tag Pikachu merges, OI-1 final-segment
+   * in-session pass couldn't (late-tag untagged placeholder merges, OI-1 final-segment
    * backward absorption, OI-2 cycling, OI-3 forward absorption).
    *
    * The algorithm already skips segments whose status === 'transferred' (those

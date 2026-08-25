@@ -11,7 +11,7 @@ const consoles = [
   { system: null, label: null, placeholder: true },
 ];
 const games = [
-  { id: 'pokemon-red', system: 'gb', title: 'Pokémon Red', coverUrl: '/cover/red', saveMode: 'battery' },
+  { id: 'example-quest', system: 'gb', title: 'Example Quest', coverUrl: '/cover/red', saveMode: 'battery' },
   { id: 'mario-land', system: 'gb', title: 'Super Mario Land', coverUrl: '/cover/mario', saveMode: 'state' },
   { id: 'kart', system: 'snes', title: 'Mario Kart', coverUrl: '/cover/kart', saveMode: 'none' },
 ];
@@ -38,7 +38,7 @@ describe('GameCover', () => {
     const img = container.querySelector('img.emu-cover__img');
     expect(img.getAttribute('src')).toBe('/cover/red');
     fireEvent.error(img);
-    expect(container.querySelector('.emu-cover__fallback').textContent).toBe('Pokémon Red');
+    expect(container.querySelector('.emu-cover__fallback').textContent).toBe('Example Quest');
     // a game with no coverUrl renders the fallback immediately
     rerender(<GameCover game={{ id: 'x', title: 'No Cover' }} onActivate={() => {}} />);
     expect(container.querySelector('.emu-cover__fallback').textContent).toBe('No Cover');
@@ -57,7 +57,7 @@ describe('ArcadeShell', () => {
     const onSelectGame = vi.fn();
     render(<ArcadeShell consoles={consoles} games={games} onSelectGame={onSelectGame} />);
     fireEvent.keyDown(window, { key: 'Enter' });
-    expect(onSelectGame).toHaveBeenCalledWith(expect.objectContaining({ id: 'pokemon-red' }));
+    expect(onSelectGame).toHaveBeenCalledWith(expect.objectContaining({ id: 'example-quest' }));
   });
 
   it('right intent moves focus before launching', () => {

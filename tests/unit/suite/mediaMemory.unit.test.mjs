@@ -1,26 +1,7 @@
-import { describe, it, expect, beforeAll } from '@jest/globals';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { describe, it, expect } from '@jest/globals';
+import * as mediaMemory from '#apps/content/services/MediaMemoryService.mjs';
 
 describe('mediaMemory helpers', () => {
-  let mediaMemory;
-
-  beforeAll(async () => {
-    // Set test data path before importing
-    const testDataPath = path.join(__dirname, '../_fixtures/data');
-    process.env = {
-      ...process.env,
-      path: {
-        ...(process.env.path || {}),
-        data: testDataPath
-      }
-    };
-
-    mediaMemory = await import('#backend/_legacy/lib/mediaMemory.mjs');
-  });
-
   describe('parseLibraryFilename', () => {
     it('parses ID and name from filename', () => {
       const result = mediaMemory.parseLibraryFilename('14_fitness.yml');

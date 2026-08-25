@@ -32,8 +32,8 @@ const RESERVED_KEY_RE = /^(?!device:|vib:|bike:|global:)(.+):hr$/;
 export const DEFAULT_CFG = { maxCoins: 1, maxActiveZoneSeconds: 5, maxHrSamples: 3 };
 
 /**
- * Conservative detector for synthetic / "Pikachu" occupant IDs (same rule as
- * the frontend's `isPikachuId` + `guest_` extension, combined into one
+ * Conservative detector for synthetic / "untagged placeholder" occupant IDs (same rule as
+ * the frontend's `isSyntheticOccupantId` + `guest_` extension, combined into one
  * predicate here since the backend healer only needs the "is this a known
  * configured user" question).
  *

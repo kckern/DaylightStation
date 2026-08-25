@@ -216,14 +216,14 @@ describe('school-docs CLI', () => {
 
     it('honours an explicit --source-root, including a nested taxonomy path', async () => withTmpDir(async (root) => {
       const sourceRoot = path.join(root, 'sources');
-      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await mkdir(path.join(sourceRoot, 'arts/creature-identification'), { recursive: true });
       await writeFile(
-        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
-        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+        path.join(sourceRoot, 'arts/creature-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/creature-identification/quiz-1', subject: 'arts' })),
       );
 
       const { exitCode, report } = await runSchoolDocs([
-        'validate', 'arts/pokemon-identification/quiz-1.yml', '--source-root', sourceRoot,
+        'validate', 'arts/creature-identification/quiz-1.yml', '--source-root', sourceRoot,
       ]);
       expect(exitCode).toBe(0);
       expect(report.ok).toBe(true);
@@ -231,10 +231,10 @@ describe('school-docs CLI', () => {
 
     it('walks a source directory RECURSIVELY and SKIPS co-resident learning documents', async () => withTmpDir(async (root) => {
       const sourceRoot = path.join(root, 'sources');
-      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await mkdir(path.join(sourceRoot, 'arts/creature-identification'), { recursive: true });
       await writeFile(
-        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
-        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+        path.join(sourceRoot, 'arts/creature-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/creature-identification/quiz-1', subject: 'arts' })),
       );
       // The other shelf-mate: a school.learning-document/v1 that would fail
       // validateAnyDocument outright if this walk did not skip it.
@@ -248,7 +248,7 @@ describe('school-docs CLI', () => {
       const { exitCode, report } = await runSchoolDocs(['validate', sourceRoot, '--source-root', sourceRoot]);
       expect(exitCode).toBe(0);
       expect(report.ok).toBe(true);
-      expect(report.files.map((f) => f.file)).toEqual(['arts/pokemon-identification/quiz-1.yml']);
+      expect(report.files.map((f) => f.file)).toEqual(['arts/creature-identification/quiz-1.yml']);
       expect(report.skipped).toEqual(['starter-math-ten-percent.yml']);
     }));
 
@@ -470,31 +470,31 @@ describe('school-docs CLI', () => {
       const contentRoot = path.join(root, 'print-documents');
       const sourceRoot = path.join(root, 'catalog/documents');
       await mkdir(contentRoot, { recursive: true });
-      await mkdir(path.join(sourceRoot, 'arts/pokemon-identification'), { recursive: true });
+      await mkdir(path.join(sourceRoot, 'arts/creature-identification'), { recursive: true });
       await writeFile(
-        path.join(sourceRoot, 'arts/pokemon-identification/quiz-1.yml'),
-        dump(sourceQuizDoc({ id: 'arts/pokemon-identification/quiz-1', subject: 'arts' })),
+        path.join(sourceRoot, 'arts/creature-identification/quiz-1.yml'),
+        dump(sourceQuizDoc({ id: 'arts/creature-identification/quiz-1', subject: 'arts' })),
       );
 
       const { exitCode, report } = await runSchoolDocs([
-        'publish', 'arts/pokemon-identification/quiz-1.yml',
+        'publish', 'arts/creature-identification/quiz-1.yml',
         '--source-root', sourceRoot, '--content-root', contentRoot,
       ]);
       expect(exitCode).toBe(0);
-      expect(report.id).toBe('arts/pokemon-identification/quiz-1');
+      expect(report.id).toBe('arts/creature-identification/quiz-1');
 
       // Artifacts land under the CONTENT root, mirroring the id path — the
       // source root stays free of machine-written output.
       const published = await readFile(
-        publishedPath(contentRoot, 'arts/pokemon-identification/quiz-1', report.rev),
+        publishedPath(contentRoot, 'arts/creature-identification/quiz-1', report.rev),
         'utf8',
       );
-      expect(published).toContain('arts/pokemon-identification/quiz-1');
+      expect(published).toContain('arts/creature-identification/quiz-1');
       await expect(readFile(path.join(sourceRoot, 'published'), 'utf8')).rejects.toThrow();
 
       // And a render by the same relative source path resolves too.
       const rendered = await runSchoolDocs([
-        'render', 'arts/pokemon-identification/quiz-1.yml', '--out', path.join(root, 'proof.pdf'),
+        'render', 'arts/creature-identification/quiz-1.yml', '--out', path.join(root, 'proof.pdf'),
         '--source-root', sourceRoot, '--content-root', contentRoot,
       ]);
       expect(rendered.exitCode).toBe(0);

@@ -1,7 +1,7 @@
 # EmulatorJS Spike Findings (2026-06-22)
 
 Headless verification of the self-hosted EmulatorJS path for the Emulator Console.
-Harness: `tests/_scratch/emulator-spike/` (in-process static server + Playwright headless Chromium, probing a real gambatte boot of Pokémon Red).
+Harness: `tests/_scratch/emulator-spike/` (in-process static server + Playwright headless Chromium, probing a real gambatte boot of franchise theme Red).
 
 ## Engine delivery — CONFIRMED working
 
@@ -13,7 +13,7 @@ Harness: `tests/_scratch/emulator-spike/` (in-process static server + Playwright
 
 ## RAM read for memory-watch hooks — NOT available on stock cores
 
-The whole point of the memory-watch framework is reading console RAM (e.g. Pokémon Red battle flag `$D057`). **Stock EmulatorJS cores do not expose it:**
+The whole point of the memory-watch framework is reading console RAM (e.g. franchise theme Red battle flag `$D057`). **Stock EmulatorJS cores do not expose it:**
 
 - `Module._retro_get_memory_data` / `_retro_get_memory_size`: **not exported.** `Module.cwrap('retro_get_memory_data', …)` → "getData is not a function" (symbol absent).
 - `gameManager.functions` cwraps a fixed set (restart, loadState, screenshot, **setCheat**, simulateInput, getCoreOptions, save-files, fast-forward/rewind, …) — **no memory read.**
@@ -49,7 +49,7 @@ that at runtime:
 - **Calibrate during boot/load** (before meaningful gameplay) and `resetCheat()` — the
   signature briefly corrupts the scratch region; harmless pre-game.
 - Use a long/rare signature (≥24 bytes) and assert a single full match for a safe base.
-- **GBC banked WRAM caveat:** `0xC000–0xCFFF` (bank 0) + flat-8KB DMG games (e.g. Pokémon
+- **GBC banked WRAM caveat:** `0xC000–0xCFFF` (bank 0) + flat-8KB DMG games (e.g. franchise theme
   Red, where `0xD000–0xDFFF` maps to offset `0x1000–0x1FFF`) are reliable. GBC games with
   *banked* `0xD000` WRAM need the active bank to disambiguate — a per-game nuance to
   document, not a blocker for the seed.

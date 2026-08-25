@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Make the built-but-unwired EmulatorConsole launchable from the Fitness app menu as a **locked** (fingerprint to open) and **governed** (credit-gated: keep exercising in the required zone to keep playing) module that boots the seeded Pokémon Red.
+**Goal:** Make the built-but-unwired EmulatorConsole launchable from the Fitness app menu as a **locked** (fingerprint to open) and **governed** (credit-gated: keep exercising in the required zone to keep playing) module that boots the seeded Creature Red.
 
 **Architecture:** A thin Fitness binding `EmulatorGameWidget` builds the EmulatorConsole's `governanceGate` (from the game's `governance` config + the active player's live vitals), `controls` (from the library's `input.keyboard` via `buildEjsControls`), `identity`, and `resolveMediaUrl`, and renders `<EmulatorConsole>`. Controls are threaded through `EmulatorEngine.boot`→loader (already supports `EJS_defaultControls`). The fitness menu gains an item + a per-user `locks` entry. A `window.__emulatorCapturingGamepad` flag stops the menu GamepadAdapter from fighting EmulatorJS.
 
@@ -209,7 +209,7 @@ beforeEach(() => {
   api.mockReset();
   api.mockResolvedValue({
     systems: { gb: { core: 'gb' } },
-    games: [{ id: 'pokemon-red', system: 'gb', title: 'Pokémon Red', romUrl: '/rom', chrome: 'gb-bezel', shader: 'dotmatrix',
+    games: [{ id: 'creature-red', system: 'gb', title: 'Creature Red', romUrl: '/rom', chrome: 'gb-bezel', shader: 'dotmatrix',
               governance: { mode: 'credit', required_zone: 'warm', earn_rate: 1.5, max_credit_seconds: 600 } }],
     input: { keyboard: { up: 'ArrowUp', start: 'Enter', a: 'x', b: 'z' } },
   });
@@ -222,7 +222,7 @@ describe('EmulatorGameWidget', () => {
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
     await waitFor(() => expect(screen.getByTestId('console')).toBeTruthy());
     const el = screen.getByTestId('console');
-    expect(el.getAttribute('data-game')).toBe('pokemon-red');
+    expect(el.getAttribute('data-game')).toBe('creature-red');
     expect(el.getAttribute('data-haskbd')).toBe('true');
     expect(el.getAttribute('data-gate')).toBe('credit');
     expect(api).toHaveBeenCalledWith('api/v1/emulator/library');

@@ -72,7 +72,7 @@ presentation:
 ```
 
 **Scope:** per-system, with **per-game override** that deep-merges by `id`
-(mirrors how `governance` already merges). Pokémon Red adds a `badges` overlay
+(mirrors how `governance` already merges). franchise theme Red adds a `badges` overlay
 reading the existing `states.badges` semantic map.
 
 ## Wiring

@@ -61,22 +61,22 @@ describe('listSaveUsers', () => {
 
   it('returns [] when nothing exists', () => {
     const dir = tmpEmu();
-    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual([]);
+    expect(listSaveUsers(dir, 'gb', 'creature-red')).toEqual([]);
   });
 
   it('finds users with a .srm and users with a state dir, sorted + deduped', () => {
     const dir = tmpEmu();
     // battery: {system}/saves/{user}/{gameId}.srm
     fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_5'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_5', 'pokemon-red.srm'), 'x');
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_5', 'creature-red.srm'), 'x');
     fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_3'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_3', 'other-game.srm'), 'x'); // different game
     // state: {system}/states/{user}/{gameId}/{slot}.state
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red', 'auto.state'), 'x');
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red', 'auto.state'), 'x'); // dup of user_5
-    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual(['user_4', 'user_5']);
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_4', 'creature-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_4', 'creature-red', 'auto.state'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_5', 'creature-red'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_5', 'creature-red', 'auto.state'), 'x'); // dup of user_5
+    expect(listSaveUsers(dir, 'gb', 'creature-red')).toEqual(['user_4', 'user_5']);
   });
 
   it('rejects unsafe segments', () => {
@@ -162,10 +162,10 @@ git commit -m "feat(emulator): listSaveUsers — enumerate users with a save for
 Add to `emulator.test.mjs`. First extend `makeApp`'s `deps` with a `listSaveUsers` stub (add this line inside the `deps` object, next to `resolveStatePath`):
 
 ```js
-    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['user_5', 'user_4'] : [])),
+    listSaveUsers: vi.fn((system, gameId) => (gameId === 'creature-red' ? ['user_5', 'user_4'] : [])),
 ```
 
-Then add the describe block below. `resolveGameRules` reads the **normalized** `game.saveMode` field, so the save-enabled case supplies it via a `loadConfig` override — do NOT edit the shared `makeCfg()` (its `pokemon-red` game has no save mode on purpose; the existing "default none" library test depends on that). `request` from `supertest` is already imported at the top of the file — do not re-import.
+Then add the describe block below. `resolveGameRules` reads the **normalized** `game.saveMode` field, so the save-enabled case supplies it via a `loadConfig` override — do NOT edit the shared `makeCfg()` (its `creature-red` game has no save mode on purpose; the existing "default none" library test depends on that). `request` from `supertest` is already imported at the top of the file — do not re-import.
 
 ```js
 describe('GET /saves/:system/:gameId', () => {
@@ -173,7 +173,7 @@ describe('GET /saves/:system/:gameId', () => {
 
   it('returns the saver list for a save-enabled game', async () => {
     const { app } = makeApp({ loadConfig: batteryCfg });
-    const res = await request(app).get('/api/v1/emulator/saves/gb/pokemon-red');
+    const res = await request(app).get('/api/v1/emulator/saves/gb/creature-red');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ users: ['user_5', 'user_4'] });
   });
@@ -1099,8 +1099,8 @@ describe('EmulatorGameWidget save flow', () => {
     });
     identity.registerAdmin.mockResolvedValue({ matched: true, userId: 'dad', authz: { admin: true } });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Creature Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Creature Red'));
     await waitFor(() => expect(identity.registerAdmin).toHaveBeenCalled());
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0'); // fresh + anonymous
@@ -1115,8 +1115,8 @@ describe('EmulatorGameWidget save flow', () => {
       : Promise.resolve({ users: [] }));
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Creature Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Creature Red'));
     await screen.findByTestId('console');
     fireEvent.click(screen.getByTestId('console')); // not a real exit; instead simulate exit via onExit below
     // Re-launch path: exit then relaunch
@@ -1132,8 +1132,8 @@ describe('EmulatorGameWidget save flow', () => {
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Creature Red')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Creature Red'));
     await screen.findByTestId('player-select');
     fireEvent.click(screen.getByTestId('saver-user_5'));
     await waitFor(() => {

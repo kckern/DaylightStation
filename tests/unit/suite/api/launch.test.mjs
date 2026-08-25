@@ -48,11 +48,15 @@ describe('POST /api/v1/launch', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when targetDeviceId missing', async () => {
+  it('delegates a missing targetDeviceId so the service can auto-resolve it', async () => {
     const res = await request(app)
       .post('/api/v1/launch')
       .send({ contentId: 'retroarch:n64/mario-kart-64' });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(mockLaunchService.launch).toHaveBeenCalledWith({
+      contentId: 'retroarch:n64/mario-kart-64',
+      targetDeviceId: undefined
+    });
   });
 });

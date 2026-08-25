@@ -99,7 +99,4 @@ export class GeoFix {
     return other instanceof GeoFix && other.lat === this.#lat && other.lon === this.#lon;
   }
 
-  toJSON() {
-    return { lat: this.#lat, lon: this.#lon };
-  }
 }
