@@ -1461,10 +1461,11 @@ describe('SegmentMap — logging the new decisions', () => {
         .toBeGreaterThanOrEqual(1);
       const last = density[density.length - 1][1];
       // 400px of rule, four segments, the widest name wanting 198px: 202px over
-      // three inactive segments is 67px each, under this rail's 85px name floor
-      // (48px of furniture + the 37px name run), so the rail chips.
+      // three inactive segments is 67px each, under this rail's 87px name floor
+      // (48px of furniture + the 39px name run — re-derived when the corpus's
+      // widest compressed opening moved to 38.3px), so the rail chips.
       expect(last).toMatchObject({
-        density: 'chips', segments: 4, railPx: 400, widestPx: 198, chromePx: 48, nameFloorPx: 85,
+        density: 'chips', segments: 4, railPx: 400, widestPx: 198, chromePx: 48, nameFloorPx: 87,
       });
       expect(last.roomPx).toBe(67);
     });
