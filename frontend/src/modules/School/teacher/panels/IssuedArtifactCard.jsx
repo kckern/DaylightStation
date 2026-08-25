@@ -36,7 +36,6 @@ export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' })
         : availabilityLabel(artifact)}</small>
       <div className="teacher-issued-artifact__actions">
         <a href={url} target="_blank" rel="noreferrer">Open {receipt ? 'receipt' : 'worksheet'}</a>
-        <a href={url} download>Download {receipt ? 'image' : 'PDF'}</a>
       </div>
     </div>
   </article>;
