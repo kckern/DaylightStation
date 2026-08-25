@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyMove, applySequence, createCube, inverseMove, isSolved, scramble } from './engine.mjs';
+import { applyMove, applySequence, createCube, inverseMove, isSolved, normalizeMove, scramble } from './engine.mjs';
 
 test('a turn followed by its inverse restores the cube', () => {
   for (const move of ['U', 'R', 'F', 'D', 'L', 'B', "R'", 'F2']) {
@@ -23,5 +23,13 @@ test('a scramble never repeats or immediately reverses a face', () => {
   for (let index = 1; index < moves.length; index += 1) {
     assert.notEqual(moves[index], moves[index - 1]);
     assert.notEqual(moves[index], opposite[moves[index - 1]]);
+  }
+});
+
+test('wide, slice, and whole-cube notation has legal inverses', () => {
+  for (const move of ['r', 'Rw', 'M', 'E', 'S', 'x', 'y', 'z']) {
+    const normalized = normalizeMove(move);
+    assert.ok(normalized);
+    assert.ok(isSolved(applySequence(createCube(), [normalized, inverseMove(normalized)])), move);
   }
 });

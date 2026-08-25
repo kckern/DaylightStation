@@ -40,6 +40,24 @@ export const schoolApi = {
   rubiksCubeAnswer: ({ userId, courseId, grant, lessonId, answers }) => req(
     `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/answer`, { lessonId, answers }, 'POST', { 'X-School-Cube-Grant': grant },
   ),
+  rubiksCubePhysicalImport: ({ userId, courseId, grant, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/import`, { faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalCoach: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/coach`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalCoachAdvance: ({ userId, courseId, grant }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/coach/advance`, {}, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalVerify: ({ userId, courseId, grant, lessonId, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/verify`, { lessonId, faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePacket: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/packets`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePacketVerify: ({ userId, courseId, grant, packetId, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/packets/${encodeURIComponent(packetId)}/verify`, { faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
   roster: () => req('/roster'),
   // Fail-closed surface resolution (spec §4.2): 404 -> {ok:false}, same as any
   // other unresolved-resource response — the caller never treats a missing

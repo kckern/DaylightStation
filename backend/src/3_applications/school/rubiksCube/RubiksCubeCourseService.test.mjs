@@ -4,13 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { RubiksCubeCourseService } from './RubiksCubeCourseService.mjs';
+import { RubiksPacketPlanner } from './RubiksPacketPlanner.mjs';
 import { inverseMove, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
+import { engineCubeToFacelets } from './physicalCube.mjs';
 
 function subject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cube-course-'));
   const configService = { getUserProfile: (id) => id === 'milo' ? { id } : null, getUserDir: (id) => path.join(root, id) };
-  return { service: new RubiksCubeCourseService({ configService, clock: () => new Date('2026-08-24T12:00:00Z') }), root };
+  const clock = () => new Date('2026-08-24T12:00:00Z'); const recoverySolver = { solve: async () => [] };
+  return { service: new RubiksCubeCourseService({ configService, recoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: recoverySolver, clock }), clock }), root };
 }
+
+const colors = { U: 'white', R: 'red', F: 'green', D: 'yellow', L: 'orange', B: 'blue' };
+const solvedFaces = () => {
+  const facelets = engineCubeToFacelets({ U: Array(9).fill('white'), R: Array(9).fill('red'), F: Array(9).fill('green'), D: Array(9).fill('yellow'), L: Array(9).fill('orange'), B: Array(9).fill('blue') });
+  return Object.fromEntries(['U', 'R', 'F', 'D', 'L', 'B'].map((face, index) => [face, [...facelets.slice(index * 9, index * 9 + 9)].map((role) => colors[role])]));
+};
 
 test('the course starts at its first activity and keeps later work locked', () => {
   const { service } = subject(); const opened = service.open({ userId: 'milo' });
@@ -53,4 +62,27 @@ test('restart replaces a partially-played cube with the authored start state', (
   assert.equal(moved.active.revision, 1);
   assert.equal(restarted.active.revision, 0);
   assert.deepEqual(restarted.active.moves, []);
+});
+
+test('a valid physical cube can be reset and prepared for the current worksheet', async () => {
+  const { service } = subject(); const opened = service.open({ userId: 'milo' });
+  const imported = service.importPhysicalCube({ userId: 'milo', faces: solvedFaces() });
+  assert.equal(imported.ok, true);
+  const coach = await service.beginPhysicalCoach({ userId: 'milo', lessonId: opened.lesson.id });
+  assert.equal(coach.coach.phase, 'setup');
+  const advanced = service.advancePhysicalCoach({ userId: 'milo' });
+  assert.equal(advanced.coach.phase, 'complete');
+  const verified = service.verifyPhysicalCube({ userId: 'milo', lessonId: opened.lesson.id, faces: solvedFaces() });
+  assert.equal(verified.ok, true);
+});
+
+test('a physical cube becomes a frozen, verifiable paper packet', async () => {
+  const { service } = subject(); const opened = service.open({ userId: 'milo' });
+  assert.equal(service.importPhysicalCube({ userId: 'milo', faces: solvedFaces() }).ok, true);
+  const packet = await service.generatePacket({ userId: 'milo', lessonId: opened.lesson.id });
+  assert.equal(packet.packet.goal, 'orientation');
+  assert.equal(packet.packet.steps.length, 2);
+  const checked = service.verifyPacket({ userId: 'milo', packetId: packet.packet.id, faces: solvedFaces() });
+  assert.equal(checked.ok, true);
+  assert.equal(checked.packet.status, 'verified');
 });

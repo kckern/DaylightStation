@@ -294,9 +294,11 @@ import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmen
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
 import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
 import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
+import { KociembaCubeRecoverySolver } from './1_adapters/school/rubiksCube/KociembaCubeRecoverySolver.mjs';
 import { LanguageReelService } from './3_applications/school/LanguageReelService.mjs';
 import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
 import { RubiksCubeCourseService } from './3_applications/school/rubiksCube/RubiksCubeCourseService.mjs';
+import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPacketPlanner.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
@@ -2880,7 +2882,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
   }
   const languageReelService = new LanguageReelService({ configService });
-  const rubiksCubeService = new RubiksCubeCourseService({ configService });
+  const rubiksRecoverySolver = new KociembaCubeRecoverySolver();
+  const rubiksCubeService = new RubiksCubeCourseService({ configService, recoverySolver: rubiksRecoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: rubiksRecoverySolver }) });
   const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
