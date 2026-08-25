@@ -63,6 +63,18 @@ const CODE_PAGE_IDS = {
 const DEFAULT_CODE_PAGE = 'cp858';
 
 /**
+ * Connect timeout. 20s, not the old 5s: on 2026-08-25 the printer refused new
+ * connections for ~11.5s after an abrupt close, and every job queued behind
+ * that window timed out and (before the abort flag) resurrected as blank paper.
+ *
+ * Deliberately NOT derived from payload size — the observed lockout had nothing
+ * to do with how big the job was. This guards CONNECT only; `device.open`'s
+ * callback clears it, so a large job's own transfer and drain time is never
+ * charged against it.
+ */
+export const DEFAULT_CONNECT_TIMEOUT_MS = 20000;
+
+/**
  * NUL bytes fed ahead of `ESC @` on the job following an unclean one, to be
  * eaten by a printer still counting an unfinished raster. Roughly seven
  * 576-dot raster lines' worth — enough for a small shortfall, cheap enough to
@@ -133,7 +145,7 @@ export class ThermalPrinterAdapter {
   constructor(config, options = {}) {
     this.#host = config.host;
     this.#port = config.port || 9100;
-    this.#timeout = config.timeout || 5000;
+    this.#timeout = config.timeout || DEFAULT_CONNECT_TIMEOUT_MS;
     this.#encoding = config.encoding || 'utf8';
     this.#codepage = (config.codepage || DEFAULT_CODE_PAGE).toLowerCase();
     this.#codePageId = CODE_PAGE_IDS[this.#codepage] ?? CODE_PAGE_IDS[DEFAULT_CODE_PAGE];
