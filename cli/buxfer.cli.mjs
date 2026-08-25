@@ -403,7 +403,7 @@ async function cmdDelete() {
 }
 
 async function cmdPayroll() {
-  const raw = dockerRead('data/household/finances/payroll.yml');
+  const raw = dockerRead('data/household/finance/payroll.yml');
   if (!raw) {
     console.error('Error: Cannot read payroll data from container.');
     process.exit(1);
@@ -535,7 +535,7 @@ function printPaycheck(date, check) {
 }
 
 async function cmdBalances() {
-  const raw = dockerRead('data/household/finances/account.balances.yml');
+  const raw = dockerRead('data/household/finance/account.balances.yml');
   if (!raw) {
     console.error('Error: Cannot read account balances from container.');
     process.exit(1);

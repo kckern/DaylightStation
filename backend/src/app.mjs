@@ -3341,6 +3341,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       tokenRegistry: schoolCalc.tokenRegistry ?? null,
       schoolCalcActionResolver: schoolCalc.actionResolver ?? null,
       schoolCalcStudies: schoolCalc.wired ? schoolCalc.studySessions : null,
+      renderCoursePosterFallback,
       logger: schoolLifecycleLogger
     });
   } catch (err) {

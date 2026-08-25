@@ -7,7 +7,7 @@
  * card, and the two ways out (exit, idle timeout).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import SchoolApp from '#frontend/modules/School/SchoolApp.jsx';
 import { REJECT_WORD } from '#frontend/modules/School/selfService/Keypad.jsx';
 
@@ -97,15 +97,36 @@ vi.mock('#frontend/modules/Player/Player.jsx', () => ({
 // So these tests assert that whatever label ARRIVES is what renders — never
 // that a particular sentence is correct. See the pass-through test below.
 const MOVE_CARD = {
+  schema: 'school.self-service-card/v2',
   ok: true,
   learner: 'kid1',
   learnerId: 'kid1',
   subject: 'Mathematics',
   title: 'Fractions 3',
   sentence: null,
+  context: {
+    learner: { id: 'kid1', displayName: 'Alpha', avatar: { kind: 'learner', id: 'kid1' } },
+    taxonomy: {
+      subject: { id: 'math', label: 'Math & Money' },
+      course: { id: 'fractions', title: 'Fractions', artwork: { kind: 'course-poster', courseId: 'fractions' } },
+      module: { id: 'foundations', title: 'Foundations', position: 1 },
+      lesson: { id: 'fractions-3', title: 'Fractions 3' },
+    },
+    trail: [
+      { kind: 'subject', id: 'math', label: 'Math & Money' },
+      { kind: 'course', id: 'fractions', label: 'Fractions' },
+      { kind: 'module', id: 'foundations', label: 'Foundations' },
+      { kind: 'lesson', id: 'fractions-3', label: 'Fractions 3' },
+    ],
+    progress: [
+      { scope: 'course', label: 'Course', completed: 2, total: 6, inProgress: 1 },
+      { scope: 'module', label: 'Unit 1', completed: 3, total: 8 },
+    ],
+  },
+  presentation: { status: 'ready', message: null },
   actions: [
-    { kind: 'print', label: 'Print your sheet' },
-    { kind: 'exit', label: 'Go back' },
+    { kind: 'print', label: 'Print your sheet', role: 'primary', operation: 'print', followUp: 'confirm-print' },
+    { kind: 'exit', label: 'Go back', role: 'secondary', operation: 'exit', followUp: 'close' },
   ],
 };
 
@@ -122,7 +143,10 @@ beforeEach(() => {
   // validated a contract neither side implements.
   actMock.mockReset().mockResolvedValue({
     ok: true, status: 200,
-    data: { outcome: 'done', sentence: 'All set.', sessionId: 'ses_1', effect: { status: 'issued' } },
+    data: {
+      outcome: 'done', sentence: 'All set.', sessionId: 'ses_1',
+      effect: { status: 'issued' }, transition: 'confirm-print',
+    },
   });
   screenConfigMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: {} });
   coursesMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: [] });
@@ -171,12 +195,12 @@ describe('locked panel — which surface renders', () => {
     expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
   });
 
-  it('names no learner on the lock screen', async () => {
+  it('names no learner inside the keypad before a code resolves', async () => {
     renderLocked();
-    await screen.findByTestId('selfservice-keypad');
-    // 'Alpha' is the only roster learner in these fixtures; a lock screen that
-    // named her would tell a child whose codes to guess.
-    expect(screen.queryByText(/alpha/i)).toBeNull();
+    const keypad = await screen.findByTestId('selfservice-keypad');
+    // The read-only household status board may name learners; the claim
+    // surface itself remains anonymous until a valid code identifies one.
+    expect(within(keypad).queryByText(/alpha/i)).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
@@ -201,7 +225,7 @@ describe('locked panel — typing a code', () => {
 
     // Still a live keypad — no lockout, no dead buttons: the next code works.
     await typeCode('481920');
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
   });
 
   it('the refusal turns the slots over into a word and then clears itself', async () => {
@@ -263,10 +287,21 @@ describe('locked panel — typing a code', () => {
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
 
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
-    expect(screen.getByText('Mathematics')).toBeInTheDocument();
+    const card = await screen.findByTestId('selfservice-card');
+    expect(within(card).getByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
+    expect(within(card).getAllByText('Math & Money').length).toBeGreaterThan(0);
+    expect(screen.getByText('Alpha')).toBeInTheDocument();
+    expect(within(card).getByRole('img', { name: 'Alpha' }))
+      .toHaveAttribute('src', '/api/v1/static/img/users/kid1?w=192');
+    expect(within(card).getByRole('img', { name: 'Fractions cover' }))
+      .toHaveAttribute('src', '/api/v1/school/self-service/curriculum/fractions/poster.jpg');
+    expect(screen.getByRole('navigation', { name: /lesson context/i }))
+      .toHaveTextContent('Math & Money›Fractions›Foundations›Fractions 3');
+    expect(screen.getByRole('progressbar', { name: /course: 2 of 6/i })).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: /unit 1: 3 of 8/i })).toBeInTheDocument();
     expect(actionButton('print')).toBeInTheDocument();
     expect(actionButton('exit')).toBeInTheDocument();
+    await waitFor(() => expect(actionButton('print')).toHaveFocus());
     expect(resolveMock).toHaveBeenCalledWith('481920');
     await waitFor(() => expect(selfServiceLog).toHaveBeenCalledWith('code.resolved', expect.anything()));
   });
@@ -290,6 +325,9 @@ describe('locked panel — printing', () => {
     fireEvent.click(await findActionButton('print'));
 
     expect(await screen.findByText(/did it print\?/i)).toBeInTheDocument();
+    expect(screen.getByText('Alpha')).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: /lesson context/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('selfservice-print-ok')).toHaveFocus());
     expect(actMock).toHaveBeenCalledWith({ code: '481920', action: 'print' });
 
     fireEvent.click(screen.getByTestId('selfservice-print-ok'));
@@ -443,7 +481,7 @@ describe('locked panel — idle timeout', () => {
     renderLocked({ idleTimeoutSeconds: 0.25 });
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
 
     expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
     expect(screen.queryByText('Fractions 3')).toBeNull();
@@ -499,7 +537,7 @@ describe('locked panel — the domain owns the wording', () => {
 
     expect(await screen.findByTestId('selfservice-card')).toBeInTheDocument();
     expect(screen.getByText('You already did this today.')).toBeInTheDocument();
-    expect(screen.getByText('Fractions 3')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
     // Emphatically NOT the keypad's refusal path.
     expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
     expect(selfServiceLog).not.toHaveBeenCalledWith('code.rejected', expect.anything());
@@ -536,7 +574,7 @@ describe('locked panel — the domain owns the wording', () => {
 
     expect(await screen.findByText('Something went wrong at school HQ.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again|retry/i }));
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
   });
 });
 
@@ -1002,7 +1040,7 @@ describe('locked panel — an unrecognised refusal reason still offers a retry',
 
     expect(await screen.findByText('School is not running right now.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again|retry/i }));
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
   });
 
   it('a plain `unknown_code` gets no retry — there is nothing to retry', async () => {
@@ -1052,7 +1090,7 @@ describe('locked panel — escape', () => {
     renderLocked();
     await screen.findByTestId('selfservice-keypad');
     await typeCode('481920');
-    await screen.findByText('Fractions 3');
+    await screen.findByRole('heading', { name: 'Fractions 3' });
 
     // portal.yml maps idle escape to `reload` — the kiosk's only refresh
     // affordance, since FKB has no address bar. Consuming the event here
@@ -1087,7 +1125,7 @@ describe('locked panel — degraded backend', () => {
 
     // The retry re-attempts the same code; the keypad was never dead.
     fireEvent.click(retry);
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
     expect(resolveMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1115,7 +1153,7 @@ describe('locked panel — degraded backend', () => {
 
     expect(await screen.findByText(/school computer isn.t answering/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /try again|retry/i }));
-    expect(await screen.findByText('Fractions 3')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Fractions 3' })).toBeInTheDocument();
   });
 
   it('a 500 from /resolve degrades rather than showing "Try again"', async () => {

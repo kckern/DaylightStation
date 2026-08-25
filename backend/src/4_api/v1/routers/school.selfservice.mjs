@@ -37,9 +37,17 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {object} deps
  * @param {{execute: (args: {code: string}) => Promise<object>}} deps.resolveAccessCode
  * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
+ * @param {{getCoursePoster?: (courseId: string) => Promise<Buffer|null>}} [deps.curriculum]
+ * @param {(courseId: string) => Buffer} [deps.renderCoursePosterFallback]
  * @returns {import('express').Router}
  */
-export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress = null } = {}) {
+export function createSchoolSelfServiceRouter({
+  resolveAccessCode,
+  runSelfServiceAction,
+  recordLessonCompanionProgress = null,
+  curriculum = null,
+  renderCoursePosterFallback = null,
+} = {}) {
   const router = express.Router();
 
   // Registered only when the use case is actually injected, so a deployment
@@ -50,6 +58,24 @@ export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServic
       const { code } = req.body || {};
       const card = await resolveAccessCode.execute({ code });
       res.set('Cache-Control', 'no-store').json(card);
+    }));
+  }
+
+  // Learner-safe artwork for the contextual card. This is intentionally not
+  // under `/teacher`: it exposes only the published course cover (or the same
+  // generated fallback), never curriculum answers, assignments or history.
+  if (curriculum) {
+    router.get('/curriculum/:courseId/poster.jpg', asyncHandler(async (req, res) => {
+      let bytes = await curriculum.getCoursePoster?.(req.params.courseId);
+      if (!bytes && renderCoursePosterFallback) {
+        bytes = renderCoursePosterFallback(req.params.courseId);
+        res.set('X-School-Poster-Fallback', 'missing-asset');
+      }
+      if (!bytes) return res.status(404).end();
+      return res.set('Cache-Control', 'private, max-age=3600')
+        .set('Content-Type', 'image/jpeg')
+        .set('X-Content-Type-Options', 'nosniff')
+        .send(bytes);
     }));
   }
 
