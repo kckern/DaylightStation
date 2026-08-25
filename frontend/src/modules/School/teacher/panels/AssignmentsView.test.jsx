@@ -100,7 +100,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
       data: {
         units: [
           { unitId: 'math-fractions', courseId: 'math-fractions' },
-          { unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us' },
+          { unitId: 'atlas-unit-1', courseId: 'young-peoples-atlas-us', courseTitle: 'Young People’s Atlas of the US' },
         ],
       },
     });
@@ -120,7 +120,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
 
     // Verify the enrolled course is displayed (not flattened to a string)
     await waitFor(() => {
-      expect(screen.getByText(/Young peoples atlas us/i)).toBeInTheDocument();
+      expect(screen.getByText(/Young People’s Atlas of the US/i)).toBeInTheDocument();
     });
 
     // Click Edit
@@ -129,7 +129,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
 
     // Verify edit mode is active (we see checkboxes)
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Young peoples atlas us/i })).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: /Young People’s Atlas of the US/i })).toBeInTheDocument();
     });
 
     // Click Save without making any changes
