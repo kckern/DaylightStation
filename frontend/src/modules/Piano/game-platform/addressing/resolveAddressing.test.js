@@ -20,10 +20,29 @@ describe('resolveAddressing — the layers', () => {
     expect(resolved.clefs).toBe('grand'); // untouched dimensions survive
   });
 
-  it('lets a rung override the game', () => {
-    const resolved = resolveAddressing({ game: { vocabulary: 'chords' }, rung: 2 });
+  it('lets a rung override the game on the difficulty dimensions', () => {
+    const resolved = resolveAddressing({ game: { vocabulary: 'chords', shuffle: 'never' }, rung: 7, axisSize: 8 });
+    expect(resolved.shuffle).toBe('each_turn');
+    expect(resolved.x.order).toBe('shuffled');
+  });
+
+  it('never lets a rung override a stated vocabulary — the ladder is difficulty, not a notation switch', () => {
+    // Rung 2 is a staff rung; a game configured for chords must climb in chords.
+    const resolved = resolveAddressing({ game: { vocabulary: 'chords' }, rung: 2, axisSize: 5 });
+    expect(resolved.vocabulary).toBe('chords');
+    expect(resolved.x.tier).toBe(1); // the rung's difficulty still lands
+    expect(resolved.notes.join(' ')).toMatch(/yields to the configured/);
+  });
+
+  it('lets a rung set the vocabulary when no layer stated one', () => {
+    const resolved = resolveAddressing({ rung: 2 });
     expect(resolved.vocabulary).toBe('staff');
     expect(resolved.clefs).toBe('treble-only');
+  });
+
+  it('lets a player-stated vocabulary silence a chord rung the same way', () => {
+    const resolved = resolveAddressing({ rung: 9, user: { vocabulary: 'staff' } });
+    expect(resolved.vocabulary).toBe('staff');
   });
 
   it('lets a player override the rung', () => {

@@ -25,7 +25,7 @@ import { noticeDocument } from '#domains/school/documents/receipts.mjs';
 
 export class ResolveScanAction {
   #tokens; #sessions; #curriculum; #card; #issue; #media; #remediation; #receipts; #clock; #logger;
-  #subjectResolver; #portal; #launchers; #donow; #close;
+  #subjectResolver; #portal; #launchers; #donow; #close; #externalActivities;
   #learningAction;
   #replaceLostAnswerSheet;
 
@@ -69,6 +69,7 @@ export class ResolveScanAction {
     dispatchMedia, openRemediation, receipts,
     resolveSubjectNext = null, portal = null, launchers = new Map(),
     donow = null, closeSessionOutcome = null,
+    externalActivityProvider = null,
     resolveLearningAction = null,
     replaceLostAnswerSheet = null,
     clock = () => new Date(), logger = console,
@@ -90,6 +91,7 @@ export class ResolveScanAction {
     this.#launchers = launchers;
     this.#donow = donow;
     this.#close = closeSessionOutcome;
+    this.#externalActivities = externalActivityProvider;
     this.#learningAction = resolveLearningAction;
     this.#replaceLostAnswerSheet = replaceLostAnswerSheet;
     this.#clock = clock;
@@ -264,6 +266,9 @@ export class ResolveScanAction {
    */
   async #start(sessionId, sessionState) {
     const unit = await this.#curriculum.getUnit(sessionState?.unitId);
+    if (unit?.activity) {
+      return this.#dispatchActivity({ sessionId, learnerId: sessionState?.learnerId ?? null, unit, tokenClass: 'select_unit' });
+    }
     if (unit?.launch) {
       return this.#dispatchLaunch({
         sessionId, learnerId: sessionState?.learnerId ?? null, launch: unit.launch, tokenClass: 'select_unit',
@@ -438,6 +443,51 @@ export class ResolveScanAction {
       lines: [result.message],
       message: result.message,
     });
+  }
+
+  async #dispatchActivity({ sessionId, learnerId, unit, tokenClass }) {
+    if (!this.#externalActivities || !this.#donow) {
+      return this.#slip({
+        status: 'unavailable', tokenClass, sessionId, id: `activity-unwired-${sessionId}`,
+        headline: 'Not set up yet', lines: ['Ask a grown-up to set up the Fitness course connection.'],
+        message: 'Ask a grown-up to set up the Fitness course connection.',
+      });
+    }
+    const main = unit.activity.segments.find((segment) => segment.kind === 'plex-video') ?? unit.activity.segments[0];
+    try {
+      await this.#externalActivities.prepare({
+        workSessionId: sessionId, learnerId, unitId: unit.unitId, activity: unit.activity,
+      });
+      const result = await this.#donow.dispatch({
+        surface: 'garage-fitness', learnerId, requestedBy: 'school-scan', ref: sessionId,
+        action: {
+          episodeId: main?.sourceId ?? unit.activity.source?.showId,
+          schoolActivity: {
+            workSessionId: sessionId, unitId: unit.unitId,
+            courseRevision: unit.activity.courseRevision, policyRevision: unit.activity.policyRevision,
+          },
+        },
+      });
+      if (result.decision === 'dispatched') {
+        return this.#slip({
+          status: 'dispatched', tokenClass, sessionId, id: `activity-${sessionId}`,
+          headline: unit.title, lines: ['Your Fitness lesson is ready in the garage.'],
+          message: 'Your Fitness lesson is ready in the garage.',
+        });
+      }
+      return this.#slip({
+        status: result.decision, tokenClass, sessionId, id: `activity-${result.decision}-${sessionId}`,
+        headline: result.decision === 'pending_approval' ? 'Waiting on a grown-up' : 'Could not start that',
+        lines: [result.message], message: result.message,
+      });
+    } catch (error) {
+      this.#logger.warn?.('school.external-activity.dispatch-failed', { sessionId, error: error.message });
+      return this.#slip({
+        status: 'failed', tokenClass, sessionId, id: `activity-failed-${sessionId}`,
+        headline: 'Could not start that', lines: ['The Fitness lesson is not answering. Try again.'],
+        message: 'The Fitness lesson is not answering. Try again.',
+      });
+    }
   }
 
   /**
@@ -646,6 +696,11 @@ export class ResolveScanAction {
     if (r.move.kind === 'launch') {
       return this.#dispatchLaunch({
         sessionId: r.sessionId, learnerId, launch: r.unit.launch, tokenClass: 'subject_next',
+      });
+    }
+    if (r.move.kind === 'activity') {
+      return this.#dispatchActivity({
+        sessionId: r.sessionId, learnerId, unit: r.unit, tokenClass: 'subject_next',
       });
     }
     if (r.move.kind === 'screen' && this.#issue.canIssueBank?.(r.unit?.bank)) {

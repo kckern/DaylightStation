@@ -11,15 +11,28 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import SchoolApp from '#frontend/modules/School/SchoolApp.jsx';
 import { REJECT_WORD } from '#frontend/modules/School/selfService/Keypad.jsx';
 
-// Capture the WS subscribers, KEYED BY TOPIC, so a `school.launch` broadcast
-// can be pushed through the REAL useSchoolLaunch hook. SchoolApp mounts more
-// than one useWebSocketSubscription now (school.launch AND the Slice D scan
-// ceremony's `omr` topic) — a single flat slot would let the second
-// subscriber silently clobber the first's callback (pattern:
-// SchoolApp.launch.test.jsx).
-const h = vi.hoisted(() => ({ byTopic: {} }));
+// Capture the WS subscribers PER TOPIC AS A LIST, so a `school.launch`
+// broadcast can be pushed through the REAL useSchoolLaunch hook.
+//
+// One slot per topic is not enough, and stopped being enough the moment TWO
+// hooks subscribed to `school`: useSchoolLaunch (school.launch) and the scan
+// ceremony (which also listens there for `piano-lesson-complete`). The second
+// registration then replaced the first and launches silently stopped landing
+// — the very clobbering this mock was written to prevent, one level in.
+//
+// The real `wsService.subscribe` gives every subscription its own key
+// (`sub_${id}`, WebSocketService.js) and fans a message out to all of them, so
+// a list is the accurate model. `h.byTopic[topic]` stays CALLABLE and fans out,
+// which keeps every existing call site working. Callbacks are deduped by
+// identity — both hooks memoize theirs with useCallback, so re-renders do not
+// pile up duplicate subscribers the way a plain push would.
+const h = vi.hoisted(() => ({ byTopic: {}, subs: {} }));
 vi.mock('#frontend/hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: (topic, cb) => { h.byTopic[topic] = cb; },
+  useWebSocketSubscription: (topic, cb) => {
+    const list = (h.subs[topic] ||= []);
+    if (!list.includes(cb)) list.push(cb);
+    h.byTopic[topic] = (payload) => list.forEach((fn) => fn(payload));
+  },
 }));
 
 const selfServiceLog = vi.fn();
@@ -133,6 +146,7 @@ const MOVE_CARD = {
 beforeEach(() => {
   localStorage.clear();
   h.byTopic = {};
+  h.subs = {};
   selfServiceLog.mockClear();
   selfServiceErrorLog.mockClear();
   openSessionMock.mockReset().mockResolvedValue({ ok: true, status: 200, data: { sessionId: 'ses_1' } });

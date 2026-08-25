@@ -155,6 +155,35 @@ describe('the standard header', () => {
   });
 });
 
+describe('receipt taxonomy hierarchy', () => {
+  it('starts the lesson on a new, deeper-indented row below the unit', async () => {
+    const originalFillText = CanvasRenderingContext2D.prototype.fillText;
+    const calls = [];
+    CanvasRenderingContext2D.prototype.fillText = function patchedFillText(value, x, y, ...rest) {
+      calls.push({ value: String(value), x, y });
+      return originalFillText.call(this, value, x, y, ...rest);
+    };
+    try {
+      await renderer.createCanvas(doc([{
+        type: 'result_summary', headline: 'PASSED', title: 'Psalms', correctCount: 5, totalCount: 5,
+        taxonomy: {
+          subject: 'Scripture', course: 'Come Follow Me — Old Testament 2026',
+          unit: 'Unit 35: Aug 24–30 · Psalms 49–86', lesson: 'Tuesday · Psalms 62–66, 69',
+        },
+      }]));
+    } finally {
+      CanvasRenderingContext2D.prototype.fillText = originalFillText;
+    }
+    expect(calls.length).toBeGreaterThan(0);
+    const unit = calls.find((call) => call.value.startsWith('Unit 35:'));
+    const lesson = calls.find((call) => call.value.includes('Tuesday'));
+    expect(unit).toBeTruthy();
+    expect(lesson).toBeTruthy();
+    expect(lesson.y).toBeGreaterThan(unit.y);
+    expect(lesson.x).toBeGreaterThan(unit.x);
+  });
+});
+
 describe('subject icons on scan_action blocks', () => {
   const iconDoc = (icon) => doc([{ type: 'scan_action', action: 'sch:AAAA', label: 'Unit Two — watch it', ...(icon ? { icon } : {}) }]);
 

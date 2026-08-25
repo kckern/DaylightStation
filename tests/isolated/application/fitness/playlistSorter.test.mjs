@@ -1,5 +1,5 @@
 // tests/isolated/application/fitness/playlistSorter.test.mjs
-import { describe, test, expect } from '@jest/globals';
+import { describe, test, expect } from 'vitest';
 import { sortPlaylistItems, isPlaylist } from '#apps/fitness/playlistSorter.mjs';
 
 describe('sortPlaylistItems', () => {

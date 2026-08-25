@@ -24,6 +24,8 @@ const PAYLOADS = {
   media_stalled: {},
   launch_dispatched: { surface: 'screen-1', decision: 'auto', approvalId: 'app_1' },
   program_dispatched: { programId: 'language', corpusId: 'glossika-korean', day: 3 },
+  external_activity_dispatched: { provider: 'fitness', attemptId: SID, courseRevision: 'course-1', policyRevision: 'policy-1' },
+  external_activity_assessed: { provider: 'fitness', assessmentId: 'fitness-assessment-1', courseRevision: 'course-1', policyRevision: 'policy-1', result: 'passed', measures: { engagements: 1 } },
   submitted: { transport: 'paper' },
   graded: { attemptIds: ['att_1'], percent: 90 },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
@@ -56,7 +58,8 @@ describe('EVENT_TYPES', () => {
     expect(EVENT_TYPES).toEqual([
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
       'media_dispatched', 'media_completed', 'media_stalled',
-      'launch_dispatched', 'program_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
+      'submitted', 'graded', 'outcome_recorded', 'rewarded',
       'reward_reconciled', 'reward_reconciliation_failed',
       'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
@@ -121,7 +124,7 @@ describe('append-only teacher grade corrections', () => {
 describe('TRANSITIONS', () => {
   it('is the closed table from the spec', () => {
     expect(TRANSITIONS).toEqual({
-      created: ['issued', 'media_dispatched', 'launch_dispatched', 'program_dispatched', 'abandoned'],
+      created: ['issued', 'media_dispatched', 'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'abandoned'],
       issued: ['submitted', 'reprinted', 'failed', 'abandoned'],
       reprinted: ['submitted', 'reprinted', 'abandoned'],
       media_dispatched: ['media_completed', 'media_stalled', 'abandoned'],
@@ -129,6 +132,8 @@ describe('TRANSITIONS', () => {
       media_stalled: ['media_dispatched', 'abandoned'],
       launch_dispatched: ['outcome_recorded', 'abandoned'],
       program_dispatched: ['outcome_recorded', 'abandoned'],
+      external_activity_dispatched: ['external_activity_assessed', 'abandoned'],
+      external_activity_assessed: ['outcome_recorded'],
       submitted: ['graded'],
       graded: ['outcome_recorded'],
       outcome_recorded: ['rewarded', 'remediation_opened'],

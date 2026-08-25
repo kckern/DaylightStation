@@ -333,6 +333,14 @@ every layer. That last clause is the whole requirement and it is enforced in two
 - **`DataServicePianoGameRepository.readConfig` / `writeConfig`** deep-merge rather than spread. This
   was a real defect: a spread replaced a nested block wholesale, so a player overriding one addressing
   dimension silently discarded the household's vocabulary, clefs, cadence and other axis.
+  (`mergeChessConfig` had the same defect for its `addressing` block, with the same fix.)
+
+**One dimension is exempt from the rung layer: `vocabulary`.** The ladder is a difficulty ladder,
+not a notation switch — a rung may move tiers, ordering, cadence, clefs and inversions, but when
+the game's YAML or the player has stated a vocabulary, the rung's is dropped (with a note). A board
+configured for chords climbs in chords: wider roots, shuffles, accidentals — never a different
+notation because the ladder file says rung 3. A rung's vocabulary applies only when no lower layer
+stated one.
 
 `pinned` is the "always keep it sequential, never shuffle, basic root notes" case: an explicit hold
 that beats the earned rung, so a player who needs stability gets it regardless of what they have
@@ -470,6 +478,14 @@ every layer. That last clause is the whole requirement and it is enforced in two
 - **`DataServicePianoGameRepository.readConfig` / `writeConfig`** deep-merge rather than spread. This
   was a real defect: a spread replaced a nested block wholesale, so a player overriding one addressing
   dimension silently discarded the household's vocabulary, clefs, cadence and other axis.
+  (`mergeChessConfig` had the same defect for its `addressing` block, with the same fix.)
+
+**One dimension is exempt from the rung layer: `vocabulary`.** The ladder is a difficulty ladder,
+not a notation switch — a rung may move tiers, ordering, cadence, clefs and inversions, but when
+the game's YAML or the player has stated a vocabulary, the rung's is dropped (with a note). A board
+configured for chords climbs in chords: wider roots, shuffles, accidentals — never a different
+notation because the ladder file says rung 3. A rung's vocabulary applies only when no lower layer
+stated one.
 
 `pinned` is the "always keep it sequential, never shuffle, basic root notes" case: an explicit hold
 that beats the earned rung, so a player who needs stability gets it regardless of what they have

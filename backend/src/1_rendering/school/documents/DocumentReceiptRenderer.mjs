@@ -32,6 +32,7 @@ import QRCode from 'qrcode';
 import { parseRichText } from './measure.mjs';
 import { documentReceiptTheme } from './documentReceiptTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
+import { activeProgressPosition } from '#domains/school/progressRows.mjs';
 
 /**
  * The subject shelf icons — the SAME nine SVG files the School home grid
@@ -154,7 +155,6 @@ export function createDocumentReceiptRenderer({
     const textOffset = icon ? iconSize + theme.action.iconGap : 0;
     const textWidth = maxWidth - textOffset;
     const top = `${taxonomy.subject}  ›  ${taxonomy.course}`;
-    const bottom = includeLesson ? `${taxonomy.unit}  ›  ${taxonomy.lesson}` : taxonomy.unit;
 
     ctx.font = theme.fonts.taxonomyTop;
     const topLines = wrapTight(ctx, top, textWidth);
@@ -163,7 +163,14 @@ export function createDocumentReceiptRenderer({
       : 0;
 
     ctx.font = theme.fonts.taxonomyBottom;
-    const bottomLines = wrapTight(ctx, bottom, textWidth - theme.action.taxonomyBottomIndent);
+    const unitLines = wrapTight(ctx, taxonomy.unit, textWidth - theme.action.taxonomyBottomIndent);
+    const lessonLines = includeLesson && taxonomy.lesson
+      ? wrapTight(ctx, `›  ${taxonomy.lesson}`, textWidth - theme.action.taxonomyLessonIndent)
+      : [];
+    const bottomRows = [
+      ...unitLines.map((line) => ({ line, indent: theme.action.taxonomyBottomIndent })),
+      ...lessonLines.map((line) => ({ line, indent: theme.action.taxonomyLessonIndent })),
+    ];
 
     return {
       icon,
@@ -171,11 +178,11 @@ export function createDocumentReceiptRenderer({
       iconCenterOffset,
       textOffset,
       topLines,
-      bottomLines,
+      bottomRows,
       topLineHeight: theme.action.taxonomyTopLineHeight,
       bottomLineHeight: theme.action.taxonomyBottomLineHeight,
       heightPx: topLines.length * theme.action.taxonomyTopLineHeight
-        + (bottomLines.length ? theme.action.taxonomyGap + bottomLines.length * theme.action.taxonomyBottomLineHeight : 0),
+        + (bottomRows.length ? theme.action.taxonomyGap + bottomRows.length * theme.action.taxonomyBottomLineHeight : 0),
     };
   }
 
@@ -468,8 +475,8 @@ export function createDocumentReceiptRenderer({
       }
       const bottomY = ty + taxonomy.topLines.length * taxonomy.topLineHeight + theme.action.taxonomyGap;
       ctx.font = theme.fonts.taxonomyBottom;
-      taxonomy.bottomLines.forEach((line, index) => ctx.fillText(
-        line, textX + theme.action.taxonomyBottomIndent, bottomY + index * taxonomy.bottomLineHeight,
+      taxonomy.bottomRows.forEach((row, index) => ctx.fillText(
+        row.line, textX + row.indent, bottomY + index * taxonomy.bottomLineHeight,
       ));
     }
 
@@ -767,7 +774,7 @@ export function createDocumentReceiptRenderer({
           ctx.fillText(`${progress.label.toUpperCase()} ${complete ? 'COMPLETE' : 'PROGRESS'}`, x, sy);
           ctx.textAlign = 'right';
           ctx.font = theme.fonts.code;
-          ctx.fillText(`${progress.completed} of ${progress.total}`, x + contentWidth, sy);
+          ctx.fillText(`${activeProgressPosition(progress)} of ${progress.total}`, x + contentWidth, sy);
           sy += 31;
           // ONE TICK PER LESSON. This used to be
           // `Math.min(progressSegments, total)` with `progressSegments: 10`,

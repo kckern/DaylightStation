@@ -137,7 +137,7 @@ const DEFAULT_SIDEBAR = 250;
 
 const FITNESS_MAX_VIDEO_BITRATE = null;
 
-const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false, onSessionEndRedirect = null }) => {
+const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false, onSessionEndRedirect = null, onSchoolAttemptClosed = null }) => {
   useRenderProfiler('FitnessPlayer');
   const logger = useMemo(() => getLogger().child({ component: 'FitnessPlayer' }), []);
   const mainPlayerRef = useRef(null);
@@ -1192,6 +1192,16 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
   // 4A: Execute actual close (separated for voice memo guard)
   const executeClose = useCallback(() => {
     const sid = fitnessSessionInstance?.sessionId ?? null;
+    const elapsedSeconds = Math.max(0, Number(currentTime) || 0);
+    const durationSeconds = Math.max(0, Number(duration) || Number(currentItem?.duration) || 0);
+    const itemCompletionRatio = durationSeconds > 0 ? Math.min(1, elapsedSeconds / durationSeconds) : 0;
+    const identityIndex = queue.findIndex((item) => item === currentItem);
+    const queueIndex = Math.max(0, identityIndex >= 0
+      ? identityIndex
+      : queue.findIndex((item) => item.id === currentItem?.id));
+    const completionRatio = queue.length > 0
+      ? Math.min(1, (queueIndex + itemCompletionRatio) / queue.length)
+      : itemCompletionRatio;
     // Dedup: both the voice-memo onComplete callback and the overlay-transition
     // useEffect can race to call executeClose after one close gesture.
     if (!closeGuardRef.current.acquire(sid)) {
@@ -1237,6 +1247,27 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
         .finally(() => { refetchScreenData('sessions'); });
     }
 
+    // School assessment starts only after Fitness has finished its own final
+    // persistence. The callback carries playback coordination facts; the
+    // backend independently re-derives HR, cadence, strength and memo evidence
+    // from the saved Fitness session before deciding pass/remediation.
+    if (typeof onSchoolAttemptClosed === 'function') {
+      Promise.resolve(fitnessSessionInstance?.whenFinalPersistSettled?.())
+        .then(
+          () => onSchoolAttemptClosed({
+            fitnessSessionId: sid,
+            observations: {
+              media: { elapsed_seconds: elapsedSeconds, completion_ratio: completionRatio },
+              segments: {
+                completed: queueIndex + (itemCompletionRatio >= 0.5 ? 1 : 0),
+                in_order: true,
+              },
+            },
+          }),
+          (error) => logger.error('fitness.player.school-attempt.persist_failed', { sessionId: sid, error: error?.message }),
+        );
+    }
+
     if (setQueue) {
       setQueue([]);
     }
@@ -1249,7 +1280,7 @@ const FitnessPlayer = ({ playQueue, setPlayQueue, viewportRef, nogovern = false,
 
     logger.info('fitness.player.close.completed', { sessionId: sid });
     closeWatchdog.completed({ sessionId: sid });
-  }, [postEpisodeStatus, setQueue, currentItem?.grandparentId, currentItem?.showId, fitnessSessionInstance, plexConfig, voiceMemos, onSessionEndRedirect, logger, closeWatchdog, refetchScreenData]);
+  }, [postEpisodeStatus, setQueue, queue, currentItem, currentTime, duration, fitnessSessionInstance, plexConfig, voiceMemos, onSessionEndRedirect, onSchoolAttemptClosed, logger, closeWatchdog, refetchScreenData]);
 
   const handleClose = () => {
     // Note: media_end is logged by the useEffect cleanup when currentMediaIdentity changes to null

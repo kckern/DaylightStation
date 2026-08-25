@@ -5,7 +5,7 @@
  * of entry-day, accept-day, revision-day, and user text.
  */
 
-import { describe, it, expect, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { LogFoodFromText } from '#apps/nutribot/usecases/LogFoodFromText.mjs';
 import { AcceptFoodLog } from '#apps/nutribot/usecases/AcceptFoodLog.mjs';
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
@@ -15,50 +15,57 @@ const THU_NOON_PT = new Date('2026-04-16T19:00:00Z'); // Thu 12:00 PT
 const FRI_NOON_PT = new Date('2026-04-17T19:00:00Z'); // Fri 12:00 PT
 
 function mockClock(date) {
-  // doNotFake: ['setTimeout'] keeps timer-based awaits (e.g. autoreport's 300ms
-  // debounce inside AcceptFoodLog) resolving in real time while we control Date.
-  jest.useFakeTimers({ doNotFake: ['setTimeout'] });
-  jest.setSystemTime(date);
+  // Fake DATE ONLY. These tests control what "today" is; they must not freeze
+  // the clock that timer-based awaits run on (autoreport's 300ms debounce
+  // inside AcceptFoodLog), or every await here hangs to the suite timeout.
+  //
+  // `doNotFake` is a JEST option. Vitest forwards this config to
+  // @sinonjs/fake-timers, which has no such key — it was accepted and ignored,
+  // setTimeout was faked after all, and all four cases timed out at 5s. The
+  // sinon-native spelling is `toFake`, naming what to fake rather than what to
+  // spare.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(date);
 }
 
 function resetClock() {
-  jest.useRealTimers();
+  vi.useRealTimers();
 }
 
 function buildTextDeps(aiResponseForInitial, aiResponseForRevision = null) {
   const messagingGateway = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'msg-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'msg-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
   };
   const aiGateway = {
-    chat: jest.fn()
+    chat: vi.fn()
       .mockResolvedValueOnce(aiResponseForInitial)
       .mockResolvedValueOnce(aiResponseForRevision || aiResponseForInitial),
   };
   let savedLog = null;
   const foodLogStore = {
-    save: jest.fn().mockImplementation(async (log) => { savedLog = log; }),
-    findByUuid: jest.fn().mockImplementation(async () => savedLog),
-    updateStatus: jest.fn().mockResolvedValue({}),
+    save: vi.fn().mockImplementation(async (log) => { savedLog = log; }),
+    findByUuid: vi.fn().mockImplementation(async () => savedLog),
+    updateStatus: vi.fn().mockResolvedValue({}),
   };
   const conversationStateStore = {
-    get: jest.fn().mockResolvedValue(null),
-    set: jest.fn().mockResolvedValue({}),
-    clear: jest.fn().mockResolvedValue({}),
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue({}),
+    clear: vi.fn().mockResolvedValue({}),
   };
   const responseContext = {
-    sendMessage: jest.fn().mockResolvedValue({ messageId: 'ctx-1' }),
-    updateMessage: jest.fn().mockResolvedValue({}),
-    deleteMessage: jest.fn().mockResolvedValue({}),
-    createStatusIndicator: jest.fn().mockResolvedValue({
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 'ctx-1' }),
+    updateMessage: vi.fn().mockResolvedValue({}),
+    deleteMessage: vi.fn().mockResolvedValue({}),
+    createStatusIndicator: vi.fn().mockResolvedValue({
       messageId: 'status-1',
-      finish: jest.fn().mockResolvedValue({}),
+      finish: vi.fn().mockResolvedValue({}),
     }),
   };
   return {
     messagingGateway, aiGateway, foodLogStore, conversationStateStore, responseContext,
-    logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
     config: {
       getDefaultTimezone: () => 'America/Los_Angeles',
       getUserTimezone: () => 'America/Los_Angeles',
@@ -231,24 +238,24 @@ function buildAcceptDeps(nutriLog) {
   return {
     savedItemDates,
     messagingGateway: {
-      sendMessage: jest.fn().mockResolvedValue({ messageId: 'm' }),
-      updateMessage: jest.fn().mockResolvedValue({}),
-      deleteMessage: jest.fn().mockResolvedValue({}),
+      sendMessage: vi.fn().mockResolvedValue({ messageId: 'm' }),
+      updateMessage: vi.fn().mockResolvedValue({}),
+      deleteMessage: vi.fn().mockResolvedValue({}),
     },
     foodLogStore: {
-      findByUuid: jest.fn().mockResolvedValue(nutriLog),
-      updateStatus: jest.fn().mockResolvedValue({}),
-      findPending: jest.fn().mockResolvedValue([]),
+      findByUuid: vi.fn().mockResolvedValue(nutriLog),
+      updateStatus: vi.fn().mockResolvedValue({}),
+      findPending: vi.fn().mockResolvedValue([]),
     },
     nutriListStore: {
-      saveMany: jest.fn().mockImplementation(async (items) => {
+      saveMany: vi.fn().mockImplementation(async (items) => {
         for (const it of items) savedItemDates.push(it.date);
       }),
     },
-    conversationStateStore: { clear: jest.fn().mockResolvedValue({}) },
-    generateDailyReport: { execute: jest.fn().mockResolvedValue({}) },
+    conversationStateStore: { clear: vi.fn().mockResolvedValue({}) },
+    generateDailyReport: { execute: vi.fn().mockResolvedValue({}) },
     config: { getDefaultTimezone: () => 'America/Los_Angeles' },
-    logger: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
 }
 

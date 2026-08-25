@@ -42,7 +42,12 @@ export class GarageFitnessSurface {
   }
 
   /** @returns {Promise<{state: 'idle'|'active'|'unknown', occupantId: null}>} */
-  async occupancy() {
+  async occupancy({ action } = {}) {
+    // A School Fitness request is non-destructive until the kiosk user accepts
+    // its local switch prompt. Let it reach the kiosk even while active; the
+    // ordinary fire-and-forget Fitness launch keeps the existing DoNow busy
+    // policy unchanged.
+    if (action?.schoolActivity?.workSessionId) return { state: 'idle', occupantId: null };
     if (!this.#presence) return { state: 'unknown', occupantId: null };
     try {
       return this.#presence.occupancy();
@@ -59,7 +64,10 @@ export class GarageFitnessSurface {
       return { dispatched: false };
     }
     try {
-      this.#eventBus.broadcast('fitness', { type: 'fitness.launch', learnerId, episodeId: action.episodeId });
+      this.#eventBus.broadcast('fitness', {
+        type: 'fitness.launch', learnerId, episodeId: action.episodeId,
+        ...(action.schoolActivity ? { schoolActivity: action.schoolActivity } : {}),
+      });
     } catch (err) {
       this.#logger.warn?.('donow.garage-fitness.dispatch-failed', { error: err?.message || String(err) });
       return { dispatched: false };

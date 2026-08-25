@@ -44,6 +44,7 @@ const PROGRAM_EXCLUSIVE_FIELDS = ['passing', 'retry', 'review', 'reward', 'cours
 // own field-named error, mirroring `PROGRAM_EXCLUSIVE_FIELDS` above, rather
 // than one combined message that hides which field an author needs to remove.
 const LAUNCH_EXCLUSIVE_FIELDS = ['media', 'bank', 'document', 'review', 'program'];
+const ACTIVITY_EXCLUSIVE_FIELDS = ['media', 'bank', 'document', 'review', 'program', 'launch'];
 
 // Resolvable reference kinds: field name → the injected set that must contain
 // its value. `review` is deliberately absent — it is a free-form parent rubric
@@ -88,7 +89,8 @@ const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 /**
  * @param {*} raw - one parsed unit YAML
  * @param {{bankIds?: Set<string>, documentIds?: Set<string>, manifestIds?: Set<string>,
- *          programIds?: Set<string>, surfaceValidators?: Map<string, Function>}} [sets]
+ *          programIds?: Set<string>, surfaceValidators?: Map<string, Function>,
+ *          activityValidators?: Map<string, Function>}} [sets]
  *   `surfaceValidators` maps a DoNow surface id to that surface's own
  *   `validateAction` — the same registered-adapter contract `DoNowService`
  *   dispatches through at runtime, reused here so a `launch:` unit cannot
@@ -328,10 +330,36 @@ export function validateUnit(raw, sets = {}) {
     }
   }
 
+  // Evidence-backed work performed in another bounded context. Unlike a
+  // `launch:` composition, dispatch is only the beginning: the provider must
+  // later return a durable assessment before School records an outcome.
+  let activity;
+  if (isPresent(raw.activity)) {
+    if (!isPlainObject(raw.activity)) {
+      errors.push('activity must be an object');
+    } else if (!isNonEmptyString(raw.activity.provider)) {
+      errors.push('activity.provider must be a non-empty string');
+    } else {
+      const validator = sets.activityValidators instanceof Map
+        ? sets.activityValidators.get(raw.activity.provider)
+        : null;
+      if (typeof validator !== 'function') {
+        errors.push(`activity.provider '${raw.activity.provider}' not found`);
+      } else {
+        const activityErrors = validator(raw.activity) ?? [];
+        activityErrors.forEach((message) => errors.push(`activity: ${message}`));
+        if (!activityErrors.length) activity = structuredClone(raw.activity);
+      }
+    }
+    for (const field of ACTIVITY_EXCLUSIVE_FIELDS) {
+      if (isPresent(raw[field])) errors.push(`an activity unit takes no ${field}`);
+    }
+  }
+
   // Presence, not resolvability: a dangling reference is already reported, and
   // reporting it twice would read as two separate authoring mistakes.
-  if (![...REFERENCE_FIELDS, 'program', 'launch'].some((field) => isPresent(raw[field]))) {
-    errors.push('unit must reference at least one of bank, document, media, review');
+  if (![...REFERENCE_FIELDS, 'program', 'launch', 'activity'].some((field) => isPresent(raw[field]))) {
+    errors.push('unit must reference at least one of bank, document, media, review, program, launch, activity');
   }
 
   if (!isPlainObject(raw.provenance)) {
@@ -380,6 +408,7 @@ export function validateUnit(raw, sets = {}) {
       programInstance,
       cadence,
       launch,
+      activity,
       ...(schoolcalc ? { schoolcalc } : {}),
       ...(companion ? { companion } : {}),
       provenance: raw.provenance,

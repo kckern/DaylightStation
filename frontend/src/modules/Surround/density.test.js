@@ -39,12 +39,16 @@ describe('densityShares', () => {
 
   it('gives a fold the width its PARENT TITLE needs, not a chip', () => {
     const railPx = 1000;
+    // The parent-title width arrives as the MEASURED `foldMinPx` (SegmentMap
+    // measures it with foldWidthPx and passes it through), not as the fold's
+    // own `needs` entry — a fold has no title of its own to need width for.
     const s = densityShares({
       segments: [{ collapsed: true }, {}, {}],
-      needs: [180, 40, 40],
+      needs: [40, 40, 40],
       chromePx: 10,
       railPx,
       activeIndex: 1,
+      foldMinPx: 180,
     });
     expect(Math.round(s[0] * railPx)).toBeGreaterThanOrEqual(180);
     // …and it is wider than the chip beside it, which is the whole point.

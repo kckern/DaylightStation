@@ -13,7 +13,8 @@ const shuffle = (items, rng) => {
 };
 
 export function createCourseEnrollment({
-  enrollmentId = null, courseId, profile, units, modules = [], policy = {}, today = null, rng = Math.random,
+  enrollmentId = null, courseId, profile, units, modules = [], policy = {}, display = null,
+  today = null, rng = Math.random,
 } = {}) {
   if (typeof courseId !== 'string' || !courseId) throw new Error('courseId is required');
   if (enrollmentId !== null && (typeof enrollmentId !== 'string' || !enrollmentId)) {
@@ -55,6 +56,22 @@ export function createCourseEnrollment({
       ...(policy.lesson_order === 'shuffle_once' ? shuffle(remainder, rng) : remainder),
     ].map((u) => u.unitId);
   }
+  const authoredModules = new Map((Array.isArray(modules) ? modules : [])
+    .map((module, index) => [module?.module, { module, index }])
+    .filter(([id]) => id));
+  const moduleDisplay = Object.fromEntries([...moduleOrder, ...optionalModules].map((moduleId) => {
+    const authored = authoredModules.get(moduleId);
+    const configuredNumber = authored?.module?.number;
+    const offsetNumber = Number.isInteger(policy.module_number_start) && authored
+      ? policy.module_number_start + authored.index
+      : null;
+    return [moduleId, {
+      ...(Number.isInteger(configuredNumber) ? { number: configuredNumber }
+        : Number.isInteger(offsetNumber) ? { number: offsetNumber } : {}),
+      ...(authored?.module?.title ? { title: authored.module.title } : {}),
+      ...(authored?.module?.short_title ? { shortTitle: authored.module.short_title } : {}),
+    }];
+  }));
   return {
     schema: 'school.course-enrollment/v2',
     ...(enrollmentId ? { enrollmentId } : {}),
@@ -66,6 +83,15 @@ export function createCourseEnrollment({
     // Effective policy snapshot: progression must not change under a learner
     // because the catalog or syllabus was edited after enrollment.
     progression: structuredClone(policy),
+    // Learner-facing numbering and compact labels are part of the enrollment
+    // snapshot too. A later catalog rename must not silently relabel the units
+    // a learner already enrolled in, and a mid-course enrollment must retain
+    // the authored number instead of restarting at Unit 1.
+    display: {
+      ...(display?.title ? { courseTitle: display.title } : {}),
+      ...(display?.shortTitle ? { courseShortTitle: display.shortTitle } : {}),
+      modules: moduleDisplay,
+    },
     ...(dated ? {
       moduleSchedule: Object.fromEntries(
         windowed.map((module) => [module.module, { opensOn: module.opensOn, closesOn: module.closesOn }]),

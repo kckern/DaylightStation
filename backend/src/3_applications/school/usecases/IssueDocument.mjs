@@ -46,6 +46,7 @@ import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/repri
 import { slugify } from '#domains/school/documents/receipts.mjs';
 import { DEFAULT_PRINT_POLICY } from '#domains/school/index.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
+import { worksheetPresentation } from '#domains/school/curriculum/worksheetPresentation.mjs';
 import { resolveScripturePlaylist } from '../readalong/resolveScripturePlaylist.mjs';
 
 /**
@@ -538,6 +539,9 @@ export class IssueDocument {
     if (!enrollmentId || !profile) {
       return this.#unavailable(sessionId, 'no-enrollment', 'This lesson is not enrolled for this learner.');
     }
+    const works = await this.#curriculum.listWorks?.() ?? [];
+    const work = works.find((candidate) => candidate?.work === unit.courseId) ?? null;
+    const presentation = worksheetPresentation({ unit, work, enrollment: course?.enrollment });
 
     let instance = await this.#worksheetInstances.findBySession(sessionId);
     const existingInstance = Boolean(instance);
@@ -554,12 +558,13 @@ export class IssueDocument {
       const published = await this.#publishPrintDocument.execute({
         source: worksheetInstanceDocument(instance, {
           title: unit.title,
-          description: unit.description ?? null,
-          sourceTitle: unit.sourceTitle ?? 'The Young People’s Atlas of the United States',
-          printedPages: unit.provenance?.printed_pages ?? [],
+          description: presentation.citation,
+          sourceTitle: presentation.sourceTitle,
+          printedPages: presentation.printedPages,
+          reading: presentation.reading,
           subjectIcon: unit.subject ?? 'school',
           subjectName: unit.subject ?? 'School',
-          breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
+          breadcrumb: presentation.breadcrumb,
           passPercent: unit.passing?.percent ?? null,
           progress: await this.#lessonProgress({ state, unit, nowIso }),
           companionCode: companion?.accessCode ?? null,

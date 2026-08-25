@@ -15,7 +15,21 @@ export default function MultipleChoiceItem({ item, onSubmit, verdict }) {
   // ever re-render with updated state.
   const submittedRef = useRef(false);
   const [chosen, setChosen] = useState(null);
-  useEffect(() => { submittedRef.current = false; setChosen(null); }, [item.id]);
+  // Reset when the ITEM CHANGES — not on mount. On mount this is a no-op by
+  // construction (`chosen` starts null, `submittedRef` starts false), but it is
+  // a no-op that RUNS, and passive effects flush after the commit that put
+  // these buttons on screen. A tap landing in that gap was silently undone:
+  // the arm was wiped and the choice sat unselected. A browser flushes within a
+  // frame so no child could hit it, but it made this component's tests fail
+  // roughly one run in five, and "the first tap did nothing" is not a state
+  // worth leaving reachable.
+  const seenItemRef = useRef(item.id);
+  useEffect(() => {
+    if (seenItemRef.current === item.id) return;
+    seenItemRef.current = item.id;
+    submittedRef.current = false;
+    setChosen(null);
+  }, [item.id]);
   const submit = (choice) => {
     if (verdict || submittedRef.current) return;
     if (chosen !== choice) {

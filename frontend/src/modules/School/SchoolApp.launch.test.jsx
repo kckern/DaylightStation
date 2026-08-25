@@ -9,9 +9,20 @@ import SchoolApp from './SchoolApp.jsx';
 // useWebSocketSubscription now (school.launch AND the Slice D scan ceremony's
 // `omr` topic) — a single flat slot would let the second subscriber silently
 // clobber the first's callback.
-const h = vi.hoisted(() => ({ byTopic: {} }));
+// A LIST per topic, not one slot: two hooks now subscribe to `school`
+// (useSchoolLaunch, and the scan ceremony for `piano-lesson-complete`), so a
+// single slot let the second registration replace the first and launches
+// stopped landing. The real `wsService.subscribe` keys every subscription
+// separately (`sub_${id}`) and fans out to all, so a list is the accurate
+// model. `h.byTopic[topic]` stays callable and fans out, keeping call sites
+// unchanged; callbacks dedupe by identity because both hooks memoize theirs.
+const h = vi.hoisted(() => ({ byTopic: {}, subs: {} }));
 vi.mock('../../hooks/useWebSocket.js', () => ({
-  useWebSocketSubscription: (topic, cb) => { h.byTopic[topic] = cb; },
+  useWebSocketSubscription: (topic, cb) => {
+    const list = (h.subs[topic] ||= []);
+    if (!list.includes(cb)) list.push(cb);
+    h.byTopic[topic] = (payload) => list.forEach((fn) => fn(payload));
+  },
 }));
 
 // Spy on the schoolLog facade so the not-found/program-unavailable warn paths
@@ -84,6 +95,7 @@ const EMPTY_CATALOG = { ok: true, status: 200, data: { sections: [], materials: 
 beforeEach(() => {
   localStorage.clear();
   h.byTopic = {};
+  h.subs = {};
   bankLogMock.mockClear();
   banksMock.mockReset().mockResolvedValue({
     ok: true, status: 200,

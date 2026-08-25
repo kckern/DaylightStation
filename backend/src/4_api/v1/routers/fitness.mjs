@@ -73,6 +73,7 @@ const COMMIT_PENDING_MAX_AGE_MS = 120000; // 2 min
  * @param {Object} config.contentRegistry - Content source registry (for show endpoint)
  * @param {Object} [config.fitnessConfigService] - FitnessConfigService for config + playlist enrichment
  * @param {Object} [config.fitnessPlayableService] - FitnessPlayableService for show/playable orchestration
+ * @param {Object} [config.fitnessSchoolCourseService] - School-requested Fitness attempt authority
  * @param {Object} [config.fitnessContentAdapter] - Pre-resolved content adapter for fitness (default: plex)
  * @param {Object} config.transcriptionService - OpenAI transcription service (optional)
  * @param {Object} [config.screenshotService] - ScreenshotService for saving session screenshots
@@ -102,6 +103,7 @@ export function createFitnessRouter(config) {
     contentRegistry,
     fitnessConfigService,
     fitnessPlayableService,
+    fitnessSchoolCourseService,
     fitnessContentAdapter,
     transcriptionService,
     screenshotService,
@@ -292,6 +294,43 @@ export function createFitnessRouter(config) {
       parents: result.parents,
       items: result.items.map(toListItem)
     });
+  }));
+
+  // ── School-owned Fitness courses ─────────────────────────────────────────
+  router.get('/school-attempts/:workSessionId/plan', asyncHandler(async (req, res) => {
+    if (!fitnessSchoolCourseService) return res.status(503).json({ error: 'School Fitness courses unavailable' });
+    const record = await fitnessSchoolCourseService.get(req.params.workSessionId, req.query.household || defaultHouseholdId);
+    if (!record) return res.status(404).json({ error: 'School Fitness attempt not found' });
+    return res.json(record);
+  }));
+
+  router.post('/school-attempts/:workSessionId/accept', asyncHandler(async (req, res) => {
+    if (!fitnessSchoolCourseService) return res.status(503).json({ error: 'School Fitness courses unavailable' });
+    const record = await fitnessSchoolCourseService.accept({
+      workSessionId: req.params.workSessionId, learnerId: req.body?.learnerId,
+      householdId: req.body?.household || defaultHouseholdId,
+    });
+    return res.json(record);
+  }));
+
+  router.post('/school-attempts/:workSessionId/decline', asyncHandler(async (req, res) => {
+    if (!fitnessSchoolCourseService) return res.status(503).json({ error: 'School Fitness courses unavailable' });
+    const record = await fitnessSchoolCourseService.decline({
+      workSessionId: req.params.workSessionId, learnerId: req.body?.learnerId,
+      householdId: req.body?.household || defaultHouseholdId,
+    });
+    return res.json(record);
+  }));
+
+  router.post('/school-attempts/:workSessionId/assess', asyncHandler(async (req, res) => {
+    if (!fitnessSchoolCourseService) return res.status(503).json({ error: 'School Fitness courses unavailable' });
+    const record = await fitnessSchoolCourseService.assess({
+      workSessionId: req.params.workSessionId, learnerId: req.body?.learnerId,
+      fitnessSessionIds: req.body?.fitnessSessionIds ?? [],
+      clientObservations: req.body?.observations ?? {},
+      householdId: req.body?.household || defaultHouseholdId,
+    });
+    return res.json(record);
   }));
 
   /**

@@ -3078,6 +3078,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     releaseEmergencyLockdown,
     getLockdownState,
     identityRelay,
+    eventBus,
     workoutRepository,
     saveWorkout,
     exerciseLibrary,
@@ -3368,6 +3369,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.
       pianoPlayableUnits: pianoContainer?.getPlayableUnits?.() ?? null,
+      fitnessPlayableService: v1Routers.fitness?.fitnessPlayableService ?? null,
+      fitnessSchoolCourseService: v1Routers.fitness?.fitnessSchoolCourseService ?? null,
       learningEvidenceRepository: schoolLearningEvidence,
       // Same adapter class the grading hook uses, pointed at its own
       // `school.yml` block. Guarded on the HA gateway exactly as the grading
@@ -5370,6 +5373,18 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         rootLogger.info?.('school.completion-bridge.shutdown.complete');
       } catch (err) {
         rootLogger.error?.('school.completion-bridge.shutdown.error', { error: err?.message });
+      }
+    });
+  }
+
+  // Graceful shutdown: unsubscribe the Fitness-to-School assessment bridge.
+  if (schoolLifecycle.fitnessSchoolAssessmentBridge) {
+    process.on('SIGTERM', () => {
+      try {
+        schoolLifecycle.fitnessSchoolAssessmentBridge.stop();
+        rootLogger.info?.('school.fitness-assessment-bridge.shutdown.complete');
+      } catch (err) {
+        rootLogger.error?.('school.fitness-assessment-bridge.shutdown.error', { error: err?.message });
       }
     });
   }
