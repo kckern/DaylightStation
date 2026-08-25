@@ -58,6 +58,7 @@ import { useIdleGap } from '../lib/identity/useIdleGap.js';
 import { useWhoPromptAutoClose } from '../modules/Piano/PianoKiosk/useWhoPromptAutoClose.js';
 import { useAutoMidiHistory } from '../modules/Piano/PianoKiosk/useAutoMidiHistory.js';
 import ProfilePicker from '../lib/identity/ProfilePicker.jsx';
+import { ShutdownBlackout, useShutdownLock } from '../hooks/useShutdownLock.js';
 import './PianoApp.scss';
 
 /**
@@ -273,6 +274,13 @@ function PianoShell() {
   );
 }
 
+function PianoShutdownGate({ children }) {
+  const { sendPanic } = usePianoMidi();
+  const shutdown = useShutdownLock(KIOSK_DEVICE_ID ? `piano:${KIOSK_DEVICE_ID}` : '');
+  useEffect(() => { if (shutdown.locked) sendPanic?.(); }, [shutdown.locked, sendPanic]);
+  return shutdown.locked ? <ShutdownBlackout /> : children;
+}
+
 /** Resolves the active piano from the route + roster, then wires MIDI + shell. */
 function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
   const params = useParams();
@@ -292,6 +300,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
       <PianoDesignScale width={config.display?.designWidth} height={config.display?.designHeight}>
       <PianoUserProvider pianoId={pianoId}>
       <PianoMidiProvider preferredInputName={config.midi.preferredInputName}>
+        <PianoShutdownGate>
         <PianoWakeLockProvider>
           {/* Screensaver runs above the route shell so an idle tablet sleeps
               even with no piano connected; the wake-lock provider is hoisted
@@ -318,6 +327,7 @@ function ActivePiano({ pianoId: pianoIdProp, basePath: basePathProp }) {
             </PianoPlaybackProvider>
           </PianoScreenControlProvider>
         </PianoWakeLockProvider>
+        </PianoShutdownGate>
       </PianoMidiProvider>
       </PianoUserProvider>
       </PianoDesignScale>

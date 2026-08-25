@@ -31,6 +31,10 @@ public class Config {
     public static final String KEY_GATE_ENDPOINT = "gateEndpoint";
     public static final String KEY_GATE_TOKEN = "gateToken";
     public static final String KEY_GATE_HEARTBEAT_MS = "gateHeartbeatMs";
+    // A separate capability token for the safety service. It is deliberately
+    // never returned by /status or /config, just like the FKB password.
+    public static final String KEY_LOCKDOWN_TOKEN = "lockdownToken";
+    private static final String KEY_LOCKDOWN_UNTIL = "lockdownUntil";
 
     private final SharedPreferences prefs;
 
@@ -114,6 +118,21 @@ public class Config {
     /** Heartbeat cadence. The backend's TTL must exceed this or the gate flaps. */
     public int gateHeartbeatMs() { return prefs.getInt(KEY_GATE_HEARTBEAT_MS, 60000); }
 
+    public String lockdownToken() { return prefs.getString(KEY_LOCKDOWN_TOKEN, ""); }
+
+    /** A Long.MAX_VALUE deadline represents a fail-closed indefinite lock. */
+    public boolean lockdownActive() {
+        long until = prefs.getLong(KEY_LOCKDOWN_UNTIL, 0);
+        return until == Long.MAX_VALUE || until > System.currentTimeMillis();
+    }
+
+    public long lockdownUntil() { return prefs.getLong(KEY_LOCKDOWN_UNTIL, 0); }
+
+    public void setLockdown(boolean locked, Long until) {
+        long value = !locked ? 0 : (until == null ? Long.MAX_VALUE : until);
+        prefs.edit().putLong(KEY_LOCKDOWN_UNTIL, value).apply();
+    }
+
     /** Redacted view for pkctl status — never emits the password. */
     public String toJsonRedacted() {
         return "{"
@@ -125,7 +144,10 @@ public class Config {
                 + "\"blockControlCenter\":" + blockControlCenter() + ","
                 + "\"gateEndpoint\":\"" + Json.escape(gateEndpoint()) + "\","
                 + "\"gateTokenSet\":" + (!gateToken().isEmpty()) + ","
-                + "\"gateHeartbeatMs\":" + gateHeartbeatMs()
+                + "\"gateHeartbeatMs\":" + gateHeartbeatMs() + ","
+                + "\"lockdownTokenSet\":" + (!lockdownToken().isEmpty()) + ","
+                + "\"lockdownActive\":" + lockdownActive() + ","
+                + "\"lockdownUntil\":" + (lockdownUntil() > 0 && lockdownUntil() != Long.MAX_VALUE ? lockdownUntil() : "null")
                 + "}";
     }
 }

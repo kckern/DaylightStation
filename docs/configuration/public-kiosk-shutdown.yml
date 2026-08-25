@@ -1,0 +1,33 @@
+# Copy to the household data volume as shutdown/config.yml.
+# This policy is intentionally declarative: changing a card, reader, target,
+# duration, Portal endpoint, or Home Assistant cue never requires a code edit.
+schema_version: 1
+
+# A repeat scan starts a fresh window from the later scan.
+duration_seconds: 1800
+# Polling is the fallback for a lost WebSocket event, expiry, and manual
+# deletion/edit of shutdown/lockdown.yml. Keep this short for Portal re-enable.
+reconcile_seconds: 5
+
+nfc:
+  reader_id: study-omr
+  tag_uid: 04aa660fcb2a81
+
+targets:
+  school_screen_ids:
+    - portal
+  piano_device_ids:
+    - yellow-room-tablet
+
+# Portal Keys is independent of the browser blackout so the native hardware
+# buttons are also suppressed during shutdown. Provision the matching secret
+# onto the APK with: node _extensions/portal-keys/pkctl.mjs lockdown-token <secret>
+# `auth_ref` resolves through the household auth store; do not put its value here.
+portal_keys:
+  base_url: http://10.0.0.92:8771
+  auth_ref: portal-keys-lockdown
+
+# The initial cue is a KC-phone push. Its Home Assistant script definition is
+# tracked beside this file and can later grow a siren action without app code.
+home_assistant:
+  script: script.public_kiosk_shutdown_cue

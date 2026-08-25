@@ -50,6 +50,8 @@ export function createNfcTapIngress({
   triggerConfig = null,
   triggerDispatchService = null,
   resolvePersonalCard = null,
+  shutdownService = null,
+  getShutdownConfig = null,
   location = null,
   logger = console,
 } = {}) {
@@ -69,6 +71,17 @@ export function createNfcTapIngress({
     }
 
     const tag = triggerConfig?.nfc?.tags?.[canonical] ?? null;
+    // This deliberately precedes the learner-card branch: the shutdown tag is
+    // a household safety command, not a learner identity or media trigger.
+    const shutdown = getShutdownConfig?.() ?? null;
+    const shutdownUid = typeof shutdown?.nfc?.tag_uid === 'string'
+      ? canonicalizeNfcUid(shutdown.nfc.tag_uid) : null;
+    const shutdownReaderId = shutdown?.nfc?.reader_id ?? null;
+    if (shutdownService?.activate && shutdownUid === canonical && (!shutdownReaderId || shutdownReaderId === id)) {
+      const state = await shutdownService.activate({ readerId: id, tagUid: canonical });
+      logger.info?.('nfc.tap.shutdown', { reader: id, uid: canonical, lockedUntil: state.lockedUntil });
+      return { status: 'shutdown_locked', lockedUntil: state.lockedUntil };
+    }
     const learnerId = tag?.global?.[SCHOOL_LEARNER_FIELD] ?? null;
 
     if (learnerId) {

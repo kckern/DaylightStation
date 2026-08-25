@@ -146,6 +146,12 @@ public class PortalKeysService extends AccessibilityService
         if (!isVolume) return false; // everything else passes through untouched
 
         keysSeen++;
+        // Shutdown is enforced below the browser: it must also suppress the
+        // physical double-press screen toggle and Android volume changes.
+        if (config.lockdownActive()) {
+            eventLog.add("key-suppressed-lockdown " + name);
+            return true;
+        }
         broadcast(name, down ? "down" : "up", interactive);
 
         // ── Display is OFF: any volume key wakes it, and changes nothing else. ──

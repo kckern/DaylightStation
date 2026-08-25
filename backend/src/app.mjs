@@ -3920,6 +3920,37 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'trigger' }),
   });
   v1Routers.trigger = triggerRouter;
+  // Shared public-kiosk shutdown is deliberately server-owned: NFC writes one
+  // hand-editable state file and both kiosks observe its read-only projection.
+  const { YamlShutdownDatastore } = await import('#adapters/persistence/yaml/YamlShutdownDatastore.mjs');
+  const { PortalKeysLockdownAdapter } = await import('#adapters/devices/PortalKeysLockdownAdapter.mjs');
+  const { ShutdownService } = await import('#apps/shutdown/ShutdownService.mjs');
+  const { createShutdownRouter } = await import('#api/v1/routers/shutdown.mjs');
+  // Reload the small policy document on each safety check. That makes an NFC
+  // tag/target change take effect from YAML without a process restart, while
+  // the separately persisted lockdown.yml remains the only authority on an
+  // already-active window.
+  const readShutdownConfig = () => {
+    if (typeof configService.reloadHouseholdAppConfig === 'function') {
+      return configService.reloadHouseholdAppConfig(householdId, 'shutdown') || {};
+    }
+    return configService.getHouseholdAppConfig?.(householdId, 'shutdown') || {};
+  };
+  const shutdownConfig = readShutdownConfig();
+  const portalAuth = shutdownConfig.portal_keys?.auth_ref
+    ? configService.getHouseholdAuth?.(shutdownConfig.portal_keys.auth_ref, householdId) : null;
+  const portal = new PortalKeysLockdownAdapter({
+    baseUrl: shutdownConfig.portal_keys?.base_url,
+    token: typeof portalAuth === 'string' ? portalAuth : portalAuth?.token,
+    logger: rootLogger.child({ module: 'shutdown-portal' }),
+  });
+  const shutdownService = new ShutdownService({
+    repo: new YamlShutdownDatastore({ configService }), eventBus, getConfig: readShutdownConfig,
+    haGateway: homeAutomationAdapters.haGateway, portal, logger: rootLogger.child({ module: 'shutdown' }),
+  });
+  shutdownService.start();
+  server?.once?.('close', () => shutdownService.dispose());
+  v1Routers.shutdown = createShutdownRouter({ shutdownService });
   // The action executor is deliberately late-bound: SchoolCalc is composed
   // before the existing print and trigger services, but scans cannot arrive
   // until boot is complete. This keeps one shared policy path rather than a
@@ -3943,6 +3974,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     triggerConfig,
     triggerDispatchService,
     resolvePersonalCard: schoolLifecycle.useCases?.resolvePersonalCard ?? null,
+    shutdownService,
+    getShutdownConfig: readShutdownConfig,
     location: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcLocation ?? null,
     logger: rootLogger.child({ module: 'nfc-tap' }),
   });
