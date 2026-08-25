@@ -64,13 +64,57 @@ The original intent was right — `receipts.mjs:258-261` states it explicitly:
 
 The section carries `lockReason` where it meant to carry `remedy`. One field, prose instead of data.
 
-### Fix
+### Fix — two rules, in this order
 
-Thread `remedy` (the object) through `planDailyAgenda` alongside — not instead of — `lockReason`,
-and treat a locked section's remedy as **the section's offer**: mint its token, print its QR and
-panel code, render it as `next`.
+> **Revised 2026-08-25 after adversarial review.** An earlier draft said simply "promote the remedy
+> to the section's offer." **That is wrong in every reachable case and would ship a new bug.**
+> `agenda.mjs:191-193` computes `lockedRemedy` only when `!next` — only when the section has **no**
+> available candidate. If the blocker were available it would already *be* `section.next`. So
+> unconditional promotion is either vacuous or promotes work that is **not** available.
+>
+> Concrete failure it would have caused: on **Saturday 2026-08-29**, a learner who finished week 35
+> sees w36-d1 as `upcoming` (its window opens Aug 31) and w36-d2 as `locked` with remedy = w36-d1.
+> Promotion would mint a token and **open next Monday's lesson early** — and `ensureSession`
+> (`offerSession.mjs:28-48`) has no timing guard, after which "open beats the lock deliberately"
+> (`planner.mjs:314-317`) makes the early start permanent.
 
-The lock is an implementation detail of sequencing. The child needs the outcome, not the reasoning.
+**Rule 1 — fix locked-vs-upcoming precedence first.** When a section has no candidate and the
+blocking entry is `upcoming` or `dormant`, the section must yield its **`timingNotice`**
+("Starts <date>"), never lock prose. A child cannot act on either, but the timing notice is *true
+and non-actionable by nature*, whereas "Finish X first" is an instruction that cannot be followed.
+`agenda.mjs:227-229` has the same wrong precedence in `obligation.reason` and must be fixed with it.
+
+**Rule 2 — promote only when the remedy is genuinely offerable.** Promote the remedy to the
+section's offer **only if** it resolves to a plan entry whose own status is `available` or
+`in_progress`. Blocker chains must be followed to a fixpoint: `planner.mjs:218-223` returns only the
+*nearest* unpassed predecessor, which may itself be locked. If the fixpoint is not offerable, fall
+back to Rule 1's notice or today's prose.
+
+When Rule 2 does fire, the lock is an implementation detail of sequencing and the child gets the
+outcome, not the reasoning.
+
+### Where the fix lands
+
+**In `planDailyAgenda`, not in `BuildAgenda`.** Four surfaces consume the same locked state:
+`ResolveSubjectNext.mjs:131`, `ResolveAccessCode.mjs:320`, the self-service card builder
+`offeredActions.mjs:188-201`, and the printed agenda. Fixing only `BuildAgenda` means the printed QR
+offers a unit while the panel code still says "Finish … first."
+
+`remedy` is `{ unitId, title, action }` (`planner.mjs:321-325`) — not a plan entry. Promotion must
+**materialize it into the blocker's full entry** (status, timing, priority, taxonomy), not synthesize
+a partial one.
+
+### The promoted section's obligation state — must be declared
+
+Today a blocked section is `blocked_no_offer` → `excused` (`agenda.mjs:227`), which is why a learner
+could read `complete` this morning with scripture excused. If promotion makes the section
+`obligated`, completion flips to `incomplete` and the piano games re-lock
+(`useSchoolGameAccess.js:6`) **as a side effect of this spec** — territory the pacing spec claims.
+
+**Ruling: a promoted section is `obligated`.** It now carries real, actionable work, and calling it
+excused would mean printing a live QR under a day marked complete. This must be stated because it
+means Spec A and the pacing spec both move the completion lever, and whichever ships second inherits
+the interaction.
 
 **`lockReason` keeps a consumer — the teacher console — and must become unprintable on a child's
 receipt.** Leaving it renderable is how the dead-end line creeps back later.
@@ -120,6 +164,26 @@ withCurriculumExceptions(withAttestedPasses(rawHistory, …), …)
 `CloseSessionOutcome` currently uses raw `listForLearner` (`:594-604`) and has no `attestations` or
 `curriculumExceptions` dependencies. Both must be injected. An attested pass unlocks a successor on
 the agenda that an unwrapped plan still shows locked.
+
+**`launchers` + program statuses are also required.** `planDailyAgenda` without `programStatuses`
+sees every program's `doneToday` as false, so a finished PE or flashcards subject looks unserved and
+can win the receipt's next slot — drift by construction. All three deps (`attestations`,
+`curriculumExceptionStore`, `launchers`) are already in scope at the construction site,
+`schoolLifecycle.mjs:738`.
+
+**`ResolveSubjectNext` picks within ONE subject** (`:119-133`) — the subject its token names. It has
+no cross-subject selection rule, and none exists anywhere in the codebase. This spec must define one
+or the implementer will invent a new private answer, which is the exact sin being fixed here.
+
+**Ruling: the cross-section winner is the first section in the agenda's own paper order** that has a
+non-null `next`. The printed agenda already orders sections; using that order means the receipt names
+whatever the child would read first on their own agenda. No new ordering is introduced.
+
+**Known, accepted asymmetry:** `BuildAgenda` appends flashcard and language-reel entries to the plan
+after `planLearnerWork` runs (`:213-237`); `ResolveSubjectNext` does not. The receipt follows
+`ResolveSubjectNext`'s inputs, so it can never name a flashcard or language-reel as "next." That is
+acceptable — those are not tokened worksheet offers — but it must be stated so the two surfaces'
+difference is a decision rather than a surprise.
 
 ### What `plan.next` is not
 

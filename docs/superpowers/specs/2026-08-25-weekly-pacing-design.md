@@ -34,7 +34,22 @@ holding a receipt actually has.
 
 ---
 
-## Prerequisite — enrollments must be re-materialized
+## Prerequisite — ✅ DONE 2026-08-25 18:35–18:36Z
+
+**Both learners were re-enrolled with `rematerialize: true` and now carry full `moduleSchedule`
+(w35–w51), `lessonOrder` in authored d1→d5 order, and `moduleOrder` in calendar order.** Plan-errors
+went to zero and scripture offers a real unit. The section below is retained as the explanation of
+*why* it was needed.
+
+> ### ⚠️ Do NOT re-run rematerialization after a week closes
+>
+> `enrollment.mjs:38` filters `module.closesOn >= today`. Re-running on, say, 2026-08-31 would
+> silently **drop week 35** — and every earlier closed week — from the enrollment, taking its
+> `moduleSchedule` entry and `lessonOrder` with it. That would destroy exactly the data pacing
+> depends on, mid-course, with no error. If an enrollment must be rebuilt later, this filter has to
+> be addressed first.
+
+## Why it was needed (historical)
 
 `createCourseEnrollment` (`backend/src/2_domains/school/curriculum/enrollment.mjs:37-39, 71`) builds
 `moduleSchedule` by filtering modules that are **published at enrollment time**:
@@ -100,28 +115,73 @@ Derived, not hardcoded: expected on day *d* is `min(d, lessonCount)` where *d* i
 - `owedToday = clamp(expected(today) − completedThisModule)`
 - `caughtUp = completedThisModule >= expected(today)`
 
-### The cap
+### The cap — a serve budget, not simultaneous offers
 
-- **Mon–Fri:** at most **2** lessons offered per day — today's plus one catch-up.
+- **Mon–Fri:** at most **2** lessons per day — today's plus one catch-up.
 - **Sat:** uncapped. The window's spare days are the deliberate catch-up room.
-- **Sun:** offers nothing. Expected stays at 5; the week closes.
+- **Sun:** cap 0 — offers nothing.
 
 Rationale: an uncapped Friday after a lost week means five lessons in one sitting, which converts a
 pacing feature into a punishment. The cap bounds any single day at double a normal one while still
 recovering a three-day hole in three days.
 
-### Ruling: no rollover
+**Implementation note (revised after review).** An earlier draft said a paced subject "offers up to
+`min(owedToday, cap)` entries." **That is unsupported by the architecture** — a section has exactly
+one `next`, and `BuildAgenda` mints one `subject_next` token per subject
+(`tokensBySubject`, `accessCodesByToken`, one lesson card per subject on the document).
 
-At `closesOn`, the module closes and the count resets. Unfinished lessons are **not** carried into
-the next week.
+The cap is a **serve budget**, consumed one lesson at a time, which is precisely what the existing
+**focus-budget** mechanism already does (`agenda.mjs:89-94, 187-188`): `servedToday` withholds the
+next offer until `candidatePasses < focusBudget`. Pacing should set that budget rather than invent
+parallel offers. It must also compose with the existing `dated_modules` gating
+(`planner.mjs:270-291`), which already gates *which module* is current — intra-week pacing is the
+only new thing here.
 
-Rationale: CFM is tied to calendar weeks — week 36 *is* next week's reading whether or not week 35
-finished. Carrying backlog forward puts a child permanently out of sync with what the family is
-actually studying, and against a 2/day cap with 5 new lessons arriving weekly it never converges.
+### Sunday must excuse, not deadlock
 
-**Cost, stated plainly: content is genuinely skipped.** Missed lessons surface on the teacher
-console, never on the child's paper. This is the ruling most worth revisiting if it feels wrong in
-practice.
+A cap of 0 cannot combine with "complete means `caughtUp`" or a learner one lesson behind on Sunday
+is `incomplete`, offered nothing, and **locked out of their games all day with no path to unlock**.
+Sunday is *inside* every window (`closesOn` is a Sunday for all 17 weeks), so the out-of-window
+excusal never fires.
+
+**Rule: when the cap for the day is 0, the paced subject is `excused` for that day**, exactly as a
+subject with no available offer is today. The week's expectation is unchanged; the child simply is
+not obligated on a day the household does not assign work.
+
+### Ruling: RETRACTED — catch-up already exists and is intentional
+
+> **Revised 2026-08-25 after adversarial review.** An earlier draft ruled "no rollover: at
+> `closesOn` the week closes and unfinished lessons are not carried forward," and claimed missed
+> lessons would "surface on the teacher console, never on the child's paper." **Both were wrong.**
+> That behaviour already ships, deliberately, and the ruling would have torn out a designed feature.
+
+The course file says so in its own words
+(`data/content/school/scripture/come-follow-me-ot-2026/_index.yml`):
+
+> *"Weeks are dated: the calendar picks the current one, and unfinished earlier weeks stay available
+> as catch-up, newest first."*
+
+And it is implemented end to end:
+
+- `timing.mjs:231` — a closed window returns `{ state: 'catch_up' }`, deliberately never `dormant`.
+- `planner.mjs:283, 344-352` — closed modules are collected, ranked newest-first, and stay
+  `available` at medium priority.
+- `agenda.mjs:218, 234-235` — they are classed `optional_backlog`.
+
+So once the current week is served, catch-up lessons **do** become `section.next` and **do** print on
+a child's paper. That is the intent.
+
+**Corrected ruling: pacing composes with catch-up; it does not replace it.**
+
+- `expected(day)` and `owedToday` are computed against the **current** module only. Backlog is not
+  added to today's obligation — a child three weeks behind does not owe 15 lessons today.
+- Catch-up entries remain offerable exactly as they are now, as `optional_backlog`, **after** the
+  current week's obligation is met.
+- Completion (`caughtUp`) is judged on the current module. Backlog does not block "done for the
+  day," or a child who fell behind once could never be done again.
+
+This keeps the curriculum's stated design — the family stays in sync with the current week, while
+earlier weeks stay reachable — and confines pacing to the question it was meant to answer.
 
 ### Ruling: positional, not judgmental
 
