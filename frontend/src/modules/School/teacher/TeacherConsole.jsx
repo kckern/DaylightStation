@@ -79,6 +79,8 @@ function TeacherShell() {
   useEffect(() => {
     let alive = true;
     const poll = async () => {
+      // A hidden tab polls nothing; visibilitychange below catches up on return.
+      if (document.visibilityState === 'hidden') return;
       const [review, prints] = await Promise.all([schoolApi.lifecycleReview(), schoolApi.printPending()]);
       if (!alive) return;
       setBacklog((review.ok ? (review.data?.items ?? []).length : 0) + (prints.ok && Array.isArray(prints.data) ? prints.data.length : 0));
@@ -88,7 +90,9 @@ function TeacherShell() {
     };
     poll();
     const timer = setInterval(poll, 60_000);
-    return () => { alive = false; clearInterval(timer); };
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { alive = false; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
   useEffect(() => {
