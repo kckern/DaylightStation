@@ -93,3 +93,32 @@ describe('usePanelFetch rejection path', () => {
     await waitFor(() => expect(result.current.state).toBe('error'));
   });
 });
+
+describe('stale-while-revalidate retry', () => {
+  it('keeps good data through a retry and through a failed refresh', async () => {
+    const { renderHook, waitFor: hookWaitFor, act: hookAct } = await import('@testing-library/react');
+    let calls = 0;
+    const fetcher = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return { ok: true, status: 200, data: { items: [1] } };
+      return { ok: false, status: 500, data: null };
+    });
+    const { result } = renderHook(() => usePanelFetch(fetcher, { panel: 'swr-test' }));
+    await hookWaitFor(() => expect(result.current.state).toBe('ok'));
+    hookAct(() => result.current.retry());
+    // During the refresh the old data stays up.
+    expect(result.current.data).toEqual({ items: [1] });
+    await hookWaitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    // The failed refresh keeps the stale data — no blank error panel.
+    await hookWaitFor(() => expect(result.current.refreshing).toBe(false));
+    expect(result.current.state).toBe('ok');
+    expect(result.current.data).toEqual({ items: [1] });
+  });
+
+  it('a first-load failure still errors (nothing stale to show)', async () => {
+    const { renderHook, waitFor: hookWaitFor } = await import('@testing-library/react');
+    const fetcher = vi.fn(async () => ({ ok: false, status: 500, data: null }));
+    const { result } = renderHook(() => usePanelFetch(fetcher, { panel: 'swr-test' }));
+    await hookWaitFor(() => expect(result.current.state).toBe('error'));
+  });
+});

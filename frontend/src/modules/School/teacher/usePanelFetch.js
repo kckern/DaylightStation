@@ -26,46 +26,66 @@ const looksEmpty = (d) => (
 export function usePanelFetch(fetcher, {
   deps = [], isEmpty = looksEmpty, notFoundAs = 'error', nullAs = 'empty', panel = 'panel',
 } = {}) {
-  const [result, setResult] = useState({ state: 'loading', data: null });
+  const [result, setResult] = useState({ state: 'loading', data: null, refreshing: false });
   const [attempt, setAttempt] = useState(0);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  // The last good payload, for stale-while-revalidate retries: a manual retry
+  // after success must not blank a perfectly good panel back to a skeleton.
+  const lastGoodRef = useRef(null);
+
+  const depsKeyRef = useRef(null);
 
   useEffect(() => {
     let alive = true;
-    setResult({ state: 'loading', data: null });
+    // Deps changed = a different query (new learner/day) — stale data from
+    // the old query must never show under the new one.
+    const depsKey = JSON.stringify(deps);
+    if (depsKeyRef.current !== depsKey) { lastGoodRef.current = null; depsKeyRef.current = depsKey; }
+    const stale = attempt > 0 ? lastGoodRef.current : null;
+    setResult(stale
+      ? { state: stale.state, data: stale.data, refreshing: true }
+      : { state: 'loading', data: null, refreshing: false });
     fetcherRef.current().then(({ ok, status, data }) => {
       if (!alive) return;
       if (!ok) {
         if (status === 404 && notFoundAs !== 'error') {
           if (notFoundAs === 'unavailable') teacherLog.fetch('unavailable', { panel, status });
-          setResult({ state: notFoundAs, data: null });
+          setResult({ state: notFoundAs, data: null, refreshing: false });
         } else {
           teacherLog.fetch('fetch-failed', { panel, status });
-          setResult({ state: 'error', data: null });
+          // A failed REFRESH keeps the stale data on screen; only a first
+          // load (nothing to show) surfaces the error state.
+          setResult(stale
+            ? { state: stale.state, data: stale.data, refreshing: false }
+            : { state: 'error', data: null, refreshing: false });
         }
         return;
       }
       if (data === null) {
         if (nullAs === 'unavailable') teacherLog.fetch('unavailable', { panel, status });
-        setResult({ state: nullAs, data: null });
+        setResult({ state: nullAs, data: null, refreshing: false });
         return;
       }
-      setResult(isEmpty(data) ? { state: 'empty', data } : { state: 'ok', data });
+      const next = isEmpty(data) ? { state: 'empty', data, refreshing: false } : { state: 'ok', data, refreshing: false };
+      if (next.state === 'ok') lastGoodRef.current = { state: 'ok', data };
+      setResult(next);
     }).catch((err) => {
       // schoolApi's req() never throws, but the hook is the module-wide
       // contract and callers pass composed closures — a rejection must land
       // in `error`, never leave the panel loading forever.
       if (!alive) return;
       teacherLog.fetchError('fetcher-threw', { panel, error: err?.message });
-      setResult({ state: 'error', data: null });
+      setResult(stale
+        ? { state: stale.state, data: stale.data, refreshing: false }
+        : { state: 'error', data: null, refreshing: false });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt, ...deps]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { state: result.state, data: result.data, retry };
+  return { state: result.state, data: result.data, refreshing: result.refreshing, retry };
 }
 
 /** The single-banner rule: true only when EVERY lifecycle panel reported unavailable. */
