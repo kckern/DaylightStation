@@ -170,6 +170,19 @@ on the provider's integration config. Written by
 `backend/src/1_adapters/ai/AiUsageLedger.mjs`; recording never breaks the call
 it observes.
 
+Pricing is per 1M tokens and models four rates — `input`, `cachedInput`,
+`cacheWrite`, `output` — plus an optional `long` block for long-context rates.
+Cache hits matter: on the gpt-5.6 family they bill at a tenth of the input rate.
+Both providers report them, but differently — OpenAI nests
+`prompt_tokens_details.cached_tokens` *inside* `prompt_tokens`, Anthropic
+reports `cache_read_input_tokens` *outside* `input_tokens` — so the adapters
+normalize to "cached is a subset of prompt" before pricing. The long-context
+threshold defaults to 128K prompt tokens; that boundary is an assumption, not a
+published figure, and is overridable per model with `longThreshold`. Every call
+this codebase makes today is far below it. OpenAI `reasoning_tokens` are logged
+separately: they already bill inside `completion_tokens`, but they are otherwise
+invisible spend.
+
 ### system-local.{ENV}.yml (Environment Overrides)
 
 Per-environment overrides merged on top of system.yml.
