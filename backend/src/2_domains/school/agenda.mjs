@@ -83,6 +83,72 @@ function gradeFor(list, latestBySessionUnit, statuses) {
   return Math.round(mean);
 }
 
+// --- blocked-work provenance -------------------------------------------------
+// A lock is two different situations wearing one name. "Finish Unit One first"
+// when Unit One is sitting there waiting is an ordinary sequence and excuses
+// the day; the same sentence pointing at something NOTHING can reach is a
+// broken curriculum, and a broken curriculum must never read as a day served.
+// The planner (planner.mjs `blockerFor`) reports only the NEAREST unpassed
+// predecessor, which may itself be locked behind something else, so the chain
+// has to be walked to a fixpoint before either verdict is safe.
+
+/** Work a child can pick up right now. */
+const ACTIONABLE_STATUSES = new Set(['available', 'in_progress']);
+
+/**
+ * The reasons that describe the SYSTEM being broken rather than the child
+ * being legitimately off the hook. These fault the day (`indeterminate` in
+ * completion.mjs) instead of excusing it, because a day that could not be
+ * judged is not a day that was finished — and the piano-kiosk games hang off
+ * that verdict.
+ */
+const FAULT_REASONS = new Set(['program_unavailable', 'blocked_unreachable']);
+
+/**
+ * Work held by the calendar or by a grown-up rather than by a broken
+ * curriculum. A date arrives on its own and a grown-up can be asked, so
+ * neither is a fault — and the excuse ladder below already has truthful names
+ * for those days (`opens_later`, `awaiting_grown_up`).
+ *
+ * The exception is the planner's `not_scheduled` marker: a dated unit whose
+ * module carries no window at all is not waiting for a date, it is waiting for
+ * a date that will never exist.
+ */
+const isTimeHeld = (entry) => (entry.status === 'upcoming' || entry.status === 'dormant')
+  && !(entry.timingReasons ?? []).includes('not_scheduled');
+
+/**
+ * Walk one locked entry's blocker chain to a fixpoint.
+ *
+ * @returns {boolean} true when the chain ends at something the child (or the
+ *   calendar, or a grown-up) can actually get to. False when it dead-ends: a
+ *   blocker absent from the plan, a lock that names no remedy at all, a
+ *   never-scheduled dated unit, a blocker already passed (a contradiction the
+ *   planner cannot produce, so evidence the data is wrong), or a cycle.
+ */
+function blockerChainIsReachable(start, entryByUnit, logger) {
+  const visited = new Set();
+  let cursor = start;
+  while (cursor) {
+    if (visited.has(cursor.unitId)) {
+      // A malformed curriculum must not hang the planner.
+      logger?.warn?.('school.agenda.blocker-cycle', {
+        unitId: start.unitId, subject: start.subject ?? null, chain: [...visited],
+      });
+      return false;
+    }
+    visited.add(cursor.unitId);
+    const blockerId = cursor.remedy?.unitId ?? null;
+    if (!isNonEmptyString(blockerId)) return false;
+    const blocker = entryByUnit.get(blockerId);
+    if (!blocker) return false;
+    if (ACTIONABLE_STATUSES.has(blocker.status) || isTimeHeld(blocker)) return true;
+    if (blocker.status !== 'locked') return false;
+    cursor = blocker;
+  }
+  return false;
+}
+
 const timingScope = (entry) => entry?.courseId ? `course:${entry.courseId}` : `unit:${entry?.unitId ?? ''}`;
 const byEntryPriority = (left, right) => (left.timingPriority ?? 3) - (right.timingPriority ?? 3)
   || (left.timingRank ?? 0) - (right.timingRank ?? 0);
@@ -120,10 +186,12 @@ export function programStatusFor(programStatuses, entry) {
  * @param {string} args.now               ISO string — compared against, never stamped
  * @param {string|null} [args.timezone]   IANA zone, or null
  * @param {number} [args.boundaryHour]    study-day rollover hour (default 4am)
+ * @param {object} [args.logger]          structured logger; `warn` is called when a
+ *                                         subject turns out to be blocked by nothing reachable
  * @returns {{ sections: object[] }}
  */
 export function planDailyAgenda({
-  plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4,
+  plan, sessions = [], programStatuses = {}, now, timezone = null, boundaryHour = 4, logger = null,
 } = {}) {
   const nowMs = Date.parse(now ?? '');
   const entries = (plan?.entries ?? []).filter((e) => e && typeof e === 'object');
@@ -208,6 +276,12 @@ export function planDailyAgenda({
     // partway through its extra blocks is still "served" for completion
     // purposes) and counts only non-elective passes (an elective pass must
     // never excuse a required entry sharing its subject).
+    //
+    // EXCUSED is not the same as FAULTED. Excused means the child is
+    // legitimately off the hook and the day may still complete; faulted means
+    // the day could not be judged at all. Two reasons fault: a required
+    // program that will not answer, and work blocked by something nothing can
+    // reach (see `blockerChainIsReachable` above).
     const nonElectiveList = list.filter((e) => !e.elective);
     const actionable = eligible.filter((e) => !e.elective && (e.status === 'in_progress' || e.status === 'available'));
     const nonElectiveProgramDone = nonElectiveList.some((e) => (
@@ -224,11 +298,26 @@ export function planDailyAgenda({
       let reason;
       if (nonElectiveList.length === 0) reason = 'elective_only';
       else if (hasNonElective((e) => e.program && unavailableProgramKeys.has(programStatusKey(e)))) reason = 'program_unavailable';
-      else if (hasNonElective((e) => e.status === 'locked')) reason = 'blocked_no_offer';
-      else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
+      else if (hasNonElective((e) => e.status === 'locked')) {
+        // The split the 2026-08-25 unlock incident demanded: being blocked by a
+        // sibling the child can still get to excuses the day, being blocked by
+        // something nothing can reach is a fault. Only one locked entry needs a
+        // live chain for the subject to have somewhere to go.
+        const lockedNonElective = nonElectiveList.filter((e) => e.status === 'locked');
+        const reachable = lockedNonElective
+          .some((e) => blockerChainIsReachable(e, entryByUnit, logger));
+        reason = reachable ? 'blocked_no_offer' : 'blocked_unreachable';
+        if (!reachable) {
+          logger?.warn?.('school.agenda.blocked-unreachable', {
+            subject,
+            unitIds: lockedNonElective.map((e) => e.unitId),
+            blockerIds: lockedNonElective.map((e) => e.remedy?.unitId ?? null),
+          });
+        }
+      } else if (hasNonElective((e) => e.status === 'dormant')) reason = 'awaiting_grown_up';
       else if (hasNonElective((e) => e.status === 'upcoming')) reason = 'opens_later';
       else reason = 'caught_up';
-      obligation = reason === 'program_unavailable'
+      obligation = FAULT_REASONS.has(reason)
         ? { state: 'faulted', reason }
         : { state: 'excused', reason };
     } else if (actionable.every(isBacklog)) {

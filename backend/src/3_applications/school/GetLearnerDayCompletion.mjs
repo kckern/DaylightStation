@@ -52,7 +52,9 @@ export class GetLearnerDayCompletion {
     const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
-    const { sections } = planDailyAgenda({ plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone });
+    const { sections } = planDailyAgenda({
+      plan, sessions: history, programStatuses, now: nowIso, timezone: this.#timezone, logger: this.#logger,
+    });
     const { state, excused, faults } = resolveDayCompletion({ sections, planErrors: plan.errors });
     const { startAtMs } = studyDayWindow(Date.parse(nowIso), { timezone: this.#timezone });
     const studyDate = new Intl.DateTimeFormat('en-CA', {

@@ -286,7 +286,7 @@ export class BuildAgenda {
     // attestation as "this subject was served today", or the repair day is
     // exactly the day the agenda goes silent.
     const { sections: rawSections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
+      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone, logger: this.#logger,
     });
     const sections = rawSections.map((section) => section.next?.program
       ? { ...section, next: projectProgramEntry(section.next, programStatusFor(programStatuses, section.next)) }

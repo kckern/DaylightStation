@@ -28,6 +28,25 @@ describe('completionAllowsGames', () => {
   it.each(['incomplete', 'indeterminate', null, 'plan_error'])('does not unlock for %s', (state) => {
     expect(completionAllowsGames(state)).toBe(false);
   });
+
+  // A reward gate that fails OPEN on breakage will eventually pay out on
+  // breakage. `indeterminate` is what `resolveDayCompletion` returns when the
+  // day could not be judged — a plan error, an unavailable required program, or
+  // work blocked by something nothing can reach. On 2026-08-25 a learner's only
+  // subject was excused for being broken, his day read `complete`, and his
+  // games unlocked. This pins the gate closed on every state that is not
+  // positive evidence the day is done.
+  it('unlocks on exactly two of the four completion states, and indeterminate is not one', () => {
+    const everyCompletionState = ['complete', 'incomplete', 'no_work_today', 'indeterminate'];
+    expect(everyCompletionState.filter(completionAllowsGames)).toEqual(['complete', 'no_work_today']);
+    expect(completionAllowsGames('indeterminate')).toBe(false);
+  });
+
+  it('fails closed for any state it does not recognise', () => {
+    expect(completionAllowsGames('probably_fine')).toBe(false);
+    expect(completionAllowsGames(undefined)).toBe(false);
+    expect(completionAllowsGames('')).toBe(false);
+  });
 });
 
 describe('useSchoolGameAccess', () => {
