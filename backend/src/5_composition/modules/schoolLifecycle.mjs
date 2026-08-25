@@ -46,6 +46,7 @@ import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.
 import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnchorStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
+import { YamlLessonCompanionStore } from '#adapters/persistence/yaml/YamlLessonCompanionStore.mjs';
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
@@ -91,6 +92,8 @@ import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
 import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
+import { RecordLessonCompanionProgress } from '#apps/school/usecases/RecordLessonCompanionProgress.mjs';
+import { LessonCompanionHandlers, ReadalongLessonCompanionHandler } from '#apps/school/companions/LessonCompanionHandlers.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
@@ -654,6 +657,10 @@ export async function createSchoolLifecycle({
   });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
+  const companions = new YamlLessonCompanionStore({ configService, logger });
+  const companionHandlers = new LessonCompanionHandlers([
+    new ReadalongLessonCompanionHandler({ companions, clock }),
+  ]);
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   // Capture the same canvas the thermal raster path draws. The application
   // receives a small port returning immutable PNG bytes, never a renderer.
@@ -689,7 +696,7 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
-    assignments: stores.assignments, worksheetInstances,
+    assignments: stores.assignments, worksheetInstances, companions,
     issuedArtifacts,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
@@ -697,7 +704,7 @@ export async function createSchoolLifecycle({
     // `PrintService`'s `#policy` getter) — one block, one place a grown-up
     // edits the household's whole print posture from.
     printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
-    bankReader, clock, rng: draw, logger,
+    bankReader, clock, rng: draw, timezone, logger,
     curriculumExceptions: curriculumExceptionStore,
   });
   const issueComposedWorksheet = new IssueComposedWorksheet({
@@ -972,6 +979,7 @@ export async function createSchoolLifecycle({
     attestations,
     curriculumExceptions: curriculumExceptionStore,
     issueDocument,
+    companions,
     selfService: cfg.selfService,
     timezone,
     clock,
@@ -999,10 +1007,12 @@ export async function createSchoolLifecycle({
     // open on this screen) from a `garage-fitness` one, and would tell every
     // child their work was opening in front of them.
     launchers,
+    companions, companionHandlers,
     newSessionId,
     clock,
     logger,
   });
+  const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
 
   const listLearnerSessions = new ListLearnerSessions({ sessions: stores.sessions, timezone, clock });
   const listPrintableWorksheetSessions = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
@@ -1012,7 +1022,7 @@ export async function createSchoolLifecycle({
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
-    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
   };
 
@@ -1048,7 +1058,7 @@ export async function createSchoolLifecycle({
   // `school.yml` needs a restart to take effect.
   const selfServiceEnabled = cfg.selfService?.enabled === true;
   const selfServiceRouter = selfServiceEnabled
-    ? createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction })
+    ? createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress })
     : null;
   if (!selfServiceEnabled) {
     logger.info?.('school.lifecycle.self-service-off', { reason: 'selfService.enabled is not true' });
@@ -1092,7 +1102,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, issuedArtifacts, curriculumExceptionStore,
+      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

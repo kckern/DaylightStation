@@ -214,7 +214,7 @@ export function formatPageSpans(pages) {
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
   sourceTitle = null, printedPages = [], subjectIcon = 'school', subjectName = null, breadcrumb = null,
-  passPercent = null, progress = null,
+  passPercent = null, progress = null, companionCode = null,
 } = {}) {
   const numericSeed = [...String(instance.seed || instance.id)]
     .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
@@ -267,6 +267,7 @@ export function worksheetInstanceDocument(instance, {
         questionCount: instance.questions.length,
         passPercent,
         ...(Array.isArray(progress) && progress.length ? { progress } : {}),
+        ...(companionCode ? { companionCode: String(companionCode) } : {}),
         // Required by the generic inset schema; the lesson-card renderer
         // consumes the semantic fields above instead.
         blocks: [{ type: 'rich_text', md: title }],

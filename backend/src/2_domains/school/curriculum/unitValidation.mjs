@@ -83,6 +83,7 @@ export const PRINT_DOCUMENT_REF_PATTERN = /^print\/[a-z0-9][a-z0-9-]*(\/[a-z0-9]
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 const isPlainObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const isPresent = (v) => v !== undefined && v !== null;
+const READALONG_PARTICIPATION = Object.freeze(['optional', 'required']);
 
 /**
  * @param {*} raw - one parsed unit YAML
@@ -189,6 +190,32 @@ export function validateUnit(raw, sets = {}) {
   const reward = validateReward(raw.reward, errors);
   const retry = validateRetry(raw.retry, errors);
   const schoolcalc = validateSchoolCalc(raw.schoolcalc, raw, errors);
+  let companion;
+  if (isPresent(raw.companion)) {
+    if (!isPlainObject(raw.companion)) {
+      errors.push('companion must be an object');
+    } else {
+      const participation = raw.companion.participation ?? 'optional';
+      if (!READALONG_PARTICIPATION.includes(participation)) {
+        errors.push(`companion.participation must be ${READALONG_PARTICIPATION.join('|')}`);
+      } else {
+        if (raw.companion.handler != null && !isNonEmptyString(raw.companion.handler)) {
+          errors.push('companion.handler must be a non-empty string when present');
+        } else if (raw.companion.label != null && !isNonEmptyString(raw.companion.label)) {
+          errors.push('companion.label must be a non-empty string when present');
+        } else if (raw.companion.payload != null && !isPlainObject(raw.companion.payload)) {
+          errors.push('companion.payload must be an object when present');
+        } else {
+          companion = {
+            enabled: raw.companion.enabled !== false, participation,
+            ...(raw.companion.handler ? { handler: raw.companion.handler.trim() } : {}),
+            ...(raw.companion.label ? { label: raw.companion.label.trim() } : {}),
+            ...(raw.companion.payload ? { payload: structuredClone(raw.companion.payload) } : {}),
+          };
+        }
+      }
+    }
+  }
 
   const references = {};
   for (const [field, setName] of Object.entries(RESOLVABLE_REFS)) {
@@ -354,6 +381,7 @@ export function validateUnit(raw, sets = {}) {
       cadence,
       launch,
       ...(schoolcalc ? { schoolcalc } : {}),
+      ...(companion ? { companion } : {}),
       provenance: raw.provenance,
     },
   };

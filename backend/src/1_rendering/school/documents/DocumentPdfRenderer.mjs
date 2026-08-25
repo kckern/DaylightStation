@@ -517,6 +517,7 @@ export function createDocumentPdfRenderer({
     draw(node.title, 'heading');
     draw(node.reading, 'body');
     draw(node.citation, 'caption');
+    draw(node.companionCode, 'label');
     cursorY += node.bandGap - node.gap;
     out.save().lineWidth(0.6).strokeColor(theme.ink.rule)
       // The divider belongs to the information rail.  It must stop before

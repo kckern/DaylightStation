@@ -45,6 +45,7 @@ import LaunchCard from './selfService/LaunchCard.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 import { useScanCeremony } from './selfService/useScanCeremony.js';
+import ReadalongPlaylistPlayer from '../Player/ReadalongPlaylistPlayer.jsx';
 import { ShutdownBlackout, useShutdownLock } from '../../hooks/useShutdownLock.js';
 import './School.scss';
 
@@ -493,6 +494,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // a child who just pressed a button and got nothing needs words, so
   // `useSelfService` keeps the card up unless this answers `true`.
   const onPortalLaunch = useCallback(async (target, launchedLearnerId = null) => {
+    if (target?.kind === 'companion' && target.presentation === 'readalong') {
+      setActive({ mode: 'lesson_companion', descriptor: target });
+      return true;
+    }
     if (target?.kind === 'program' && ['sentence-ladder', 'language'].includes(target.program)) {
       const courseId = target.corpusId ?? null;
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
@@ -953,6 +958,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           <AdaptiveTutorPanel
             sessionId={active.sessionId}
             learnerId={currentUser.id}
+            onExit={() => setActive(null)}
+          />
+        )}
+        {active?.mode === 'lesson_companion' && active.descriptor.presentation === 'readalong' && (
+          <ReadalongPlaylistPlayer
+            title={active.descriptor.title}
+            parts={active.descriptor.parts}
+            progress={active.descriptor.state}
+            onProgress={(payload) => schoolApi.companionProgress(active.descriptor.companionId, payload)}
             onExit={() => setActive(null)}
           />
         )}

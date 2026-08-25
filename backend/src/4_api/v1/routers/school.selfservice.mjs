@@ -39,7 +39,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
  * @returns {import('express').Router}
  */
-export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction } = {}) {
+export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress = null } = {}) {
   const router = express.Router();
 
   // Registered only when the use case is actually injected, so a deployment
@@ -61,6 +61,12 @@ export function createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServic
     router.post('/act', asyncHandler(async (req, res) => {
       const { code, action } = req.body || {};
       const result = await runSelfServiceAction.execute({ code, action });
+      res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+  if (recordLessonCompanionProgress) {
+    router.post('/companions/:id/progress', asyncHandler(async (req, res) => {
+      const result = await recordLessonCompanionProgress.execute({ id: req.params.id, ...(req.body || {}) });
       res.set('Cache-Control', 'no-store').json(result);
     }));
   }

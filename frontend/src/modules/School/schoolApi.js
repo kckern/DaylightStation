@@ -201,6 +201,7 @@ export const schoolApi = {
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
   selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
   // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
   // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
   // Different base to BASE, hence the raw fetch — same never-throws contract.

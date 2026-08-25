@@ -79,6 +79,31 @@ from that plan; choosing an agenda item opens a work session; issuing paper
 creates a worksheet record and a print artifact. Those are distinct records,
 not successive names for an “assignment.”
 
+### Worksheet read-along
+
+An issued worksheet can include a second, six-digit **Read Along** panel code
+in its lesson card. It opens a generic ordered read-along playlist, so the
+same interaction can support scripture, audiobooks, or other narrated
+material. Handler-owned state lives in `records/companions/`, separately from the
+immutable worksheet and its OMR result. Each offering owns its participation
+policy: it can record opened, position, and completed parts for informational
+use or make that evidence part of a configured completion rule. It never
+changes an OMR score.
+
+The offering-level shape is deliberately small:
+
+```yaml
+companion:
+  enabled: true
+  participation: optional # optional | required
+  handler: readalong # e.g. readalong, singalong, player, program, surface
+  label: Read along # printed/action wording for this companion
+```
+
+Handlers own the action: they may mount a local renderer, open a player, print,
+dispatch to a surface, or emit an application event. Progress is optional and
+implemented only by handlers that have meaningful progress to record.
+
 Time-sensitive work follows the same boundary: a syllabus may offer defaults,
 but an enrollment or standalone-work plan owns the resolved household dates and
 priority. See [Time-sensitive School planning](./timing-and-priority.md).
