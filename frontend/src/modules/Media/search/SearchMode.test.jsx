@@ -320,7 +320,12 @@ describe('SearchMode', () => {
       await screen.findByTestId('search-mode');
       // The notice must name the scope that came up empty, so put the surface
       // on the Ambient chip the way the incident did.
-      fireEvent.click(screen.getByTestId('scope-chip-ambient'));
+      //
+      // AWAITED, not `getBy`: the chips mount a beat after `search-mode`
+      // itself, so a synchronous get here is a race the test only loses when
+      // the machine is busy — it was the last roaming failure of the full
+      // parallel sweep, and passed every time this file ran alone.
+      fireEvent.click(await screen.findByTestId('scope-chip-ambient'));
     }
 
     it('names the empty scope and the widened result count once the widened search has landed', async () => {
