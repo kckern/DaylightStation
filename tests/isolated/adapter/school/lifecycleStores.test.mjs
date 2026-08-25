@@ -69,7 +69,7 @@ describe('YamlAssignmentStore', () => {
     // boundary (school data reorg) — the persistence shape never mixes the two.
     expect(await assignments.get('kid1')).toEqual({
       learnerId: 'kid1', courses: [{ courseId: 'math-fractions' }], units: [{ unitId: 'art.01', elective: true }], updatedAt: AT,
-      assignedBy: null,
+      assignedBy: null, programs: [],
     });
     expect(yaml.load(fs.readFileSync(assignmentsUnder('kid1.yml'), 'utf8')).enrollments).toEqual([{ courseId: 'math-fractions' }]);
   });

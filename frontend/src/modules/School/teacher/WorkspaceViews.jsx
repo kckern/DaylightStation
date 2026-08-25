@@ -3,7 +3,6 @@ import { schoolApi } from '../schoolApi.js';
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 import { usePanelFetch } from './usePanelFetch.js';
 import { useTeacherWrite } from './useTeacherWrite.js';
-import { useTeacherProfile } from './TeacherProfileContext.jsx';
 import { labelize } from './labelize.js';
 import PanelFrame from './panels/PanelFrame.jsx';
 import TodayTab from './tabs/TodayTab.jsx';
@@ -33,18 +32,10 @@ function CapabilityNotice({ children }) {
 }
 
 function useAuthorizedTeacherRead() {
-  const { requestAuthorization, invalidateAuthorization } = useTeacherProfile();
-  return useCallback(async (read) => {
-    let authorized = await requestAuthorization();
-    if (!authorized.ok) return { ok: false, status: 403, data: null };
-    let response = await read();
-    if (response.status !== 403) return response;
-    invalidateAuthorization();
-    authorized = await requestAuthorization();
-    if (!authorized.ok) return response;
-    response = await read();
-    return response;
-  }, [requestAuthorization, invalidateAuthorization]);
+  // Authentication will wrap the teacher route as a whole. Until then, the
+  // presence of this surface is the read boundary; a record read must not
+  // force a local profile claim or silently turn into a sign-in failure.
+  return useCallback(async (read) => read(), []);
 }
 
 const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}:${Math.random().toString(36).slice(2)}`}`;
@@ -451,40 +442,24 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   );
 }
 
-function ArtifactPostview({ artifactId }) {
-  const [url, setUrl] = useState(null);
-  const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-postview' });
-  const key = `postview:${artifactId}`;
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  const prepare = () => run(key, ({ stepUpToken }) => teacherWorkspaceApi.artifactPostview(artifactId, stepUpToken), {
-    stepUp: { action: 'artifact.postview', resource: artifactId },
-    onSuccess: (blob) => {
-      setUrl((prior) => {
-        if (prior) URL.revokeObjectURL(prior);
-        return URL.createObjectURL(blob);
-      });
-    },
-  });
-  return (
-    <>
-      {url
-        ? <a target="_blank" rel="noreferrer" href={url} download={`postview-${artifactId}.pdf`}>Open postview PDF</a>
-        : <button type="button" disabled={busy === key} onClick={prepare}>{busy === key ? 'Preparing…' : 'Prepare postview PDF…'}</button>}
-      {errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}
-    </>
-  );
-}
-
-function ArtifactOriginal({ artifactId, index = null }) {
+function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null, availability = 'exact', index = null }) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const authorizedRead = useAuthorizedTeacherRead();
   useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
   const prepare = async () => {
     setBusy(true);
     setError(null);
-    const response = await authorizedRead(() => teacherWorkspaceApi.artifactOriginal(artifactId));
+    const response = availability === 'deterministic-replay' && sessionId
+      ? await teacherWorkspaceApi.worksheetPdf(sessionId)
+      : originalPdfUrl
+      ? await (async () => {
+        try {
+          const fetched = await fetch(originalPdfUrl, { credentials: 'same-origin' });
+          return fetched.ok ? { ok: true, data: await fetched.blob() } : { ok: false };
+        } catch { return { ok: false }; }
+      })()
+      : await teacherWorkspaceApi.artifactOriginal(artifactId);
     if (response.ok) {
       setUrl((prior) => {
         if (prior) URL.revokeObjectURL(prior);
@@ -493,9 +468,14 @@ function ArtifactOriginal({ artifactId, index = null }) {
     } else setError('Couldn’t open the retained original.');
     setBusy(false);
   };
+  if (!['exact', 'deterministic-replay'].includes(availability)) {
+    return <span className="teacher-muted">{availability === 'semantic-reconstruction'
+      ? 'Only a semantic reconstruction is available for this historical record.'
+      : 'The original paper is not available in this historical record.'}</span>;
+  }
   return <>{url
-    ? <a target="_blank" rel="noreferrer" href={url}>Open issued PDF{index === null ? '' : ` ${index + 1}`}</a>
-    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `Open issued PDF${index === null ? '' : ` ${index + 1}`}…`}</button>}
+    ? <a target="_blank" rel="noreferrer" href={url}>{availability === 'exact' ? 'Open issued PDF' : 'Open replayed worksheet PDF'}{index === null ? '' : ` ${index + 1}`}</a>
+    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `${availability === 'exact' ? 'Open issued PDF' : 'Open replayed worksheet PDF'}${index === null ? '' : ` ${index + 1}`}…`}</button>}
   {error && <span className="teacher-panel__error">{error}</span>}</>;
 }
 
@@ -518,13 +498,15 @@ function ArtifactReprint({ artifactId, onPrinted }) {
 }
 
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
-  const authorizedRead = useAuthorizedTeacherRead();
   const [result, setResult] = useState({ state: 'loading', session: null, ownerId: learnerId });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const dedicated = await authorizedRead(() => teacherWorkspaceApi.session(sessionId));
+      // Reaching the teacher surface is the read boundary for now. History
+      // must not be blocked by the future login wrapper or make a user claim
+      // just to see an already-issued session.
+      const dedicated = await teacherWorkspaceApi.session(sessionId);
       if (dedicated.ok) return { state: 'ok', session: dedicated.data, ownerId: dedicated.data?.state?.learnerId ?? dedicated.data?.learnerId ?? learnerId };
       if (dedicated.status !== 404) return { state: 'error', session: null, ownerId: learnerId };
       const candidates = learnerId ? kids.filter((kid) => kid.id === learnerId) : kids;
@@ -541,12 +523,10 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
       setResult(next);
     }).catch(() => alive && setResult({ state: 'error', session: null, ownerId: learnerId }));
     return () => { alive = false; };
-  }, [learnerId, sessionId, kids, attempt, authorizedRead]);
+  }, [learnerId, sessionId, kids, attempt]);
 
   const session = result.session;
   const sessionState = session?.schema?.startsWith('school.teacher-session/') ? session.state : session;
-  const artifactIds = session?.artifactIds?.length ? session.artifactIds
-    : [sessionState?.artifactId ?? sessionState?.document?.artifactId ?? sessionState?.issued?.artifactId].filter(Boolean);
   const machineGrade = session?.scores?.machine?.percent ?? sessionState?.machineGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const effectiveGrade = session?.scores?.effective?.percent ?? sessionState?.effectiveGrade?.percent ?? sessionState?.gradedPercent ?? sessionState?.percent ?? null;
   const gradeAdjustments = sessionState?.gradeAdjustments ?? [];
@@ -561,7 +541,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   return (
     <div className="teacher-view teacher-session-inspector">
       <button type="button" className="teacher-back" onClick={onBack}>← Back to history</button>
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Session inspector</p><h2>{sessionState?.title ?? labelize(sessionState?.unitId) ?? sessionId}</h2><p>{ownerName ? `${ownerName} · ` : ''}{sessionId}</p></div></div>
+      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">{session?.taxonomy?.subject ?? 'Session record'}</p><h2>{session?.taxonomy?.lessonTitle ?? sessionState?.title ?? 'Lesson'}</h2><p>{[ownerName, session?.taxonomy?.courseTitle, session?.taxonomy?.moduleTitle].filter(Boolean).join(' · ')}</p></div></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
       {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
       {result.state === 'empty' && <CapabilityNotice>This session is not present in the available learner-history window. A dedicated session read endpoint is required to inspect older records.</CapabilityNotice>}
@@ -579,11 +559,34 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
-          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Rendered results</h3><p className="teacher-muted">Generated from decoded OMR evidence. These images are rendered results, not photographs of the scanned answer card.</p><div className="teacher-result-previews"><figure><img src={session.results.machine} alt="Rendered original machine result" /><figcaption>Original machine result</figcaption></figure><figure><img src={session.results.effective} alt="Rendered current effective result" /><figcaption>Current effective result</figcaption></figure></div></section>}
+          {session?.assignment && <section className="teacher-panel">
+            <h3 className="teacher-panel__title">Paper issued</h3>
+            <p className="teacher-muted">Created {session.assignment.createdAt ? new Date(session.assignment.createdAt).toLocaleString() : 'at session start'} · immutable published worksheet revision</p>
+            <ol className="teacher-event-list teacher-question-list">
+              {session.assignment.questions.map((question) => <li key={question.itemId ?? question.number}>
+                <strong>{question.number}. {question.prompt ?? 'Question text unavailable'}</strong>
+                {question.choices?.length > 0 && <span>{question.choices.map((choice) => choice.text ?? choice.label ?? choice).join(' · ')}</span>}
+              </li>)}
+            </ol>
+          </section>}
+          {session?.assessment?.items?.length > 0 && <section className="teacher-panel">
+            <h3 className="teacher-panel__title">Answers and result</h3>
+            <ol className="teacher-event-list teacher-question-list">
+              {session.assessment.items.map((item) => <li key={item.itemId ?? item.questionNumber}>
+                <strong>Question {item.questionNumber}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>Answer: {item.given ?? 'No recorded answer'} · Expected: {item.expected?.join(', ') || 'Unavailable'} · {item.verdict ?? 'Not yet reviewed'}</small>
+              </li>)}
+            </ol>
+          </section>}
+          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Assessment renderings</h3><p className="teacher-muted">These are the machine assessment rendering and the current effective assessment. They are not the thermal receipt or a photograph of the scanned answer card.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Machine assessment rendering" /></a><figcaption>Machine assessment</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current effective assessment rendering" /></a><figcaption>Current effective assessment</figcaption></figure></div></section>}
           {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
           <section className="teacher-panel">
             <h3 className="teacher-panel__title">Artifact lineage</h3>
-            {artifactIds.length ? artifactIds.map((artifactId, index) => <div className="teacher-artifact-actions" key={artifactId}><ArtifactOriginal artifactId={artifactId} index={artifactIds.length > 1 ? index : null} /><ArtifactReprint artifactId={artifactId} onPrinted={() => setAttempt((n) => n + 1)} /><ArtifactPostview artifactId={artifactId} /><span>{artifactId}</span></div>) : <CapabilityNotice>No retained artifact is linked to this session. Legacy issues may only have event metadata.</CapabilityNotice>}
+            {session?.artifacts?.length ? session.artifacts.map((artifact, index) => <div className="teacher-artifact-actions" key={artifact.artifactId}>
+              <strong>{artifact.title ?? session.assignment?.title ?? 'Historical document'}</strong>
+              <span className="teacher-muted">{artifact.availability === 'exact' ? 'Exact issued bytes retained' : artifact.availability === 'deterministic-replay' ? 'Replay from frozen issue inputs' : artifact.availability === 'semantic-reconstruction' ? 'Semantic reconstruction only' : 'Original unavailable'}</span>
+              <ArtifactOriginal artifactId={artifact.artifactId} sessionId={sessionId} originalPdfUrl={artifact.originalPdfUrl} availability={artifact.availability ?? (artifact.exactBytesRetained === false ? 'deterministic-replay' : 'exact')} index={session.artifacts.length > 1 ? index : null} />
+              {artifact.availability === 'exact' && <ArtifactReprint artifactId={artifact.artifactId} onPrinted={() => setAttempt((n) => n + 1)} />}
+            </div>) : <CapabilityNotice>No worksheet artifact is linked to this session.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{event.at ? new Date(event.at).toLocaleString() : ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>

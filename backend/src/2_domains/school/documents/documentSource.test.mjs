@@ -87,7 +87,7 @@ describe('validateDocumentSource', () => {
 
   it('reports dotted-path errors for a malformed source, same as validateDocumentV2', () => {
     const { errors } = validateDocumentSource(fullSource({ id: 'BAD ID' }));
-    expect(errors).toContain('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)');
+    expect(errors).toContain('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/creature-identification/quiz-1)');
   });
 
   it('validateAnyDocument routes the source schema literal here', () => {

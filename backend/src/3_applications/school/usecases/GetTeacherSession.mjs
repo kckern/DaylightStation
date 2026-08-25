@@ -3,10 +3,11 @@ import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 
 /** Read models for the teacher history and session inspector surfaces. */
 export class GetTeacherSession {
-  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions;
+  #sessions; #curriculum; #artifacts; #reviews; #allocations; #worksheets; #exceptions; #printDocuments;
   constructor({
     sessions, curriculum = null, issuedArtifacts = null, reviewQueue = null,
     allocationStore = null, worksheetInstances = null, curriculumExceptions = null,
+    printDocuments = null,
   } = {}) {
     if (!sessions) throw new Error('GetTeacherSession requires sessions');
     this.#sessions = sessions;
@@ -16,6 +17,7 @@ export class GetTeacherSession {
     this.#allocations = allocationStore;
     this.#worksheets = worksheetInstances;
     this.#exceptions = curriculumExceptions;
+    this.#printDocuments = printDocuments;
   }
 
   async execute({ sessionId } = {}) {
@@ -23,19 +25,52 @@ export class GetTeacherSession {
     const events = await this.#sessions.readEvents(sessionId);
     if (!events.length) throw new EntityNotFoundError('session', sessionId);
     const state = reduceSession(events);
-    const [unit, works, worksheet, reviewEvidence, artifactRows, learnerSessions, exceptions] = await Promise.all([
+    const [unit, works, worksheet, reviewEvidence, issuedArtifactRows, learnerSessions, exceptions] = await Promise.all([
       this.#curriculum?.getUnit?.(state.unitId) ?? null,
       this.#curriculum?.listWorks?.() ?? [],
       this.#worksheets?.findBySession?.(sessionId) ?? null,
       this.#reviews?.listForSession?.(sessionId) ?? [],
       Promise.all(state.issuedArtifacts.map(async (artifactId) => {
         const artifact = await this.#artifacts?.get?.(artifactId);
-        return artifact ? { ...artifact.manifest,
-          originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf` } : { artifactId };
+        return artifact ? { ...artifact.manifest, availability: 'exact', exactBytesRetained: true,
+          originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf` }
+          : { artifactId, availability: 'unavailable', exactBytesRetained: false };
       })),
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
     ]);
+    // A worksheet has always been an immutable work-session artifact, even
+    // before the byte-retention store existed. Resolve its published document
+    // revision here rather than making old history look as though it never
+    // produced paper. This is read-through only: opening teacher history must
+    // never mint or alter an artifact.
+    const publishedWorksheet = worksheet?.documentId && worksheet?.documentRevision
+      ? await this.#printDocuments?.getPublished?.(worksheet.documentId, worksheet.documentRevision)
+      : null;
+    const legacyArtifact = publishedWorksheet ? {
+      schema: 'school.session-artifact/v2',
+      artifactId: worksheet.id ?? `${sessionId}:worksheet`,
+      kind: 'assignment', origin: 'published-document',
+      documentId: worksheet.documentId, documentRevision: worksheet.documentRevision,
+      title: publishedWorksheet.title ?? unit?.title ?? null,
+      createdAt: worksheet.issuedAt ?? state.createdAt ?? null,
+      originalPdfUrl: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/worksheet.pdf`,
+      exactBytesRetained: false,
+      availability: 'deterministic-replay',
+      rendererRevision: worksheet.rendererRevision ?? null,
+    } : null;
+    let artifactRows = [...issuedArtifactRows];
+    if (legacyArtifact) {
+      const legacyIndex = artifactRows.findIndex((artifact) => artifact.artifactId === legacyArtifact.artifactId
+        || (artifact.documentId === legacyArtifact.documentId && artifact.documentRevision === legacyArtifact.documentRevision));
+      // `issuedArtifacts` deliberately leaves a lightweight `{artifactId}`
+      // placeholder when an old byte archive is absent. Enrich that placeholder
+      // with the published-document artifact instead of allowing it to hide
+      // the worksheet's real historical representation.
+      if (legacyIndex >= 0 && !artifactRows[legacyIndex].originalPdfUrl) {
+        artifactRows[legacyIndex] = { ...artifactRows[legacyIndex], ...legacyArtifact };
+      } else if (legacyIndex < 0) artifactRows = [...artifactRows, legacyArtifact];
+    }
     const courseId = unit?.courseId ?? null;
     const course = works.find((candidate) => candidate.work === courseId
       || `${candidate.subject}/${candidate.work}` === courseId) ?? null;
@@ -55,12 +90,12 @@ export class GetTeacherSession {
       module: candidate.module ?? null,
       status: progressStatus(candidate.unitId, state.learnerId, completedIds, exceptions) }));
     return {
-      schema: 'school.teacher-session/v2',
+      schema: 'school.teacher-session/v4',
       sessionId,
       revision: events.reduce((max, event) => Math.max(max, Number(event?.seq) || 0), 0),
       state,
       events,
-      artifactIds: [...state.issuedArtifacts],
+      artifactIds: artifactRows.map((artifact) => artifact.artifactId),
       taxonomy: {
         subject: unit?.subject ?? course?.subject ?? null,
         courseId, courseTitle: course?.title ?? courseId,
@@ -76,6 +111,34 @@ export class GetTeacherSession {
         },
       },
       worksheetSnapshot: worksheet,
+      assignment: publishedWorksheet ? {
+        documentId: worksheet.documentId, documentRevision: worksheet.documentRevision,
+        title: publishedWorksheet.title ?? unit?.title ?? null,
+        createdAt: worksheet.issuedAt ?? state.createdAt ?? null,
+        questions: (worksheet.questions ?? []).map((question, index) => ({
+          itemId: question.itemId ?? question.id ?? null,
+          number: question.questionNumber ?? question.number ?? index + 1,
+          prompt: question.prompt ?? question.question ?? question.text ?? null,
+          choices: question.options ?? question.choices ?? [],
+          expected: (question.options ?? question.choices ?? []).filter((choice) => choice?.correct === true)
+            .map((choice) => choice.letter ?? choice.label ?? choice.text ?? choice),
+        })),
+      } : null,
+      assessment: {
+        machine: state.machineGrade ?? null,
+        effective: state.gradedPercent == null ? null : {
+          percent: state.gradedPercent, correctCount: state.gradedCorrectCount,
+          totalCount: state.gradedTotalCount, missedItemIds: state.missedItemIds,
+        },
+        items: reviewEvidence.map((item, index) => ({
+          itemId: item.itemId ?? null, questionNumber: item.questionNumber ?? index + 1,
+          prompt: item.prompt ?? item.question ?? null, given: item.given ?? null,
+          expected: (worksheet?.questions ?? []).find((question) => question.itemId === item.itemId)?.options
+            ?.filter((choice) => choice?.correct === true)
+            .map((choice) => choice.letter ?? choice.label ?? choice.text ?? choice) ?? [],
+          verdict: item.verdict ?? null,
+        })),
+      },
       reviewEvidence,
       omrEvidence: reviewEvidence.filter((item) => item.reason === 'machine' || item.attemptId)
         .map((item) => ({ itemId: item.itemId, questionNumber: item.questionNumber ?? null,

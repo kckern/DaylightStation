@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import LearnerDay from './LearnerDay.jsx';
+import { teacherBaseFor, teacherSessionPath } from '../teacherUrl.js';
 
 const SELF_LABEL = {
   not_yet: 'says: not yet', uncertain: 'says: not sure', ready: 'says: feels ready',
@@ -18,7 +19,10 @@ export default function RosterStrip({ rows, kids }) {
     <div className="teacher-roster">
       {rows.map((row) => (
         <div key={row.learnerId} className="teacher-roster__entry">
-          {(() => { const panelId = `teacher-day-${String(row.learnerId).replace(/[^a-z0-9_-]/gi, '-')}`; return <>
+          {(() => { const panelId = `teacher-day-${String(row.learnerId).replace(/[^a-z0-9_-]/gi, '-')}`;
+            const sessions = row.sessions ?? row.sessionsToday ?? [];
+            const base = teacherBaseFor(globalThis.location?.pathname ?? '');
+            return <>
           <button
             type="button"
             className="teacher-roster__card"
@@ -31,15 +35,16 @@ export default function RosterStrip({ rows, kids }) {
             {(row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0 ? (
               <span className="teacher-roster__stats">
                 {row.effectiveScoreTotals?.correct ?? row.correctToday} / {row.effectiveScoreTotals?.total ?? row.attemptsToday} correct
+                {sessions.length > 1 ? ` across ${sessions.length} assignments` : ''}
               </span>
             ) : (
               // "0 / 0 correct — idle" was division-by-zero as a status line
               // (design audit): a quiet phrase carries the same fact kindly.
               <span className="teacher-roster__stats teacher-roster__stats--none">nothing yet today</span>
             )}
-            {row.sessionsToday.length > 0 && (
+            {sessions.length > 0 && (
               <span className="teacher-roster__sessions">
-                {`${row.sessionsToday.length} session${row.sessionsToday.length > 1 ? 's' : ''}`}
+                {`${sessions.length} session${sessions.length > 1 ? 's' : ''}`}
               </span>
             )}
             {row.pendingReview > 0 && (
@@ -61,11 +66,11 @@ export default function RosterStrip({ rows, kids }) {
             </ul>
           )}
           {openId === row.learnerId && <div id={panelId} className="teacher-roster__details">
-            {(row.sessions ?? row.sessionsToday ?? []).length > 0 && <div className="teacher-day-sessions">{(row.sessions ?? row.sessionsToday).map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={`/school/teacher/students/${encodeURIComponent(row.learnerId)}/history/sessions/${encodeURIComponent(session.sessionId)}`}>
+            {sessions.length > 0 && <div className="teacher-day-sessions">{sessions.map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
               {session.posterUrl && <img src={session.posterUrl} alt="" />}
-              <span><strong>{session.lessonTitle ?? session.title ?? session.unitId}</strong><small>{[session.subject, session.courseTitle ?? session.courseId, session.moduleTitle ?? session.moduleId].filter(Boolean).join(' → ')}</small><small>{session.studyDay ?? ''} · {session.effectiveScore?.percent == null ? 'Not graded' : `${session.effectiveScore.percent}%`} · {session.reviewStatus ?? session.state}</small></span>
+              <span><strong>{session.lessonTitle ?? session.title ?? 'Lesson'}</strong><small>{[session.subject, session.courseTitle, session.moduleTitle].filter(Boolean).join(' → ')}</small><small>{session.studyDay ?? ''} · {session.effectiveScore?.percent == null ? 'Not graded' : `${session.effectiveScore.percent}%`} · {session.reviewStatus ?? session.state}</small></span>
             </a>)}</div>}
-            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={`/school/teacher/students/${encodeURIComponent(row.learnerId)}/history/sessions/${encodeURIComponent(session.sessionId)}`}><strong>{session.lessonTitle ?? session.unitId}</strong><span>Work from {session.studyDay} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span></a>)}</section>}
+            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}><strong>{session.lessonTitle ?? 'Lesson'}</strong><span>Work from {session.studyDay} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span></a>)}</section>}
             <LearnerDay learnerId={row.learnerId} />
           </div>}
           </>; })()}

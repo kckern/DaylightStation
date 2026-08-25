@@ -10,6 +10,7 @@ import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocumen
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
 import { slugify } from '#domains/school/documents/receipts.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
+import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 
 const ISSUABLE = new Set(['created', 'media_completed', 'issued', 'reprinted']);
 
@@ -49,12 +50,12 @@ function learnerReading(value) {
 
 export class IssueComposedWorksheet {
   #curriculum; #sessions; #assignments; #worksheetInstances; #bankReader;
-  #printDocuments; #render; #allocations; #publish; #printer; #teacherGate; #clock; #logger; #policy;
+  #printDocuments; #render; #allocations; #publish; #printer; #issuedArtifacts; #teacherGate; #clock; #logger; #policy;
 
   constructor({
     curriculum, sessions, assignments, worksheetInstances, bankReader,
     printDocuments, renderPrintDocument, allocationStore, printer,
-    publishPrintDocument = null, answerSheetPolicy: policy = null,
+    publishPrintDocument = null, issuedArtifacts = null, answerSheetPolicy: policy = null,
     teacherGate = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!curriculum || !sessions || !assignments || !worksheetInstances || !bankReader
@@ -65,7 +66,7 @@ export class IssueComposedWorksheet {
     this.#worksheetInstances = worksheetInstances; this.#bankReader = bankReader;
     this.#printDocuments = printDocuments; this.#render = renderPrintDocument; this.#allocations = allocationStore;
     this.#publish = publishPrintDocument ?? new PublishPrintDocument({ repository: printDocuments });
-    this.#printer = printer; this.#teacherGate = teacherGate;
+    this.#printer = printer; this.#issuedArtifacts = issuedArtifacts; this.#teacherGate = teacherGate;
     this.#clock = clock; this.#logger = logger; this.#policy = answerSheetPolicy(policy);
   }
 
@@ -133,7 +134,7 @@ export class IssueComposedWorksheet {
       id: `section-${slugify(sessionId)}`, instance, created, state, unit,
       subjectId: unit.subject ?? 'school', courseId: unit.courseId ?? null,
       subject: unit.subject ?? 'School', course: unit.courseTitle ?? unit.courseId ?? null,
-      breadcrumb: [unit.subject, unit.discipline, unit.topic].filter(Boolean).join(' › '),
+      breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
       title: unit.title, reading: learnerReading(unit.reading),
       sourceTitle: unit.sourceTitle ?? learnerSourceTitle(unit.provenance?.source), passPercent: unit.passing?.percent ?? null,
       printedPages: unit.provenance?.printed_pages ?? [],
@@ -141,10 +142,14 @@ export class IssueComposedWorksheet {
   }
 
   async #issueChunk({ sections, learnerId, nowIso, part, parts }) {
+    const sectionsWithProgress = await Promise.all(sections.map(async (section) => ({
+      ...section,
+      progress: await this.#lessonProgress({ section, nowIso }),
+    })));
     const compositionId = `composed/${slugify(learnerId)}/ws-${shortId(10)}-${part}`;
     const composition = composedWorksheetDocument({
       id: compositionId, seed: `${nowIso}:${compositionId}`, title: 'Worksheet',
-      subtitle: parts > 1 ? `Part ${part} of ${parts}` : null, sections,
+      subtitle: parts > 1 ? `Part ${part} of ${parts}` : null, sections: sectionsWithProgress,
     });
     const published = await this.#publish.execute({ source: composition.source });
     const document = await this.#printDocuments.getPublished(published.id, published.rev);
@@ -182,6 +187,31 @@ export class IssueComposedWorksheet {
       await this.#worksheetInstances.put(instance);
       section.instance = instance;
     }
+    // A composition is one physical paper artifact shared by all of its
+    // sessions. Retain it before dispatch; history must never substitute the
+    // individual source worksheets for the combined handout a learner held.
+    if (this.#issuedArtifacts) {
+      await this.#issuedArtifacts.put({
+        artifactId: compositionId,
+        bytes: Buffer.isBuffer(rendered.bytes) ? rendered.bytes : Buffer.from(rendered.bytes),
+        pageCount: rendered.pageCount ?? null,
+        issuedAt: nowIso,
+        sessionIds: sections.map((section) => section.state.sessionId),
+        learnerId,
+        kind: 'worksheet-composition',
+        captureKind: 'original',
+        document: { id: published.id, rev: published.rev, title: document.title ?? composition.source.title },
+        allocation: rendered.allocation,
+        renderContext: {
+          learnerId, learnerName, date: issueDate, duplex: rendered.duplex ?? null,
+          compositionId, part, parts,
+          sections: sections.map((section) => ({
+            sessionId: section.state.sessionId, worksheetInstanceId: section.instance.id,
+            lessonId: section.instance.lessonId, title: section.title,
+          })),
+        },
+      });
+    }
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.bytes, {
@@ -213,6 +243,18 @@ export class IssueComposedWorksheet {
       allocation: rendered.allocation, pageCount: rendered.pageCount,
       sessionIds: sections.map((section) => section.state.sessionId),
     };
+  }
+
+  async #lessonProgress({ section, nowIso }) {
+    if (!section.unit?.courseId || typeof this.#curriculum.listUnits !== 'function'
+      || typeof this.#sessions.listForLearner !== 'function') return null;
+    const [assignment, units, sessions, works] = await Promise.all([
+      this.#assignments.get(section.state.learnerId), this.#curriculum.listUnits(),
+      this.#sessions.listForLearner(section.state.learnerId), this.#curriculum.listWorks?.() ?? [],
+    ]);
+    return lessonProgressRows({
+      learnerId: section.state.learnerId, unit: section.unit, assignment, units, sessions, works, now: nowIso,
+    });
   }
 }
 

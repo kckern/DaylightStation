@@ -38,8 +38,9 @@ export class YamlIssuedArtifactStore {
     }
   }
 
-  async put({ artifactId, bytes, pageCount = null, issuedAt, sessionId, learnerId = null,
-    unitId = null, captureKind = 'original', worksheetInstanceId = null, allocation = null } = {}) {
+  async put({ artifactId, bytes, pageCount = null, issuedAt, sessionId = null, sessionIds = null, learnerId = null,
+    unitId = null, captureKind = 'original', worksheetInstanceId = null, allocation = null,
+    kind = 'worksheet', document = null, renderContext = null, parentArtifactIds = [] } = {}) {
     if (!validId(artifactId) || !Buffer.isBuffer(bytes)) throw new Error('issued artifact requires artifactId and Buffer bytes');
     const run = async () => {
       const existing = await this.get(artifactId);
@@ -51,13 +52,29 @@ export class YamlIssuedArtifactStore {
         return existing;
       }
       await fs.mkdir(this.#root(), { recursive: true });
+      const linkedSessionIds = [...new Set([sessionId, ...(Array.isArray(sessionIds) ? sessionIds : [])].filter(Boolean))];
       const manifest = {
-        schema: 'school.issued-artifact/v1', artifactId, captureKind, sha256,
-        byteLength: bytes.length, pageCount, issuedAt, sessionId, learnerId, unitId,
+        // v2 is the durable session-artifact contract. v1 manifests remain
+        // readable above, but every newly captured print has enough lineage
+        // to be shown honestly in teacher history without rediscovering it
+        // from mutable curriculum data.
+        schema: 'school.session-artifact/v2', artifactId, kind, captureKind, sha256,
+        byteLength: bytes.length, pageCount, issuedAt,
+        sessionId: linkedSessionIds[0] ?? null, sessionIds: linkedSessionIds,
+        learnerId, unitId,
         worksheetInstanceId, allocation: allocation ? {
           cardId: allocation.cardId ?? null, recordId: allocation.recordId ?? null,
           rowRange: allocation.rowRange ?? null,
         } : null,
+        document: document ? {
+          id: document.id ?? null, revision: document.rev ?? document.revision ?? null,
+          title: document.title ?? null,
+        } : null,
+        // This is input provenance, not a live render request. It lets a
+        // future compatible renderer prove that a replay is possible while
+        // making an unavailable legacy render explicit rather than fictional.
+        renderContext: renderContext ? structuredClone(renderContext) : null,
+        parentArtifactIds: [...new Set(parentArtifactIds.filter(Boolean))],
       };
       const nonce = `${process.pid}-${Date.now()}`;
       const pdfTmp = `${this.#pdf(artifactId)}.${nonce}.tmp`;

@@ -210,7 +210,8 @@ export function formatPageSpans(pages) {
 /** Convert an instance into a self-contained publishable OMR document source. */
 export function worksheetInstanceDocument(instance, {
   title = instance.lessonId, description = null,
-  sourceTitle = null, printedPages = [],
+  sourceTitle = null, printedPages = [], subjectIcon = 'school', subjectName = null, breadcrumb = null,
+  passPercent = null, progress = null,
 } = {}) {
   const numericSeed = [...String(instance.seed || instance.id)]
     .reduce((value, char) => Math.imul(value ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261);
@@ -244,13 +245,29 @@ export function worksheetInstanceDocument(instance, {
     // just stops HARD-CODING a policy that never even tried to right-size.
     title,
     header: {
-      name: true, date: true, scoreBox: false, metaFirst: true, rule: false, frame: 'double',
-      ...(description ? { subtitle: description } : {}),
-      ...(sourceTitle && printedPages.length ? {
-        reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${formatPageSpans(printedPages)}.`,
-      } : {}),
+      // The header owns identity/card geometry only. Lesson presentation
+      // belongs to the semantic card immediately below it; generic framed
+      // title/subtitle/reading headers are not a valid issued-paper design.
+      name: true, date: true, title: false, scoreBox: false, metaFirst: true, rule: false, frame: 'none',
     },
     blocks: [
+      {
+        type: 'inset', layout: 'lesson_card', keepWithNext: true,
+        subjectIcon,
+        subjectName: subjectName ?? subjectIcon,
+        breadcrumb: breadcrumb ?? instance.lessonId,
+        lessonTitle: title,
+        ...(sourceTitle && printedPages.length ? {
+          reading: `Read: ${sourceTitle}, ${printedPages.length === 1 ? 'page' : 'pages'} ${formatPageSpans(printedPages)}.`,
+        } : {}),
+        citation: description,
+        questionCount: instance.questions.length,
+        passPercent,
+        ...(Array.isArray(progress) && progress.length ? { progress } : {}),
+        // Required by the generic inset schema; the lesson-card renderer
+        // consumes the semantic fields above instead.
+        blocks: [{ type: 'rich_text', md: title }],
+      },
       ...instance.questions.map((question, index) => ({
         type: 'question', itemId: question.itemId, number: index + 1, omr: true, fillAfter: true,
         blocks: [
@@ -300,7 +317,8 @@ export function composedWorksheetDocument({
     blocks.push({
       type: 'inset', layout: 'lesson_card', keepWithNext: true,
       subjectIcon: section.subjectId ?? section.subject ?? 'school',
-      breadcrumb: section.breadcrumb ?? [section.subject, section.discipline, section.topic]
+      subjectName: section.subject ?? section.subjectId ?? 'School',
+      breadcrumb: section.breadcrumb ?? [section.course, section.discipline, section.topic]
         .filter(Boolean).join(' › '),
       lessonTitle: section.title ?? instance.lessonId,
       // A card may omit this line when the lesson title/course already tell
@@ -310,6 +328,7 @@ export function composedWorksheetDocument({
       citation: section.sourceTitle ?? null,
       questionCount: instance.questions.length,
       passPercent: section.passPercent ?? null,
+      ...(Array.isArray(section.progress) && section.progress.length ? { progress: section.progress } : {}),
       // The source schema requires nested blocks for an inset. The specialised
       // lesson-card renderer consumes the semantic fields above instead.
       blocks: [{ type: 'rich_text', md: section.title ?? instance.lessonId }],
