@@ -222,6 +222,26 @@ export function createPlayRouter(config) {
           .catch((err) => logger.warn?.('play.log.economy_earn_failed', { userId, assetId, error: err?.message }));
       }
 
+      // School ceremony (piano-course program): announce the SAME genuine
+      // transition the earn-hook above pays on. Published, not called — this
+      // router must not know whether School is wired, and School decides for
+      // itself whether this player was discharging an obligation (most piano
+      // use is not schoolwork). Synchronous publish inside its own try: a
+      // subscriber that throws must never fail the progress write that just
+      // succeeded, nor the HTTP response.
+      if (eventBus?.publish && userProgress?.newlyCompleted) {
+        try {
+          eventBus.publish('piano.lesson.completed', {
+            userId,
+            plexId: `plex:${String(assetId).replace(/^plex:/, '')}`,
+            title: itemMetadata?.title || title || null,
+            at: new Date().toISOString(),
+          });
+        } catch (err) {
+          logger.warn?.('play.log.lesson_completed_publish_failed', { userId, assetId, error: err?.message });
+        }
+      }
+
       // Strip the internal newlyCompleted signal from the public response shape.
       const userProgressPublic = userProgress
         ? (() => { const { newlyCompleted, ...rest } = userProgress; return rest; })()

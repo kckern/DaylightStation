@@ -14,6 +14,13 @@
  * five events must land as plain, child-readable words, never a blame or a
  * bare code.
  *
+ * A SECOND TOPIC, deliberately. `piano-lesson-complete` arrives on the
+ * `school` bus (published by `PianoLessonCeremonyBridge`) rather than `omr`,
+ * because it is not a scan and filing it under the scanner's topic would
+ * make the bus lie about where events come from. It is handled here anyway:
+ * the requirement — "a child working alone must SEE that it counted" — is
+ * identical, and one banner system is easier to keep honest than two.
+ *
  * `agenda-suppressed` (Slice G, 2026-08-22-omr-grading-integrity) joins the
  * same five: a repeat NFC card tap inside the agenda print cooldown
  * (`nfcTapIngress.mjs` broadcasting `ResolvePersonalCard`'s
@@ -32,6 +39,10 @@ import { schoolLog } from '../schoolLog.js';
 import getLogger from '../../../lib/logging/Logger.js';
 
 const TOPIC = 'omr';
+// The School bus carries acknowledgements that are not scans — today the daily
+// piano requirement being satisfied, which happens at the piano rather than at
+// the scanner but must still land on the Portal's panel.
+const SCHOOL_TOPIC = 'school';
 const AUTO_CLEAR_MS = 12000;
 
 let _logger;
@@ -135,6 +146,21 @@ function buildCeremony(payload) {
         detail: 'You already have today’s agenda — check your desk.',
         at,
       };
+    case 'piano-lesson-complete':
+      // Not a scan at all: the child finished their assigned Hoffman lesson
+      // at the piano and the day's music requirement is satisfied. It shares
+      // this hook because it shares the need — an acknowledgement the child
+      // can see from across the room — and because a second banner system
+      // would be a second thing to keep consistent. `success` so it rings the
+      // rising pair, the same "good news climbs" cue a graded sheet gets.
+      return {
+        tone: 'success',
+        title: 'Piano done!',
+        detail: payload.lesson
+          ? `${payload.lesson} — that's your music for today.`
+          : "That's your music for today.",
+        at,
+      };
     default:
       return null;
   }
@@ -182,6 +208,10 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   }, [autoClearMs, clearTimer]);
 
   useWebSocketSubscription(TOPIC, handle, [handle]);
+  // Same handler, second topic. `buildCeremony` returns null for anything it
+  // does not recognise, so ordinary School traffic on this bus is ignored the
+  // same way ordinary `omr` traffic already is.
+  useWebSocketSubscription(SCHOOL_TOPIC, handle, [handle]);
 
   // Unmount cleanup: nothing left running past the component's lifetime.
   useEffect(() => clearTimer, [clearTimer]);
