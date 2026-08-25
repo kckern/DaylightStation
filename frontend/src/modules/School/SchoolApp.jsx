@@ -39,6 +39,7 @@ import { schoolLog } from './schoolLog.js';
 import { useSchoolLaunch } from './useSchoolLaunch.js';
 import { moduleLaunchAllowed } from './catalog/certification.js';
 import Keypad from './selfService/Keypad.jsx';
+import AgendaStatusBoard from './status/AgendaStatusBoard.jsx';
 import LaunchCard from './selfService/LaunchCard.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
@@ -559,6 +560,18 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // or open (KC: "a scan must always be acknowledged on screen").
   const ceremony = useScanCeremony();
 
+  // Split lock screen (kiosk wave 5): keypad in one pane, the read-only
+  // AgendaStatusBoard in the other. The sides swap on a fixed cadence for
+  // burn-in — a layout flip only (grid direction), so keypad entry state
+  // survives every swap. Local date: toISOString flips to tomorrow at 5pm PDT.
+  const [lockSide, setLockSide] = useState('keypad-left');
+  useEffect(() => {
+    if (!lock.locked) return undefined;
+    const timer = setInterval(() => setLockSide((side) => (side === 'keypad-left' ? 'keypad-right' : 'keypad-left')), 90_000);
+    return () => clearInterval(timer);
+  }, [lock.locked]);
+  const statusDay = (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; })();
+
   // Going home also clears any guest-refusal notice: the notice belongs to
   // the section visit that produced it and must not greet the next visit.
   const goHome = useCallback(() => {
@@ -759,16 +772,24 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             keypad still underneath it. */}
         {lock.locked && !active && !section && (
           selfService.view === 'keypad' ? (
-            <Keypad
-              onSubmit={selfService.submit}
-              busy={selfService.busy}
-              message={selfService.message}
-              degraded={selfService.degraded}
-              onRetry={selfService.retry}
-              onReload={selfService.reload}
-              screenOffTimeoutSeconds={lock.screenOffTimeoutSeconds}
-              screenOffSuppressed={!!ceremony.current}
-            />
+            <div className="school-lock-split" data-side={lockSide}>
+              <Keypad
+                onSubmit={selfService.submit}
+                busy={selfService.busy}
+                message={selfService.message}
+                degraded={selfService.degraded}
+                onRetry={selfService.retry}
+                onReload={selfService.reload}
+                screenOffTimeoutSeconds={lock.screenOffTimeoutSeconds}
+                screenOffSuppressed={!!ceremony.current}
+              />
+              {/* Read-only status pane: names appear here by design — this is
+                  the family's own day board, not a claim affordance; codes
+                  remain the only entry path. Never intercepts a tap. */}
+              <div className="school-lock-split__board" aria-label="Today's school status">
+                <AgendaStatusBoard kids={roster} day={statusDay} />
+              </div>
+            </div>
           ) : (
             <LaunchCard
               card={selfService.card}
