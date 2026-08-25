@@ -128,4 +128,18 @@ describe('school.fitness-course/v1', () => {
       expect.stringContaining('is not selected'),
     ]));
   });
+
+  it('keeps each kiosk run on one executor while allowing sensor/reflection companions', () => {
+    const result = compileFitnessCourse(minimal({
+      units: [{
+        id: 'mixed-run', sourceId: '101',
+        segments: [
+          { kind: 'plex-video' },
+          { kind: 'saved-workout', workoutId: 'leg-day' },
+          { kind: 'sensor-block' },
+        ],
+      }],
+    }), source);
+    expect(result.errors).toContainEqual(expect.stringContaining('cannot mix Plex videos and a saved workout'));
+  });
 });

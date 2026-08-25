@@ -63,8 +63,13 @@ const runResponse = vi.hoisted(() => ({
   ok: true, workout: { id: null, title: null }, steps: [], exercises: {}, missingSlugs: []
 }));
 vi.mock('@/lib/api.mjs', () => ({
-  DaylightAPI: (path) => (String(path).endsWith('/workouts/run')
-    ? Promise.resolve({ ...runResponse })
+  DaylightAPI: (path) => (String(path).endsWith('/workouts/run') || String(path).includes('/workouts/school-ride/run')
+    ? Promise.resolve({
+        ...runResponse,
+        workout: String(path).includes('/workouts/school-ride/run')
+          ? { id: 'school-ride', title: 'School Ride' }
+          : runResponse.workout,
+      })
     : new Promise(() => {})),
   DaylightAPIText: () => new Promise(() => {}),
   DaylightMediaPath: (p) => `https://kiosk.test/${String(p).replace(/^\/|\/$/g, '')}`,
@@ -122,6 +127,13 @@ describe('FitnessInstructionContainer', () => {
   it('starts in browse', () => {
     const q = render(<FitnessInstructionContainer />);
     expectOnlyState(q, 'browse');
+  });
+
+  it('prepares a School-assigned saved workout and enters the normal runner directly', async () => {
+    const q = render(<FitnessInstructionContainer config={{ initialWorkoutId: 'school-ride' }} />);
+    await q.findByTestId('fitness-instruction-run');
+    expectOnlyState(q, 'run');
+    expect(logsFor('info', 'school-workout-run-prepared')[0].data).toMatchObject({ workoutId: 'school-ride' });
   });
 
   it('logs mounted at info', () => {
@@ -285,6 +297,20 @@ describe('FitnessInstructionContainer — filing a finished run', () => {
     const [call] = logRun.mock.calls[0];
     expect(call.workout).toBeTruthy();
     expect(call.completedSteps).toHaveLength(4);
+  });
+
+  it('notifies the School bridge only after the completed run is filed successfully', async () => {
+    const onSchoolWorkoutComplete = vi.fn();
+    const logRun = vi.fn(async () => ({ ok: true, sessionId: 'fs_school', workoutId: 'w1', sets: 4 }));
+    const q = render(<FitnessInstructionContainer
+      logRun={logRun}
+      config={{ onSchoolWorkoutComplete }}
+    />);
+    await runToCompletion(q);
+
+    await waitFor(() => expect(onSchoolWorkoutComplete).toHaveBeenCalledWith({
+      fitnessSessionId: 'fs_school', workoutId: 'w1',
+    }));
   });
 
   it('files the sets PERFORMED, not the plan', async () => {
