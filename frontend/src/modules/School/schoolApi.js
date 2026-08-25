@@ -19,6 +19,27 @@ async function req(path, body, method, headers = {}) {
 }
 
 export const schoolApi = {
+  rubiksCubePreview: () => req('/rubiks-cube/preview'),
+  rubiksCubeOpen: ({ userId, courseId, grant, lessonId = null }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}${lessonId ? '/open' : ''}`,
+    lessonId ? { lessonId } : undefined,
+    lessonId ? 'POST' : 'GET', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeTurn: ({ userId, courseId, grant, lessonId, move, expectedRevision }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/turn`, { lessonId, move, expectedRevision }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeRestart: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/restart`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeDemo: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/demo`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeHint: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/hint`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeAnswer: ({ userId, courseId, grant, lessonId, answers }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/answer`, { lessonId, answers }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
   roster: () => req('/roster'),
   // Fail-closed surface resolution (spec §4.2): 404 -> {ok:false}, same as any
   // other unresolved-resource response — the caller never treats a missing

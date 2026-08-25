@@ -293,8 +293,11 @@ import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLa
 import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
 import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
+import { HmacSchoolCubeGrantIssuer } from './1_adapters/school/actions/HmacSchoolCubeGrantIssuer.mjs';
 import { LanguageReelService } from './3_applications/school/LanguageReelService.mjs';
 import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
+import { RubiksCubeCourseService } from './3_applications/school/rubiksCube/RubiksCubeCourseService.mjs';
+import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
@@ -2864,6 +2867,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
   let schoolStudyGrants = null;
   let schoolReelGrants = null;
+  let schoolCubeGrants = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
   } catch (error) {
@@ -2872,7 +2876,11 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try { schoolReelGrants = new HmacSchoolReelGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.language-reels.grants-unavailable', { error: error.message });
   }
+  try { schoolCubeGrants = new HmacSchoolCubeGrantIssuer({ key: jwtSecret }); } catch (error) {
+    rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
+  }
   const languageReelService = new LanguageReelService({ configService });
+  const rubiksCubeService = new RubiksCubeCourseService({ configService });
   const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
@@ -3322,6 +3330,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       languageReelService,
       languageReelGrants: schoolReelGrants,
       flashcardStudyService: flashcardStudy,
+      rubiksCubeService,
+      rubiksCubeGrants: schoolCubeGrants,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -3853,6 +3863,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.school.use('/language-reels', createLanguageReelsRouter({
     service: languageReelService, grants: schoolReelGrants,
     logger: rootLogger.child({ module: 'school-language-reels-api' }),
+  }));
+  v1Routers.school.use('/rubiks-cube', createRubiksCubeRouter({
+    service: rubiksCubeService, grants: schoolCubeGrants,
+    logger: rootLogger.child({ module: 'school-rubiks-cube-api' }),
   }));
 
   if (schoolLifecycle.router) {

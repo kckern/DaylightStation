@@ -59,6 +59,8 @@ import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
 import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
+import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
+import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
@@ -177,6 +179,8 @@ export async function createSchoolLifecycle({
   languageReelService = null,
   languageReelGrants = null,
   flashcardStudyService = null,
+  rubiksCubeService = null,
+  rubiksCubeGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   clock = () => new Date(), rng = null, logger = console,
@@ -422,6 +426,9 @@ export async function createSchoolLifecycle({
     launchers.set('flashcards', new FlashcardProgramLauncher({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
     }));
+  }
+  if (rubiksCubeService && rubiksCubeGrants) {
+    launchers.set('rubiks-cube', new RubiksCubeProgramLauncher({ service: rubiksCubeService, grants: rubiksCubeGrants, donow }));
   }
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
@@ -896,6 +903,12 @@ export async function createSchoolLifecycle({
         } catch {
           return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
         }
+      }]] : []),
+      ...(rubiksCubeService ? [['rubiks-cube', (raw) => {
+        const courseId = raw?.courseId ?? raw?.corpusId;
+        return courseId === RUBIKS_CUBE_COURSE_ID
+          ? { errors: [], enrollment: { programId: 'rubiks-cube', corpusId: courseId, courseId } }
+          : { errors: [`rubiks-cube requires courseId ${RUBIKS_CUBE_COURSE_ID}`] };
       }]] : []),
     ]),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
