@@ -66,7 +66,20 @@ export function useChessAuthority({ userId = 'household', initialFen, seed } = {
   }), [dispatch]);
   const takeback = useCallback((plies) => dispatch({ type: 'chess.takeback', plies }), [dispatch]);
   const reset = useCallback(async (nextSeed) => {
-    if (sessionRef.current) await authorityRef.current.close(sessionRef.current.header.session_id);
+    // A FINISHED SESSION CANNOT BE CLOSED, AND DOES NOT NEED TO BE. The kernel
+    // refuses every command on a terminal session — `session.close` included
+    // (`runtime.dispatch`: "Session … is complete") — so after a checkmate this
+    // close ALWAYS throws. Left unhandled it aborted the reset before the fresh
+    // start: "Play again" swapped the board but never minted a new authority
+    // session, and every move in the new game died `authority-move-failed:
+    // Session is complete` — a zombie board until remount. Complete is already
+    // closed in every sense that matters; a genuinely live session still gets
+    // its close, and a close that fails for any reason must not cost the
+    // player their next game.
+    if (sessionRef.current) {
+      try { await authorityRef.current.close(sessionRef.current.header.session_id); }
+      catch { /* terminal already, or close raced — start fresh regardless */ }
+    }
     localStorage.removeItem(indexKey);
     return start({ fresh: true, nextSeed });
   }, [indexKey, start]);
