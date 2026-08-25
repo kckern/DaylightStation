@@ -166,6 +166,25 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
     expect(await screen.findByText('Refused: 1 open session on this course.')).toBeInTheDocument();
   });
 
+  it('is a real dialog: aria-modal, initial focus inside, Escape closes', () => {
+    const onClose = vi.fn();
+    render(
+      <EnrollmentDrawer
+        learner={LEARNER}
+        courseId="history-capitals"
+        cell={CELL}
+        syllabi={SYLLABI}
+        onClose={onClose}
+        onChanged={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('arms with consequence copy and Cancel returns to the actions without calling the api', () => {
     render(
       <EnrollmentDrawer
