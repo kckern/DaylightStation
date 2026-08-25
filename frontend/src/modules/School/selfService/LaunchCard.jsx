@@ -82,6 +82,20 @@ function CourseArtwork({ course, subject }) {
   );
 }
 
+/**
+ * Where this lesson sits: subject › course › module › lesson.
+ *
+ * CONTEXT, NOT CONTENT. It sits above the title as an eyebrow and is set small,
+ * quiet and left-aligned against it — a child reading the card at arm's length
+ * should land on the lesson name, then be able to look up and see where it came
+ * from. It used to be centred above the card while everything else was
+ * left-aligned, at nearly the weight of the heading, so it read as a second
+ * headline competing with the first.
+ *
+ * It is also the ONLY place the course and module are named. A separate
+ * "course · module" line under the title said the same words a second time,
+ * and a subject eyebrow said the first crumb a third; both are gone.
+ */
 function ContextTrail({ trail }) {
   if (!trail?.length) return null;
   return (
@@ -189,6 +203,7 @@ export default function LaunchCard({
   const learner = context?.learner ?? null;
   const learnerAvatarId = learner?.avatar?.kind === 'learner'
     ? learner.avatar.id : learner?.id;
+  const trail = Array.isArray(context?.trail) ? context.trail : [];
   const subject = taxonomy.subject ?? (card?.subject ? { id: card.subject, label: card.subject } : null);
   const lessonTitle = taxonomy.lesson?.title ?? card?.title ?? 'Lesson';
   const message = card?.presentation?.message ?? card?.sentence ?? null;
@@ -206,7 +221,6 @@ export default function LaunchCard({
       data-testid="selfservice-card"
       data-status={card?.presentation?.status ?? 'ready'}
     >
-      <ContextTrail trail={context?.trail} />
       <div className="school-selfservice-card__shell">
         <aside className="school-selfservice-card__art">
           <CourseArtwork course={taxonomy.course} subject={subject} />
@@ -220,13 +234,15 @@ export default function LaunchCard({
                 <span>{learner.displayName ?? 'Student'}</span>
               </div>
             )}
-            {subject?.label && <p className="school-selfservice-card__subject">{subject.label}</p>}
-            <h1 className="school-selfservice-card__title">{lessonTitle}</h1>
-            {(taxonomy.course?.title || taxonomy.module?.title) && (
-              <p className="school-selfservice-card__course-line">
-                {[taxonomy.course?.title, taxonomy.module?.title].filter(Boolean).join(' · ')}
-              </p>
+            <ContextTrail trail={trail} />
+            {/* The trail already opens with the subject. This line is the
+                degraded path's stand-in for it — a v1 card carries a subject
+                but no taxonomy to build a trail from — so the two are
+                alternatives, never both. */}
+            {!trail.length && subject?.label && (
+              <p className="school-selfservice-card__subject">{subject.label}</p>
             )}
+            <h1 className="school-selfservice-card__title">{lessonTitle}</h1>
           </header>
 
           <ProgressRows rows={context?.progress} />
