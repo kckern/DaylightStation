@@ -308,19 +308,6 @@ export function createSchoolPrintScanConsumer({
                   // grading path and never able to fail it. The adapter
                   // already swallows its own errors; this catch covers a
                   // hook that rejects outright.
-                  gradingHook?.fire({
-                    result: 'graded',
-                    testId,
-                    learnerId: card.learnerId ?? null,
-                    earned,
-                    total,
-                    percent,
-                    sessionId: sectionOutcome.session.sessionId,
-                    subject: sectionOutcome.curriculum?.subjectId ?? null,
-                    course: sectionOutcome.curriculum?.courseId ?? null,
-                    unit: sectionOutcome.curriculum?.unitId ?? null,
-                    lesson: sectionOutcome.curriculum?.lessonId ?? null,
-                  }).catch(() => {});
                   // Same outcome, second listener: the School panel ceremony
                   // (Slice D) needs this on the wire too. SAME session-sourced
                   // percent/earned/total the hook above just fired — never
@@ -345,12 +332,31 @@ export function createSchoolPrintScanConsumer({
                     result: 'graded',
                     sessionId: sectionOutcome.session.sessionId,
                   });
+                  let settledResult = 'graded';
                   if (closeSessionOutcome) {
                     // The bridge returns the authoritative session id (a
                     // composed card itself has no single session owner).
                     // eslint-disable-next-line no-await-in-loop
-                    await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                    const settled = await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                    settledResult = settled?.result ?? settledResult;
                   }
+                  // Fire after the authoritative outcome settles so Home
+                  // Assistant can distinguish a passing non-perfect score
+                  // from a score needing remediation. The hook itself is
+                  // still fire-and-forget and cannot affect grading.
+                  gradingHook?.fire({
+                    result: settledResult,
+                    testId,
+                    learnerId: card.learnerId ?? null,
+                    earned,
+                    total,
+                    percent,
+                    sessionId: sectionOutcome.session.sessionId,
+                    subject: sectionOutcome.curriculum?.subjectId ?? null,
+                    course: sectionOutcome.curriculum?.courseId ?? null,
+                    unit: sectionOutcome.curriculum?.unitId ?? null,
+                    lesson: sectionOutcome.curriculum?.lessonId ?? null,
+                  }).catch(() => {});
                 } else if (sectionOutcome?.session?.reason === 'awaiting-review') {
                   gradingHook?.fire({
                     result: 'review',
