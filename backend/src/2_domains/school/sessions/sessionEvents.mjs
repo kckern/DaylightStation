@@ -145,6 +145,19 @@ const SCHEMA = {
       if (!Number.isInteger(raw.day) || raw.day < 1) push('day: must be an integer >= 1');
     }),
   },
+  external_activity_dispatched: {
+    fields: ['provider', 'attemptId', 'courseRevision', 'policyRevision'],
+    validate: allOf(stringField('provider'), stringField('attemptId'), stringField('courseRevision'), stringField('policyRevision')),
+  },
+  external_activity_assessed: {
+    fields: ['provider', 'assessmentId', 'courseRevision', 'policyRevision', 'result', 'measures'],
+    validate: allOf(stringField('provider'), stringField('assessmentId'), stringField('courseRevision'),
+      stringField('policyRevision'), oneOfField('result', RESULTS), (raw, push) => {
+        if (raw.measures !== undefined && (!raw.measures || typeof raw.measures !== 'object' || Array.isArray(raw.measures))) {
+          push('measures: must be an object when present');
+        }
+      }),
+  },
   submitted: { fields: ['transport'], validate: oneOfField('transport', TRANSPORTS) },
   graded: {
     // `passingPercent` (optional) is the bar IN EFFECT at grading time
@@ -266,7 +279,7 @@ export const EVENT_TYPES = Object.freeze(Object.keys(SCHEMA));
  * session is in state K, these event types may be appended".
  */
 export const TRANSITIONS = Object.freeze({
-  created: ['issued', 'media_dispatched', 'launch_dispatched', 'program_dispatched', 'abandoned'],
+  created: ['issued', 'media_dispatched', 'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'abandoned'],
   issued: ['submitted', 'reprinted', 'failed', 'abandoned'],
   reprinted: ['submitted', 'reprinted', 'abandoned'],
   media_dispatched: ['media_completed', 'media_stalled', 'abandoned'],
@@ -274,6 +287,8 @@ export const TRANSITIONS = Object.freeze({
   media_stalled: ['media_dispatched', 'abandoned'],
   launch_dispatched: ['outcome_recorded', 'abandoned'],
   program_dispatched: ['outcome_recorded', 'abandoned'],
+  external_activity_dispatched: ['external_activity_assessed', 'abandoned'],
+  external_activity_assessed: ['outcome_recorded'],
   submitted: ['graded'],
   graded: ['outcome_recorded'],
   outcome_recorded: ['rewarded', 'remediation_opened'],
@@ -408,6 +423,7 @@ const emptyState = () => ({
   remediation: null,
   lastFailure: null,
   launch: null,
+  externalActivity: null,
   eventCount: 0,
   nextAction: null,
   errors: [],
@@ -484,6 +500,22 @@ const APPLY = {
       at: e.at,
     };
     s.lastFailure = null;
+  },
+  external_activity_dispatched(s, e) {
+    s.externalActivity = {
+      provider: e.provider, attemptId: e.attemptId, courseRevision: e.courseRevision,
+      policyRevision: e.policyRevision, status: 'dispatched', dispatchedAt: e.at,
+    };
+    s.lastFailure = null;
+  },
+  external_activity_assessed(s, e) {
+    s.externalActivity = {
+      ...(s.externalActivity ?? {}), provider: e.provider, assessmentId: e.assessmentId,
+      courseRevision: e.courseRevision, policyRevision: e.policyRevision,
+      result: e.result, measures: e.measures ?? null, status: 'assessed', assessedAt: e.at,
+    };
+    s.gradedPercent = e.result === 'passed' ? 100 : 0;
+    s.gradedPassingPercent = 100;
   },
   submitted(s, e) {
     s.transport = e.transport ?? null;
@@ -597,6 +629,10 @@ function computeNextAction(s) {
       return act('record_outcome', 'Waiting for the work to be done');
     case 'program_dispatched':
       return act('continue_program', 'Keep going on the Portal.');
+    case 'external_activity_dispatched':
+      return act('await_external_assessment', 'Finish the activity in Fitness');
+    case 'external_activity_assessed':
+      return act('record_outcome', 'Recording the Fitness result');
     case 'submitted':
       return act('grade_work', 'A grown-up will check this');
     case 'graded':

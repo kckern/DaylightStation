@@ -78,6 +78,7 @@ export function nextMove(unit, state) {
       // just keeps the one-shot case legible at the top of the table.
       // `labelHint` lets a unit author supply their own wording (e.g. "go
       // ride the bike") without a new field on every other composition kind.
+      if (unit.activity) return { kind: 'activity', tokenClass: 'select_unit', label: 'do this in Fitness' };
       if (unit.launch) return { kind: 'launch', tokenClass: 'select_unit', label: unit.launch.labelHint ?? 'go do this' };
       if (unit.media) return { kind: 'play', tokenClass: 'select_unit', label: 'watch or listen' };
       if (unit.document) return { kind: 'print', tokenClass: 'select_unit', label: 'print your sheet' };
