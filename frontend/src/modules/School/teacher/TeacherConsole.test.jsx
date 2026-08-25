@@ -224,8 +224,8 @@ describe('TeacherConsole workspace', () => {
       .mockResolvedValueOnce({ ok: true, status: 201, data: { printed: true, idempotencyKey: 'replayed' } });
     window.history.pushState({}, '', '/school/teacher/students/user_2/overview');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Print agenda…' })).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Print agenda…' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Print User_2’s agenda' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Print User_2’s agenda' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm print' })).toBeTruthy());
 
     for (let attempt = 0; attempt < 2; attempt += 1) {

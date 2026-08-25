@@ -292,6 +292,9 @@ import { SentenceLadderService } from './3_applications/school/SentenceLadderSer
 import { YamlLanguageStudyDatastore } from './1_adapters/persistence/yaml/YamlLanguageStudyDatastore.mjs';
 import { YamlAssignmentStore } from './1_adapters/persistence/yaml/YamlAssignmentStore.mjs';
 import { HmacSchoolStudyGrantIssuer } from './1_adapters/school/actions/HmacSchoolStudyGrantIssuer.mjs';
+import { HmacSchoolReelGrantIssuer } from './1_adapters/school/actions/HmacSchoolReelGrantIssuer.mjs';
+import { LanguageReelService } from './3_applications/school/LanguageReelService.mjs';
+import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
 import { GetInstructionalInsights } from './3_applications/school/GetInstructionalInsights.mjs';
@@ -2838,11 +2841,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const readGateConfig = () => configService.getHouseholdAppConfig(null, 'school')?.gate || null;
   const languageAssignments = new YamlAssignmentStore({ configService, logger: rootLogger });
   let schoolStudyGrants = null;
+  let schoolReelGrants = null;
   try {
     schoolStudyGrants = new HmacSchoolStudyGrantIssuer({ key: jwtSecret });
   } catch (error) {
     rootLogger.error('school.sentence-ladder.study-grants-unavailable', { error: error.message });
   }
+  try { schoolReelGrants = new HmacSchoolReelGrantIssuer({ key: jwtSecret }); } catch (error) {
+    rootLogger.error('school.language-reels.grants-unavailable', { error: error.message });
+  }
+  const languageReelService = new LanguageReelService({ configService });
   const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
@@ -3289,6 +3297,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       thermalPrinterRegistry: printerRegistry,
       languageStudyService,
       studyGrants: schoolStudyGrants,
+      languageReelService,
+      languageReelGrants: schoolReelGrants,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -3810,6 +3820,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // Compatibility alias for deployed clients and bookmarks. No removal in
   // this migration; legacy traffic is logged by the shared router.
   v1Routers.school.use('/language', sentenceLadderRouter);
+  v1Routers.school.use('/language-reels', createLanguageReelsRouter({
+    service: languageReelService, grants: schoolReelGrants,
+    logger: rootLogger.child({ module: 'school-language-reels-api' }),
+  }));
 
   if (schoolLifecycle.router) {
     v1Routers.school.use('/lifecycle', schoolLifecycle.router);

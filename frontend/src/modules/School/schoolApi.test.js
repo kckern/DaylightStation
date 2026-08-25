@@ -4,6 +4,12 @@ import { schoolApi } from './schoolApi.js';
 beforeEach(() => vi.unstubAllGlobals());
 
 describe('schoolApi', () => {
+  it('asks for the server-selected study day when no day is supplied', async () => {
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ learners: [] }) }));
+    await schoolApi.teacherDay();
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/school/teacher/day', expect.any(Object));
+  });
+
   it('returns ok/status/data on success', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([{ id: 'b' }]), { status: 200 })));
     expect(await schoolApi.banks()).toEqual({ ok: true, status: 200, data: [{ id: 'b' }] });

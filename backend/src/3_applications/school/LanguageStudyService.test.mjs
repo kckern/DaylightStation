@@ -147,6 +147,18 @@ describe('getDay', () => {
     expect(day.queue[0].text).toEqual(CORPUS.sentences[0].text);
   });
 
+  it('marks copy-mode dictation from the enrollment rather than a client choice', () => {
+    svc = makeService(ds, AT, {
+      readProgramEnrollment: () => ({
+        programId: 'sentence-ladder', corpusId: 'test-korean', lessonSize: 1,
+        rungs: ['dictation'], dictationMode: 'copy',
+      }),
+    });
+    const day = svc.getDay({ userId: 'kckern', corpusId: 'test-korean', capabilities: EQUIPPED });
+    expect(day.enrollment).toMatchObject({ dictationMode: 'copy' });
+    expect(day.queue[0]).toMatchObject({ rung: 'dictation', copyPrompt: true });
+  });
+
   it('reports the device-filtered chain', () => {
     const day = svc.getDay({
       userId: 'kckern', corpusId: 'test-korean',

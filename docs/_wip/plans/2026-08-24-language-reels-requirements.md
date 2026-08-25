@@ -2,7 +2,9 @@
 
 ## Status and purpose
 
-**Status:** proposed requirements; this document does not imply implementation.
+**Status:** initial implementation in progress. The imported source collection is
+draft-only; a reel remains unavailable to learners until its authored record is
+reviewed and marked `approved`.
 
 Language Reels is a new School language-learning program, adjacent to Sentence
 Ladder. It turns a short authentic-language reel into a sequence of preparation,

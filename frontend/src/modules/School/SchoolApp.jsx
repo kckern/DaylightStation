@@ -25,6 +25,7 @@ import Icon from './home/icons/Icon.jsx';
 import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadcrumbContext.jsx';
 import { groupBySubject, subjectLabel } from './home/subjects.js';
 import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgram.jsx';
+import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -265,6 +266,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [materials, setMaterials] = useState([]); // full catalog materials list, unfiltered
   const [courses, setCourses] = useState([]);     // sentence-ladder language courses
   const [studyLaunch, setStudyLaunch] = useState(null);
+  const [reelLaunch, setReelLaunch] = useState(null);
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -465,6 +467,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection(`sentence-ladder:${courseId}`);
       return true;
     }
+    if (target?.kind === 'program' && target.program === 'language-reels') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.reelId || !target.reelGrant || !target.unitId || !learnerId) {
+        schoolLog.bank('program-unavailable', { program: target.program });
+        return false;
+      }
+      setReelLaunch({ learnerId, reelId: target.reelId, reelGrant: target.reelGrant });
+      setStudyLaunch(null);
+      openSection('language-reels');
+      return true;
+    }
     if (target?.kind === 'bank') {
       const bankSummary = banks.find((b) => b.id === target.bankId);
       if (!bankSummary) { schoolLog.bank('not-found', { bankId: target.bankId }); return false; }
@@ -588,6 +601,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     setStudyLaunch((current) => (
       current && current.learnerId !== currentUser?.id ? null : current
     ));
+    setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
@@ -850,6 +864,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             onSignIn={lock.locked ? goHome : openPicker}
             onExit={lock.locked ? goHome : null}
             locked={lock.locked}
+          />
+        )}
+        {section === 'language-reels' && reelLaunch && reelLaunch.learnerId === currentUser?.id && (
+          <LanguageReelsProgram
+            userId={reelLaunch.learnerId}
+            reelId={reelLaunch.reelId}
+            reelGrant={reelLaunch.reelGrant}
+            onExit={goHome}
           />
         )}
       </main>

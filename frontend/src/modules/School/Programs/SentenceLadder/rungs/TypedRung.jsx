@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSentenceAudio, clipsFor } from '../useSentenceAudio.js';
 import { languageLog } from '../languageLog.js';
 
@@ -11,7 +11,10 @@ import { languageLog } from '../languageLog.js';
  * two components would mean two places to hardcode a language, which is
  * exactly what the role model exists to prevent.
  *
- *   dictation      — hear target, type target. Nothing is shown; that is the test.
+ *   dictation      — hear target, type target. In enrollment-owned `copy`
+ *                    mode, one target glyph is revealed ahead of the matching
+ *                    typed prefix, so early learners can practise entering
+ *                    the script without being handed the whole sentence.
  *   interpretation — hear target, type source. The target text is shown, since
  *                    the task is rendering meaning, not recalling the audio.
  *
@@ -28,6 +31,19 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
   const responseLang = entry.response?.language;
   const promptLang = entry.prompt?.[0]?.language;
   const isDictation = entry.rung === 'dictation';
+  const isCopying = isDictation && entry.copyPrompt === true;
+  const showPromptText = !isDictation || isCopying;
+  const targetText = entry.text?.[promptLang] ?? '';
+  const visibleTargetText = useMemo(() => {
+    if (!isCopying) return targetText;
+    const targetGlyphs = Array.from(targetText);
+    const typedGlyphs = Array.from(value);
+    let matched = 0;
+    while (matched < typedGlyphs.length && typedGlyphs[matched] === targetGlyphs[matched]) matched += 1;
+    // Keep exactly one upcoming glyph in view. Precomposed Hangul syllables
+    // are one code point, which is the step the learner sees on the keyboard.
+    return targetGlyphs.slice(0, Math.min(matched + 1, targetGlyphs.length)).join('');
+  }, [isCopying, targetText, value]);
 
   // NOTE: do NOT reset `value`/`played` here. This component is remounted per
   // entry via `key={rung-seq}` (in SentenceLadderProgram), so each entry already
@@ -47,7 +63,7 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
 
   const play = useCallback(() => {
     setPlayed(true);
-    playSequence(clipsFor(entry, audioUrl));
+    playSequence(clipsFor(entry, audioUrl), { loop: true });
     // Return focus so the learner can keep typing without a second tap.
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [entry, audioUrl, playSequence]);
@@ -89,14 +105,14 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
         <p className="lang-rung__notice" role="alert">Audio was blocked — tap Play again.</p>
       )}
 
-      {/* Dictation shows nothing: recalling the sentence IS the task.
-          Interpretation shows the target, because rendering meaning is. */}
-      {!isDictation && (
-        <p className="lang-rung__target">{entry.text?.[promptLang]}</p>
+      {/* Ordinary dictation shows nothing: recalling the sentence is the task.
+          Copy mode intentionally reveals it for script-entry practice. */}
+      {showPromptText && (
+        <p className="lang-rung__target" aria-live={isCopying ? 'polite' : undefined}>{visibleTargetText}</p>
       )}
 
       <label className="lang-rung__label" htmlFor={`lang-input-${entry.seq}`}>
-        {isDictation ? 'Type what you hear' : 'Type what it means'}
+        {isCopying ? 'Copy the sentence' : isDictation ? 'Type what you hear' : 'Type what it means'}
       </label>
       <input
         id={`lang-input-${entry.seq}`}
@@ -108,7 +124,13 @@ export default function TypedRung({ entry, audioUrl, nextEntry, onComplete, savi
         autoCorrect="off"
         spellCheck={false}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          // Typing is a trusted browser gesture. Starting the loop here means
+          // a learner who begins from the copy prompt gets the same repeating
+          // audio support as someone who pressed Play first.
+          if (!played) play();
+          setValue(e.target.value);
+        }}
         onKeyDown={onKeyDown}
         disabled={saving}
       />

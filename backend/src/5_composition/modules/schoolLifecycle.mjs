@@ -57,6 +57,7 @@ import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
+import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
@@ -171,6 +172,8 @@ export async function createSchoolLifecycle({
   thermalPrinterRegistry = null, playbackAdapter = null,
   languageStudyService = null,
   studyGrants = null,
+  languageReelService = null,
+  languageReelGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   clock = () => new Date(), rng = null, logger = console,
@@ -406,6 +409,11 @@ export async function createSchoolLifecycle({
     });
     launchers.set('sentence-ladder', sentenceLadder);
     launchers.set('language', sentenceLadder); // persisted assignment compatibility
+  }
+  if (languageReelService && languageReelGrants) {
+    launchers.set('language-reels', new LanguageReelsProgramLauncher({
+      service: languageReelService, grants: languageReelGrants, donow,
+    }));
   }
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config

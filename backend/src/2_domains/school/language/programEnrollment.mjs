@@ -13,6 +13,9 @@ export function validateProgramEnrollment(raw, { corpus = null } = {}) {
     if (raw[field] !== undefined && (!Number.isInteger(raw[field]) || raw[field] < 1)) errors.push(`${field} must be an integer >= 1`);
   }
   if (raw.lessonSize === undefined) errors.push('lessonSize is required');
+  if (raw.dictationMode !== undefined && !['listen', 'copy'].includes(raw.dictationMode)) {
+    errors.push('dictationMode must be listen or copy');
+  }
   const rungs = raw.rungs ?? RUNG_IDS;
   if (!Array.isArray(rungs) || rungs.length === 0 || rungs.some((r) => !RUNG_IDS.includes(r))) {
     errors.push(`rungs must be a non-empty subset of ${RUNG_IDS.join(', ')}`);
@@ -41,6 +44,7 @@ export function validateProgramEnrollment(raw, { corpus = null } = {}) {
   return { errors, enrollment: {
     programId: String(raw.programId), corpusId: String(raw.corpusId),
     lessonSize: raw.lessonSize, rungs: [...rungs], unitSize: raw.unitSize ?? 10,
+    ...(raw.dictationMode !== undefined ? { dictationMode: raw.dictationMode } : {}),
     ...(raw.reward ? { reward: { amount: raw.reward.amount } } : {}),
     ...(raw.scope !== undefined ? { scope } : {}),
   } };
