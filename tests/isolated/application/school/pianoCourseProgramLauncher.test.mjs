@@ -125,6 +125,34 @@ describe('PianoCourseProgramLauncher.status', () => {
     expect(status.score).toBe(50);
   });
 
+  it('owes the day when the lock exempts today\'s assigned lesson', async () => {
+    // The pacing rule still says this child is ahead, but School assigned them
+    // this lesson — so it is work they can and must do, not an excused day.
+    const launcher = launcherFor(
+      {
+        items: [lesson('a', { watched: true }), lesson('b', { title: 'Unit 4 Lesson 1' })],
+        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['b'] },
+      },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    expect(status.doneToday).toBe(false);
+    expect(status.excused).toBeUndefined();
+    expect(status.progressLabel).toContain('next: Unit 4 Lesson 1');
+  });
+
+  it('still excuses a lockout that exempts some OTHER lesson', async () => {
+    const launcher = launcherFor(
+      {
+        items: [lesson('a', { watched: true }), lesson('b')],
+        coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['zzz'] },
+      },
+      '2026-08-25T20:00:00Z',
+    );
+    const status = await launcher.status({ userId: 'felix', programInstance: COURSE });
+    expect(status.excused).toBe(true);
+  });
+
   it('reports error (never a silent "done") when the course cannot be read', async () => {
     const launcher = launcherFor({}, '2026-08-25T20:00:00Z', { ok: false, reason: 'invalid_user' });
     expect(await launcher.status({ userId: 'nobody', programInstance: COURSE })).toEqual({ error: true });
@@ -177,6 +205,28 @@ describe('PianoCourseProgramLauncher launch contract', () => {
         courseTitle: 'Hoffman Academy', unitId: 'season-4', unitTitle: 'Unit 4',
         lessonId: 'plex:9001', lessonTitle: 'Lesson 1',
       });
+  });
+
+  it('refuses to launch a lesson the co-progress lock still blocks', async () => {
+    const launcher = launcherFor({
+      compoundId: COURSE,
+      items: [{ id: 'plex:9001', title: 'Lesson 1', parentId: 's4', parentIndex: 4, itemIndex: 1, userWatched: false }],
+      coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3 },
+    }, '2026-08-25T20:00:00Z');
+    await expect(launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE }))
+      .rejects.toThrow(/waiting for the paired learner/);
+  });
+
+  it('launches the assigned lesson even while the learner is ahead', async () => {
+    // The incident this exists to prevent: a child whose last item of the day
+    // was a piano lesson could not start it, because a sibling was behind.
+    const launcher = launcherFor({
+      compoundId: COURSE,
+      items: [{ id: 'plex:9001', title: 'Lesson 1', parentId: 's4', parentIndex: 4, itemIndex: 1, userWatched: false }],
+      coProgressLock: { locked: true, waitingForId: 'milo', aheadBy: 3, buffer: 3, exemptLessonIds: ['9001'] },
+    }, '2026-08-25T20:00:00Z');
+    const target = await launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE });
+    expect(target.lessonId).toBe('plex:9001');
   });
 
   it('dispatches as an explicit interrupt to the Piano kiosk', async () => {
