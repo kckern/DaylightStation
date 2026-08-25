@@ -98,11 +98,22 @@ describe('appendEvent', () => {
    * land on one session in the same tick; a read-modify-write without a queue
    * loses all but the last. A lost append here is a lost piece of a child's work
    * record, which is exactly what an append-only log exists to prevent.
+   *
+   * The twenty are `failed` annotations — an offline printer, re-scanned. This
+   * test used to fire twenty `issued` events at one session, which the store now
+   * refuses: `TRANSITIONS.issued` has no self-edge, because a session holding
+   * twenty issued artifacts from one print is precisely the corrupt record that
+   * write-time enforcement exists to prevent (a retry emits `reprinted`, reusing
+   * the original id). `failed` is non-advancing by spec §9, so all twenty are
+   * legal from `created` no matter what order the queue lands them in — which
+   * keeps this test about the WRITE QUEUE, which is what it is for.
    */
   it('lands all 20 concurrent appends with unique sequential seqs', async () => {
     await ds.appendEvent(SID, created());
     const results = await Promise.all(
-      Array.from({ length: 20 }, (_, i) => ds.appendEvent(SID, { ...issued(), artifactId: `doc_${i}` })),
+      Array.from({ length: 20 }, (_, i) => ds.appendEvent(SID, {
+        type: 'failed', at: AT, sessionId: SID, stage: 'print', reason: `printer offline (${i})`,
+      })),
     );
 
     const seqs = results.map((e) => e.seq).sort((a, b) => a - b);
@@ -112,8 +123,8 @@ describe('appendEvent', () => {
     const stored = await ds.readEvents(SID);
     expect(stored).toHaveLength(21);
     expect(stored.map((e) => e.seq)).toEqual(Array.from({ length: 21 }, (_, i) => i + 1));
-    // Every artifact made it — nothing was clobbered by an interleaved write.
-    expect(new Set(stored.map((e) => e.artifactId).filter(Boolean)).size).toBe(20);
+    // Every attempt made it — nothing was clobbered by an interleaved write.
+    expect(new Set(stored.map((e) => e.reason).filter(Boolean)).size).toBe(20);
   });
 
   it('serialises concurrent appends across different sessions too', async () => {
@@ -232,15 +243,21 @@ describe('listOpenForLearner', () => {
     expect(await openIds('kid1')).toEqual([]);
   });
 
-  it('leaves the session open when an appended event is not a legal transition', async () => {
-    // The store is dumb: legality is the reducer's word, and a rejected event
-    // must not close a session that is still really in progress.
+  it('refuses an illegal transition outright, leaving the session open and the log clean', async () => {
+    // This used to assert the opposite: that the store accepted the illegal
+    // event and left it for the reducer to complain about on every subsequent
+    // read. That posture is what let a session record an `issued` event for an
+    // artifact that never existed. `rewarded` from `issued` would pay a child
+    // for work nothing ever checked — the store now refuses it, and the session
+    // stays open because it really is still in progress.
     await ds.appendEvent(SID, created());
     await ds.appendEvent(SID, issued());
-    await ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 't1' });
+    await expect(ds.appendEvent(SID, { type: 'rewarded', at: AT, sessionId: SID, txnId: 't1' }))
+      .rejects.toMatchObject({ code: 'ILLEGAL_TRANSITION' });
     expect(await openIds('kid1')).toEqual([SID]);
-    expect(reduceSession(await ds.readEvents(SID)).errors)
-      .toContain('event[seq=3]: illegal transition issued -> rewarded');
+    const state = reduceSession(await ds.readEvents(SID));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('issued');
   });
 
   it('follows a reassignment — the work moves to the new learner', async () => {

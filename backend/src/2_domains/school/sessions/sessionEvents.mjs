@@ -308,6 +308,63 @@ export const TERMINAL_STATES = Object.freeze(new Set(
     .filter((state) => !TRANSITIONS[state] && !ANNOTATION_EVENTS.has(state)),
 ));
 
+/**
+ * `TRANSITIONS` read backwards: event type -> the states it may be appended from.
+ *
+ * It exists so that callers asking "may this session still be issued a sheet?"
+ * can ask the TABLE instead of hand-writing their own copy of the answer. Three
+ * use cases used to carry a literal `ISSUABLE = new Set([...])`, each a manual
+ * projection of the same four states, each free to drift the moment an edge was
+ * added or removed here. Derived, not declared: there is only ever one table.
+ */
+const ACCEPTING = (() => {
+  const index = new Map();
+  Object.entries(TRANSITIONS).forEach(([state, types]) => {
+    types.forEach((type) => {
+      if (!index.has(type)) index.set(type, new Set());
+      index.get(type).add(state);
+    });
+  });
+  return index;
+})();
+
+/**
+ * @param {string} eventType
+ * @returns {Set<string>} a fresh set (callers must not be able to edit the table)
+ */
+export function statesAccepting(eventType) {
+  return new Set(ACCEPTING.get(eventType) ?? []);
+}
+
+/** The one wording for "this log has not been opened yet". */
+const MUST_OPEN = 'session must open with a created event';
+
+/**
+ * Decide whether `eventType` may be appended while the session sits in `state`.
+ *
+ * This is the SINGLE legality decision — `reduceSession` consults it when it
+ * folds a log, and `YamlWorkSessionDatastore.appendEvent` consults it before it
+ * writes one. The reducer records a violation and moves on, because a log that
+ * crashes the reducer destroys the only evidence of the work it describes; the
+ * datastore refuses, because there is no such evidence to protect yet and an
+ * event written here is a fact asserted about a child's work that never
+ * happened. Same table, two postures, deliberately.
+ *
+ * @param {string|null} state - the derived state, null for an empty log
+ * @param {string} eventType
+ * @returns {string|null} null when legal, else the reason in house notation
+ */
+export function transitionViolation(state, eventType) {
+  const annotation = ANNOTATION_EVENTS.has(eventType);
+  if (state === null && !annotation) {
+    return eventType === 'created' ? null : MUST_OPEN;
+  }
+  const legal = annotation
+    ? state !== null && (!TERMINAL_STATES.has(state) || TERMINAL_ANNOTATIONS.has(eventType))
+    : (TRANSITIONS[state] || []).includes(eventType);
+  return legal ? null : `illegal transition ${state} -> ${eventType}`;
+}
+
 function validateInto(raw, errors) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     errors.push('event must be a mapping');
@@ -679,16 +736,14 @@ export function reduceSession(events) {
     });
 
     const annotation = ANNOTATION_EVENTS.has(raw.type);
-    if (s.state === null && !annotation) {
-      if (raw.type !== 'created') push('session must open with a created event');
-    } else {
-      const legal = annotation
-        ? s.state !== null && (!TERMINAL_STATES.has(s.state) || TERMINAL_ANNOTATIONS.has(raw.type))
-        : (TRANSITIONS[s.state] || []).includes(raw.type);
-      if (!legal) {
-        push(`illegal transition ${s.state} -> ${raw.type}`);
-        return;
-      }
+    const violation = transitionViolation(s.state, raw.type);
+    if (violation) {
+      push(violation);
+      // A log that opens on something other than `created` is reported but
+      // still folded: the events happened, and refusing to read them would
+      // hide the very work whose record is already damaged. A genuinely
+      // illegal EDGE is skipped, as it always was.
+      if (violation !== MUST_OPEN) return;
     }
 
     APPLY[raw.type](s, raw, push);
