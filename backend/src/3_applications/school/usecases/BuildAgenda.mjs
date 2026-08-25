@@ -29,17 +29,13 @@
  * per-unit tokens did — a token a child is already holding should keep
  * meaning something.
  */
-import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
-import { collectProgramStatuses } from '../programStatusCollection.mjs';
-import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { PlanProjection } from '../PlanProjection.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
 import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayWindowForDate, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
-import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 
 const DEFAULT_SUBJECT_TOKEN_TTL_HOURS = 168;
@@ -50,31 +46,15 @@ const HOUR_MS = 3_600_000;
 const BOUNDARY_HOUR = 4;
 
 
-/**
- * Attestation gate-unlock (spec D2): an attested unit enters the planner's
- * history as a synthetic PASSED session, so its successor unlocks exactly
- * as if the engine had graded it. The row is marked `attested: true` — a
- * reader that must distinguish evidence kinds can.
- */
-function withAttestedPasses(history, attestations, learnerId) {
-  const entries = attestations?.list?.({ learnerId }) ?? [];
-  if (!entries.length) return history;
-  return [
-    ...history,
-    ...entries.map((a) => ({
-      sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
-      outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
-    })),
-  ];
-}
-
-
-
-
 export class BuildAgenda {
-  #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
+  // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
+  // NOT held: every read this use case makes of them now happens inside
+  // `PlanProjection`. Keeping a second handle would be an invitation to
+  // re-assemble the plan here, which is the defect this class was extracted to
+  // end.
+  #sessions; #tokens; #launchers; #timezone; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService; #curriculumExceptions; #languageReelService; #previewOnly;
+  #selfService; #languageReelService; #previewOnly; #planProjection;
 
   /**
    * @param {object} deps
@@ -120,13 +100,16 @@ export class BuildAgenda {
     // `selfService`: even when self-service is enabled for real paper, a
     // preview has no actionable QR or digit code at all.
     previewOnly = false,
+    // The ONE assembler for plan + sections. Injected so every surface in a
+    // composition can share a single instance (and so a test can prove they
+    // agree); defaulted so no caller is obliged to build one, and none of them
+    // can quietly go back to hand-assembling the inputs.
+    planProjection = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
       throw new Error('BuildAgenda requires curriculum, assignments, sessions and tokens');
     }
-    this.#curriculum = curriculum;
-    this.#assignments = assignments;
     this.#sessions = sessions;
     this.#tokens = tokens;
     this.#launchers = launchers;
@@ -137,14 +120,12 @@ export class BuildAgenda {
     this.#ttlMs = subjectTokenTtlHours * HOUR_MS;
     this.#reviewQueue = reviewQueue;
     this.#logger = logger;
-    this.#attestations = attestations;
     this.#teacherNotes = teacherNotes;
     if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
       throw new Error('BuildAgenda schoolCalcMode must be off, issue, or preview');
     }
     this.#schoolCalcStudies = schoolCalcStudies;
     this.#schoolCalcMode = schoolCalcMode;
-    this.#curriculumExceptions = curriculumExceptions;
     this.#languageReelService = languageReelService;
     this.#previewOnly = previewOnly === true;
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
@@ -158,6 +139,13 @@ export class BuildAgenda {
     if (this.#selfService && typeof tokens.liveAccessCodes !== 'function') {
       throw new Error('BuildAgenda: selfService requires a token registry with liveAccessCodes');
     }
+    this.#planProjection = planProjection ?? new PlanProjection({
+      curriculum, assignments, sessions, attestations, curriculumExceptions,
+      launchers, timezone, clock,
+      planErrorEvent: 'school.agenda.plan-errors',
+      launcherFailedEvent: 'school.agenda.launcher-failed',
+      logger,
+    });
   }
 
   /**
@@ -202,41 +190,28 @@ export class BuildAgenda {
       ? new Date(window.startAtMs + Math.floor((window.endAtMs - window.startAtMs) / 2))
       : this.#clock();
     const nowIso = now.toISOString();
-    const [assignment, units, works, rawHistory] = await Promise.all([
-      this.#assignments.get(learnerId),
-      this.#curriculum.listUnits(),
-      this.#curriculum.listWorks?.() ?? [],
-      this.#sessions.listForLearner(learnerId),
-    ]);
-    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
-    const history = withCurriculumExceptions(
-      withAttestedPasses(rawHistory, this.#attestations, learnerId), activeExceptions, learnerId,
-    );
-
-    const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
-    const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
-    const reelEnrollment = (assignment?.programs ?? []).find((entry) => entry?.programId === 'language-reels'
-      && entry?.corpusId === 'korean-language-reels' && entry?.daily?.selection === 'random_category');
-    if (reelEnrollment && this.#languageReelService) {
-      const dayKey = studyDayForInstant(now.getTime(), { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
-      const entry = this.#languageReelService.dailyEntry({ learnerId, dayKey, rng: this.#rng });
-      if (entry) plan.entries.push(entry);
-      else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
-    }
-    appendAssignedProgramEntries(plan, assignment);
-    if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
-
-    const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
-    // RAW history only (M5 review): the synthetic attested rows exist to
-    // unlock the PLANNER's gate — the daily-serving layer must not read an
-    // attestation as "this subject was served today", or the repair day is
-    // exactly the day the agenda goes silent.
-    const { sections: rawSections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone, logger: this.#logger,
+    // The canonical recipe, now stated once (`PlanProjection`) instead of
+    // hand-copied here and in four other files with four sets of small
+    // differences. This use case keeps the DEFAULTS — attested passes and
+    // curriculum exceptions overlaid onto the planner's history, assigned
+    // programs appended, `planDailyAgenda` fed the RAW history — because this
+    // is the surface that prints the paper a child is holding, so it is the
+    // one every other surface has to converge on.
+    const { plan, sections, activeExceptions, projection } = await this.#planProjection.project({
+      learnerId,
+      // A study-day preview plans against the midpoint of that day's window,
+      // not the clock.
+      now,
+      // The day's language reel must land BETWEEN the planner and the
+      // assigned-program append: an entry pushed after `project()` returns
+      // would never reach `sections`, which is the only surface below reads.
+      augmentPlan: (draft, { assignment: assigned }) => this.#appendLanguageReel(draft, {
+        assignment: assigned, learnerId, at: now,
+      }),
+      planErrorEvent: 'school.agenda.plan-errors',
+      launcherFailedEvent: 'school.agenda.launcher-failed',
     });
-    const sections = rawSections.map((section) => section.next?.program
-      ? { ...section, next: projectProgramEntry(section.next, programStatusFor(programStatuses, section.next)) }
-      : section);
+    const { assignment, units, works } = projection;
 
     const unitsById = new Map(units.map((u) => [u.unitId, u]));
     const offers = [];
@@ -278,7 +253,9 @@ export class BuildAgenda {
       if (!entry) continue; // served today, locked-with-no-offer, or unavailable
 
       // eslint-disable-next-line no-await-in-loop
-      const { sessionId, suffix, created } = await this.#offerFor({ entry, unitsById, learnerId, nowIso });
+      const { sessionId, suffix, created } = await this.#offerFor({
+        entry, unitsById, learnerId, nowIso, activeExceptions,
+      });
       if (created) createdSessions.push(sessionId);
 
       if (entry.schoolcalc) {
@@ -469,7 +446,7 @@ export class BuildAgenda {
    * already uses for "served today") — a note from last week is stale
    * homework feedback, not something worth reprinting on every agenda from
    * here on. Never blocks the agenda: an unwired or failing review queue
-   * just means no notes section, same as `#collectProgramStatuses`'s own
+   * just means no notes section, same as the launcher fan-out's own
    * per-source degrade.
    */
   async #collectNotes(learnerId, nowMs) {
@@ -501,20 +478,23 @@ export class BuildAgenda {
   }
 
   /**
-   * `programStatuses` for `planDailyAgenda`: one read-only `status()` call per
-   * DISTINCT program instance among the plan's entries. A program that throws or was
-   * never registered must not blank the rest of the agenda — it degrades to
-   * `{ error: true }`, which `planDailyAgenda` turns into that subject's
-   * "not answering" line.
+   * The day's Korean reel, chosen once per study day and pushed onto the plan
+   * as an ordinary entry. Runs inside `PlanProjection`'s `augmentPlan` seam —
+   * between the planner and the assigned-program append — because an entry
+   * added after sectioning would be missing from `sections`.
    *
-   * @returns {Promise<Record<string, {doneToday: boolean, progressLabel: string|null,
-   *   score: number|null}|{error: true}>>}
+   * Silent when the household has no such enrollment or no reel service; a
+   * warning (never a throw) when the corpus has nothing approved to show, since
+   * a missing reel must not cost a child the rest of their paper.
    */
-  async #collectProgramStatuses(plan, learnerId) {
-    return collectProgramStatuses({
-      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
-      logEvent: 'school.agenda.launcher-failed',
-    });
+  #appendLanguageReel(plan, { assignment, learnerId, at }) {
+    const enrolled = (assignment?.programs ?? []).find((entry) => entry?.programId === 'language-reels'
+      && entry?.corpusId === 'korean-language-reels' && entry?.daily?.selection === 'random_category');
+    if (!enrolled || !this.#languageReelService) return;
+    const dayKey = studyDayForInstant(at.getTime(), { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+    const entry = this.#languageReelService.dailyEntry({ learnerId, dayKey, rng: this.#rng });
+    if (entry) plan.entries.push(entry);
+    else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
   }
 
   /**
@@ -534,13 +514,16 @@ export class BuildAgenda {
    *
    * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean}>}
    */
-  async #offerFor({ entry, unitsById, learnerId, nowIso }) {
+  async #offerFor({ entry, unitsById, learnerId, nowIso, activeExceptions }) {
     if (entry.program) {
       const launcher = this.#launchers.get(entry.program);
       const hint = launcher?.locationHint ?? null;
       return { sessionId: null, suffix: hint ?? 'go do this', created: false };
     }
-    const paused = (await this.#curriculumExceptions?.active?.() ?? [])
+    // The exceptions `PlanProjection` already read for this projection. Reading
+    // them a second time here would let the paused check answer for a different
+    // instant than the plan it is annotating.
+    const paused = (activeExceptions ?? [])
       .find((exception) => exception.kind === 'paused' && exception.resolvedLessonIds?.includes(entry.unitId));
     if (paused) return { sessionId: null, suffix: `content paused (${paused.reason})`, created: false };
     const { sessionId, state, created } = await ensureSession({
