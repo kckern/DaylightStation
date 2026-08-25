@@ -261,6 +261,10 @@ export class BuildAgenda {
     // must not be reissued, or the registry's index keeps only the last writer
     // and the earlier record's code silently stops resolving.
     const mintedCodes = new Set();
+    // The tokens this build actually minted a live access code for. Returned so
+    // a caller that ends up NOT printing (a cooldown-suppressed tap) can hand
+    // the codes back instead of leaving them live for a receipt nobody holds.
+    const mintedTokens = [];
     // Read ONCE per build, deliberately: the mint predicate is synchronous.
     let liveCodes = new Set();
     if (this.#selfService) {
@@ -348,6 +352,7 @@ export class BuildAgenda {
 
       tokensBySubject[section.subject] = record.token;
       if (record.accessCode) accessCodesByToken[record.token] = record.accessCode;
+      if (record.accessCode) mintedTokens.push(record.token);
       actionLabelBySubject.set(section.subject, suffix);
       offers.push({
         subject: section.subject,
@@ -408,6 +413,7 @@ export class BuildAgenda {
       sections: enrichedSections,
       offers,
       createdSessions,
+      mintedTokens,
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken, notes,
