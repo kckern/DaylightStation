@@ -83,6 +83,9 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Enroll' }));
+    // Two-tap: the first tap only arms; the api fires on Confirm.
+    expect(schoolApi.enroll).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.enroll).toHaveBeenCalled());
     expect(schoolApi.enroll).toHaveBeenCalledWith('felix', {
       syllabusId: 'atlas-upper',
@@ -138,6 +141,7 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Re-materialize' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.enroll).toHaveBeenCalled());
     expect(await screen.findByText('Refused: 2 open sessions on this course.')).toBeInTheDocument();
   });
@@ -157,8 +161,29 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unenroll' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.unenroll).toHaveBeenCalled());
     expect(await screen.findByText('Refused: 1 open session on this course.')).toBeInTheDocument();
+  });
+
+  it('arms with consequence copy and Cancel returns to the actions without calling the api', () => {
+    render(
+      <EnrollmentDrawer
+        learner={LEARNER}
+        courseId="history-capitals"
+        courseTitle="History Capitals"
+        cell={CELL}
+        syllabi={SYLLABI}
+        onClose={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Unenroll' }));
+    expect(screen.getByText(/Remove History Capitals from Felix/)).toBeInTheDocument();
+    expect(schoolApi.unenroll).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Unenroll' })).toBeInTheDocument();
+    expect(schoolApi.unenroll).not.toHaveBeenCalled();
   });
 });
 
