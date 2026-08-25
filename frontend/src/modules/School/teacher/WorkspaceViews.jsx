@@ -27,25 +27,11 @@ import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
-import { localDay } from './teacherDates.js';
+import { localDay, humanDate, humanDateTime } from './teacherDates.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
 const stateOf = (session) => session?.state ?? session?.status ?? session?.outcome?.result ?? session?.result ?? 'unknown';
-const humanDate = (value) => {
-  if (!value) return null;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', {
-    weekday: 'long', month: 'short', day: 'numeric',
-  }).format(date);
-};
-const humanDateTime = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
-  }).format(date);
-};
 const scoreLine = (session) => {
   const score = session?.effectiveScore ?? session?.machineScore;
   if (!score || score.correctCount == null || score.totalCount == null) return null;
@@ -647,7 +633,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               {artifact.availability === 'exact' && <div className="teacher-session-materials__print"><ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} /></div>}
             </div>)}</div> : <CapabilityNotice>No issued worksheet or result receipt is linked to this session.</CapabilityNotice>}
           </section>
-          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
+          {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>
         </>
       )}

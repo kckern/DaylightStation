@@ -8,15 +8,7 @@ import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import LearnerDay from './LearnerDay.jsx';
 import { teacherBaseFor, teacherSessionPath } from '../teacherUrl.js';
 import { LessonIdentity } from '../CurriculumIdentity.jsx';
-import { teacherDate } from '../teacherDates.js';
-
-function humanDay(value) {
-  if (!value) return null;
-  const date = new Date(`${value}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat(undefined, {
-    weekday: 'long', month: 'short', day: 'numeric',
-  }).format(date);
-}
+import { teacherDate, humanDate, teacherTime } from '../teacherDates.js';
 
 function outcomeLine(session) {
   const score = session.effectiveScore;
@@ -86,11 +78,11 @@ export default function RosterStrip({ rows, kids }) {
           {openId === row.learnerId && <div id={panelId} className="teacher-roster__details">
             {sessions.length > 0 && <div className="teacher-day-sessions">{sessions.map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title} posterUrl={session.posterUrl} compact />
-              <small className="teacher-day-session__outcome">{[humanDay(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
+              <small className="teacher-day-session__outcome">{[humanDate(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
             </a>)}</div>}
             {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact />
-              <span>Work from {teacherDate(session.studyDay)} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span>
+              <span>Work from {teacherDate(session.studyDay)} · processed {teacherTime(session.processedAt) ?? 'today'}</span>
             </a>)}</section>}
             <LearnerDay sessions={sessions} />
           </div>}
