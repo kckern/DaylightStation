@@ -29,6 +29,10 @@ export class LanguageReelService {
     if (!this.#config.getUserProfile?.(userId) || !ID_RE.test(String(reelId))) return null;
     return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'language-reels', `${reelId}.yml`);
   }
+  #dailyFile(userId) {
+    if (!this.#config.getUserProfile?.(userId)) return null;
+    return path.join(this.#config.getUserDir(userId), 'apps', 'school', 'language-reels', 'daily-selections.yml');
+  }
   #mediaFile(reel) {
     const parts = String(reel?.media?.assetId ?? '').replace(/^school:language\//, '').split('/');
     if (parts.length !== 3 || parts[0] !== 'korean-language-reels') return null;
@@ -77,6 +81,39 @@ export class LanguageReelService {
     const terminal = Boolean(session?.completedAt);
     return { doneToday: terminal && session.completedAt.slice(0, 10) === this.#clock().toISOString().slice(0, 10), terminal,
       progressLabel: terminal ? 'Reel complete' : session ? 'Reel in progress' : 'Not started', score: session?.score ?? null };
+  }
+  /**
+   * Select once at agenda creation, then preserve the decision for that study
+   * day.  The category is chosen first; a reel is then chosen from it. This
+   * keeps reprinted agendas deterministic and avoids one huge category winning
+   * simply because it has more files.
+   */
+  dailyEntry({ userId, dayKey, rng = Math.random } = {}) {
+    const file = this.#dailyFile(userId); if (!file || !dayKey) return null;
+    const selections = fs.existsSync(file) ? (load(file) ?? {}) : {};
+    const held = selections[dayKey];
+    if (held?.reelId) {
+      try { const { reel } = this.getReel(held.reelId); return this.#dailyPlanEntry(held.reelId, held.category, dayKey, reel); } catch { delete selections[dayKey]; }
+    }
+    const root = path.join(this.#root(), 'reels');
+    const choices = [];
+    for (const category of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+      const rows = fs.readdirSync(path.join(root, category)).filter((name) => name.endsWith('.reel.yml'))
+        .map((name) => name.replace(/\.reel\.yml$/, ''))
+        .filter((id) => { try { return this.getReel(id).reel.reviewState === 'approved'; } catch { return false; } });
+      if (rows.length) choices.push({ category, ids: rows });
+    }
+    if (!choices.length) return null;
+    const group = choices[Math.min(choices.length - 1, Math.floor(rng() * choices.length))];
+    const reelId = group.ids[Math.min(group.ids.length - 1, Math.floor(rng() * group.ids.length))];
+    selections[dayKey] = { reelId, category: group.category, selectedAt: this.#clock().toISOString() };
+    save(file, selections);
+    return this.#dailyPlanEntry(reelId, group.category, dayKey, this.getReel(reelId).reel);
+  }
+  #dailyPlanEntry(reelId, category, dayKey, reel) {
+    return { unitId: `language-reel-${dayKey}-${reelId}`, title: reel.title, subject: 'language',
+      program: 'language-reels', programInstance: String(reelId), cadence: 'daily', status: 'available',
+      timingPriority: 3, timingRank: 0, reelCategory: category };
   }
   markStage({ userId, reelId, stage }) {
     const file = this.#sessionFile(userId, reelId); if (!file || !fs.existsSync(file)) throw new ValidationError('open the reel first');

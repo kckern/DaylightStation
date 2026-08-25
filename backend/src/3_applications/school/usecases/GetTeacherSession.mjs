@@ -84,6 +84,7 @@ export class GetTeacherSession {
     const courseId = unit?.courseId ?? null;
     const course = works.find((candidate) => candidate.work === courseId
       || `${candidate.subject}/${candidate.work}` === courseId) ?? null;
+    const module = course?.modules?.find((entry) => entry.module === unit?.module) ?? null;
     const courseUnits = this.#curriculum && courseId
       ? (await this.#curriculum.listUnits()).filter((candidate) => candidate.courseId === courseId)
       : [];
@@ -109,7 +110,7 @@ export class GetTeacherSession {
       taxonomy: {
         subject: unit?.subject ?? course?.subject ?? null,
         courseId, courseTitle: course?.title ?? courseId,
-        moduleId: unit?.module ?? null, moduleTitle: unit?.module ?? null,
+        moduleId: unit?.module ?? null, moduleTitle: module?.title ?? unit?.module ?? null,
         lessonId: state.unitId, lessonTitle: unit?.title ?? state.unitId,
         posterUrl: courseId ? `/api/v1/school/teacher/curriculum/${encodeURIComponent(courseId)}/poster.jpg` : null,
       },

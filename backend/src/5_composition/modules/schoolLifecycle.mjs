@@ -537,7 +537,7 @@ export async function createSchoolLifecycle({
   const buildAgenda = new BuildAgenda({
     attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
-    launchers, timezone, clock, rng: draw, newSessionId,
+    launchers, languageReelService, timezone, clock, rng: draw, newSessionId,
     // Optional knob; BuildAgenda's own default (168h) applies when unset.
     subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
     // Read-only: the "Notes for you" section (spec R7) reads a learner's
@@ -587,7 +587,7 @@ export async function createSchoolLifecycle({
       put: async () => {},
       liveAccessCodes: () => stores.tokens.liveAccessCodes(),
     },
-    launchers, timezone, clock, rng: draw, newSessionId,
+    launchers, languageReelService, timezone, clock, rng: draw, newSessionId,
     subjectTokenTtlHours: lifecycleCfg.subjectTokenTtlHours,
     // Same real, read-only review queue as `buildAgenda` — a preview showing
     // no notes when the real print would have some is a preview that lies.
@@ -869,9 +869,14 @@ export async function createSchoolLifecycle({
   });
   const setAssignments = new SetAssignments({
     assignments: stores.assignments, grownUps, teacherGate, curriculum,
-    programValidators: new Map(languageStudyService ? [[
-      'sentence-ladder', (raw) => languageStudyService.validateEnrollment(raw),
-    ]] : []),
+    programValidators: new Map([
+      ...(languageStudyService ? [['sentence-ladder', (raw) => languageStudyService.validateEnrollment(raw)]] : []),
+      ...(languageReelService ? [['language-reels', (raw) => {
+        const valid = raw?.corpusId === 'korean-language-reels' && raw?.daily?.selection === 'random_category';
+        return valid ? { errors: [], enrollment: { programId: 'language-reels', corpusId: raw.corpusId, daily: { selection: 'random_category' } } }
+          : { errors: ['language-reels requires corpusId korean-language-reels and daily.selection random_category'] };
+      }]] : []),
+    ]),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
     clock, logger,
   });

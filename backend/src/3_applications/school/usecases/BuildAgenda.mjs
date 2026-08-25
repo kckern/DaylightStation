@@ -35,7 +35,7 @@ import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
-import { studyDayIndex, offsetMinutesFor, studyDayWindow } from '#domains/school/studyDay.mjs';
+import { studyDayIndex, offsetMinutesFor, studyDayWindow, studyDayForInstant } from '#domains/school/studyDay.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
@@ -69,7 +69,7 @@ function withAttestedPasses(history, attestations, learnerId) {
 export class BuildAgenda {
   #curriculum; #assignments; #sessions; #tokens; #launchers; #timezone; #attestations; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
-  #selfService; #curriculumExceptions;
+  #selfService; #curriculumExceptions; #languageReelService;
 
   /**
    * @param {object} deps
@@ -109,7 +109,7 @@ export class BuildAgenda {
     // planner's gate-unlock; teacher notes join the "Notes for you" window.
     attestations = null, teacherNotes = null,
     schoolCalcStudies = null, schoolCalcMode = 'off',
-    selfService = null, curriculumExceptions = null,
+    selfService = null, curriculumExceptions = null, languageReelService = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -135,6 +135,7 @@ export class BuildAgenda {
     this.#schoolCalcStudies = schoolCalcStudies;
     this.#schoolCalcMode = schoolCalcMode;
     this.#curriculumExceptions = curriculumExceptions;
+    this.#languageReelService = languageReelService;
     // One switch, read once: `selfService.enabled !== true` is today's agenda,
     // byte for byte — no code minted, no key on the record, no line on the paper.
     this.#selfService = selfService?.enabled === true;
@@ -190,6 +191,14 @@ export class BuildAgenda {
 
     const coursePolicies = Object.fromEntries((works ?? []).map((work) => [work.work, work.progression]).filter(([, p]) => p));
     const plan = planLearnerWork({ learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies });
+    const reelEnrollment = (assignment?.programs ?? []).find((entry) => entry?.programId === 'language-reels'
+      && entry?.corpusId === 'korean-language-reels' && entry?.daily?.selection === 'random_category');
+    if (reelEnrollment && this.#languageReelService) {
+      const dayKey = studyDayForInstant(now.getTime(), { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+      const entry = this.#languageReelService.dailyEntry({ learnerId, dayKey, rng: this.#rng });
+      if (entry) plan.entries.push(entry);
+      else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
+    }
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
