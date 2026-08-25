@@ -28,7 +28,7 @@
  * next) belongs to useSelfService.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { launchAndroidTarget, screenOff } from '../../../lib/fkb.js';
+import { screenOff } from '../../../lib/fkb.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import { schoolLog } from '../schoolLog.js';
 
@@ -53,14 +53,6 @@ const LETTER_MS = 125;
 const HOLD_MS = 900;
 const WIPE_MS = 70;
 const PRESENCE_POLL_MS = 15_000;
-// The Portal runs Android TV, which does not resolve the stock
-// android.settings.BLUETOOTH_SETTINGS action. This is its actual add-accessory
-// screen (verified on the kiosk); launchAndroidTarget turns it into a safe
-// component intent through FKB.
-const BLUETOOTH_SETTINGS_TARGET = {
-  package: 'com.android.tv.settings',
-  activity: '.accessories.AddAccessoryActivity',
-};
 
 // The Portal's companion APK reports its bonded HID devices to this endpoint.
 // This model string is intentionally only the display-side matcher: pairing
@@ -179,7 +171,6 @@ export default function Keypad({
 }) {
   const [entry, setEntry] = useState('');
   const [screenOffFailure, setScreenOffFailure] = useState(null);
-  const [keyboardPairingFailure, setKeyboardPairingFailure] = useState(null);
   const [activityEpoch, setActivityEpoch] = useState(0);
   // null when idle; otherwise { phase, shown } — how many slots have turned
   // over so far, counting up through the reveal and back down through the wipe.
@@ -187,16 +178,6 @@ export default function Keypad({
   const timersRef = useRef([]);
   const tap = useTapFire();
   const keyboardState = useKeyboardPresence();
-
-  const openKeyboardPairing = useCallback(() => {
-    schoolLog.selfService('keyboard.pairing.requested', {});
-    if (launchAndroidTarget(BLUETOOTH_SETTINGS_TARGET)) {
-      setKeyboardPairingFailure(null);
-      return;
-    }
-    setKeyboardPairingFailure("Bluetooth settings can't open here. Tell a grown-up.");
-    schoolLog.selfServiceError('keyboard.pairing.failed', { reason: 'fkb_unavailable' });
-  }, []);
 
   const turnScreenOff = useCallback((source) => {
     schoolLog.selfService('screen-off.requested', { source });
@@ -372,20 +353,6 @@ export default function Keypad({
         {keyboardState === 'checking' && 'Checking keyboard'}
         {keyboardState === 'unavailable' && 'Keyboard status unavailable'}
       </p>
-      {(keyboardState === 'not-paired' || keyboardState === 'disconnected') && (
-        <button
-          type="button"
-          className="school-selfservice__pair-keyboard"
-          disabled={busy}
-          {...tap(openKeyboardPairing)}
-        >
-          Pair keyboard
-        </button>
-      )}
-      <p className="school-selfservice__keyboard-status" role="status">
-        {keyboardPairingFailure ?? ''}
-      </p>
-
       <div
         className={`school-selfservice__entry${reject ? ' is-rejected' : ''}${reject?.phase === 'shake' ? ' is-shaking' : ''}`}
         data-testid="selfservice-entry"

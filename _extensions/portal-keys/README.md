@@ -272,20 +272,21 @@ reported name. Its status light means:
   fill the code, `Backspace` removes one, and `Enter` submits it.
 - **Turn on keyboard** — it is bonded but currently disconnected. Turn it on;
   Android reconnects it without a new pairing flow.
-- **Pair BK-3001 keyboard** — no matching bond exists. Tap **Pair keyboard**
-  on the keypad to open Android's Bluetooth settings via FKB, then put the
-  BK-3001 in pairing mode and complete the Android prompt. Return to Fully;
-  the status light refreshes within 15 seconds.
+- **Pair BK-3001 keyboard** — no matching bond exists. The Portal's supported
+  pairing UI is its swipe-up Control Center: temporarily allow it with
+  `pkctl config set blockControlCenter false`, swipe up from the bottom edge,
+  then put the BK-3001 in pairing mode and complete the Android prompt. Restore
+  the control-center block afterwards; the keypad status light refreshes within
+  15 seconds.
 
 Pairing remains an Android-system confirmation; the app must never attempt to
-create or silently accept a Bluetooth bond. The Portal's Android TV build does
-not resolve the stock `android.settings.BLUETOOTH_SETTINGS` action, so the
-keypad deliberately opens its Add Accessory component instead. If Fully is
-unavailable, or when recovering a kiosk before the frontend has been deployed,
-open the same system screen through ADB:
+create or silently accept a Bluetooth bond. Use the Portal Control Center rather
+than assuming a stock Android Settings intent exists on this vendor build. If
+ADB is available during recovery, inspect the installed Settings activities
+before attempting to launch one; there is no portable component name.
 
 ```bash
-adb -s <portal-ip>:5555 shell am start -n com.android.tv.settings/.accessories.AddAccessoryActivity
+adb -s <portal-ip>:5555 shell cmd package resolve-activity --brief -a android.settings.BLUETOOTH_SETTINGS
 ```
 
 Verify the raw reporter state without relying on the frontend:

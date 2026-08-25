@@ -1634,17 +1634,6 @@
 .school-selfservice__keyboard.is-disconnected .school-selfservice__keyboard-led,
 .school-selfservice__keyboard.is-not-paired .school-selfservice__keyboard-led { background: currentColor; }
 .school-selfservice__keyboard.is-unavailable { color: var(--school-muted); }
-.school-selfservice__pair-keyboard {
-  min-height: 42px; margin-top: -0.7rem; padding: 0.4rem 1rem;
-  border: 1px solid var(--school-border); border-radius: 10px;
-  background: var(--school-surface-2); color: var(--school-fg);
-  font-size: 0.95rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
-  &:disabled { opacity: 0.45; cursor: default; }
-}
-.school-selfservice__keyboard-status {
-  min-height: 1.2rem; margin: -0.7rem 0 0; color: var(--school-danger);
-  font-size: 0.85rem; font-weight: 700; text-align: center;
-}
 .school-selfservice__entry {
   display: flex; gap: 0.55rem; width: 100%;
   // The refusal happens HERE, in the slots the digits were just typed into —
