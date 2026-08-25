@@ -52,6 +52,7 @@
 | What do progress, course grade, and status mean? | [Progress and reporting](./progress-and-reporting.md) |
 | How do I inspect or repair live state? | [Operations](./operations.md) |
 | How do external programs plug in? | [Programs](./programs.md) |
+| How can a School course execute in Fitness and return evidence? | [School-owned Fitness courses](../fitness/school-course-contract.md) |
 | How does the sentence sequence work? | [Sentence Ladder](./sentence-ladder.md) |
 
 The remainder of this file is the detailed subsystem inventory. The focused

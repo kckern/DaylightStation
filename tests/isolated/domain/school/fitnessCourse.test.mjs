@@ -86,6 +86,28 @@ describe('school.fitness-course/v1', () => {
     expect(second.units[0].activity.policyRevision).toBe(first.units[0].activity.policyRevision);
   });
 
+  it('uses School dated-module grammar when the course configuration schedules blocks', () => {
+    const result = compileFitnessCourse(minimal({
+      progression: { module_order: 'fixed', lesson_order: 'fixed', mode: 'dated_modules' },
+      modules: [
+        { module: 'week-one', title: 'Week One', opensOn: '2026-09-01', closesOn: '2026-09-07' },
+        { module: 'week-two', title: 'Week Two', opensOn: '2026-09-08', closesOn: '2026-09-14' },
+      ],
+      mapping: { groups: [
+        { module: 'week-one', sourceIds: ['101', '102'] },
+        { module: 'week-two', sourceIds: ['201'] },
+      ] },
+    }), source);
+    expect(result.errors).toEqual([]);
+    expect(result.projection.work).toMatchObject({
+      progression: { mode: 'dated_modules' },
+      modules: [
+        { module: 'week-one', opensOn: '2026-09-01', closesOn: '2026-09-07' },
+        { module: 'week-two', opensOn: '2026-09-08', closesOn: '2026-09-14' },
+      ],
+    });
+  });
+
   it('rejects invalid criteria and a shelf/directory vocabulary mismatch', () => {
     const raw = minimal({ defaults: { success: { metric: 'effort.vibes', op: 'gte', value: 1 } } });
     const result = validateFitnessCourse(raw, { subject: 'arts', work: 'another-course' });
@@ -93,6 +115,17 @@ describe('school.fitness-course/v1', () => {
       expect.stringContaining('directory'),
       expect.stringContaining('shelf'),
       expect.stringContaining('metric is unsupported'),
+    ]));
+  });
+
+  it('rejects mappings to undeclared modules and unselected provider items', () => {
+    const result = compileFitnessCourse(minimal({
+      modules: [{ module: 'only', title: 'Only' }],
+      mapping: { include: ['101'], groups: [{ module: 'ghost', sourceIds: ['201'] }] },
+    }), source);
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('is not declared'),
+      expect.stringContaining('is not selected'),
     ]));
   });
 });
