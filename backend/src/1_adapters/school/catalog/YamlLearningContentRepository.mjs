@@ -4,15 +4,19 @@ import { listYamlFiles, loadYaml } from '#system/utils/FileIO.mjs';
 
 /** Resolve learning documents and ordinary School banks from configured data mounts. */
 export class YamlLearningContentRepository extends ILearningContentRepository {
-  #documentDirectories; #bankDirectories; #actionDirectories; #io;
+  #documentDirectories; #bankDirectories; #deckDirectories; #actionDirectories; #io;
 
-  constructor({ documentDirectories, bankDirectories, actionDirectories = [], io = {} } = {}) {
+  constructor({ documentDirectories, bankDirectories, deckDirectories = [], actionDirectories = [], io = {} } = {}) {
     super();
     if (!validDirectories(documentDirectories) || !validDirectories(bankDirectories)) {
       throw new Error('YamlLearningContentRepository requires documentDirectories and bankDirectories');
     }
     this.#documentDirectories = [...documentDirectories];
     this.#bankDirectories = [...bankDirectories];
+    if (!Array.isArray(deckDirectories) || !deckDirectories.every((entry) => typeof entry === 'string' && entry.trim().length > 0)) {
+      throw new Error('YamlLearningContentRepository deckDirectories must contain paths');
+    }
+    this.#deckDirectories = [...deckDirectories];
     if (!Array.isArray(actionDirectories) || !actionDirectories.every((entry) => (
       typeof entry === 'string' && entry.trim().length > 0
     ))) throw new Error('YamlLearningContentRepository actionDirectories must contain paths');
@@ -26,6 +30,10 @@ export class YamlLearningContentRepository extends ILearningContentRepository {
 
   async getQuestionBank(bankId) {
     return this.#find(this.#bankDirectories, 'id', bankId, 'question bank');
+  }
+
+  async getFlashcardDeck(deckId) {
+    return this.#find(this.#deckDirectories, 'id', deckId, 'flashcard deck');
   }
 
   async getLearningAction(actionId) {

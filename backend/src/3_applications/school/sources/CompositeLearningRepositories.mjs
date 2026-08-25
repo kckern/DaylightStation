@@ -96,6 +96,10 @@ export class CompositeLearningContentRepository {
     return this.#first('getQuestionBank', bankId);
   }
 
+  async getFlashcardDeck(deckId) {
+    return this.#first('getFlashcardDeck', deckId);
+  }
+
   async getLearningAction(actionId) {
     return this.#first('getLearningAction', actionId);
   }

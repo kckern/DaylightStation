@@ -33,6 +33,15 @@ export const PROGRAMS = {
     available: true,
     sectionFor: () => 'banks',
   },
+  flashcards: {
+    label: 'Flashcards',
+    blurb: 'Review and master study cards',
+    available: true,
+    // Standalone assignments identify their deck by program instance; the
+    // current bank shelf remains the honest fallback until a deck browser is
+    // added to the School home surface.
+    sectionFor: () => 'banks',
+  },
   materials: {
     label: 'Courses',
     blurb: 'Watch, listen, and pass the quiz',

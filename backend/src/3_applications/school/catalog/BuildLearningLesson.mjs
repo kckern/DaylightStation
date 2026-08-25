@@ -8,6 +8,7 @@ import {
   validateLearningProbeBank,
 } from '#domains/school/catalog/index.mjs';
 import { validateQuestionBank } from '#domains/school/questionBankValidation.mjs';
+import { projectBankAsFlashcardDeck, validateFlashcardDeck } from '#domains/school/flashcards/index.mjs';
 import {
   validateAdaptiveRemediationBank,
   validateAdaptiveRemediationPolicy,
@@ -121,6 +122,19 @@ export class BuildLearningLesson {
       await this.#validateDocumentActions(result.document);
       return { ...module, document: result.document };
     }
+    if (module.type === 'flashcards' && module.deckId) {
+      const rawDeck = await this.#content.getFlashcardDeck(module.deckId);
+      if (!rawDeck) throw new Error(`School flashcard deck '${module.deckId}' was not found`);
+      const deckResult = validateFlashcardDeck(rawDeck);
+      if (deckResult.errors.length) throw new Error(`School flashcard deck '${module.deckId}' is invalid: ${deckResult.errors.join('; ')}`);
+      if (deckResult.deck.id !== module.deckId) throw new Error(`School flashcard deck '${module.deckId}' declares id '${deckResult.deck.id}'`);
+      if (!module.bankId) return { ...module, deck: deckResult.deck };
+      const rawBank = await this.#content.getQuestionBank(module.bankId);
+      if (!rawBank) throw new Error(`School question bank '${module.bankId}' was not found`);
+      const bankResult = validateQuestionBank(rawBank);
+      if (!bankResult.ok) throw new Error(`School question bank '${module.bankId}' is invalid: ${bankResult.errors.join('; ')}`);
+      return { ...module, deck: deckResult.deck, bank: bankResult.bank };
+    }
     if (BANK_MODULES.has(module.type)) {
       const rawBank = await this.#content.getQuestionBank(module.bankId);
       if (!rawBank) throw new Error(`School question bank '${module.bankId}' was not found`);
@@ -150,7 +164,7 @@ export class BuildLearningLesson {
           throw new Error(`School learning probe is invalid: ${readiness.errors.join('; ')}`);
         }
       }
-      const resolved = { ...module, bank: result.bank };
+      const resolved = { ...module, bank: result.bank, ...(module.type === 'flashcards' ? { deck: projectBankAsFlashcardDeck(result.bank) } : {}) };
       if (module.remediation !== undefined) {
         // Catalog validation already rejected malformed policy. Normalize its
         // defaults here so every calculator-family projection sees the same

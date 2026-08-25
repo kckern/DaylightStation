@@ -26,6 +26,7 @@ import { SchoolBreadcrumbProvider, useSchoolBreadcrumbBar } from './SchoolBreadc
 import { groupBySubject, subjectLabel } from './home/subjects.js';
 import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgram.jsx';
 import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
+import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -387,7 +388,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     }
     if (module.type === 'learning_probe') setActive({ mode: 'learning_probe', module, learning });
     else if (module.type === 'lecture_notes' || module.type === 'examples') setActive({ mode: 'learning_reader', module, learning });
-    else if (module.type === 'flashcards') setActive({ mode: 'flashcard', bank: module.bank, learning });
+    else if (module.type === 'flashcards') {
+      // A catalog-resolved rich deck is rendered by the reusable program; old
+      // bank-only modules keep their established runner and session contract.
+      if (module.deck && module.deck.schema === 'school.flashcard-deck/v1') {
+        setActive({ mode: 'flashcard_program', descriptor: { deck: module.deck, bankItems: module.bank?.items ?? [], policy: module.policy ?? {} }, learning });
+      } else setActive({ mode: 'flashcard', bank: module.bank, learning });
+    }
     else if (module.type === 'quiz') setActive({ mode: 'quiz', bank: module.bank, learning });
     else if (module.type === 'problems') setActive({ mode: 'problems', bank: module.bank, learning });
     else setActive({ mode: 'learning_unsupported', module, learning });
@@ -822,6 +829,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
           />
         )}
         {active?.mode === 'flashcard' && <FlashcardRunner bank={active.bank} learning={active.learning} onExit={() => setActive(null)} />}
+        {active?.mode === 'flashcard_program' && (
+          <FlashcardProgram
+            descriptor={active.descriptor}
+            onEvent={async (event) => { schoolLog.session('flashcard-program-event', { ...event, learning: active.learning }); return { ok: true }; }}
+            onExit={() => setActive(null)}
+          />
+        )}
         {active?.mode === 'problems' && <QuizRunner bank={active.bank} mode="drill" learning={active.learning} onExit={() => setActive(null)} />}
         {active?.mode === 'learning_probe' && (
           <LearningProbeRunner module={active.module} learning={active.learning} onExit={() => setActive(null)} />

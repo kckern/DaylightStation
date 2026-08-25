@@ -41,7 +41,7 @@ const bank = {
   }],
 };
 
-function useCase({ rawCatalog = catalog, rawBank = bank, documentBlocks = null, action = null, modules = null } = {}) {
+function useCase({ rawCatalog = catalog, rawBank = bank, rawDeck = null, documentBlocks = null, action = null, modules = null } = {}) {
   return new BuildLearningLesson({
     catalogs: { getCatalog: async () => rawCatalog },
     content: {
@@ -50,6 +50,7 @@ function useCase({ rawCatalog = catalog, rawBank = bank, documentBlocks = null, 
         blocks: documentBlocks ?? [{ blockId: 'intro', type: 'prose', text: 'Interest can compound.' }],
       }),
       getQuestionBank: async () => rawBank,
+      getFlashcardDeck: async () => rawDeck,
       getLearningAction: async () => action,
     },
     modules,
@@ -57,6 +58,20 @@ function useCase({ rawCatalog = catalog, rawBank = bank, documentBlocks = null, 
 }
 
 describe('BuildLearningLesson', () => {
+  it('resolves a rich deck and its optional learning bank for a flashcard module', async () => {
+    const rawCatalog = structuredClone(catalog);
+    rawCatalog.subjects[0].courses[0].units[0].lessons[0].modules = [{
+      moduleId: 'cards', type: 'flashcards', deckId: 'finance:compound-cards', bankId: bank.id,
+    }];
+    const rawDeck = {
+      schema: 'school.flashcard-deck/v1', id: 'finance:compound-cards', title: 'Compound cards',
+      cards: [{ cardId: 'q1', front: { blocks: [{ type: 'text', text: 'What grows?' }] }, back: { blocks: [{ type: 'text', text: 'Principal plus interest' }] } }],
+    };
+    const bundle = await useCase({ rawCatalog, rawDeck }).execute({
+      catalogId: 'main', subjectId: 'markets', courseId: 'household-finance', unitId: 'interest', lessonId: 'compound-growth',
+    });
+    expect(bundle.lesson.modules[0]).toMatchObject({ deck: { id: rawDeck.id }, bank: { id: bank.id } });
+  });
   it('resolves a subject-neutral lesson and derives interaction capabilities', async () => {
     const bundle = await useCase().execute({
       catalogId: 'main', subjectId: 'markets', courseId: 'household-finance',
