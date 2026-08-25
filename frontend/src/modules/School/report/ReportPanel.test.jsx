@@ -267,12 +267,16 @@ describe('cross-surface evidence progress', () => {
     } });
     render(<ReportPanel />);
     expect(await screen.findByText('Instructional view')).toBeTruthy();
-    expect(screen.getByRole('grid', { name: 'Instructional content and pacing signals' })).toBeTruthy();
+    // One grid per signal group since the grouped-insights wave — same grammar.
+    expect(screen.getAllByRole('grid', { name: 'Instructional content and pacing signals' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('gridcell', { name: /Equivalent Fractions/ })).toBeTruthy();
     expect(screen.getByText(/not learner rankings/)).toBeTruthy();
     expect(screen.getByText('Why this is suggested')).toBeTruthy();
     expect(screen.getByText(/3\/6 correct across 6 records and 2 learners/)).toBeTruthy();
-    expect(screen.getByText(/school\.instructional-review\/v1/)).toBeTruthy();
+    // The internal policy id never renders (UX audit B7); the basis line is
+    // plain English with the expiry date.
+    expect(screen.queryByText(/school\.instructional-review\/v1/)).toBeNull();
+    expect(screen.getByText(/Suggested automatically from answer history/)).toBeTruthy();
   });
 
   it('shows exact recent scores, pending sync, and a learner follow-up action', async () => {
