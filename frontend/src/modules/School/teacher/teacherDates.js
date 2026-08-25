@@ -19,6 +19,28 @@ export function localDay(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+/** "Monday, Aug 24" — weekday-led day label. Null on garbage, so callers can ?? a fallback. */
+export function humanDate(value) {
+  const date = dateFor(value);
+  return date ? new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(date) : null;
+}
+
+/** "Aug 24, 2026, 3:20 PM" — timestamp label. Null on garbage. */
+export function humanDateTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(date);
+}
+
+/** "3:20 PM" — time-of-day label. Null on garbage. */
+export function teacherTime(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
 export function teacherDateRange(from, to = null) {
   if (!to || to === from) return teacherDate(from);
   const start = dateFor(from);
