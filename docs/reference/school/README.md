@@ -747,6 +747,25 @@ of a scanned card. Course, lesson, and learner-course context routes back the
 canonical teacher URLs under `/school/teacher/curriculum/` and
 `/school/teacher/students/`.
 
+The learner timeline (`school.learner-timeline/v1`) and the `/review/learner`
+feed join the curriculum catalog at read time, so History rows and feedback
+entries carry lesson/course titles and posters; session records store only
+ids. The feedback lane rolls consecutive same-session verdicts into one
+expandable summary; machine grading is never attributed as if it were a
+person.
+
+Console information architecture: the Curriculum page is a course-card
+catalog; lessons and pass bars (including a bulk course-level set, written
+through the per-unit override store) live on the per-course drill-in page.
+"The whole school" enrollment matrix renders once, on the catalog page,
+transposed — courses as rows, students as columns — with a legend and an
+unassigned-course count. The dashboard is the Today digest plus a compact
+backlog-count strip; the Action queue owns the item-level review/print/quiz
+lists. Destructive flows are two-tap arm→confirm everywhere (enrollment
+changes included), the curriculum-exceptions form starts neutral, and the
+period-close control lives with the closed periods below the live report
+card.
+
 Published `school.course/v2` packages require `poster: poster.jpg`. The asset
 must be a contained JPEG; runtime never reads the source PDF/EPUB. Use
 `node scripts/school/build-course-posters.mjs` to normalize the published
@@ -1314,6 +1333,17 @@ If the bridge is unavailable, the panel stays on and shows a visible failure.
 Minting and locking are independent so the rollout can be staged: print codes
 first, confirm one resolves, lock the panel last. **Both off is exactly the
 behaviour before this feature existed**, pinned by a characterisation test.
+
+The locked panel's resting state is a split home: the keypad in one pane
+and the read-only **AgendaStatusBoard** in the other — every student with
+their agenda-lesson pills, a done count, and Not started / In progress /
+Done for the day. The board accepts no taps (codes and printed agendas stay
+the only entry path), never blocks the keypad (a failed status fetch just
+hides the board), does not count as keypad activity for screen-off, and the
+two panes swap sides every 90 seconds for burn-in without losing a
+half-typed code. The board component lives at
+`frontend/src/modules/School/status/AgendaStatusBoard.jsx` and reads the
+same agenda-preview + teacher-day models the teacher console uses.
 
 A locked panel still accepts `school.launch` broadcasts — `portal.yml` is the
 only screen in the house that mounts School, so ignoring them would break the

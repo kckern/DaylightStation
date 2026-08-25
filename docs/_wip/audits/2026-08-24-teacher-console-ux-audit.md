@@ -1,5 +1,11 @@
 # Teacher Console UX Audit — Design & Usability Failures
 
+> **OUTCOME (2026-08-24):** All findings remediated the same day across five
+> waves (Truth / Safety / Structure / Polish / Kiosk split home) — spec
+> `docs/superpowers/specs/2026-08-24-teacher-console-ux-remediation-design.md`,
+> plan `docs/superpowers/plans/2026-08-24-teacher-console-ux-remediation.md`.
+> Verified via vitest (module fully green) + Playwright against deployed prod.
+
 **Date:** 2026-08-24 · **Surface:** `/school/teacher` (`frontend/src/modules/School/teacher/`) · **Build audited:** `ea19b453f` (deployed prod)
 **Method:** headless Playwright screenshots of all 10 routes at 1280×800 and 390×844, direct API probes, and a full code-level read of the module.
 
