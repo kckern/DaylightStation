@@ -49,7 +49,6 @@ export function createSchoolRouter({
   reprintIssuedArtifact = null,
   reprintResultReceiptArtifact = null,
   manageCurriculumException = null,
-  renderCoursePosterFallback = null,
   teacherCapabilitySessions = null,
   teacherGate = null,
   openRemediation = null,
@@ -1291,12 +1290,12 @@ export function createSchoolRouter({
       studyDay: req.query.studyDay == null ? null : requiredTextQuery(req.query.studyDay, 'studyDay'), version: 'v2',
     }));
   }));
+  // A course with no published cover 404s. Every consumer here draws through
+  // `SafeImg fallback=""`, so the absence renders as nothing — which is the
+  // truth. It must never be papered over with generated artwork: the same
+  // substitute used to reach the learner panel and be read as the real thing.
   router.get('/teacher/curriculum/:courseId/poster.jpg', wrap(async (req, res) => {
-    let bytes = await curriculumForSyllabus?.getCoursePoster?.(req.params.courseId);
-    if (!bytes && renderCoursePosterFallback) {
-      bytes = renderCoursePosterFallback(req.params.courseId);
-      res.set('X-School-Poster-Fallback', 'missing-asset');
-    }
+    const bytes = await curriculumForSyllabus?.getCoursePoster?.(req.params.courseId);
     if (!bytes) throw new EntityNotFoundError('course poster', req.params.courseId);
     res.set('Cache-Control', 'private, max-age=3600').set('Content-Type', 'image/jpeg')
       .set('X-Content-Type-Options', 'nosniff').send(bytes);

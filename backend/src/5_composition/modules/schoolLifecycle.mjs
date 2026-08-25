@@ -175,8 +175,6 @@ function cryptoRng(crypto) {
  * @param {object} [deps.tokenRegistry] shared School token registry
  * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
  * @param {object} [deps.schoolCalcStudies] Adaptive Study issuance service
- * @param {(courseId: string) => Buffer} [deps.renderCoursePosterFallback]
- *   rendering-layer fallback for the learner-safe self-service poster route
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
@@ -207,7 +205,6 @@ export async function createSchoolLifecycle({
   rubiksCubeGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
-  renderCoursePosterFallback = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -1235,7 +1232,6 @@ export async function createSchoolLifecycle({
       recordLessonCompanionProgress,
       readPrinterHealth,
       curriculum,
-      renderCoursePosterFallback,
     })
     : null;
   if (!selfServiceEnabled) {

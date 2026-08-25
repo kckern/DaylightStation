@@ -1302,8 +1302,20 @@ application layer joins roster, curriculum, enrollment, and session facts; the
 frontend resolves those references through existing avatar infrastructure and
 the learner-safe
 `GET /api/v1/school/self-service/curriculum/:courseId/poster.jpg` route. That
-route serves only poster bytes or the generated poster fallback—never course
-answers, assignment data, or history. Missing metadata degrades to stable IDs
+route serves published poster bytes and nothing else—never course answers,
+assignment data, or history.
+
+**Artwork is real or absent; it is never invented.** A course id is either a
+curriculum shelf id, whose `poster.jpg` ships inside the published package and
+is served by that route, or a `plex:<ratingKey>` id for a course whose cover
+only exists in Plex—which the panel resolves through `/api/v1/proxy/plex`, the
+same image proxy the materials grid and the Player draw Plex artwork through,
+sized to the box via `sizedPlexImage`. When neither yields a cover the route
+404s and the card draws its own blank placeholder. No generated substitute
+exists on either the learner or the teacher route: one used to answer a missing
+cover with a hue-derived gradient captioned with the raw course id, at HTTP
+200, so the panel's `onError` never fired and a child was shown a fabricated
+poster in place of their lesson's own. Missing metadata degrades to stable IDs
 and placeholders rather than removing the context shell.
 
 **Three six-digit codes now exist, two of them on the same sheet of paper.**
