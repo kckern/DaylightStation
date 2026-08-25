@@ -19,15 +19,18 @@ export class YamlIssuedArtifactStore {
   #root() { return this.#configService.getHouseholdPath('school/artifacts/issued'); }
   #stem(id) { return encodeURIComponent(id); }
   #manifest(id) { return path.join(this.#root(), `${this.#stem(id)}.yml`); }
-  #pdf(id) { return path.join(this.#root(), `${this.#stem(id)}.pdf`); }
+  #payload(id, extension = 'pdf') { return path.join(this.#root(), `${this.#stem(id)}.${extension}`); }
 
   async get(artifactId) {
     if (!validId(artifactId)) return null;
     try {
-      const [raw, bytes] = await Promise.all([
-        fs.readFile(this.#manifest(artifactId), 'utf8'), fs.readFile(this.#pdf(artifactId)),
-      ]);
+      const raw = await fs.readFile(this.#manifest(artifactId), 'utf8');
       const manifest = yaml.load(raw);
+      // v1/v2 worksheet archives predate typed representations and are always
+      // PDFs. v3 makes the retained original explicit so receipts can retain
+      // their original raster without pretending to be Letter documents.
+      const extension = manifest?.representation?.extension ?? 'pdf';
+      const bytes = await fs.readFile(this.#payload(artifactId, extension));
       if (manifest?.artifactId !== artifactId || manifest?.sha256 !== digest(bytes) || manifest?.byteLength !== bytes.length) {
         throw new DomainInvariantError(`issued artifact ${artifactId} failed integrity verification`, { code: 'ARTIFACT_CORRUPT' });
       }
@@ -40,7 +43,8 @@ export class YamlIssuedArtifactStore {
 
   async put({ artifactId, bytes, pageCount = null, issuedAt, sessionId = null, sessionIds = null, learnerId = null,
     unitId = null, captureKind = 'original', worksheetInstanceId = null, allocation = null,
-    kind = 'worksheet', document = null, renderContext = null, parentArtifactIds = [] } = {}) {
+    kind = 'worksheet', document = null, renderContext = null, parentArtifactIds = [],
+    representation = null, sourceDocument = null } = {}) {
     if (!validId(artifactId) || !Buffer.isBuffer(bytes)) throw new Error('issued artifact requires artifactId and Buffer bytes');
     const run = async () => {
       const existing = await this.get(artifactId);
@@ -53,12 +57,21 @@ export class YamlIssuedArtifactStore {
       }
       await fs.mkdir(this.#root(), { recursive: true });
       const linkedSessionIds = [...new Set([sessionId, ...(Array.isArray(sessionIds) ? sessionIds : [])].filter(Boolean))];
+      const typedRepresentation = representation ? {
+        mediaType: representation.mediaType ?? 'application/pdf',
+        extension: representation.extension ?? 'pdf',
+        width: representation.width ?? null,
+        height: representation.height ?? null,
+      } : null;
+      if (typedRepresentation && !/^[a-z0-9]+$/i.test(typedRepresentation.extension)) {
+        throw new Error('issued artifact representation extension must be alphanumeric');
+      }
       const manifest = {
         // v2 is the durable session-artifact contract. v1 manifests remain
         // readable above, but every newly captured print has enough lineage
         // to be shown honestly in teacher history without rediscovering it
         // from mutable curriculum data.
-        schema: 'school.session-artifact/v2', artifactId, kind, captureKind, sha256,
+        schema: typedRepresentation || sourceDocument ? 'school.session-artifact/v3' : 'school.session-artifact/v2', artifactId, kind, captureKind, sha256,
         byteLength: bytes.length, pageCount, issuedAt,
         sessionId: linkedSessionIds[0] ?? null, sessionIds: linkedSessionIds,
         learnerId, unitId,
@@ -74,14 +87,21 @@ export class YamlIssuedArtifactStore {
         // future compatible renderer prove that a replay is possible while
         // making an unavailable legacy render explicit rather than fictional.
         renderContext: renderContext ? structuredClone(renderContext) : null,
+        ...(typedRepresentation ? { representation: typedRepresentation } : {}),
+        // A receipt's document is the frozen semantic record from which a
+        // compatible renderer may produce a separately labelled replay. It is
+        // never reconstructed from current curriculum, review, or clock data.
+        ...(sourceDocument ? { sourceDocument: structuredClone(sourceDocument) } : {}),
         parentArtifactIds: [...new Set(parentArtifactIds.filter(Boolean))],
       };
       const nonce = `${process.pid}-${Date.now()}`;
-      const pdfTmp = `${this.#pdf(artifactId)}.${nonce}.tmp`;
+      const extension = typedRepresentation?.extension ?? 'pdf';
+      const payload = this.#payload(artifactId, extension);
+      const pdfTmp = `${payload}.${nonce}.tmp`;
       const manifestTmp = `${this.#manifest(artifactId)}.${nonce}.tmp`;
       await fs.writeFile(pdfTmp, bytes, { flag: 'wx' });
       await fs.writeFile(manifestTmp, yaml.dump(manifest, { lineWidth: -1, noRefs: true }), { flag: 'wx' });
-      await fs.rename(pdfTmp, this.#pdf(artifactId));
+      await fs.rename(pdfTmp, payload);
       await fs.rename(manifestTmp, this.#manifest(artifactId));
       return { manifest, bytes };
     };

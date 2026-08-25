@@ -23,6 +23,7 @@ let clock, sessions, tokens, economy, thermal, reviewQueue, close, remediate;
 const build = ({
   economyEnabled = true, throwOn = null, receiptPrinter = undefined, wireReviewQueue = true,
   passOverrides = null, teacherGate = null, eventBus = null,
+  receiptCapture = null, receiptArtifactPrinter = null,
 } = {}) => {
   clock = fakeClock();
   const catalog = new FakeCatalog({ units: rawUnits(), documents: rawDocuments(), manifests: rawManifests() });
@@ -39,7 +40,7 @@ const build = ({
     logger: silentLogger,
   });
   close = new CloseSessionOutcome({
-    curriculum, sessions, tokens, assignments, economy, receipts,
+    curriculum, sessions, tokens, assignments, economy, receipts, receiptCapture, receiptArtifactPrinter,
     economyAction: 'school-unit-complete', economyEnabled,
     grownUps: fakeGrownUps(clock),
     teacherGate,
@@ -393,6 +394,25 @@ describe('the result receipt carries a resolved note (spec R7)', () => {
 // document and stop, so on a FAIL the retry barcode never left the printer and
 // the loop dead-ended with nothing in the child's hand to scan.
 describe('the result receipt reaches paper', () => {
+  it('prints the retained original raster, not a second render', async () => {
+    const bytes = Buffer.from('the frozen receipt raster');
+    const capture = { execute: vi.fn(async () => ({ created: true, artifact: {
+      bytes, manifest: { artifactId: 'receipt/ses_1/out:ses_1', representation: { mediaType: 'image/png' } },
+    } })) };
+    const printer = { print: vi.fn(async () => true) };
+    build({ receiptCapture: capture, receiptArtifactPrinter: printer });
+    await graded();
+
+    const result = await close.execute({ sessionId: SID });
+
+    expect(result).toMatchObject({ printed: true, receiptArtifactId: 'receipt/ses_1/out:ses_1' });
+    expect(printer.print).toHaveBeenCalledWith(expect.objectContaining({ bytes }));
+    expect(thermal.jobs).toHaveLength(0);
+    expect(sessions.derive(SID).resultReceiptArtifacts).toEqual([
+      expect.objectContaining({ artifactId: 'receipt/ses_1/out:ses_1', printed: true }),
+    ]);
+  });
+
   it('prints the receipt as part of settling', async () => {
     await graded();
     const result = await close.execute({ sessionId: SID });

@@ -17,7 +17,7 @@ describe('YamlIssuedArtifactStore', () => {
     const bytes = Buffer.from('%PDF-1.4\nexact issued bytes\n');
     const saved = await store.put({ artifactId: 'math/course/ws-ses_1', bytes, pageCount: 2,
       issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1', learnerId: 'kid', unitId: 'u1' });
-    expect(saved.manifest).toMatchObject({ schema: 'school.issued-artifact/v1', byteLength: bytes.length,
+    expect(saved.manifest).toMatchObject({ schema: 'school.session-artifact/v2', byteLength: bytes.length,
       artifactId: 'math/course/ws-ses_1', captureKind: 'original' });
     expect((await store.get('math/course/ws-ses_1')).bytes.equals(bytes)).toBe(true);
   });
@@ -28,6 +28,19 @@ describe('YamlIssuedArtifactStore', () => {
     await expect(store.put(base)).resolves.toMatchObject({ manifest: { artifactId: 'art_1' } });
     await expect(store.put({ ...base, bytes: Buffer.from('two') })).rejects.toMatchObject({ code: 'ARTIFACT_IMMUTABLE' });
     expect((await store.get('art_1')).bytes.toString()).toBe('one');
+  });
+
+  it('retains a receipt PNG with its frozen source document and typed representation', async () => {
+    const bytes = Buffer.from('png bytes');
+    await store.put({ artifactId: 'receipt/ses_1/out_ses_1', bytes,
+      issuedAt: '2026-08-24T10:00:00.000Z', sessionId: 'ses_1', learnerId: 'kid', kind: 'result-receipt',
+      representation: { mediaType: 'image/png', extension: 'png', width: 384, height: 640 },
+      sourceDocument: { schema: 'school.document-source/v1', id: 'result-ses-1', target: ['receipt'], blocks: [] } });
+    const retained = await store.get('receipt/ses_1/out_ses_1');
+    expect(retained.manifest).toMatchObject({ schema: 'school.session-artifact/v3', kind: 'result-receipt',
+      representation: { mediaType: 'image/png', extension: 'png', width: 384, height: 640 },
+      sourceDocument: { id: 'result-ses-1' } });
+    expect(retained.bytes.equals(bytes)).toBe(true);
   });
 
   it('refuses traversal and incomplete records', async () => {

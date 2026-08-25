@@ -20,7 +20,7 @@ const ATTEMPTS = {
   ],
 };
 
-const make = ({ appended = [] } = {}) => new RegradeBankAttempts({
+const make = ({ appended = [], sessions = null, worksheetInstances = null, sessionCorrection = null } = {}) => new RegradeBankAttempts({
   datastore: {
     // The fake honors the ranged read INCLUDING appended corrections, so the
     // idempotency scan-to-today sees them like the real store would.
@@ -32,10 +32,13 @@ const make = ({ appended = [] } = {}) => new RegradeBankAttempts({
       return day >= fromDay && day <= toDay;
     }),
     appendAttempt: vi.fn((learnerId, attempt) => { appended.push({ learnerId, attempt }); return attempt; }),
+    readAllAttempts: (learnerId) => [...(ATTEMPTS[learnerId] ?? []),
+      ...appended.filter((r) => r.learnerId === learnerId).map((r) => r.attempt)],
   },
   bankReader: { getBank: (id) => (id === 'caps' ? BANK : null) },
   teacherGate: { assert: ({ userId }) => { if (userId !== 'kckern') throw new GuestForbiddenError('no'); } },
   learnerDirectory: { listLearners: async () => [{ id: 'felix' }] },
+  sessions, worksheetInstances, sessionCorrection,
   clock: () => new Date('2026-08-20T12:00:00.000Z'),
   logger: silent,
 });
@@ -80,6 +83,28 @@ describe('RegradeBankAttempts (admin advocacy #5)', () => {
     expect(second.changed).toEqual([]);
     expect(second.alreadyCorrected).toBe(1);
     expect(appended).toHaveLength(1); // nothing re-appended
+  });
+
+  it('turns a fully evidenced applied regrade into one append-only session correction', async () => {
+    const appended = [];
+    const sessionCorrection = vi.fn(async (args) => ({ ...args, idempotent: false,
+      receiptArtifact: { artifactId: `receipt/ses_1/correction/${args.adjustmentId}` } }));
+    const sessions = { readEvents: async () => [
+      { type: 'created', at: '2026-08-01T10:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'felix', unitId: 'unit_1' },
+      { type: 'issued', at: '2026-08-01T10:01:00.000Z', sessionId: 'ses_1', seq: 2, artifactId: 'art_1' },
+      { type: 'submitted', at: '2026-08-01T10:02:00.000Z', sessionId: 'ses_1', seq: 3, transport: 'paper' },
+      { type: 'graded', at: '2026-08-01T10:03:00.000Z', sessionId: 'ses_1', seq: 4,
+        attemptIds: ['att_1', 'att_2'], percent: 0, correctCount: 0, totalCount: 2 },
+      { type: 'outcome_recorded', at: '2026-08-01T10:04:00.000Z', sessionId: 'ses_1', seq: 5,
+        outcomeId: 'out_1', result: 'needs_remediation' },
+    ] };
+    const result = await make({ appended, sessions, sessionCorrection }).execute({
+      bankId: 'caps', fromDay: '2026-08-01', toDay: '2026-08-02', reason: 'key fixed', regradedBy: 'kckern', apply: true,
+    });
+
+    expect(sessionCorrection).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'ses_1',
+      correctCount: 1, totalCount: 2, percent: 50, missedItemIds: ['q1'], apply: true }));
+    expect(result.sessionCorrections).toEqual([expect.objectContaining({ sessionId: 'ses_1', status: 'corrected' })]);
   });
 
   it('gate-checked and reason required', async () => {

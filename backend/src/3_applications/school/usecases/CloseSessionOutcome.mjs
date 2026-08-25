@@ -49,7 +49,7 @@ import { studyDayWindow } from '#domains/school/studyDay.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
-  #receipts; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
+  #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
   #selfService; #eventBus;
 
   /**
@@ -91,7 +91,7 @@ export class CloseSessionOutcome {
   constructor({
     curriculum, sessions, tokens, assignments,
     economy = null, economyAction = 'school-unit-complete', economyEnabled = false,
-    receipts = null, grownUps = null, teacherGate = null, clock = () => new Date(), rng = Math.random,
+    receipts = null, receiptCapture = null, receiptArtifactPrinter = null, grownUps = null, teacherGate = null, clock = () => new Date(), rng = Math.random,
     reviewQueue = null,
     // Optional pass-criteria override store (teacher-console W3-2):
     // `{percentFor(unitId)}` — an override wins over the authored percent.
@@ -116,6 +116,8 @@ export class CloseSessionOutcome {
     this.#economyAction = economyAction;
     this.#economyEnabled = economyEnabled;
     this.#receipts = receipts;
+    this.#receiptCapture = receiptCapture;
+    this.#receiptArtifactPrinter = receiptArtifactPrinter;
     this.#grownUps = grownUps;
     this.#teacherGate = teacherGate;
     this.#clock = clock;
@@ -371,6 +373,35 @@ export class CloseSessionOutcome {
       notes,
     });
 
+    let receiptArtifact = null;
+    let printing = document ? { printed: false, printReason: 'not_wired' } : { printed: false, printReason: 'program' };
+    if (document) {
+      const artifactId = `receipt/${sessionId}/${outcome.outcomeId}`;
+      try {
+        receiptArtifact = await this.#receiptCapture?.execute({ artifactId, sessionId,
+          learnerId: state.learnerId, unitId: state.unitId, document, issuedAt: nowIso });
+      } catch (error) {
+        // Receipt retention must never undo a settled learning outcome. The
+        // print path still reports its own truth below, while history will
+        // honestly have no retained original for this exceptional install.
+        this.#logger.warn?.('school.outcome.receipt-capture-failed', { sessionId, error: error.message });
+      }
+      // The retained raster is the original receipt.  When the raster printer
+      // is available, hand those exact bytes to it — capture and initial print
+      // are one object, rather than two supposedly equivalent render passes.
+      // Older installs deliberately retain their existing ReceiptPrinting
+      // fallback, which is still truthful but cannot promise byte identity.
+      printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
+        ? await this.#printCapturedReceipt(receiptArtifact.artifact)
+        : await this.#printed(document);
+      if (receiptArtifact?.created) {
+        const built = createEvent({ type: 'result_receipt_captured', at: nowIso, sessionId,
+          artifactId, kind: 'result-receipt', printed: printing.printed,
+          ...(printing.printReason ? { printReason: printing.printReason } : {}) });
+        if (!built.errors.length) await this.#sessions.appendEvent(sessionId, built.event);
+      }
+    }
+
     return {
       status: resettling ? 'already_settled' : 'settled',
       sessionId,
@@ -383,7 +414,8 @@ export class CloseSessionOutcome {
       retryToken,
       message: passed ? 'Nice work!' : 'Almost there — try again.',
       document,
-      ...(document ? await this.#printed(document) : { printed: false, printReason: 'program' }),
+      receiptArtifactId: receiptArtifact?.artifact?.manifest?.artifactId ?? null,
+      ...printing,
     };
   }
 
@@ -416,6 +448,23 @@ export class CloseSessionOutcome {
       this.#logger.warn?.('school.outcome.receipt-unprinted', { id: document?.id ?? null, reason: outcome.reason });
     }
     return { printed: outcome.printed, printReason: outcome.reason };
+  }
+
+  async #printCapturedReceipt(artifact) {
+    try {
+      const confirmed = await this.#receiptArtifactPrinter.print({
+        bytes: artifact.bytes,
+        representation: artifact.manifest.representation,
+        jobName: `school-result-${artifact.manifest.artifactId}`,
+      });
+      if (confirmed === true) return { printed: true, printReason: null };
+      return { printed: false, printReason: 'printer_unconfirmed' };
+    } catch (error) {
+      this.#logger.warn?.('school.outcome.receipt-unprinted', {
+        id: artifact?.manifest?.artifactId ?? null, reason: error.message,
+      });
+      return { printed: false, printReason: error.message };
+    }
   }
 
   /**

@@ -44,8 +44,10 @@ export function createSchoolRouter({
   teacherAgendaDispatch = null,
   renderArtifactPostview = null,
   renderSessionResult = null,
+  renderReceiptArtifact = null,
   sessionResultArtifacts = null,
   reprintIssuedArtifact = null,
+  reprintResultReceiptArtifact = null,
   manageCurriculumException = null,
   renderCoursePosterFallback = null,
   teacherCapabilitySessions = null,
@@ -1304,6 +1306,7 @@ export function createSchoolRouter({
   // V2 teacher workspace read models. These are intentionally additive to the
   // older lifecycle routes so rollout/cutback never changes student behavior.
   router.get('/teacher/learners/:learnerId/timeline', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!getLearnerTimeline) throw new EntityNotFoundError('teacher timeline', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getLearnerTimeline.execute({
       learnerId: req.params.learnerId,
@@ -1328,6 +1331,7 @@ export function createSchoolRouter({
     }));
   }));
   router.get('/teacher/sessions/:sessionId', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession) throw new EntityNotFoundError('teacher session inspector', 'not configured');
     res.set('Cache-Control', 'no-store').json(await getTeacherSession.execute({ sessionId: req.params.sessionId }));
   }));
@@ -1335,6 +1339,7 @@ export function createSchoolRouter({
   // published document revision and the issued worksheet instance. It never
   // allocates a card, creates an artifact, or changes session state.
   router.get('/teacher/sessions/:sessionId/worksheet.pdf', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo) {
       throw new EntityNotFoundError('worksheet render', 'not configured');
     }
@@ -1384,29 +1389,62 @@ export function createSchoolRouter({
     res.status(201).json(await openRemediation.execute({ sessionId: req.params.sessionId, openedBy: body.openedBy ?? null }));
   }));
   router.get('/teacher/artifacts/:artifactId', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     res.set('Cache-Control', 'no-store').json(artifact.manifest);
   }));
   router.get('/teacher/artifacts/:artifactId/original.pdf', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const artifact = await issuedArtifactStore.get(req.params.artifactId);
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
+    if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
     res.set('Cache-Control', 'private, no-store')
-      .set('Content-Type', 'application/pdf')
+      .set('Content-Type', mediaType)
       .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.pdf"`)
       .send(artifact.bytes);
   }));
+  router.get('/teacher/artifacts/:artifactId/original', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
+    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const representation = artifact.manifest.representation ?? { mediaType: 'application/pdf', extension: 'pdf' };
+    res.set('Cache-Control', 'private, no-store')
+      .set('Content-Type', representation.mediaType)
+      .set('Content-Disposition', `inline; filename="issued-${slugify(req.params.artifactId)}.${representation.extension}"`)
+      .send(artifact.bytes);
+  }));
+  router.get('/teacher/artifacts/:artifactId/replay.png', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
+    if (!issuedArtifactStore || !renderReceiptArtifact) throw new EntityNotFoundError('receipt replay', 'not configured');
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact?.manifest?.sourceDocument) throw new EntityNotFoundError('frozen receipt source', req.params.artifactId);
+    const rendered = await renderReceiptArtifact(artifact.manifest.sourceDocument);
+    res.set('Cache-Control', 'private, no-store')
+      .set('Content-Type', 'image/png')
+      .set('X-School-Artifact', 'frozen-replay')
+      .set('Content-Disposition', `inline; filename="replay-${slugify(req.params.artifactId)}.png"`)
+      .send(rendered.bytes);
+  }));
   router.post('/teacher/artifacts/:artifactId/reprint', wrap(async (req, res) => {
-    if (!reprintIssuedArtifact) throw new EntityNotFoundError('artifact reprint', 'not configured');
+    if (!issuedArtifactStore) throw new EntityNotFoundError('issued artifact store', 'not configured');
     const body = req.body || {};
-    const receipt = await reprintIssuedArtifact.execute({ artifactId: req.params.artifactId,
+    const artifact = await issuedArtifactStore.get(req.params.artifactId);
+    if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
+    const reprint = ['result-receipt', 'result-correction'].includes(artifact.manifest.kind)
+      ? reprintResultReceiptArtifact : reprintIssuedArtifact;
+    if (!reprint) throw new EntityNotFoundError('artifact reprint', 'not configured');
+    const receipt = await reprint.execute({ artifactId: req.params.artifactId,
       reprintedBy: body.reprintedBy, pin: body.pin,
       idempotencyKey: req.get('Idempotency-Key') ?? body.idempotencyKey, apply: body.apply === true });
     res.status(body.apply === true ? 201 : 200).json(receipt);
   }));
   router.get('/teacher/artifacts/:artifactId/postview.pdf', wrap(async (req, res) => {
+    if (!requireTeacherRead(req, res)) return;
     if (!issuedArtifactStore || !getTeacherSession || !renderArtifactPostview) {
       return res.status(501).json({ error: 'artifact postview is not configured' });
     }

@@ -111,6 +111,22 @@ const SCHEMA = {
     fields: ['artifactId', 'confirmed', 'idempotencyKey', 'reprintedBy'],
     validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed')),
   },
+  // A result receipt is evidence produced by settlement, not a new lesson
+  // state. It therefore records its own immutable artifact separately from a
+  // worksheet's `issuedArtifacts`, whose list drives paper reprint/cooldown.
+  result_receipt_captured: {
+    fields: ['artifactId', 'kind', 'printed', 'printReason', 'parentArtifactIds'],
+    validate: allOf(stringField('artifactId'), oneOfField('kind', ['result-receipt', 'result-correction']),
+      booleanIfPresent('printed'), (raw, push) => {
+        if (raw.printReason !== undefined && !isNonEmptyString(raw.printReason)) push('printReason: must be a non-empty string when present');
+        if (raw.parentArtifactIds !== undefined && (!Array.isArray(raw.parentArtifactIds)
+          || !raw.parentArtifactIds.every(isNonEmptyString))) push('parentArtifactIds: must be an array of non-empty strings when present');
+      }),
+  },
+  result_receipt_reprinted: {
+    fields: ['artifactId', 'confirmed', 'idempotencyKey', 'reprintedBy'],
+    validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed'), stringField('idempotencyKey'), stringField('reprintedBy')),
+  },
   media_dispatched: {
     fields: ['dispatchId', 'target', 'contentId'],
     validate: allOf(stringField('dispatchId'), stringField('target'), stringField('contentId')),
@@ -277,9 +293,13 @@ export const TRANSITIONS = Object.freeze({
 export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'failed', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted',
   'reward_reconciled', 'reward_reconciliation_failed',
+  'result_receipt_captured', 'result_receipt_reprinted',
 ]));
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'reward_reconciled', 'reward_reconciliation_failed',
+  // Settlement closes the state before its retained receipt can be linked.
+  // These are evidence-only annotations and must remain legal afterwards.
+  'result_receipt_captured', 'result_receipt_reprinted',
 ]);
 
 /** States the table can reach but never leave. */
@@ -342,6 +362,7 @@ const emptyState = () => ({
   state: null,
   terminal: false,
   issuedArtifacts: [],
+  resultReceiptArtifacts: [],
   // The `at` of the most recent CONFIRMED `issued`/`reprinted` event — NOT
   // the most recent scan, and not just any issue. IssueDocument's
   // print-debounce times its cooldown window from this field for two
@@ -422,6 +443,12 @@ const APPLY = {
     }
     s.lastFailure = null;
     if (e.confirmed !== false) s.lastPrintedAt = e.at;
+  },
+  result_receipt_captured(s, e) {
+    if (!e.artifactId || s.resultReceiptArtifacts.some((row) => row.artifactId === e.artifactId)) return;
+    s.resultReceiptArtifacts.push({ artifactId: e.artifactId, kind: e.kind,
+      printed: e.printed !== false, printReason: e.printReason ?? null,
+      parentArtifactIds: e.parentArtifactIds ?? [], at: e.at });
   },
   media_dispatched(s, e) {
     s.mediaDispatch = {
