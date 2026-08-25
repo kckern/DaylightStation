@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ResolvePersonalCard } from './ResolvePersonalCard.mjs';
 
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
@@ -26,9 +26,23 @@ function makeDeps({ printDelayMs = 50 } = {}) {
         },
       },
       roster: { displayName: () => 'Learner' },
+      // Mirrors the real `YamlAgendaCooldownStore`'s whitelist, which projects
+      // to exactly these three fields on BOTH put (:82-89) and get (:68-73).
+      // A double that stores the record verbatim would stay green if a future
+      // field were silently dropped in production.
       cooldown: {
-        get: async (id) => cooldownStore.get(id) ?? null,
-        put: async (rec) => { cooldownStore.set(rec.learnerId, rec); },
+        get: async (id) => {
+          const rec = cooldownStore.get(id);
+          if (!rec) return null;
+          return { learnerId: rec.learnerId, lastAgendaPrintedAt: rec.lastAgendaPrintedAt, contentHash: rec.contentHash };
+        },
+        put: async (rec) => {
+          cooldownStore.set(rec.learnerId, {
+            learnerId: rec.learnerId,
+            lastAgendaPrintedAt: rec.lastAgendaPrintedAt,
+            contentHash: rec.contentHash,
+          });
+        },
       },
       cooldownMinutes: 15,
       clock: () => new Date('2026-08-25T15:12:30.000Z'),
@@ -84,7 +98,15 @@ describe('suppressed taps do not leak live tokens', () => {
   it('revokes the token minted by a suppressed tap', async () => {
     const { deps } = makeDeps();
     const revoked = [];
-    deps.tokens = { revoke: async (token) => { revoked.push(token); } };
+    // Capture BOTH args. The real `ITokenRegistry.revoke(token, opts)` reads
+    // no clock of its own (ITokenRegistry.mjs:99) and `YamlTokenRegistry`
+    // throws without a valid `{ at }` ISO string (YamlTokenRegistry.mjs:408-
+    // 410) — a throw here is caught and only WARN-logged by the production
+    // code (a revoke failure must never fail a scan), so a test that checks
+    // only the token would stay green while production silently revoked
+    // nothing. Assert the actual `at` value, not just that `opts` is truthy —
+    // `{ reason: 'suppressed' }` would also be "truthy".
+    deps.tokens = { revoke: async (token, opts) => { revoked.push([token, opts]); } };
     // Replace the buildAgenda double so it reports a minted token.
     const base = deps.buildAgenda.execute;
     deps.buildAgenda.execute = async (args) => ({
@@ -96,6 +118,6 @@ describe('suppressed taps do not leak live tokens', () => {
     await card.execute({ learnerId: 'lrn' });   // prints, arms cooldown
     await card.execute({ learnerId: 'lrn' });   // suppressed
 
-    expect(revoked).toEqual(['sch:TESTTOKEN']);
+    expect(revoked).toEqual([['sch:TESTTOKEN', { at: '2026-08-25T15:12:30.000Z' }]]);
   });
 });
