@@ -100,7 +100,13 @@ export class IntegrationLoader {
 
     try {
       const { default: AdapterClass } = await manifest.adapter();
-      return new AdapterClass(config, deps);
+      // Scope the shared logger per provider so adapter events (openai.usage,
+      // openai.error, …) carry a module tag and ship to the log store instead
+      // of defaulting to console/stdout.
+      const adapterDeps = deps.logger?.child
+        ? { ...deps, logger: deps.logger.child({ module: `${provider}-adapter` }) }
+        : deps;
+      return new AdapterClass(config, adapterDeps);
     } catch (err) {
       this.#logger.error?.('integration.adapter.failed', { capability, provider, error: err.message });
       return null;
