@@ -257,3 +257,45 @@ swallowed and nothing listens. Deploy the frontend first, or set `consumeVolume 
 `https://`, and a `ws://localhost` connection from an `https` page is a mixed-content question
 that has not been checked on this panel's Chrome 131 WebView. Piano-bridge does the same thing
 successfully on its tablet, which is encouraging but not proof.
+
+## Bluetooth keyboard for the locked School keypad
+
+Portal Keys is also the source of truth for the Portal's *observed* Bluetooth
+state. It reports every bonded device to the backend on startup, Bluetooth ACL
+changes, and its configured heartbeat. The backend, rather than this APK or the
+web app, decides which keyboard MAC is allowed by `school.yml`'s gate config.
+
+The locked School keypad polls that report and recognizes a BK-3001 by its
+reported name. Its status light means:
+
+- **Keyboard connected** — Android HID input is reaching the WebView. Digits
+  fill the code, `Backspace` removes one, and `Enter` submits it.
+- **Turn on keyboard** — it is bonded but currently disconnected. Turn it on;
+  Android reconnects it without a new pairing flow.
+- **Pair BK-3001 keyboard** — no matching bond exists. Tap **Pair keyboard**
+  on the keypad to open Android's Bluetooth settings via FKB, then put the
+  BK-3001 in pairing mode and complete the Android prompt. Return to Fully;
+  the status light refreshes within 15 seconds.
+
+Pairing remains an Android-system confirmation; the app must never attempt to
+create or silently accept a Bluetooth bond. The Portal's Android TV build does
+not resolve the stock `android.settings.BLUETOOTH_SETTINGS` action, so the
+keypad deliberately opens its Add Accessory component instead. If Fully is
+unavailable, or when recovering a kiosk before the frontend has been deployed,
+open the same system screen through ADB:
+
+```bash
+adb -s <portal-ip>:5555 shell am start -n com.android.tv.settings/.accessories.AddAccessoryActivity
+```
+
+Verify the raw reporter state without relying on the frontend:
+
+```bash
+curl -sS http://<portal-ip>:8771/presence
+```
+
+Look for the BK-3001 in `last.devices` with `connected: true`. A bonded but
+disconnected device is still included with `connected: false`; no entry means
+the Android bond has not completed (or Bluetooth is off). Do not use a device
+name as an access-control rule: names are only the keypad's display matcher;
+the backend gate's configured MAC remains the security authority.

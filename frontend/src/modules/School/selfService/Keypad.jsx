@@ -28,7 +28,7 @@
  * next) belongs to useSelfService.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { screenOff } from '../../../lib/fkb.js';
+import { launchAndroidTarget, screenOff } from '../../../lib/fkb.js';
 import useArmedAction from '../../../lib/identity/useArmedAction.js';
 import { schoolLog } from '../schoolLog.js';
 
@@ -53,11 +53,22 @@ const LETTER_MS = 125;
 const HOLD_MS = 900;
 const WIPE_MS = 70;
 const PRESENCE_POLL_MS = 15_000;
+// The Portal runs Android TV, which does not resolve the stock
+// android.settings.BLUETOOTH_SETTINGS action. This is its actual add-accessory
+// screen (verified on the kiosk); launchAndroidTarget turns it into a safe
+// component intent through FKB.
+const BLUETOOTH_SETTINGS_TARGET = {
+  package: 'com.android.tv.settings',
+  activity: '.accessories.AddAccessoryActivity',
+};
 
 // The Portal's companion APK reports its bonded HID devices to this endpoint.
 // This model string is intentionally only the display-side matcher: pairing
 // policy and the authoritative keyboard MAC remain in the server's gate config.
-const KEYBOARD_MODEL = 'bk3001';
+// The BK-3001 has appeared under both its product name and the generic Android
+// name below. These are *display* aliases only; the server gate is still the
+// authority that allowlists a keyboard by MAC address.
+const KEYBOARD_NAMES = ['bk3001', 'bluetooth51keyboard'];
 
 function portalDeviceId() {
   const match = window.location.pathname.match(/^\/screens?\/([^/]+)/);
@@ -66,7 +77,9 @@ function portalDeviceId() {
 
 function keyboardConnection(presence) {
   const keyboard = presence?.devices?.find((device) => (
-    String(device?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(KEYBOARD_MODEL)
+    KEYBOARD_NAMES.some((name) => (
+      String(device?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(name)
+    ))
   ));
   if (!keyboard) return 'not-paired';
   return keyboard.connected === true ? 'connected' : 'disconnected';
@@ -166,6 +179,7 @@ export default function Keypad({
 }) {
   const [entry, setEntry] = useState('');
   const [screenOffFailure, setScreenOffFailure] = useState(null);
+  const [keyboardPairingFailure, setKeyboardPairingFailure] = useState(null);
   const [activityEpoch, setActivityEpoch] = useState(0);
   // null when idle; otherwise { phase, shown } — how many slots have turned
   // over so far, counting up through the reveal and back down through the wipe.
@@ -173,6 +187,16 @@ export default function Keypad({
   const timersRef = useRef([]);
   const tap = useTapFire();
   const keyboardState = useKeyboardPresence();
+
+  const openKeyboardPairing = useCallback(() => {
+    schoolLog.selfService('keyboard.pairing.requested', {});
+    if (launchAndroidTarget(BLUETOOTH_SETTINGS_TARGET)) {
+      setKeyboardPairingFailure(null);
+      return;
+    }
+    setKeyboardPairingFailure("Bluetooth settings can't open here. Tell a grown-up.");
+    schoolLog.selfServiceError('keyboard.pairing.failed', { reason: 'fkb_unavailable' });
+  }, []);
 
   const turnScreenOff = useCallback((source) => {
     schoolLog.selfService('screen-off.requested', { source });
@@ -293,6 +317,36 @@ export default function Keypad({
     }
   }, [busy, entry, length, onSubmit, playReject]);
 
+  // A bonded BK-3001 is a normal Android HID keyboard: its keys reach the
+  // WebView as browser keydown events. Keep this listener on the keypad, not
+  // SchoolApp, so typing can never leak into a runner or an open School page.
+  // Preventing default on Enter also avoids activating whichever touch button
+  // happened to retain focus after the child last used the screen.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        noteActivity();
+        press(event.key);
+        return;
+      }
+      if (event.key === 'Backspace') {
+        event.preventDefault();
+        noteActivity();
+        backspace();
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'NumpadEnter') {
+        event.preventDefault();
+        noteActivity();
+        submit();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [backspace, noteActivity, press, submit]);
+
   const cells = reject
     ? Array.from({ length }, (_, i) => (i < reject.shown ? letters[i] : null))
     : Array.from({ length }, (_, i) => entry[i] ?? null);
@@ -317,6 +371,19 @@ export default function Keypad({
         {keyboardState === 'not-paired' && 'Pair BK-3001 keyboard'}
         {keyboardState === 'checking' && 'Checking keyboard'}
         {keyboardState === 'unavailable' && 'Keyboard status unavailable'}
+      </p>
+      {(keyboardState === 'not-paired' || keyboardState === 'disconnected') && (
+        <button
+          type="button"
+          className="school-selfservice__pair-keyboard"
+          disabled={busy}
+          {...tap(openKeyboardPairing)}
+        >
+          Pair keyboard
+        </button>
+      )}
+      <p className="school-selfservice__keyboard-status" role="status">
+        {keyboardPairingFailure ?? ''}
       </p>
 
       <div
