@@ -365,7 +365,7 @@ export default joinLearnerDay;
 npx vitest run frontend/src/modules/School/teacher/learnerDay.test.js
 ```
 
-Expected: PASS, 10 tests.
+Expected: PASS, 12 tests (one per `it` block above).
 
 **Step 5: Commit**
 
@@ -373,6 +373,14 @@ Expected: PASS, 10 tests.
 git add frontend/src/modules/School/teacher/learnerDay.js frontend/src/modules/School/teacher/learnerDay.test.js
 git commit -m "feat(school/teacher): pure plan-vs-actual join for a learner's study day"
 ```
+
+**Step 6 (Task 1b): match by unit across subject buckets**
+
+The subject-keyed join above has a defect found in review. `backend/src/2_domains/school/agenda.mjs:134` buckets any subject outside its canonical list into the literal `'other'`, while day-projection sessions carry the **raw** subject. A piano lesson therefore arrives as an `'other'` section plus a `'piano'` session, and renders as TWO rows — "Not started" and "Extra" — for ONE activity. That is precisely the repetition this view exists to end.
+
+Do **not** fix it by copying the backend's canonical subject list into the frontend; that list would rot. Fix it with identity: `section.next.unitId` and `session.unitId` share an id space, so a unit match is authoritative and must be tried across **all** unclaimed sessions regardless of subject bucket. Subject matching remains the fallback for sessions carrying no `unitId`.
+
+While restructuring, drop the unconditional `unmatched.delete(key)`: sections should **claim** the sessions they match and leave the rest available, so two sections sharing a subject can no longer have the first swallow both. Add the four tests in the Task 1b brief covering the `'other'`-bucket match, two same-subject sections each claiming their own unit, one session never claimed twice, and a genuinely unplanned session still landing as `extra`.
 
 ---
 
