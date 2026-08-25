@@ -218,6 +218,23 @@ export class BuildAgenda {
       if (entry) plan.entries.push(entry);
       else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
     }
+    // Unlike a catalog lesson, an assigned deck is a durable program instance:
+    // it needs no duplicated authored unit merely to appear on the daily
+    // agenda. The launcher owns completion and launch target policy.
+    for (const enrollment of assignment?.programs ?? []) {
+      if (enrollment?.programId !== 'flashcards') continue;
+      const deckId = enrollment.deckId ?? enrollment.corpusId;
+      if (!deckId) continue;
+      plan.entries.push({
+        unitId: `flashcards:${deckId}`, title: enrollment.title ?? 'Flashcards',
+        description: null, subject: 'flashcards', courseId: null, sequence: null,
+        module: null, profile: null, timing: null, timingState: 'available',
+        timingPriority: 3, timingRank: 0, timingReasons: ['program_assignment'],
+        elective: false, program: 'flashcards', programInstance: deckId,
+        cadence: 'daily', status: 'available', sessionId: null, state: null,
+        lockReason: null, remedy: null, unlocks: [],
+      });
+    }
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);

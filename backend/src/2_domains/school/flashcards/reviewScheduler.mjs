@@ -1,35 +1,69 @@
 /**
- * Scheduler adapter boundary. The stored state deliberately includes an
- * algorithm/version so a vetted FSRS implementation can replace this
- * conservative bootstrap policy without rewriting learner history.
+ * Version-pinned FSRS-6 scheduling boundary. `enable_fuzz: false` is
+ * intentional: a learner's saved rating produces the same result on every
+ * server, which keeps support, test replay, and recovery deterministic.
  */
-export const FLASHCARD_SCHEDULER = 'fsrs-bootstrap-1';
-const HOUR = 60 * 60 * 1000;
-const DAY = HOUR * 24;
-const RATING_FACTORS = Object.freeze({ again: 0.25, hard: 0.8, good: 1.7, easy: 2.5 });
+import { createEmptyCard, fsrs, generatorParameters, Rating, State } from 'ts-fsrs';
 
-export function initialCardProgress({ now = new Date() } = {}) {
-  return { state: 'new', dueAt: now.toISOString(), reviews: 0, lapses: 0, stabilityDays: 0, difficulty: 5, scheduler: { algorithm: FLASHCARD_SCHEDULER, parametersVersion: 'default-1' } };
+export const FLASHCARD_SCHEDULER = 'ts-fsrs@5.4.1/fsrs-6';
+const scheduler = fsrs(generatorParameters({ enable_fuzz: false }));
+const RATING = Object.freeze({ again: Rating.Again, hard: Rating.Hard, good: Rating.Good, easy: Rating.Easy });
+const STATE = Object.freeze({
+  [State.New]: 'new', [State.Learning]: 'learning', [State.Review]: 'review', [State.Relearning]: 'relearning',
+});
+
+const date = (value, fallback) => {
+  const parsed = value ? new Date(value) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : fallback;
+};
+
+function project(card) {
+  return {
+    state: STATE[card.state] ?? 'new',
+    dueAt: date(card.due, new Date()).toISOString(),
+    reviews: card.reps,
+    lapses: card.lapses,
+    stabilityDays: card.stability,
+    difficulty: card.difficulty,
+    lastReviewedAt: card.last_review ? date(card.last_review, new Date()).toISOString() : null,
+    scheduler: {
+      algorithm: FLASHCARD_SCHEDULER, parametersVersion: 'fsrs-6-default-1',
+      card: {
+        due: date(card.due, new Date()).toISOString(), stability: card.stability,
+        difficulty: card.difficulty, elapsed_days: card.elapsed_days,
+        scheduled_days: card.scheduled_days, reps: card.reps, lapses: card.lapses,
+        learning_steps: card.learning_steps, state: card.state,
+        ...(card.last_review ? { last_review: date(card.last_review, new Date()).toISOString() } : {}),
+      },
+    },
+  };
 }
 
-export function scheduleReview(progress, rating, { now = new Date() } = {}) {
-  if (!Object.hasOwn(RATING_FACTORS, rating)) throw new TypeError('rating must be again|hard|good|easy');
-  const current = { ...initialCardProgress({ now }), ...(progress || {}) };
-  const priorDays = Number(current.stabilityDays) || 0;
-  const forgotten = rating === 'again';
-  const stabilityDays = forgotten ? 0 : Math.max(1, priorDays || 1) * RATING_FACTORS[rating];
-  const delay = forgotten ? 10 * 60 * 1000 : Math.max(DAY, Math.round(stabilityDays * DAY));
-  const difficulty = Math.min(10, Math.max(1, (Number(current.difficulty) || 5) + (forgotten ? 1 : rating === 'easy' ? -0.35 : rating === 'good' ? -0.1 : 0.2)));
+function cardFor(progress, now) {
+  const stored = progress?.scheduler?.algorithm === FLASHCARD_SCHEDULER ? progress.scheduler.card : null;
+  if (!stored || typeof stored !== 'object') {
+    // Bootstrap cards were projections, not FSRS cards. Preserve no fabricated
+    // stability; place them back in FSRS's first-review path at their prior
+    // due date. Their old history stays in the durable event/progress record.
+    return createEmptyCard(date(progress?.dueAt, now));
+  }
   return {
-    ...current,
-    state: forgotten ? 'learning' : stabilityDays >= 21 ? 'review' : 'learning',
-    dueAt: new Date(now.getTime() + delay).toISOString(),
-    stabilityDays: Number(stabilityDays.toFixed(3)), difficulty: Number(difficulty.toFixed(3)),
-    reviews: (Number(current.reviews) || 0) + 1,
-    lapses: (Number(current.lapses) || 0) + (forgotten ? 1 : 0),
-    lastReviewedAt: now.toISOString(),
-    scheduler: { algorithm: FLASHCARD_SCHEDULER, parametersVersion: 'default-1' },
+    due: date(stored.due, now), stability: Number(stored.stability) || 0,
+    difficulty: Number(stored.difficulty) || 0, elapsed_days: Number(stored.elapsed_days) || 0,
+    scheduled_days: Number(stored.scheduled_days) || 0, reps: Number(stored.reps) || 0,
+    lapses: Number(stored.lapses) || 0, learning_steps: Number(stored.learning_steps) || 0,
+    state: Number.isInteger(stored.state) ? stored.state : State.New,
+    ...(stored.last_review ? { last_review: date(stored.last_review, now) } : {}),
   };
+}
+
+export function initialCardProgress({ now = new Date() } = {}) { return project(createEmptyCard(now)); }
+
+export function scheduleReview(progress, rating, { now = new Date() } = {}) {
+  if (!Object.hasOwn(RATING, rating)) throw new TypeError('rating must be again|hard|good|easy');
+  const prior = cardFor(progress, now);
+  const { card } = scheduler.next(prior, now, RATING[rating]);
+  return project(card);
 }
 
 export function selectReviewCards(deck, progressByCard = {}, { now = new Date(), newLimit = 20, limit = 20 } = {}) {
@@ -38,8 +72,8 @@ export function selectReviewCards(deck, progressByCard = {}, { now = new Date(),
     const progress = progressByCard[card.cardId] || initialCardProgress({ now });
     if (progress.state === 'suspended') continue;
     if (progress.state === 'new') fresh.push(card);
-    else if (Date.parse(progress.dueAt) <= now.getTime()) due.push(card);
+    else if (date(progress.dueAt, now).getTime() <= now.getTime()) due.push(card);
   }
-  due.sort((a, b) => Date.parse(progressByCard[a.cardId]?.dueAt || 0) - Date.parse(progressByCard[b.cardId]?.dueAt || 0));
+  due.sort((a, b) => date(progressByCard[a.cardId]?.dueAt, now) - date(progressByCard[b.cardId]?.dueAt, now));
   return [...due, ...fresh.slice(0, newLimit)].slice(0, limit);
 }

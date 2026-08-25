@@ -19,12 +19,14 @@ const insightsMock = vi.fn(async () => ({ ok: true, status: 200, data: {
   concepts: [], items: [], pacing: [],
 } }));
 const teacherTodayMock = vi.fn(async () => ({ ok: true, status: 200, data: [] }));
+const flashcardReportMock = vi.fn(async () => ({ ok: true, status: 200, data: { decks: [] } }));
 vi.mock('../schoolApi.js', () => ({ schoolApi: {
   report: (...a) => reportMock(...a),
   progress: (...a) => progressMock(...a),
   progressOptions: (...a) => optionsMock(...a),
   instructionalInsights: (...a) => insightsMock(...a),
   teacherToday: (...a) => teacherTodayMock(...a),
+  flashcardReport: (...a) => flashcardReportMock(...a),
 } }));
 
 const metric = (kind, extra) => ({ id: kind, kind, label: kind, ...extra });
@@ -72,6 +74,26 @@ describe('scope', () => {
     reportMock.mockResolvedValue(payload([learner({ needsAttention: true })]));
     render(<ReportPanel />);
     expect(await screen.findByText('Needs attention')).toBeTruthy();
+  });
+});
+
+describe('flashcard reporting', () => {
+  it('shows each learner’s deck summary in the household report', async () => {
+    reportMock.mockResolvedValue(payload([learner(), learner({ id: 'kid2', name: 'Beta' })]));
+    flashcardReportMock.mockImplementation(async (id) => ({ ok: true, status: 200, data: { decks: [{ id: `${id}/deck`, title: `${id} cards`, summary: { counts: { due: id === 'kid1' ? 2 : 1, new: 0, mastered: 3, reviewed: 4, activeSeconds: 60 } } }] } }));
+    render(<ReportPanel />);
+    await waitFor(() => expect(screen.getAllByLabelText('Flashcard progress')).toHaveLength(2));
+    expect(screen.getByText('kid1 cards')).toBeTruthy();
+    expect(screen.getByText('kid2 cards')).toBeTruthy();
+    expect(flashcardReportMock).toHaveBeenCalledWith('kid1');
+    expect(flashcardReportMock).toHaveBeenCalledWith('kid2');
+  });
+  it('shows formative deck counts separately from assessment metrics', async () => {
+    reportMock.mockResolvedValue(payload([learner()]));
+    flashcardReportMock.mockResolvedValue({ ok: true, status: 200, data: { decks: [{ id: 'cells', title: 'Cell organelles', summary: { counts: { due: 2, new: 3, mastered: 4, reviewed: 9, activeSeconds: 120 } } }] } });
+    render(<ReportPanel userId="kid1" />);
+    expect(await screen.findByLabelText('Flashcard progress')).toHaveTextContent('2 due · 3 new · 4 mastered');
+    expect(screen.getByLabelText('Flashcard progress')).toHaveTextContent('9 reviews · 2 active min');
   });
 });
 

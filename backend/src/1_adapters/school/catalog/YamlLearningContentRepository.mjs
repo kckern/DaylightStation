@@ -36,6 +36,21 @@ export class YamlLearningContentRepository extends ILearningContentRepository {
     return this.#find(this.#deckDirectories, 'id', deckId, 'flashcard deck');
   }
 
+  async listFlashcardDecks() {
+    const decks = new Map();
+    for (const directory of this.#deckDirectories) {
+      const files = [...this.#io.list(directory, { recursive: true })].sort();
+      for (const relative of files) {
+        const filePath = path.join(directory, relative);
+        const deck = this.#io.load(filePath);
+        if (!deck?.id) continue;
+        if (decks.has(deck.id)) throw new Error(`Duplicate School flashcard deck '${deck.id}' in '${decks.get(deck.id).__path}' and '${filePath}'`);
+        decks.set(deck.id, { ...deck, __path: filePath });
+      }
+    }
+    return [...decks.values()].map(({ __path, ...deck }) => structuredClone(deck));
+  }
+
   async getLearningAction(actionId) {
     return this.#find(this.#actionDirectories, 'actionId', actionId, 'learning action');
   }

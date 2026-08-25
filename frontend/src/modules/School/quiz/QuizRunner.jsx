@@ -94,7 +94,7 @@ function TutorOffer({ userId, sessionId, onOpen }) {
   return null;
 }
 
-export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh = false, onExit, onRestart = null, onReview = null, onTutor = null }) {
+export default function QuizRunner({ bank, mode = 'quiz', learning = null, purpose = null, deckId = null, testPlan = null, fresh = false, onExit, onRestart = null, onReview = null, onTutor = null }) {
   const { status, currentUser, isGuest } = useSchoolProfile();
   const [sessionId, setSessionId] = useState(null);
   const [index, setIndex] = useState(0);
@@ -140,7 +140,7 @@ export default function QuizRunner({ bank, mode = 'quiz', learning = null, fresh
     let alive = true;
     const userId = currentUser?.id ?? null;
     schoolApi.openSession({
-      userId, bankId: bank.id, mode, ...(learning ? { learning } : {}), ...(fresh ? { fresh: true } : {}),
+      userId, bankId: bank.id, mode, ...(learning ? { learning } : {}), ...(purpose ? { purpose } : {}), ...(deckId ? { deckId } : {}), ...(testPlan ? { testPlan } : {}), ...(fresh ? { fresh: true } : {}),
     }).then(({ ok, data }) => {
       if (!alive) return;
       if (!ok) {

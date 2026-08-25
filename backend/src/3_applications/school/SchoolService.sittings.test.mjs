@@ -78,6 +78,18 @@ beforeEach(() => {
 afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
 describe('SchoolService sittings (mid-quiz resume)', () => {
+  it('counts only a complete, server-tagged flashcard assessment toward its deck', () => {
+    const { svc } = makeService();
+    const { sessionId } = svc.openResolvedSession({
+      userId: 'u1', bankSnapshot: bank, mode: 'quiz',
+      provenance: { flashcardTest: { deckId: 'science/caps/cards', bankId: bank.id, testId: 'deck-test', itemCount: 3 } },
+    });
+    svc.answer({ sessionId, itemId: 'q1', given: 'Olympia' });
+    svc.answer({ sessionId, itemId: 'q2', given: 'Salem' });
+    expect(svc.flashcardTestStatus('u1', { deckId: 'science/caps/cards', bankId: bank.id, passingPercent: 80 })).toMatchObject({ passed: false, latest: null });
+    svc.answer({ sessionId, itemId: 'q3', given: 'Boise' });
+    expect(svc.flashcardTestStatus('u1', { deckId: 'science/caps/cards', bankId: bank.id, passingPercent: 80 })).toMatchObject({ passed: true, latest: { correct: 3, percent: 100 } });
+  });
   it('answer 2 of 3, drop the session, reopen (new service, same store dir) → resume with score/outcomes; 3rd answer completes and CLEARS', () => {
     const { svc } = makeService();
     const { sessionId } = svc.openSession({ userId: 'u1', bankId: bank.id, mode: 'quiz' });

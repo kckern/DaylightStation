@@ -334,15 +334,15 @@ export class SchoolService {
    * HTTP never supplies this snapshot directly: Catalog session opening first
    * verifies learner visibility, address, module, mode, and bank identity.
    */
-  openResolvedSession({ userId = null, bankSnapshot, mode, learningContext = null, fresh = false }) {
+  openResolvedSession({ userId = null, bankSnapshot, mode, learningContext = null, provenance = null, fresh = false }) {
     const validated = validateQuestionBank(bankSnapshot);
     if (!validated.ok) {
       throw new ValidationError(`resolved question bank is invalid: ${validated.errors.join('; ')}`);
     }
-    return this.#openResolvedSession({ userId, bank: validated.bank, mode, learningContext, fresh });
+    return this.#openResolvedSession({ userId, bank: validated.bank, mode, learningContext, provenance, fresh });
   }
 
-  #openResolvedSession({ userId, bank, mode, learningContext, fresh = false }) {
+  #openResolvedSession({ userId, bank, mode, learningContext, provenance = null, fresh = false }) {
     const bankRev = bankContentRev(bank);
     this.#sweepExpired();
     if (!MODES.has(mode)) throw new ValidationError(`mode must be quiz|flashcard|drill|learning_probe, got: ${mode}`);
@@ -354,7 +354,7 @@ export class SchoolService {
     }
     const session = {
       id: `ses_${shortId(8)}`, userId, bankId: bank.id, mode, bank, bankRev,
-      learningContext: normalized.learning,
+      learningContext: normalized.learning, provenance,
       startedAt: this.#now(), lastActiveAt: this.#now(), responseClaims: new Map(),
     };
     // Mid-quiz resumability (Task 17): only interactively-opened, signed-in
@@ -571,7 +571,8 @@ export class SchoolService {
       const attempt = createAttempt({
         at: attemptAt,
         sessionId: s.id, bankId: s.bankId, itemId: item.id, itemType: item.type,
-        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport, provenance,
+        mode: s.mode, given: recordedGiven, correct, attributedTo: s.userId, transport,
+        provenance: s.provenance ? { ...s.provenance, ...(provenance ?? {}) } : provenance,
         bankRev: s.bankRev ?? null,
         learning: {
           ...(learningContext ?? s.learningContext ?? {}),
@@ -742,6 +743,34 @@ export class SchoolService {
       correct: results.filter((entry) => entry.correct).length,
       total: submission.responses.length,
     };
+  }
+
+  /**
+   * Return only completed, server-tagged assessments for an assigned flashcard
+   * deck. Ordinary practice of the same bank is deliberately not evidence: the
+   * tag can be created only by FlashcardStudyService's assignment gate.
+   */
+  flashcardTestStatus(userId, { deckId, bankId, passingPercent = 80 } = {}) {
+    if (!this.#isLearner(userId)) throw new ValidationError(`unknown learner: ${userId}`);
+    const grouped = new Map();
+    for (const attempt of this.#ds.readAllAttempts(userId)) {
+      const test = attempt?.provenance?.flashcardTest;
+      if (isRegradeCorrection(attempt) || attempt.mode !== 'quiz' || attempt.bankId !== bankId
+          || !test || test.deckId !== deckId || !Number.isInteger(test.itemCount) || test.itemCount < 1) continue;
+      const key = `${attempt.sessionId}/${test.testId ?? ''}`;
+      if (!grouped.has(key)) grouped.set(key, { sessionId: attempt.sessionId, itemCount: test.itemCount, items: new Map(), at: attempt.at });
+      const group = grouped.get(key);
+      // A contradictory tag cannot be made into a passing run by mixing rows.
+      if (group.itemCount !== test.itemCount) { group.invalid = true; continue; }
+      group.items.set(attempt.itemId, attempt.correct === true);
+      if (String(attempt.at) > String(group.at)) group.at = attempt.at;
+    }
+    const completed = [...grouped.values()].filter((group) => !group.invalid && group.items.size === group.itemCount)
+      .map((group) => ({ ...group, correct: [...group.items.values()].filter(Boolean).length }))
+      .map((group) => ({ ...group, percent: Math.round((group.correct / group.itemCount) * 100) }));
+    completed.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    const passing = completed.find((group) => group.percent >= passingPercent) ?? null;
+    return { passed: Boolean(passing), passingPercent, latest: completed[0] ?? null, passing };
   }
 
   getResults(userId, { bankId } = {}) {

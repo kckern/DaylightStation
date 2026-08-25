@@ -58,6 +58,7 @@ import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
+import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
@@ -96,6 +97,7 @@ import { CreateLostAnswerSheetTicket } from '#apps/school/usecases/CreateLostAns
 import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
+import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
@@ -174,6 +176,7 @@ export async function createSchoolLifecycle({
   studyGrants = null,
   languageReelService = null,
   languageReelGrants = null,
+  flashcardStudyService = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
   clock = () => new Date(), rng = null, logger = console,
@@ -413,6 +416,11 @@ export async function createSchoolLifecycle({
   if (languageReelService && languageReelGrants) {
     launchers.set('language-reels', new LanguageReelsProgramLauncher({
       service: languageReelService, grants: languageReelGrants, donow,
+    }));
+  }
+  if (flashcardStudyService) {
+    launchers.set('flashcards', new FlashcardProgramLauncher({
+      studyService: flashcardStudyService, assignments: stores.assignments, donow,
     }));
   }
 
@@ -878,6 +886,16 @@ export async function createSchoolLifecycle({
         const valid = raw?.corpusId === 'korean-language-reels' && raw?.daily?.selection === 'random_category';
         return valid ? { errors: [], enrollment: { programId: 'language-reels', corpusId: raw.corpusId, daily: { selection: 'random_category' } } }
           : { errors: ['language-reels requires corpusId korean-language-reels and daily.selection random_category'] };
+      }]] : []),
+      ...(flashcardStudyService ? [['flashcards', async (raw) => {
+        const result = validateFlashcardEnrollment(raw);
+        if (result.errors.length) return result;
+        try {
+          await flashcardStudyService.getDeck(result.enrollment.deckId);
+          return result;
+        } catch {
+          return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
+        }
       }]] : []),
     ]),
     roster: () => userService?.getHouseholdRoster?.() ?? [],

@@ -59,4 +59,23 @@ describe('OpenCatalogLearningSession', () => {
     await expect(useCase.execute({ learnerId: 'kid-a', learning, bankId: 'other' }))
       .rejects.toThrow(/does not use bank other/);
   });
+
+  it('allows a flashcard module to open its linked bank only through the explicit graded test purpose', async () => {
+    const flashcardBundle = structuredClone(bundle);
+    flashcardBundle.lesson.modules[0] = { ...flashcardBundle.lesson.modules[0], moduleId: 'cards', type: 'flashcards' };
+    const grader = { openResolvedSession: vi.fn(() => ({ sessionId: 'test-1' })) };
+    const useCase = new OpenCatalogLearningSession({ catalog: { lesson: async () => flashcardBundle }, grader });
+    const learning = { catalogId: 'main', subjectId: 'quant', courseId: 'rates', unitId: 'unit-rates', lessonId: 'intro', moduleId: 'cards' };
+    await expect(useCase.execute({ learnerId: 'kid-a', learning, bankId: 'rates/check', mode: 'quiz', purpose: 'flashcard_test' })).resolves.toEqual({ sessionId: 'test-1' });
+    expect(grader.openResolvedSession).toHaveBeenCalledWith(expect.objectContaining({ mode: 'quiz' }));
+  });
+  it('builds a limited immutable Test snapshot from server-resolved forms', async () => {
+    const flashcardBundle = structuredClone(bundle);
+    flashcardBundle.lesson.modules[0] = { ...flashcardBundle.lesson.modules[0], moduleId: 'cards', type: 'flashcards', bank: { ...flashcardBundle.lesson.modules[0].bank, items: [{ id: 'a', type: 'multiple_choice' }, { id: 'b', type: 'matching' }] } };
+    const grader = { openResolvedSession: vi.fn(() => ({ sessionId: 'test-1' })) };
+    const useCase = new OpenCatalogLearningSession({ catalog: { lesson: async () => flashcardBundle }, grader });
+    const learning = { catalogId: 'main', subjectId: 'quant', courseId: 'rates', unitId: 'unit-rates', lessonId: 'intro', moduleId: 'cards' };
+    await useCase.execute({ learnerId: 'kid-a', learning, mode: 'quiz', purpose: 'flashcard_test', testPlan: { count: 1, types: ['matching'] } });
+    expect(grader.openResolvedSession).toHaveBeenCalledWith(expect.objectContaining({ bankSnapshot: expect.objectContaining({ items: [{ id: 'b', type: 'matching' }] }) }));
+  });
 });

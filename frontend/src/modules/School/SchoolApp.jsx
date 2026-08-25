@@ -27,6 +27,7 @@ import { groupBySubject, subjectLabel } from './home/subjects.js';
 import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgram.jsx';
 import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
+import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -368,6 +369,22 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     await start(bankSummary, mode, isGuest);
   }, [currentUser, isGuest, openPicker, start]);
 
+  const startFlashcardDeck = useCallback(async (deckSummary, learnerId = currentUser?.id ?? null) => {
+    const { ok, data } = await schoolApi.flashcardDeck(deckSummary.id);
+    if (ok && data?.deck) {
+      setNotice(null);
+      setActive({ mode: 'flashcard_program', descriptor: {
+        deck: data.deck, bank: null, policy: {}, userId: learnerId,
+      }, learning: null });
+    }
+    return ok;
+  }, [currentUser?.id]);
+
+  const onFlashcardDeckLaunch = useCallback(async (deckSummary) => {
+    if (!currentUser && !isGuest) { setPending({ kind: 'flashcard-deck', deckSummary }); openPicker(); return false; }
+    return startFlashcardDeck(deckSummary);
+  }, [currentUser, isGuest, openPicker, startFlashcardDeck]);
+
   // Certification gate (spec §4.2): consulted ONLY here, on catalog module
   // launches — startLearning's one caller chain is onLearningLaunch/onPick/
   // onDismiss, all originating from LearningCatalogBrowser's onLaunch, so
@@ -392,13 +409,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       // A catalog-resolved rich deck is rendered by the reusable program; old
       // bank-only modules keep their established runner and session contract.
       if (module.deck && module.deck.schema === 'school.flashcard-deck/v1') {
-        setActive({ mode: 'flashcard_program', descriptor: { deck: module.deck, bankItems: module.bank?.items ?? [], policy: module.policy ?? {} }, learning });
+        setActive({ mode: 'flashcard_program', descriptor: { deck: module.deck, bank: module.bank ?? null, policy: module.policy ?? {}, userId: currentUser?.id ?? null }, learning });
       } else setActive({ mode: 'flashcard', bank: module.bank, learning });
     }
     else if (module.type === 'quiz') setActive({ mode: 'quiz', bank: module.bank, learning });
     else if (module.type === 'problems') setActive({ mode: 'problems', bank: module.bank, learning });
     else setActive({ mode: 'learning_unsupported', module, learning });
-  }, [surfaceId]);
+  }, [surfaceId, currentUser?.id]);
 
   const onLearningLaunch = useCallback((launch) => {
     const tracked = ['problems', 'flashcards', 'quiz', 'learning_probe', 'activity'].includes(launch.module.type);
@@ -414,8 +431,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     claim(id);
     if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, false);
     if (pending?.kind === 'learning') startLearning(pending.launch);
+    if (pending?.kind === 'flashcard-deck') startFlashcardDeck(pending.deckSummary, id);
     setPending(null);
-  }, [claim, pending, start, startLearning]);
+  }, [claim, pending, start, startLearning, startFlashcardDeck]);
 
   // Explicit "continue as guest" (the picker's guest row) — the ONLY path
   // that demotes an unclaimed learner to Guest and resolves whatever launch
@@ -427,8 +445,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     continueAsGuest();
     if (pending?.kind === 'bank') start(pending.bankSummary, pending.mode, true);
     if (pending?.kind === 'learning') startLearning(pending.launch);
+    if (pending?.kind === 'flashcard-deck') startFlashcardDeck(pending.deckSummary, null);
     setPending(null);
-  }, [continueAsGuest, pending, start, startLearning]);
+  }, [continueAsGuest, pending, start, startLearning, startFlashcardDeck]);
 
   // ✕ / backdrop / auto-timeout — a CANCEL, not a guest demotion. Closes the
   // sheet and drops whatever launch was pending; identity (claimed, guest, or
@@ -489,6 +508,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       setReelLaunch({ learnerId, reelId: target.reelId, reelGrant: target.reelGrant });
       setStudyLaunch(null);
       openSection('language-reels');
+      return true;
+    }
+    if (target?.kind === 'program' && target.program === 'flashcards') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.deckId || !learnerId) return false;
+      const { ok, data } = await schoolApi.flashcardDeck(target.deckId);
+      if (!ok || !data?.deck) return false;
+      const assessment = await schoolApi.flashcardAssessment(target.deckId, { userId: learnerId });
+      const bank = assessment.ok ? assessment.data?.bank ?? null : null;
+      setActive({ mode: 'flashcard_program', descriptor: { deck: data.deck, bank, policy: target.policy ?? {}, userId: learnerId }, learning: null });
+      openSection('flashcards');
       return true;
     }
     if (target?.kind === 'bank') {
@@ -786,7 +816,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {section === 'typing' && <TypingTutor />}
         {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
         {section === 'chess' && !active && <ChessLessons />}
-        {section === 'banks' && !active && <BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} />}
+        {section === 'banks' && !active && <><FlashcardDeckBrowser onLaunch={onFlashcardDeckLaunch} /><BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} /></>}
         {subjectId && !active && (
           <SubjectPage
             subjectId={subjectId}
@@ -821,6 +851,9 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             key={`quiz:${active.bank.id}:${runNonce}`}
             bank={active.bank}
             learning={active.learning}
+            purpose={active.purpose ?? null}
+            deckId={active.deckId ?? null}
+            testPlan={active.testPlan ?? null}
             fresh={runFresh}
             onExit={() => setActive(null)}
             onRestart={({ fresh = true } = {}) => { setRunFresh(fresh); setRunNonce((n) => n + 1); }}
@@ -832,7 +865,26 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {active?.mode === 'flashcard_program' && (
           <FlashcardProgram
             descriptor={active.descriptor}
-            onEvent={async (event) => { schoolLog.session('flashcard-program-event', { ...event, learning: active.learning }); return { ok: true }; }}
+            onEvent={async (event) => {
+              schoolLog.session('flashcard-program-event', { ...event, learning: active.learning });
+              if (event.type === 'start_test' && active.descriptor.bank && active.learning) {
+                const plan = event.testPlan ?? null;
+                const eligible = plan
+                  ? active.descriptor.bank.items.filter((item) => plan.types.includes(item.type)).slice(0, plan.count)
+                  : active.descriptor.bank.items;
+                setRunFresh(false);
+                setActive({ mode: 'quiz', bank: { ...active.descriptor.bank, items: eligible }, learning: active.learning, purpose: 'flashcard_test', testPlan: plan });
+              } else if (event.type === 'start_test' && active.descriptor.userId) {
+                const plan = event.testPlan ?? null;
+                const { ok, data } = await schoolApi.flashcardAssessment(active.descriptor.deck.id, { userId: active.descriptor.userId, testPlan: plan });
+                if (!ok || !data?.bank) return { ok: false };
+                setRunFresh(false);
+                setActive({ mode: 'quiz', bank: data.bank, learning: null, purpose: 'flashcard_assessment', deckId: active.descriptor.deck.id, testPlan: plan });
+              }
+              return { ok: true };
+            }}
+            studyApi={{ open: schoolApi.flashcardOpen, review: schoolApi.flashcardReview, heartbeat: schoolApi.flashcardHeartbeat, summary: schoolApi.flashcardSummary }}
+            resolveAssetUrl={schoolApi.flashcardAssetUrl ?? ((assetId) => assetId)}
             onExit={() => setActive(null)}
           />
         )}

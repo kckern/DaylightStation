@@ -100,6 +100,20 @@ export class CompositeLearningContentRepository {
     return this.#first('getFlashcardDeck', deckId);
   }
 
+  async listFlashcardDecks() {
+    const decks = new Map();
+    for (const source of this.#sources) {
+      if (typeof source.listFlashcardDecks !== 'function') continue;
+      let found;
+      try { found = await source.listFlashcardDecks(); } catch (error) {
+        this.#logger?.error?.('school.content.source-failed', { op: 'listFlashcardDecks', error: error.message });
+        continue;
+      }
+      for (const deck of found ?? []) if (deck?.id && !decks.has(deck.id)) decks.set(deck.id, deck);
+    }
+    return [...decks.values()];
+  }
+
   async getLearningAction(actionId) {
     return this.#first('getLearningAction', actionId);
   }

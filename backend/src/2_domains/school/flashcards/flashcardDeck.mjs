@@ -14,7 +14,7 @@ export function validateFlashcardDeck(raw, { path = 'deck' } = {}) {
   if (raw.schema !== 'school.flashcard-deck/v1') at('.schema', 'must be school.flashcard-deck/v1');
   if (!ID.test(raw.id || '')) at('.id', 'must be a lowercase content reference');
   if (!text(raw.title)) at('.title', 'is required');
-  if (raw.bankId !== undefined && !ID.test(raw.bankId || '')) at('.bankId', 'must be a lowercase content reference');
+  const assessment = validateAssessment(raw, errors, path);
   if (!Array.isArray(raw.cards) || raw.cards.length === 0) at('.cards', 'must contain at least one card');
   const ids = new Set();
   (raw.cards || []).forEach((card, index) => {
@@ -32,8 +32,35 @@ export function validateFlashcardDeck(raw, { path = 'deck' } = {}) {
     if (card.explanation !== undefined && !text(card.explanation)) at(`${prefix}.explanation`, 'must be non-empty when present');
     if (card.concepts !== undefined && (!Array.isArray(card.concepts) || card.concepts.some((id) => !CARD_ID.test(id)) || new Set(card.concepts).size !== card.concepts.length)) at(`${prefix}.concepts`, 'must be unique lowercase identifiers when present');
     if (card.directions !== undefined && (!Array.isArray(card.directions) || card.directions.length === 0 || card.directions.some((direction) => !DIRECTIONS.has(direction)))) at(`${prefix}.directions`, 'must contain front_to_back and/or back_to_front');
+    validateLearn(card.learn, `${prefix}.learn`, errors);
   });
-  return { errors, deck: errors.length ? null : raw };
+  if (errors.length) return { errors, deck: null };
+  // `bankId` was the first draft's top-level test relationship. Preserve old
+  // content on read, but hand every consumer one unambiguous deck-owned field.
+  const { bankId: _legacyBankId, ...withoutLegacy } = raw;
+  return { errors, deck: { ...withoutLegacy, ...(assessment ? { assessment } : {}) } };
+}
+
+function validateAssessment(raw, errors, path) {
+  const legacy = raw.bankId;
+  if (legacy !== undefined && !ID.test(legacy || '')) errors.push(`${path}.bankId: must be a lowercase content reference`);
+  if (raw.assessment === undefined) return legacy ? { bankId: legacy } : null;
+  if (!object(raw.assessment)) { errors.push(`${path}.assessment: must be a mapping`); return null; }
+  if (!ID.test(raw.assessment.bankId || '')) errors.push(`${path}.assessment.bankId: must be a lowercase content reference`);
+  if (legacy && legacy !== raw.assessment.bankId) errors.push(`${path}: bankId and assessment.bankId disagree`);
+  return { bankId: raw.assessment.bankId };
+}
+
+function validateLearn(learn, path, errors) {
+  if (learn === undefined) return;
+  if (!object(learn)) { errors.push(`${path}: must be a mapping`); return; }
+  Object.entries(learn).forEach(([direction, config]) => {
+    if (!DIRECTIONS.has(direction)) { errors.push(`${path}.${direction}: must be front_to_back or back_to_front`); return; }
+    if (!object(config) || !Array.isArray(config.acceptedAnswers) || config.acceptedAnswers.length === 0
+      || config.acceptedAnswers.some((answer) => !text(answer))) {
+      errors.push(`${path}.${direction}.acceptedAnswers: must be a non-empty text array`);
+    }
+  });
 }
 
 function validateBlock(block, path, errors) {
@@ -59,7 +86,10 @@ export function projectBankAsFlashcardDeck(bank) {
     front: { blocks: [{ type: 'text', text: item.prompt }] },
     back: { blocks: [{ type: 'text', text: answerText(item) }] },
   }));
-  return { schema: 'school.flashcard-deck/v1', id: `bank:${bank?.id || 'unknown'}`, title: bank?.title || 'Flashcards', bankId: bank?.id, cards };
+  return {
+    schema: 'school.flashcard-deck/v1', id: `bank:${bank?.id || 'unknown'}`,
+    title: bank?.title || 'Flashcards', ...(bank?.id ? { assessment: { bankId: bank.id } } : {}), cards,
+  };
 }
 
 function answerText(item) {

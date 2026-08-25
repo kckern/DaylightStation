@@ -27,7 +27,29 @@ export function cardFace(card, direction = 'front_to_back', revealed = false) {
   return revealed ? card?.[second] : card?.[first];
 }
 
-export function learnPrompt(card, bankItem = null) {
-  if (bankItem?.choices?.length > 1) return { kind: 'choice', prompt: bankItem.prompt, choices: bankItem.choices, answer: bankItem.answer };
-  return { kind: 'reveal', prompt: card?.front?.blocks?.find((block) => block.type === 'text')?.text || '', answer: card?.back?.blocks?.find((block) => block.type === 'text')?.text || '' };
+export function learnPrompt(card, direction = 'front_to_back') {
+  const source = direction === 'back_to_front' ? card?.back : card?.front;
+  const target = direction === 'back_to_front' ? card?.front : card?.back;
+  const derived = faceText(target);
+  const aliases = card?.learn?.[direction]?.acceptedAnswers ?? [];
+  const acceptedAnswers = aliases.length ? aliases : derived ? [derived] : [];
+  return { kind: acceptedAnswers.length ? 'recall' : 'reveal', prompt: faceText(source), acceptedAnswers };
+}
+
+function faceText(face) {
+  const block = face?.blocks?.find((candidate) => ['text', 'tts'].includes(candidate.type)
+    || (candidate.type === 'image' && candidate.alt) || (['audio', 'video'].includes(candidate.type) && candidate.transcript));
+  return block?.text ?? block?.alt ?? block?.transcript ?? '';
+}
+
+/** Tolerant typed-recall match: formatting never masks a known answer. */
+export function recallMatches(given, expected) {
+  const normalize = (value) => String(value ?? '').trim().toLocaleLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, ' ')
+    .trim();
+  return normalize(given) !== '' && normalize(given) === normalize(expected);
+}
+
+export function recallMatchesAny(given, expected = []) {
+  return expected.some((answer) => recallMatches(given, answer));
 }

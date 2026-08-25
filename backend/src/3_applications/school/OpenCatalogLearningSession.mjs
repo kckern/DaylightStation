@@ -27,7 +27,7 @@ export class OpenCatalogLearningSession {
     this.#grader = grader;
   }
 
-  async execute({ learnerId = null, learning, bankId = null, mode = null, fresh = false } = {}) {
+  async execute({ learnerId = null, learning, bankId = null, mode = null, purpose = null, testPlan = null, fresh = false } = {}) {
     const address = catalogModuleAddress(learning);
     const bundle = await this.#catalog.lesson({
       learnerId,
@@ -39,10 +39,13 @@ export class OpenCatalogLearningSession {
     });
     const module = bundle.lesson?.modules?.find(({ moduleId }) => moduleId === address.moduleId);
     if (!module) throw new ValidationError(`unknown Catalog module: ${address.moduleId}`);
-    const resolvedMode = module.type === 'activity' && module.mechanic === 'timed_drill'
+    const flashcardTest = purpose === 'flashcard_test';
+    const resolvedMode = flashcardTest
+      ? 'quiz'
+      : module.type === 'activity' && module.mechanic === 'timed_drill'
       ? 'drill'
       : MODE_BY_MODULE[module.type] ?? null;
-    if (!resolvedMode || !module.bank) {
+    if (!resolvedMode || !module.bank || (flashcardTest && module.type !== 'flashcards')) {
       throw new ValidationError(`Catalog module '${address.moduleId}' is not a tracked question session`);
     }
     if (mode !== null && mode !== resolvedMode) {
@@ -51,9 +54,10 @@ export class OpenCatalogLearningSession {
     if (bankId !== null && bankId !== module.bank.id) {
       throw new ValidationError(`Catalog module '${address.moduleId}' does not use bank ${bankId}`);
     }
+    const bankSnapshot = flashcardTest ? scopedTestBank(module.bank, testPlan) : module.bank;
     return this.#grader.openResolvedSession({
       userId: learnerId,
-      bankSnapshot: module.bank,
+      bankSnapshot,
       mode: resolvedMode,
       learningContext: learningContext(bundle, module),
       // Catalog quizzes share QuizRunner's restart affordance, so the
@@ -61,6 +65,23 @@ export class OpenCatalogLearningSession {
       fresh: fresh === true,
     });
   }
+}
+
+/** Server-owned selection from a resolved bank. Clients request forms/count, never ids. */
+function scopedTestBank(bank, rawPlan) {
+  if (rawPlan === null || rawPlan === undefined) return bank;
+  if (!rawPlan || typeof rawPlan !== 'object' || Array.isArray(rawPlan)) throw new ValidationError('flashcard testPlan must be a mapping');
+  const availableTypes = new Set(bank.items.map((item) => item.type));
+  const types = rawPlan.types === undefined ? [...availableTypes] : rawPlan.types;
+  if (!Array.isArray(types) || !types.length || types.some((type) => typeof type !== 'string' || !availableTypes.has(type))) {
+    throw new ValidationError('flashcard testPlan.types must be a non-empty subset of the linked bank forms');
+  }
+  const eligible = bank.items.filter((item) => types.includes(item.type));
+  const count = rawPlan.count ?? eligible.length;
+  if (!Number.isInteger(count) || count < 1 || count > eligible.length) {
+    throw new ValidationError(`flashcard testPlan.count must be an integer from 1 to ${eligible.length}`);
+  }
+  return { ...bank, items: eligible.slice(0, count) };
 }
 
 function catalogModuleAddress(raw) {

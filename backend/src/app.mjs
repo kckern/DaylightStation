@@ -2654,6 +2654,21 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     exerciseLibrary,
     logger: rootLogger.child({ module: 'school-catalog' }),
   });
+  const { YamlFlashcardProgressStore } = await import('#adapters/persistence/yaml/YamlFlashcardProgressStore.mjs');
+  const { SchoolFlashcardAssetRepository } = await import('#adapters/school/catalog/SchoolFlashcardAssetRepository.mjs');
+  const { FlashcardStudyService } = await import('#apps/school/FlashcardStudyService.mjs');
+  const flashcardStudy = schoolCatalog.content
+    ? new FlashcardStudyService({
+      progressStore: new YamlFlashcardProgressStore({ configService, logger: rootLogger.child({ module: 'school-flashcards' }) }),
+      decks: schoolCatalog.content,
+      assignments: new YamlAssignmentStore({ configService, logger: rootLogger.child({ module: 'school-flashcard-assignments' }) }),
+      grader: schoolService,
+      timezone: configService.getTimezone?.() || null,
+    })
+    : null;
+  const flashcardAssets = new SchoolFlashcardAssetRepository({
+    rootDir: schoolFullConfig.flashcards?.assets?.dir ?? path.join(dataDir, 'content', 'assets'),
+  });
   const openCatalogLearningSession = schoolCatalog.query
     ? new OpenCatalogLearningSession({ catalog: schoolCatalog.query, grader: schoolService })
     : null;
@@ -3300,6 +3315,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       studyGrants: schoolStudyGrants,
       languageReelService,
       languageReelGrants: schoolReelGrants,
+      flashcardStudyService: flashcardStudy,
       donow: donowModule?.service ?? null,
       donowSurfaces: donowModule?.surfaces ?? null,
       donowDatastore: donowModule?.datastore ?? null,
@@ -3655,6 +3671,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   v1Routers.school = createSchoolRouter({
     schoolErrors,
     schoolService,
+    flashcardStudy,
+    flashcardAssets,
     getMaterialCatalog,
     getMaterialUnits,
     getMaterialProgressSummary,
