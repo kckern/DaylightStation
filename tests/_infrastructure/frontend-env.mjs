@@ -137,6 +137,59 @@ export default {
       },
     });
 
+    // ── No sockets to the fictional page origin ────────────────────────────
+    //
+    // happy-dom needs a page URL, and the default above is
+    // `http://localhost:3000` — an address that EXISTS ONLY ON PAPER. But
+    // happy-dom's `fetch` and `WebSocket` are real network clients, so any
+    // component that fires a relative fetch or opens the app's `/ws` socket
+    // (the logging transport's `wsService.connect()`, an autosave, a config
+    // load) dials a REAL TCP connection to :3000. Nothing listens there, and
+    // the failure is SLOW — DNS + two address families + connect timeouts —
+    // so the rejection lands seconds later, after the owning test finished,
+    // and vitest pins the unhandled rejection on whichever test happens to be
+    // running in that worker. That was the full-sweep roulette: one or two
+    // failures per sweep, a different victim each time (life-plan-authoring
+    // one run, trigger.sideEffect the next), every one passing in isolation.
+    //
+    // ONLY the page origin is blocked. Suites that start a real local server
+    // on an ephemeral port (laserPrinterAdapter's mock IPP printer, the school
+    // router suites) keep working — those are never on :3000.
+    //
+    // fetch: reject IMMEDIATELY, so the rejection surfaces while the test
+    // that caused it is still on the clock, with a message naming the cure.
+    // WebSocket: an inert, forever-CONNECTING socket — no TCP, no error event.
+    // An error event would kick WebSocketService into its reconnect ladder and
+    // spray timers across unrelated tests; a socket stuck CONNECTING is the
+    // one state its connect() treats as "already being handled".
+    const pageOrigin = new URL(win.location.href).origin;
+    const realFetch = win.fetch.bind(win);
+    win.fetch = function fetch(resource, init) {
+      const url = new URL(typeof resource === 'string' ? resource : resource?.url ?? String(resource), win.location.href);
+      if (url.origin === pageOrigin) {
+        return Promise.reject(new TypeError(
+          `fetch(${url.pathname}) hit the fictional test-page origin (${pageOrigin}) — nothing listens there. `
+          + 'Mock this call (vi.stubGlobal/component prop) in the test that triggered it.',
+        ));
+      }
+      return realFetch(resource, init);
+    };
+    const RealWebSocket = win.WebSocket;
+    const pageHost = new URL(win.location.href).host;
+    win.WebSocket = class WebSocket extends EventTarget {
+      static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+      constructor(url, protocols) {
+        const parsed = new URL(String(url));
+        if (parsed.host !== pageHost) return new RealWebSocket(url, protocols);
+        super();
+        this.url = String(url);
+        this.readyState = 0; // CONNECTING, forever — no TCP behind it
+        this.onopen = null; this.onclose = null; this.onerror = null; this.onmessage = null;
+      }
+      send() {}
+      close() { this.readyState = 3; }
+    };
+
     const { keys, originals } = populateGlobalFromWindow(global, win);
 
     return {

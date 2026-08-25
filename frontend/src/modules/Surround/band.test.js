@@ -693,8 +693,8 @@ describe('railGroups', () => {
   it('gives one entry per consecutive run, sized by the run’s sounding seconds', () => {
     expect(railGroups([run(0, 'Op. 10', 10), run(0, 'Op. 10', 10), run(1, 'Op. 25', 20)]))
       .toEqual([
-        { title: 'Op. 10', index: 0, from: 0, count: 2, span: 20 },
-        { title: 'Op. 25', index: 1, from: 2, count: 1, span: 20 },
+        { title: 'Op. 10', mini: null, index: 0, from: 0, count: 2, span: 20 },
+        { title: 'Op. 25', mini: null, index: 1, from: 2, count: 1, span: 20 },
       ]);
   });
 
@@ -714,7 +714,7 @@ describe('railGroups', () => {
 
   it('folds consecutive ungrouped segments into ONE null run', () => {
     expect(railGroups([run(null, null, 5), run(null, null, 5), run(null, null, 5)]))
-      .toEqual([{ title: null, index: null, from: 0, count: 3, span: 15 }]);
+      .toEqual([{ title: null, mini: null, index: null, from: 0, count: 3, span: 15 }]);
   });
 
   it('closes a run when an ungrouped segment interrupts it', () => {
@@ -730,7 +730,7 @@ describe('railGroups', () => {
    */
   it('degrades a group with no usable index to ungrouped rather than guessing', () => {
     const nameless = [{ segment: { duration: 4, group: { work: 'a', title: 'A' } } }];
-    expect(railGroups(nameless)).toEqual([{ title: null, index: null, from: 0, count: 1, span: 4 }]);
+    expect(railGroups(nameless)).toEqual([{ title: null, mini: null, index: null, from: 0, count: 1, span: 4 }]);
   });
 
   it('answers with no runs for anything that is not a rail', () => {
@@ -745,8 +745,8 @@ describe('railGroups', () => {
     ];
     expect(railGroups(placed).map((g) => g.title)).toEqual(['Scene 1', 'Scene 2', 'Scene 3']);
     expect(railGroups(placed, (segment) => segment?.hierarchy?.part)).toEqual([
-      { title: 'Part One', index: 0, from: 0, count: 2, span: 20 },
-      { title: 'Part Two', index: 1, from: 2, count: 1, span: 20 },
+      { title: 'Part One', mini: null, index: 0, from: 0, count: 2, span: 20 },
+      { title: 'Part Two', mini: null, index: 1, from: 2, count: 1, span: 20 },
     ]);
   });
 });
@@ -957,18 +957,18 @@ describe('railGroups at depth', () => {
   });
 
   it('groups by the outermost level when asked for depth 0', () => {
-    const runs = railGroups(rail, { depth: 0 });
+    const runs = railGroups(rail, (segment) => segment?.groupPath?.[0] ?? segment?.group ?? null);
     expect(runs.map((g) => g.title)).toEqual(['Part One', 'Part Two']);
     expect(runs.map((g) => g.count)).toEqual([3, 1]);
   });
 
   it('falls back to the segment’s own group where there is no ancestry', () => {
     const flat = [{ segment: { duration: 5, group: S1 } }];
-    expect(railGroups(flat, { depth: 0 }).map((g) => g.title)).toEqual(['Scene 1']);
+    expect(railGroups(flat, (segment) => segment?.groupPath?.[0] ?? segment?.group ?? null).map((g) => g.title)).toEqual(['Scene 1']);
   });
 
   it('sizes an outer run by the sounding seconds of everything beneath it', () => {
-    expect(railGroups(rail, { depth: 0 }).map((g) => g.span)).toEqual([30, 10]);
+    expect(railGroups(rail, (segment) => segment?.groupPath?.[0] ?? segment?.group ?? null).map((g) => g.span)).toEqual([30, 10]);
   });
 });
 

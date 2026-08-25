@@ -561,7 +561,17 @@ export default function SegmentMap({
     const legacyParts = railGroups(placedRail, (segment) => segment?.hierarchy?.part);
     const legacyScenes = railGroups(placedRail);
     if (legacyParts.some((run) => run.title)) return [legacyParts, legacyScenes];
-    return legacyScenes.some((run) => run.title) ? [legacyScenes] : [];
+    // A FLAT RAIL RENDERS NO ROW (`railIsFlat`) — the rule this module still
+    // documents above ("seven polonaises are seven works of one segment each,
+    // so every heading names exactly what the segment under it names, and the
+    // row was printing the same title a second time in a second face — both
+    // copies ellipsized, neither of them whole"). The gate lived on `grouped`
+    // (`!flat && …`) until the groupLevels refactor rebuilt `grouped` from
+    // this list and forgot the flat term; the comment and the gutter's own
+    // flat renumbering both survived, so the rule's absence here was a hole,
+    // not a decision.
+    return legacyScenes.some((run) => run.title) && !railIsFlat(legacyScenes)
+      ? [legacyScenes] : [];
   }, [composed, placedRail]);
   const grouped = groupLevels.length > 0;
 
@@ -1647,6 +1657,23 @@ export default function SegmentMap({
               <span className="surround-segment-map__text-row">
                 <span className="surround-segment-map__numeral">{numeral(seg.n, i, style)}</span>
                 <span className="surround-segment-map__text">
+                  {/* THE COMPRESSED FORM (documented in the classical README:
+                      "`short:` is what the rail sets while a segment is NOT
+                      sounding — on one line, with no gloss under it"). The
+                      SOUNDING segment always sets its whole name: it is the one
+                      segment the accordion guarantees room for. This branch was
+                      lost in the 2026-08-20 rail-folding rewrite — the `__short`
+                      styles and the corpus `short:` fields stayed behind while
+                      every segment silently set its full heading again. */}
+                  {state !== 'active' && seg.short ? (
+                    <span
+                      className="surround-segment-map__short"
+                      data-testid="surround-segment-short"
+                    >
+                      {seg.short}
+                    </span>
+                  ) : (
+                  <>
                   <span className="surround-segment-map__heading">
                     {title && <span className="surround-segment-map__title">{title}</span>}
                     {tempo && <span className="surround-segment-map__tempo">{tempo}</span>}
@@ -1664,6 +1691,8 @@ export default function SegmentMap({
                     >
                       {seg.annotation}
                     </span>
+                  )}
+                  </>
                   )}
                 </span>
               </span>
