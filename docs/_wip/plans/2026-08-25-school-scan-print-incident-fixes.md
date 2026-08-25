@@ -1961,6 +1961,218 @@ node /opt/Code/DaylightStation/node_modules/vitest/vitest.mjs run \
 
 ---
 
+## Task 14: A missing artifact must not make a session permanently unprintable
+
+**Live failure, 2026-08-25 12:01–12:03.** A learner scanned, typed his panel code, and was told the
+sheet was already issued; he tried again and was told the worksheet does not exist. Both messages
+are true. Together they are a dead end with no way forward. Full diagnosis:
+`docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md`.
+
+**Root cause.** `IssueDocument.mjs:302-303` routes **any** session that has ever issued an artifact
+to exact-reprint, as the only option:
+
+```js
+if (state.issuedArtifacts.length > 0) {
+  return this.#reprintExact({ sessionId, nowIso, state });
+}
+```
+
+`#reprintExact` then hard-fails when the bytes are gone (`:403-411`), returning
+`#unavailable(sessionId, 'original-unavailable', …)`. There is no fallback.
+
+`issuedArtifacts.length > 0` means *"this session issued something once"* — **not** *"a reprintable
+copy exists."* The code treats them as synonyms. They diverge whenever retention is absent.
+
+**Why the artifact was missing:** `YamlIssuedArtifactStore` (`#root()` =
+`school/artifacts/issued`) holds only artifacts dated 2026-08-25. The failing session was issued
+2026-08-23, before retention captured worksheets. Its *content* still exists in the separate tree
+`school/artifacts/print/documents/**` (`document.yml` + `answers.yml` per revision) — only the
+rendered PDF is gone. That is what makes the fix possible.
+
+**Files:**
+- Modify: `backend/src/3_applications/school/usecases/IssueDocument.mjs` (`#reprintExact` ~`:403`; the routing at `:302`)
+- Test: `backend/src/3_applications/school/usecases/IssueDocument.replacement.test.mjs` (create)
+
+**Interfaces:**
+- Produces: a new log event `school.issue.replacement-issued` with `{ sessionId, missingArtifactId, newArtifactId }`. `execute()`'s return shape is unchanged; the failing path now returns a printed result instead of `status: 'unavailable'`.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `IssueDocument.replacement.test.mjs`. The load-bearing case: a session whose `issued` event
+names an artifact the store does **not** hold must produce a printed replacement, not
+`status: 'unavailable'`.
+
+```js
+  it('issues a replacement when the original artifact is gone, instead of dead-ending', async () => {
+    // issuedArtifacts.get() returns null for the recorded artifactId — the
+    // 2026-08-23 state: the event exists, the bytes never did.
+    const issuedArtifacts = { get: async () => null, put: async ({ bytes }) => ({ bytes }) };
+    // …construct IssueDocument with a session whose state.issuedArtifacts is
+    // ['civilization/young-peoples-atlas-us/ws-ses-gxbzibqg'] and a printer double…
+
+    const result = await issueDocument.execute({ sessionId: 'ses_GxBZiBqG' });
+
+    expect(result.status).not.toBe('unavailable');
+    expect(result.status).toBe('issued');
+  });
+
+  it('leaves the healthy reprint path untouched', async () => {
+    // issuedArtifacts.get() RETURNS bytes => exact reprint, no replacement,
+    // no new artifactId, no new issued event.
+  });
+```
+
+Copy the construction shape from the existing `IssueDocument` tests rather than inventing deps.
+
+- [ ] **Step 2: Run to verify it fails**
+
+```bash
+node /opt/Code/DaylightStation/node_modules/vitest/vitest.mjs run \
+  backend/src/3_applications/school/usecases/ --config ./vitest.config.mjs
+```
+
+Expected: FAIL with `status: 'unavailable'` — the exact production behaviour.
+
+- [ ] **Step 3: Fall through instead of refusing**
+
+In `#reprintExact`, replace the `if (!retained) { … return this.#unavailable(…) }` block with a
+fall-through that issues a fresh sheet marked as a replacement:
+
+```js
+    if (!retained) {
+      // The event says a sheet was issued; the bytes are gone (retention did
+      // not exist when this session was issued — 2026-08-23). Refusing here
+      // left the session PERMANENTLY unprintable: "already issued" and
+      // "doesn't exist" are both true and there is no third message.
+      //
+      // The integrity rule stays intact. We never claim a substitute IS the
+      // original — we issue a NEW sheet, with its own artifactId and its own
+      // `issued` event, and the document says it is a replacement. What was
+      // wrong was treating "issued once" as "reprintable".
+      this.#logger.warn?.('school.issue.replacement-issued', {
+        sessionId, unitId: state.unitId, missingArtifactId: artifactId,
+      });
+      return this.#issueFresh({ sessionId, nowIso, state, replacementFor: artifactId });
+    }
+```
+
+Route `#issueFresh` to the same path a first issuance takes, threading `replacementFor` so the
+rendered document can say so. **Prefer regenerating from the retained
+`artifacts/print/documents/<...>/<rev>/document.yml`** when it exists, so the learner gets the same
+questions rather than a different variant; fall back to a fresh variant only when that is missing,
+and have the sheet state that too.
+
+- [ ] **Step 4: Run to verify it passes, and that the healthy path is unchanged**
+
+```bash
+node /opt/Code/DaylightStation/node_modules/vitest/vitest.mjs run \
+  backend/src/3_applications/school/ --config ./vitest.config.mjs
+```
+
+Both new tests pass, and the full layer still passes. The second test is the guard that this change
+did not turn every reprint into a re-issue.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/src/3_applications/school/usecases/IssueDocument.mjs \
+        backend/src/3_applications/school/usecases/IssueDocument.replacement.test.mjs
+git commit -m "fix(school): a missing artifact issues a replacement, not a dead end
+
+'issuedArtifacts.length > 0' was treated as 'a reprintable copy exists'.
+When retention had no bytes, the session became permanently unprintable:
+'already issued' and 'doesn't exist', with no third option.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 15: Unit label reads the week number, and question numbers stop colliding with card rows
+
+Two defects observed on the first successful scripture print, 2026-08-25 ~12:05. Diagnosis:
+`docs/_wip/bugs/2026-08-25-unprintable-session-already-issued-but-gone.md` (Addendum).
+
+### 15a — the unit label must be the WEEK number
+
+The zero-based bug is already fixed (`c74c13bc2`, `f997c0fae`, now sharing one `moduleOrdinal()`),
+but **the ordinal is the wrong number**. `moduleOrder.indexOf() + 1` gives the module's position
+within the enrollment (w35 → `Unit 1`). The requirement is the curriculum's week number: w35 carries
+`sequence: 35` on its own `_index.yml`.
+
+**Do not parse `w35-aug24`.** Taking `35` out of an identifier is the brittleness rejected elsewhere
+in this work. `sequence` is explicit data — read it.
+
+- [ ] **Step 1: Determine where `sequence` is reachable**
+
+`moduleOrdinal({ enrollment, entry })` currently reads `enrollment.moduleOrder`, which holds bare
+ids and no `sequence`. Check whether the module unit (`moduleRole: module`) is present in
+`BuildAgenda`'s `unitsById` catalog. If it is, the lookup is `unitsById.get(entry.module)?.sequence`
+and this is a small change.
+
+**If it is not present, STOP and report** — threading `sequence` into the enrollment at
+materialization time is a larger change that needs its own task, and re-materializing enrollments
+has a documented hazard (`enrollment.mjs:38` filters `closesOn >= today`, silently dropping closed
+weeks).
+
+- [ ] **Step 2: Write the failing test**
+
+Extend `BuildAgenda.progressLabel.test.mjs`. Given a module whose unit carries `sequence: 35`, the
+label reads `Unit 35`, not `Unit 1`. Cover the fallback when `sequence` is absent (keep today's
+ordinal rather than printing `Unit undefined`).
+
+- [ ] **Step 3: Run to verify it fails, implement, re-run**
+
+Change `moduleOrdinal` to prefer the module unit's `sequence`, falling back to the 1-based ordinal.
+Both label sites already share this helper, so they update together.
+
+Baseline is **804 tests / 91 files**. Report the real numbers.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "fix(school): unit label reads the curriculum week number, not enrollment position
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+### 15b — question numbers vs OMR card rows
+
+**Observed:** a five-question worksheet printed starting at "question 7," and `cardId` read as an
+unfamiliar student number.
+
+**Cause, from the issued manifest:** `allocation.rowRange: { start: 7, end: 11 }`. Rows 1–6 of card
+`2487270` were already consumed, so this sheet's bubbles sit at rows 7–11 while the document
+correctly numbers its own questions 1–5 (`document.yml:31,49,67,85,103`). `planRows`
+(`allocation.mjs:195`) assigns `row: startRow + index`, and the sheet prints the row.
+
+**This is a design collision, not a coding error** — the bubble genuinely must be at row 7 for
+scanning to work. "Question number" and "bubble row" are two different things sharing one label.
+
+- [ ] **Step 1: STOP and confirm the approach with the user**
+
+Do not implement before this is answered:
+
+- **(a) Print both** *(recommended)* — "Question 1" prominent, bubble row as a small cue beside the
+  bubble. Keeps card reuse; fixes the label rather than the allocator.
+- **(b) Fresh card per worksheet, always starting at row 1** — row and question number always
+  coincide, nothing to explain, costs a card per worksheet.
+- **(c) Renumber printed questions to match rows** — internally consistent, but a five-question sheet
+  labelled 7–11 reads as though six questions are missing.
+
+- [ ] **Step 2: Relabel `cardId` regardless of the above**
+
+`cardId` identifies the physical card, not the learner, and a new card mints a new number. Wherever
+it prints, label it as a card/sheet id and keep it away from the learner's name, where it currently
+reads as a student number. This is safe to do independently of Step 1.
+
+- [ ] **Step 3: Tests**
+
+Whichever option is chosen: a worksheet allocated at `startRow: 7` must render question numbers
+1–5, and the row cue must correspond to 7–11. Assert both appear and that they are distinguishable.
+
+---
+
 ## Execution order
 
 Tasks are numbered by the order they were written, **not** the order to do them. Work this table top to bottom.
