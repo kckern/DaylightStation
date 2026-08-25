@@ -253,7 +253,10 @@ Milo's piano-games unlock is gone. `felix` similarly shows `"faults":[]`.
 in the last 15 minutes post-restart. All remaining rows carry `context.preview:
 "true"` — they come from the **teacher planning-preview** BuildAgenda instance
 (`schoolLifecycle.mjs:588-610`, `logger.child({ preview: true })`), not the real
-learner agenda path, which is now clean. That preview instance is passed the same
+learner agenda path: since the `2026-08-25T17:14:10Z` container start, 0 non-preview
+`plan-errors` have been logged (only `context.preview:"true"` rows remain). (A
+non-preview row at `16:37:25Z` belongs to the *previous* container, ~37 minutes before
+this restart, and is not evidence against the fix.) That preview instance is passed the same
 `curriculum` object as the real one (`schoolLifecycle.mjs:590` vs `:547`) yet still
 reports "assigned but no published units belong to it" — differs from the real path
 in `previewSessions`, `previewOnly: true`, and `curriculumExceptions:
