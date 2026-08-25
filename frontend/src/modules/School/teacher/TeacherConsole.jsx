@@ -23,10 +23,13 @@ import {
 } from './WorkspaceViews.jsx';
 import './Teacher.scss';
 
+// `short` is the phone tab label — a truthful abbreviation of the SAME word,
+// never a different one ('Courses' for Curriculum collided with the student
+// Courses tab; UX audit F26).
 const GLOBAL_NAV = [
   { id: 'dashboard', label: 'Dashboard', short: 'Home' },
   { id: 'queue', label: 'Action queue', short: 'Queue' },
-  { id: 'curriculum', label: 'Curriculum', short: 'Courses' },
+  { id: 'curriculum', label: 'Curriculum', short: 'Curric.' },
   { id: 'operations', label: 'Operations', short: 'Ops' },
 ];
 const LEARNER_NAV = [
@@ -188,7 +191,7 @@ function TeacherShell() {
         </div>
 
         <nav className="teacher-workspace__mobile-nav" aria-label="Sections">
-          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
+          {GLOBAL_NAV.map((item) => <button key={item.id} type="button" aria-label={item.label} aria-current={route.kind === 'section' && route.section === item.id ? 'page' : undefined} onClick={() => goGlobal(item.id)}>{item.short}{item.id === 'queue' && backlog > 0 && <b>{backlog}</b>}</button>)}
         </nav>
         <PinPrompt />
         <ProfilePicker open={pickerOpen} users={teachers} activeId={currentTeacher?.id} onPick={claim} onDismiss={closePicker} timeoutMs={600000} title="Who’s teaching?" />

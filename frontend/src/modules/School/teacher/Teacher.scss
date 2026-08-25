@@ -210,8 +210,12 @@
     border-bottom: 1px solid #e4ddcf;
     background: rgba(255, 253, 248, .96);
     backdrop-filter: blur(10px);
+    // A clipped last tab used to read as a label ("Opera") — the fade says
+    // "more this way" instead of pretending the strip ends (UX audit G31).
+    scroll-snap-type: x proximity;
+    mask-image: linear-gradient(90deg, #000 92%, transparent);
 
-    button { flex: 0 0 auto; border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: #756d5f; cursor: pointer; font-weight: 650; }
+    button { flex: 0 0 auto; border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: #756d5f; cursor: pointer; font-weight: 650; white-space: nowrap; scroll-snap-align: start; }
     button[aria-current='page'] { background: #f0e2c8; color: #3d3326; }
   }
   &__mobile-nav, &__scrim { display: none; }
