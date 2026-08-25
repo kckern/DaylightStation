@@ -88,6 +88,16 @@ describe('question-bank/v2', () => {
     expect(JSON.stringify(composed.source)).not.toContain('assigned section');
   });
 
+  it('prints a lesson-companion panel code in the semantic lesson card', () => {
+    const instance = createWorksheetInstance({
+      id: 'ws-companion', sessionId: 'session-companion', bank, learnerId: 'milo', enrollmentId: 'enr',
+      lessonId: 'psalms', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
+    });
+    const result = publishDocument(worksheetInstanceDocument(instance, { title: 'Psalms', companionCode: '123456' }));
+    expect(result.errors).toBeUndefined();
+    expect(result.published.blocks[0].companionCode).toBe('123456');
+  });
+
   it('uses an authored printed range on a composed card without an empty Read line', () => {
     const instance = createWorksheetInstance({
       id: 'ws-page-range', sessionId: 'session-range', bank, learnerId: 'milo', enrollmentId: 'enr',

@@ -46,6 +46,7 @@ import { YamlSyllabusStore } from '#adapters/persistence/yaml/YamlSyllabusStore.
 import { YamlTimingAnchorStore } from '#adapters/persistence/yaml/YamlTimingAnchorStore.mjs';
 import { YamlFormMapStore } from '#adapters/persistence/yaml/YamlFormMapStore.mjs';
 import { YamlWorksheetInstanceStore } from '#adapters/persistence/yaml/YamlWorksheetInstanceStore.mjs';
+import { YamlLessonCompanionStore } from '#adapters/persistence/yaml/YamlLessonCompanionStore.mjs';
 import { YamlIssuedArtifactStore } from '#adapters/persistence/yaml/YamlIssuedArtifactStore.mjs';
 import { YamlReviewQueue } from '#adapters/persistence/yaml/YamlReviewQueue.mjs';
 import { YamlAgendaCooldownStore } from '#adapters/persistence/yaml/YamlAgendaCooldownStore.mjs';
@@ -59,6 +60,8 @@ import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
 import { LanguageReelsProgramLauncher } from '#apps/school/LanguageReelsProgramLauncher.mjs';
 import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.mjs';
+import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
+import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
 import { CloseLanguageDay } from '#apps/school/CloseLanguageDay.mjs';
@@ -89,6 +92,8 @@ import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
 import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs';
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
 import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
+import { RecordLessonCompanionProgress } from '#apps/school/usecases/RecordLessonCompanionProgress.mjs';
+import { LessonCompanionHandlers, ReadalongLessonCompanionHandler } from '#apps/school/companions/LessonCompanionHandlers.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
 import { MarkSessionAbandoned } from '#apps/school/usecases/MarkSessionAbandoned.mjs';
@@ -160,6 +165,8 @@ function cryptoRng(crypto) {
  * @param {object} [deps.tokenRegistry] shared School token registry
  * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
  * @param {object} [deps.schoolCalcStudies] Adaptive Study issuance service
+ * @param {(courseId: string) => Buffer} [deps.renderCoursePosterFallback]
+ *   rendering-layer fallback for the learner-safe self-service poster route
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
@@ -177,8 +184,11 @@ export async function createSchoolLifecycle({
   languageReelService = null,
   languageReelGrants = null,
   flashcardStudyService = null,
+  rubiksCubeService = null,
+  rubiksCubeGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
+  renderCoursePosterFallback = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -423,6 +433,9 @@ export async function createSchoolLifecycle({
       studyService: flashcardStudyService, assignments: stores.assignments, donow,
     }));
   }
+  if (rubiksCubeService && rubiksCubeGrants) {
+    launchers.set('rubiks-cube', new RubiksCubeProgramLauncher({ service: rubiksCubeService, grants: rubiksCubeGrants, donow }));
+  }
 
   // `school.yml` `programs:` — one `SurfaceProgramLauncher` per entry, config
   // selecting from the closed DoNow surface vocabulary (spec §6 "Surface
@@ -647,6 +660,10 @@ export async function createSchoolLifecycle({
   });
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
+  const companions = new YamlLessonCompanionStore({ configService, logger });
+  const companionHandlers = new LessonCompanionHandlers([
+    new ReadalongLessonCompanionHandler({ companions, clock }),
+  ]);
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
   // Capture the same canvas the thermal raster path draws. The application
   // receives a small port returning immutable PNG bytes, never a renderer.
@@ -682,7 +699,7 @@ export async function createSchoolLifecycle({
     curriculum, sessions: stores.sessions, tokens: stores.tokens,
     renderer: documentRenderer, printer: laserPrinter, formMaps: stores.formMaps,
     printDocuments, renderPrintDocument, allocationStore,
-    assignments: stores.assignments, worksheetInstances,
+    assignments: stores.assignments, worksheetInstances, companions,
     issuedArtifacts,
     answerSheetPolicy: cfg.answer_sheets ?? null,
     // Same `printing:` block the laser host/port/path and the page-quota
@@ -690,7 +707,7 @@ export async function createSchoolLifecycle({
     // `PrintService`'s `#policy` getter) — one block, one place a grown-up
     // edits the household's whole print posture from.
     printCooldownMinutes: cfg.printing?.printCooldownMinutes ?? null,
-    bankReader, clock, rng: draw, logger,
+    bankReader, clock, rng: draw, timezone, logger,
     curriculumExceptions: curriculumExceptionStore,
   });
   const issueComposedWorksheet = new IssueComposedWorksheet({
@@ -901,6 +918,12 @@ export async function createSchoolLifecycle({
           return { errors: [`flashcard deck '${result.enrollment.deckId}' was not found`] };
         }
       }]] : []),
+      ...(rubiksCubeService ? [['rubiks-cube', (raw) => {
+        const courseId = raw?.courseId ?? raw?.corpusId;
+        return courseId === RUBIKS_CUBE_COURSE_ID
+          ? { errors: [], enrollment: { programId: 'rubiks-cube', corpusId: courseId, courseId } }
+          : { errors: [`rubiks-cube requires courseId ${RUBIKS_CUBE_COURSE_ID}`] };
+      }]] : []),
     ]),
     roster: () => userService?.getHouseholdRoster?.() ?? [],
     clock, logger,
@@ -963,6 +986,8 @@ export async function createSchoolLifecycle({
     attestations,
     curriculumExceptions: curriculumExceptionStore,
     issueDocument,
+    companions,
+    roster: displayRoster,
     selfService: cfg.selfService,
     timezone,
     clock,
@@ -990,10 +1015,12 @@ export async function createSchoolLifecycle({
     // open on this screen) from a `garage-fitness` one, and would tell every
     // child their work was opening in front of them.
     launchers,
+    companions, companionHandlers,
     newSessionId,
     clock,
     logger,
   });
+  const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
 
   const listLearnerSessions = new ListLearnerSessions({ sessions: stores.sessions, timezone, clock });
   const listPrintableWorksheetSessions = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
@@ -1003,7 +1030,7 @@ export async function createSchoolLifecycle({
     submitPaperWork, gradeSubmission, closeSessionOutcome, openRemediation,
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
-    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
+    enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress,
     getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
   };
 
@@ -1039,7 +1066,13 @@ export async function createSchoolLifecycle({
   // `school.yml` needs a restart to take effect.
   const selfServiceEnabled = cfg.selfService?.enabled === true;
   const selfServiceRouter = selfServiceEnabled
-    ? createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction })
+    ? createSchoolSelfServiceRouter({
+      resolveAccessCode,
+      runSelfServiceAction,
+      recordLessonCompanionProgress,
+      curriculum,
+      renderCoursePosterFallback,
+    })
     : null;
   if (!selfServiceEnabled) {
     logger.info?.('school.lifecycle.self-service-off', { reason: 'selfService.enabled is not true' });
@@ -1083,7 +1116,7 @@ export async function createSchoolLifecycle({
     // wiring (`ResolveCardScan`) reads/writes the identical allocation records
     // rather than a second store pointed at a directory that could drift.
     stores: {
-      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, issuedArtifacts, curriculumExceptionStore,
+      ...stores, curriculum, printDocuments, allocationStore, worksheetInstances, companions, issuedArtifacts, curriculumExceptionStore,
     },
     // The `RenderPrintDocument` instance the print-document pipeline shares
     // between `issueDocument`'s tracked-quiz path and any other caller (proof

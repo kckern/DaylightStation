@@ -19,6 +19,45 @@ async function req(path, body, method, headers = {}) {
 }
 
 export const schoolApi = {
+  rubiksCubePreview: () => req('/rubiks-cube/preview'),
+  rubiksCubeOpen: ({ userId, courseId, grant, lessonId = null }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}${lessonId ? '/open' : ''}`,
+    lessonId ? { lessonId } : undefined,
+    lessonId ? 'POST' : 'GET', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeTurn: ({ userId, courseId, grant, lessonId, move, expectedRevision }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/turn`, { lessonId, move, expectedRevision }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeRestart: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/restart`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeDemo: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/demo`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeHint: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/hint`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubeAnswer: ({ userId, courseId, grant, lessonId, answers }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/answer`, { lessonId, answers }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalImport: ({ userId, courseId, grant, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/import`, { faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalCoach: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/coach`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalCoachAdvance: ({ userId, courseId, grant }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/coach/advance`, {}, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePhysicalVerify: ({ userId, courseId, grant, lessonId, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/physical/verify`, { lessonId, faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePacket: ({ userId, courseId, grant, lessonId }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/packets`, { lessonId }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
+  rubiksCubePacketVerify: ({ userId, courseId, grant, packetId, faces }) => req(
+    `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}/packets/${encodeURIComponent(packetId)}/verify`, { faces }, 'POST', { 'X-School-Cube-Grant': grant },
+  ),
   roster: () => req('/roster'),
   // Fail-closed surface resolution (spec §4.2): 404 -> {ok:false}, same as any
   // other unresolved-resource response — the caller never treats a missing
@@ -162,6 +201,7 @@ export const schoolApi = {
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
   selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
+  companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
   // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
   // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
   // Different base to BASE, hence the raw fetch — same never-throws contract.

@@ -1,47 +1,116 @@
 /**
- * LaunchCard — what a correct code opens (design §3).
+ * ContextualLaunchCard — the identified, learner-facing surface opened by a
+ * valid panel code. The keypad remains anonymous; this card confirms whose
+ * work, where it sits, how far along it is, and the one useful next action.
  *
- * The lesson, the one action it is at, and a way out. Three views, all of them
- * ending somewhere: the card itself, the "Did it print?" confirm, and a plain
- * sentence with a Done. Nothing here decides anything — `useSelfService` owns
- * the transitions, `offeredActions` owns which buttons exist and what they say.
- *
- * No learner name: the card is reached by a code that already named them, and
- * keeping the panel anonymous end to end means one less rule to remember.
- *
- * WORDING IS NOT DECIDED HERE. Every button renders `action.label` verbatim.
- * `offeredActions` is the ONE authority on what a card offers and what each
- * button says — its own header cites the duplicated judgement in
- * `offerSession.mjs:133-145` that drifted and had to be deleted. A second
- * wording authority in the frontend is that same failure one layer up, and it
- * shows as a button whose text disagrees with what the backend is offering.
- * `action.kind` is the action's IDENTITY (it is what `/act` looks up); `label`
- * is for the child's eyes only.
- *
- * The three strings below ARE this component's own — they answer questions the
- * panel asks, not the domain. They are worded so a domain string can never be
- * mistaken for one of them: the synthesised exit says "Close", NOT the "Go
- * back" that `offeredActions.EXIT` supplies, so seeing "Close" tells you the
- * backend sent a card with no exit on it — a real defect, and otherwise
- * invisible behind an identical duplicate.
+ * The domain owns wording and action semantics. This component owns geometry,
+ * accessibility and the transient print-confirmation/outcome views.
  */
+import { useEffect, useRef, useState } from 'react';
+import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+
 const PRINT_QUESTION = 'Did it print?';
 const CONFIRM_YES = 'Yes';
 const CONFIRM_NO = 'No';
-/** Deliberately NOT `offeredActions.EXIT.label`. See above. */
 const SYNTHESISED_EXIT = 'Close';
+
+function CourseArtwork({ course, subject }) {
+  const [failed, setFailed] = useState(false);
+  const artworkCourseId = course?.artwork?.kind === 'course-poster'
+    ? course.artwork.courseId : course?.id;
+  useEffect(() => setFailed(false), [artworkCourseId]);
+  const label = course?.title ?? subject?.label ?? 'School';
+  if (!artworkCourseId || failed) {
+    return (
+      <div className="school-selfservice-card__poster-placeholder" aria-label={`${label} artwork`}>
+        <span aria-hidden="true">✦</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      className="school-selfservice-card__poster"
+      src={`/api/v1/school/self-service/curriculum/${encodeURIComponent(artworkCourseId)}/poster.jpg`}
+      alt={`${label} cover`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function ContextTrail({ trail }) {
+  if (!trail?.length) return null;
+  return (
+    <nav className="school-selfservice-card__trail" aria-label="Lesson context">
+      <ol>
+        {trail.map((item, index) => (
+          <li key={`${item.kind}-${item.id}`}>
+            {index > 0 && <span aria-hidden="true">›</span>}
+            <span aria-current={index === trail.length - 1 ? 'page' : undefined}>{item.label}</span>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function ProgressRows({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <div className="school-selfservice-card__progress" aria-label="Course progress">
+      {rows.map((row) => {
+        const total = Math.max(0, Number(row.total) || 0);
+        const completed = Math.min(total, Math.max(0, Number(row.completed) || 0));
+        const completePct = total ? completed / total * 100 : 0;
+        const underwayPct = total && row.inProgress
+          ? Math.min(100 - completePct, Number(row.inProgress) / total * 100)
+          : 0;
+        return (
+          <div className="school-selfservice-card__progress-row" key={`${row.scope}-${row.label}`}>
+            <div className="school-selfservice-card__progress-copy">
+              <span>{row.label}</span>
+              <span>{completed} of {total}</span>
+            </div>
+            <div
+              className="school-selfservice-card__progress-track"
+              role="progressbar"
+              aria-label={`${row.label}: ${completed} of ${total}`}
+              aria-valuemin="0"
+              aria-valuemax={total}
+              aria-valuenow={completed}
+            >
+              <span className="is-complete" style={{ width: `${completePct}%` }} />
+              {underwayPct > 0 && (
+                <span className="is-underway" style={{ left: `${completePct}%`, width: `${underwayPct}%` }} />
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function CardAction({ action, onAction, onExit, busy, actionRef = null }) {
+  const role = action.role ?? (action.kind === 'exit' ? 'secondary' : 'primary');
+  return (
+    <button
+      type="button"
+      ref={actionRef}
+      className={`school-selfservice-card__action is-${role}`}
+      data-kind={action.kind}
+      data-testid={`selfservice-action-${action.kind}`}
+      onClick={() => (action.kind === 'exit' ? onExit() : onAction(action))}
+      disabled={busy}
+    >
+      {action.label}
+    </button>
+  );
+}
 
 /**
  * @param {object} props
- * @param {object} props.card - the `/resolve` payload: `{subject, title,
- *   sentence, actions}`. `sentence` is the planner's own wording for a card
- *   with nothing to do (served / locked / waiting) and is shown verbatim.
+ * @param {object} props.card - `/resolve` contextual card (v2, with v1 fallback).
  * @param {'card'|'confirm'|'sentence'} props.view
- * @param {string|null} [props.sentence] - the `/act` outcome's words.
- * @param {boolean} [props.busy]
- * @param {(action: object) => void} props.onAction
- * @param {(printed: boolean) => void} props.onConfirm
- * @param {() => void} props.onExit
  */
 export default function LaunchCard({
   card,
@@ -52,99 +121,133 @@ export default function LaunchCard({
   onConfirm,
   onExit,
 }) {
+  const actionFocusRef = useRef(null);
   const actions = Array.isArray(card?.actions) ? card.actions : [];
-  // Every card ends with an exit — the paper path's never-dead-end rule. The
-  // backend supplies one, but a card that somehow arrived without it must not
-  // trap a child on a wall panel with no browser chrome behind it.
-  const hasExit = actions.some((a) => a.kind === 'exit');
+  const hasExit = actions.some((action) => action.kind === 'exit');
+  const context = card?.context ?? null;
+  const taxonomy = context?.taxonomy ?? {};
+  const learner = context?.learner ?? null;
+  const learnerAvatarId = learner?.avatar?.kind === 'learner'
+    ? learner.avatar.id : learner?.id;
+  const subject = taxonomy.subject ?? (card?.subject ? { id: card.subject, label: card.subject } : null);
+  const lessonTitle = taxonomy.lesson?.title ?? card?.title ?? 'Lesson';
+  const message = card?.presentation?.message ?? card?.sentence ?? null;
+
+  // Each state swap keeps the same contextual shell, but moves keyboard focus
+  // to the first decision in the new state. This prevents focus from falling
+  // back to the document body when the tapped button is replaced.
+  useEffect(() => {
+    actionFocusRef.current?.focus();
+  }, [view]);
 
   return (
-    <section className="school-selfservice-card" data-testid="selfservice-card">
-      <header className="school-selfservice-card__head">
-        {card?.subject && <p className="school-selfservice-card__subject">{card.subject}</p>}
-        {card?.title && <h1 className="school-selfservice-card__title">{card.title}</h1>}
-      </header>
+    <section
+      className="school-selfservice-card"
+      data-testid="selfservice-card"
+      data-status={card?.presentation?.status ?? 'ready'}
+    >
+      <ContextTrail trail={context?.trail} />
+      <div className="school-selfservice-card__shell">
+        <aside className="school-selfservice-card__art">
+          <CourseArtwork course={taxonomy.course} subject={subject} />
+        </aside>
 
-      {view === 'card' && (
-        <>
-          {card?.sentence && <p className="school-selfservice-card__sentence">{card.sentence}</p>}
-          <div className="school-selfservice-card__actions">
-            {actions.map((action, i) => (
-              <button
-                key={`${action.kind}-${i}`}
-                type="button"
-                className={`school-selfservice-card__action school-selfservice-card__action--${action.kind}`}
-                /* Addressable by KIND, which is the action's stable identity.
-                   Labels belong to `offeredActions` and change with the
-                   session state and the config, so nothing should have to
-                   find a button by what it says. */
-                data-testid={`selfservice-action-${action.kind}`}
-                onClick={() => (action.kind === 'exit' ? onExit() : onAction(action))}
-                disabled={busy}
-              >
-                {/* Verbatim. The domain owns this wording — see the header. */}
-                {action.label}
-              </button>
-            ))}
-            {!hasExit && (
-              <button
-                type="button"
-                className="school-selfservice-card__action school-selfservice-card__action--exit"
-                data-testid="selfservice-action-exit"
-                onClick={onExit}
-                disabled={busy}
-              >
-                {SYNTHESISED_EXIT}
-              </button>
+        <div className="school-selfservice-card__content">
+          <header className="school-selfservice-card__head">
+            {learner && (
+              <div className="school-selfservice-card__learner">
+                <ProfileAvatar id={learnerAvatarId} name={learner.displayName ?? 'Student'} size={192} />
+                <span>{learner.displayName ?? 'Student'}</span>
+              </div>
+            )}
+            {subject?.label && <p className="school-selfservice-card__subject">{subject.label}</p>}
+            <h1 className="school-selfservice-card__title">{lessonTitle}</h1>
+            {(taxonomy.course?.title || taxonomy.module?.title) && (
+              <p className="school-selfservice-card__course-line">
+                {[taxonomy.course?.title, taxonomy.module?.title].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </header>
+
+          <ProgressRows rows={context?.progress} />
+
+          <div className="school-selfservice-card__interaction" aria-busy={busy}>
+            {view === 'card' && (
+              <>
+                {message && <p className="school-selfservice-card__sentence" role="status">{message}</p>}
+                <div className="school-selfservice-card__actions">
+                  {actions.map((action, index) => (
+                    <CardAction
+                      key={`${action.kind}-${index}`}
+                      action={action}
+                      actionRef={index === 0 ? actionFocusRef : null}
+                      onAction={onAction}
+                      onExit={onExit}
+                      busy={busy}
+                    />
+                  ))}
+                  {!hasExit && (
+                    <CardAction
+                      action={{ kind: 'exit', label: SYNTHESISED_EXIT, role: 'secondary' }}
+                      actionRef={actions.length === 0 ? actionFocusRef : null}
+                      onAction={onAction}
+                      onExit={onExit}
+                      busy={busy}
+                    />
+                  )}
+                </div>
+              </>
+            )}
+
+            {view === 'confirm' && (
+              <div className="school-selfservice-card__confirm">
+                <p className="school-selfservice-card__sentence" role="status">{PRINT_QUESTION}</p>
+                <div className="school-selfservice-card__actions">
+                  <button
+                    type="button"
+                    ref={actionFocusRef}
+                    className="school-selfservice-card__action is-primary"
+                    data-testid="selfservice-print-ok"
+                    onClick={() => onConfirm(true)}
+                    disabled={busy}
+                  >
+                    {CONFIRM_YES}
+                  </button>
+                  <button
+                    type="button"
+                    className="school-selfservice-card__action is-secondary"
+                    data-testid="selfservice-print-failed"
+                    onClick={() => onConfirm(false)}
+                    disabled={busy}
+                  >
+                    {CONFIRM_NO}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {view === 'sentence' && (
+              <div className="school-selfservice-card__outcome">
+                <p className="school-selfservice-card__sentence" role="status">
+                  {sentence || 'Something went wrong here. Tell a grown-up.'}
+                </p>
+                <div className="school-selfservice-card__actions is-single">
+                  <button
+                    type="button"
+                    ref={actionFocusRef}
+                    className="school-selfservice-card__action is-primary"
+                    data-testid="selfservice-done"
+                    onClick={onExit}
+                    disabled={busy}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
             )}
           </div>
-        </>
-      )}
-
-      {view === 'confirm' && (
-        <div className="school-selfservice-card__confirm">
-          <p className="school-selfservice-card__sentence">{PRINT_QUESTION}</p>
-          <div className="school-selfservice-card__actions">
-            {/* Wall panels get double-tapped. Without the guard a double "No"
-                fires two /resolve calls and races two cards onto the screen. */}
-            <button
-              type="button"
-              className="school-selfservice-card__action"
-              data-testid="selfservice-print-ok"
-              onClick={() => onConfirm(true)}
-              disabled={busy}
-            >
-              {CONFIRM_YES}
-            </button>
-            <button
-              type="button"
-              className="school-selfservice-card__action"
-              data-testid="selfservice-print-failed"
-              onClick={() => onConfirm(false)}
-              disabled={busy}
-            >
-              {CONFIRM_NO}
-            </button>
-          </div>
         </div>
-      )}
-
-      {view === 'sentence' && (
-        <div className="school-selfservice-card__outcome">
-          {sentence && <p className="school-selfservice-card__sentence">{sentence}</p>}
-          <div className="school-selfservice-card__actions">
-            <button
-              type="button"
-              className="school-selfservice-card__action"
-              data-testid="selfservice-done"
-              onClick={onExit}
-              disabled={busy}
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
     </section>
   );
 }

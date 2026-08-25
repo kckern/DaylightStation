@@ -49,7 +49,9 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { offeredActions, cardSentence, resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
+import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
+import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
+import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
 
@@ -99,7 +101,7 @@ const NOT_ANSWERING = Object.freeze({
 
 export class ResolveAccessCode {
   #tokens; #curriculum; #assignments; #sessions; #launchers; #attestations; #curriculumExceptions;
-  #issueDocument; #mediaSurface; #timezone; #clock; #logger;
+  #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger;
 
   /**
    * @param {object} deps
@@ -122,7 +124,7 @@ export class ResolveAccessCode {
    */
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
-    attestations = null, curriculumExceptions = null, issueDocument = null, selfService = null,
+    attestations = null, curriculumExceptions = null, issueDocument = null, companions = null, roster = null, selfService = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -136,6 +138,8 @@ export class ResolveAccessCode {
     this.#attestations = attestations;
     this.#curriculumExceptions = curriculumExceptions;
     this.#issueDocument = issueDocument;
+    this.#companions = companions;
+    this.#roster = roster;
     this.#mediaSurface = selfService?.mediaSurface ?? null;
     this.#timezone = timezone;
     this.#clock = clock;
@@ -146,9 +150,12 @@ export class ResolveAccessCode {
    * @param {object} args
    * @param {string} args.code - the six digits, as typed
    * @returns {Promise<{ok: boolean, reason?: 'unknown_code'|'not_answering',
+   *                    schema?: 'school.self-service-card/v2',
    *                    learner: string|null, subject: string|null,
    *                    title: string|null, sentence: string|null,
-   *                    actions: Array<{kind: string, label: string, target?: string}>}>}
+   *                    context?: object, presentation?: object,
+   *                    actions: Array<{kind: string, label: string, target?: string,
+   *                      role?: string, operation?: string, followUp?: string}>}>}
    *   `sentence` is null when the buttons say it all; `actions` always ends
    *   with the exit on a card, and is empty on a refusal. `reason` is present
    *   only on a refusal, and is what a caller branches on — see the constants
@@ -186,6 +193,16 @@ export class ResolveAccessCode {
       return { card: this.#faulted('lookup', { error: error?.message ?? String(error) }), resolution: null };
     }
 
+    if (record?.tokenClass === 'worksheet_companion') {
+      try {
+        return await this.#resolveCompanion(record);
+      } catch (error) {
+        return {
+          card: this.#faulted('resolve-companion', { error: error?.message ?? String(error) }),
+          resolution: null,
+        };
+      }
+    }
     const learnerId = record?.subject?.learnerId ?? null;
     const subject = record?.subject?.subject ?? null;
     if (!record || !learnerId || !subject) {
@@ -207,21 +224,21 @@ export class ResolveAccessCode {
         // time value it needs comes from here.
         now: this.#clock(),
       };
-      const actions = offeredActions(resolution, options);
+      const projection = await this.#projectionFor({ resolution, learnerId, subject, options });
       const card = {
         ok: true,
         learner: learnerId,
         subject,
         title: resolution.unit?.title ?? null,
-        sentence: cardSentence(resolution, options),
-        actions,
+        sentence: projection.presentation.message,
+        ...projection,
       };
       this.#logger.info?.('school.selfservice.code.resolved', {
         learnerId, subject, kind: resolution.kind,
         state: resolution.state?.state ?? null,
         unitId: resolution.unit?.unitId ?? null,
         // A card whose only button is the exit is the interesting one.
-        offered: actions.map((a) => a.kind),
+        offered: projection.actions.map((a) => a.kind),
       });
       // How often a child picks up work from a previous day, which is the
       // question Felix's eight-day resume raised and nothing could answer:
@@ -246,6 +263,104 @@ export class ResolveAccessCode {
         resolution: null,
       };
     }
+  }
+
+  async #resolveCompanion(record) {
+    const offer = await this.#companions?.get?.(record.subject.companionId);
+    if (!offer || offer.learnerId !== record.subject.learnerId) return { card: TRY_AGAIN, resolution: null };
+    const unit = await this.#curriculum.getUnit?.(offer.lessonId) ?? null;
+    const resolution = { kind: 'companion', offer, record, unit };
+    const projection = await this.#projectionFor({
+      resolution,
+      learnerId: offer.learnerId,
+      subject: unit?.subject ?? null,
+      options: { mediaSurface: this.#mediaSurface, bankPrintable: false, now: this.#clock() },
+    });
+    return {
+      card: {
+        ok: true,
+        learner: offer.learnerId,
+        subject: unit?.subject ?? null,
+        title: unit?.title ?? offer.companion?.payload?.playlist?.title ?? 'Lesson companion',
+        sentence: projection.presentation.message,
+        ...projection,
+      },
+      resolution,
+    };
+  }
+
+  async #projectionFor({ resolution, learnerId, subject, options }) {
+    let facts = resolution?.projection ?? null;
+    const unit = resolution?.unit ?? null;
+    if (!facts && unit) {
+      const [assignment, units, sessions, works] = await Promise.all([
+        this.#assignments.get(learnerId),
+        this.#curriculum.listUnits(),
+        this.#sessions.listForLearner(learnerId),
+        this.#curriculum.listWorks?.() ?? [],
+      ]);
+      facts = { assignment, units, sessions, works, nowIso: this.#clock().toISOString() };
+    }
+    const works = facts?.works ?? [];
+    const course = unit?.courseId ? works.find((candidate) => (
+      candidate.work === unit.courseId || `${candidate.subject}/${candidate.work}` === unit.courseId
+    )) ?? null : null;
+    const moduleRow = course?.modules?.find((candidate) => candidate.module === unit?.module) ?? null;
+    const enrollment = facts?.assignment?.courses?.find?.((candidate) => (
+      typeof candidate === 'object' && candidate.courseId === unit?.courseId
+    ))?.enrollment ?? null;
+    const moduleIndex = enrollment?.moduleOrder?.indexOf?.(unit?.module) ?? -1;
+    let progress = null;
+    if (unit && facts) {
+      try {
+        progress = lessonProgressRows({
+          learnerId,
+          unit,
+          assignment: facts.assignment,
+          units: facts.units,
+          sessions: facts.sessions,
+          works,
+          now: facts.nowIso,
+          timezone: this.#timezone,
+        });
+      } catch (error) {
+        this.#logger.warn?.('school.selfservice.card-context-incomplete', {
+          learnerId, missing: 'progress', error: error?.message ?? String(error),
+        });
+      }
+    }
+    let displayName = null;
+    let displayNameError = null;
+    try {
+      displayName = this.#roster?.displayName?.(learnerId) ?? null;
+    } catch (error) {
+      displayNameError = error?.message ?? String(error);
+    }
+    if (!displayName) {
+      this.#logger.warn?.('school.selfservice.card-context-incomplete', {
+        learnerId, missing: 'learner-display-name', ...(displayNameError ? { error: displayNameError } : {}),
+      });
+    }
+    return buildContextualLaunchCard({
+      resolution,
+      learner: { id: learnerId, displayName },
+      subjectId: subject ?? unit?.subject ?? null,
+      // A valid unit already proves the course association. Catalog metadata
+      // enriches its label, but a missing/temporarily-invalid work index must
+      // not erase that context from the learner's card.
+      course: unit?.courseId ? { id: unit.courseId, title: course?.title ?? unit.courseId } : null,
+      module: unit?.module ? {
+        id: unit.module,
+        title: moduleRow?.title ?? unit.module,
+        position: moduleIndex >= 0 ? moduleIndex + 1 : null,
+      } : null,
+      lesson: unit?.unitId ? { id: unit.unitId, title: unit.title } : null,
+      progress: progress?.map((row, index) => ({
+        scope: index === 0 ? 'course' : 'module',
+        ...row,
+      })) ?? [],
+      options,
+    });
   }
 
   /**
@@ -308,28 +423,30 @@ export class ResolveAccessCode {
       plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
     });
 
+    const projection = { assignment, units, sessions: rawHistory, works, nowIso };
+    const withProjection = (value) => ({ ...value, projection });
     const section = sections.find((s) => s.subject === subject);
-    if (!section) return { kind: 'empty' };
+    if (!section) return withProjection({ kind: 'empty' });
     // No `continueToday` here, ever: the panel has no affordance for "do it
     // again anyway", and that flag is precisely the case that would force a
     // fresh session open on a subject already finished for the day.
-    if (section.servedToday) return { kind: 'served', subjectLabel: subject };
+    if (section.servedToday) return withProjection({ kind: 'served', subjectLabel: subject });
 
     const entry = section.next;
     if (!entry) {
-      if (section.lockedRemedy) return { kind: 'locked', remedy: section.lockedRemedy };
-      if (section.programUnavailable) return { kind: 'unavailable' };
-      return { kind: 'empty' };
+      if (section.lockedRemedy) return withProjection({ kind: 'locked', remedy: section.lockedRemedy });
+      if (section.programUnavailable) return withProjection({ kind: 'unavailable' });
+      return withProjection({ kind: 'empty' });
     }
 
     const unit = new Map(units.map((u) => [u.unitId, u])).get(entry.unitId) ?? null;
-    if (entry.program) return { kind: 'program', programId: entry.program, unit };
+    if (entry.program) return withProjection({ kind: 'program', programId: entry.program, unit });
 
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
-    if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };
+    if (paused) return withProjection({ kind: 'locked', remedy: `Content paused: ${paused.reason}` });
 
     const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
-    return { kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry };
+    return withProjection({ kind: 'move', move: nextMove(unit ?? {}, state), sessionId, state, unit, entry });
   }
 
   /**

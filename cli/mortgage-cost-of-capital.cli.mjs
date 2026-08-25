@@ -102,7 +102,7 @@ function getAppPort() {
  * Read mortgage config from budget.config.yml
  */
 function readMortgageConfig() {
-  const raw = dockerRead('data/household/finances/budget.config.yml');
+  const raw = dockerRead('data/household/finance/budget.config.yml');
   if (!raw) return null;
 
   const config = loadYaml(raw);

@@ -98,7 +98,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 });
 
 export class RunSelfServiceAction {
-  #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers;
+  #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
   #newSessionId; #clock; #logger;
 
   /**
@@ -132,7 +132,7 @@ export class RunSelfServiceAction {
   constructor({
     resolveAccessCode, sessions,
     issueDocument = null, dispatchMedia = null, openRemediation = null,
-    donow = null, closeSessionOutcome = null, launchers = new Map(),
+    donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -147,6 +147,8 @@ export class RunSelfServiceAction {
     this.#donow = donow;
     this.#close = closeSessionOutcome;
     this.#launchers = launchers instanceof Map ? launchers : new Map();
+    this.#companions = companions;
+    this.#companionHandlers = companionHandlers;
     this.#newSessionId = newSessionId;
     this.#clock = clock;
     this.#logger = logger;
@@ -158,7 +160,8 @@ export class RunSelfServiceAction {
    * @param {string|{kind: string}} args.action - the button that was pressed
    * @returns {Promise<{outcome: 'done'|'debounced'|'pending'|'mount'|'refused'|'failed',
    *                    sentence: string, action: string|null,
-   *                    sessionId: string|null, effect: object|null}>}
+   *                    sessionId: string|null, effect: object|null,
+   *                    transition: 'confirm-print'|'mount'|'message'|'close'}>}
    *   `sentence` is ALWAYS a non-empty sentence to put in front of a child.
    *   `mount` means the panel opens it itself (a bank quiz, a program) and
    *   `effect` carries what it needs to do so. `sessionId` is always a REAL
@@ -190,6 +193,8 @@ export class RunSelfServiceAction {
       action: kind,
       sessionId: result.sessionId ?? null,
       effect: result.effect ?? null,
+      transition: result.transition
+        ?? (result.outcome === 'mount' ? 'mount' : 'message'),
     };
     this.#logger.info?.('school.selfservice.action.run', {
       action: kind, outcome: answer.outcome, sessionId: answer.sessionId,
@@ -229,7 +234,14 @@ export class RunSelfServiceAction {
 
     // The way out of the card. No session, no use case, nothing recorded —
     // the code stays valid and the panel goes back to the keypad.
-    if (kind === 'exit') return { outcome: 'done', sentence: 'Okay — see you next time.' };
+    if (kind === 'exit') {
+      return { outcome: 'done', sentence: 'Okay — see you next time.', transition: 'close' };
+    }
+
+    if (kind === 'companion' && resolution?.kind === 'companion') {
+      const answer = await this.#companionHandlers?.open?.({ offer: resolution.offer });
+      return answer ?? { outcome: 'failed', sentence: TELL_A_GROWN_UP };
+    }
 
     if (kind === 'program') {
       return this.#program({
@@ -277,7 +289,12 @@ export class RunSelfServiceAction {
     const learnerId = card.learner;
     switch (kind) {
       case 'print': return this.#print(sessionId);
-      case 'retry': return this.#retry(sessionId);
+      case 'retry': return this.#retry({
+        sessionId,
+        offered,
+        learnerId,
+        unit: resolution.unit,
+      });
       case 'play': return this.#play(sessionId, offered.target ?? null);
       case 'launch': return this.#launch({ sessionId, learnerId, launch: resolution.unit?.launch });
       case 'screen': return this.#screen({ sessionId, learnerId, unit: resolution.unit });
@@ -309,14 +326,12 @@ export class RunSelfServiceAction {
   }
 
   /**
-   * A FRESH session with a fresh variant, never a reprint of the graded one —
-   * `IssueDocument`'s ISSUABLE set refuses at `outcome_recorded`, so a plain
-   * print here would loop the child through already-done answers until the 4am
-   * rollover. `OpenRemediation` opens the replacement; the sheet is then
-   * printed against THAT session, so the child does not have to come back to
-   * the keypad a second time for it.
+   * A FRESH session with a fresh variant, never another operation against the
+   * graded one. `OpenRemediation` opens the replacement; then the action's
+   * declared `operation` runs against THAT session. Paper prints, media plays,
+   * banks mount, and launches dispatch exactly as a fresh created card would.
    */
-  async #retry(sessionId) {
+  async #retry({ sessionId, offered, learnerId, unit }) {
     if (!this.#remediation) return this.#unwired('retry', sessionId);
     let opened;
     try {
@@ -337,12 +352,34 @@ export class RunSelfServiceAction {
     }
 
     const fresh = opened.newSessionId;
-    const printed = await this.#print(fresh);
+    let result;
+    const operation = offered?.operation ?? 'print';
+    switch (operation) {
+      case 'print':
+        result = await this.#print(fresh);
+        break;
+      case 'play':
+        result = await this.#play(fresh, offered.target ?? null);
+        break;
+      case 'screen':
+        result = await this.#screen({ sessionId: fresh, learnerId, unit });
+        break;
+      case 'launch':
+        result = await this.#launch({ sessionId: fresh, learnerId, launch: unit?.launch });
+        break;
+      default:
+        return {
+          outcome: 'refused', sentence: MOVED_ON, sessionId: fresh,
+          effect: { status: 'unsupported-remediation-operation', operation: offered?.operation ?? null },
+          transition: 'message',
+        };
+    }
     return {
-      ...printed,
+      ...result,
       sessionId: fresh,
-      sentence: printed.outcome === 'done' ? 'Printing a fresh sheet to try again.' : printed.sentence,
-      effect: { ...(printed.effect ?? {}), remediationOf: sessionId, variant: opened.variant ?? null },
+      sentence: operation === 'print' && result.outcome === 'done'
+        ? 'Printing a fresh sheet to try again.' : result.sentence,
+      effect: { ...(result.effect ?? {}), remediationOf: sessionId, variant: opened.variant ?? null },
     };
   }
 
@@ -399,6 +436,7 @@ export class RunSelfServiceAction {
       sentence: (typeof own === 'string' && own.trim()) ? own : (outcome === 'done' ? 'All set.' : TELL_A_GROWN_UP),
       sessionId,
       effect: { status: result?.status ?? null, ...effect },
+      transition: action === 'print' && outcome === 'done' ? 'confirm-print' : 'message',
     };
   }
 

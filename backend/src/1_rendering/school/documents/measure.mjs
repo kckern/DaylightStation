@@ -1009,6 +1009,7 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   let title;
   let reading;
   let citation;
+  let companionCode;
   let success;
   const textWidthPt = widthPt - pad * 2 - railPt - iconGapPt;
   const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
@@ -1018,8 +1019,9 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   title = make(String(block.lessonTitle ?? ''), 'heading');
   reading = block.reading ? make(String(block.reading), 'body') : null;
   citation = block.citation ? make(String(block.citation), 'caption') : null;
+  companionCode = block.companionCode ? make(`COMPANION • PANEL CODE ${block.companionCode}`, 'label') : null;
   success = make(successText, 'label');
-  const finalContent = [breadcrumb, title, reading, citation].filter(Boolean);
+  const finalContent = [breadcrumb, title, reading, citation, companionCode].filter(Boolean);
   const finalTopHeight = finalContent.reduce((sum, entry) => sum + entry.heightPt, 0)
     + Math.max(0, finalContent.length - 1) * gap;
   const innerHeight = Math.max(sideRailHeightPt, finalTopHeight + bandGap + success.heightPt);
@@ -1028,7 +1030,7 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
     radiusPt: theme.box.radiusPt, borderWidthPt: theme.box.borderWidthPt,
     icon: { svg: resolved.svg, widthPt: iconSizePt, heightPt: iconSizePt }, railPt,
     subjectName: String(block.subjectName ?? block.subjectIcon ?? 'School').toUpperCase(), subjectLabelHeightPt,
-    breadcrumb, title, reading, citation, success, progress, progressRowHeightPt, gap, bandGap,
+    breadcrumb, title, reading, citation, companionCode, success, progress, progressRowHeightPt, gap, bandGap,
   };
 }
 
