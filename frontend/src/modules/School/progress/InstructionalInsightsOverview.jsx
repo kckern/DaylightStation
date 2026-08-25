@@ -10,6 +10,9 @@ const SIGNAL_LABELS = {
   met: 'Met',
 };
 
+// Severity order for the grouped view: what needs a teacher first.
+const SIGNAL_ORDER = ['review_instruction', 'review_pacing', 'limited_evidence', 'upcoming', 'monitor', 'met'];
+
 /** Adult-facing, subject-neutral overview of content and pacing signals. */
 export default function InstructionalInsightsOverview({ insights }) {
   const items = useMemo(() => [
@@ -25,6 +28,17 @@ export default function InstructionalInsightsOverview({ insights }) {
     })),
   ], [insights]);
 
+  // One collapsible group per signal, severity-first, so 30 "more evidence
+  // needed" cards read as one line instead of a wall (UX audit C12). Only the
+  // most severe non-empty group opens by default.
+  const groups = useMemo(() => {
+    const known = new Set(SIGNAL_ORDER);
+    const order = [...SIGNAL_ORDER, ...new Set(items.map((item) => item.signal).filter((signal) => !known.has(signal)))];
+    return order
+      .map((signal) => ({ signal, items: items.filter((item) => item.signal === signal) }))
+      .filter((group) => group.items.length > 0);
+  }, [items]);
+
   if (items.length === 0) return null;
   return (
     <section className="school-insights" aria-labelledby="school-insights-title">
@@ -32,7 +46,19 @@ export default function InstructionalInsightsOverview({ insights }) {
         <h3 id="school-insights-title">Instructional view</h3>
         <p>Content signals for planning—not learner rankings or ability labels.</p>
       </header>
-      <OverviewDetail
+      {groups.map((group, index) => (
+        <details key={group.signal} className="school-insights__group" open={index === 0}>
+          <summary>{SIGNAL_LABELS[group.signal] ?? displayId(group.signal)} ({group.items.length})</summary>
+          <InsightsGrid items={group.items} />
+        </details>
+      ))}
+    </section>
+  );
+}
+
+function InsightsGrid({ items }) {
+  return (
+    <OverviewDetail
         items={items}
         ariaLabel="Instructional content and pacing signals"
         columns={4}
@@ -69,8 +95,7 @@ export default function InstructionalInsightsOverview({ insights }) {
             <RecommendationBasis recommendation={item.suggestedAction?.recommendation} />
           </div>
         )}
-      />
-    </section>
+    />
   );
 }
 
