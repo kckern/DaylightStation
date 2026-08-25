@@ -59,6 +59,7 @@ export class OpenAIFoodParserAdapter {
       const model = result?.model || this.#model;
       const promptTokens = usage.prompt_tokens ?? null;
       const completionTokens = usage.completion_tokens ?? null;
+      const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? null;
       const entry = {
         provider: 'openai',
         endpoint: '/chat/completions',
@@ -68,7 +69,8 @@ export class OpenAIFoodParserAdapter {
         promptTokens,
         completionTokens,
         totalTokens: usage.total_tokens ?? null,
-        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens }, this.#pricing),
+        ...(cachedTokens != null ? { cachedTokens } : {}),
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens, cachedTokens }, this.#pricing),
         durationMs,
         status: error ? 'error' : 'ok',
         ...(error ? { error: error.message } : {}),

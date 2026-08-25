@@ -144,7 +144,14 @@ export class AnthropicAdapter extends IAIGateway {
     try {
       const usage = result?.usage || {};
       const model = result?.model || requestedModel || null;
-      const promptTokens = usage.input_tokens ?? null;
+      // Anthropic reports cache reads/writes OUTSIDE input_tokens, unlike
+      // OpenAI — so cache reads are added to the prompt total here to give the
+      // pricing helper the same "cached is a subset of prompt" shape.
+      const cachedTokens = usage.cache_read_input_tokens ?? null;
+      const cacheWriteTokens = usage.cache_creation_input_tokens ?? null;
+      const promptTokens = usage.input_tokens != null
+        ? usage.input_tokens + (cachedTokens || 0)
+        : null;
       const completionTokens = usage.output_tokens ?? null;
       const entry = {
         provider: 'anthropic',
@@ -156,7 +163,9 @@ export class AnthropicAdapter extends IAIGateway {
         totalTokens: promptTokens != null || completionTokens != null
           ? (promptTokens || 0) + (completionTokens || 0)
           : null,
-        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens }, this.pricing),
+        ...(cachedTokens != null ? { cachedTokens } : {}),
+        ...(cacheWriteTokens != null ? { cacheWriteTokens } : {}),
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens, cachedTokens, cacheWriteTokens }, this.pricing),
         durationMs,
         status: error ? 'error' : 'ok',
         ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),

@@ -302,6 +302,14 @@ export class OpenAIAdapter extends IAIGateway {
       const model = result?.model || requestedModel || null;
       const promptTokens = usage.prompt_tokens ?? usage.input_tokens ?? null;
       const completionTokens = usage.completion_tokens ?? usage.output_tokens ?? null;
+      // Cache hits bill at roughly a tenth of the input rate, so they have to
+      // be split out rather than folded into the prompt total.
+      const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? null;
+      const cacheWriteTokens = usage.prompt_tokens_details?.cache_write_tokens ?? null;
+      // Reasoning tokens are already inside completion_tokens and bill at the
+      // output rate; surfaced separately because they are invisible spend —
+      // a model can burn most of a call's output budget thinking.
+      const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? null;
       const entry = {
         provider: 'openai',
         endpoint,
@@ -310,7 +318,10 @@ export class OpenAIAdapter extends IAIGateway {
         promptTokens,
         completionTokens,
         totalTokens: usage.total_tokens ?? null,
-        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens }, this.pricing),
+        ...(cachedTokens != null ? { cachedTokens } : {}),
+        ...(cacheWriteTokens ? { cacheWriteTokens } : {}),
+        ...(reasoningTokens ? { reasoningTokens } : {}),
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens, cachedTokens, cacheWriteTokens }, this.pricing),
         durationMs,
         status: error ? 'error' : 'ok',
         ...(error ? { httpStatus: error.status ?? null, error: error.message } : {}),

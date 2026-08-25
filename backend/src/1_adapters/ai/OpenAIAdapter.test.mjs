@@ -150,14 +150,38 @@ describe('OpenAIAdapter usage observability', () => {
     const post = vi.fn(async () => ({
       status: 200,
       headers: {},
-      data: { model: 'gpt-5.6-luna', choices: [{ message: { content: 'Hi.' } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } },
+      data: { model: 'some-unreleased-model', choices: [{ message: { content: 'Hi.' } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } },
+    }));
+    const deps = makeDeps({ post });
+    const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
+
+    await adapter.chat([{ role: 'user', content: 'Hello' }], { model: 'some-unreleased-model' });
+    expect(deps.aiUsageLedger.record).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'some-unreleased-model', promptTokens: 10, completionTokens: 5, costUsd: null,
+    }));
+  });
+
+  it('splits cached prompt tokens out of the usage entry and the cost', async () => {
+    const post = vi.fn(async () => ({
+      status: 200,
+      headers: {},
+      data: {
+        model: 'gpt-5.6-luna',
+        choices: [{ message: { content: 'Hi.' } }],
+        usage: {
+          prompt_tokens: 1000, completion_tokens: 0, total_tokens: 1000,
+          prompt_tokens_details: { cached_tokens: 800 },
+        },
+      },
     }));
     const deps = makeDeps({ post });
     const adapter = new OpenAIAdapter({ apiKey: 'test-key' }, deps);
 
     await adapter.chat([{ role: 'user', content: 'Hello' }], { model: 'gpt-5.6-luna' });
     expect(deps.aiUsageLedger.record).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'gpt-5.6-luna', promptTokens: 10, completionTokens: 5, costUsd: null,
+      promptTokens: 1000,
+      cachedTokens: 800,
+      costUsd: (200 * 0.20 + 800 * 0.02) / 1e6,
     }));
   });
 
