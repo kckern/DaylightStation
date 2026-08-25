@@ -25,3 +25,12 @@ describe('teacher workspace URL model', () => {
     expect(parseTeacherPath('/school/teacher/planning/felix')).toMatchObject({ kind: 'not-found' });
   });
 });
+
+describe('teacherSessionPath origin', () => {
+  it('carries ?from= when the opener says so', async () => {
+    const { teacherSessionPath } = await import('./teacherUrl.js');
+    expect(teacherSessionPath('milo', 's1', '/school/teacher', { from: 'today' }))
+      .toBe('/school/teacher/students/milo/history/sessions/s1?from=today');
+    expect(teacherSessionPath('milo', 's1')).toBe('/school/teacher/students/milo/history/sessions/s1');
+  });
+});

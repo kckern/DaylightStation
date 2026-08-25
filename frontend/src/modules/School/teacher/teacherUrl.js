@@ -66,8 +66,11 @@ export function teacherLearnerPath(learnerId, section = 'overview', detailId = n
   return `${base}/students/${encodeURIComponent(learnerId)}/${safe}${suffix}`;
 }
 
-export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE) {
-  return learnerId
+export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { from = null } = {}) {
+  const path = learnerId
     ? `${teacherLearnerPath(learnerId, 'history', null, base)}/sessions/${encodeURIComponent(sessionId)}`
     : `${base}/sessions/${encodeURIComponent(sessionId)}`;
+  // `from` records the view that opened the session, so Back can return
+  // there instead of always landing on History.
+  return from ? `${path}?from=${encodeURIComponent(from)}` : path;
 }
