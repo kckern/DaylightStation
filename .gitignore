@@ -17,6 +17,10 @@ backend/node_modules
 !backend/src/3_applications/agents/health-coach/playbooks/seed.yml
 !backend/src/2_domains/fitness/services/__fixtures__/*.yml
 !backend/src/3_applications/school/sources/geography/*.yml
+# Rubik's Cube course content — `courseCatalog.mjs` degrades gracefully when
+# this is absent (no throw at import), but a real one authored here must be
+# committable rather than silently swallowed by the blanket `*.yml` rule.
+!backend/src/3_applications/school/rubiksCube/course.yml
 # Backend-scoped fixture tree (mirrors the `!tests/_fixtures/**` rule above for
 # the root suite). These ARE test inputs — without this the suite only passes on
 # a machine where they happen to sit untracked in the working tree.
