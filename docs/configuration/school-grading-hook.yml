@@ -1,5 +1,0 @@
-# Merge into data/household/school/school.yml. The OMR scan consumer sends the
-# learner, curriculum IDs, result, and authoritative row-count score as Home
-# Assistant script variables; the script definition is in the adjacent YAML.
-grading_hook:
-  script: script.school_worksheet_scan_notification
