@@ -8,6 +8,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import { sizedPlexImage, ART_BOX } from '../plexImage.js';
+import { schoolLog } from '../schoolLog.js';
 
 const PRINT_QUESTION = 'Did it print?';
 const CONFIRM_YES = 'Yes';
@@ -20,12 +22,43 @@ const PRINT_AUTO_HINT = 'This closes by itself.';
 const CONFIRM_NO = 'No';
 const SYNTHESISED_EXIT = 'Close';
 
+/**
+ * WHERE A COURSE'S ARTWORK ACTUALLY LIVES.
+ *
+ * A course id is either a curriculum shelf id (`fractions`) whose `poster.jpg`
+ * ships inside the published package, or a `plex:<ratingKey>` id for a course
+ * whose cover only ever existed in Plex — the piano course being the one a
+ * child meets daily. The curriculum route can only serve the first kind, so a
+ * `plex:` id asked of it returns nothing.
+ *
+ * That nothing used to be answered with a generated hue-gradient bearing the
+ * raw course id, at HTTP 200, which is how a child came to be shown an invented
+ * poster in place of Hoffman Academy. Both halves of that are fixed: the route
+ * 404s instead of fabricating (see school.selfservice.mjs), and a `plex:` id is
+ * resolved HERE, against the same image proxy every other surface in the house
+ * already draws Plex artwork through — `MaterialGrid` next door, `VideoPlayer`
+ * for its title cards. `sizedPlexImage` then asks Plex for it at the size the
+ * card actually draws it, exactly as the materials grid does.
+ */
+const PLEX_ID = /^plex:(\d+)$/;
+
+function posterSrc(courseId) {
+  const plex = PLEX_ID.exec(String(courseId));
+  if (plex) {
+    return sizedPlexImage(`/api/v1/proxy/plex/library/metadata/${plex[1]}/thumb`, ...ART_BOX.launchPoster);
+  }
+  return `/api/v1/school/self-service/curriculum/${encodeURIComponent(courseId)}/poster.jpg`;
+}
+
 function CourseArtwork({ course, subject }) {
   const [failed, setFailed] = useState(false);
   const artworkCourseId = course?.artwork?.kind === 'course-poster'
     ? course.artwork.courseId : course?.id;
   useEffect(() => setFailed(false), [artworkCourseId]);
   const label = course?.title ?? subject?.label ?? 'School';
+  // A blank, calm placeholder — never an invented one. The mark is decorative
+  // and the label carries the meaning, so a course with no cover reads as a
+  // course with no cover.
   if (!artworkCourseId || failed) {
     return (
       <div className="school-selfservice-card__poster-placeholder" aria-label={`${label} artwork`}>
@@ -36,9 +69,15 @@ function CourseArtwork({ course, subject }) {
   return (
     <img
       className="school-selfservice-card__poster"
-      src={`/api/v1/school/self-service/curriculum/${encodeURIComponent(artworkCourseId)}/poster.jpg`}
+      src={posterSrc(artworkCourseId)}
       alt={`${label} cover`}
-      onError={() => setFailed(true)}
+      // Worth a line in the log store: artwork silently going missing on the
+      // panel is precisely what nobody could see before, and a course that
+      // never resolves a cover is a content or wiring fault, not a child's.
+      onError={() => {
+        setFailed(true);
+        schoolLog.selfService('poster.unresolved', { courseId: artworkCourseId });
+      }}
     />
   );
 }

@@ -61,6 +61,7 @@ export const ART_BOX = {
   gridSquare: [240, 240],   // .school-materials__tile--square (a collection)
   detailPoster: [230, 345], // .school-material-detail__poster (max-width 230)
   unitThumb: [240, 135],    // .school-material-detail__thumb, aspect-ratio 16/9
+  launchPoster: [248, 372], // .school-selfservice-card__poster (art column caps at 15.5rem)
 };
 
 export default sizedPlexImage;

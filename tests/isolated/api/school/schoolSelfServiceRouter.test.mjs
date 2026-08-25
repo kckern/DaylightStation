@@ -63,18 +63,18 @@ describe('school self-service router', () => {
     expect(response.body).toEqual(Buffer.from('jpeg-poster'));
   });
 
-  it('uses the generated poster fallback without exposing another curriculum payload', async () => {
-    const app = appFor({
-      curriculum: { getCoursePoster: async () => null },
-      renderCoursePosterFallback: (courseId) => Buffer.from(`fallback:${courseId}`),
-    });
+  // A course with no published cover 404s, and the panel draws its own
+  // placeholder. It must NEVER answer 200 with a substitute image: doing that
+  // put a machine-generated slab carrying the raw course id in front of a
+  // child, and the 200 is exactly what stopped `onError` from catching it.
+  it('404s a missing poster rather than answering 200 with a generated one', async () => {
+    const app = appFor({ curriculum: { getCoursePoster: async () => null } });
 
     const response = await request(app)
       .get('/api/v1/school/self-service/curriculum/missing-course/poster.jpg');
 
-    expect(response.status).toBe(200);
-    expect(response.headers['x-school-poster-fallback']).toBe('missing-asset');
-    expect(response.body).toEqual(Buffer.from('fallback:missing-course'));
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({});
   });
 
   it('does not mount the artwork route without curriculum access', async () => {

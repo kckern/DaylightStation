@@ -38,7 +38,6 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
  * @param {{execute: (args: {code: string}) => Promise<object>}} deps.resolveAccessCode
  * @param {{execute: (args: {code: string, action: string}) => Promise<object>}} [deps.runSelfServiceAction]
  * @param {{getCoursePoster?: (courseId: string) => Promise<Buffer|null>}} [deps.curriculum]
- * @param {(courseId: string) => Buffer} [deps.renderCoursePosterFallback]
  * @returns {import('express').Router}
  */
 export function createSchoolSelfServiceRouter({
@@ -47,7 +46,6 @@ export function createSchoolSelfServiceRouter({
   recordLessonCompanionProgress = null,
   readPrinterHealth = null,
   curriculum = null,
-  renderCoursePosterFallback = null,
 } = {}) {
   const router = express.Router();
 
@@ -63,15 +61,19 @@ export function createSchoolSelfServiceRouter({
   }
 
   // Learner-safe artwork for the contextual card. This is intentionally not
-  // under `/teacher`: it exposes only the published course cover (or the same
-  // generated fallback), never curriculum answers, assignments or history.
+  // under `/teacher`: it exposes only the published course cover, never
+  // curriculum answers, assignments or history.
+  //
+  // NO POSTER MEANS 404, NEVER A SUBSTITUTE. This route used to answer a
+  // missing cover with a generated hue-gradient carrying the raw course id as
+  // its headline. It arrived as HTTP 200, so the panel's `onError` never fired
+  // and a child stood in front of a machine-made slab that claimed to be their
+  // lesson's artwork. A 404 is the honest answer: the panel draws its own
+  // calm placeholder, and a course whose art lives elsewhere (Plex) is
+  // resolved by the panel against the image proxy every other surface uses.
   if (curriculum) {
     router.get('/curriculum/:courseId/poster.jpg', asyncHandler(async (req, res) => {
-      let bytes = await curriculum.getCoursePoster?.(req.params.courseId);
-      if (!bytes && renderCoursePosterFallback) {
-        bytes = renderCoursePosterFallback(req.params.courseId);
-        res.set('X-School-Poster-Fallback', 'missing-asset');
-      }
+      const bytes = await curriculum.getCoursePoster?.(req.params.courseId);
       if (!bytes) return res.status(404).end();
       return res.set('Cache-Control', 'private, max-age=3600')
         .set('Content-Type', 'image/jpeg')
