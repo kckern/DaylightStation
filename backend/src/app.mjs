@@ -2656,13 +2656,19 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
   const { YamlFlashcardProgressStore } = await import('#adapters/persistence/yaml/YamlFlashcardProgressStore.mjs');
   const { SchoolFlashcardAssetRepository } = await import('#adapters/school/catalog/SchoolFlashcardAssetRepository.mjs');
+  const { TsFsrsFlashcardScheduler } = await import('#adapters/school/flashcards/TsFsrsFlashcardScheduler.mjs');
   const { FlashcardStudyService } = await import('#apps/school/FlashcardStudyService.mjs');
+  const { FlashcardSchedulerPolicyResolver } = await import('#apps/school/FlashcardSchedulerPolicyResolver.mjs');
+  const flashcardAssignments = new YamlAssignmentStore({ configService, logger: rootLogger.child({ module: 'school-flashcard-assignments' }) });
   const flashcardStudy = schoolCatalog.content
     ? new FlashcardStudyService({
       progressStore: new YamlFlashcardProgressStore({ configService, logger: rootLogger.child({ module: 'school-flashcards' }) }),
       decks: schoolCatalog.content,
-      assignments: new YamlAssignmentStore({ configService, logger: rootLogger.child({ module: 'school-flashcard-assignments' }) }),
+      assignments: flashcardAssignments,
       grader: schoolService,
+      scheduler: new TsFsrsFlashcardScheduler(),
+      policyResolver: new FlashcardSchedulerPolicyResolver({ configService, assignments: flashcardAssignments, catalog: schoolCatalog.query }),
+      teacherGate: schoolTeacherGate,
       timezone: configService.getTimezone?.() || null,
     })
     : null;

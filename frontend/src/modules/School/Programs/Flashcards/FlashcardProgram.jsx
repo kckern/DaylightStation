@@ -15,7 +15,7 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
   const [index, setIndex] = useState(0); const [revealed, setRevealed] = useState(false);
   const [direction, setDirection] = useState('front_to_back'); const [activeSeconds, setActiveSeconds] = useState(0);
   const [reviews, setReviews] = useState(0); const [answer, setAnswer] = useState(null); const [sessionId, setSessionId] = useState(null); const [autoplay, setAutoplay] = useState(false); const started = useRef(Date.now());
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary] = useState(null); const [intervals, setIntervals] = useState([]); const [learnStage, setLearnStage] = useState('recognition');
   const card = queue[index];
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
   useEffect(() => {
     if (!studyApi || !descriptor?.userId || !deck?.id) return undefined;
     let live = true;
-    studyApi.open({ userId: descriptor.userId, deckId: deck.id, policy }).then(({ ok, data }) => {
+    studyApi.open({ userId: descriptor.userId, deckId: deck.id, learning: descriptor.learning ?? null }).then(({ ok, data }) => {
       if (!live || !ok || !data?.session) return;
       setSessionId(data.session.sessionId); setReviews(data.session.reviews || 0);
       const selected = new Set(data.session.cardIds || []); setQueue(deck.cards.filter((candidate) => selected.has(candidate.cardId)));
@@ -44,8 +44,18 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
     }, 30000);
     return () => window.clearInterval(interval);
   }, [sessionId, studyApi, descriptor?.userId]);
+  useEffect(() => {
+    if (!sessionId || !card?.cardId || !studyApi?.preview || !descriptor?.userId || mode === 'cards') { setIntervals([]); return undefined; }
+    let live = true;
+    studyApi.preview(sessionId, { userId: descriptor.userId, cardId: card.cardId }).then(({ ok, data }) => { if (live && ok) setIntervals(data?.intervals ?? []); });
+    return () => { live = false; };
+  }, [sessionId, studyApi, descriptor?.userId, card?.cardId, mode]);
   useEffect(() => () => { onEvent({ type: 'active_time', seconds: Math.floor((Date.now() - started.current) / 1000) }); }, [onEvent]);
-  useEffect(() => { setIndex(0); setRevealed(false); setAnswer(null); }, [mode, direction]);
+  useEffect(() => { setIndex(0); setRevealed(false); setAnswer(null); setLearnStage('recognition'); }, [mode, direction, card?.cardId]);
+  useEffect(() => {
+    const enabled = Array.isArray(card?.directions) && card.directions.length ? card.directions : ['front_to_back', 'back_to_front'];
+    if (!enabled.includes(direction)) setDirection(enabled[0]);
+  }, [card?.cardId, card?.directions, direction]);
   useEffect(() => {
     if (!autoplay || mode !== 'cards' || !card) return undefined;
     const timer = window.setTimeout(() => {
@@ -68,6 +78,8 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
   };
   const face = cardFace(card, direction, revealed);
   const prompt = learnPrompt(card, direction);
+  const activePrompt = prompt.kind === 'recognition' && learnStage === 'recall' ? { ...prompt, kind: 'recall' } : prompt;
+  const directions = Array.isArray(card?.directions) && card.directions.length ? card.directions : ['front_to_back', 'back_to_front'];
 
   return <section className="flashcard-program" aria-label={deck.title}>
     <header><div><p>Flashcards</p><h2>{deck.title}</h2></div><button type="button" onClick={onExit}>Leave for now</button></header>
@@ -75,13 +87,13 @@ export default function FlashcardProgram({ descriptor, onEvent = async () => ({ 
     {summary?.counts && <p className="flashcard-program__summary" aria-label="Deck progress">{summary.counts.due} due · {summary.counts.new} new · {summary.counts.mastered} mastered</p>}
     {mode === 'test' ? <TestNotice deck={deck} bank={descriptor?.bank} onEvent={onEvent} /> : <>
       <p className="flashcard-program__progress">{index + 1} of {queue.length} · {reviews} reviewed · {Math.floor(activeSeconds / 60)} min active</p>
-      {mode === 'learn' ? (prompt.kind === 'reveal' && revealed
+      {mode === 'learn' ? (activePrompt.kind === 'reveal' && revealed
         ? <CardFace face={face} resolveAssetUrl={resolveAssetUrl} />
-        : <LearnCard prompt={prompt} answer={answer} setAnswer={setAnswer} onCorrect={() => rate('good')} onWrong={() => rate('again')} />)
+        : <LearnCard prompt={activePrompt} answer={answer} setAnswer={setAnswer} onRecognized={() => { setLearnStage('recall'); setAnswer(null); }} onCorrect={() => rate('good')} onWrong={() => rate('again')} />)
         : <CardFace face={face} resolveAssetUrl={resolveAssetUrl} />}
-      {mode === 'cards' && <div className="flashcard-program__controls"><button type="button" onClick={() => setRevealed((value) => !value)}>{revealed ? 'Hide answer' : 'Show answer'}</button><button type="button" onClick={() => setDirection((value) => value === 'front_to_back' ? 'back_to_front' : 'front_to_back')}>Reverse</button><button type="button" onClick={() => setQueue((cards) => [...cards].sort(() => Math.random() - 0.5))}>Shuffle</button><button type="button" aria-pressed={autoplay} onClick={() => setAutoplay((value) => !value)}>{autoplay ? 'Stop autoplay' : 'Autoplay'}</button>{revealed && <button type="button" onClick={() => { onEvent({ type: 'self_check', deckId: deck.id, cardId: card.cardId, result: 'again' }); advance(); }}>Show me again</button>}<button type="button" onClick={advance}>Next</button></div>}
-      {(mode === 'review' || (mode === 'learn' && prompt.kind === 'reveal')) && revealed && <div className="flashcard-program__ratings">{RATINGS.map((rating) => <button type="button" key={rating} onClick={() => rate(rating)}>{rating}</button>)}</div>}
-      {mode === 'learn' && card?.directions?.includes('front_to_back') && card?.directions?.includes('back_to_front') && <button type="button" onClick={() => setDirection((value) => value === 'front_to_back' ? 'back_to_front' : 'front_to_back')}>Study other direction</button>}
+      {mode === 'cards' && <div className="flashcard-program__controls"><button type="button" onClick={() => setRevealed((value) => !value)}>{revealed ? 'Hide answer' : 'Show answer'}</button>{directions.length > 1 && <button type="button" onClick={() => setDirection((value) => value === 'front_to_back' ? 'back_to_front' : 'front_to_back')}>Reverse</button>}<button type="button" onClick={() => setQueue((cards) => [...cards].sort(() => Math.random() - 0.5))}>Shuffle</button><button type="button" aria-pressed={autoplay} onClick={() => setAutoplay((value) => !value)}>{autoplay ? 'Stop autoplay' : 'Autoplay'}</button>{revealed && <button type="button" onClick={() => { onEvent({ type: 'self_check', deckId: deck.id, cardId: card.cardId, result: 'again' }); advance(); }}>Show me again</button>}<button type="button" onClick={advance}>Next</button></div>}
+      {(mode === 'review' || (mode === 'learn' && prompt.kind === 'reveal')) && revealed && <div className="flashcard-program__ratings">{RATINGS.map((rating) => <button type="button" key={rating} onClick={() => rate(rating)}>{rating}{intervals.find((item) => item.rating === rating)?.intervalDays ? ` · ${intervals.find((item) => item.rating === rating).intervalDays}d` : ''}</button>)}</div>}
+      {mode === 'learn' && directions.length > 1 && <button type="button" onClick={() => setDirection((value) => value === 'front_to_back' ? 'back_to_front' : 'front_to_back')}>Study other direction</button>}
       {(mode === 'review' || (mode === 'learn' && prompt.kind === 'reveal')) && !revealed && <button type="button" className="flashcard-program__primary" onClick={() => setRevealed(true)}>Show answer</button>}
     </>}
     {complete && <p className="flashcard-program__complete">Assignment target reached.</p>}
@@ -97,8 +109,10 @@ function Block({ block, resolveAssetUrl }) {
   if (block.type === 'tts') return <button type="button" onClick={() => window.speechSynthesis?.speak(new SpeechSynthesisUtterance(block.text))}>Listen</button>;
   return null;
 }
-function LearnCard({ prompt, answer, setAnswer, onCorrect, onWrong }) {
+function LearnCard({ prompt, answer, setAnswer, onRecognized, onCorrect, onWrong }) {
+  const [recognitionFeedback, setRecognitionFeedback] = useState(null);
   if (prompt.kind === 'reveal') return <article className="flashcard-program__card"><p>{prompt.prompt || 'Study this association.'}</p><p>This card has no text answer to type. Reveal it, then choose a confidence rating.</p></article>;
+  if (prompt.kind === 'recognition') return <article className="flashcard-program__card"><p>{prompt.prompt}</p><p>Choose the matching association.</p><div className="flashcard-program__choices">{prompt.recognitionChoices.map((choice) => <button type="button" key={choice} onClick={() => { if (recallMatchesAny(choice, prompt.acceptedAnswers)) onRecognized(); else setRecognitionFeedback('Not quite — try another association.'); }}>{choice}</button>)}</div>{recognitionFeedback && <p role="status">{recognitionFeedback}</p>}</article>;
   const correct = answer !== null && recallMatchesAny(answer, prompt.acceptedAnswers);
   return <article className="flashcard-program__card"><p>{prompt.prompt}</p><label>Type your answer<input value={answer ?? ''} onChange={(event) => setAnswer(event.target.value)} /></label>{answer !== null && !correct && <p>Not quite. One accepted answer is: {prompt.acceptedAnswers[0]}</p>}<button type="button" onClick={() => { if (correct) onCorrect(); else onWrong(); }}>Check answer</button></article>;
 }

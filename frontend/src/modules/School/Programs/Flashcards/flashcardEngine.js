@@ -33,7 +33,8 @@ export function learnPrompt(card, direction = 'front_to_back') {
   const derived = faceText(target);
   const aliases = card?.learn?.[direction]?.acceptedAnswers ?? [];
   const acceptedAnswers = aliases.length ? aliases : derived ? [derived] : [];
-  return { kind: acceptedAnswers.length ? 'recall' : 'reveal', prompt: faceText(source), acceptedAnswers };
+  const recognitionChoices = card?.learn?.[direction]?.recognitionChoices ?? [];
+  return { kind: acceptedAnswers.length ? (recognitionChoices.length ? 'recognition' : 'recall') : 'reveal', prompt: faceText(source), acceptedAnswers, recognitionChoices };
 }
 
 function faceText(face) {
