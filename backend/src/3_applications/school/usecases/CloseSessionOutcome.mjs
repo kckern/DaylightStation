@@ -43,7 +43,7 @@ import { outcomeIdFor, evaluateOutcome, rewardDecision } from '#domains/school/s
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
-import { planLearnerWork } from '#domains/school/planner.mjs';
+import { PlanProjection } from '../PlanProjection.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
@@ -51,7 +51,7 @@ import { studyDayWindow } from '#domains/school/studyDay.mjs';
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
   #receipts; #receiptCapture; #receiptArtifactPrinter; #grownUps; #teacherGate; #clock; #rng; #logger; #reviewQueue; #passOverrides; #worksheetInstances; #timezone;
-  #selfService; #eventBus;
+  #selfService; #eventBus; #planProjection;
 
   /**
    * @param {object} deps
@@ -103,6 +103,9 @@ export class CloseSessionOutcome {
     // state machine (design 2026-08-23) — absent, settling behaves exactly
     // as it did before that feature existed.
     eventBus = null,
+    // The shared assembler. This use case asks it for a DELIBERATELY narrower
+    // projection than the agenda does — see `#projectPlan`.
+    planProjection = null,
     logger = console,
   } = {}) {
     if (!curriculum || !sessions || !tokens || !assignments) {
@@ -113,6 +116,14 @@ export class CloseSessionOutcome {
     this.#sessions = sessions;
     this.#tokens = tokens;
     this.#assignments = assignments;
+    this.#planProjection = planProjection ?? new PlanProjection({
+      curriculum, assignments, sessions,
+      // No attestations, no exceptions, no launchers — this use case was never
+      // wired with any of them, and `#projectPlan` asks for none of them.
+      timezone: timezone || 'UTC', clock,
+      planErrorEvent: 'school.outcome.plan-errors',
+      logger,
+    });
     this.#economy = economy;
     this.#economyAction = economyAction;
     this.#economyEnabled = economyEnabled;
@@ -269,8 +280,13 @@ export class CloseSessionOutcome {
       : null;
 
     const retryToken = passed ? null : await this.#mintRetryToken({ sessionId, state, nowIso });
-    const unlocked = passed ? await this.#nextUnlocked({ state, unit, nowIso }) : null;
-    const progress = await this.#learningProgress({ state, unit, nowIso });
+    // ONE projection for both of the receipt's forward-looking lines. They used
+    // to fan out to the same four reads twice, at two different instants, and
+    // could in principle print a "next up" that the progress rows beside it
+    // disagreed with.
+    const projected = unit?.courseId ? await this.#projectPlan({ state, nowIso }) : null;
+    const unlocked = passed ? this.#nextUnlocked({ projected, unit }) : null;
+    const progress = this.#learningProgress({ projected, state, unit });
 
     const actions = [];
     if (retryToken) actions.push({
@@ -609,19 +625,9 @@ export class CloseSessionOutcome {
    * unit's session belongs to the agenda, which is the one place work sessions
    * are created (§6.3). The receipt names it and says to scan the card.
    */
-  async #nextUnlocked({ state, unit, nowIso }) {
-    if (!unit?.courseId) return null;
-    const [assignment, units, history, works] = await Promise.all([
-      this.#assignments.get(state.learnerId),
-      this.#curriculum.listUnits(),
-      this.#sessions.listForLearner(state.learnerId),
-      this.#curriculum.listWorks?.() ?? [],
-    ]);
-    const coursePolicies = Object.fromEntries((works ?? [])
-      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-    const plan = planLearnerWork({
-      learnerId: state.learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
-    });
+  #nextUnlocked({ projected, unit }) {
+    if (!projected) return null;
+    const { plan, projection: { assignment, works } } = projected;
     const nextId = plan.entries.find((e) => e.unitId === unit.unitId)?.unlocks ?? null;
     if (!nextId) return null;
     const next = plan.entries.find((e) => e.unitId === nextId);
@@ -650,17 +656,42 @@ export class CloseSessionOutcome {
     };
   }
 
-  async #learningProgress({ state, unit, nowIso }) {
-    if (!unit?.courseId) return null;
-    const [assignment, units, history, works] = await Promise.all([
-      this.#assignments.get(state.learnerId),
-      this.#curriculum.listUnits(),
-      this.#sessions.listForLearner(state.learnerId),
-      this.#curriculum.listWorks?.() ?? [],
-    ]);
+  #learningProgress({ projected, state, unit }) {
+    if (!projected) return null;
+    const { assignment, units, sessions, works, nowIso } = projected.projection;
     return lessonProgressRows({
-      learnerId: state.learnerId, unit, assignment, units, sessions: history,
+      learnerId: state.learnerId, unit, assignment, units, sessions,
       works, now: nowIso, timezone: this.#timezone,
+    });
+  }
+
+  /**
+   * The learner's plan as this receipt sees it.
+   *
+   * THE THREE `false`s ARE THE POINT. This use case has never applied the
+   * attested-pass overlay, never applied the curriculum-exception projection,
+   * and never appended assigned-program entries — it read the raw history and
+   * planned against that. Migrating it onto the canonical DEFAULTS would have
+   * changed what a receipt promises a child next, quietly, inside a commit
+   * whose message said "refactor". So the divergence is preserved exactly, and
+   * is now three visible booleans instead of four absent lines nobody could
+   * see. Whether a receipt SHOULD honour an attestation is a real question
+   * with a real answer; it is not this commit's question.
+   *
+   * `programStatuses: []` keeps the launcher fan-out out of the close-out path.
+   * This use case is wired with no launchers at all, so fanning out would only
+   * manufacture `{error: true}` statuses and a warning line per program entry —
+   * for sections it does not read.
+   */
+  async #projectPlan({ state, nowIso }) {
+    return this.#planProjection.project({
+      learnerId: state.learnerId,
+      now: nowIso,
+      attested: false,
+      exceptions: false,
+      assignedPrograms: false,
+      programStatuses: [],
+      planErrorEvent: 'school.outcome.plan-errors',
     });
   }
 
