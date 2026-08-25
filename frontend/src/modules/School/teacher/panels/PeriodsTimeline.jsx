@@ -11,6 +11,7 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherDateRange } from '../teacherDates.js';
 
@@ -76,15 +77,7 @@ export default function PeriodsTimeline() {
   };
 
   return (
-    <section className="teacher-panel" data-state={periods.state}>
-      <h2 className="teacher-panel__title">Academic periods</h2>
-      {periods.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {periods.state === 'error' && (
-        <p className="teacher-panel__error">
-          Couldn&rsquo;t load Academic periods.
-          <button type="button" className="teacher-panel__retry" onClick={periods.retry}>Retry</button>
-        </p>
-      )}
+    <PanelFrame title="Academic periods" state={periods.state} retry={periods.retry} alwaysRender>
       {!editing && (periods.state === 'ok' || periods.state === 'empty') && (
         <>
           {periods.state === 'empty' ? (
@@ -201,6 +194,6 @@ export default function PeriodsTimeline() {
           {(localError || errors.save) && <p className="teacher-panel__error">{localError ?? errors.save}</p>}
         </div>
       )}
-    </section>
+    </PanelFrame>
   );
 }

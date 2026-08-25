@@ -4,12 +4,12 @@
  * published curriculum, saved through the gate (PUT assignments carries the
  * teacher stamp + pin), server-authoritative refresh. A 404 read is "nothing
  * assigned yet" — an empty state that still offers Edit, never an error —
- * which is why this panel wears its own frame instead of PanelFrame (whose
- * children render only on ok).
+ * hence PanelFrame's `alwaysRender`: the editable body survives empty/error.
  */
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { useTeacherProfile } from '../TeacherProfileContext.jsx';
 import { curriculumTitles } from '../curriculumTitles.js';
@@ -89,15 +89,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
   }), { onSuccess: () => { setEditing(false); record.retry(); } });
 
   return (
-    <section className="teacher-panel" data-state={record.state}>
-      <h2 className="teacher-panel__title">Assignments</h2>
-      {record.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {record.state === 'error' && (
-        <p className="teacher-panel__error">
-          Couldn&rsquo;t load Assignments.
-          <button type="button" className="teacher-panel__retry" onClick={record.retry}>Retry</button>
-        </p>
-      )}
+    <PanelFrame title="Assignments" state={record.state} retry={record.retry} alwaysRender>
       {(record.state === 'ok' || record.state === 'empty') && !editing && (
         <>
           {record.state === 'empty' ? (
@@ -167,6 +159,6 @@ export default function AssignmentsView({ learnerId, learnerName }) {
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
         </div>
       )}
-    </section>
+    </PanelFrame>
   );
 }

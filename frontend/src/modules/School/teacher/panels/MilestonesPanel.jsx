@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
+import PanelFrame from './PanelFrame.jsx';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { curriculumTitles } from '../curriculumTitles.js';
 import { teacherDate } from '../teacherDates.js';
@@ -55,15 +56,7 @@ export default function MilestonesPanel({ learnerId }) {
   }), { onSuccess: () => { setEditing(false); statuses.retry(); } });
 
   return (
-    <section className="teacher-panel" data-state={statuses.state}>
-      <h2 className="teacher-panel__title">Milestones</h2>
-      {statuses.state === 'loading' && <div className="teacher-panel__skeleton" aria-hidden />}
-      {statuses.state === 'error' && (
-        <p className="teacher-panel__error">
-          Couldn&rsquo;t load Milestones.
-          <button type="button" className="teacher-panel__retry" onClick={statuses.retry}>Retry</button>
-        </p>
-      )}
+    <PanelFrame title="Milestones" state={statuses.state} retry={statuses.retry} alwaysRender>
       {!editing && (statuses.state === 'ok' || statuses.state === 'empty') && (
         <>
           {statuses.state === 'empty' ? (
@@ -103,6 +96,6 @@ export default function MilestonesPanel({ learnerId }) {
           {errors.save && <p className="teacher-panel__error">{errors.save}</p>}
         </div>
       )}
-    </section>
+    </PanelFrame>
   );
 }
