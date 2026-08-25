@@ -235,6 +235,24 @@ export class BuildAgenda {
         lockReason: null, remedy: null, unlocks: [],
       });
     }
+    // A piano course is a durable program instance for the same reason a deck
+    // is: the lesson sequence lives in Plex and the kiosk, not in an authored
+    // School unit, so duplicating one here to make it appear would create a
+    // second copy of "what comes next" that could disagree with the kiosk's.
+    for (const enrollment of assignment?.programs ?? []) {
+      if (enrollment?.programId !== 'piano-course') continue;
+      const courseId = enrollment.courseId ?? enrollment.corpusId;
+      if (!courseId) continue;
+      plan.entries.push({
+        unitId: `piano-course:${courseId}`, title: enrollment.title ?? 'Piano lesson',
+        description: null, subject: enrollment.subject ?? 'arts', courseId: null, sequence: null,
+        module: null, profile: null, timing: null, timingState: 'available',
+        timingPriority: 3, timingRank: 0, timingReasons: ['program_assignment'],
+        elective: false, program: 'piano-course', programInstance: courseId,
+        cadence: 'daily', status: 'available', sessionId: null, state: null,
+        lockReason: null, remedy: null, unlocks: [],
+      });
+    }
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
@@ -318,6 +336,25 @@ export class BuildAgenda {
           subject: section.subject, unitId: entry.unitId, sessionId,
           token: null, tokenClass: 'preview',
           label: `${entry.title} — ${actionLabelBySubject.get(section.subject)}`,
+        });
+        continue;
+      }
+
+      // A program that cannot be opened by scanning or by typing a code gets
+      // NEITHER. Minting them anyway prints a QR that resolves to a launcher
+      // whose `launch()` can only refuse, and a six-digit code a child can
+      // type into the panel to be told "no" — two dead ends on the paper,
+      // where the honest card is the subject icon and the words "at the
+      // piano". `mountable === false` is the launcher's own declaration
+      // (`PianoCourseProgramLauncher`); every other launcher omits the getter
+      // and is therefore unaffected.
+      const offeringLauncher = entry.program ? this.#launchers.get(entry.program) : null;
+      if (offeringLauncher?.mountable === false) {
+        actionLabelBySubject.set(section.subject, suffix);
+        offers.push({
+          subject: section.subject, unitId: entry.unitId, sessionId,
+          token: null, tokenClass: 'program_unmountable',
+          label: `${entry.title} — ${suffix}`,
         });
         continue;
       }

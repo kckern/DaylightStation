@@ -3318,6 +3318,25 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     wired: false, reason: 'not attempted', handlesCode: () => false, handleScan: null,
     reporter: null, router: null, devicesRouter: null, donowSchoolBridge: null,
   };
+  // Same adapter class, same guard, own `school.yml` block — see the grading
+  // hook's wiring below for why a home-automation failure must never take the
+  // rest of School down with it.
+  let pianoLessonHook = null;
+  if (homeAutomationAdapters.haGateway) {
+    try {
+      const { SchoolGradingHookAdapter } = await import('#adapters/school/SchoolGradingHookAdapter.mjs');
+      pianoLessonHook = new SchoolGradingHookAdapter({
+        gateway: homeAutomationAdapters.haGateway,
+        configKey: 'piano_lesson_hook',
+        loadSchoolConfig: () => configService.getHouseholdAppConfig(null, 'school') || {},
+        resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
+        logger: rootLogger.child({ module: 'school-piano-lesson-hook' }),
+      });
+    } catch (err) {
+      pianoLessonHook = null;
+      schoolLifecycleLogger.warn('school.piano_lesson_hook.wiring-failed', { error: err.message });
+    }
+  }
   try {
     const { createSchoolLifecycle } = await import('#composition/modules/schoolLifecycle.mjs');
     schoolLifecycle = await createSchoolLifecycle({
@@ -3332,6 +3351,15 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       studyGrants: schoolStudyGrants,
       languageReelService,
       languageReelGrants: schoolReelGrants,
+      // Piano's own use case, so School's piano-course program reads exactly
+      // what the kiosk reads (progress, sequential gating, co-progress lock)
+      // instead of a second implementation that could disagree with it.
+      pianoPlayableUnits: pianoContainer?.getPlayableUnits?.() ?? null,
+      // Same adapter class the grading hook uses, pointed at its own
+      // `school.yml` block. Guarded on the HA gateway exactly as the grading
+      // hook is: no Home Assistant means the Portal banner still fires and
+      // only the chime is absent.
+      pianoLessonHook,
       flashcardStudyService: flashcardStudy,
       rubiksCubeService,
       rubiksCubeGrants: schoolCubeGrants,
