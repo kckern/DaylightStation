@@ -40,10 +40,23 @@ beforeEach(() => {
   });
 });
 
+/**
+ * Arm a choice, then confirm it — WAITING for the arm to land in between.
+ *
+ * `MultipleChoiceItem.submit` confirms only when `chosen === choice`, and
+ * `chosen` is state read from the handler's CLOSURE. Firing both clicks as one
+ * synchronous burst on a captured node meant that whenever React had not
+ * flushed the re-render between them, the second click still saw `chosen ===
+ * null` and merely re-armed: the item sat armed, nothing was submitted, and the
+ * Next button never appeared. That made this file fail roughly one run in five.
+ *
+ * Re-querying by the ARMED name is what proves the first click took effect
+ * before the second is sent — the same pattern items.test.jsx already uses.
+ */
 async function confirmChoice(name) {
-  const choice = await screen.findByRole('button', { name });
-  fireEvent.click(choice);
-  fireEvent.click(choice);
+  fireEvent.click(await screen.findByRole('button', { name }));
+  const armed = await screen.findByRole('button', { name: new RegExp(`${name}.*tap again`, 'i') });
+  fireEvent.click(armed);
 }
 
 describe('QuizRunner', () => {

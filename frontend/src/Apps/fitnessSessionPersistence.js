@@ -7,6 +7,7 @@ function logger() {
 }
 
 const KEY = 'daylight.fitness.activeSession';
+const SCHOOL_ATTEMPT_KEY = 'daylight.fitness.activeSchoolAttempt';
 
 /** Persist the active play queue. An empty/absent queue clears the entry. */
 export function saveActiveSession(queue) {
@@ -34,4 +35,28 @@ export function loadActiveSession() {
 
 export function clearActiveSession() {
   try { window.sessionStorage.removeItem(KEY); } catch { /* noop */ }
+}
+
+/** Keep the cross-app reconciliation pointer across a kiosk refresh. */
+export function saveActiveSchoolAttempt(attempt) {
+  try {
+    if (!attempt?.workSessionId) { clearActiveSchoolAttempt(); return; }
+    window.sessionStorage.setItem(SCHOOL_ATTEMPT_KEY, JSON.stringify(attempt));
+  } catch (err) {
+    logger().warn('fitness.school_attempt_persist.save_failed', { message: err?.message ?? null });
+  }
+}
+
+export function loadActiveSchoolAttempt() {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(SCHOOL_ATTEMPT_KEY) || 'null');
+    return value?.workSessionId ? value : null;
+  } catch (err) {
+    logger().warn('fitness.school_attempt_persist.load_failed', { message: err?.message ?? null });
+    return null;
+  }
+}
+
+export function clearActiveSchoolAttempt() {
+  try { window.sessionStorage.removeItem(SCHOOL_ATTEMPT_KEY); } catch { /* noop */ }
 }

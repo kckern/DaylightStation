@@ -32,7 +32,7 @@ import { validateWork } from '#domains/school/curriculum/workValidation.mjs';
 const DEFAULT_TTL_MS = 15_000;
 
 export class CurriculumAccess {
-  #catalog; #bankIds; #programIds; #surfaceValidators; #ttlMs; #clock; #logger;
+  #catalog; #bankIds; #programIds; #surfaceValidators; #activityValidators; #ttlMs; #clock; #logger;
   #snapshot = null;
   #loading = null;
 
@@ -53,6 +53,7 @@ export class CurriculumAccess {
    */
   constructor({
     catalog, bankIds = () => [], programIds = () => [], surfaceValidators = () => new Map(),
+    activityValidators = () => new Map(),
     ttlMs = DEFAULT_TTL_MS, clock = () => Date.now(), logger = console,
   } = {}) {
     if (!catalog) throw new Error('CurriculumAccess requires a catalog');
@@ -60,6 +61,7 @@ export class CurriculumAccess {
     this.#bankIds = typeof bankIds === 'function' ? bankIds : () => bankIds;
     this.#programIds = typeof programIds === 'function' ? programIds : () => programIds;
     this.#surfaceValidators = typeof surfaceValidators === 'function' ? surfaceValidators : () => surfaceValidators;
+    this.#activityValidators = typeof activityValidators === 'function' ? activityValidators : () => activityValidators;
     this.#ttlMs = ttlMs;
     this.#clock = clock;
     this.#logger = logger;
@@ -91,12 +93,14 @@ export class CurriculumAccess {
     });
 
     const surfaceValidators = this.#surfaceValidators();
+    const activityValidators = this.#activityValidators();
     const sets = {
       bankIds: new Set(this.#bankIds() ?? []),
       documentIds: new Set(validDocuments.keys()),
       manifestIds: new Set(validManifests.keys()),
       programIds: new Set(this.#programIds() ?? []),
       surfaceValidators: surfaceValidators instanceof Map ? surfaceValidators : new Map(),
+      activityValidators: activityValidators instanceof Map ? activityValidators : new Map(),
     };
 
     const validUnits = new Map();
@@ -190,7 +194,7 @@ export class CurriculumAccess {
    * @returns {{unitId: string, title: string, subject: string, objectives: string[],
    *            courseId: string|null, sequence: number|null, grades: string[],
    *            passingPercent: number|null, hasBank: boolean, hasDocument: boolean,
-   *            hasMedia: boolean}}
+   *            hasMedia: boolean, hasActivity: boolean}}
    */
   static summarise(unit, courseTitle = null) {
     return {
@@ -210,6 +214,7 @@ export class CurriculumAccess {
       hasBank: Boolean(unit.bank),
       hasDocument: Boolean(unit.document),
       hasMedia: Boolean(unit.media),
+      hasActivity: Boolean(unit.activity),
     };
   }
 

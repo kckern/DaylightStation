@@ -39,6 +39,7 @@ import path from 'path';
 import os from 'node:os';
 import { promises as fs } from 'fs';
 import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
+import { YamlFitnessCourseProjectionStore } from '#adapters/persistence/yaml/YamlFitnessCourseProjectionStore.mjs';
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
 import { YamlTokenRegistry } from '#adapters/persistence/yaml/YamlTokenRegistry.mjs';
 import { YamlAssignmentStore } from '#adapters/persistence/yaml/YamlAssignmentStore.mjs';
@@ -55,6 +56,8 @@ import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrin
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { FitnessCourseCurriculumCatalog } from '#apps/school/FitnessCourseCurriculumCatalog.mjs';
+import { FitnessSchoolAssessmentBridge } from '#apps/school/FitnessSchoolAssessmentBridge.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
 import { ReceiptPrinting } from '#apps/school/ReceiptPrinting.mjs';
 import { SentenceLadderProgramLauncher } from '#apps/school/SentenceLadderProgramLauncher.mjs';
@@ -107,6 +110,7 @@ import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
 import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
+import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
 import { shortId } from '#domains/core/utils/id.mjs';
@@ -191,6 +195,8 @@ export async function createSchoolLifecycle({
   // reads the SAME course/progress/lock projection the kiosk itself renders.
   // Null in a composition without Piano: the program simply never registers.
   pianoPlayableUnits = null,
+  fitnessPlayableService = null,
+  fitnessSchoolCourseService = null,
   learningEvidenceRepository = null,
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
@@ -389,8 +395,13 @@ export async function createSchoolLifecycle({
   }
 
   // --- persistence -----------------------------------------------------------
+  const baseCatalog = new YamlCurriculumDatastore({ configService });
   const stores = {
-    catalog: new YamlCurriculumDatastore({ configService }),
+    catalog: new FitnessCourseCurriculumCatalog({
+      baseCatalog, sourceProvider: fitnessPlayableService,
+      projectionStore: new YamlFitnessCourseProjectionStore({ configService, logger }),
+      householdId, logger,
+    }),
     sessions: new YamlWorkSessionDatastore({ configService, logger }),
     tokens: tokenRegistry ?? new YamlTokenRegistry({ configService, logger }),
     assignments: new YamlAssignmentStore({ configService, logger }),
@@ -544,6 +555,7 @@ export async function createSchoolLifecycle({
     // never showed up) must be reflected immediately, not frozen at construction.
     programIds: () => [...launchers.keys()],
     surfaceValidators,
+    activityValidators: () => new Map([['fitness', validateFitnessActivityDescriptor]]),
     logger,
   });
   const bankReader = {
@@ -891,6 +903,7 @@ export async function createSchoolLifecycle({
     // from this composition now that `donow` is unconditionally wired), but
     // this file constructs nothing to feed it.
     donow, closeSessionOutcome, clock, logger,
+    externalActivityProvider: fitnessSchoolCourseService,
     resolveLearningAction: schoolCalcActionResolver,
     replaceLostAnswerSheet,
   });
@@ -906,11 +919,19 @@ export async function createSchoolLifecycle({
   // unit simply never gets its honor-close on approval (still visible/
   // resolvable via a fresh scan), rather than this file throwing.
   let donowSchoolBridge = null;
+  let fitnessSchoolAssessmentBridge = null;
   if (eventBus && typeof eventBus.subscribe === 'function') {
     donowSchoolBridge = new DoNowSchoolBridge({
       eventBus, sessions: stores.sessions, closeSessionOutcome, clock, logger,
     });
     donowSchoolBridge.start();
+    if (fitnessSchoolCourseService) {
+      fitnessSchoolAssessmentBridge = new FitnessSchoolAssessmentBridge({
+        eventBus, sessions: stores.sessions, curriculum, closeSessionOutcome,
+        evidenceRepository: learningEvidenceRepository, clock, logger,
+      });
+      fitnessSchoolAssessmentBridge.start();
+    }
   } else {
     logger.warn?.('school.lifecycle.donow-bridge-unwired', { reason: 'no eventBus' });
   }
@@ -1230,6 +1251,7 @@ export async function createSchoolLifecycle({
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.
     donowSchoolBridge,
+    fitnessSchoolAssessmentBridge,
     closeLanguageDay,
     // Read-only completion status ("is this learner done for today?") and
     // its push-on-transition bridge — same null-when-unwired,

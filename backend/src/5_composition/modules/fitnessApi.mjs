@@ -4,12 +4,14 @@
 import { PlexPosterProvider } from '#adapters/content/media/plex/PlexPosterProvider.mjs';
 import { FitnessAssetResolver } from '#adapters/fitness/FitnessAssetResolver.mjs';
 import { YamlRecapSnapshotStore } from '#adapters/persistence/yaml/YamlRecapSnapshotStore.mjs';
+import { YamlFitnessSchoolAttemptStore } from '#adapters/persistence/yaml/YamlFitnessSchoolAttemptStore.mjs';
 import { FfmpegVideoAdapter } from '#adapters/video/FfmpegVideoAdapter.mjs';
 import { createFitnessRouter } from '#api/v1/routers/fitness.mjs';
 import { Scheduler } from '#apps/agents/index.mjs';
 import { ContentQueryService } from '#apps/content/ContentQueryService.mjs';
 import { FitnessConfigService } from '#apps/fitness/FitnessConfigService.mjs';
 import { FitnessPlayableService } from '#apps/fitness/FitnessPlayableService.mjs';
+import { FitnessSchoolCourseService } from '#apps/fitness/FitnessSchoolCourseService.mjs';
 import { FitnessSimulationService } from '#apps/fitness/services/FitnessSimulationService.mjs';
 import { ScreenshotService } from '#apps/fitness/services/ScreenshotService.mjs';
 import { SessionLockService } from '#apps/fitness/services/SessionLockService.mjs';
@@ -68,6 +70,7 @@ export function createFitnessApiRouter(config) {
     releaseEmergencyLockdown = null,
     getLockdownState = null,
     identityRelay = null,
+    eventBus = null,
     // Workout persistence + its save-time slug guard, both built in app.mjs and passed
     // straight through — this module composes fitness services, and these are already
     // composed by the time they arrive.
@@ -97,6 +100,12 @@ export function createFitnessApiRouter(config) {
     contentQueryService,
     createProgressClassifier: (cfg) => new FitnessProgressClassifier(cfg),
     logger
+  });
+  const fitnessSchoolCourseService = new FitnessSchoolCourseService({
+    attemptStore: new YamlFitnessSchoolAttemptStore({ configService, logger }),
+    sessionService: fitnessServices.sessionService,
+    eventBus,
+    logger,
   });
 
   // Create ScreenshotService for session screenshot handling
@@ -275,6 +284,7 @@ export function createFitnessApiRouter(config) {
     screenshotService,
     fitnessConfigService,
     fitnessPlayableService,
+    fitnessSchoolCourseService,
     fitnessContentAdapter,
     fitnessSuggestionService,
     userService,
@@ -302,5 +312,9 @@ export function createFitnessApiRouter(config) {
   // Expose the sweeps so app.mjs can register them on the agents Scheduler.
   fitnessRouter.recapSweep = recapSweep;
   fitnessRouter.trashRetentionSweep = trashRetentionSweep;
+  // Shared with School's lifecycle composition: these are the already-wired
+  // Fitness authorities, not second instances with drifting config/caches.
+  fitnessRouter.fitnessPlayableService = fitnessPlayableService;
+  fitnessRouter.fitnessSchoolCourseService = fitnessSchoolCourseService;
   return fitnessRouter;
 }

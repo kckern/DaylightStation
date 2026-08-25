@@ -331,7 +331,7 @@ describe('validateUnit: policy', () => {
 describe('validateUnit: composition references', () => {
   it('rejects a unit that composes nothing', () => {
     expect(errs(valid({ document: undefined })))
-      .toContain('unit must reference at least one of bank, document, media, review');
+      .toContain('unit must reference at least one of bank, document, media, review, program, launch, activity');
   });
 
   it.each([
@@ -377,7 +377,7 @@ describe('validateUnit: composition references', () => {
 
   it('does not double-report a dangling reference as a missing composition', () => {
     expect(errs(valid({ document: 'nope' })))
-      .not.toContain('unit must reference at least one of bank, document, media, review');
+      .not.toContain('unit must reference at least one of bank, document, media, review, program, launch, activity');
   });
 });
 
@@ -542,7 +542,7 @@ describe('launch units', () => {
 
   it('joins the "must reference at least one" list — launch alone is enough, no other composition needed', () => {
     const { errors } = validateUnit(launchUnit(), refsWithSurfaces());
-    expect(errors).not.toContain('unit must reference at least one of bank, document, media, review');
+    expect(errors).not.toContain('unit must reference at least one of bank, document, media, review, program, launch, activity');
   });
 
   it('rejects launch that is not an object', () => {
@@ -587,6 +587,48 @@ describe('launch units', () => {
   it('accepts every other field alongside launch (courseId/sequence/grades/objectives)', () => {
     expect(errs(launchUnit({ courseId: 'skills-1', sequence: 3, grades: ['lower'], objectives: ['Move around'] }), refsWithSurfaces()))
       .toEqual([]);
+  });
+});
+
+describe('external activity units', () => {
+  const activity = {
+    provider: 'fitness',
+    courseRevision: 'course-1',
+    policyRevision: 'policy-1',
+    source: { adapter: 'plex', showId: '44' },
+    segments: [{ id: 'main', role: 'main', kind: 'plex-video', sourceId: '123', required: true }],
+    successPolicy: { all: [{ metric: 'media.completion_ratio', op: 'gte', value: 0.5 }] },
+  };
+  const activityUnit = (over = {}) => ({
+    unitId: 'skills-fitness-1', title: 'Fitness lesson', subject: 'skills', activity,
+    passing: { percent: 100 },
+    provenance: { source: 'generated', reviewState: 'approved' },
+    ...over,
+  });
+  const activityRefs = () => ({
+    ...refs(),
+    activityValidators: new Map([['fitness', (value) => value?.segments?.length ? [] : ['segments required']]]),
+  });
+
+  it('accepts and retains a provider-validated activity as the unit composition', () => {
+    const { errors, unit } = validateUnit(activityUnit(), activityRefs());
+    expect(errors).toEqual([]);
+    expect(unit.activity).toEqual(activity);
+  });
+
+  it('fails closed for an unregistered activity provider', () => {
+    expect(errs(activityUnit(), refs())).toContain("activity.provider 'fitness' not found");
+  });
+
+  it.each([
+    ['media', { media: 'liberty-kids-01' }],
+    ['bank', { bank: 'math-fractions' }],
+    ['document', { document: 'math-fractions-01-ws' }],
+    ['review', { review: 'Parent checks it' }],
+    ['program', { program: 'language' }],
+    ['launch', { launch: { surface: 'garage-fitness', episodeId: 'plex:1' } }],
+  ])('rejects activity combined with %s', (field, extra) => {
+    expect(errs(activityUnit(extra), activityRefs())).toContain(`an activity unit takes no ${field}`);
   });
 });
 
