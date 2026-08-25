@@ -56,6 +56,7 @@ import { YamlPrintDocumentRepository } from '#adapters/school/documents/YamlPrin
 import { YamlAllocationStore } from '#adapters/school/documents/YamlAllocationStore.mjs';
 import { RenderPrintDocument, createYamlBankReader } from '#apps/school/documents/RenderPrintDocument.mjs';
 import { CurriculumAccess } from '#apps/school/CurriculumAccess.mjs';
+import { PlanProjection } from '#apps/school/PlanProjection.mjs';
 import { FitnessCourseCurriculumCatalog } from '#apps/school/FitnessCourseCurriculumCatalog.mjs';
 import { FitnessSchoolAssessmentBridge } from '#apps/school/FitnessSchoolAssessmentBridge.mjs';
 import { GrownUpGate } from '#apps/school/GrownUpGate.mjs';
@@ -595,8 +596,29 @@ export async function createSchoolLifecycle({
   const attestations = new YamlAttestationLog({ configService, logger });
   const teacherNotes = new YamlTeacherNotes({ configService, logger });
 
+  // ONE assembler for "what's next", shared by every surface that answers the
+  // question. Before this, six call sites hand-built the planner's inputs with
+  // six slightly different recipes, and the printed agenda, the scanned ticket
+  // and the panel code could genuinely disagree about what a child was allowed
+  // to do next. They now cannot: there is one recipe, and a surface that wants
+  // a narrower one (`getLearnerDayCompletion`) says so in flags a reader can
+  // see rather than by omitting lines nobody notices.
+  //
+  // Two instances stay separate, both deliberately:
+  //   - `previewPlanProjection` below reads through the dry-run session store
+  //     and logs under the preview's child logger.
+  //   - `closeSessionOutcome` keeps its own (built inside the use case): it is
+  //     wired with no launchers and defaults `timezone` to UTC rather than
+  //     null, and a receipt is not the place to discover that those differ.
+  const planProjection = new PlanProjection({
+    curriculum, assignments: stores.assignments, sessions: stores.sessions,
+    attestations, curriculumExceptions: curriculumExceptionStore,
+    launchers, timezone, clock, logger,
+  });
+
   // --- use cases -------------------------------------------------------------
   const buildAgenda = new BuildAgenda({
+    planProjection,
     attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: stores.sessions, tokens: stores.tokens,
     launchers, languageReelService, timezone, clock, rng: draw, newSessionId,
@@ -614,6 +636,7 @@ export async function createSchoolLifecycle({
     selfService: cfg.selfService,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
+    planProjection,
     attestations,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, newSessionId, curriculumExceptions: curriculumExceptionStore, logger,
@@ -622,6 +645,11 @@ export async function createSchoolLifecycle({
   // 2026-08-23-student-completion-state-machine): "is this learner done for
   // today?", derived on demand, no session or token side effects.
   const getLearnerDayCompletion = new GetLearnerDayCompletion({
+    // The SAME projection the agenda plans from — asked for a NARROWER view
+    // (no attested passes, no exceptions, no assigned programs), which is
+    // exactly what this read has always been. That is a completion-semantics
+    // decision and it lives in the use case, stated, not in this wiring.
+    planProjection,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, logger,
   });
@@ -639,7 +667,16 @@ export async function createSchoolLifecycle({
     readEvents: (sid) => stores.sessions.readEvents(sid),
     appendEvent: async () => {},
   };
+  const previewPlanProjection = new PlanProjection({
+    curriculum, assignments: stores.assignments, sessions: previewSessions,
+    attestations, curriculumExceptions: curriculumExceptionStore,
+    launchers, timezone, clock,
+    planErrorEvent: 'school.agenda.plan-errors',
+    launcherFailedEvent: 'school.agenda.launcher-failed',
+    logger: logger.child ? logger.child({ preview: true }) : logger,
+  });
   const previewAgenda = new BuildAgenda({
+    planProjection: previewPlanProjection,
     attestations, teacherNotes,
     curriculum, assignments: stores.assignments, sessions: previewSessions,
     // Write path stubbed, READ path real: a preview must never persist a
@@ -1098,6 +1135,7 @@ export async function createSchoolLifecycle({
   // from, passed through untouched — one config path, so the room a video goes
   // to and the codes that reach it can never come from two different readings.
   const resolveAccessCode = new ResolveAccessCode({
+    planProjection,
     tokens: stores.tokens,
     curriculum,
     assignments: stores.assignments,
