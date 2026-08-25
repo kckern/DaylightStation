@@ -592,6 +592,7 @@ describe('screen and program', () => {
     expect(result.effect).toMatchObject({ decision: 'dispatched', surface: 'garage-fitness' });
     // Nothing for a panel to mount, so nothing that names a mountable target.
     expect(result.effect.kind).toBeUndefined();
+    expect(result.transition).toBe('close');
     expect(sessions.ids()).toEqual([]);
   });
 

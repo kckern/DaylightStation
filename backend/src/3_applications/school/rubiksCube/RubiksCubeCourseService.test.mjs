@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { RubiksCubeCourseService } from './RubiksCubeCourseService.mjs';
+import { YamlDocumentFileStore } from '#adapters/school/YamlDocumentFileStore.mjs';
 import { RubiksPacketPlanner } from './RubiksPacketPlanner.mjs';
 import { inverseMove, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
 import { engineCubeToFacelets } from './physicalCube.mjs';
@@ -12,7 +13,7 @@ function subject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cube-course-'));
   const configService = { getUserProfile: (id) => id === 'milo' ? { id } : null, getUserDir: (id) => path.join(root, id) };
   const clock = () => new Date('2026-08-24T12:00:00Z'); const recoverySolver = { solve: async () => [] };
-  return { service: new RubiksCubeCourseService({ configService, recoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: recoverySolver, clock }), clock }), root };
+  return { service: new RubiksCubeCourseService({ configService, store: new YamlDocumentFileStore(), recoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: recoverySolver, clock }), clock }), root };
 }
 
 const colors = { U: 'white', R: 'red', F: 'green', D: 'yellow', L: 'orange', B: 'blue' };

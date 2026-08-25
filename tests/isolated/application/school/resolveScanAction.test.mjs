@@ -28,6 +28,10 @@ const PROGRAM_ID = 'lang-app';
 const LAUNCH_SURFACE = 'garage-fitness';
 
 let clock, rng, sessions, tokens, thermal, laser, playback, resolve, agenda, close, portal, donow;
+// Exposed so a test that asserts an `issued` event into a session WITHOUT
+// going through IssueDocument can also seed the artifact those bytes would
+// have been retained under — otherwise its reprint has nothing to replay.
+let retainArtifact;
 
 const build = ({
   assignment = { learnerId: 'kid1', courses: ['math-fractions'] },
@@ -62,8 +66,25 @@ const build = ({
     clock: clock.now, rng, newSessionId: sequentialIds(), logger: silentLogger,
   });
   let artifactSeq = 0;
+  // A reprint replays the RETAINED original bytes rather than re-rendering
+  // (IssueDocument#reprintExact); with no retention store every reprint
+  // degrades to `unavailable`, which is a different covered behaviour from the
+  // reprint paths these scan tests exercise.
+  const retainedById = new Map();
+  retainArtifact = (artifactId) => retainedById.set(artifactId, {
+    manifest: { artifactId }, bytes: Buffer.from(`retained-${artifactId}`),
+  });
+  const issuedArtifacts = {
+    get: async (id) => retainedById.get(id) ?? null,
+    put: async (value) => {
+      const retained = { manifest: { artifactId: value.artifactId }, bytes: Buffer.from(value.bytes) };
+      retainedById.set(value.artifactId, retained);
+      return retained;
+    },
+  };
   const issueDocument = new IssueDocument({
     curriculum, sessions, tokens, renderer: new FakeDocumentRenderer(), printer: laser, formMaps,
+    issuedArtifacts,
     clock: clock.now, rng, newArtifactId: () => `art_${++artifactSeq}`, logger: silentLogger,
   });
   const dispatchMedia = new DispatchMedia({ curriculum, sessions, playback, targets: TARGETS, clock: clock.now, logger: silentLogger });
@@ -402,6 +423,7 @@ describe('recovery', () => {
   it('a recovery ticket reprints the same artifact', async () => {
     await sessions.appendEvent('ses_w', { type: 'created', at: clock.iso(), sessionId: 'ses_w', learnerId: 'kid1', unitId: WORKSHEET_UNIT });
     await sessions.appendEvent('ses_w', { type: 'issued', at: clock.iso(), sessionId: 'ses_w', artifactId: 'art_9' });
+    retainArtifact('art_9'); // the bytes IssueDocument would have retained
     // Past the default print-debounce window: this scenario is "the recovery
     // ticket still points at the right artifact", not "two scans of the same
     // ticket seconds apart" — that overlapping case is covered directly in
@@ -606,6 +628,7 @@ describe('the subject ticket', () => {
     const sid = 'ses_w';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
     await sessions.appendEvent(sid, { type: 'issued', at: clock.iso(), sessionId: sid, artifactId: 'art_1' });
+    retainArtifact('art_1'); // the bytes IssueDocument would have retained
     // Past the print-cooldown window (default 10 min) — this must be a
     // genuine "print it again" rescan, not the SEPARATE, deliberate silent
     // debounce that guards against a double-tap scan seconds apart.
@@ -837,6 +860,7 @@ describe('physical outcome logging (2026-08-14 investigation)', () => {
     const sid = 'ses_w';
     await sessions.appendEvent(sid, { type: 'created', at: clock.iso(), sessionId: sid, learnerId: 'kid1', unitId: WORKSHEET_UNIT });
     await sessions.appendEvent(sid, { type: 'issued', at: clock.iso(), sessionId: sid, artifactId: 'art_1' });
+    retainArtifact('art_1'); // the bytes IssueDocument would have retained
     clock.advanceHours(1);
     const record = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'kid1', subject: 'math' }, at: clock.iso(), rng });
     await tokens.put(record);

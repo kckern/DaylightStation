@@ -1,47 +1,23 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
 import { inverseMove, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
+import { RUBIKS_CUBE_COURSE_SOURCE as source } from './courseSource.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 
 const logger = createLogger({ source: 'backend', app: 'school', context: { component: 'rubiks-cube-course-catalog' } });
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const COURSE_FILE = path.join(HERE, 'course.yml');
-
-/**
- * `course.yml` is content, not code — it is gitignored/dockerignored until an
- * author commits a real one (see the `.gitignore`/`.dockerignore` negations
- * added alongside this guard). Reading it at module scope used to mean a
- * fresh checkout or a deploy with no course authored yet took the WHOLE
- * school subsystem down at import (`schoolLifecycle.mjs` imports this
- * module statically). Same shape as `GeneratedBankSource`'s missing-recipes
- * handling: absent or invalid ⇒ logged, never thrown. The Rubik's Cube
- * course is simply unavailable — everything downstream (course id/revision
- * null, `RUBIKS_CUBE_COURSE` an empty shell, `activities()` empty) degrades
- * from there instead of crashing.
- */
-function loadSource() {
-  if (!fs.existsSync(COURSE_FILE)) {
-    logger.warn('school.rubiks-cube.course-missing', { file: COURSE_FILE });
-    return null;
-  }
-  let parsed;
-  try {
-    parsed = yaml.load(fs.readFileSync(COURSE_FILE, 'utf8'));
-  } catch (err) {
-    logger.error('school.rubiks-cube.course-invalid', { file: COURSE_FILE, error: err.message });
-    return null;
-  }
-  if (parsed?.schema !== 'school.rubiks-cube-course/v1') {
-    logger.error('school.rubiks-cube.course-invalid', { file: COURSE_FILE, error: 'unexpected schema', schema: parsed?.schema ?? null });
-    return null;
-  }
-  return parsed;
+// The course content now lives in a committed JS module (main, 2026-08-25),
+// which is the right fix: it was previously read from `course.yml` at module
+// scope, and that file matched `.gitignore`/`.dockerignore`, so it could never
+// reach the image — taking the WHOLE school subsystem down at import, because
+// `schoolLifecycle.mjs` imports this module statically.
+//
+// The schema check stays, but it must NEVER throw. A malformed source should
+// make the Rubik's Cube course unavailable, not kill school. Same shape as
+// `GeneratedBankSource`'s missing-recipes handling: absent or invalid ⇒
+// logged, never thrown. Everything downstream (null course id/revision, empty
+// activities) degrades from there.
+if (source?.schema !== 'school.rubiks-cube-course/v1') {
+  logger.error('school.rubiks-cube.course-invalid', { schema: source?.schema ?? null });
 }
-
-const source = loadSource();
 
 const FOUNDATION_CHECKS = [
   { prompt: 'Which symbol means turn a face counter-clockwise?', options: ['2', 'x', "'", '+'], answer: 2 },

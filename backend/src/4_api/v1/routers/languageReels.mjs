@@ -1,5 +1,17 @@
 import express from 'express';
-import { EntityNotFoundError, ValidationError } from '#domains/core/errors/index.mjs';
+
+/**
+ * Status is mapped by ERROR NAME, not `instanceof`, and the unexpected case is
+ * delegated to the app-wide `errorHandlerMiddleware`.
+ *
+ * Both are the sanctioned shape for this layer: `api-no-domains` forbids the
+ * API layer importing domain error classes, and `errorHandler.mjs` exists to
+ * be the one place that decides status — its own `getHttpStatusByName` says so
+ * ("routers that cannot import domain classes stamp `err.status` by NAME at
+ * their boundary"). A hand-rolled 500 here would also hide the trace id and
+ * the structured logging that handler emits.
+ */
+const STATUS_BY_NAME = Object.freeze({ EntityNotFoundError: 404, ValidationError: 400 });
 
 export function createLanguageReelsRouter({ service, grants, logger = console } = {}) {
   const router = express.Router();
@@ -8,10 +20,10 @@ export function createLanguageReelsRouter({ service, grants, logger = console } 
     if (!result?.ok) { res.status(403).json({ error: 'A current assigned-reel launch is required' }); return null; }
     return result.payload;
   };
-  const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (error) {
-    if (error instanceof EntityNotFoundError) res.status(404).json({ error: error.message });
-    else if (error instanceof ValidationError) res.status(400).json({ error: error.message });
-    else { logger.error?.('school.language-reels.router.error', { error: error.message, path: req.path }); res.status(500).json({ error: 'internal' }); }
+  const wrap = (fn) => async (req, res, next) => { try { await fn(req, res); } catch (error) {
+    const status = STATUS_BY_NAME[error?.name];
+    if (status) res.status(status).json({ error: error.message });
+    else { logger.error?.('school.language-reels.router.error', { error: error.message, path: req.path }); next(error); }
   } };
   router.get('/users/:userId/reels/:reelId', wrap((req, res) => {
     const grant = authorized(req, res); if (!grant) return;

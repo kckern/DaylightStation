@@ -30,8 +30,9 @@
  * meaning something.
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
+import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
@@ -276,23 +277,7 @@ export class BuildAgenda {
       if (entry) plan.entries.push(entry);
       else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
     }
-    // Unlike a catalog lesson, an assigned deck is a durable program instance:
-    // it needs no duplicated authored unit merely to appear on the daily
-    // agenda. The launcher owns completion and launch target policy.
-    for (const enrollment of assignment?.programs ?? []) {
-      if (enrollment?.programId !== 'flashcards') continue;
-      const deckId = enrollment.deckId ?? enrollment.corpusId;
-      if (!deckId) continue;
-      plan.entries.push({
-        unitId: `flashcards:${deckId}`, title: enrollment.title ?? 'Flashcards',
-        description: null, subject: 'flashcards', courseId: null, sequence: null,
-        module: null, profile: null, timing: null, timingState: 'available',
-        timingPriority: 3, timingRank: 0, timingReasons: ['program_assignment'],
-        elective: false, program: 'flashcards', programInstance: deckId,
-        cadence: 'daily', status: 'available', sessionId: null, state: null,
-        lockReason: null, remedy: null, unlocks: [],
-      });
-    }
+    appendAssignedProgramEntries(plan, assignment);
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
@@ -300,9 +285,12 @@ export class BuildAgenda {
     // unlock the PLANNER's gate — the daily-serving layer must not read an
     // attestation as "this subject was served today", or the repair day is
     // exactly the day the agenda goes silent.
-    const { sections } = planDailyAgenda({
+    const { sections: rawSections } = planDailyAgenda({
       plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
     });
+    const sections = rawSections.map((section) => section.next?.program
+      ? { ...section, next: projectProgramEntry(section.next, programStatusFor(programStatuses, section.next)) }
+      : section);
 
     const unitsById = new Map(units.map((u) => [u.unitId, u]));
     const offers = [];
@@ -434,6 +422,12 @@ export class BuildAgenda {
           const work = worksById.get(entry?.courseId);
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
           const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
+          if (entry?.programContext) return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
+            unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
+            lesson: entry.programContext.lesson?.title ?? entry.title,
+          };
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: work?.title ?? entry?.courseId ?? 'Independent study',

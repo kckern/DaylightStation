@@ -304,7 +304,7 @@ async function tapMaterial(title) {
 describe('SchoolApp home — the subject wall', () => {
   it('renders all nine subjects; empty shelves are greyed, not hidden', async () => {
     render(<SchoolApp clear={() => {}} mode="open" />);
-    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'Civilization', 'Scripture & Gospel', 'Art & Music']) {
+    for (const label of ['English & Literature', 'Writing & Typing', 'Language & Culture', 'Math & Money', 'Science & Nature', 'Life & Skills', 'Civilization', 'Scripture & Gospel', 'Arts & Culture']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     // Empty catalog: the shelf is disabled and says so in words (wave-7

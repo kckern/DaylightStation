@@ -1,7 +1,15 @@
 /**
  * SchoolGradingHookAdapter — fires one configured Home Assistant script when a
- * paper scan reaches a terminal outcome, passing the outcome as script
+ * school event reaches a terminal outcome, passing the outcome as script
  * variables.
+ *
+ * TWO INSTANCES, ONE PIPE. `configKey` selects which `school.yml` block names
+ * this instance's script: `grading_hook` (a paper scan's four terminal
+ * outcomes) or `piano_lesson_hook` (a daily piano lesson crossing
+ * completion). They are separate hooks because they are separate events a
+ * household will want to sound differently — but the pipe itself (circuit
+ * breaker, never-throw contract, variable shaping) is identical, and a
+ * forked copy of it would drift.
  *
  * Deliberately a dumb pipe: it does not decide what a score MEANS. `school.yml`
  * names one script; Home Assistant branches on the `result` variable. Retuning
@@ -52,6 +60,8 @@ export class SchoolGradingHookAdapter {
   #gateway;
   #loadSchoolConfig;
   #resolveStudent;
+  #configKey;
+  #eventPrefix;
   #logger;
 
   constructor(config) {
@@ -68,6 +78,16 @@ export class SchoolGradingHookAdapter {
     this.#gateway = config.gateway;
     this.#loadSchoolConfig = config.loadSchoolConfig;
     this.#resolveStudent = config.resolveStudent || null;
+    // Which `school.yml` block names this instance's script. Defaults to
+    // `grading_hook` so every existing caller is untouched; a second instance
+    // (the piano-lesson ceremony) passes its own key rather than forking this
+    // class, because the pipe — circuit breaker, never-throw contract,
+    // variable shaping — is identical and must not drift into two copies.
+    this.#configKey = config.configKey || 'grading_hook';
+    // Log events are NAMED for the instance, so the log store can tell the two
+    // hooks apart. The default key reproduces `school.grading_hook.*` byte for
+    // byte — every existing query and every existing test keeps working.
+    this.#eventPrefix = `school.${this.#configKey}`;
     this.#logger = config.logger || console;
 
     this.failureCount = 0;
@@ -88,16 +108,16 @@ export class SchoolGradingHookAdapter {
     // The inner try/catch (around the actual gateway call) keeps sole
     // ownership of failureCount/backoffUntil.
     try {
-      const script = this.#loadSchoolConfig(outcome?.householdId)?.grading_hook?.script;
+      const script = this.#loadSchoolConfig(outcome?.householdId)?.[this.#configKey]?.script;
       if (!script) {
         this.metrics.skippedNotConfigured++;
-        this.#logger.debug?.('school.grading_hook.skipped', { reason: 'not_configured' });
+        this.#logger.debug?.(`${this.#eventPrefix}.skipped`, { reason: 'not_configured' });
         return { ok: true, skipped: true, reason: 'not_configured' };
       }
 
       if (this.backoffUntil > now) {
         this.metrics.skippedBackoff++;
-        this.#logger.warn?.('school.grading_hook.skipped', {
+        this.#logger.warn?.(`${this.#eventPrefix}.skipped`, {
           reason: 'backoff', remainingMs: this.backoffUntil - now, failureCount: this.failureCount,
         });
         return { ok: true, skipped: true, reason: 'backoff' };
@@ -134,7 +154,7 @@ export class SchoolGradingHookAdapter {
         this.metrics.lastFiredAt = new Date(now).toISOString();
         this.metrics.resultHistogram[variables.result] =
           (this.metrics.resultHistogram[variables.result] || 0) + 1;
-        this.#logger.info?.('school.grading_hook.fired', {
+        this.#logger.info?.(`${this.#eventPrefix}.fired`, {
           script, result: variables.result, learnerId: variables.learner_id,
         });
         return { ok: true };
@@ -146,11 +166,11 @@ export class SchoolGradingHookAdapter {
             MAX_BACKOFF_MS, 1000 * (2 ** (this.failureCount - MAX_FAILURES)),
           );
           this.backoffUntil = Date.now() + backoffMs;
-          this.#logger.error?.('school.grading_hook.circuit_open', {
+          this.#logger.error?.(`${this.#eventPrefix}.circuit_open`, {
             failureCount: this.failureCount, backoffMs, error: error.message,
           });
         } else {
-          this.#logger.error?.('school.grading_hook.failed', {
+          this.#logger.error?.(`${this.#eventPrefix}.failed`, {
             script, result: variables.result, error: error.message,
             failureCount: this.failureCount,
           });
@@ -161,7 +181,7 @@ export class SchoolGradingHookAdapter {
       // Config load / outcome-shaping errors — never the gateway's fault, so
       // the breaker stays untouched. Distinct event name from `.failed`
       // (which means "the gateway rejected the call").
-      this.#logger.error?.('school.grading_hook.error', { error: error.message });
+      this.#logger.error?.(`${this.#eventPrefix}.error`, { error: error.message });
       return { ok: false, error: error.message };
     }
   }

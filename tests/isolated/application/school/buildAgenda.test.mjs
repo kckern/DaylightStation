@@ -79,6 +79,41 @@ const actions = (doc) => doc.blocks.filter((b) => b.type === 'scan_action');
 const transcript = (doc) => doc.blocks.map((b) => b.md ?? b.label ?? '').join('\n');
 
 describe('the agenda document', () => {
+  it('prints Hoffman as a structured course/unit/lesson with a QR and panel code', async () => {
+    const status = {
+      doneToday: false,
+      score: 10,
+      progressLabel: '34/344 · next: Lesson 3',
+      context: {
+        course: { id: 'plex:675689', title: 'Hoffman Academy' },
+        unit: { id: 'season-4', title: 'Unit 4', position: 4 },
+        lesson: { id: 'plex:9003', title: 'Lesson 3', position: 3 },
+      },
+      progress: [
+        { scope: 'course', label: 'Course', completed: 34, total: 344 },
+        { scope: 'module', label: 'Unit 4', completed: 2, total: 20 },
+      ],
+    };
+    build({
+      assignment: { learnerId: 'kid1', programs: [{ programId: 'piano-course', courseId: 'plex:675689', subject: 'arts' }] },
+      launchers: new Map([['piano-course', { status: async () => status, locationHint: 'at the piano', mountable: true }]]),
+      selfService: { enabled: true },
+    });
+    const result = await useCase.execute({ learnerId: 'kid1' });
+    const offer = offerFor(result, 'arts');
+    expect(offer).toMatchObject({ tokenClass: 'subject_next', unitId: 'piano-course:plex:675689' });
+    expect(offer.token).toEqual(expect.any(String));
+    expect(tokens.ofClass('subject_next')[0].accessCode).toMatch(/^\d{6}$/);
+    expect(sectionFor(result, 'arts').next).toMatchObject({
+      title: 'Lesson 3', courseId: 'plex:675689', module: 'season-4',
+      programContext: status.context,
+    });
+    const renderedFacts = JSON.stringify(result.document);
+    expect(renderedFacts).toContain('Hoffman Academy');
+    expect(renderedFacts).toContain('Unit 4');
+    expect(renderedFacts).toContain('Lesson 3');
+  });
+
   it('is a valid receipt-target document', async () => {
     const { document } = await useCase.execute({ learnerId: 'kid1' });
     expect(validateDocument(document).errors).toEqual([]);

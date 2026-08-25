@@ -187,6 +187,19 @@ describe('useKioskLaunchCommand', () => {
   });
 
   describe('piano.launch (DoNow reachability)', () => {
+    it('routes a structured School course lesson without requiring a contentId', async () => {
+      const onPianoCourseOpen = vi.fn();
+      mount({ onPianoCourseOpen });
+      await deliver({
+        deviceId: 'yellow-room-tablet', type: 'piano.course-lesson.launch',
+        learnerId: 'felix', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
+      });
+      expect(onPianoCourseOpen).toHaveBeenCalledWith(expect.objectContaining({
+        learnerId: 'felix', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
+      }));
+      expect(h.DaylightAPI).not.toHaveBeenCalled();
+      expect(h.launchIntent).not.toHaveBeenCalled();
+    });
     it('routes a piano.launch message to onPianoOpen, never launchIntent', async () => {
       const onPianoOpen = vi.fn();
       mount({ onPianoOpen });

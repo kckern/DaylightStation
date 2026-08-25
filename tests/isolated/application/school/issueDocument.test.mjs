@@ -19,7 +19,7 @@ import {
   WORKSHEET_DOCUMENT_ID, OMR_DOCUMENT_ID,
 } from '#testlib/school/lifecycleFixtures.mjs';
 
-let clock, sessions, tokens, formMaps, renderer, printer, useCase, curriculum;
+let clock, sessions, tokens, formMaps, renderer, printer, useCase, curriculum, issuedArtifacts;
 
 const SID = 'ses_1';
 
@@ -32,9 +32,23 @@ const build = ({ formMapFor = null } = {}) => {
   formMaps = new FakeFormMapStore();
   renderer = new FakeDocumentRenderer({ formMapFor });
   printer = new FakeLaserPrinter();
+  // A reprint replays the RETAINED original bytes rather than re-rendering
+  // mutable source data (IssueDocument#reprintExact). Without a retention
+  // store every reprint correctly degrades to `unavailable` — which is its
+  // own covered behaviour (IssueDocument.artifactRetention.test.mjs) but the
+  // opposite of what the reprint cases below mean to exercise.
+  const retainedById = new Map();
+  issuedArtifacts = {
+    get: async (id) => retainedById.get(id) ?? null,
+    put: async (value) => {
+      const retained = { manifest: { artifactId: value.artifactId }, bytes: Buffer.from(value.bytes) };
+      retainedById.set(value.artifactId, retained);
+      return retained;
+    },
+  };
   let artifactSeq = 0;
   useCase = new IssueDocument({
-    curriculum, sessions, tokens, renderer, printer, formMaps,
+    curriculum, sessions, tokens, renderer, printer, formMaps, issuedArtifacts,
     bankReader: { getBank: (id) => ({ id, items: [] }) },
     clock: clock.now, rng: seededRng(11),
     newArtifactId: () => `art_${++artifactSeq}`,
@@ -289,7 +303,10 @@ describe('print debounce', () => {
   it('honours a configured cooldown window', async () => {
     build();
     useCase = new IssueDocument({
-      curriculum, sessions, tokens, renderer, printer, formMaps,
+      // `build()`'s retention store is reused deliberately: this case overrides
+      // only the cooldown window, and dropping the store would make it assert
+      // `unavailable` (no retained original) instead of the reprint it names.
+      curriculum, sessions, tokens, renderer, printer, formMaps, issuedArtifacts,
       bankReader: { getBank: (id) => ({ id, items: [] }) },
       clock: clock.now, rng: seededRng(11), newArtifactId: () => 'art_x',
       printCooldownMinutes: 1,
@@ -484,10 +501,20 @@ describe('tracked quizzes (print/<id>@<rev> document references, spec §9)', () 
     printFormMaps = new FakeFormMapStore();
     printRenderer = new FakeDocumentRenderer();
     printPrinter = new FakeLaserPrinter();
+    // Same reason as `build()`'s own store: a reprint replays retained bytes.
+    const printRetainedById = new Map();
+    const printIssuedArtifacts = {
+      get: async (id) => printRetainedById.get(id) ?? null,
+      put: async (value) => {
+        const retained = { manifest: { artifactId: value.artifactId }, bytes: Buffer.from(value.bytes) };
+        printRetainedById.set(value.artifactId, retained);
+        return retained;
+      },
+    };
     let artifactSeq = 0;
     printUseCase = new IssueDocument({
       curriculum, sessions: printSessions, tokens: printTokens, renderer: printRenderer,
-      printer: printPrinter, formMaps: printFormMaps,
+      printer: printPrinter, formMaps: printFormMaps, issuedArtifacts: printIssuedArtifacts,
       ...(configured ? { printDocuments: repository, renderPrintDocument, allocationStore } : {}),
       clock: printClock.now, rng: seededRng(11),
       newArtifactId: () => `art_${++artifactSeq}`,

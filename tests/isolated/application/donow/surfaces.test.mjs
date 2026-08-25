@@ -522,6 +522,21 @@ describe('PianoKioskSurface', () => {
     expect(broadcast.mock.calls[0][1]).not.toHaveProperty('play');
   });
 
+  it('validates and dispatches a structured course lesson with learner identity', async () => {
+    const broadcast = vi.fn();
+    const s = new PianoKioskSurface({ eventBus: { broadcast }, kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
+    const action = {
+      kind: 'course-lesson', learnerId: 'felix', courseId: 'plex:675689', courseTitle: 'Hoffman Academy',
+      unitId: 'season-4', unitTitle: 'Unit 4', lessonId: 'plex:9001', lessonTitle: 'Lesson 1',
+    };
+    expect(s.validateAction(action)).toEqual([]);
+    await expect(s.dispatch({ action, learnerId: 'felix' })).resolves.toEqual({ dispatched: true });
+    expect(broadcast).toHaveBeenCalledWith('kiosk.launch', expect.objectContaining({
+      type: 'piano.course-lesson.launch', deviceId: 'piano-tablet-1', learnerId: 'felix',
+      courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
+    }));
+  });
+
   it('no eventBus -> dispatched:false, never throws', async () => {
     const s = new PianoKioskSurface({ kioskDeviceParam: 'piano-tablet-1', logger: silentLogger });
     await expect(s.dispatch({ action: { contentId: 'hymn:12' }, learnerId: 'kid1' }))

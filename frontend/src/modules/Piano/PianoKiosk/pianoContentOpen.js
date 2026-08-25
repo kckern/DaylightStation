@@ -35,6 +35,23 @@ export function sheetMusicViewPath(basePath, contentId) {
   return `${basePath}/sheetmusic/view/${contentId}`;
 }
 
+export function pianoCourseLessonPath(basePath, courseId, lessonId) {
+  const course = String(courseId ?? '').replace(/^plex:/, '');
+  if (!/^\d+$/.test(course) || !/^plex:\d+$/.test(lessonId ?? '')) return null;
+  return `${basePath}/videos/${course}/${lessonId}`;
+}
+
+export function openPianoCourseLesson({ courseId, lessonId, basePath, navigate }) {
+  const target = pianoCourseLessonPath(basePath, courseId, lessonId);
+  if (!target) {
+    logger().warn('piano-course-lesson-open-unreachable', { courseId, lessonId });
+    return false;
+  }
+  logger().info('piano-course-lesson-open', { courseId, lessonId });
+  navigate(target);
+  return true;
+}
+
 /**
  * Resolve a DoNow `piano.launch` contentId to an in-kiosk navigation,
  * mirroring "the same path a menu tap takes" for the ONE piano mode that
