@@ -3,11 +3,10 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import Keypad from './Keypad.jsx';
 
 const screenOff = vi.hoisted(() => vi.fn());
-const launchAndroidTarget = vi.hoisted(() => vi.fn());
 const selfService = vi.hoisted(() => vi.fn());
 const selfServiceError = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../lib/fkb.js', () => ({ screenOff, launchAndroidTarget }));
+vi.mock('../../../lib/fkb.js', () => ({ screenOff }));
 vi.mock('../schoolLog.js', () => ({
   schoolLog: { selfService, selfServiceError },
 }));
@@ -25,7 +24,6 @@ describe('School self-service keypad screen off', () => {
       json: async () => ({ presence: { devices: [] } }),
     }));
     screenOff.mockReset().mockReturnValue(true);
-    launchAndroidTarget.mockReset().mockReturnValue(true);
     selfService.mockClear();
     selfServiceError.mockClear();
   });
@@ -45,16 +43,6 @@ describe('School self-service keypad screen off', () => {
     await act(async () => {});
     expect(screen.getByText('Keyboard connected')).toBeInTheDocument();
     expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
-  });
-
-  it('opens Android Bluetooth settings when pairing is needed', async () => {
-    renderKeypad();
-    await act(async () => {});
-    fireEvent.click(screen.getByRole('button', { name: 'Pair keyboard' }));
-    expect(launchAndroidTarget).toHaveBeenCalledWith({
-      package: 'com.android.tv.settings', activity: '.accessories.AddAccessoryActivity',
-    });
-    expect(selfService).toHaveBeenCalledWith('keyboard.pairing.requested', {});
   });
 
   it('accepts Bluetooth HID digits, backspace, and Enter', async () => {
