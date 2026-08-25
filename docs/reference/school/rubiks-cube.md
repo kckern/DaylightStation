@@ -2,6 +2,14 @@
 
 `rubiks-cube` is an assigned School program for the `beginner-v1` layer-by-layer course. It is intentionally a learner-course service, not a Group Play game: the shared cube engine owns legal turns while the School service owns one learner's progress, hints, quiz results, and launch authority.
 
+## Authored course and physical companion
+
+The course catalogue lives in `backend/src/3_applications/school/rubiksCube/course.yml`.  It is the reviewed, editable source for unit order, learner-facing copy, demonstrations, staged goals, and strategy checks.  `courseCatalog.mjs` only loads and validates that source, derives deterministic practice scrambles and their engine-checked recovery sequences, and removes answers/recovery moves from learner responses.
+
+The learner can enter all six faces of a physical cube in the persistent **My physical cube** panel.  Input is rejected unless colour counts, cubie inventory, edge/corner orientation, and permutation parity describe a legal 3×3 state.  A bounded recovery worker then returns moves which are replayed through the local engine before the app shows them.  Reset/setup guidance is explicitly guidance; a physical-stage verification requires entering all six faces again and checking the authored stage predicate.
+
+Rubik worksheets will be authored as `school.document-source/v1` sources and issued through the School print-document lifecycle.  Cube SVGs carry a colour letter plus a light grayscale cue (no hatching).  A worksheet companion action is **one issued opaque token with two entry paths**: the action card carries its QR payload and, immediately with it, the token's six-digit panel alias.  Scanning the QR or typing the digits resolves the identical token and emits the identical companion-open event.  A worksheet is not allowed to invent either value.  Until the dedicated worksheet-companion token class is added to that shared contract, the course must not present a worksheet as printable/enrollable.
+
 ## Assignment and access
 
 Use the normal assignment write with this program enrollment:

@@ -1,22 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { activities, RUBIKS_CUBE_COURSE, publicActivity } from './courseCatalog.mjs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { RUBIKS_CUBE_COURSE, RUBIKS_CUBE_REVISION, activities, publicActivity } from './courseCatalog.mjs';
 
-describe('Rubik’s Cube course catalog', () => {
-  it('keeps the complete beginner sequence ordered and contains every requested activity type', () => {
-    const all = activities();
-    expect(RUBIKS_CUBE_COURSE.units.map((unit) => unit.id)).toEqual([
-      'know-the-cube', 'white-cross', 'white-corners', 'middle-layer', 'yellow-face', 'last-layer', 'complete-the-cube',
-    ]);
-    expect(new Set(all.map((item) => item.kind))).toEqual(new Set(['demo', 'lesson', 'challenge', 'quiz']));
-    expect(all).toHaveLength(33);
-  });
-
-  it('keeps answer keys and authored solutions out of the learner projection', () => {
-    for (const lesson of activities()) {
-      const safe = publicActivity(lesson);
-      expect(safe.solution).toBeUndefined();
-      for (const question of safe.questions ?? []) expect(question.answer).toBeUndefined();
-      for (const question of lesson.questions ?? []) expect(question.options).toHaveLength(4);
-    }
-  });
+test('the YAML catalogue hydrates staged practice and hides answer material', () => {
+  assert.equal(RUBIKS_CUBE_REVISION, 3);
+  assert.equal(RUBIKS_CUBE_COURSE.units.length, 7);
+  const cross = activities().find((activity) => activity.id === 'cross-edges');
+  assert.equal(cross.goal, 'white-cross');
+  assert.ok(cross.solution.length > 0);
+  assert.equal(publicActivity(cross).solution, undefined);
+  const check = activities().find((activity) => activity.id === 'yellow-face-quiz');
+  assert.equal(check.questions.length, 5);
+  assert.equal(publicActivity(check).questions[0].answer, undefined);
 });

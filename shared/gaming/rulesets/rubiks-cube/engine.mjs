@@ -53,14 +53,26 @@ export function isValidCube(cube) {
   const stickers = FACES.flatMap((face) => cube[face] || []);
   if (stickers.length !== 54 || FACES.some((face) => !Array.isArray(cube[face]) || cube[face].length !== 9)) return false;
   return Object.values(COLORS).every((color) => stickers.filter((value) => value === color).length === 9)
-    && FACES.every((face) => cube[face][4] === COLORS[face]);
+    // Whole-cube rotations are legal teaching moves. Their centers move in the
+    // fixed display frame, so validity is center-relative rather than tied to
+    // the white-up starter orientation.
+    && new Set(FACES.map((face) => cube[face][4])).size === 6;
 }
 
 export function normalizeMove(input) {
   if (typeof input !== 'string') return null;
-  const value = input.trim().toUpperCase();
-  const match = /^([URFDLB])([2']?)$/.exec(value);
-  return match ? `${match[1]}${match[2]}` : null;
+  const value = input.trim();
+  const match = /^([URFDLBMESXYZurfdlbxyz])([wW]?)([2']?)$/.exec(value);
+  if (!match) return null;
+  const [, raw, wideMarker, suffix] = match;
+  let face;
+  if (wideMarker) {
+    if (!'URFDLBurfdlb'.includes(raw)) return null;
+    face = raw.toLowerCase();
+  } else if ('urfdlb'.includes(raw)) face = raw; // conventional lower-case wide turn
+  else if ('xyz'.includes(raw.toLowerCase())) face = raw.toLowerCase();
+  else face = raw.toUpperCase();
+  return `${face}${suffix}`;
 }
 
 export function inverseMove(move) {
@@ -71,13 +83,28 @@ export function inverseMove(move) {
 export function applyMove(cube, input) {
   const move = normalizeMove(input);
   if (!move || !isValidCube(cube)) return null;
-  const face = move[0]; const axis = NORMALS[face];
-  // Clockwise when looking directly at the named face is -90° around its
-  // outward normal.  Half turns are direction-independent.
-  const turns = move.endsWith('2') ? 2 : move.endsWith("'") ? 1 : -1;
+  const face = move[0];
+  const upper = face.toUpperCase();
+  let axis; let select; let direction = -1;
+  if (FACES.includes(face)) {
+    axis = NORMALS[face]; select = (position) => dot(position, axis) === 1;
+  } else if ('urfdlb'.includes(face)) {
+    axis = NORMALS[upper]; select = (position) => dot(position, axis) >= 0;
+  } else if (face === 'M') {
+    axis = NORMALS.R; select = (position) => dot(position, axis) === 0; direction = 1; // M turns like L
+  } else if (face === 'E') {
+    axis = NORMALS.U; select = (position) => dot(position, axis) === 0; direction = 1; // E turns like D
+  } else if (face === 'S') {
+    axis = NORMALS.F; select = (position) => dot(position, axis) === 0;
+  } else {
+    axis = NORMALS[{ x: 'R', y: 'U', z: 'F' }[face]]; select = () => true;
+  }
+  // Clockwise when looking directly at a named face is -90° around its
+  // outward normal. Slice conventions follow L, D, and F respectively.
+  const turns = move.endsWith('2') ? 2 : move.endsWith("'") ? -direction : direction;
   const next = cloneCube(cube);
   for (const source of FACELETS) {
-    if (dot(source.p, axis) !== 1) continue;
+    if (!select(source.p)) continue;
     const destination = LOOKUP.get(key(rotate(source.p, axis, turns), rotate(source.n, axis, turns)));
     next[destination.face][destination.row * 3 + destination.col] = cube[source.face][source.row * 3 + source.col];
   }
@@ -91,7 +118,25 @@ export function applySequence(cube, moves = []) {
 }
 
 export function isSolved(cube) {
-  return isValidCube(cube) && FACES.every((face) => cube[face].every((sticker) => sticker === COLORS[face]));
+  return isValidCube(cube) && FACES.every((face) => cube[face].every((sticker) => sticker === cube[face][4]));
+}
+
+const sideTop = (cube, face) => cube[face][1] === cube[face][4];
+
+/** Teaching goals are intentionally partial: a cross lesson does not demand a
+ * full solve merely because the learner has used the real cube. */
+export function goalReached(cube, goal = 'solved') {
+  if (!isValidCube(cube)) return false;
+  const top = cube.U[4];
+  const firstLayer = cube.U.every((sticker) => sticker === top)
+    && ['R', 'F', 'L', 'B'].every((face) => cube[face].slice(0, 3).every((sticker) => sticker === cube[face][4]));
+  if (goal === 'white-cross') return [1, 3, 5, 7].every((index) => cube.U[index] === top)
+    && ['R', 'F', 'L', 'B'].every((face) => sideTop(cube, face));
+  if (goal === 'first-layer') return firstLayer;
+  if (goal === 'middle-layer') return firstLayer
+    && ['R', 'F', 'L', 'B'].every((face) => cube[face].slice(3, 6).every((sticker) => sticker === cube[face][4]));
+  if (goal === 'yellow-oriented') return cube.D.every((sticker) => sticker === cube.D[4]);
+  return isSolved(cube);
 }
 
 export function cubeFaces(cube) {
