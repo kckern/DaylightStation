@@ -1867,25 +1867,64 @@
   pointer-events: none;
   user-select: none;
   min-width: 0; min-height: 0;
-  display: grid; place-items: center;
-  padding: clamp(1.25rem, 3vw, 3rem); box-sizing: border-box;
+  padding: clamp(1.25rem, 2.5vw, 2.25rem); box-sizing: border-box;
   border-left: 1px solid var(--school-border);
 }
 .school-lock-split[data-side='keypad-right'] .school-lock-split__board { border-left: 0; border-right: 1px solid var(--school-border); }
+// Keypad-left puts the board under the fixed "Turn off screen" affordance
+// (bottom-right) — reserve a lane so it never sits on the last card.
+.school-lock-split[data-side='keypad-left'] .school-lock-split__board { padding-bottom: clamp(3rem, 6vh, 3.75rem); }
+// The board OWNS its pane: a column of equal-height student cards that split
+// the available height between them, whatever each card has to say. A card
+// with no plan keeps the same footprint — four matching cards are the point.
 .school-status-board {
   color: #efe9dc;
+  display: flex; flex-direction: column;
+  width: 100%; height: 100%; min-height: 0;
 
-  &__title { margin: 0 0 0.75rem; font: 700 1.4rem/1.1 Georgia, serif; opacity: 0.8; }
-  &__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.9rem; }
-  &__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.75rem; }
-  &__name { font-weight: 700; font-size: 1.05rem; }
-  &__pills { display: inline-flex; gap: 0.3rem; align-items: center; flex-basis: 100%; margin-left: 3rem; }
-  &__pill { width: 1.15rem; height: 0.45rem; border-radius: 999px; background: rgba(239, 233, 220, 0.25);
+  &__title { margin: 0 0 clamp(0.5rem, 1.5vh, 1rem); font: 700 clamp(1.3rem, 2.6vh, 1.7rem)/1.1 Georgia, serif; opacity: 0.8; flex: 0 0 auto; }
+  &__rows {
+    list-style: none; margin: 0; padding: 0;
+    flex: 1 1 0; min-height: 0;
+    display: flex; flex-direction: column; gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  }
+  &__row {
+    flex: 1 1 0; min-height: 0;
+    display: flex; align-items: center; gap: clamp(0.9rem, 2vw, 1.4rem);
+    padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.9rem, 2vw, 1.5rem);
+    border: 1px solid var(--school-border); border-radius: 16px;
+    background: var(--school-surface);
+
+    .piano-avatar {
+      width: clamp(3.25rem, 9.5vh, 5rem); height: clamp(3.25rem, 9.5vh, 5rem);
+      font-size: clamp(1.1rem, 3vh, 1.6rem);
+    }
+  }
+  &__info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: clamp(0.35rem, 1vh, 0.6rem); }
+  &__line { display: flex; align-items: baseline; gap: 0.75rem; }
+  &__name {
+    font-weight: 800; font-size: clamp(1.15rem, 2.8vh, 1.6rem);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  // The meter spans the card, one segment per lesson: comparable bar-to-bar
+  // even when the lesson counts differ.
+  &__pills { display: flex; gap: clamp(0.3rem, 0.8vw, 0.5rem); align-items: center; width: 100%; }
+  &__pill {
+    flex: 1 1 0; max-width: 4.5rem; height: clamp(0.5rem, 1.3vh, 0.7rem);
+    border-radius: 999px; background: rgba(239, 233, 220, 0.22);
     &.is-done { background: #7fb069; }
   }
-  &__count { font-size: 0.8rem; opacity: 0.75; }
-  &__status { margin-left: auto; font-size: 0.8rem; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em; }
-  &__row[data-status='Done for the day'] .school-status-board__status { color: #7fb069; opacity: 1; }
+  &__count { font-size: clamp(0.85rem, 1.9vh, 1rem); opacity: 0.75; }
+  &__status {
+    margin-left: auto; flex: 0 0 auto;
+    font-size: clamp(0.8rem, 1.8vh, 0.95rem); font-weight: 700;
+    opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
+  &__row[data-status='Done for the day'] {
+    border-color: color-mix(in srgb, #7fb069 45%, var(--school-border));
+    .school-status-board__status { color: #7fb069; opacity: 1; }
+  }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short
  * viewports so the keypad always fits. */
