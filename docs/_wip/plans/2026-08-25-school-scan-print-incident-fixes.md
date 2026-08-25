@@ -1317,7 +1317,78 @@ const printSocket = () => LateNetwork.instances[1];
 
 Update the three assertions to use `printSocket()` instead of `instances[0]`, and assert on `writes` **excluding** the four DLE EOT query buffers.
 
-- [ ] **Step 8: Run the whole thermal suite, then commit**
+- [ ] **Step 8: Close the loop — never arm a lockout on an unverified print**
+
+This is the step the whole task exists for. Steps 1–7 make `printed: true` mean more; this one makes the *consequence* depend on it.
+
+Today `ResolvePersonalCard.mjs:190` arms a 15-minute cooldown after `receipts.print()` returns truthy. A genuinely FAILED print already skips arming (line 179 returns first — verified), so the remaining hole is the **phantom success**: the adapter reports true, no paper came out, and the child is locked out for 15 minutes with a receipt that does not exist.
+
+Step 6's pre-flight closes the case that actually happened on 2026-08-25 — a printer that was already unhealthy and had not recovered. It cannot close **mid-job paper-out**, because this hardware answers no buffered status command and a second connection during a job is refused (see Step 6's note). Be honest about that boundary in the code rather than implying certainty.
+
+Add a **post-close, advisory** verification in `#executePrintJob` — after `device.close()` and after `job.complete` is logged, never inside the open callback:
+
+```js
+            // Post-close, ADVISORY. The socket is already closed, so this
+            // second connection cannot collide with the job's own (this
+            // printer refuses concurrent connects — 2026-08-25). It cannot
+            // prove the raster rendered; it can only catch the roll running
+            // out DURING the job, which the pre-flight by definition cannot.
+            let verified = true;
+            try {
+              const post = await this.getStatus();
+              if (post.responded && (!post.paperPresent || post.errors.length > 0)) {
+                verified = false;
+                this.#logger.error?.('thermalPrinter.postcheck.failed', {
+                  paperPresent: post.paperPresent, errors: post.errors,
+                });
+              }
+            } catch { /* advisory only — never turn a good print into a failure */ }
+            resolve(verified);
+```
+
+Then in `ResolvePersonalCard.mjs`, leave line 190 as-is — it is already correct once `print()` stops returning phantom successes. Instead add a comment above it recording WHY it is safe and what it still cannot know:
+
+```js
+    // Arming a 15-minute lockout is a claim that paper exists. `print()` now
+    // refuses up front when the printer cannot print and reports false when the
+    // roll ran out mid-job (ThermalPrinterAdapter Steps 6/8), so this is no
+    // longer armed on a stopwatch. It still cannot prove the raster RENDERED —
+    // no buffered status command exists on this hardware — which is precisely
+    // why the repeat-tap override (Task 9) has to exist.
+    if (this.#cooldown) await this.#armCooldown(learnerId, agenda);
+```
+
+Test it, in `tests/unit/adapters/hardware/thermal-printer/ThermalPrinterAdapter.status.test.mjs`:
+
+```js
+  it('resolves FALSE when the roll runs out mid-job — no phantom success', async () => {
+    // Status transport answers "paper present" on the pre-flight and
+    // "paper out" (bit 5 set on DLE EOT 4) on the post-check.
+    let call = 0;
+    class DrainingNetwork extends StatusNetwork {
+      write(data, cb) {
+        this.sent.push([...data]);
+        if (data[0] === 0x10 && data[1] === 0x04) {
+          const outOfPaper = call > 0 && data[2] === 4;
+          const replies = { 1: 0x16, 2: 0x12, 3: 0x12, 4: outOfPaper ? 0x32 : 0x12 };
+          setImmediate(() => this.readCb?.(Buffer.from([replies[data[2]]])));
+        }
+        cb && cb(null);
+        return this;
+      }
+      close(cb) { call += 1; cb && cb(null, null); return this; }
+    }
+    const adapter = new ThermalPrinterAdapter(
+      { host: '10.0.0.50', port: 9100, timeout: 2000 },
+      { logger: quietLogger(), createTransport: () => new DrainingNetwork() },
+    );
+    await expect(adapter.print(textJob)).resolves.toBe(false);
+  });
+```
+
+> Confirm the paper-out bit encoding against `#parseStatusResponses` case 3 (`(byte & 0x60) === 0` means present) before trusting `0x32`, and adjust the fixture to whatever actually sets one of bits 5/6. The assertion — false, not true — is the part that matters.
+
+- [ ] **Step 9: Run the whole thermal suite, then commit**
 
 ```bash
 NODE_OPTIONS=--experimental-vm-modules node /opt/Code/DaylightStation/node_modules/jest/bin/jest.js \
