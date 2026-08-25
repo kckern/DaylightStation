@@ -307,9 +307,13 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   const titles = curriculumTitles(units);
   const courseIds = [...new Set(units.map((unit) => unit.courseId).filter(Boolean))];
   const modules = [...new Set(units.map((unit) => unit.module).filter(Boolean))];
-  const [form, setForm] = useState({ kind: 'paused', learnerId: '', targetType: 'lesson',
-    targetId: lessonId, courseId, replacementLessonId: '', reason: 'broken' });
+  // Neutral by default: the most drastic decision and a preselected reason
+  // must never be the zero-interaction path.
+  const [form, setForm] = useState({ kind: '', learnerId: '', targetType: 'lesson',
+    targetId: lessonId, courseId, replacementLessonId: '', reason: '' });
   const [preview, setPreview] = useState(null);
+  const [retracting, setRetracting] = useState(null);
+  const [retractReason, setRetractReason] = useState('');
   const { run, busy, errors } = useTeacherWrite({ panel: 'curriculum-exceptions' });
   const change = (field) => (event) => {
     const value = event.target.value;
@@ -318,11 +322,11 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
         ? units.find((unit) => unit.unitId === value) : null;
       return { ...current, [field]: value,
         ...(selectedUnit ? { courseId: selectedUnit.courseId ?? '' } : {}),
-        ...(field === 'kind' && value === 'paused' ? { learnerId: '', reason: 'broken' } : {}) };
+        ...(field === 'kind' && value === 'paused' ? { learnerId: '', reason: '' } : {}) };
     });
     setPreview(null);
   };
-  const valid = form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
+  const valid = form.kind && form.targetId.trim() && form.reason.trim() && (form.kind === 'paused' || form.learnerId)
     && (form.kind !== 'replaced' || form.replacementLessonId.trim());
   const save = (apply) => run(`exception-${apply ? 'apply' : 'preview'}`, (auth) => teacherWorkspaceApi.changeCurriculumException({
     ...form, learnerId: form.kind === 'paused' ? null : form.learnerId, courseId: form.courseId || null,
@@ -331,25 +335,29 @@ function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
   }, auth.stepUpToken), { onSuccess: (data) => { setPreview(data); if (apply) setRefresh((n) => n + 1); },
     stepUp: apply ? () => ({ action: 'curriculum-exception.apply', resource: form.targetId }) : null });
   const retract = (exception) => {
-    const reason = window.prompt('Why are you retracting this exception?');
-    if (!reason?.trim()) return;
     run(`retract-${exception.exceptionId}`, (auth) => teacherWorkspaceApi.retractCurriculumException(exception.exceptionId,
-      { reason: reason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }, auth.stepUpToken),
-    { onSuccess: () => setRefresh((n) => n + 1),
+      { reason: retractReason.trim(), retractedBy: auth.actorId, pin: auth.pin, apply: true }, auth.stepUpToken),
+    { onSuccess: () => { setRetracting(null); setRetractReason(''); setRefresh((n) => n + 1); },
       stepUp: () => ({ action: 'curriculum-exception.retract', resource: exception.exceptionId }) });
   };
   return <PanelFrame title="Curriculum exceptions" state={exceptions.state} retry={exceptions.retry} unavailableCopy="Curriculum exceptions are not enabled."><div className="teacher-exception-panel"><div className="teacher-form-grid">
-    <label>Decision<select value={form.kind} onChange={change('kind')}><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
+    <label>Decision<select value={form.kind} onChange={change('kind')}><option value="">Choose…</option><option value="excused">Excused</option><option value="deferred">Deferred</option><option value="replaced">Replaced</option><option value="paused">Paused globally</option></select></label>
     {form.kind !== 'paused' && <label>Student<select value={form.learnerId} onChange={change('learnerId')}><option value="">Choose…</option>{kids.map((kid) => <option key={kid.id} value={kid.id}>{kid.name ?? kid.id}</option>)}</select></label>}
     <label>Target<select value={form.targetType} onChange={change('targetType')}><option value="lesson">Lesson</option><option value="module">Unit / module</option></select></label>
     <label>{form.targetType === 'lesson' ? 'Lesson' : 'Unit / module'}<select value={form.targetId} onChange={change('targetId')}><option value="">Choose…</option>{form.targetType === 'lesson' ? units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>) : modules.map((module) => <option key={module} value={module}>{labelize(module)}</option>)}</select></label>
     <label>Course<select value={form.courseId} onChange={change('courseId')}><option value="">Any course</option>{courseIds.map((id) => <option key={id} value={id}>{titles.course(id)}</option>)}</select></label>
     {form.kind === 'replaced' && <label>Replacement lesson<select value={form.replacementLessonId} onChange={change('replacementLessonId')}><option value="">Choose…</option>{units.map((unit) => <option key={unit.unitId} value={unit.unitId}>{titles.lesson(unit.unitId)}</option>)}</select></label>}
-    <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
+    <label>Reason{form.kind === 'paused' ? <select value={form.reason} onChange={change('reason')}><option value="">Choose…</option><option value="defective">Defective</option><option value="garbled">Garbled</option><option value="missing">Missing</option><option value="broken">Broken</option><option value="inappropriate">Inappropriate</option></select> : <input value={form.reason} onChange={change('reason')} />}</label>
   </div><div className="teacher-action-row"><button type="button" disabled={!valid || busy} onClick={() => save(false)}>Preview</button>{preview && !preview.applied && <button type="button" disabled={busy} onClick={() => save(true)}>Apply exception</button>}</div>
   {errors['exception-preview'] && <p role="alert">{errors['exception-preview']}</p>}{errors['exception-apply'] && <p role="alert">{errors['exception-apply']}</p>}
   {preview?.effects && <p>Gate: {preview.effects.advancesGate ? 'satisfied without mastery' : preview.effects.remainsOutstanding ? 'still outstanding' : preview.effects.blocksNewWork ? 'new work blocked' : 'unchanged'}.</p>}
-  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} <button type="button" disabled={busy} onClick={() => retract(exception)}>Retract</button></li>)}</ul>
+  <ul>{(exceptions.data?.active ?? []).map((exception) => <li key={exception.exceptionId}><strong>{labelize(exception.kind)}</strong> · {exception.learnerId ?? 'Everyone'} · {exception.targetType === 'lesson' ? titles.lesson(exception.targetId) : labelize(exception.targetId)} · {exception.reason} {retracting === exception.exceptionId
+    ? <span className="teacher-action-row">
+      <input aria-label={`Retraction reason for ${exception.exceptionId}`} maxLength={240} placeholder="Why retract this?" value={retractReason} onChange={(event) => setRetractReason(event.target.value)} />
+      <button type="button" disabled={busy || !retractReason.trim()} onClick={() => retract(exception)}>Confirm retraction</button>
+      <button type="button" onClick={() => { setRetracting(null); setRetractReason(''); }}>Cancel</button>
+    </span>
+    : <button type="button" disabled={busy} onClick={() => { setRetracting(exception.exceptionId); setRetractReason(''); }}>Retract</button>}</li>)}</ul>
   </div></PanelFrame>;
 }
 
