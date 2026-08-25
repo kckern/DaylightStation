@@ -81,24 +81,32 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   return (
     <div className="school-status-board" data-testid="agenda-status-board">
       <h2 className="school-status-board__title">Today</h2>
+      {/* One card per student, equal height whether or not a plan loaded —
+          the board is a wall fixture, and four uneven rows read as broken. */}
       <ul className="school-status-board__rows">
         {visible.map(({ kid, summary }) => (
           <li key={kid.id} className="school-status-board__row" data-status={summary ? dayStatus(summary) : null}>
-            <ProfileAvatar id={kid.id} name={kid.name} />
-            <span className="school-status-board__name">{kid.name}</span>
-            {summary && summary.total > 0 ? (
-              <>
-                <span className="school-status-board__pills" aria-hidden="true">
-                  {Array.from({ length: summary.total }, (_, i) => (
-                    <i key={i} className={`school-status-board__pill${i < summary.done ? ' is-done' : ''}`} />
-                  ))}
-                </span>
-                <span className="school-status-board__count">{summary.done} of {summary.total}</span>
-                <span className="school-status-board__status">{dayStatus(summary)}</span>
-              </>
-            ) : (
-              <span className="school-status-board__status school-status-board__status--none">—</span>
-            )}
+            <ProfileAvatar id={kid.id} name={kid.name} size={192} />
+            <div className="school-status-board__info">
+              <div className="school-status-board__line">
+                <span className="school-status-board__name">{kid.name}</span>
+                {summary && summary.total > 0 ? (
+                  <span className="school-status-board__status">{dayStatus(summary)}</span>
+                ) : (
+                  <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
+                )}
+              </div>
+              {summary && summary.total > 0 && (
+                <>
+                  <span className="school-status-board__pills" aria-hidden="true">
+                    {Array.from({ length: summary.total }, (_, i) => (
+                      <i key={i} className={`school-status-board__pill${i < summary.done ? ' is-done' : ''}`} />
+                    ))}
+                  </span>
+                  <span className="school-status-board__count">{summary.done} of {summary.total}</span>
+                </>
+              )}
+            </div>
           </li>
         ))}
       </ul>
