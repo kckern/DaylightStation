@@ -30,8 +30,9 @@
  * meaning something.
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
+import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
 import { mintToken } from '#domains/school/sessions/tokens.mjs';
 import { mintAccessCode } from '#domains/school/sessions/accessCode.mjs';
 import { agendaDocument, noticeDocument, reviewNoteLines } from '#domains/school/documents/receipts.mjs';
@@ -218,41 +219,7 @@ export class BuildAgenda {
       if (entry) plan.entries.push(entry);
       else this.#logger.warn?.('school.language-reels.daily-none-approved', { learnerId, dayKey });
     }
-    // Unlike a catalog lesson, an assigned deck is a durable program instance:
-    // it needs no duplicated authored unit merely to appear on the daily
-    // agenda. The launcher owns completion and launch target policy.
-    for (const enrollment of assignment?.programs ?? []) {
-      if (enrollment?.programId !== 'flashcards') continue;
-      const deckId = enrollment.deckId ?? enrollment.corpusId;
-      if (!deckId) continue;
-      plan.entries.push({
-        unitId: `flashcards:${deckId}`, title: enrollment.title ?? 'Flashcards',
-        description: null, subject: 'flashcards', courseId: null, sequence: null,
-        module: null, profile: null, timing: null, timingState: 'available',
-        timingPriority: 3, timingRank: 0, timingReasons: ['program_assignment'],
-        elective: false, program: 'flashcards', programInstance: deckId,
-        cadence: 'daily', status: 'available', sessionId: null, state: null,
-        lockReason: null, remedy: null, unlocks: [],
-      });
-    }
-    // A piano course is a durable program instance for the same reason a deck
-    // is: the lesson sequence lives in Plex and the kiosk, not in an authored
-    // School unit, so duplicating one here to make it appear would create a
-    // second copy of "what comes next" that could disagree with the kiosk's.
-    for (const enrollment of assignment?.programs ?? []) {
-      if (enrollment?.programId !== 'piano-course') continue;
-      const courseId = enrollment.courseId ?? enrollment.corpusId;
-      if (!courseId) continue;
-      plan.entries.push({
-        unitId: `piano-course:${courseId}`, title: enrollment.title ?? 'Piano lesson',
-        description: null, subject: enrollment.subject ?? 'arts', courseId: null, sequence: null,
-        module: null, profile: null, timing: null, timingState: 'available',
-        timingPriority: 3, timingRank: 0, timingReasons: ['program_assignment'],
-        elective: false, program: 'piano-course', programInstance: courseId,
-        cadence: 'daily', status: 'available', sessionId: null, state: null,
-        lockReason: null, remedy: null, unlocks: [],
-      });
-    }
+    appendAssignedProgramEntries(plan, assignment);
     if (plan.errors.length) this.#logger.warn?.('school.agenda.plan-errors', { learnerId, errors: plan.errors });
 
     const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
@@ -260,9 +227,12 @@ export class BuildAgenda {
     // unlock the PLANNER's gate — the daily-serving layer must not read an
     // attestation as "this subject was served today", or the repair day is
     // exactly the day the agenda goes silent.
-    const { sections } = planDailyAgenda({
+    const { sections: rawSections } = planDailyAgenda({
       plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
     });
+    const sections = rawSections.map((section) => section.next?.program
+      ? { ...section, next: projectProgramEntry(section.next, programStatusFor(programStatuses, section.next)) }
+      : section);
 
     const unitsById = new Map(units.map((u) => [u.unitId, u]));
     const offers = [];
@@ -340,25 +310,6 @@ export class BuildAgenda {
         continue;
       }
 
-      // A program that cannot be opened by scanning or by typing a code gets
-      // NEITHER. Minting them anyway prints a QR that resolves to a launcher
-      // whose `launch()` can only refuse, and a six-digit code a child can
-      // type into the panel to be told "no" — two dead ends on the paper,
-      // where the honest card is the subject icon and the words "at the
-      // piano". `mountable === false` is the launcher's own declaration
-      // (`PianoCourseProgramLauncher`); every other launcher omits the getter
-      // and is therefore unaffected.
-      const offeringLauncher = entry.program ? this.#launchers.get(entry.program) : null;
-      if (offeringLauncher?.mountable === false) {
-        actionLabelBySubject.set(section.subject, suffix);
-        offers.push({
-          subject: section.subject, unitId: entry.unitId, sessionId,
-          token: null, tokenClass: 'program_unmountable',
-          label: `${entry.title} — ${suffix}`,
-        });
-        continue;
-      }
-
       const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
       // `mintAccessCode` tests `taken` SYNCHRONOUSLY, so the registry cannot be
       // asked per draw — a Promise is always truthy and every attempt would read
@@ -409,6 +360,12 @@ export class BuildAgenda {
           const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
           const moduleIndex = enrollment?.moduleOrder?.indexOf(entry?.module) ?? -1;
           const moduleTitle = work?.modules?.find((module) => module.module === entry?.module)?.title;
+          if (entry?.programContext) return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
+            unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
+            lesson: entry.programContext.lesson?.title ?? entry.title,
+          };
           return {
             subject: section.subject[0].toUpperCase() + section.subject.slice(1),
             course: work?.title ?? entry?.courseId ?? 'Independent study',

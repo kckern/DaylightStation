@@ -601,6 +601,7 @@ export class RunSelfServiceAction {
       // to mount, and an effect that looks mountable would invite exactly the
       // false "opening here" this method exists to remove.
       effect: { decision, surface, programId, unitId },
+      ...(decision === 'dispatched' ? { transition: 'close' } : {}),
     };
   }
 

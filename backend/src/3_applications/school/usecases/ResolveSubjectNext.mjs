@@ -28,10 +28,11 @@
  * decision was actually made against.
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
 import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
+import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
 
 export class ResolveSubjectNext {
   #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger; #attestations; #curriculumExceptions;
@@ -111,6 +112,7 @@ export class ResolveSubjectNext {
     const plan = planLearnerWork({
       learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
     });
+    appendAssignedProgramEntries(plan, assignment);
     if (plan.errors.length) {
       this.#logger.warn?.('school.subject.plan-errors', { learnerId, subject, errors: plan.errors });
     }
@@ -138,7 +140,10 @@ export class ResolveSubjectNext {
 
     // A program entry never gets a session — there is nothing here to track,
     // same rule `BuildAgenda#offerFor` follows for the identical case.
-    if (entry.program) return { kind: 'program', programId: entry.program, unit };
+    if (entry.program) return {
+      kind: 'program', programId: entry.program,
+      unit: projectProgramEntry(entry, programStatusFor(programStatuses, entry)),
+    };
 
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
     if (paused) return { kind: 'locked', remedy: `Content paused: ${paused.reason}` };

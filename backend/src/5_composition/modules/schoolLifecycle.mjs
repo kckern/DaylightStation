@@ -189,6 +189,7 @@ export async function createSchoolLifecycle({
   // reads the SAME course/progress/lock projection the kiosk itself renders.
   // Null in a composition without Piano: the program simply never registers.
   pianoPlayableUnits = null,
+  learningEvidenceRepository = null,
   // `SchoolGradingHookAdapter` bound to `piano_lesson_hook`; null with no HA.
   pianoLessonHook = null,
   flashcardStudyService = null,
@@ -450,7 +451,7 @@ export async function createSchoolLifecycle({
   let pianoCourseLauncher = null;
   if (pianoPlayableUnits) {
     pianoCourseLauncher = new PianoCourseProgramLauncher({
-      getPlayableUnits: pianoPlayableUnits, timezone, clock, logger,
+      getPlayableUnits: pianoPlayableUnits, donow, timezone, clock, logger,
     });
     launchers.set(pianoCourseLauncher.id, pianoCourseLauncher);
   } else {
@@ -902,6 +903,7 @@ export async function createSchoolLifecycle({
         eventBus,
         assignments: stores.assignments,
         launcher: pianoCourseLauncher,
+        evidenceRepository: learningEvidenceRepository,
         hook: pianoLessonHook,
         resolveStudent: (learnerId) => configService.getUserProfile?.(learnerId)?.name ?? learnerId,
         timezone, clock, logger,

@@ -47,7 +47,7 @@ const BOUNDARY_HOUR = 4;
 export const CEREMONY_TOPIC = 'school';
 
 export class PianoLessonCeremonyBridge {
-  #eventBus; #assignments; #launcher; #hook; #resolveStudent;
+  #eventBus; #assignments; #launcher; #evidence; #hook; #resolveStudent;
   #timezone; #clock; #logger; #unsubscribe; #announced;
 
   /**
@@ -63,7 +63,7 @@ export class PianoLessonCeremonyBridge {
    * @param {object} [config.logger]
    */
   constructor({
-    eventBus, assignments, launcher, hook = null, resolveStudent = null,
+    eventBus, assignments, launcher, evidenceRepository = null, hook = null, resolveStudent = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!eventBus || typeof eventBus.subscribe !== 'function') {
@@ -75,6 +75,7 @@ export class PianoLessonCeremonyBridge {
     this.#eventBus = eventBus;
     this.#assignments = assignments;
     this.#launcher = launcher;
+    this.#evidence = evidenceRepository;
     this.#hook = hook;
     this.#resolveStudent = resolveStudent;
     this.#timezone = timezone;
@@ -94,6 +95,31 @@ export class PianoLessonCeremonyBridge {
         });
       })
     ));
+    // Backfill School's projection from Piano's authoritative completion
+    // ledger. Detached from boot: a slow Plex read must not hold up the house.
+    this.reconcile().catch((err) => this.#logger.warn?.('school.piano-progress.reconcile-failed', {
+      error: err?.message ?? String(err),
+    }));
+  }
+
+  /** Rebuildable/idempotent School projection for every current enrollment. */
+  async reconcile() {
+    if (!this.#evidence?.appendEvidence || typeof this.#assignments.list !== 'function') return;
+    const assignments = await this.#assignments.list();
+    for (const assignment of assignments ?? []) {
+      const learnerId = assignment?.learnerId;
+      if (!learnerId) continue;
+      for (const enrollment of (assignment.programs ?? []).filter((row) => row?.programId === this.#launcher.id)) {
+        const courseId = enrollment.courseId ?? enrollment.corpusId ?? null;
+        if (!courseId) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
+        for (const completion of status?.completedLessons ?? []) {
+          // eslint-disable-next-line no-await-in-loop
+          await this.#recordEvidence({ learnerId, enrollment, completion });
+        }
+      }
+    }
   }
 
   /** Unsubscribe. Safe before `start()` and safe to call twice. */
@@ -107,25 +133,43 @@ export class PianoLessonCeremonyBridge {
     if (typeof learnerId !== 'string' || !learnerId.trim()) return;
 
     const assignment = await this.#assignments.get(learnerId);
-    const enrollment = (assignment?.programs ?? [])
-      .find((row) => row?.programId === this.#launcher.id);
+    const enrollments = (assignment?.programs ?? [])
+      .filter((row) => row?.programId === this.#launcher.id);
     // Not enrolled: this player has no school piano requirement. Silence is
     // the correct response, not a warning — most piano use is not schoolwork.
-    if (!enrollment) return;
+    if (!enrollments.length) return;
 
-    const courseId = enrollment.courseId ?? enrollment.corpusId ?? null;
-    if (!courseId) {
-      this.#logger.warn?.('school.piano-ceremony.enrollment-has-no-course', { learnerId });
-      return;
+    let enrollment = null;
+    let courseId = null;
+    let status = null;
+    let completion = null;
+    for (const candidate of enrollments) {
+      const candidateCourseId = candidate.courseId ?? candidate.corpusId ?? null;
+      if (!candidateCourseId) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const candidateStatus = await this.#launcher.status({ userId: learnerId, programInstance: candidateCourseId });
+      const candidateCompletion = (candidateStatus?.completedLessonsToday ?? [])
+        .find((row) => row?.lesson?.id === payload?.plexId);
+      if (!candidateCompletion) continue;
+      enrollment = candidate;
+      courseId = candidateCourseId;
+      status = candidateStatus;
+      completion = candidateCompletion;
+      break;
     }
-
-    const status = await this.#launcher.status({ userId: learnerId, programInstance: courseId });
+    // The completed episode was not part of an enrolled Hoffman course.
+    if (!enrollment || !completion) return;
     // `status.error` (course unreadable) and a not-yet-done day both mean
     // "no requirement was discharged by this event".
     if (status?.error === true || status?.doneToday !== true) return;
     // Locked out rather than finished — the agenda stops asking, but there is
     // nothing to announce (see the class doc).
     if (status?.excused === true) return;
+
+    // Durable School progress is written before the one-per-day ceremony
+    // dedupe. A child may complete two assigned lessons; only one chimes, but
+    // both belong in the educational record.
+    await this.#recordEvidence({ learnerId, enrollment, completion });
 
     const nowMs = this.#nowMs();
     const studyDate = studyDayForInstant(nowMs, {
@@ -135,13 +179,48 @@ export class PianoLessonCeremonyBridge {
     this.#announced.set(learnerId, studyDate);
 
     const student = await this.#studentName(learnerId);
-    const lesson = payload?.title ?? null;
+    const lesson = completion.lesson?.title ?? payload?.title ?? null;
     this.#logger.info?.('school.piano-ceremony.satisfied', {
       learnerId, courseId, studyDate, lesson,
     });
 
     this.#broadcast({ learnerId, student, courseId, lesson, status, studyDate });
     await this.#fireHook({ learnerId, student, courseId, lesson, status });
+  }
+
+  async #recordEvidence({ learnerId, enrollment, completion }) {
+    if (!this.#evidence?.appendEvidence || !completion?.lesson?.id || !completion?.completedAt) return null;
+    const occurredAt = new Date(Date.parse(completion.completedAt)).toISOString();
+    const evidence = {
+      schema: 'school.learning-evidence/v1',
+      evidenceId: `piano-lesson:${learnerId}:${completion.lesson.id}`,
+      learnerId,
+      occurredAt,
+      verification: 'verified',
+      activity: {
+        id: completion.lesson.id,
+        kind: 'piano_lesson',
+        itemId: completion.lesson.id,
+        graded: false,
+        action: 'complete',
+      },
+      learning: {
+        subjectId: enrollment.subject ?? 'arts',
+        courseId: completion.course?.id ?? enrollment.courseId ?? enrollment.corpusId,
+        ...(completion.unit?.id ? { unitId: completion.unit.id } : {}),
+        lessonId: completion.lesson.id,
+      },
+      measures: { engagements: 1, completions: 1 },
+      source: { surface: 'piano-kiosk', transport: 'playback' },
+    };
+    try {
+      return await this.#evidence.appendEvidence(evidence);
+    } catch (error) {
+      this.#logger.warn?.('school.piano-progress.record-failed', {
+        learnerId, lessonId: completion.lesson.id, error: error?.message ?? String(error),
+      });
+      return null;
+    }
   }
 
   /**
