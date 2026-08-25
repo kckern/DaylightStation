@@ -76,11 +76,11 @@ export default function RosterStrip({ rows, kids }) {
             </ul>
           )}
           {openId === row.learnerId && <div id={panelId} className="teacher-roster__details">
-            {sessions.length > 0 && <div className="teacher-day-sessions">{sessions.map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
+            {sessions.length > 0 && <div className="teacher-day-sessions">{sessions.map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={teacherSessionPath(row.learnerId, session.sessionId, base, { from: 'today' })}>
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title} posterUrl={session.posterUrl} compact />
               <small className="teacher-day-session__outcome">{[humanDate(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
             </a>)}</div>}
-            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
+            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base, { from: 'today' })}>
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact />
               <span>Work from {teacherDate(session.studyDay)} · processed {teacherTime(session.processedAt) ?? 'today'}</span>
             </a>)}</section>}

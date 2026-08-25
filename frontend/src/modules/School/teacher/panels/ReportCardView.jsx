@@ -85,14 +85,19 @@ export default function ReportCardView({ learnerId, periodId }) {
             </div>
           )}
           {(data.materials ?? []).length > 0 && (
-            <ul className="teacher-reportcard__materials">
-              {data.materials.map((m) => (
-                <li key={m.materialId}>
-                  <span>{materialLabel(m.materialId)}</span>
-                  <span>{m.unitsDone} / {m.unitTotal} units</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              {/* Distinct list, distinct unit of measure — labeled so it never
+                  reads as more graded courses with a different format. */}
+              <p className="teacher-reportcard__materials-label">Study materials · units completed</p>
+              <ul className="teacher-reportcard__materials">
+                {data.materials.map((m) => (
+                  <li key={m.materialId}>
+                    <span>{materialLabel(m.materialId)}</span>
+                    <span>{m.unitsDone} / {m.unitTotal} units</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
           {(data.remediationArcs ?? []).length > 0 && (
             <ul className="teacher-reportcard__arcs">

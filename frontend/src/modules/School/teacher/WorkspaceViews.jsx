@@ -582,7 +582,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
 
   return (
     <div className="teacher-view teacher-session-inspector">
-      <button type="button" className="teacher-back" onClick={onBack}>← Back to history</button>
+      <button type="button" className="teacher-back" onClick={onBack}>← Back</button>
       <div className="teacher-session-heading"><LessonIdentity subject={session?.taxonomy?.subject} courseTitle={session?.taxonomy?.courseTitle} moduleTitle={session?.taxonomy?.moduleTitle} lessonTitle={session?.taxonomy?.lessonTitle ?? sessionState?.title} posterUrl={session?.taxonomy?.posterUrl} heading /><p>{ownerName ? `${ownerName} completed this lesson${humanDateTime(updatedAt) ? ` · ${humanDateTime(updatedAt)}` : ''}` : ''}</p></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
       {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
@@ -598,7 +598,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               <div><dt>Current score<small>After teacher corrections</small></dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
               <div><dt>Last recorded</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
             </dl>
-            <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
+            <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><a className="teacher-back" href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>Completion credit — Student operations</a></div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {session?.assignment && <section className="teacher-panel">

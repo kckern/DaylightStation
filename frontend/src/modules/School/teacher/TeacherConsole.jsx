@@ -113,7 +113,10 @@ function TeacherShell() {
   if (route.kind === 'not-found') {
     view = <section className="teacher-panel"><h2 className="teacher-panel__title">Page not found</h2><p className="teacher-panel__empty">This teacher-workspace address is not a valid route.</p><button type="button" onClick={() => goGlobal('dashboard')}>Return to dashboard</button></section>;
   } else if (route.kind === 'session') {
-    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids} onBack={() => route.learnerId ? goLearner(route.learnerId, 'history') : goGlobal('dashboard')} />;
+    // Back returns to the view that opened the session (?from=today → the
+    // dashboard digest), not always History.
+    const fromToday = new URLSearchParams(window.location.search).get('from') === 'today';
+    view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids} onBack={() => (fromToday || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history'))} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
       overview: <LearnerOverview learnerId={learner.id} learnerName={learner.name} onOpenSession={goSession} />,
@@ -139,7 +142,7 @@ function TeacherShell() {
         <header className="teacher-console__header teacher-workspace__topbar">
           <button type="button" className="teacher-workspace__menu" aria-label="Open navigation" aria-expanded={railOpen} onClick={() => setRailOpen((open) => !open)}>☰</button>
           <button type="button" className="teacher-workspace__brand" onClick={() => goGlobal('dashboard')}><span>School</span><strong>Teacher</strong></button>
-          <div className="teacher-workspace__context">{learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}</div>
+          <div className="teacher-workspace__context" title={learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}>{learner ? learner.name : GLOBAL_NAV.find((item) => item.id === route.section)?.label ?? 'Session'}</div>
           {noTeachers ? (
             <div className="teacher-console__no-teachers">{configured ? 'Configured teachers do not resolve to the roster.' : 'No teachers configured in school.yml.'}</div>
           ) : (

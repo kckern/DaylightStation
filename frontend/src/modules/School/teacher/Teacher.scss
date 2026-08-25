@@ -1303,3 +1303,7 @@
   padding: 0.7rem 0.9rem; font: inherit; font-weight: 700; color: #6b5d33; cursor: pointer;
   &:hover, &:focus-visible { background: #fbf4e6; }
 }
+
+.teacher-reportcard__materials-label { margin: 0.6rem 0 0.2rem; color: #8a7c5c; font-size: 0.78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+// Insight card titles wrap on narrow screens instead of clipping mid-word.
+.school-insights__group .school-overview-detail__item strong { overflow-wrap: anywhere; }
