@@ -14,6 +14,28 @@
  * five events must land as plain, child-readable words, never a blame or a
  * bare code.
  *
+ * THE CEREMONY IS A FALLBACK, NOT A RECEIPT (2026-08-25).
+ *
+ * That "success already prints a receipt" clause used to be background; it is
+ * now the rule. When a graded scan's result receipt REACHES PAPER, the paper
+ * in the child's hand is the feedback, and this hook shows nothing: the
+ * on-screen score was redundant, and a wall panel in a shared room announcing
+ * "4 of 10" is a grade read out loud to whoever is standing there. The
+ * ceremony survives for the case where the sheet was read but the outcome
+ * never reached paper, and there it says *"I got your sheet, but something
+ * else went wrong"* — deliberately WITHOUT the score, because the child's
+ * next move is to fetch a grown-up, not to learn their mark from a wall.
+ *
+ * Only `scan-graded` is ever suppressed, and only on an explicit
+ * `printed === true` from `schoolPrintScanConsumer.mjs` (which sources it
+ * from `CloseSessionOutcome`'s `{printed, printReason}` — the same pair
+ * `ReceiptPrinting.print()` returns). Every OTHER outcome shows regardless of
+ * what `printed` says, because those are precisely the cases where nothing
+ * came out of any printer and the screen is the only feedback that exists.
+ * A missing `printed` (an older backend, a payload from anywhere else) shows
+ * the ceremony too: silence is only ever correct when paper is KNOWN to have
+ * arrived.
+ *
  * A SECOND TOPIC, deliberately. `piano-lesson-complete` arrives on the
  * `school` bus (published by `PianoLessonCeremonyBridge`) rather than `omr`,
  * because it is not a scan and filing it under the scanner's topic would
@@ -56,7 +78,8 @@ function logger() {
  * `null` if the payload isn't one of the outcomes this hook knows.
  *
  * Copy table (design brief, Slice D; `agenda-suppressed` added Slice G):
- *   scan-graded       → success  "Scored!"                 "{n} of {m} right — your sheet is printing."
+ *   scan-graded       → (nothing when the receipt printed — the paper says it)
+ *   scan-graded       → warn     "I got your sheet"         "It's marked, but nothing printed. Tell a grown-up."
  *   scan-review       → warn     "Needs a grown-up"         "{count} had two answers filled in. Ask a grown-up to check it."
  *   scan-unresolved   → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
  *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
@@ -71,21 +94,18 @@ function logger() {
 function buildCeremony(payload) {
   const at = typeof payload?.timestamp === 'number' ? payload.timestamp : Date.now();
   switch (payload?.event) {
-    case 'scan-graded': {
-      // ROW counts (`schoolPrintScanConsumer.mjs`'s session-sourced
-      // correctCount/totalCount), the same numbers the gradebook and report
-      // card use — never the card's points aggregate.
-      const { correctCount, totalCount } = payload;
-      const hasScore = typeof correctCount === 'number' && typeof totalCount === 'number';
+    case 'scan-graded':
+      // `receiptPrinted()` has already sent the printed case away; anything
+      // reaching here is a sheet that was READ AND MARKED but whose result
+      // never made it onto paper. No score: the child cannot act on a number
+      // here, and the one thing they can act on is fetching a grown-up.
+      // `warn` rather than `error` — nothing about their work went wrong.
       return {
-        tone: 'success',
-        title: 'Scored!',
-        detail: hasScore
-          ? `${correctCount} of ${totalCount} right — your sheet is printing.`
-          : 'Your sheet is printing.',
+        tone: 'warn',
+        title: 'I got your sheet',
+        detail: "It's marked, but nothing printed. Tell a grown-up.",
         at,
       };
-    }
     case 'scan-review': {
       const count = typeof payload.pendingReview === 'number'
         ? payload.pendingReview
@@ -167,6 +187,20 @@ function buildCeremony(payload) {
 }
 
 /**
+ * Did this outcome already reach the child ON PAPER?
+ *
+ * Scoped HARD to `scan-graded` on purpose. It is the only outcome that prints
+ * anything — every other one is a sheet that produced no paper by definition —
+ * so widening this predicate (or letting a stray `printed: true` on a
+ * `scan-refused` payload through it) would silence exactly the events the
+ * ceremony exists for. The check is `=== true`, never truthiness: an absent
+ * field means "nobody told us", which is not the same as "yes".
+ */
+function receiptPrinted(payload) {
+  return payload?.event === 'scan-graded' && payload.printed === true;
+}
+
+/**
  * @param {object} [opts]
  * @param {number} [opts.autoClearMs] - how long a ceremony stays on screen
  *   before it self-clears (~12s, per the brief). A new scan always replaces
@@ -190,6 +224,20 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS } = {}) {
   }, [clearTimer]);
 
   const handle = useCallback((payload) => {
+    if (receiptPrinted(payload)) {
+      // A SILENT SCREEN IS NOT A SILENT SYSTEM. The banner is suppressed
+      // because paper carried the news, but the scan still has to be
+      // traceable — otherwise "the panel showed nothing" becomes
+      // indistinguishable from "the scan never arrived", which is the exact
+      // ambiguity this whole ceremony was built to remove. `info`, not
+      // `debug`: debug events are never shipped to the production log store,
+      // so a debug line here would leave a suppressed scan with no trace at
+      // all in the one place anyone would go looking. Whatever ceremony was
+      // already up stays up — this event has nothing to say and so replaces
+      // nothing.
+      schoolLog.scan('scan-graded', { suppressed: 'receipt-printed' });
+      return;
+    }
     const ceremony = buildCeremony(payload);
     if (!ceremony) {
       logger().debug('ceremony-ignored', { event: payload?.event });

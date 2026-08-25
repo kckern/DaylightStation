@@ -47,30 +47,54 @@ describe('useScanCeremony', () => {
     expect(result.current.current).toBeNull();
   });
 
-  it('maps scan-graded to a success ceremony with the score', () => {
+  // THE CEREMONY IS A FALLBACK, NOT A RECEIPT.
+  //
+  // When the result receipt prints, the paper in the child's hand IS the
+  // feedback — repeating the score on a wall panel in a shared room is both
+  // redundant and a grade read out loud to whoever is in the room. So a
+  // graded scan whose receipt printed shows NOTHING; the ceremony survives
+  // only for the case where the sheet was read but the outcome never reached
+  // paper, and then it says so rather than reading out a score.
+  it('shows NO ceremony for a graded scan whose receipt printed — the paper is the feedback', () => {
     const { result } = mount();
     act(() => {
       deliver({
         topic: 'omr', event: 'scan-graded', testId: 't1', learnerId: 'kid1',
-        correctCount: 8, totalCount: 10, percent: 80, result: 'graded', sessionId: 's1',
-        timestamp: 1000,
+        correctCount: 8, totalCount: 10, percent: 80, result: 'passed', sessionId: 's1',
+        printed: true, printReason: null, timestamp: 1000,
+      });
+    });
+    expect(result.current.current).toBeNull();
+  });
+
+  it('shows a ceremony for a graded scan whose receipt did NOT print — and never reads out the score', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr', event: 'scan-graded', testId: 't1', learnerId: 'kid1',
+        correctCount: 8, totalCount: 10, percent: 80, result: 'passed', sessionId: 's1',
+        printed: false, printReason: 'printer_error', timestamp: 1000,
       });
     });
     expect(result.current.current).toEqual({
-      tone: 'success',
-      title: 'Scored!',
-      detail: '8 of 10 right — your sheet is printing.',
+      tone: 'warn',
+      title: 'I got your sheet',
+      detail: "It's marked, but nothing printed. Tell a grown-up.",
       at: 1000,
     });
+    // The whole point: the grade is NOT announced on the wall.
+    expect(result.current.current.detail).not.toMatch(/8|10|80/);
   });
 
-  it('falls back to a scoreless success message when points are missing', () => {
+  it('shows the ceremony when the wire says nothing about printing at all', () => {
+    // An older backend (or any payload missing `printed`) must fail toward
+    // SPEAKING: silence is only ever correct when paper is known to have
+    // come out.
     const { result } = mount();
     act(() => {
       deliver({ topic: 'omr', event: 'scan-graded', testId: 't1', correctCount: null, totalCount: null });
     });
-    expect(result.current.current.tone).toBe('success');
-    expect(result.current.current.detail).toBe('Your sheet is printing.');
+    expect(result.current.current).toMatchObject({ tone: 'warn', title: 'I got your sheet' });
   });
 
   it('maps scan-review to a warn ceremony naming the pending count', () => {
@@ -162,7 +186,33 @@ describe('useScanCeremony', () => {
     act(() => {
       deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
-    expect(scanLog).toHaveBeenCalledWith('scan-graded', { tone: 'success', title: 'Scored!', code: null });
+    expect(scanLog).toHaveBeenCalledWith('scan-graded', { tone: 'warn', title: 'I got your sheet', code: null });
+  });
+
+  it('a suppressed graded scan still leaves a trace in the log — a silent screen is not a silent system', () => {
+    mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5, printed: true });
+    });
+    expect(scanLog).toHaveBeenCalledWith('scan-graded', { suppressed: 'receipt-printed' });
+  });
+
+  // REGRESSION GUARD: over-suppression is the failure mode this fix can
+  // create. Every NON-graded outcome is a case where the screen is the only
+  // feedback a child gets, so `printed` — whatever it says, including
+  // `true` — must never silence one of them.
+  it.each([
+    ['scan-review', { pendingReview: 1 }, 'Needs a grown-up'],
+    ['scan-unresolved', { code: 'CARD_ID_UNREADABLE' }, "Couldn't read that sheet"],
+    ['scan-refused', { code: 'unknown_card' }, "That sheet doesn't match"],
+    ['reader-error', {}, 'Scanner hiccup'],
+  ])('still shows %s even when the payload claims printed:true', (event, extra, title) => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event, printed: true, ...extra });
+    });
+    expect(result.current.current).not.toBeNull();
+    expect(result.current.current.title).toBe(title);
   });
 
   it('a new scan replaces the current ceremony', () => {
@@ -170,7 +220,7 @@ describe('useScanCeremony', () => {
     act(() => {
       deliver({ topic: 'omr', event: 'scan-graded', correctCount: 5, totalCount: 5 });
     });
-    expect(result.current.current.title).toBe('Scored!');
+    expect(result.current.current.title).toBe('I got your sheet');
     act(() => {
       deliver({ topic: 'omr', event: 'scan-unresolved', code: 'CARD_ID_UNREADABLE' });
     });

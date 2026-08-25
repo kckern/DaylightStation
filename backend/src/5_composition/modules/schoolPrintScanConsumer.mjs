@@ -304,6 +304,51 @@ export function createSchoolPrintScanConsumer({
                   const total = typeof sectionOutcome.session.totalCount === 'number'
                     ? sectionOutcome.session.totalCount
                     : null;
+                  let settledResult = 'graded';
+                  // DID PAPER COME OUT? The panel's ceremony is a FALLBACK,
+                  // not a receipt (see `useScanCeremony.js`): when the result
+                  // receipt prints, the paper in the child's hand IS the
+                  // feedback, and repeating the score on a wall screen both
+                  // duplicates it and reads a grade out loud in a shared
+                  // room. The panel cannot make that call without this pair,
+                  // and this is the only place in the graded path that knows
+                  // it — `CloseSessionOutcome#execute` returns the SAME
+                  // `{printed, printReason}` `ReceiptPrinting.print()`
+                  // produced, so nothing here re-derives or guesses it.
+                  //
+                  // Defaults FAIL TOWARD SPEAKING. `false` is the answer for
+                  // every case where paper is not KNOWN to have arrived — no
+                  // settle step wired (nothing prints at all then), a settle
+                  // that threw, a settle that reported nothing — because a
+                  // redundant ceremony costs a child twelve seconds of banner
+                  // and a wrongly-suppressed one costs them any feedback at
+                  // all.
+                  let printed = false;
+                  let printReason = 'not_settled';
+                  if (closeSessionOutcome) {
+                    try {
+                      // The bridge returns the authoritative session id (a
+                      // composed card itself has no single session owner).
+                      // eslint-disable-next-line no-await-in-loop
+                      const settled = await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
+                      settledResult = settled?.result ?? settledResult;
+                      printed = settled?.printed === true;
+                      printReason = printed ? null : (settled?.printReason ?? 'unknown');
+                    } catch (err) {
+                      // The settle is now UPSTREAM of the broadcast (it has to
+                      // be — the print outcome does not exist before it), so
+                      // an unguarded throw here would take the whole ceremony
+                      // with it and a scan would make no visible mark on the
+                      // room at all. That is exactly the failure the ceremony
+                      // exists to forbid, so the grade is still announced and
+                      // the failure is still loud in the log.
+                      printed = false;
+                      printReason = 'settle_failed';
+                      logger.warn?.('school.print.scan-settle-failed', {
+                        testId, sessionId: sectionOutcome.session.sessionId, error: err.message,
+                      });
+                    }
+                  }
                   // Home automation is a bystander: never awaited into the
                   // grading path and never able to fail it. The adapter
                   // already swallows its own errors; this catch covers a
@@ -329,17 +374,11 @@ export function createSchoolPrintScanConsumer({
                     correctCount: earned,
                     totalCount: total,
                     percent,
-                    result: 'graded',
+                    result: settledResult,
                     sessionId: sectionOutcome.session.sessionId,
+                    printed,
+                    printReason,
                   });
-                  let settledResult = 'graded';
-                  if (closeSessionOutcome) {
-                    // The bridge returns the authoritative session id (a
-                    // composed card itself has no single session owner).
-                    // eslint-disable-next-line no-await-in-loop
-                    const settled = await closeSessionOutcome.execute({ sessionId: sectionOutcome.session.sessionId });
-                    settledResult = settled?.result ?? settledResult;
-                  }
                   // Fire after the authoritative outcome settles so Home
                   // Assistant can distinguish a passing non-perfect score
                   // from a score needing remediation. The hook itself is
