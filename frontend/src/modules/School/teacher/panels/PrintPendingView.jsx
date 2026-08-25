@@ -12,7 +12,9 @@ import { waitAge } from './ReviewQueueView.jsx';
 
 export default function PrintPendingView({ kids }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
-  const pending = usePanelFetch(() => schoolApi.printPending(), { panel: 'print-pending' });
+  // 404 = the feature isn't wired on this install — the quiet unavailable
+  // copy, never a Retry that can't succeed.
+  const pending = usePanelFetch(() => schoolApi.printPending(), { panel: 'print-pending', notFoundAs: 'unavailable' });
   const jobs = Array.isArray(pending.data) ? pending.data : [];
   const { run, busy, errors } = useTeacherWrite({ panel: 'print-pending' });
 
@@ -23,7 +25,7 @@ export default function PrintPendingView({ kids }) {
   ), { onSuccess: pending.retry });
 
   return (
-    <PanelFrame title="Print approvals" state={pending.state} retry={pending.retry} emptyCopy="No prints waiting.">
+    <PanelFrame title="Print approvals" state={pending.state} retry={pending.retry} emptyCopy="No prints waiting." unavailableCopy="Print approvals aren't enabled on this install.">
       <ul className="teacher-prints">
         {jobs.map((job) => (
           <li key={job.id} className="teacher-prints__job">

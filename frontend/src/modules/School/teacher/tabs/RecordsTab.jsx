@@ -87,17 +87,22 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       )}
       <PeriodSelect periods={periodList} value={periodId} onChange={setPeriodId} />
       {periodId && <ReportCardView learnerId={learnerId} periodId={periodId} />}
-      {periodId && (
-        <ClosePeriodPanel
-          key={`${learnerId}:${periodId}`}
-          learnerId={learnerId}
-          periodId={periodId}
-          periodLabel={periodList.find((p) => p.periodId === periodId)?.label ?? null}
-          onClosed={() => setFrozenRefresh((n) => n + 1)}
-        />
-      )}
       {periodId && <PacingPanel learnerId={learnerId} periodId={periodId} />}
-      <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
+      {/* Freezing a period lives WITH the closed periods, below the live
+          card — the most destructive verb on the page must not sit above
+          the fold on the default view (UX audit E20). */}
+      <section className="teacher-period-admin">
+        <FrozenHistory learnerId={learnerId} refreshKey={frozenRefresh} />
+        {periodId && (
+          <ClosePeriodPanel
+            key={`${learnerId}:${periodId}`}
+            learnerId={learnerId}
+            periodId={periodId}
+            periodLabel={periodList.find((p) => p.periodId === periodId)?.label ?? null}
+            onClosed={() => setFrozenRefresh((n) => n + 1)}
+          />
+        )}
+      </section>
       <a
         className="teacher-pdf-pill"
         href={`/api/v1/school/transcript?learnerId=${encodeURIComponent(learnerId)}&format=pdf`}
