@@ -135,4 +135,32 @@ describe('connect timeout default', () => {
       jest.useRealTimers();
     }
   });
+
+  it('honours an explicit timeout constructed the way production does (app.mjs -> adapters.yml thermal_printer_defaults.timeout)', async () => {
+    // Production never falls through to DEFAULT_CONNECT_TIMEOUT_MS: app.mjs
+    // always passes an explicit `timeout` sourced from adapters.yml's
+    // thermal_printer_defaults.timeout. Use a value distinct from both the
+    // old 5000 default and DEFAULT_CONNECT_TIMEOUT_MS (20000) so a pass here
+    // can't be a coincidence of either constant.
+    const PRODUCTION_STYLE_TIMEOUT = 12000;
+    jest.useFakeTimers();
+    try {
+      const adapter = new ThermalPrinterAdapter(
+        { host: '10.0.0.50', port: 9100, timeout: PRODUCTION_STYLE_TIMEOUT },
+        { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
+      );
+      const settled = jest.fn();
+      const printing = adapter.print(textJob).then(settled);
+
+      await jest.advanceTimersByTimeAsync(11000);
+      // Would already have resolved false under DEFAULT_CONNECT_TIMEOUT_MS.
+      expect(settled).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(3000);
+      await printing;
+      expect(settled).toHaveBeenCalledWith(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
