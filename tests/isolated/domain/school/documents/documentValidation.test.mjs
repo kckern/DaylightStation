@@ -47,7 +47,7 @@ describe('validateDocument: id', () => {
     ['missing', undefined],
     ['not a string', 42],
   ])('rejects an id that is %s', (_label, id) => {
-    expect(errs(doc({ id }))).toContain('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)');
+    expect(errs(doc({ id }))).toContain('id must be 1-4 kebab-case segments separated by "/" (e.g. arts/creature-identification/quiz-1)');
   });
 });
 
@@ -336,7 +336,7 @@ describe('validateDocument: return value', () => {
   it('accumulates every failure rather than stopping at the first', () => {
     const r = validateDocument({ id: 'BAD', seed: -1, target: ['fax'], blocks: [{ type: 'html' }] });
     expect(r.errors).toEqual([
-      'id must be 1-4 kebab-case segments separated by "/" (e.g. arts/pokemon-identification/quiz-1)',
+      'id must be 1-4 kebab-case segments separated by "/" (e.g. arts/creature-identification/quiz-1)',
       `seed must be an integer between 0 and ${Number.MAX_SAFE_INTEGER}`,
       'unknown target: fax',
       'blocks[0]: unknown block type: html',

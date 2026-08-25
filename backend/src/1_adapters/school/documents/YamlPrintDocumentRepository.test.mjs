@@ -92,8 +92,8 @@ describe('list() with a separate sourceDirectory (sources moved to the catalog s
       directory: '/data/print-documents',
       sourceDirectory: '/data/catalog/documents',
       io: fakeRoots({
-        '/data/catalog/documents/arts/pokemon-identification/quiz-1':
-          { schema: SOURCE, id: 'arts/pokemon-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
+        '/data/catalog/documents/arts/creature-identification/quiz-1':
+          { schema: SOURCE, id: 'arts/creature-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
         '/data/catalog/documents/starter-math-ten-percent':
           { schema: LEARNING, documentId: 'starter-math-ten-percent', title: 'Ten Percent', blocks: [] },
         '/data/catalog/documents/starter-science-water-cycle':
@@ -101,7 +101,7 @@ describe('list() with a separate sourceDirectory (sources moved to the catalog s
       }),
     });
 
-    expect(repo.list().map((entry) => entry.id)).toEqual(['arts/pokemon-identification/quiz-1']);
+    expect(repo.list().map((entry) => entry.id)).toEqual(['arts/creature-identification/quiz-1']);
     // Neither by its own `documentId` nor by the file-path id the old
     // filename fallback would have fabricated for it.
     expect(repo.get('starter-math-ten-percent')).toBeNull();
@@ -185,13 +185,13 @@ describe('list() legacy single-root fallback (backward compatibility)', () => {
       directory: '/docs',
       io: fakeRoots({
         '/docs/legacy-v1': { id: 'legacy-v1', seed: 1, target: ['letter'], blocks: [] },
-        '/docs/arts/pokemon-identification/quiz-1': { schema: SOURCE, id: 'arts/pokemon-identification/quiz-1', blocks: [] },
+        '/docs/arts/creature-identification/quiz-1': { schema: SOURCE, id: 'arts/creature-identification/quiz-1', blocks: [] },
         '/docs/published/legacy-v1@abc': { schema: PUBLISHED_V2, id: 'legacy-v1', rev: 'abc' },
       }),
     });
 
     expect(repo.list().map((entry) => entry.id))
-      .toEqual(['arts/pokemon-identification/quiz-1', 'legacy-v1']);
+      .toEqual(['arts/creature-identification/quiz-1', 'legacy-v1']);
     expect(repo.get('legacy-v1')).toEqual({ id: 'legacy-v1', seed: 1, target: ['letter'], blocks: [] });
   });
 });
@@ -234,10 +234,10 @@ describe('list()', () => {
 
   it('walks nested hierarchical-id sources but never the artifact subtrees', () => {
     const byRelative = {
-      'arts/pokemon-identification/quiz-1':
-        { id: 'arts/pokemon-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
+      'arts/creature-identification/quiz-1':
+        { id: 'arts/creature-identification/quiz-1', seed: 1, target: ['letter'], blocks: [] },
       'flat-doc': { id: 'flat-doc', seed: 2, target: ['letter'], blocks: [] },
-      'published/arts/pokemon-identification/quiz-1@632002966': { id: 'arts/pokemon-identification/quiz-1' },
+      'published/arts/creature-identification/quiz-1@632002966': { id: 'arts/creature-identification/quiz-1' },
       'derived-banks/flat-doc@abcdef123': { id: 'flat-doc' },
       'allocations/3302880': [{ cardId: '3302880' }],
     };
@@ -249,9 +249,9 @@ describe('list()', () => {
       },
     });
     expect(repo.list().map((entry) => entry.id))
-      .toEqual(['arts/pokemon-identification/quiz-1', 'flat-doc']);
-    expect(repo.get('arts/pokemon-identification/quiz-1'))
-      .toEqual(byRelative['arts/pokemon-identification/quiz-1']);
+      .toEqual(['arts/creature-identification/quiz-1', 'flat-doc']);
+    expect(repo.get('arts/creature-identification/quiz-1'))
+      .toEqual(byRelative['arts/creature-identification/quiz-1']);
   });
 });
 

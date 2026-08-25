@@ -66,7 +66,7 @@ describe('question-bank/v2', () => {
     expect(instance).toMatchObject({ learnerId: 'milo', enrollmentId: 'enr-milo-atlas' });
     const result = publishDocument(worksheetInstanceDocument(instance, { title: 'Kansas' }));
     expect(result.errors).toBeUndefined();
-    expect(result.published.blocks[0].type).toBe('question');
+    expect(result.published.blocks[0]).toMatchObject({ type: 'inset', layout: 'lesson_card' });
     const questions = result.published.blocks.filter((block) => block.type === 'question');
     expect(questions).toHaveLength(6);
     expect(questions.every((block) => block.omr && block.blocks.at(-1).layout === 'compact')).toBe(true);

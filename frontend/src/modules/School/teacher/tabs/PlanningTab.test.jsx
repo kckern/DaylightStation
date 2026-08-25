@@ -36,6 +36,15 @@ vi.mock('../../schoolApi.js', () => ({
 }));
 const { schoolApi } = await import('../../schoolApi.js');
 
+vi.mock('../../../Piano/PianoKiosk/modes/Exercises/pianoLearningApi.js', () => ({
+  pianoLearningApi: {
+    programs: vi.fn(),
+    assignments: vi.fn(),
+    putAssignments: vi.fn(),
+  },
+}));
+const { pianoLearningApi } = await import('../../../Piano/PianoKiosk/modes/Exercises/pianoLearningApi.js');
+
 const KIDS = [{ id: 'felix', name: 'Felix' }];
 const ok = (data) => ({ ok: true, status: 200, data });
 const fail = (status) => ({ ok: false, status, data: null });
@@ -75,6 +84,9 @@ beforeEach(() => {
     { id: 'enr_1', title: 'Yellowstone trip', from: '2026-08-10', to: '2026-08-14', learnerIds: ['felix'], subjectIds: ['science'], recordedBy: 'kckern' },
   ] }));
   schoolApi.postEnrichment.mockResolvedValue(ok({ entry: { id: 'enr_2' } }));
+  pianoLearningApi.programs.mockResolvedValue(ok({ programs: [] }));
+  pianoLearningApi.assignments.mockResolvedValue(ok({ programs: [], updatedAt: null }));
+  pianoLearningApi.putAssignments.mockResolvedValue(ok({ programs: [] }));
 });
 
 describe('PlanningTab (wave 3, all live)', () => {

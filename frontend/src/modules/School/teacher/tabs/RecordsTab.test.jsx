@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import RecordsTab from './RecordsTab.jsx';
 
 vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
@@ -34,7 +34,6 @@ const KIDS = [{ id: 'felix', name: 'Felix' }];
 const ok = (data) => ({ ok: true, status: 200, data });
 
 beforeEach(() => {
-  vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-08-06T12:00:00Z'));
   vi.clearAllMocks();
   schoolApi.periods.mockResolvedValue(ok([
@@ -73,13 +72,17 @@ beforeEach(() => {
   schoolApi.materials.mockResolvedValue(ok({ materials: [{ id: 'plex:384855', label: 'I Survived (audio)' }] }));
 });
 
+afterEach(() => {
+  cleanup();
+});
+
 const mount = (ui) => render(<TeacherProfileProvider>{ui}<PinPrompt /></TeacherProfileProvider>);
 
 describe('RecordsTab', () => {
   it('defaults the period selector to the current period and renders the DRAFT card', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-fall' }));
-    await vi.waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
+    await waitFor(() => expect(schoolApi.reportCard).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-fall' }));
+    await waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
     expect(screen.getAllByText(/math-fractions/).length).toBeGreaterThan(0);
     expect(screen.getByText(/88%/)).toBeTruthy();
     expect(screen.getByText(/best-of-unit-mean-v1/)).toBeTruthy();
@@ -91,7 +94,7 @@ describe('RecordsTab', () => {
   it('a failed periods read surfaces a named error with retry, never a silently missing selector', async () => {
     schoolApi.periods.mockResolvedValue({ ok: false, status: 500, data: null });
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/Couldn.t load the academic periods/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Couldn.t load the academic periods/)).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
 
@@ -101,9 +104,9 @@ describe('RecordsTab', () => {
       ? Promise.resolve(ok({ courses: [{ courseId: 'math-fractions', coursePercent: 91 }], activeDays: { bySubject: [], total: 40 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-spring', closedBy: 'kckern', closedAt: '2026-06-13T00:00:00Z' }]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
     act(() => { fireEvent.click(screen.getByText(/Closed by kckern/)); });
-    await vi.waitFor(() => expect(screen.getByText('FROZEN')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('FROZEN')).toBeTruthy());
     expect(screen.getByText(/91%/)).toBeTruthy();
     expect(schoolApi.reportCardFrozen).toHaveBeenCalledWith({ learnerId: 'felix', periodId: '2026-spring' });
   });
@@ -111,36 +114,36 @@ describe('RecordsTab', () => {
   it('a null report card is UNAVAILABLE, never a quiet empty (unwired tell)', async () => {
     schoolApi.reportCard.mockResolvedValue(ok(null));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/report card isn.t available on this install/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/report card isn.t available on this install/i)).toBeTruthy());
   });
 
   it('lists frozen closes with who and when', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Closed by kckern/)).toBeTruthy());
   });
 
   it('links the report-card PDF for the selected period', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('link', { name: 'PDF · Report card' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'PDF · Report card' })).toBeTruthy());
     expect(screen.getByRole('link', { name: 'PDF · Report card' }).getAttribute('href'))
       .toBe('/api/v1/school/report-card?learnerId=felix&periodId=2026-fall&format=pdf');
   });
 
   it('no learner selected prompts instead of fetching', async () => {
     mount(<RecordsTab learnerId={null} kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/Pick a learner/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Pick a learner/)).toBeTruthy());
     expect(schoolApi.reportCard).not.toHaveBeenCalled();
   });
 
   it('carries no stubs — every records use case is live', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('DRAFT')).toBeTruthy());
     expect(document.querySelectorAll('[data-todo]').length).toBe(0);
   });
 
   it('pacing shows the excused vocabulary and the enrichment credit', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByText(/excused — 4 enrichment days/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/excused — 4 enrichment days/)).toBeTruthy());
     expect(screen.getByText('Yellowstone trip')).toBeTruthy();
     expect(screen.getByRole('link', { name: /PDF · Progress report/ })).toBeTruthy();
   });
@@ -152,11 +155,11 @@ describe('RecordsTab', () => {
       ? Promise.resolve({ ok: false, status: 404, data: null })
       : Promise.resolve(ok([]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Close this period' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close this period' })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Close this period' })); });
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
-    await vi.waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
+    await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
       { learnerId: 'felix', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: false }, null));
   });
 
@@ -165,7 +168,7 @@ describe('RecordsTab', () => {
       ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
   });
 
   it('requires a learner-and-period-scoped confirmation before superseding a freeze', async () => {
@@ -174,13 +177,13 @@ describe('RecordsTab', () => {
       ? Promise.resolve(ok({ courses: [], activeDays: { bySubject: [], total: 1 }, pendingReview: 0 }))
       : Promise.resolve(ok([{ periodId: '2026-fall', closedBy: 'kckern', closedAt: 't' }]))));
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Supersede & re-close/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Supersede & re-close/ })); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Confirm' })); });
-    await vi.waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Confirm sensitive action')).toBeTruthy());
     act(() => { fireEvent.change(screen.getByLabelText('PIN'), { target: { value: '4321' } }); });
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Continue' })); });
-    await vi.waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
+    await waitFor(() => expect(schoolApi.closePeriod).toHaveBeenCalledWith(
       { learnerId: 'felix', periodId: '2026-fall', closedBy: 'kckern', pin: null, supersede: true }, 'grant'));
     expect(teacherWorkspaceApi.stepUp).toHaveBeenCalledWith({
       pin: '4321', action: 'report-card.close', resource: 'felix/2026-fall',
@@ -189,7 +192,7 @@ describe('RecordsTab', () => {
 
   it('certificate links render only for graded courses', async () => {
     mount(<RecordsTab learnerId="felix" kids={KIDS} />);
-    await vi.waitFor(() => expect(screen.getByRole('link', { name: 'Certificate' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Certificate' })).toBeTruthy());
     expect(screen.getByRole('link', { name: 'Certificate' }).getAttribute('href'))
       .toContain('/api/v1/school/certificate?learnerId=felix&periodId=2026-fall&courseId=math-fractions');
   });

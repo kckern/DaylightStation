@@ -4,9 +4,10 @@ import {
 } from './teacherUrl.js';
 
 describe('teacher workspace URL model', () => {
-  it('lands roots and stale paths on the dashboard', () => {
+  it('lands roots on the dashboard and rejects malformed paths', () => {
     expect(parseTeacherPath('/school/teacher')).toMatchObject({ kind: 'section', section: 'dashboard' });
-    expect(parseTeacherPath('/school/teacher/unknown')).toMatchObject({ kind: 'section', section: 'dashboard' });
+    expect(parseTeacherPath('/school/teacher/unknown')).toMatchObject({ kind: 'not-found' });
+    expect(parseTeacherPath('/school/teacher/students/milo/history/not-a-session/ses_1')).toMatchObject({ kind: 'not-found' });
   });
 
   it('round-trips learner, course, and session routes', () => {

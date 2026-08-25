@@ -78,13 +78,13 @@ skipped as belonging to another system.
 
 ```yaml
 schema: school.document-source/v1
-id: arts/pokemon-identification/quiz-1     # hierarchical taxonomy id
+id: arts/creature-identification/quiz-1     # hierarchical taxonomy id
 subject: arts                               # must match the id's first segment
-topics: [popular-culture, pokemon, identification]
+topics: [popular-culture, creature, identification]
 seed: 80426
 target: [letter]
 archetype: quiz                             # or worksheet — the stakes dial
-title: "Pokemon Identification — Quiz 1"
+title: "Creature Identification — Quiz 1"
 header:
   instructions: "Mark your answers on your bubble card."
 fit:
@@ -93,7 +93,7 @@ fit:
 blocks:
   - type: question
     key: pk1
-    bankId: arts/pokemon-identification/pokemon-identification-medium
+    bankId: arts/creature-identification/creature-identification-medium
     select: 6                               # bank-select sugar: 6 seeded picks
 ```
 
@@ -102,7 +102,7 @@ blocks:
   is present on a hierarchical id, it must equal the first segment;
   contradiction is a validation error, not metadata. Source files nest under
   their id's path
-  (`catalog/documents/arts/pokemon-identification/quiz-1.yml`).
+  (`catalog/documents/arts/creature-identification/quiz-1.yml`).
 - **Blocks** are the closed set from the learning-document system (rich text,
   math, figures/assets, insets, lists, wordbank, matching, cloze,
   short answer, essay, questions with inline choices or bank-select,
@@ -192,6 +192,48 @@ curriculum source.
 Moving a source file never invalidates an artifact: allocations, worksheet
 instances, and published filenames all key off the document's `id`, never its
 path.
+
+### Teacher history and artifact lineage
+
+A teacher history view is a **read-only projection of one work session**, not
+a new print request. The projection joins the append-only session events with
+the issued worksheet instance, its exact published document revision, answer
+evidence, assessment revisions, and any retained rendered bytes. It must not
+allocate an OMR card, republish a document, alter a grade, or create an
+artifact merely because someone opened the record.
+
+`school.teacher-session/v4` is the browser contract for that projection. It
+returns human taxonomy (subject, course, module, lesson), a named assignment
+with the frozen questions, item-level assessment evidence, and an artifact
+lineage. Internal ids remain links between records; they are never the title
+shown to a teacher.
+
+Every newly issued artifact uses `school.session-artifact/v2`. Its manifest
+records the linked session or sessions, document revision, frozen render
+context, OMR mapping, parent lineage, and an integrity hash over retained
+bytes. A composed worksheet is one shared artifact linked to every included
+session; it is never reconstructed as several individual worksheets.
+
+There are four honest artifact representations during the incremental rollout:
+
+- An `school.issued-artifact/v1` has retained PDF bytes. Its **issued PDF** is
+  the exact object sent to the printer and may be explicitly reprinted.
+- `exact` means retained bytes are available and are the only bytes a reprint
+  may dispatch.
+- `deterministic-replay` means a compatible renderer can reproduce a frozen
+  document revision and complete issue context, including the original card
+  rows, without calling the allocation store.
+- `semantic-reconstruction` and `unavailable` are explicit historical states;
+  neither may be presented as the paper a learner received.
+
+Viewing any of these records is pure and does not backfill a new artifact.
+
+Every future assignment and feedback/result rendering should bind an immutable
+render specification (document or feedback inputs, creation time, medium, and
+renderer revision); retain bytes whenever they were actually issued. A grade
+correction appends a new assessment/feedback artifact and leaves the original
+assignment artifact untouched. Printing that feedback remains a separate,
+explicit action.
 
 ### Composed daily worksheets
 
@@ -407,10 +449,10 @@ Every card-backed render writes (or reuses) an **allocation record** at
 `data/content/school/print-documents/allocations/<cardId>.yml`:
 
 ```yaml
-- recordId: arts/pokemon-identification/quiz-1@632002966:v2:1-6
+- recordId: arts/creature-identification/quiz-1@632002966:v2:1-6
   cardId: '9251793'
   rowRange: {start: 1, end: 6}
-  documentId: arts/pokemon-identification/quiz-1
+  documentId: arts/creature-identification/quiz-1
   rev: 632002966
   seed: 80426
   variant: 2
@@ -557,7 +599,7 @@ valid while a later recovery attempt handles only the still-live remainder.
 ## 6. The print API
 
 `GET /api/v1/school/print/<id-path>` — the id is the full taxonomy path
-(`…/print/arts/pokemon-identification/quiz-1`). Returns the PDF inline
+(`…/print/arts/creature-identification/quiz-1`). Returns the PDF inline
 (filename from the slug), with `X-School-Print-Allocation` (the card record
 summary) and `X-School-Print-Warnings` headers. This GET is a **plain proof
 render**, safe to bookmark, refresh, and share a link to — repeating it never
