@@ -18,12 +18,32 @@ const renderKeypad = (props = {}) => render(
 describe('School self-service keypad screen off', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    window.history.replaceState({}, '', '/screens/portal');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ presence: { devices: [] } }),
+    }));
     screenOff.mockReset().mockReturnValue(true);
     selfService.mockClear();
     selfServiceError.mockClear();
   });
 
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    window.history.replaceState({}, '', '/');
+    vi.useRealTimers();
+  });
+
+  it('shows a green LED when the paired BK-3001 is connected', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ presence: { devices: [{ name: 'BK-3001', connected: true }] } }),
+    });
+    renderKeypad();
+    await act(async () => {});
+    expect(screen.getByText('Keyboard connected')).toBeInTheDocument();
+    expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
+  });
 
   it('requires two taps for the manual screen-off action', () => {
     renderKeypad();

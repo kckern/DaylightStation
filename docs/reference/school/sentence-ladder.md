@@ -37,6 +37,12 @@ The frontend requires explicit learner, corpus, and grant. It cancels stale
 loads, re-derives after each write, and directs a learner to a capable device
 when an enrollment-owned credit rung cannot be completed locally.
 
+On the Portal's locked keypad, a small status LED polls the existing Portal
+Keys Bluetooth-presence report every 15 seconds. It recognizes the BK-3001
+keyboard by its reported model name and says whether it is connected, off, not
+paired, or temporarily unavailable. The server gate configuration remains the
+authority for the keyboard MAC and for which typing rungs are permitted.
+
 ## School lifecycle
 
 On a locked Portal, the learner enters through the anonymous self-service

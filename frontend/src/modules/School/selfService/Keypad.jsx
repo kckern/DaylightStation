@@ -52,6 +52,52 @@ const SHAKE_MS = 380;
 const LETTER_MS = 125;
 const HOLD_MS = 900;
 const WIPE_MS = 70;
+const PRESENCE_POLL_MS = 15_000;
+
+// The Portal's companion APK reports its bonded HID devices to this endpoint.
+// This model string is intentionally only the display-side matcher: pairing
+// policy and the authoritative keyboard MAC remain in the server's gate config.
+const KEYBOARD_MODEL = 'bk3001';
+
+function portalDeviceId() {
+  const match = window.location.pathname.match(/^\/screens?\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function keyboardConnection(presence) {
+  const keyboard = presence?.devices?.find((device) => (
+    String(device?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '').includes(KEYBOARD_MODEL)
+  ));
+  if (!keyboard) return 'not-paired';
+  return keyboard.connected === true ? 'connected' : 'disconnected';
+}
+
+/** Live, read-only LED state from the Portal Keys companion APK. */
+function useKeyboardPresence() {
+  const [state, setState] = useState('checking');
+
+  useEffect(() => {
+    const deviceId = portalDeviceId();
+    if (!deviceId) { setState('unavailable'); return undefined; }
+    let alive = true;
+
+    const read = async () => {
+      try {
+        const response = await fetch(`/api/v1/device/${encodeURIComponent(deviceId)}/presence`);
+        if (!response.ok) throw new Error(`presence ${response.status}`);
+        const data = await response.json();
+        if (alive) setState(keyboardConnection(data?.presence));
+      } catch {
+        if (alive) setState('unavailable');
+      }
+    };
+    read();
+    const poll = window.setInterval(read, PRESENCE_POLL_MS);
+    return () => { alive = false; window.clearInterval(poll); };
+  }, []);
+
+  return state;
+}
 
 /**
  * Buttons that fire on TOUCH-DOWN.
@@ -126,6 +172,7 @@ export default function Keypad({
   const [reject, setReject] = useState(null);
   const timersRef = useRef([]);
   const tap = useTapFire();
+  const keyboardState = useKeyboardPresence();
 
   const turnScreenOff = useCallback((source) => {
     schoolLog.selfService('screen-off.requested', { source });
@@ -259,6 +306,18 @@ export default function Keypad({
       onClickCapture={noteActivity}
     >
       <h1 className="school-selfservice__title">Type your code</h1>
+      <p
+        className={`school-selfservice__keyboard is-${keyboardState}`}
+        data-testid="selfservice-keyboard-status"
+        role="status"
+      >
+        <span className="school-selfservice__keyboard-led" aria-hidden="true" />
+        {keyboardState === 'connected' && 'Keyboard connected'}
+        {keyboardState === 'disconnected' && 'Turn on keyboard'}
+        {keyboardState === 'not-paired' && 'Pair BK-3001 keyboard'}
+        {keyboardState === 'checking' && 'Checking keyboard'}
+        {keyboardState === 'unavailable' && 'Keyboard status unavailable'}
+      </p>
 
       <div
         className={`school-selfservice__entry${reject ? ' is-rejected' : ''}${reject?.phase === 'shake' ? ' is-shaking' : ''}`}
