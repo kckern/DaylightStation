@@ -26,6 +26,7 @@ import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
 import { teacherBaseFor } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
+import { localDay } from './teacherDates.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -55,11 +56,19 @@ const outcomeLabel = (sessionState) => {
   if (outcome === 'needs_remediation') return 'Needs review';
   return labelize(sessionState?.state ?? outcome ?? 'Recorded');
 };
-const recordedAnswerLine = (item) => {
+const choiceLetter = (index) => String.fromCharCode(65 + index);
+// The honest answer line: "Their answer: X · Correct answer: Y (C) · Incorrect".
+// The letter is derived from the worksheet's own choice order; when the child
+// was right, repeating the correct answer is redundant and is omitted.
+const recordedAnswerLine = (item, question = null) => {
   const answer = item.given ?? 'No recorded answer';
-  const expected = item.expected?.length ? ` · Correct answer: ${item.expected.join(', ')}` : '';
   const verdict = item.verdict ? ` · ${labelize(item.verdict)}` : '';
-  return `Answer: ${answer}${expected}${verdict}`;
+  if (item.verdict === 'correct' || !item.expected?.length) return `Their answer: ${answer}${verdict}`;
+  const letterOf = (text) => {
+    const index = (question?.choices ?? []).findIndex((choice) => (choice.text ?? choice.label ?? choice) === text);
+    return index >= 0 ? ` (${choiceLetter(index)})` : '';
+  };
+  return `Their answer: ${answer} · Correct answer: ${item.expected.map((expected) => `${expected}${letterOf(expected)}`).join(', ')}${verdict}`;
 };
 
 function CapabilityNotice({ children }) {
@@ -227,7 +236,7 @@ export function QueueView({ kids }) {
 }
 
 export function LearnerOverview({ learnerId, learnerName, onOpenSession }) {
-  const [studyDay, setStudyDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [studyDay, setStudyDay] = useState(() => localDay());
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student workspace</p><h2>{learnerName}&rsquo;s workspace</h2><p>Preview a chosen day, then inspect its progress, blockers, and useful teacher actions.</p></div></div>
@@ -393,8 +402,7 @@ export function OperationsView({ kids }) {
 }
 
 function BulkRegradePanel() {
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const today = localDay();
   const [form, setForm] = useState({ bankId: '', fromDay: today, toDay: today, reason: '' });
   const [preview, setPreview] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'bulk-regrade' });
@@ -580,8 +588,8 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             <h3 className="teacher-panel__title">Outcome</h3>
             <dl>
               <div><dt>Lesson status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
-              <div><dt>Marked score</dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
-              <div><dt>Current score</dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
+              <div><dt>Marked score<small>As graded by the machine</small></dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
+              <div><dt>Current score<small>After teacher corrections</small></dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
               <div><dt>Last recorded</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
             </dl>
             <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
@@ -593,16 +601,21 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             <ol className="teacher-event-list teacher-question-list">
               {session.assignment.questions.map((question) => <li key={question.itemId ?? question.number}>
                 <strong>{question.number}. {question.prompt ?? 'Question text unavailable'}</strong>
-                {question.choices?.length > 0 && <span>{question.choices.map((choice) => choice.text ?? choice.label ?? choice).join(' · ')}</span>}
+                {question.choices?.length > 0 && <span>{question.choices.map((choice, index) => `${choiceLetter(index)}. ${choice.text ?? choice.label ?? choice}`).join('  ·  ')}</span>}
               </li>)}
             </ol>
           </section>}
           {session?.assessment?.items?.length > 0 && <section className="teacher-panel">
             <h3 className="teacher-panel__title">Answers and result</h3>
+            {/* Numbered by the worksheet the teacher just read above, never by
+                the bank-global questionNumber — one page, one numbering. */}
             <ol className="teacher-event-list teacher-question-list">
-              {session.assessment.items.map((item) => <li key={item.itemId ?? item.questionNumber}>
-                <strong>Question {item.questionNumber}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>{recordedAnswerLine(item)}</small>
-              </li>)}
+              {session.assessment.items.map((item, index) => {
+                const question = (session.assignment?.questions ?? []).find((candidate) => candidate.itemId != null && candidate.itemId === item.itemId) ?? null;
+                return <li key={item.itemId ?? item.questionNumber}>
+                  <strong>Question {question?.number ?? index + 1}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>{recordedAnswerLine(item, question)}</small>
+                </li>;
+              })}
             </ol>
           </section>}
           {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
