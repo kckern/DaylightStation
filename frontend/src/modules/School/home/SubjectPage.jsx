@@ -30,10 +30,13 @@ import EmptyState from './EmptyState.jsx';
 const SUBJECT_PROGRAMS = {
   writing: [{ id: 'typing', label: 'Typing', hint: 'Learn to touch-type', section: 'typing' }],
   civilization: [{ id: 'geography', label: 'Geography', hint: 'States, capitals, and flags', section: 'geography' }],
-  arts: [{ id: 'chess', label: 'Chess', hint: 'Learn the game, one unit at a time', section: 'chess' }],
+  arts: [
+    { id: 'chess', label: 'Chess', hint: 'Learn the game, one unit at a time', section: 'chess' },
+    { id: 'rubiks-cube', label: 'Rubik’s Cube', hint: 'Learn a complete beginner solve', section: 'rubiks-cube' },
+  ],
 };
 
-export default function SubjectPage({ subjectId, shelf, guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
+export default function SubjectPage({ subjectId, shelf, guestOnly: _guestOnly, onLaunch, notice, onOpen, initialMaterialPath = [], onMaterialNav, catalogLoading = false }) {
   // SubjectPage owns the per-subject progress fetch because `materialProgress`
   // fans out a Plex read per material on the backend — expensive. The fetched
   // list feeds the ranking (started work floats to the front of its shelf) and

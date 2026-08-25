@@ -28,6 +28,7 @@ import SentenceLadderProgram from './Programs/SentenceLadder/SentenceLadderProgr
 import LanguageReelsProgram from './Programs/LanguageReels/LanguageReelsProgram.jsx';
 import FlashcardProgram from './Programs/Flashcards/FlashcardProgram.jsx';
 import FlashcardDeckBrowser from './Programs/Flashcards/FlashcardDeckBrowser.jsx';
+import RubiksCubeProgram from './Programs/RubiksCube/RubiksCubeProgram.jsx';
 import ReportPanel from './report/ReportPanel.jsx';
 import AdaptiveTutorPanel from './remediation/AdaptiveTutorPanel.jsx';
 import LearningCatalogBrowser from './catalog/LearningCatalogBrowser.jsx';
@@ -215,6 +216,7 @@ export function parseSchoolPath(urlBase) {
   if (seg[0] === 'typing') return { section: 'typing', materialPath: [] };
   if (seg[0] === 'geography') return { section: 'geography', materialPath: [] };
   if (seg[0] === 'chess') return { section: 'chess', materialPath: [] };
+  if (seg[0] === 'rubiks-cube') return { section: 'rubiks-cube', materialPath: [] };
   // Teacher-only entry into a stateless runner.  This is explicitly separate
   // from the learner launch below: no learner can be reconstructed from a
   // deep link and no grant is accepted here.
@@ -235,6 +237,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'typing') return `${urlBase}/typing`;
   if (section === 'geography') return `${urlBase}/geography`;
   if (section === 'chess') return `${urlBase}/chess`;
+  if (section === 'rubiks-cube') return `${urlBase}/rubiks-cube`;
   if (section.startsWith('sentence-ladder-preview:')) return `${urlBase}/sentence-ladder-preview/${encodeURIComponent(section.slice(24))}`;
   if (section.startsWith('sentence-ladder:')) return `${urlBase}/sentence-ladder/${encodeURIComponent(section.slice(16))}`;
   return urlBase;
@@ -276,6 +279,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const [courses, setCourses] = useState([]);     // sentence-ladder language courses
   const [studyLaunch, setStudyLaunch] = useState(null);
   const [reelLaunch, setReelLaunch] = useState(null);
+  const [cubeLaunch, setCubeLaunch] = useState(null);
   const [banks, setBanks] = useState([]);         // bank summaries, for shelving + titles
   // The catalog fetch is Plex-backed and can be SLOW on a cold cache (first open
   // after a redeploy fans out to every source). Track whether it has resolved so
@@ -511,6 +515,13 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       openSection('language-reels');
       return true;
     }
+    if (target?.kind === 'program' && target.program === 'rubiks-cube') {
+      const learnerId = launchedLearnerId ?? target.learnerId ?? null;
+      if (!target.courseId || !target.cubeGrant || !learnerId) return false;
+      setCubeLaunch({ learnerId, courseId: target.courseId, cubeGrant: target.cubeGrant });
+      openSection('rubiks-cube');
+      return true;
+    }
     if (target?.kind === 'program' && target.program === 'flashcards') {
       const learnerId = launchedLearnerId ?? target.learnerId ?? null;
       if (!target.deckId || !learnerId) return false;
@@ -662,6 +673,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
       current && current.learnerId !== currentUser?.id ? null : current
     ));
     setReelLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
+    setCubeLaunch((current) => (current && current.learnerId !== currentUser?.id ? null : current));
   }, [currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
@@ -677,6 +689,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             : section === 'print' ? 'Print'
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
+                  : section === 'rubiks-cube' ? 'Rubik’s Cube'
                   : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
                     : section;
 
@@ -841,6 +854,14 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {section === 'typing' && <TypingTutor />}
         {section === 'geography' && !active && <GeographyGrid onLaunch={onLaunch} />}
         {section === 'chess' && !active && <ChessLessons />}
+        {section === 'rubiks-cube' && !active && (
+          <RubiksCubeProgram
+            userId={cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null}
+            courseId={cubeLaunch?.courseId ?? 'beginner-v1'}
+            cubeGrant={cubeLaunch?.cubeGrant ?? null}
+            onExit={goHome}
+          />
+        )}
         {section === 'banks' && !active && <><FlashcardDeckBrowser onLaunch={onFlashcardDeckLaunch} /><BankBrowser guestOnly={isGuest} onLaunch={onLaunch} notice={notice} /></>}
         {subjectId && !active && (
           <SubjectPage

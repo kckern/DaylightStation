@@ -1,0 +1,20 @@
+.rubiks-cube { display: grid; gap: 1.25rem; color: var(--cl-ink, #202020); }
+.rubiks-cube__header { display: flex; justify-content: space-between; gap: 1rem; align-items: start; }
+.rubiks-cube__header p { margin: .15rem 0; color: var(--cl-ink-soft, #665); }
+.rubiks-cube__header h2 { margin: 0; }
+.rubiks-cube__units { display: flex; overflow-x: auto; gap: .75rem; padding-bottom: .4rem; }
+.rubiks-cube__units > div { min-width: 11rem; display: grid; gap: .25rem; padding: .65rem; background: #f4efe5; border-radius: .55rem; }
+.rubiks-cube__units button { text-align: left; border: 0; background: transparent; padding: .25rem; cursor: pointer; }
+.rubiks-cube__units button.is-current { font-weight: 700; color: #704315; }
+.rubiks-cube__activity { display: grid; grid-template-columns: minmax(18rem, 32rem) minmax(16rem, 1fr); gap: 1.5rem; align-items: start; }
+.rubiks-cube__net { display: grid; grid-template-columns: repeat(4, minmax(3.75rem, 1fr)); grid-template-rows: repeat(3, minmax(3.75rem, 1fr)); gap: .22rem; }
+.rubiks-cube__face { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: #24201c; padding: 3px; border-radius: .2rem; aspect-ratio: 1; }
+.rubiks-cube__face--U { grid-column: 2; }.rubiks-cube__face--L { grid-column: 1; grid-row: 2; }.rubiks-cube__face--F { grid-column: 2; grid-row: 2; }.rubiks-cube__face--R { grid-column: 3; grid-row: 2; }.rubiks-cube__face--B { grid-column: 4; grid-row: 2; }.rubiks-cube__face--D { grid-column: 2; grid-row: 3; }
+.rubiks-cube__sticker { background: var(--sticker); border-radius: .12rem; min-width: 0; }
+.rubiks-cube__view-toggle { margin-top: .75rem; border: 0; background: transparent; color: #704315; text-decoration: underline; cursor: pointer; }
+.rubiks-cube__perspective { position: relative; width: 12rem; height: 12rem; margin: 1rem auto 0; perspective: 35rem; transform: rotateX(-28deg) rotateY(42deg); transform-style: preserve-3d; }
+.rubiks-cube__perspective-face { position: absolute; width: 8rem; height: 8rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; background: #24201c; transform-origin: center; }.rubiks-cube__perspective-face span { background: var(--sticker); border-radius: 1px; }.rubiks-cube__perspective-face--F { transform: translateZ(4rem); }.rubiks-cube__perspective-face--R { transform: rotateY(90deg) translateZ(4rem); }.rubiks-cube__perspective-face--U { transform: rotateX(90deg) translateZ(4rem); }
+.rubiks-cube__turns { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .35rem; padding-top: .7rem; }
+.rubiks-cube__turn-group { display: flex; align-items: center; gap: .15rem; }.rubiks-cube__turn-group button, .rubiks-cube__header button, .rubiks-cube__card button, .rubiks-cube__quiz button { padding: .35rem .5rem; border: 1px solid #76502e; border-radius: .3rem; background: #fffaf0; cursor: pointer; }.rubiks-cube__turn-group button:disabled { opacity: .5; cursor: wait; }
+.rubiks-cube__card, .rubiks-cube__quiz { padding: 1rem; border-radius: .6rem; background: #f4efe5; }.rubiks-cube__card button + button { margin-inline-start: .5rem; }.rubiks-cube__quiz fieldset { display: grid; gap: .35rem; margin: .7rem 0; }.rubiks-cube__notice { grid-column: 1 / -1; padding: .7rem; background: #e6f2dd; border-radius: .4rem; }
+@media (max-width: 720px) { .rubiks-cube__activity { grid-template-columns: 1fr; }.rubiks-cube__net { max-width: 32rem; } }
