@@ -47,7 +47,6 @@ import { planLearnerWork } from '#domains/school/planner.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
-import { moduleOrdinal } from './BuildAgenda.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
