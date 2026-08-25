@@ -7,7 +7,7 @@ Daylight Feed is one reading system with three deliberate modes:
 - **Scroll** is a bounded, personalized discovery session spanning news, library, household, and personal sources.
 - **Search** joins their normalized 12-month history, saved items, and archived material.
 
-Start with [Feed System Architecture](./feed-system-architecture.md) for the cross-mode model and API. Use [Reader System](./reader-system.md) for FreshRSS behavior, [Feed Scroll Architecture](./feed-scroll-architecture.md) for frontend session/rendering behavior, [Feed Assembly Process](./feed-assembly-process.md) for ranking, and [Feed Query System](./feed-query-system.md) for source configuration and filters.
+Start with [Feed System Architecture](./feed-system-architecture.md) for the cross-mode model and API. Use [Reader System](./reader-system.md) for FreshRSS behavior, [Feed Scroll Architecture](./feed-scroll-architecture.md) for frontend session/rendering behavior, [Feed Assembly Process](./feed-assembly-process.md) for ranking, [Feed Query System](./feed-query-system.md) for source configuration and filters, and the [Feed Design System](./design-system.md) for tokens, control treatments, and per-surface visual rules (the Headlines outlet matrix is the default headline view; Briefing is the secondary toggle).
 
 ## Current product contract
 
