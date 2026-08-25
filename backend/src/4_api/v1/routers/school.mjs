@@ -1455,7 +1455,14 @@ export function createSchoolRouter({
     if (!artifact) throw new EntityNotFoundError('issued artifact', req.params.artifactId);
     const mediaType = artifact.manifest.representation?.mediaType ?? 'application/pdf';
     if (mediaType !== 'application/pdf') throw new ValidationError('artifact is not a PDF');
-    const png = await renderWorksheetThumbnail(artifact.bytes);
+    // A corrupt retained PDF is a missing view, not a server fault — the card
+    // degrades to its no-thumbnail state instead of surfacing a 500.
+    let png;
+    try {
+      png = await renderWorksheetThumbnail(artifact.bytes);
+    } catch {
+      return res.status(404).json({ error: 'thumbnail-unrenderable' });
+    }
     res.set('Cache-Control', 'private, no-store')
       .set('X-School-Artifact', 'exact-thumbnail')
       .type('image/png').send(png);

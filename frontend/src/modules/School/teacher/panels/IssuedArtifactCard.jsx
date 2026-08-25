@@ -3,13 +3,15 @@
  * speaks in the language of the family (worksheet/result receipt), while the
  * immutable-artifact mechanics remain in the API contract.
  */
+import SafeImg from './SafeImg.jsx';
+
 function isReceipt(artifact) {
   return artifact.kind === 'result-receipt' || artifact.role === 'result-receipt';
 }
 
 function availabilityLabel(artifact) {
   if (artifact.availability === 'exact') return 'Exact issued file';
-  return 'Original print was not archived';
+  return 'Original print was not archived — only prints issued after artifact retention began are kept';
 }
 
 export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' }) {
@@ -24,8 +26,8 @@ export default function IssuedArtifactCard({ artifact, lessonTitle = 'Lesson' })
   return <article className={`teacher-issued-artifact${receipt ? ' teacher-issued-artifact--receipt' : ''}`}>
     <a className={receipt ? 'teacher-issued-artifact__receipt-preview' : 'teacher-issued-artifact__preview'} href={url} target="_blank" rel="noreferrer" aria-label={`Open ${title}`}>
       {receipt
-        ? <img src={url} alt="Printed result receipt" />
-        : artifact.thumbnailUrl ? <img src={artifact.thumbnailUrl} alt={`${title} first page`} /> : <span>PDF</span>}
+        ? <SafeImg src={url} alt="Printed result receipt" />
+        : artifact.thumbnailUrl ? <SafeImg src={artifact.thumbnailUrl} alt={`${title} first page`} /> : <span>PDF</span>}
     </a>
     <div className="teacher-issued-artifact__copy">
       <strong>{title}</strong>

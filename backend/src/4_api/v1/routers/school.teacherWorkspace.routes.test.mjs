@@ -190,6 +190,17 @@ describe('teacher workspace routes', () => {
     }));
   });
 
+  it('answers 404, not 500, when a retained PDF cannot render a thumbnail', async () => {
+    const issuedArtifactStore = { get: vi.fn(async () => ({
+      manifest: { artifactId: 'art_1', representation: { mediaType: 'application/pdf' } },
+      bytes: Buffer.from('%PDF corrupt'),
+    })) };
+    const renderWorksheetThumbnail = vi.fn(async () => { throw new Error('bad xref'); });
+    const response = await request(app({ issuedArtifactStore, renderWorksheetThumbnail }))
+      .get('/api/v1/school/teacher/artifacts/art_1/thumbnail.png').expect(404);
+    expect(response.body).toMatchObject({ error: 'thumbnail-unrenderable' });
+  });
+
   it('joins unitTitle onto review rows so the feedback lane can name the lesson', async () => {
     const reviewQueue = { listForLearner: vi.fn(async () => [
       { itemId: 'i1', sessionId: 'ses_1', unitId: 'atlas-us-p044-illinois', verdict: 'correct', gradedBy: 'engine', gradedAt: '2026-08-24T15:20:00Z' },
