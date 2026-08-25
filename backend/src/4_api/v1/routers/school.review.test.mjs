@@ -27,7 +27,7 @@ describe('GET /api/v1/school/review/learner/:learnerId', () => {
     const res = await request(appWith({ reviewQueue })).get('/api/v1/school/review/learner/kid1');
     expect(res.status).toBe(200);
     expect(res.body).toEqual([{
-      itemId: 'q1', sessionId: 'ses_1', unitId: 'math-fractions.02', verdict: 'correct',
+      itemId: 'q1', sessionId: 'ses_1', unitId: 'math-fractions.02', unitTitle: null, verdict: 'correct',
       note: 'Nice work', gradedBy: 'parent', gradedAt: '2026-07-27T09:00:00.000Z',
       prompt: 'What is 1/2 + 1/2?', questionNumber: 3,
     }]);
