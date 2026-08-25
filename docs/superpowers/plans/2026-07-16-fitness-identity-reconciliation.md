@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Effort test replaces wall-clock duration as the absorb gate.** A segment is *insignificant* iff `coins ≤ max_coins` AND `activeWarmZoneSeconds ≤ max_active_zone_seconds` AND `hrSampleCount < max_hr_samples`. Config `governance.insignificant_usage = { max_coins: 1, max_active_zone_seconds: 5, max_hr_samples: 3 }` (starting values).
-- **Cross-device merge applies to configured/known users only** — never synthetic guests (`guest-*`, `#*`, `guest_*`). Reuse `isPikachuId` and extend with a `guest_`-prefix check for the known-user predicate.
+- **Cross-device merge applies to configured/known users only** — never synthetic guests (`guest-*`, `#*`, `guest_*`). Reuse `isSyntheticOccupantId` and extend with a `guest_`-prefix check for the known-user predicate.
 - **Series metric names differ by representation.** In-memory (frontend save time): `user:<id>:heart_rate | zone_id | coins_total | heart_beats`. On-disk (backend heal): flat `<id>:hr | zone | coins | beats`, RLE-encoded strings; zone letters `c/a/w/h`; `interval_seconds` (default 5) at `timeline.interval_seconds`.
 - **Pure cores have no side effects.** They return plans; callers apply them.
 - **Preserve existing behavior:** OI-2 cycling detection (3+ alternating substantial segments = shared-strap turn-taking) must still keep all participants. Existing `sessionBackfill` exports keep working (the duration path is demoted, not deleted).
@@ -192,7 +192,7 @@ Expected: FAIL — `buildOccupancySegments is not a function`.
 ```javascript
 export function isKnownUserId(id) {
   if (typeof id !== 'string' || !id) return false;
-  if (isPikachuId(id)) return false;      // guest-* / #*
+  if (isSyntheticOccupantId(id)) return false;      // guest-* / #*
   if (id.startsWith('guest_')) return false; // device-keyed generic guest
   return true;
 }

@@ -4,7 +4,7 @@ import { resolveGameRules, buildCatalog, resolveConsoles } from './EmulatorCatal
 
 const cfg = {
   defaults: { governance: { mode: 'gate', required_zone: 'active', grace_seconds: 20, earn_rate: 1 }, shader: 'crt', chrome: null },
-  games: [{ id: 'pkmn', system: 'gbc', rom: 'p.gbc', title: 'Pokémon',
+  games: [{ id: 'pkmn', system: 'gbc', rom: 'p.gbc', title: 'Creature',
             shader: 'lcd-grid', governance: { mode: 'credit', required_zone: 'warm', earn_rate: 1.5 } }],
   users: { user_5: { governance: { required_zone: 'cool' } } },
 };

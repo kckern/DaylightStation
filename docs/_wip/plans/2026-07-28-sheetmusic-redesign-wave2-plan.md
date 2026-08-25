@@ -575,8 +575,8 @@ const CURATED = {
   'overworld-theme-super-mario-world': 'Overworld Theme (Super Mario World)',
   'super-mario-land-2-six-golden-coins-overworld-theme': 'Overworld Theme (Super Mario Land 2)',
   'super-mario-land-world-1-solo-piano': 'World 1 (Super Mario Land)',
-  'pokemon-red-blue-and-yellow-trainer-battle-music': 'Trainer Battle (Pokemon Red/Blue/Yellow)',
-  'pokemon-red-blue-gbc-road-to-viridian-city': 'Road to Viridian City (Pokemon Red/Blue)',
+  'creature-red-blue-and-yellow-trainer-battle-music': 'Trainer Battle (Creature Red/Blue/Yellow)',
+  'creature-red-blue-gbc-road-to-viridian-city': 'Road to Viridian City (Creature Red/Blue)',
   'green-hill-zone-sonic-the-hedgehog': 'Green Hill Zone (Sonic the Hedgehog)',
   'the-adventures-of-tintin-theme': 'The Adventures of Tintin Theme',
 };

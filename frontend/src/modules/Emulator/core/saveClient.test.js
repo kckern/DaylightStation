@@ -17,10 +17,10 @@ describe('saveClient URLs', () => {
   it('builds user-keyed save + state URLs (slot defaults to auto)', async () => {
     const fetchImpl = vi.fn(async () => res({ status: 204 }));
     const c = clientWith(fetchImpl);
-    await c.getSave('gb', 'pokemon-red', 'user_5');
-    await c.getState('gb', 'pokemon-red', 'user_5');
-    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
-    expect(fetchImpl.mock.calls[1][0]).toBe(`/api/v1/emulator/state/gb/pokemon-red/${DEFAULT_SLOT}?user=user_5`);
+    await c.getSave('gb', 'example-quest', 'user_5');
+    await c.getState('gb', 'example-quest', 'user_5');
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/v1/emulator/save/gb/example-quest?user=user_5');
+    expect(fetchImpl.mock.calls[1][0]).toBe(`/api/v1/emulator/state/gb/example-quest/${DEFAULT_SLOT}?user=user_5`);
   });
 
   it('encodes path + user segments', async () => {

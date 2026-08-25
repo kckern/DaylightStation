@@ -55,7 +55,7 @@ TI-86 1.4 ROM. The self-contained evidence lives in
 23-variable release, launches `ASCHL`, records ordered keypad input, and
 captures the actual 128×64 LCD. It covers first boot, learner-named Progress,
 a seven-page Notes reader through `END`, Math `MARK` receipt extraction,
-History `LATER` pending work, the six-question Pokémon assessment, and a
+History `LATER` pending work, the six-question Creature assessment, and a
 nonzero Science route with compact context title, full `REMOVE` rail, and safe
 Cancel. The compact `0` and `O` glyphs are distinct; transcripts must never
 use ambiguity markers for numeric values.
@@ -72,7 +72,7 @@ were rerun for that release.
 ### Inline-assessment evidence
 
 On 2026-08-03, release `56ac632a8a5f` passed the owned-ROM,
-virtual-Graph-Link `pokemon-identification-quiz` scenario. It captures the
+virtual-Graph-Link `creature-identification-quiz` scenario. It captures the
 full generic route for Soren: Arts & Culture → auto-collapsed Course/Unit/
 Lesson → Modules → all six locally scored questions → durable offline result
 → Version-5/M QR presenter. Each normal question shows its compact prompt and
@@ -81,8 +81,8 @@ there is no intermediate `ANS` state. The 25 captured PNG/ASCII frames and
 report are in the scenario output directory selected for that run.
 
 On 2026-08-03, the exact-release CLI independently completed the six-question
-Pokémon flow for bundle `fc89608f8385`: fresh picker → Soren → Arts & Culture
-→ one-transition Course/Unit/Lesson collapse → Pokémon Identification → Q1–Q6
+Creature flow for bundle `fc89608f8385`: fresh picker → Soren → Arts & Culture
+→ one-transition Course/Unit/Lesson collapse → Creature Identification → Q1–Q6
 → locally queued result → Version-5/M result QR → `MARK`/`LATER`. The real
 TI-OS/MAME transcript contains every authored prompt and answer—including
 `DRAGONAIR`, `DRAGONITE`, `GYARADOS`, and `BAGON`—and contains no `CONTENT
@@ -93,9 +93,9 @@ the actual crowded compact assessment framebuffer.
 
 On 2026-08-04, complete 24-variable release `7f9e19d5a4be` passed the owned
 TI-86 1.4 exact CLI route from a real TI-OS `ASCHL` launch: first boot → Soren
-→ Subjects → Home → `CODE` → typed `123456` → Pokémon Identification Q1/6.
+→ Subjects → Home → `CODE` → typed `123456` → Creature Identification Q1/6.
 `123456` is the deliberately reversible pairing of Milo's configured stable
-slot and the authored Pokémon module route `098765`; the installed `SCCO`
+slot and the authored Creature module route `098765`; the installed `SCCO`
 index resolves it locally before the normal learning runtime receives the
 target. The captured LCD proves each numeral, the `CODE` screen, and the
 question-and-choice surface. This is device-local navigation evidence, not a

@@ -61,17 +61,6 @@ export class Document {
     return this.#expires !== null && this.#expires < asOf;
   }
 
-  toJSON() {
-    return {
-      id: this.#id,
-      kind: this.#kind,
-      label: this.#label,
-      file: this.#file,
-      issued: this.#issued ? this.#issued.toISOString().slice(0, 10) : null,
-      expires: this.#expires ? this.#expires.toISOString().slice(0, 10) : null,
-      notes: this.#notes,
-    };
-  }
 }
 
 function toDateOrNull(value) {

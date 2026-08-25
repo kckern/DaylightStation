@@ -19,7 +19,7 @@
  */
 
 import { spawn } from 'child_process';
-import { readdirSync, statSync, writeFileSync, mkdirSync } from 'fs';
+import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -123,6 +123,16 @@ function filterFolders(folders, args) {
   }
 
   return result;
+}
+
+function explicitVitestFiles(dir = join(__dirname, 'suite'), out = []) {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) explicitVitestFiles(fullPath, out);
+    else if (entry.isFile() && /\.test\.(?:js|jsx|mjs)$/.test(entry.name)
+      && /from ['"]vitest['"]/.test(readFileSync(fullPath, 'utf8'))) out.push(fullPath);
+  }
+  return out;
 }
 
 // ============================================================================
@@ -229,14 +239,27 @@ function parseJestOutput(output) {
 // ============================================================================
 
 function buildJestArgs(args, folders) {
+  // Anchor discovery to this repository's legacy Jest suite. A loose
+  // `tests/unit/suite` substring also matches `backend/tests/unit/suite`, whose
+  // files are Vitest-owned and register a second matcher runtime inside Jest.
+  const suiteRoot = join(rootDir, 'tests/unit/suite').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const jestArgs = [
-    '--testPathPattern=tests/unit/suite',
+    `--testPathPattern=^${suiteRoot}`,
     '--passWithNoTests',
   ];
 
+  // Runner ownership is declared by the file, not solely by its historical
+  // directory. A small number of migrated tests still live under suite/ but
+  // explicitly import Vitest; loading those in Jest installs a second matcher
+  // runtime and crashes both suites. The Vitest gate includes these files.
+  for (const file of explicitVitestFiles()) {
+    const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    jestArgs.push(`--testPathIgnorePatterns=${escaped}`);
+  }
+
   // Add folder filters
   if (folders.length > 0 && folders.length < discoverFolders().length) {
-    const pattern = folders.map(f => `tests/unit/suite/${f}`).join('|');
+    const pattern = folders.map(f => `^${suiteRoot}/${f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('|');
     jestArgs[0] = `--testPathPattern=${pattern}`;
   }
 

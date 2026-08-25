@@ -24,7 +24,7 @@ console with per-user save/resume. Coins appear as placeholders (economy lands l
 5. **Per-game save mode** (manifest, per game): `none` | `state` | `battery`.
    - `none` (e.g. Mario Kart): tap → boots immediately, anonymous, no saving.
    - `state` (e.g. Super Mario Land): emulator save-state snapshot used as the resume point.
-   - `battery` (e.g. Pokémon): `.srm` battery save used as the resume point.
+   - `battery` (e.g. franchise theme): `.srm` battery save used as the resume point.
 6. **Launch flow** for save-enabled games — fingerprint **up front**:
    - Tap cover → identify prompt (with **"play without saving"** escape).
    - Matched → **auto-resume** that user's save if present (resume by default), else fresh;

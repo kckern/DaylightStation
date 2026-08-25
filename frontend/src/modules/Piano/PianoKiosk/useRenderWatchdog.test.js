@@ -55,6 +55,12 @@ describe('buildBeat', () => {
     expect(Number.isNaN(beat.sinceLoadMs)).toBe(false);
   });
 
+  it('carries only the active game identity needed for recovery protection', () => {
+    const beat = buildBeat(60, { activity: { type: 'game', id: 'chess', player: 'milo' } });
+    expect(beat.activity).toEqual({ type: 'game', id: 'chess' });
+    expect(beat.activity.player).toBeUndefined();
+  });
+
   it('exposes the localhost bridge ingest as the default target', () => {
     expect(DEFAULT_BEAT_URL).toBe('http://localhost:8770/kiosk/beat');
   });

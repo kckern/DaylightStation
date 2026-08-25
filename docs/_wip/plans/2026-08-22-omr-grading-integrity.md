@@ -77,7 +77,7 @@ Felix's session `ses_f6Buxumv` was **created 2026-08-14** and never submitted. O
 
 **The "PRINT IT AGAIN" label was correct** — same artifact, genuinely printed before. The `reprinted` event already validates artifact identity (`sessionEvents.mjs:318-320`: *"reprinted artifactId … was never issued (a reprint reuses the original)"*). So print-again is **already artifact-scoped, not lesson-scoped**. The original hypothesis does not hold and must not be "fixed".
 
-The real defect is that **an 8-day-old session resumed silently**. His one live card allocation is `5922785`, rows **7–16**, minted 2026-08-14 when `arts/pokemon-identification/quiz-1` held rows 1–6 of that shared physical card. So the sheet legitimately starts at question 7 and legitimately carries a different student number — for a packing context eight days stale that nobody in the room could see.
+The real defect is that **an 8-day-old session resumed silently**. His one live card allocation is `5922785`, rows **7–16**, minted 2026-08-14 when `arts/creature-identification/quiz-1` held rows 1–6 of that shared physical card. So the sheet legitimately starts at question 7 and legitimately carries a different student number — for a packing context eight days stale that nobody in the room could see.
 
 A sweep of `artifacts/print/cards/` confirms only **one** allocation is `live` for that record; a rows 1–10 card (`3598689`) exists but is `released`. See Slice E for the full table and the correction it supersedes. **There is no data corruption here and no migration to write.**
 
@@ -631,7 +631,7 @@ then silently resumed eight days later. Everything he saw follows from that:
 - The **student number changed** because his one live allocation is card
   `5922785`, minted 2026-08-14 — not the card he had most recently seen.
 - The sheet **starts at question 7** because that allocation is rows 7–16: when
-  it was minted, `arts/pokemon-identification/quiz-1` held rows 1–6 of the same
+  it was minted, `arts/creature-identification/quiz-1` held rows 1–6 of the same
   physical card. Correct behaviour for that allocation, bewildering eight days
   later with no memory of the context.
 - **"PRINT IT AGAIN" was truthful** — same `artifactId`, genuinely printed

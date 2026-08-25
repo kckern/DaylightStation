@@ -915,7 +915,7 @@ to move a piece. This closes that hole permanently.
 
 - [ ] **Step 1: Write the verifier**
 
-`cli/piano-chess.cli.mjs`, following the conventions of `cli/piano-card-game.cli.mjs` (argv parsing,
+`cli/piano-chess.cli.mjs`, following the repository's CLI conventions (argv parsing,
 `--json`, `--headed`, exit codes). It must:
 
 1. Stand up a `WebSocketServer` on port 8770 in-process — the piano kiosk's note-in is bridge-first,

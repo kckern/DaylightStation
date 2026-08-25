@@ -75,7 +75,7 @@ export class YamlPlaceDatastore extends IPlaceRepository {
   async savePlace(place) {
     const data = loadYamlSafe(this.#file) || {};
     const places = data.places || {};
-    const { id, ...rest } = place.toJSON();
+    const { id, ...rest } = dehydratePlace(place);
     places[id] = rest;
     ensureDir(path.dirname(this.#file));
     saveYaml(this.#file, { ...data, places }, { noRefs: true });
@@ -89,4 +89,15 @@ export class YamlPlaceDatastore extends IPlaceRepository {
     saveYaml(this.#file, data, { noRefs: true });
     return true;
   }
+}
+
+function dehydratePlace(place) {
+  return {
+    id: place.id,
+    label: place.label,
+    lat: place.fix.lat,
+    lon: place.fix.lon,
+    radius_m: place.radiusM,
+    kind: place.kind,
+  };
 }

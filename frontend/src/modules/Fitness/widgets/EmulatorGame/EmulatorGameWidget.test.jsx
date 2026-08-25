@@ -66,7 +66,7 @@ function libraryWith(saveMode) {
   return {
     systems: { gb: { core: 'gb' } },
     consoles: [{ system: 'gb', label: 'Game Boy', placeholder: false }, { system: null, label: null, placeholder: true }],
-    games: [{ id: 'pokemon-red', system: 'gb', title: 'Pokémon Red', coverUrl: '/cover', saveMode }],
+    games: [{ id: 'example-quest', system: 'gb', title: 'Example Quest', coverUrl: '/cover', saveMode }],
     input: { keyboard: { up: 'ArrowUp', start: 'Enter', a: 'x', b: 'z' } },
   };
 }
@@ -88,7 +88,7 @@ describe('EmulatorGameWidget arcade shell', () => {
   it('shows the arcade grid first (no console until a game is picked)', async () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
     expect(screen.queryByTestId('console')).toBeNull();
     expect(window.__emulatorCapturingGamepad).toBeFalsy(); // arcade keeps the pad
     expect(api).toHaveBeenCalledWith('api/v1/emulator/library');
@@ -97,10 +97,10 @@ describe('EmulatorGameWidget arcade shell', () => {
   it('launches a no-save game on tap: open gate, controls, no persistence, pad captured', async () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     const el = await screen.findByTestId('console');
-    expect(el.getAttribute('data-game')).toBe('pokemon-red');
+    expect(el.getAttribute('data-game')).toBe('example-quest');
     expect(el.getAttribute('data-haskbd')).toBe('true');
     expect(el.getAttribute('data-gate')).toBe('open'); // governance disabled
     expect(el.getAttribute('data-persist')).toBe('0');
@@ -110,8 +110,8 @@ describe('EmulatorGameWidget arcade shell', () => {
   it('off-kiosk: a save-enabled game skips fingerprint and cold-starts', async () => {
     api.mockResolvedValue(libraryWith('battery'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0');
     expect(identity.registerIdentify).not.toHaveBeenCalled();
@@ -122,7 +122,7 @@ describe('EmulatorGameWidget arcade shell', () => {
       systems: { gb: { core: 'gb' } },
       consoles: [{ system: 'gb', label: 'Game Boy', placeholder: false }],
       games: [
-        { id: 'pokemon-red', system: 'gb', title: 'Pokémon Red', coverUrl: '/c', saveMode: 'none' },
+        { id: 'example-quest', system: 'gb', title: 'Example Quest', coverUrl: '/c', saveMode: 'none' },
         { id: 'mario-kart', system: 'gb', title: 'Mario Kart', coverUrl: '/c2', saveMode: 'none', core: 'gba' },
       ],
       input: { keyboard: {} },
@@ -141,8 +141,8 @@ describe('EmulatorGameWidget arcade shell', () => {
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     api.mockResolvedValue(libraryWith('none')); // no-save game then boots straight to playing
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     const wrapper = document.querySelector('.fitness-emulator-fullscreen');
     expect(wrapper).toBeTruthy();
@@ -152,8 +152,8 @@ describe('EmulatorGameWidget arcade shell', () => {
   it('off-kiosk: the portaled fullscreen wrapper omits kiosk-ui', async () => {
     api.mockResolvedValue(libraryWith('none'));
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     const wrapper = document.querySelector('.fitness-emulator-fullscreen');
     expect(wrapper.className).not.toContain('kiosk-ui');
@@ -162,8 +162,8 @@ describe('EmulatorGameWidget arcade shell', () => {
   it('releases the gamepad on unmount', async () => {
     api.mockResolvedValue(libraryWith('none'));
     const { unmount } = render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     unmount();
     expect(window.__emulatorCapturingGamepad).toBeFalsy();
@@ -185,8 +185,8 @@ describe('EmulatorGameWidget save flow', () => {
     });
     identity.registerAdmin.mockResolvedValue({ matched: true, userId: 'dad', authz: { admin: true } });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await waitFor(() => expect(identity.registerAdmin).toHaveBeenCalled());
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-persist')).toBe('0'); // fresh + anonymous
@@ -201,12 +201,12 @@ describe('EmulatorGameWidget save flow', () => {
       : Promise.resolve({ users: [] })));
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     fireEvent.click(screen.getByTestId('exit'));
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     expect(identity.registerAdmin).toHaveBeenCalledTimes(1);
   });
@@ -219,8 +219,8 @@ describe('EmulatorGameWidget save flow', () => {
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('player-select');
     fireEvent.click(screen.getByTestId('saver-user_5'));
     await waitFor(() => {
@@ -238,8 +238,8 @@ describe('EmulatorGameWidget save flow', () => {
     identity.registerAdmin.mockResolvedValue({ matched: true, authz: { admin: true } });
     identity.registerIdentify.mockResolvedValue({ matched: true, userId: 'user_5' });
     render(<EmulatorGameWidget fitnessContext={fitnessContext} onClose={() => {}} config={{}} onMount={() => {}} />);
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('player-select');
     // Claim the running fresh game; the scanner (user_5) already has a save → conflict warning.
     fireEvent.click(screen.getByTestId('claim'));
@@ -282,8 +282,8 @@ describe('EmulatorGameWidget coin economy', () => {
         onMount={() => {}}
       />,
     );
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-gate')).toBe('coin-metered');
     // start() opens a spend session against the injected economy api.
@@ -303,8 +303,8 @@ describe('EmulatorGameWidget coin economy', () => {
         onMount={() => {}}
       />,
     );
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     // Wait until the session is open (coins reflect the opened balance) so close has a sessionId.
     await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-coins')).toBe('42'));
@@ -325,8 +325,8 @@ describe('EmulatorGameWidget coin economy', () => {
         onMount={() => {}}
       />,
     );
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     await screen.findByTestId('console');
     await waitFor(() => expect(screen.getByTestId('console').getAttribute('data-coins')).toBe('42'));
   });
@@ -342,8 +342,8 @@ describe('EmulatorGameWidget coin economy', () => {
         onMount={() => {}}
       />,
     );
-    await waitFor(() => expect(screen.getByLabelText('Pokémon Red')).toBeTruthy());
-    fireEvent.pointerDown(screen.getByLabelText('Pokémon Red'));
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
     const el = await screen.findByTestId('console');
     expect(el.getAttribute('data-gate')).toBe('open');
     expect(el.getAttribute('data-coins')).toBe(''); // '—' fallback stays in the console

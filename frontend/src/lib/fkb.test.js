@@ -63,8 +63,8 @@ describe('fkb launchIntent', () => {
 
   it('encodes non-ASCII filenames as UTF-8 percent escapes', () => {
     const { startIntent } = mockBridge();
-    launchIntent(PKG, ACT, { ROM: 'Pokémon.gb' });
-    expect(startIntent.mock.calls[0][0]).toBe(`${HEAD}S.ROM=Pok%C3%A9mon.gb;end`);
+    launchIntent(PKG, ACT, { ROM: 'Crème.gb' });
+    expect(startIntent.mock.calls[0][0]).toBe(`${HEAD}S.ROM=Cr%C3%A8me.gb;end`);
   });
 
   it('does not let a value inject an additional intent field', () => {
@@ -110,14 +110,14 @@ describe('fkb launchIntent', () => {
     const { startIntent } = mockBridge();
 
     launchIntent(PKG, ACT, {
-      ROM: '/storage/emulated/0/Games/GB/Pokemon - Yellow Version (USA, Europe).gbc',
+      ROM: '/storage/emulated/0/Games/GB/Creature - Yellow Version (USA, Europe).gbc',
       LIBRETRO: '/data/data/com.retroarch.aarch64/cores/gambatte_libretro_android.so',
       CONFIGFILE: '/storage/emulated/0/RetroArch/retroarch.cfg',
     });
 
     expect(startIntent.mock.calls[0][0]).toBe(
       `${HEAD}` +
-        'S.ROM=%2Fstorage%2Femulated%2F0%2FGames%2FGB%2FPokemon%20-%20Yellow%20Version%20(USA%2C%20Europe).gbc;' +
+        'S.ROM=%2Fstorage%2Femulated%2F0%2FGames%2FGB%2FCreature%20-%20Yellow%20Version%20(USA%2C%20Europe).gbc;' +
         'S.LIBRETRO=%2Fdata%2Fdata%2Fcom.retroarch.aarch64%2Fcores%2Fgambatte_libretro_android.so;' +
         'S.CONFIGFILE=%2Fstorage%2Femulated%2F0%2FRetroArch%2Fretroarch.cfg;' +
         'end'

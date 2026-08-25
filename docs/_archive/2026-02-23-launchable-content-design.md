@@ -671,8 +671,8 @@ Reference data from the Shield TV as of 2026-02-23:
 | N64 | Mario Kart 64, Bomberman 64, Mario Party, Mario Tennis, Paper Mario, Pilotwings 64, Star Fox 64, Wave Race 64, Diddy Kong Racing | mupen64plus_next_gles3 |
 | SNES | DKC, Goof Troop, Zelda ALttP, Mega Man Soccer, Super Bomberman 2, Mario All-Stars+World, Super Mario Kart, Tetris & Dr. Mario, DKC2, Mario Paint | snes9x |
 | Genesis | Sonic the Hedgehog, Mega Bomberman | genesis_plus_gx |
-| GB | Pokemon Red, Mario Land, Mario Land 2, Wario Land | gambatte |
-| GBC | Pokemon Yellow, Pokemon Crystal | gambatte |
+| GB | Creature Red, Mario Land, Mario Land 2, Wario Land | gambatte |
+| GBC | Creature Yellow, Creature Crystal | gambatte |
 | GBA | Mario Kart Super Circuit | mgba |
 | NES | Bubble Bobble | fceumm |
 | GameCube | Mario Kart Double Dash | dolphin |

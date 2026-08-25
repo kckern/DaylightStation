@@ -584,7 +584,7 @@ Four definite fragment groups merged via `cli/merge-fitness-sessions.cli.mjs`:
 | F8 | 2026-05-06 | Chest & Back | 13s | merged → 54 min, 368 coins |
 
 Four borderline fragment groups (12–24 min gaps) preserved as-is — likely
-intentional workout breaks (Leg Day 2024-08-24, Pokemon 2025-10-20,
+intentional workout breaks (Leg Day 2024-08-24, Creature 2025-10-20,
 Super Mario Kart 2026-01-02, LIIFT Shoulders 2026-01-14).
 
 May 5 Strava bad-match detached: stripped the misattributed

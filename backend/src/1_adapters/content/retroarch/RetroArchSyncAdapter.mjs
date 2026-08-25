@@ -126,8 +126,8 @@ export class RetroArchSyncAdapter {
     let savesMatched = 0;
     for (const gameList of Object.values(games)) {
       for (const game of gameList) {
-        // ROM path e.g. "/storage/emulated/0/Games/GB/Pokemon Red (UE) [S][!].gb"
-        // Save file base name e.g. "Pokemon Red (UE) [S][!]"
+        // ROM path e.g. "/storage/emulated/0/Games/GB/Example Quest (UE) [S][!].gb"
+        // Save file base name e.g. "Example Quest (UE) [S][!]"
         const romFile = game.rom.split('/').pop();
         const romBase = romFile.replace(/\.[^.]+$/, '');
         if (saveTimesMap[romBase]) {

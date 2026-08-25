@@ -201,7 +201,7 @@ task — data-mount changes are explicitly out of this task's scope): surface
 profiles were authored in the corpus (`screen-browser`, `paper-letter-mono`
 under `catalog/surfaces/`), `portal.yml` now carries `surfaceProfile:
 screen-browser`, and the missing question bank was added at
-`catalog/question-banks/arts/pokemon-identification/`.
+`catalog/question-banks/arts/creature-identification/`.
 
 Re-ran both §12.5 and §12.6's commands myself, read-only (no
 `--write-manifest`), against **this fix wave's own build** (HEAD at
@@ -222,9 +222,9 @@ Output (verbatim, table body omitted — 24 rows, all listed below by verdict):
 School certification (gate mode)
 
 Certified 24 row(s)
-  bank:arts/pokemon-identification/pokemon-identification-medium  paper-letter-mono  render
-  bank:arts/pokemon-identification/pokemon-identification-medium  screen-browser  render
-  bank:arts/pokemon-identification/pokemon-identification-medium  ti86-codec-baseline (codec)  incompatible
+  bank:arts/creature-identification/creature-identification-medium  paper-letter-mono  render
+  bank:arts/creature-identification/creature-identification-medium  screen-browser  render
+  bank:arts/creature-identification/creature-identification-medium  ti86-codec-baseline (codec)  incompatible
   bank:starter-history-roman-roads  paper-letter-mono  render
   bank:starter-history-roman-roads  screen-browser  render
   bank:starter-history-roman-roads  ti86-codec-baseline (codec)  incompatible
@@ -234,9 +234,9 @@ Certified 24 row(s)
   bank:starter-science-water-cycle  paper-letter-mono  render
   bank:starter-science-water-cycle  screen-browser  render
   bank:starter-science-water-cycle  ti86-codec-baseline (codec)  incompatible
-  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  paper-letter-mono  full
-  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  screen-browser  full
-  schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium  ti86-codec-baseline (codec)  full
+  schoolcalc-starter/arts/creature-identification/creature-basics/creature-identification-medium  paper-letter-mono  full
+  schoolcalc-starter/arts/creature-identification/creature-basics/creature-identification-medium  screen-browser  full
+  schoolcalc-starter/arts/creature-identification/creature-basics/creature-identification-medium  ti86-codec-baseline (codec)  full
   schoolcalc-starter/history/roman-roads/empire-connections/roads  paper-letter-mono  full
   schoolcalc-starter/history/roman-roads/empire-connections/roads  screen-browser  full
   schoolcalc-starter/history/roman-roads/empire-connections/roads  ti86-codec-baseline (codec)  full
@@ -284,7 +284,7 @@ Output (verbatim):
 School certification (gate mode)
 
 Errors
-  - lesson 'schoolcalc-starter/arts/pokemon-identification/pokemon-basics/pokemon-identification-medium': School question bank 'arts/pokemon-identification/pokemon-identification-medium' was not found
+  - lesson 'schoolcalc-starter/arts/creature-identification/creature-basics/creature-identification-medium': School question bank 'arts/creature-identification/creature-identification-medium' was not found
 
 Certified 0 row(s)
 
@@ -294,11 +294,11 @@ FAILED
 **Finding, not a defect in this branch's code (now fixed out-of-band, see
 above):** the real corpus's `schoolcalc-starter` catalog
 (`catalogs/schoolcalc-starter.yml`) authored an
-`arts/pokemon-identification/pokemon-basics/pokemon-identification-medium`
+`arts/creature-identification/creature-basics/creature-identification-medium`
 lesson (and listed its address in `installSets.starter-four`) whose `quiz`
-module referenced `bankId: arts/pokemon-identification/pokemon-identification-medium`
+module referenced `bankId: arts/creature-identification/creature-identification-medium`
 — but no such file existed anywhere under `question-banks/`
-(`find … -iname "*pokemon*"` under `question-banks/` and `catalogs/` returned
+(`find … -iname "*creature*"` under `question-banks/` and `catalogs/` returned
 only the catalog file itself). This was a genuine authoring gap in the
 published content mount, pre-dating and unrelated to this feature (gate mode's
 corpus-validation pass, spec §5.5.2, is exactly what is supposed to catch it —
@@ -351,7 +351,7 @@ schema error). First row (verbatim, one line — note the keys are now
 canonically sorted per line, F13):
 
 ```json
-{"address":"bank:arts/pokemon-identification/pokemon-identification-medium","contentDigest":"51b7a0371ae0a16b32f21948a14cb32d50b1d7bf2ec8dbe6bdba00755e132a4a","moduleVerdicts":null,"profileDigest":"70434a83a939795899452d4308b57a9ef5dd0aace3ebc5148f4c954b76437005","reasons":[],"surfaceId":"paper-letter-mono","verdict":"render","warnings":[]}
+{"address":"bank:arts/creature-identification/creature-identification-medium","contentDigest":"51b7a0371ae0a16b32f21948a14cb32d50b1d7bf2ec8dbe6bdba00755e132a4a","moduleVerdicts":null,"profileDigest":"70434a83a939795899452d4308b57a9ef5dd0aace3ebc5148f4c954b76437005","reasons":[],"surfaceId":"paper-letter-mono","verdict":"render","warnings":[]}
 ```
 
 ### Original run (pre data-mount fix, before this fix wave)

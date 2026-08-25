@@ -4,7 +4,7 @@ How non-household participants (friends, extended family, and total strangers we
 
 This document is the umbrella overview and the canonical lifecycle/UX narrative. For the deep dives:
 - [`assign-guest.md`](./assign-guest.md) — borrowed-device flow, continuous-usage threshold, entity transfer, state machines
-- [`unknown-hr-monitors.md`](./unknown-hr-monitors.md) — Pikachu fallback, ANT+ vs BLE admission, claiming an unknown strap mid-session
+- [`unknown-hr-monitors.md`](./unknown-hr-monitors.md) — untagged placeholder fallback, ANT+ vs BLE admission, claiming an unknown strap mid-session
 - [`ble-heart-rate.md`](./ble-heart-rate.md) — Apple Watch / Polar / Garmin BLE discovery and matching
 - [`display-name-resolver.md`](./display-name-resolver.md) — how guest names render in the sidebar and overlay
 
@@ -32,8 +32,8 @@ Not all guests are the same kind of identity. There are three classes, and which
 | Class | Identity (profileId) | Name shown | Avatar | How it arises |
 |-------|---------------------|------------|--------|---------------|
 | **Named guest** | Configured user ID (e.g. `friend-b`) | Their configured name | `/static/img/users/{id}` (their photo) | Picked from the Friends/Family tabs, or BLE auto-match |
-| **Generic Guest** | `guest_<deviceId>` (device-keyed alias, W2) | "Guest" — numbered when simultaneous ("Guest 2", "Guest 3", …) | `guest-adult` / `guest-kid` placeholder (falls back to Pikachu `user` until the assets exist) | "Guest" top option in the picker (adult, or the kid variant badged "Kid") |
-| **Untagged (Pikachu)** | Synthetic — `#<deviceId>` card label; `guest-<timestamp>` if GuestAssignmentService receives no profileId | `#<deviceId>` | Pikachu fallback | Unknown ANT+ strap broadcasts; nobody has tagged it |
+| **Generic Guest** | `guest_<deviceId>` (device-keyed alias, W2) | "Guest" — numbered when simultaneous ("Guest 2", "Guest 3", …) | `guest-adult` / `guest-kid` placeholder (falls back to untagged placeholder `user` until the assets exist) | "Guest" top option in the picker (adult, or the kid variant badged "Kid") |
+| **Untagged (untagged placeholder)** | Synthetic — `#<deviceId>` card label; `guest-<timestamp>` if GuestAssignmentService receives no profileId | `#<deviceId>` | untagged placeholder fallback | Unknown ANT+ strap broadcasts; nobody has tagged it |
 
 ### Generic Guest is a per-device alias (W2)
 
@@ -47,7 +47,7 @@ When `fitness.yml → guest_profiles.kid.zones` is configured, a second generic 
 
 ### Untagged ≠ Guest
 
-A Pikachu card (unknown ANT+ strap) is **not** a guest assignment — it's an unattributed device earning data under a synthetic identity. It becomes a guest (or a household user) only when someone taps the card and tags it. Until then it persists into the saved YAML keyed by device ID if it earns ≥ T of continuous data. Full treatment: [`unknown-hr-monitors.md`](./unknown-hr-monitors.md).
+A untagged placeholder card (unknown ANT+ strap) is **not** a guest assignment — it's an unattributed device earning data under a synthetic identity. It becomes a guest (or a household user) only when someone taps the card and tags it. Until then it persists into the saved YAML keyed by device ID if it earns ≥ T of continuous data. Full treatment: [`unknown-hr-monitors.md`](./unknown-hr-monitors.md).
 
 ---
 
@@ -97,10 +97,10 @@ A guest arrives wanting to join the workout
     → They put the strap on. Within seconds a card appears:
       ├─ Strap is mapped to a household user → card shows THAT user's
       │   name/photo (wrong person!). Tap the card → pick the guest.
-      ├─ Strap is a color-allocated visitor slot → Pikachu card with the
+      ├─ Strap is a color-allocated visitor slot → untagged placeholder card with the
       │   matching heart emoji, a sticker-color avatar ring, and a
       │   "Purple strap" label. Tap → tag it.
-      └─ Strap is totally unknown → Pikachu card labeled #<deviceId>,
+      └─ Strap is totally unknown → untagged placeholder card labeled #<deviceId>,
           avatar ring in a deterministic hash color. Tap → tag it.
 ```
 
@@ -200,7 +200,7 @@ deviceId → getDeviceAssignment(deviceId)
         → if assignment.occupantType === 'guest' → use occupantName + profileId
         → else → use device owner (UserManager.getUserByDeviceId)
         → DisplayNameResolver applies group-label heuristics for multi-user sessions
-        → Avatar: /static/img/users/{profileId} (fallback to /user — Pikachu)
+        → Avatar: /static/img/users/{profileId} (fallback to /user — untagged placeholder)
 ```
 
 Visual treatment for guests is **intentionally the same as owners** — same card layout (`.fitness-device.card-horizontal` / `.card-vertical`), same zone badge (`.device-zone-info`), same HR display. There is **no on-card "guest" badge**; the signals are the avatar (generic Guests show the `guest-adult`/`guest-kid` placeholder), the name (numbered "Guest N" for generics), and the strap-color ring that follows the device. The rest of the guest-specific UI lives inside the menu (the "Give back" restore option and the source badges in the picker).
@@ -232,15 +232,15 @@ guestAssignment.metadata.profileId      ← guest's identity (e.g. friend-b, gue
   || userIdMap[deviceId]
   || getConfiguredProfileId(...)
   || resolvedUser.id
-  || 'user'                             ← final fallback = Pikachu (user.jpg)
+  || 'user'                             ← final fallback = untagged placeholder (user.jpg)
 ```
 
 Before loading, generic-Guest profileIds (prefix `guest_`) are swapped to a placeholder tier image (`guestPlaceholders.js`): `guest-adult` or `guest-kid` per the assignment's age class. The `<img>` then loads `/static/img/users/{imageId}` with an `onError` retry to `/static/img/users/user` (picker grid and cards share the pattern). Consequences:
 
 - **Named guests with a photo on disk** show their photo everywhere (card, picker, overlays).
-- **Generic Guests show the guest placeholder** — `/static/img/users/guest-adult` or `guest-kid`, visually distinct from untagged Pikachu cards. Until those asset files are dropped in, the `onError` chain degrades to Pikachu (`user`).
-- **Untagged devices still show Pikachu** — the fallback now specifically means "nobody has claimed this" (or a named user's photo is missing).
-- **Named guests with a missing photo** silently Pikachu while keeping the correct name.
+- **Generic Guests show the guest placeholder** — `/static/img/users/guest-adult` or `guest-kid`, visually distinct from untagged untagged placeholder cards. Until those asset files are dropped in, the `onError` chain degrades to untagged placeholder (`user`).
+- **Untagged devices still show untagged placeholder** — the fallback now specifically means "nobody has claimed this" (or a named user's photo is missing).
+- **Named guests with a missing photo** silently untagged placeholder while keeping the correct name.
 
 ### Color
 
@@ -323,7 +323,7 @@ timeline:
     friend-b:coins: ...
 ```
 
-`is_guest` and `is_primary` are mutually exclusive; entries with neither flag default to `is_primary: true` (registered users aren't guests). `guest_profile` records the age-class profile (from `guest_profiles`) the guest rode under, so reports can interpret zone/coin data correctly. Occupants fully absorbed by the save-time backfill (sub-threshold segments, late-tagged Pikachus) are **excluded entirely** — no phantom rows.
+`is_guest` and `is_primary` are mutually exclusive; entries with neither flag default to `is_primary: true` (registered users aren't guests). `guest_profile` records the age-class profile (from `guest_profiles`) the guest rode under, so reports can interpret zone/coin data correctly. Occupants fully absorbed by the save-time backfill (sub-threshold segments, late-tagged untagged placeholders) are **excluded entirely** — no phantom rows.
 
 ### Session detail / history UI
 
@@ -377,7 +377,7 @@ A guest enters the session at the moment of assignment (borrow flow) or first HR
 | Different guest assigned, previous segment ≥ T | Previous entity ended (`status: 'dropped'`), new entity created. `GUEST_REPLACED` |
 | Different guest assigned, previous segment < T | Sub-threshold absorption: coins, timeline, start time migrate forward. `SEGMENT_ABSORBED`. Symmetric across Guest↔Mapped↔Mapped transitions (W1.C / OI-3) |
 | User taps "⛔ Ignore This Strap" | `suppressDeviceUntilNextReading(deviceId)` — device dropped until its next reading |
-| Session ends | All active guest entities finalized; `PersistenceManager` runs the W1.B backfill to catch OI-1 (final sub-T segment), OI-2 (cycling), and Decision §5 (late-tag Pikachu merges) that the live pass couldn't see |
+| Session ends | All active guest entities finalized; `PersistenceManager` runs the W1.B backfill to catch OI-1 (final sub-T segment), OI-2 (cycling), and Decision §5 (late-tag untagged placeholder merges) that the live pass couldn't see |
 | Own-monitor guest disconnects (BLE) | Device flagged stale after timeout; ActivityMonitor moves user to idle, then dropped |
 
 T = continuous-usage threshold from `fitness.yml → governance.usage_threshold_seconds` (default 300 s).
@@ -396,7 +396,7 @@ See [`assign-guest.md`](./assign-guest.md) § Continuous-Usage Threshold for the
 - **Tag before strap-on when possible.** The threshold model forgives owner-then-guest handoffs under 5 minutes; it cannot forgive an untagged full workout. The picker's transfer note now tells you when a sub-threshold segment will move.
 - **Simultaneous Guests are numbered, not described.** "Guest" vs "Guest 2" plus the sticker-color avatar ring is usually enough to tell cards apart, but the numbers carry no meaning across sessions — if two strangers work out together regularly, prefer tagging them as named friends.
 - **Kid guests need `guest_profiles` configured.** Without a `fitness.yml → guest_profiles.kid.zones` block, the kid Guest option doesn't appear and a kid on a borrowed adult strap inherits the owner's adult zone thresholds (wrong zones, inflated coins).
-- **A guest can block the video.** Pikachu/guest cards count toward governance `active: all`. An idle strap someone left on the shelf (still broadcasting) can hold the session hostage — use "⛔ Ignore This Strap".
+- **A guest can block the video.** untagged placeholder/guest cards count toward governance `active: all`. An idle strap someone left on the shelf (still broadcasting) can hold the session hostage — use "⛔ Ignore This Strap".
 - **No guest badge on live sidebar cards.** Sidebar cards render guests identically to household members (intentional); the guest distinction surfaces in the session-detail timeline ("guest" marker) and in the saved data (`is_guest`, `guest_profile`).
 - **Guest transitions are invisible in reports.** If a device changed hands mid-session, the saved chart shows each honored identity's lane but no marker explaining when/why the swap happened — the events that recorded it died with the EventJournal.
 - **Strava attribution goes to the primary.** A session where a guest did most of the work still enriches the primary user's Strava activity.
@@ -468,7 +468,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 | `frontend/src/hooks/fitness/DisplayNameResolver.js` | Guest-priority display name resolution |
 | `frontend/src/hooks/fitness/ParticipantRoster.js` | Roster entries with `isGuest` flag, zone lookup by trackingId, `#<deviceId>` naming |
 | `frontend/src/hooks/fitness/PersistenceManager.js` | `is_guest`/`is_primary`/`base_user` persistence, W1.B backfill, occupant exclusion |
-| `frontend/src/hooks/fitness/sessionBackfill.js` | OI-1/OI-2/OI-3/§5 rules incl. late-tag Pikachu merge |
+| `frontend/src/hooks/fitness/sessionBackfill.js` | OI-1/OI-2/OI-3/§5 rules incl. late-tag untagged placeholder merge |
 | `frontend/src/context/FitnessContext.jsx` | Exposes `assignGuestToDevice`, `clearGuestAssignment`, `suppressDeviceUntilNextReading`, `guestCandidates` |
 | `_extensions/fitness/src/ble.mjs` | BLE scan, HR Service 0x180D discovery, best-effort matching, unknown-device drop |
 | `_extensions/fitness/src/decoders/heart_rate.mjs` | GATT 0x2A37 packet parser |
@@ -478,7 +478,7 @@ BLE_HR_USERS=family-a,friend-a   # comma-separated; consumed by the fitness exte
 ## See Also
 
 - [Assign Guest](./assign-guest.md) — full borrow-flow specification (constraints, continuous-usage threshold, entity transfer, state machine)
-- [Unknown HR Monitors](./unknown-hr-monitors.md) — Pikachu fallback, ANT+/BLE admission asymmetry, mid-session claiming
+- [Unknown HR Monitors](./unknown-hr-monitors.md) — untagged placeholder fallback, ANT+/BLE admission asymmetry, mid-session claiming
 - [BLE Heart Rate](./ble-heart-rate.md) — own-monitor flow technical reference
 - [Display Name Resolver](./display-name-resolver.md) — name resolution priority chain
 - [Governance Engine](./governance-engine.md) — how guests count toward `min_participants` and zone requirements

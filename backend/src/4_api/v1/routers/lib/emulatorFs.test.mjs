@@ -23,9 +23,9 @@ function makeCfg() {
     systems: { gb: { core: 'gb', label: 'Game Boy' } },
     games: [
       {
-        id: 'pokemon-red',
+        id: 'example-quest',
         system: 'gb',
-        rom: 'roms/Pokemon Red (UE) [S][!].gb',
+        rom: 'roms/Example Quest (UE) [S][!].gb',
         boxart: 'cover.png',
         bezel: 'bezel.png',
       },
@@ -35,34 +35,34 @@ function makeCfg() {
 
 describe('emulatorFs path resolvers', () => {
   it('resolveRomPath joins the real filename from cfg under {system}/', () => {
-    const p = resolveRomPath(EMU_DIR, makeCfg(), 'gb', 'pokemon-red');
-    expect(p).toBe(path.join(EMU_DIR, 'gb', 'roms/Pokemon Red (UE) [S][!].gb'));
+    const p = resolveRomPath(EMU_DIR, makeCfg(), 'gb', 'example-quest');
+    expect(p).toBe(path.join(EMU_DIR, 'gb', 'roms/Example Quest (UE) [S][!].gb'));
   });
 
   it('resolveArtPath resolves cover and bezel', () => {
-    expect(resolveArtPath(EMU_DIR, makeCfg(), 'gb', 'pokemon-red', 'cover')).toBe(
+    expect(resolveArtPath(EMU_DIR, makeCfg(), 'gb', 'example-quest', 'cover')).toBe(
       path.join(EMU_DIR, 'gb', 'cover.png')
     );
-    expect(resolveArtPath(EMU_DIR, makeCfg(), 'gb', 'pokemon-red', 'bezel')).toBe(
+    expect(resolveArtPath(EMU_DIR, makeCfg(), 'gb', 'example-quest', 'bezel')).toBe(
       path.join(EMU_DIR, 'gb', 'bezel.png')
     );
   });
 
   it('resolveSavePath uses safe per-user filename', () => {
-    expect(resolveSavePath(EMU_DIR, 'gb', 'pokemon-red', 'user_5')).toBe(
-      path.join(EMU_DIR, 'gb', 'saves', 'user_5', 'pokemon-red.srm')
+    expect(resolveSavePath(EMU_DIR, 'gb', 'example-quest', 'user_5')).toBe(
+      path.join(EMU_DIR, 'gb', 'saves', 'user_5', 'example-quest.srm')
     );
   });
 
   it('resolveStatePath uses slot file under user/game dir', () => {
-    expect(resolveStatePath(EMU_DIR, 'gb', 'pokemon-red', '1', 'user_5')).toBe(
-      path.join(EMU_DIR, 'gb', 'states', 'user_5', 'pokemon-red', '1.state')
+    expect(resolveStatePath(EMU_DIR, 'gb', 'example-quest', '1', 'user_5')).toBe(
+      path.join(EMU_DIR, 'gb', 'states', 'user_5', 'example-quest', '1.state')
     );
   });
 
   it('unsafe system throws', () => {
-    expect(() => resolveSavePath(EMU_DIR, '../etc', 'pokemon-red', 'user_5')).toThrow();
-    expect(() => resolveRomPath(EMU_DIR, makeCfg(), '../etc', 'pokemon-red')).toThrow();
+    expect(() => resolveSavePath(EMU_DIR, '../etc', 'example-quest', 'user_5')).toThrow();
+    expect(() => resolveRomPath(EMU_DIR, makeCfg(), '../etc', 'example-quest')).toThrow();
   });
 
   it('unknown game throws ENOENT', () => {
@@ -200,22 +200,22 @@ describe('listSaveUsers', () => {
 
   it('returns [] when nothing exists', () => {
     const dir = tmpEmu();
-    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual([]);
+    expect(listSaveUsers(dir, 'gb', 'example-quest')).toEqual([]);
   });
 
   it('finds users with a .srm and users with a state dir, sorted + deduped', () => {
     const dir = tmpEmu();
     // battery: {system}/saves/{user}/{gameId}.srm
     fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_5'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_5', 'pokemon-red.srm'), 'x');
+    fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_5', 'example-quest.srm'), 'x');
     fs.mkdirSync(path.join(dir, 'gb', 'saves', 'user_3'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'gb', 'saves', 'user_3', 'other-game.srm'), 'x'); // different game
     // state: {system}/states/{user}/{gameId}/{slot}.state
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_4', 'pokemon-red', 'auto.state'), 'x');
-    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red'), { recursive: true });
-    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_5', 'pokemon-red', 'auto.state'), 'x'); // dup of user_5
-    expect(listSaveUsers(dir, 'gb', 'pokemon-red')).toEqual(['user_4', 'user_5']);
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_4', 'example-quest'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_4', 'example-quest', 'auto.state'), 'x');
+    fs.mkdirSync(path.join(dir, 'gb', 'states', 'user_5', 'example-quest'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'gb', 'states', 'user_5', 'example-quest', 'auto.state'), 'x'); // dup of user_5
+    expect(listSaveUsers(dir, 'gb', 'example-quest')).toEqual(['user_4', 'user_5']);
   });
 
   it('rejects unsafe segments', () => {

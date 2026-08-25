@@ -566,7 +566,7 @@ git commit -m "feat(fitness): outcome-based guest menu labels — 'Ignore This S
         )}
 ```
 
-(`baseName` is null exactly when the device has no configured owner and no preserved `baseUserName` — i.e. a Pikachu.)
+(`baseName` is null exactly when the device has no configured owner and no preserved `baseUserName` — i.e. a untagged placeholder.)
 
 **Step 2: Style.** In `FitnessSidebar.scss`, next to the other `guest-` rules:
 
@@ -817,7 +817,7 @@ git commit -m "feat(fitness): Guest (kid) option with configured zone profile, p
 
 ### Task 10: N5 — placeholder tiers for generic Guests
 
-Generic Guests stop looking like untagged Pikachus: distinct placeholder image IDs (`guest-adult`, `guest-kid`) with graceful fallback to `user` (Pikachu) when the asset doesn't exist yet.
+Generic Guests stop looking like untagged untagged placeholders: distinct placeholder image IDs (`guest-adult`, `guest-kid`) with graceful fallback to `user` (untagged placeholder) when the asset doesn't exist yet.
 
 **Files:**
 - Create: `frontend/src/modules/Fitness/lib/guestPlaceholders.js`
@@ -852,7 +852,7 @@ Run: `npx vitest run frontend/src/modules/Fitness/lib/guestPlaceholders.test.js`
 ```javascript
 // frontend/src/modules/Fitness/lib/guestPlaceholders.js
 // Placeholder avatar tiers (audit N5 / Part 4):
-//   untagged device            → 'user'        (Pikachu — unchanged, means "tag me")
+//   untagged device            → 'user'        (untagged placeholder — unchanged, means "tag me")
 //   generic Guest, adult       → 'guest-adult' (claimed-but-anonymous)
 //   generic Guest, kid         → 'guest-kid'
 // Assets live server-side at /static/img/users/<id>.jpg. If an asset is
@@ -907,7 +907,7 @@ git add frontend/src/modules/Fitness/lib/guestPlaceholders.js frontend/src/modul
 git commit -m "feat(fitness): distinct placeholder avatars for generic Guests, adult vs kid (audit N5)"
 ```
 
-**Operator note (post-merge, not code):** drop `guest-adult.jpg` and `guest-kid.jpg` into the household avatar directory on the prod host (same place as `user.jpg`). Until then, generic Guests keep showing Pikachu — no breakage.
+**Operator note (post-merge, not code):** drop `guest-adult.jpg` and `guest-kid.jpg` into the household avatar directory on the prod host (same place as `user.jpg`). Until then, generic Guests keep showing untagged placeholder — no breakage.
 
 ---
 
@@ -943,7 +943,7 @@ import { heartEmojiForColor, cssColorForStrap, hashColorForDevice, strapLabel } 
               // §3: surface the physical sticker color as a saturated avatar ring.
               // Configured color wins; unidentified cards (no user, no assignment)
               // get a deterministic per-device hash color so simultaneous
-              // Pikachus are visually distinct.
+              // untagged placeholders are visually distinct.
               const strapRingColor = isHeartRate
                 ? (cssColorForStrap(hrColorMap[deviceIdStr])
                     || (!resolvedUser && !guestAssignment ? hashColorForDevice(deviceIdStr) : null))
@@ -1067,7 +1067,7 @@ Per CLAUDE.md, code changes must update docs.
 
 **Step 1: `guest-mode.md`** —
 - "Guest Identity Classes": remove the **Known limitation** blockquote about the picker singleton (fixed in Task 4); note numbered display names ("Guest", "Guest 2", …) and the kid variant with `guest_profiles.kid` zones.
-- "UI Presentation → Avatar resolution": generic Guests now resolve to `guest-adult`/`guest-kid` placeholder images with fallback to Pikachu.
+- "UI Presentation → Avatar resolution": generic Guests now resolve to `guest-adult`/`guest-kid` placeholder images with fallback to untagged placeholder.
 - "UI Presentation → Color": describe the avatar ring (configured color, hash fallback for unidentified devices) and "Purple strap" labels.
 - "Reports & Persistence": add `guest_profile: kid` to the YAML example; session-detail now renders a "guest" chip.
 - "Considerations & Footguns": drop the bullets fixed here (generic-Guests-identical, no-badge-anywhere) and reword the kid-zones bullet to point at `guest_profiles`.

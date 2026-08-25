@@ -32,7 +32,7 @@ const getWsBaseUrl = () => {
     return `${protocol}//${window.location.host}`;
 };
 
-export const DaylightAPI = async (path, data = {}, method = 'GET') => {
+export const DaylightAPI = async (path, data = {}, method = 'GET', requestOptions = {}) => {
 
     // Only auto-convert to POST if method is GET and data is provided
     if (method === 'GET' && Object.keys(data).length >= 1) {
@@ -48,6 +48,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     const options = {
         method,
         headers: buildHeaders(token),
+        signal: requestOptions.signal,
     };
 
     if (method !== 'GET') {
@@ -60,7 +61,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET') => {
     
     if (!response.ok) {
         const errorText = await response.text();
-        console.error("API Error Response:", errorText);
+        getLogger().error('api.response.error', { path, status: response.status, statusText: response.statusText });
         throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
     }
     

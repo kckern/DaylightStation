@@ -26,7 +26,7 @@
 
 ## ADDENDUM (2026-06-22) — real seed + VERIFIED EmulatorJS facts
 
-A real seed exists at `media/emulation/gb/` (Pokémon Red, with a working `.srm`). It supersedes several earlier assumptions. **Where this addendum conflicts with text below, the addendum wins.**
+A real seed exists at `media/emulation/gb/` (Creature Red, with a working `.srm`). It supersedes several earlier assumptions. **Where this addendum conflicts with text below, the addendum wins.**
 
 **Filesystem layout (SSOT):** `media/emulation/{system}/` → `core/  roms/  saves/{user}/  states/{user}/  cover.png  bezel.png  {system}.yml`. The per-system manifest (`gameboy.yml`) is the config unit — no central `config.yml`.
 
@@ -133,7 +133,7 @@ import { resolveGameRules } from './EmulatorCatalog.mjs';
 
 const cfg = {
   defaults: { governance: { mode: 'gate', required_zone: 'active', grace_seconds: 20, earn_rate: 1 }, shader: 'crt', chrome: null },
-  games: [{ id: 'pkmn', system: 'gbc', rom: 'p.gbc', title: 'Pokémon',
+  games: [{ id: 'pkmn', system: 'gbc', rom: 'p.gbc', title: 'Creature',
             shader: 'lcd-grid', governance: { mode: 'credit', required_zone: 'warm', earn_rate: 1.5 } }],
   users: { user_5: { governance: { required_zone: 'cool' } } },
 };
@@ -184,7 +184,7 @@ import { safeSegment } from './emulatorPaths.mjs';
 
 describe('safeSegment', () => {
   it('accepts slug', () => expect(safeSegment('user_5')).toBe('user_5'));
-  it('accepts rom with dot', () => expect(safeSegment('pokemon-red.gb', { dot: true })).toBe('pokemon-red.gb'));
+  it('accepts rom with dot', () => expect(safeSegment('creature-red.gb', { dot: true })).toBe('creature-red.gb'));
   it('rejects traversal', () => expect(() => safeSegment('../etc')).toThrow());
   it('rejects slashes', () => expect(() => safeSegment('a/b')).toThrow());
   it('rejects empty', () => expect(() => safeSegment('')).toThrow());
@@ -212,7 +212,7 @@ import { createEmulatorRouter } from './emulator.mjs';
 const silent = { info(){}, warn(){}, error(){}, debug(){} };
 const cfg = { defaults:{ governance:{ mode:'gate', required_zone:'active' }, shader:'crt' },
   systems:{ gbc:{ core:'gambatte', label:'Game Boy Color' } },
-  games:[{ id:'pkmn', system:'gbc', rom:'p.gbc', title:'Pokémon', boxart:'pkmn.png' }] };
+  games:[{ id:'pkmn', system:'gbc', rom:'p.gbc', title:'Creature', boxart:'pkmn.png' }] };
 
 function appWith(overrides = {}) {
   const app = express(); app.use(express.json());
@@ -382,7 +382,7 @@ Render the overlay states (playing/warning/paused/depleted) from `governanceGate
 ### Task 5.1: `EmulatorLibrary` component
 
 **Files:** Create `frontend/src/modules/Emulator/EmulatorLibrary.jsx` + `.scss`.
-Fetches `/api/v1/emulator/library?user=<id>`; renders console row → game grid with `boxartUrl`, title, and the resolved rule badge (`"Pokémon · credit · warm"`). Keyboard + `onPointerDown` + gamepad navigable using the existing focus/scroll idioms (`scrollIntoViewIfNeeded`, Enter/Space activate). On select → calls `onLaunch(game)`. Test (jsdom + mocked fetch): renders games, fires `onLaunch` on Enter. **Commit:** `feat(emulator): native ROM library browser`
+Fetches `/api/v1/emulator/library?user=<id>`; renders console row → game grid with `boxartUrl`, title, and the resolved rule badge (`"Creature · credit · warm"`). Keyboard + `onPointerDown` + gamepad navigable using the existing focus/scroll idioms (`scrollIntoViewIfNeeded`, Enter/Space activate). On select → calls `onLaunch(game)`. Test (jsdom + mocked fetch): renders games, fires `onLaunch` on Enter. **Commit:** `feat(emulator): native ROM library browser`
 
 ### Task 5.2: Gamepad capture + adapter seam
 
@@ -411,9 +411,9 @@ Add a focused test to the GamepadAdapter test suite: when the flag is set, no sy
 Build `handlers` for the dispatcher: `governance` → live-overlay the gate's `required_zone`/`mode` (mutate the running credit/gate adapter's target); `cue` → reuse the fitness audio-duck cue mechanism; `chrome`/`shader` → set state consumed by Phase 7 layers; `toast` → `fitnessContext` toast; `log`. Pass `onEvent` from `MemoryProbe` → `dispatcher.dispatch(rules.hooks, eventId)`. Unit-test the wiring with fake handlers (already covered at the dispatcher level; here assert the widget passes hooks through).
 **Commit:** `feat(emulator): wire memory-watch hooks to governance/cue/chrome`
 
-### Task 6.2: Seed Pokémon Red RAM map (proof)
+### Task 6.2: Seed Creature Red RAM map (proof)
 
-Add a `pokemon-red` game entry to the household `config.yml` (NOT committed if it references a real ROM — keep ROM out of git; commit only the config shape under a fixture or doc). Provide `watches` (`in_battle` `$D057`) + `hooks` (battle → `required_zone: hot`). **Verify** in-browser with the spike's confirmed accessor: entering a battle raises the required zone. Document in `docs/reference/` (new `emulator-console.md`). **Commit:** `docs(emulator): pokemon-red memory-watch proof + reference`
+Add a `creature-red` game entry to the household `config.yml` (NOT committed if it references a real ROM — keep ROM out of git; commit only the config shape under a fixture or doc). Provide `watches` (`in_battle` `$D057`) + `hooks` (battle → `required_zone: hot`). **Verify** in-browser with the spike's confirmed accessor: entering a battle raises the required zone. Document in `docs/reference/` (new `emulator-console.md`). **Commit:** `docs(emulator): creature-red memory-watch proof + reference`
 
 > If Phase 0 descoped memory hooks, mark 6.1 "framework wired, disabled" and skip 6.2's live proof.
 

@@ -226,6 +226,17 @@ function PianoShell() {
   const MODE_LABELS = { videos: 'Courses', playalong: 'Playalong', singalong: 'Karaoke', music: 'Music', sheetmusic: 'Sheet Music', games: 'Games', exercises: 'Exercises', studio: 'Studio', composer: 'Composer', producer: 'Producer' };
   const modeKey = Object.keys(MODE_LABELS).find((k) => location.pathname.includes(`/${k}`));
   const modeLabel = modeKey ? MODE_LABELS[modeKey] : '';
+  // The bridge watchdog is outside the WebView, and a DEAD WebView previously
+  // gave it no way to distinguish the menu from a child mid-game. Send only the
+  // game id (never the player or position) so it can keep recovery non-disruptive
+  // while a game is open. The next beat clears this when the player exits.
+  const watchdogActivity = useMemo(() => {
+    const gamePrefix = `${basePath.replace(/\/$/, '')}/games/`;
+    if (!location.pathname.startsWith(gamePrefix)) return null;
+    const id = location.pathname.slice(gamePrefix.length).split('/')[0];
+    return id ? { type: 'game', id } : null;
+  }, [basePath, location.pathname]);
+  useRenderWatchdog({ activity: watchdogActivity });
 
   return (
       <PianoBreadcrumbProvider>
@@ -379,10 +390,6 @@ export default function PianoApp() {
   const logger = useMemo(() => getLogger().child({ component: 'piano-app', app: PIANO_KIOSK_LOG_APP, sessionLog: true }), []);
   useEffect(() => { logger.info('piano-app.mount', {}); }, [logger]);
   useEffect(() => applyPianoBodyTheme(), []);
-  // Self-heal: if the Fully WebView's compositor gets stuck (renderer pegs, fps
-  // collapses, a reload won't clear it), restart the WebView via the Fully JS
-  // Interface. No-op outside the kiosk. See useRenderWatchdog.js.
-  useRenderWatchdog();
   // User-controlled recovery: instead of silently reloading/restarting/rebooting
   // when the SM-T590 render latch hits, ask the user (reboot now / not now → snooze
   // 1h → re-arm). The bridge watchdog is configured to only auto-act on a TRUE hang

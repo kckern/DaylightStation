@@ -65,7 +65,7 @@ Add the `IconHeadphones` import to `AdminNav.jsx`'s existing `@tabler/icons-reac
 │ [⏮][⏯][⏭]   ──vol slider──   [🔍 LabeledContentPicker]  [Play Now] │  transport row
 ├────────────────────────────────────────────────────────────────┤
 │ ▾ Continuous schedules           ← collapsible accordion section
-│    07:00–21:00 | shuffle | [LabeledContentPicker showing "Pokémon Snap…"]
+│    07:00–21:00 | shuffle | [LabeledContentPicker showing "franchise theme Snap…"]
 │    [+ add window]                                              │
 │ ▾ Scheduled fires                ← collapsible
 │    07:00 weekdays | LabeledContentPicker | ☐ indefinite [30] min
@@ -81,7 +81,7 @@ Add the `IconHeadphones` import to `AdminNav.jsx`'s existing `@tabler/icons-reac
 **`LabeledContentPicker`** is a new thin wrapper around `ContentSearchCombobox`. The combobox itself binds to `value`/`onChange` only and renders the raw `plex:670208` string in its input when no editing is in progress — there's no `valueLabel` prop today. To avoid touching the shared component, the wrapper:
 1. Accepts `value` (the queue ID string) and optional `initialLabel` (the resolved title from server)
 2. On mount, if `value` is set and no label is in local state, calls `GET /api/v1/info/:source/:id` to resolve the title
-3. Renders `<Stack><Text>{label}</Text><ContentSearchCombobox ... /></Stack>` — label above the combo box, so the user sees "Pokémon Snap Guitar Medley" plainly even before opening the dropdown
+3. Renders `<Stack><Text>{label}</Text><ContentSearchCombobox ... /></Stack>` — label above the combo box, so the user sees "franchise theme Snap Guitar Medley" plainly even before opening the dropdown
 4. Caches the label via a module-level `Map<contentId, title>` so each unique queue resolves once per page load
 
 This is the simplest path that uses the existing `ContentSearchCombobox` without touching it. Future cleanup could push a `valueLabel` prop into the combo box; not required for v1.

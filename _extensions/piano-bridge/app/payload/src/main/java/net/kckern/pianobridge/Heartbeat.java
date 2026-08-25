@@ -221,6 +221,12 @@ public final class Heartbeat {
                 o.put("pageRafFps", s.optInt("pageRafFps", s.optInt("lastFps", -1)));
                 o.put("fps", s.optInt("lastFps", -1));
                 o.put("beatAgoMs", s.optLong("lastBeatAgoMs", -1));
+                // These make a recovery decision queryable in VictoriaLogs, not
+                // just retrievable from the tablet's finite local crash-log ring.
+                o.put("kioskGame", s.optString("activeGame", ""));
+                o.put("kioskGameProtected", s.optBoolean("midGameRecoveryProtected", false));
+                o.put("kioskRecoveryDecision", s.optString("lastDecision", ""));
+                o.put("kioskRecoveryOutcome", s.optString("lastOutcome", ""));
             }
             KioskSettingsGuard g = core.getKioskSettingsGuard();
             if (g != null) o.put("guard", g.snapshot().optString("verdict", "?"));

@@ -92,7 +92,7 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
     ]);
     const { summarizeFuel } = await import('#domains/automotive/services/FuelEconomyService.mjs');
     res.json({
-      logs: logs.map((l) => l.toJSON()),
+      logs: logs.map(presentFuelLog),
       summary: summarizeFuel(logs),
       detected: stops.unlogged,
     });
@@ -100,7 +100,7 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
 
   router.post('/vehicles/:id/fuel', asyncHandler(async (req, res) => {
     const log = await useCases.logFuel.execute({ vehicleId: req.params.id, ...(req.body || {}) });
-    res.json(log.toJSON());
+    res.json(presentFuelLog(log));
   }));
 
   router.delete('/vehicles/:id/fuel/:logId', asyncHandler(async (req, res) => {
@@ -115,12 +115,12 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
 
   router.get('/vehicles/:id/service', asyncHandler(async (req, res) => {
     const records = await recordRepository.listServiceRecords(req.params.id);
-    res.json({ records: records.map((r) => r.toJSON()) });
+    res.json({ records: records.map(presentServiceRecord) });
   }));
 
   router.post('/vehicles/:id/service', asyncHandler(async (req, res) => {
     const record = await useCases.logServiceRecord.execute({ vehicleId: req.params.id, ...(req.body || {}) });
-    res.json(record.toJSON());
+    res.json(presentServiceRecord(record));
   }));
 
   router.delete('/vehicles/:id/service/:recordId', asyncHandler(async (req, res) => {
@@ -129,19 +129,19 @@ export function createAutomotiveRouter({ automotiveContainer, logger = console }
 
   router.get('/vehicles/:id/documents', asyncHandler(async (req, res) => {
     const documents = await recordRepository.listDocuments(req.params.id);
-    res.json({ documents: documents.map((d) => d.toJSON()) });
+    res.json({ documents: documents.map(presentDocument) });
   }));
 
   // Places are household-scoped, not per-vehicle: home and school do not change
   // when the car does.
   router.get('/places', asyncHandler(async (req, res) => {
     const places = await placeRepository.listPlaces();
-    res.json({ places: places.map((p) => p.toJSON()) });
+    res.json({ places: places.map(presentPlace) });
   }));
 
   router.post('/places', asyncHandler(async (req, res) => {
     const place = await useCases.namePlace.execute({ ...(req.body || {}) });
-    res.json(place.toJSON());
+    res.json(presentPlace(place));
   }));
 
   router.delete('/places/:placeId', asyncHandler(async (req, res) => {
@@ -161,5 +161,57 @@ function parseDate(value) {
 }
 
 const isTruthy = (v) => v === '1' || v === 'true' || v === true;
+
+function presentFuelLog(log) {
+  return {
+    id: log.id,
+    date: log.date.toISOString().slice(0, 10),
+    odometer_km: log.odometerKm,
+    volume_l: log.volumeL,
+    price_total: log.priceTotal,
+    price_per_litre: log.pricePerLitre,
+    place: log.placeId,
+    partial: log.partial,
+    notes: log.notes,
+  };
+}
+
+function presentServiceRecord(record) {
+  return {
+    id: record.id,
+    date: record.date.toISOString().slice(0, 10),
+    type: record.type,
+    vendor: record.vendor,
+    cost: record.cost,
+    odometer_km: record.odometerKm,
+    interval_months: record.intervalMonths,
+    interval_km: record.intervalKm,
+    notes: record.notes,
+    attachments: record.attachments,
+  };
+}
+
+function presentDocument(document) {
+  return {
+    id: document.id,
+    kind: document.kind,
+    label: document.label,
+    file: document.file,
+    issued: document.issued?.toISOString().slice(0, 10) ?? null,
+    expires: document.expires?.toISOString().slice(0, 10) ?? null,
+    notes: document.notes,
+  };
+}
+
+function presentPlace(place) {
+  return {
+    id: place.id,
+    label: place.label,
+    lat: place.fix.lat,
+    lon: place.fix.lon,
+    radius_m: place.radiusM,
+    kind: place.kind,
+  };
+}
 
 export default createAutomotiveRouter;

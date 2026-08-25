@@ -16,7 +16,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('192.168.1.100');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       expect(req.isLocal).toBe(true);
       done();
     });
@@ -26,7 +26,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('10.0.0.5');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       done();
     });
   });
@@ -35,7 +35,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('::1');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       done();
     });
   });
@@ -44,7 +44,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('::ffff:127.0.0.1');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       done();
     });
   });
@@ -53,7 +53,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('::ffff:192.168.1.1');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk']);
       done();
     });
   });
@@ -73,7 +73,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles: roles });
     const req = mockReq('192.168.1.1', 'other');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual(['kiosk', 'member']);
+      expect(req.roles).toEqual(['sysadmin', 'kiosk', 'member']);
       done();
     });
   });
@@ -82,7 +82,7 @@ describe('networkTrustResolver', () => {
     const middleware = networkTrustResolver({ householdRoles });
     const req = mockReq('192.168.1.1', 'unknown');
     middleware(req, mockRes(), () => {
-      expect(req.roles).toEqual([]);
+      expect(req.roles).toEqual(['sysadmin']);
       done();
     });
   });

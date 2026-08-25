@@ -53,7 +53,9 @@ export class RetroArchAdapter {
     const title = overrides.title || this.#sanitizeTitle(game.title);
     const launchTarget = `${this.#config.launch.package}/${this.#config.launch.activity}`;
     const coresPath = this.#config.launch.cores_path || '/data/data/com.retroarch.aarch64/cores';
-    const corePath = `${coresPath}/${consoleConfig.core}`;
+    const corePath = String(consoleConfig.core).startsWith('/')
+      ? consoleConfig.core
+      : `${coresPath}/${consoleConfig.core}`;
     const params = { ROM: game.rom, LIBRETRO: corePath };
     if (this.#config.launch.configfile) {
       params.CONFIGFILE = this.#config.launch.configfile;

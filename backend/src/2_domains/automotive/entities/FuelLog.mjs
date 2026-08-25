@@ -83,19 +83,6 @@ export class FuelLog {
     return !this.#partial && this.#odometerKm !== null;
   }
 
-  toJSON() {
-    return {
-      id: this.#id,
-      date: this.#date.toISOString().slice(0, 10),
-      odometer_km: this.#odometerKm,
-      volume_l: this.#volumeL,
-      price_total: this.#priceTotal,
-      price_per_litre: this.pricePerLitre,
-      place: this.#placeId,
-      partial: this.#partial,
-      notes: this.#notes,
-    };
-  }
 }
 
 const round = (n, places) => Number(n.toFixed(places));

@@ -243,7 +243,7 @@ Engrave time (`openToReadyMs`, fetch excluded — `fetchMs` is 27–282ms throug
 | super-mario-land-world-1 | 2,932 – 3,426 |
 | mario-circuit | 3,869 |
 | super-mario-theme | 8,444 / 9,179 |
-| **pokemon-trainer-battle** (635 steps) | **14,359 / 15,247 / 15,350 / 15,832 / 16,009 / 16,107 / 16,162 / 17,770 / 19,056 / 19,931 / 19,867 / 24,022** |
+| **creature-trainer-battle** (635 steps) | **14,359 / 15,247 / 15,350 / 15,832 / 16,009 / 16,107 / 16,162 / 17,770 / 19,056 / 19,931 / 19,867 / 24,022** |
 
 On 07-28 the same file trends upward across the day — 15.2s at 16:10, 17.8s at 16:25, 19.9s at 18:27, **24.0s at 18:29** — consistent with WebView decay over uptime (cf. `reference_piano_keepalive_jank_regression`, `project_portal_v8_oom_crashloop`), though this audit cannot prove the mechanism from logs alone.
 
@@ -335,7 +335,7 @@ Defined and returned from `useScoreTelemetry` (`:30,86`), never called anywhere.
 
 ### L3. Perform mode is used and almost entirely unlogged — we cannot judge it from this corpus
 
-Perform was entered **five** times: 02:22:25, 02:24:06, 02:32:08 (07-26) and 16:57:49, 17:25:57 (07-27). The first four ran 3–25 seconds. The fifth ran **15m50s** — entered at 17:25:57, two seconds after a 16s pokemon engrave, with no further events until the user switched to Listen at 17:41:47 and immediately started working a loop. Someone was at the tablet at both ends of that gap.
+Perform was entered **five** times: 02:22:25, 02:24:06, 02:32:08 (07-26) and 16:57:49, 17:25:57 (07-27). The first four ran 3–25 seconds. The fifth ran **15m50s** — entered at 17:25:57, two seconds after a 16s creature engrave, with no further events until the user switched to Listen at 17:41:47 and immediately started working a loop. Someone was at the tablet at both ends of that gap.
 
 Sixteen silent minutes is exactly what Perform looks like when it is *working*: the mode's job is to display the sheet while you play acoustically, and playing acoustically emits nothing. Perform's tap-to-scroll (`ScorePlayer.jsx:752-757`) is not instrumented, so a fully-engaged 16-minute session and an abandoned tab are indistinguishable in the log.
 

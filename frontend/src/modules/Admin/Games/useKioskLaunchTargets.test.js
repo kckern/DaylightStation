@@ -4,7 +4,7 @@ import { useKioskLaunchTargets } from './useKioskLaunchTargets.js';
 
 const GAMES_CONFIG = {
   targets: [
-    { deviceId: 'yellow-room-tablet', allow: ['retroarch:gb/super-mario-land', 'retroarch:gb/pokemon-yellow'] }
+    { deviceId: 'yellow-room-tablet', allow: ['retroarch:gb/super-mario-land', 'retroarch:gb/example-quest-yellow'] }
   ]
 };
 
@@ -31,7 +31,7 @@ describe('useKioskLaunchTargets', () => {
     expect(result.current.targets).toEqual([{
       deviceId: 'yellow-room-tablet',
       label: 'Piano Tablet',
-      allow: ['retroarch:gb/super-mario-land', 'retroarch:gb/pokemon-yellow']
+      allow: ['retroarch:gb/super-mario-land', 'retroarch:gb/example-quest-yellow']
     }]);
   });
 

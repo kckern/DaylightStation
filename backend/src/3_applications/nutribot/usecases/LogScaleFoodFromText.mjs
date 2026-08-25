@@ -3,6 +3,7 @@
 // No portion guessing, no portionBoost — that is the whole point of the scale.
 
 import { buildConfirmButtons } from '../lib/scaleNutribotConfig.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 
 export class LogScaleFoodFromText {
   #messagingGateway; #aiGateway; #foodLogStore; #conversationStateStore; #logger; #encodeCallback;
@@ -60,8 +61,8 @@ export class LogScaleFoodFromText {
     const messaging = this.#getMessaging(responseContext, conversationId);
 
     const nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
-    if (!nutriLog || !nutriLog.items?.length) return { success: false, error: 'log not found' };
-    if (nutriLog.status !== 'pending') return { success: false, error: 'already processed' };
+    if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
+    if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
     const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
     const grams = Math.round(Number(item0.grams));
@@ -70,7 +71,7 @@ export class LogScaleFoodFromText {
     const est = this.#parse(response);
     if (!est) {
       this.#logger.warn?.('logScaleText.parseFailed', { logUuid, response: response?.slice?.(0, 200) });
-      return { success: false, error: 'could not estimate' };
+      throw scaleError('could not estimate', 'ESTIMATE_FAILED', { logUuid });
     }
 
     const round1 = (n) => Math.round(n * 10) / 10;
@@ -110,6 +111,10 @@ export class LogScaleFoodFromText {
     this.#logger.info?.('logScaleText.done', { logUuid, grams, density: est.density, calories });
     return { success: true, calories };
   }
+}
+
+function scaleError(message, reason, details) {
+  return new ApplicationError(message, { code: `NUTRIBOT_SCALE_${reason}`, ...details });
 }
 
 export default LogScaleFoodFromText;

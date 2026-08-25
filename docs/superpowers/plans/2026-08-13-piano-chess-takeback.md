@@ -2143,7 +2143,7 @@ sudo docker exec daylight-station sh -c 'cat data/household/config/chess.yml' > 
 wc -l /tmp/chess.yml.bak
 ```
 
-The file is long — it carries the full 21-entry Pokémon roster. **Do not rewrite it from memory.** Edit the backup, then copy the whole file back.
+The file is long — it carries the full 21-entry franchise theme roster. **Do not rewrite it from memory.** Edit the backup, then copy the whole file back.
 
 - [ ] **Step 2: Add the new blocks to the backup**
 

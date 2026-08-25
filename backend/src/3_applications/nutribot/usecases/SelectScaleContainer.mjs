@@ -4,6 +4,7 @@
 // keyboard + arm the describe path).
 
 import { resolveScaleNet } from './LogFoodFromScale.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 import {
   buildDensityKeyboard, densityPromptText,
   buildContainerKeyboard, containerPromptText,
@@ -36,8 +37,8 @@ export class SelectScaleContainer {
     const messaging = this.#getMessaging(responseContext, conversationId);
 
     const nutriLog = await this.#foodLogStore.findByUuid(logUuid, userId);
-    if (!nutriLog || !nutriLog.items?.length) return { success: false, error: 'log not found' };
-    if (nutriLog.status !== 'pending') return { success: false, error: 'already processed' };
+    if (!nutriLog || !nutriLog.items?.length) throw scaleError('log not found', 'LOG_NOT_FOUND', { logUuid });
+    if (nutriLog.status !== 'pending') throw scaleError('already processed', 'ALREADY_PROCESSED', { logUuid });
 
     const item0 = typeof nutriLog.items[0].toJSON === 'function' ? nutriLog.items[0].toJSON() : { ...nutriLog.items[0] };
     const gross = Math.round(Number(nutriLog.metadata?.grossGrams ?? item0.grams));
@@ -97,6 +98,10 @@ export class SelectScaleContainer {
     this.#logger.info?.('selectContainer.done', { logUuid, gross, net, containerId: containerId2 });
     return { success: true, net };
   }
+}
+
+function scaleError(message, reason, details) {
+  return new ApplicationError(message, { code: `NUTRIBOT_SCALE_${reason}`, ...details });
 }
 
 export default SelectScaleContainer;

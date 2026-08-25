@@ -56,6 +56,12 @@
 > `GET /midi/tap` = the raw bytes the read port delivered (the ground truth when the
 > parser is suspect). `GET|POST /beat`, `GET|POST /loopback`.
 >
+> **Game guardrail.** While the browser heartbeat says a game route is open, the watchdog
+> may try its non-disruptive touch burst but will not reload the SPA, restart FKB, or reboot
+> the tablet. `GET /kiosk` exposes `activeGame`, `midGameRecoveryProtected`,
+> `lastDecision`, and `lastOutcome`; the bridge's Victoria Logs heartbeat also carries those
+> as `data.kioskGame*` / `data.kioskRecovery*` for after-the-fact diagnosis.
+>
 > ## Physical facts that software cannot fix
 > - **The JamCorder's reboot drops the piano off USB** — twice on 2026-08-23. Its
 >   3-hour auto-reboot is now DISABLED (`autoRebootTime: -1` via `/api/auto-reboot/settings/set`).

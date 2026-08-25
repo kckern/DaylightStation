@@ -13,11 +13,11 @@ function makeCfg() {
     systems: { gb: { core: 'gb', label: 'Game Boy' } },
     games: [
       {
-        id: 'pokemon-red',
+        id: 'example-quest',
         system: 'gb',
-        title: 'Pokémon Red',
-        rom: 'roms/Pokemon Red (UE) [S][!].gb',
-        save: 'saves/Pokemon Red (UE) [S][!].srm',
+        title: 'Example Quest',
+        rom: 'roms/Example Quest (UE) [S][!].gb',
+        save: 'saves/Example Quest (UE) [S][!].srm',
         boxart: 'cover.png',
         bezel: 'bezel.png',
         governance: { mode: 'credit', required_zone: 'warm', grace_seconds: 20, earn_rate: 1.5 },
@@ -83,7 +83,7 @@ function makeApp(overrides = {}) {
     resolveArtPath: vi.fn((cfg, system, gameId, kind) => `/media/${system}/ART/${gameId}/${kind}`),
     resolveSavePath: vi.fn((system, gameId, user) => `/media/${system}/saves/${user}/${gameId}.srm`),
     resolveStatePath: vi.fn((system, gameId, slot, user) => `/media/${system}/states/${user}/${gameId}/${slot}.state`),
-    listSaveUsers: vi.fn((system, gameId) => (gameId === 'pokemon-red' ? ['user_5', 'user_4'] : [])),
+    listSaveUsers: vi.fn((system, gameId) => (gameId === 'example-quest' ? ['user_5', 'user_4'] : [])),
     readEngineFile: vi.fn((relPath) => {
       const ENGINE = {
         'loader.js': { buffer: Buffer.from('LOADER'), contentType: 'text/javascript' },
@@ -110,14 +110,14 @@ describe('createEmulatorRouter', () => {
       expect(res.body.systems.gb.label).toBe('Game Boy');
       expect(res.body.games).toHaveLength(1);
       const g = res.body.games[0];
-      expect(g.id).toBe('pokemon-red');
+      expect(g.id).toBe('example-quest');
       expect(g.system).toBe('gb');
-      expect(g.title).toBe('Pokémon Red');
+      expect(g.title).toBe('Example Quest');
       expect(g.shader).toBe('dotmatrix');
       expect(g.chrome).toBe('gb-bezel');
-      expect(g.romUrl).toBe('/api/v1/emulator/rom/gb/pokemon-red');
-      expect(g.coverUrl).toBe('/api/v1/emulator/art/gb/pokemon-red/cover');
-      expect(g.bezelUrl).toBe('/api/v1/emulator/art/gb/pokemon-red/bezel');
+      expect(g.romUrl).toBe('/api/v1/emulator/rom/gb/example-quest');
+      expect(g.coverUrl).toBe('/api/v1/emulator/art/gb/example-quest/cover');
+      expect(g.bezelUrl).toBe('/api/v1/emulator/art/gb/example-quest/bezel');
       // No-user governance: game value
       expect(g.governance.required_zone).toBe('warm');
     });
@@ -221,7 +221,7 @@ describe('createEmulatorRouter', () => {
   describe('GET /rom', () => {
     it('streams bytes 200', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/rom/gb/pokemon-red');
+      const res = await request(app).get('/api/v1/emulator/rom/gb/example-quest');
       expect(res.status).toBe(200);
       expect(res.body.toString()).toBe('ROMBYTES');
       expect(res.headers['cache-control']).toMatch(/immutable/);
@@ -231,13 +231,13 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp({
         resolveRomPath: () => '/media/gb/missing/x',
       });
-      const res = await request(app).get('/api/v1/emulator/rom/gb/pokemon-red');
+      const res = await request(app).get('/api/v1/emulator/rom/gb/example-quest');
       expect(res.status).toBe(404);
     });
 
     it('400 on unsafe system', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/rom/..%2Fetc/pokemon-red');
+      const res = await request(app).get('/api/v1/emulator/rom/..%2Fetc/example-quest');
       expect(res.status).toBe(400);
     });
 
@@ -253,7 +253,7 @@ describe('createEmulatorRouter', () => {
           return { buffer: full, size: full.length, contentType: 'application/octet-stream' };
         },
       });
-      const res = await request(app).get('/api/v1/emulator/rom/gb/pokemon-red').set('Range', 'bytes=0-2');
+      const res = await request(app).get('/api/v1/emulator/rom/gb/example-quest').set('Range', 'bytes=0-2');
       expect(res.status).toBe(206);
       expect(res.headers['content-range']).toBe('bytes 0-2/8');
       expect(res.body.toString()).toBe('ROM');
@@ -263,7 +263,7 @@ describe('createEmulatorRouter', () => {
   describe('GET /art/:kind', () => {
     it('serves cover with a moderate (non-immutable) cache so art can be swapped', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/art/gb/pokemon-red/cover');
+      const res = await request(app).get('/api/v1/emulator/art/gb/example-quest/cover');
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toMatch(/image\/png/);
       expect(res.headers['cache-control']).toMatch(/max-age/);
@@ -272,7 +272,7 @@ describe('createEmulatorRouter', () => {
 
     it('400 on invalid kind', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/art/gb/pokemon-red/screenshot');
+      const res = await request(app).get('/api/v1/emulator/art/gb/example-quest/screenshot');
       expect(res.status).toBe(400);
     });
   });
@@ -282,33 +282,33 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const payload = Buffer.from([1, 2, 3, 4, 5]);
       const put = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
+        .put('/api/v1/emulator/save/gb/example-quest?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(payload);
       expect(put.status).toBe(200);
       expect(put.body).toEqual({ ok: true, bytes: 5 });
 
-      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+      const get = await request(app).get('/api/v1/emulator/save/gb/example-quest?user=user_5');
       expect(get.status).toBe(200);
       expect(Buffer.from(get.body)).toEqual(payload);
     });
 
     it('GET ENOENT → 204', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+      const res = await request(app).get('/api/v1/emulator/save/gb/example-quest?user=user_5');
       expect(res.status).toBe(204);
     });
 
     it('GET missing user → 400', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/save/gb/pokemon-red');
+      const res = await request(app).get('/api/v1/emulator/save/gb/example-quest');
       expect(res.status).toBe(400);
     });
 
     it('PUT missing user → 400', async () => {
       const { app } = makeApp();
       const res = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red')
+        .put('/api/v1/emulator/save/gb/example-quest')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([1]));
       expect(res.status).toBe(400);
@@ -317,7 +317,7 @@ describe('createEmulatorRouter', () => {
     it('PUT empty body → 400', async () => {
       const { app } = makeApp();
       const res = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
+        .put('/api/v1/emulator/save/gb/example-quest?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.alloc(0));
       expect(res.status).toBe(400);
@@ -326,7 +326,7 @@ describe('createEmulatorRouter', () => {
     it('PUT unsafe user → 400', async () => {
       const { app } = makeApp();
       const res = await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=..%2Fetc')
+        .put('/api/v1/emulator/save/gb/example-quest?user=..%2Fetc')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([1]));
       expect(res.status).toBe(400);
@@ -335,23 +335,23 @@ describe('createEmulatorRouter', () => {
     it('DELETE erases the save (reset) and is idempotent', async () => {
       const { app } = makeApp();
       await request(app)
-        .put('/api/v1/emulator/save/gb/pokemon-red?user=user_5')
+        .put('/api/v1/emulator/save/gb/example-quest?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([1, 2, 3]));
-      const del = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+      const del = await request(app).delete('/api/v1/emulator/save/gb/example-quest?user=user_5');
       expect(del.status).toBe(200);
       expect(del.body).toEqual({ ok: true });
       // gone now → GET 204
-      const get = await request(app).get('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+      const get = await request(app).get('/api/v1/emulator/save/gb/example-quest?user=user_5');
       expect(get.status).toBe(204);
       // second delete still ok (idempotent)
-      const del2 = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red?user=user_5');
+      const del2 = await request(app).delete('/api/v1/emulator/save/gb/example-quest?user=user_5');
       expect(del2.status).toBe(200);
     });
 
     it('DELETE missing user → 400', async () => {
       const { app } = makeApp();
-      const res = await request(app).delete('/api/v1/emulator/save/gb/pokemon-red');
+      const res = await request(app).delete('/api/v1/emulator/save/gb/example-quest');
       expect(res.status).toBe(400);
     });
   });
@@ -361,32 +361,32 @@ describe('createEmulatorRouter', () => {
       const { app } = makeApp();
       const payload = Buffer.from([9, 8, 7]);
       const put = await request(app)
-        .put('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5')
+        .put('/api/v1/emulator/state/gb/example-quest/1?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(payload);
       expect(put.status).toBe(200);
       expect(put.body).toEqual({ ok: true, bytes: 3 });
 
-      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5');
+      const get = await request(app).get('/api/v1/emulator/state/gb/example-quest/1?user=user_5');
       expect(get.status).toBe(200);
       expect(Buffer.from(get.body)).toEqual(payload);
     });
 
     it('GET ENOENT → 204', async () => {
       const { app } = makeApp();
-      const res = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/1?user=user_5');
+      const res = await request(app).get('/api/v1/emulator/state/gb/example-quest/1?user=user_5');
       expect(res.status).toBe(204);
     });
 
     it('DELETE erases a state slot', async () => {
       const { app } = makeApp();
       await request(app)
-        .put('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5')
+        .put('/api/v1/emulator/state/gb/example-quest/auto?user=user_5')
         .set('Content-Type', 'application/octet-stream')
         .send(Buffer.from([5, 5]));
-      const del = await request(app).delete('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5');
+      const del = await request(app).delete('/api/v1/emulator/state/gb/example-quest/auto?user=user_5');
       expect(del.status).toBe(200);
-      const get = await request(app).get('/api/v1/emulator/state/gb/pokemon-red/auto?user=user_5');
+      const get = await request(app).get('/api/v1/emulator/state/gb/example-quest/auto?user=user_5');
       expect(get.status).toBe(204);
     });
   });
@@ -428,7 +428,7 @@ describe('createEmulatorRouter', () => {
 
     it('returns the saver list for a save-enabled game', async () => {
       const { app } = makeApp({ loadConfig: batteryCfg });
-      const res = await request(app).get('/api/v1/emulator/saves/gb/pokemon-red');
+      const res = await request(app).get('/api/v1/emulator/saves/gb/example-quest');
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ users: ['user_5', 'user_4'] });
     });

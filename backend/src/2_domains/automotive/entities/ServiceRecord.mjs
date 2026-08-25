@@ -74,20 +74,6 @@ export class ServiceRecord {
     return this.#odometerKm + this.#intervalKm;
   }
 
-  toJSON() {
-    return {
-      id: this.#id,
-      date: this.#date.toISOString().slice(0, 10),
-      type: this.#type,
-      vendor: this.#vendor,
-      cost: this.#cost,
-      odometer_km: this.#odometerKm,
-      interval_months: this.#intervalMonths,
-      interval_km: this.#intervalKm,
-      notes: this.#notes,
-      attachments: this.attachments,
-    };
-  }
 }
 
 /**

@@ -212,7 +212,7 @@ export class ParticipantRoster {
         // Guest/ledger assignment — keyed by device ID (ledger is always 1:1).
         devicesByUserId.set(`ledger:${deviceId}`, [device]);
       } else {
-        // Truly anonymous — no user, no ledger. Rendered as a Pikachu
+        // Truly anonymous — no user, no ledger. Rendered as a untagged placeholder
         // card with name `#<deviceId>` so the user can tap to assign
         // via FitnessSidebarMenu. See _buildRosterEntry synthesis path.
         anonymousDevices.push(device);

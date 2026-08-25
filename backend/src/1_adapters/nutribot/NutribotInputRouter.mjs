@@ -71,14 +71,14 @@ export class NutribotInputRouter extends BaseInputRouter {
             pendingLogUuid,
           });
           const useCase = this.container.getLogScaleFoodFromText();
-          const result = await useCase.execute({
+          const result = await this.#executeScale(() => useCase.execute({
             userId: this.#resolveUserId(event),
             conversationId: event.conversationId,
             logUuid: pendingLogUuid,
             text: event.payload.text,
             messageId: event.messageId,
             responseContext,
-          });
+          }));
           return { ok: true, result };
         }
       } catch (e) {
@@ -208,38 +208,38 @@ export class NutribotInputRouter extends BaseInputRouter {
       case 'st': {
         // Scale tare — decoded.c absent = show the container picker; present = subtract it
         const useCase = this.container.getSelectScaleContainer();
-        return await useCase.execute({
+        return await this.#executeScale(() => useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.id,
           containerId: decoded.c,
           messageId: event.messageId,
           responseContext,
-        });
+        }));
       }
       case 'sd': {
         // Scale density — resolve calories from tapped level
         const useCase = this.container.getSelectScaleDensity();
-        return await useCase.execute({
+        return await this.#executeScale(() => useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.id,
           level: decoded.l,
           messageId: event.messageId,
           responseContext,
-        });
+        }));
       }
       case 'sh': {
         // Scale help — toggle the density legend in place (h:1 show, h:0 back)
         const useCase = this.container.getShowScaleDensityHelp();
-        return await useCase.execute({
+        return await this.#executeScale(() => useCase.execute({
           userId: this.#resolveUserId(event),
           conversationId: event.conversationId,
           logUuid: decoded.id,
           showHelp: decoded.h === 1 || decoded.h === '1',
           messageId: event.messageId,
           responseContext,
-        });
+        }));
       }
       case 'ra': {
         // Report Adjust - start adjustment flow
@@ -513,6 +513,16 @@ export class NutribotInputRouter extends BaseInputRouter {
       default:
         this.logger.warn?.('nutribot.command.unknown', { command });
         return { ok: true, handled: false };
+    }
+  }
+
+  async #executeScale(execute) {
+    try {
+      return await execute();
+    } catch (error) {
+      if (!String(error?.code || '').startsWith('NUTRIBOT_SCALE_')) throw error;
+      this.logger.warn?.('nutribot.scale.refused', { code: error.code, error: error.message });
+      return { success: false, error: error.message, code: error.code };
     }
   }
 

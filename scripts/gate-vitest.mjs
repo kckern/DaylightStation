@@ -43,7 +43,7 @@ import os from 'node:os';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const BASELINE = path.join(ROOT, 'scripts/audit-baseline.vitest.txt');
 const ROOTS = ['tests/unit', 'tests/isolated', 'backend'];
-const EXCLUDE = [/\/suite\//, /\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
+const EXCLUDE = [/\/node_modules\//, /\/\.claude\//, /\/\.worktrees\//];
 
 /**
  * Which runner owns this file, decided by its own imports rather than its
@@ -82,7 +82,12 @@ function vitestPopulation() {
     for (const f of walk(abs)) {
       const rel = path.relative(ROOT, f);
       if (EXCLUDE.some((re) => re.test('/' + rel))) continue;
-      if (isVitestOwned(readFileSync(f, 'utf8'))) files.push(rel);
+      const src = readFileSync(f, 'utf8');
+      // tests/unit/suite remains Jest-owned by default. An explicit Vitest
+      // import is the migration marker that transfers an individual file.
+      if (rel.startsWith(`tests${path.sep}unit${path.sep}suite${path.sep}`)
+        && !/from ['"]vitest['"]/.test(src)) continue;
+      if (isVitestOwned(src)) files.push(rel);
     }
   }
   return files.sort();

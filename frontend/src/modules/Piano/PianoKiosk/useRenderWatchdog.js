@@ -35,16 +35,24 @@ export const DEFAULT_BEAT_URL = 'http://localhost:8770/kiosk/beat';
 /**
  * Pure builder for a heartbeat payload. Kept separate so it is unit-testable
  * without a DOM. `fps` is frames presented in the last ~1s.
- * @returns {{fps:number, visibility:string, url:string, sinceLoadMs:number, ts:number}}
+ * `activity`, when present, is deliberately small: it tells the out-of-process
+ * watchdog that a game is in progress without sending a player name or game state.
+ * @returns {{fps:number, visibility:string, url:string, sinceLoadMs:number, ts:number, activity?:{type:string,id:string}}}
  */
-export function buildBeat(fps, { visibility, url, sinceLoadMs, ts }) {
-  return {
+export function buildBeat(fps, { visibility, url, sinceLoadMs, ts, activity } = {}) {
+  const beat = {
     fps: Math.round(fps),
     visibility: visibility || 'unknown',
     url: url || '',
     sinceLoadMs: Math.round(sinceLoadMs) || 0,
     ts: ts || 0,
   };
+  // Keep this allow-list tight: the bridge needs only enough context to avoid
+  // destroying an active game, not a user's identity or their game position.
+  if (activity?.type === 'game' && typeof activity.id === 'string' && activity.id) {
+    beat.activity = { type: 'game', id: activity.id };
+  }
+  return beat;
 }
 
 /**
@@ -104,6 +112,7 @@ export function tickWatchdog(state, fps, { minFps, sustainSeconds }) {
  * @param {string} [opts.beatUrl] - heartbeat ingest URL (default DEFAULT_BEAT_URL)
  * @param {boolean} [opts.heartbeat=true] - post a per-second beat to the bridge
  * @param {(payload:object) => void} [opts.onBeat] - override the beat sender (tests)
+ * @param {{type:string,id:string}|null} [opts.activity] - active game, if any
  */
 export function useRenderWatchdog({
   minFps = WATCHDOG_DEFAULTS.minFps,
@@ -113,6 +122,7 @@ export function useRenderWatchdog({
   beatUrl = DEFAULT_BEAT_URL,
   heartbeat = true,
   onBeat,
+  activity = null,
 } = {}) {
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return undefined;
@@ -152,6 +162,7 @@ export function useRenderWatchdog({
             url: typeof location !== 'undefined' ? location.href : '',
             sinceLoadMs: t - startedAt,
             ts: Date.now(),
+            activity,
           });
           if (onBeat) onBeat(payload); else sendBeat(beatUrl, payload);
         }
@@ -223,7 +234,7 @@ export function useRenderWatchdog({
     };
     rafId = window.requestAnimationFrame(loop);
     return () => window.cancelAnimationFrame(rafId);
-  }, [minFps, sustainSeconds, graceMs, onRestart, beatUrl, heartbeat, onBeat]);
+  }, [minFps, sustainSeconds, graceMs, onRestart, beatUrl, heartbeat, onBeat, activity]);
 }
 
 export default useRenderWatchdog;

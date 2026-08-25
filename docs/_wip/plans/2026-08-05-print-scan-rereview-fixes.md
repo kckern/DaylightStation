@@ -204,7 +204,7 @@ it('EVERY lane rides the published doc when the repo is wired — a fresh first 
   const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(published) };
   const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
   const res = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&learnerId=felix');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=felix');
   expect(res.status).toBe(200);
   // The render receives the PUBLISHED document (rev field intact), never the source.
   expect(render.calls[0].document).toMatchObject({ rev: 'abcdef123' });
@@ -229,12 +229,12 @@ it('quiz + fabricated card (no usable record) demands a learnerId — the seven-
   const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
   const allocations = { findByCard: vi.fn().mockResolvedValue([]), findByDocument: vi.fn().mockResolvedValue([]) };
   const bare = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=1111111');
   expect(bare.status).toBe(400);
   expect(bare.body.error).toMatch(/learnerId/);
   // With a learner, attach-new on an explicit card stays legal.
   const ok = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=1111111&learnerId=felix');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=1111111&learnerId=felix');
   expect(ok.status).toBe(200);
 });
 
@@ -244,12 +244,12 @@ it('adopting a card that belongs to a DIFFERENT learner is a 409, never a silent
   const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
   const allocations = {
     findByCard: vi.fn().mockResolvedValue([
-      { documentId: 'pokemon-quiz-1', cardId: '4829306', learnerId: 'felix', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+      { documentId: 'creature-quiz-1', cardId: '4829306', learnerId: 'felix', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
     ]),
     findByDocument: vi.fn(),
   };
   const res = await request(appWith({ render, repo, allocations }))
-    .get('/api/v1/school/print/pokemon-quiz-1?variety=omr&card=4829306&learnerId=soren');
+    .get('/api/v1/school/print/creature-quiz-1?variety=omr&card=4829306&learnerId=soren');
   expect(res.status).toBe(409);
   expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
 });

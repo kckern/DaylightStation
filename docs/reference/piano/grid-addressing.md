@@ -202,8 +202,8 @@ collision-free however it is dealt.
 | Value | Effect | Where |
 |---|---|---|
 | `never` | one fixed layout forever | all three games' default |
-| `each_game` | re-deal on restart | Checkers, Connect Four (`shuffle_each_game`) |
-| `each_turn` | re-deal between turns | Chess (`shuffle_each_turn`) |
+| `each_game` | re-deal on restart | Checkers, Connect Four |
+| `each_turn` | re-deal between turns | Chess |
 
 `each_turn` is materially harder than `each_game` and deserves its own rung. It also demands the
 "the map moved" notice — loud for a beat, then a standing reminder — or the player spells yesterday's
@@ -351,19 +351,6 @@ that no key can address — which from the player's chair is indistinguishable f
 | `inversions: named` on `vocabulary: staff` | Reported as `any` (a two-note address has no inversion), while the player's setting is preserved under `configured` so switching back to chords restores it |
 | An invalid explicit `scheme` | **Refused**, `source: 'rejected-explicit'`, errors returned, a built scheme handed back so the game still runs |
 
-### The legacy keys it reads
-
-These are on disk today and a config that silently stops working is worse than one that never
-started, so `normalizeAddressing` accepts all of them:
-
-| On disk | Read as |
-|---|---|
-| `addressing: chords` (a bare string — chess's shipped form) | `vocabulary: chords` |
-| `shuffle_each_turn: true` (chess) | `shuffle: each_turn` |
-| `shuffle_each_game: true` (checkers, Connect Four) | `shuffle: each_game` |
-| either boolean `false` | `shuffle: never` |
-| an explicit `shuffle:` alongside a boolean | the explicit value wins |
-
 ## 6. The addressing ladder
 
 The knobs above compose into rungs. This is the deliverable the request is really after: a
@@ -501,19 +488,6 @@ that no key can address — which from the player's chair is indistinguishable f
 | `inversions: named` on `vocabulary: staff` | Reported as `any` (a two-note address has no inversion), while the player's setting is preserved under `configured` so switching back to chords restores it |
 | An invalid explicit `scheme` | **Refused**, `source: 'rejected-explicit'`, errors returned, a built scheme handed back so the game still runs |
 
-### The legacy keys it reads
-
-These are on disk today and a config that silently stops working is worse than one that never
-started, so `normalizeAddressing` accepts all of them:
-
-| On disk | Read as |
-|---|---|
-| `addressing: chords` (a bare string — chess's shipped form) | `vocabulary: chords` |
-| `shuffle_each_turn: true` (chess) | `shuffle: each_turn` |
-| `shuffle_each_game: true` (checkers, Connect Four) | `shuffle: each_game` |
-| either boolean `false` | `shuffle: never` |
-| an explicit `shuffle:` alongside a boolean | the explicit value wins |
-
 ## 6. The addressing ladder
 
 The knobs above compose into rungs. This is the deliverable the request is really after: a
@@ -568,21 +542,21 @@ an explicit hold, so a player who needs stability gets it regardless of what the
 | Cardinality | Per-game constant | each game |
 | Pitch tier | **Implemented**, 6 tiers per vocabulary, per axis | `STAFF_TIERS`, `CHORD_TIERS` |
 | Ordering (incl. `reverse`) | **Implemented**, per axis | `buildScheme.js` `axisValues` |
-| Cadence | **Unified** to one key; both legacy booleans read forward | `normalizeAddressing` |
+| Cadence | **Unified** as `addressing.shuffle` | `normalizeAddressing` |
 | Inversions | **Enforced at match time** — the required bass is load-bearing, and the rim prints the slash | `requiredBass`, `identifyChord` |
 | Per-axis independence | **Implemented** — `x` and `y` are separate blocks, shuffled from separate seeds | `resolveAddressing`, `buildScheme` |
 | Validation | **Strong** — collisions, gesture runs, label ambiguity, distinctness, plus tier-fit | `validateChordScheme`, `validateStaffScheme`, `raiseTierToFit` |
 | Layered override | **Implemented** front and back; deep-merged at the repository | `resolveAddressing`, `DataServicePianoGameRepository` |
 | Addressing ladder | **Defined** (13 rungs, all asserted buildable) with its own promotion signal and a rung picker in settings | `ADDRESSING_RUNGS`, `addressingProgress.js`, `GameStepper` |
-| Games consuming it | **Wired** — all three build their schemes through the resolver | `useAddressing`, each game's `legacyAddressing` |
+| Games consuming it | **Wired** — all three build their schemes through the resolver | `useAddressing`, each game's configured overrides |
 
 ### How each game is wired
 
-| Game | Reads | Legacy keys read forward |
+| Game | Reads | Native explicit fields |
 |---|---|---|
-| **Checkers** | `useAddressing({ axisSize: 8 })` → file and rank axes | `file_notes`/`rank_notes` (as an explicit scheme, only when a *clean* pair — a pre-redesign `square_notes` config is ignored rather than half-trusted), `shuffle_each_game` |
-| **Connect Four** | `useAddressing({ axisSize: 7 })` → column axis; chord roots re-sorted into scale order | `column_notes`, `shuffle_each_game` |
-| **Chess** | `schemeForAddressing(config, fallback)` → the resolver, built at seed 0 | `addressing:` string, `shuffle_each_turn` |
+| **Checkers** | `useAddressing({ axisSize: 8 })` → file and rank axes | `file_notes`/`rank_notes` as an explicit scheme only when both axes are valid |
+| **Connect Four** | `useAddressing({ axisSize: 7 })` → column axis; chord roots re-sorted into scale order | `column_notes` |
+| **Chess** | `schemeForAddressing(config, fallback)` → the resolver, built at seed 0 | canonical `addressing` block |
 
 Chess builds at **seed 0** on purpose: it re-deals per turn through its own `shuffleEachTurn`
 machinery inside `createChessGameState`, and letting the cadence deal here as well would shuffle an

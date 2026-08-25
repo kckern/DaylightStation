@@ -319,7 +319,7 @@ function loadYamlDocument(filePath) {
  * `YamlPrintDocumentRepository.list()`.
  *
  * Recursive because source ids are taxonomy paths and their files nest under
- * them (`arts/pokemon-identification/quiz-1.yml`): a non-recursive walk of the
+ * them (`arts/creature-identification/quiz-1.yml`): a non-recursive walk of the
  * source root would report zero files for exactly the documents that exist.
  * The three artifact subtrees are skipped at the top level so pointing this at
  * the CONTENT root still means "the hand-authored things", never the
@@ -939,7 +939,7 @@ function resolvableItemIds(document, derivedBank, banks) {
  *
  * EXACT REV, NEVER LATEST: `getPublished(id, undefined)` resolves to the most
  * recently written revision for `id`, which would turn every orphan into a
- * false pass (the pokemon quiz that motivated this has a perfectly healthy
+ * false pass (the creature quiz that motivated this has a perfectly healthy
  * LATEST rev and a dead pinned one). The rev off the record is always passed
  * through, and a null return is treated as missing.
  *

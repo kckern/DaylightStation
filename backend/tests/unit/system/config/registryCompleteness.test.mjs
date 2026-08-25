@@ -1,10 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import { HOUSEHOLD_APP_CONFIGS } from '#shared/contracts/householdConfig.mjs';
+import { getDataPath } from '../../../../../tests/_lib/configHelper.mjs';
+
+function requireDataDir() {
+  const dataDir = getDataPath();
+  expect(dataDir, 'no data path — set DAYLIGHT_BASE_PATH or DAYLIGHT_DATA_PATH').toBeTruthy();
+  return dataDir;
+}
 
 it('every registered app config exists on disk at its registered path', () => {
-  const dataDir = process.env.DAYLIGHT_DATA_PATH
-    || path.join(process.env.DAYLIGHT_BASE_PATH, 'data');
+  const dataDir = requireDataDir();
   const missing = Object.entries(HOUSEHOLD_APP_CONFIGS).filter(
     ([, rel]) => !['', '.yml', '.yaml'].some((ext) =>
       ext && fs.existsSync(path.join(dataDir, 'household', `${rel}${ext}`))),
@@ -17,8 +23,7 @@ it('every registered app config exists on disk at its registered path', () => {
 // registry entry silently does not load. Verified clean on 2026-08-21 (all 9
 // colocated dirs are registered) — this keeps it that way.
 it('no colocated <subdir>/config.yml exists outside the registry', () => {
-  const dataDir = process.env.DAYLIGHT_DATA_PATH
-    || path.join(process.env.DAYLIGHT_BASE_PATH, 'data');
+  const dataDir = requireDataDir();
   const root = path.join(dataDir, 'household');
   const registered = new Set(Object.values(HOUSEHOLD_APP_CONFIGS));
   const orphans = fs.readdirSync(root, { withFileTypes: true })
@@ -30,8 +35,7 @@ it('no colocated <subdir>/config.yml exists outside the registry', () => {
 });
 
 it('household/config/ holds no app config the registry does not know', () => {
-  const dataDir = process.env.DAYLIGHT_DATA_PATH
-    || path.join(process.env.DAYLIGHT_BASE_PATH, 'data');
+  const dataDir = requireDataDir();
   const dir = path.join(dataDir, 'household', 'config');
   const leftover = fs.existsSync(dir)
     ? fs.readdirSync(dir).filter((f) => f.endsWith('.yml'))

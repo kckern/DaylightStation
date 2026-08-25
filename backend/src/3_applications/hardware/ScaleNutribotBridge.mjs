@@ -232,6 +232,12 @@ export function createScaleNutribotBridge({
       });
     } catch (err) {
       s.live = live;
+      if (String(err?.code || '').startsWith('NUTRIBOT_SCALE_')) {
+        logger.warn?.('scaleNutribot.commit.skipped', {
+          id, reason: 'density-failed', level: snapshot.density, error: err.message,
+        });
+        return false;
+      }
       throw err;
     }
     // A refusal ('unknown level', 'log not found', 'already processed') means the

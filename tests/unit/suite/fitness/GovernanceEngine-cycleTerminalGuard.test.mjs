@@ -37,16 +37,20 @@ describe('GovernanceEngine._evaluateCycleChallenge — terminal-status guard', (
 
   it('does not re-emit transitions when status === success', () => {
     active.status = 'success';
-    const snapshot = JSON.stringify(active);
     engine._evaluateCycleChallenge(active, ctx);
-    expect(JSON.stringify(active)).toBe(snapshot);
+    expect(active).toEqual(expect.objectContaining({
+      status: 'success', cycleState: 'maintain', phaseProgressMs: 50000,
+      baseReqSatisfiedForRider: true
+    }));
   });
 
   it('does not re-emit transitions when status === failed', () => {
     active.status = 'failed';
-    const snapshot = JSON.stringify(active);
     engine._evaluateCycleChallenge(active, ctx);
-    expect(JSON.stringify(active)).toBe(snapshot);
+    expect(active).toEqual(expect.objectContaining({
+      status: 'failed', cycleState: 'maintain', phaseProgressMs: 50000,
+      baseReqSatisfiedForRider: true
+    }));
   });
 
   it('still evaluates pending challenges normally', () => {

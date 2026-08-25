@@ -43,6 +43,27 @@ describe('NutribotInputRouter scale routing', () => {
     expect(spies.density).toHaveBeenCalledWith(expect.objectContaining({ logUuid: 'log1', level: 4 }));
   });
 
+  it('translates an expected scale refusal at the adapter boundary', async () => {
+    const refusal = new Error('unknown level');
+    refusal.code = 'NUTRIBOT_SCALE_UNKNOWN_LEVEL';
+    spies.density.mockRejectedValue(refusal);
+
+    const result = await router.handleCallback(evt({
+      payload: { callbackData: JSON.stringify({ cmd: 'sd', id: 'log1', l: 99 }) },
+    }), {});
+
+    expect(result).toEqual({
+      success: false, error: 'unknown level', code: 'NUTRIBOT_SCALE_UNKNOWN_LEVEL',
+    });
+  });
+
+  it('does not swallow unexpected scale failures', async () => {
+    spies.density.mockRejectedValue(new Error('datastore offline'));
+    await expect(router.handleCallback(evt({
+      payload: { callbackData: JSON.stringify({ cmd: 'sd', id: 'log1', l: 4 }) },
+    }), {})).rejects.toThrow('datastore offline');
+  });
+
   it('routes scale_describe text to LogScaleFoodFromText', async () => {
     spies.stateStore.get = jest.fn().mockResolvedValue({ activeFlow: 'scale_describe', flowState: { pendingLogUuid: 'log1' } });
     await router.handleText(evt({ payload: { text: 'leftover lasagna' } }), {});

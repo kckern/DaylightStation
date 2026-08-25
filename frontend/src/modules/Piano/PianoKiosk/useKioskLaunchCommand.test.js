@@ -92,11 +92,11 @@ describe('useKioskLaunchCommand', () => {
   it('refuses a contentId outside the allowlist', async () => {
     // The save-divergence guard: an unlisted title must not boot here.
     mount();
-    await deliver({ deviceId: 'yellow-room-tablet', contentId: 'retroarch:gb/pokemon-red' });
+    await deliver({ deviceId: 'yellow-room-tablet', contentId: 'retroarch:gb/example-quest' });
 
     expect(h.launchIntent).not.toHaveBeenCalled();
     await waitFor(() => expect(h.send).toHaveBeenCalledWith(
-      expect.objectContaining({ ok: false, error: 'not_allowed', contentId: 'retroarch:gb/pokemon-red' })
+      expect.objectContaining({ ok: false, error: 'not_allowed', contentId: 'retroarch:gb/example-quest' })
     ));
   });
 

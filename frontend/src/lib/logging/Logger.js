@@ -24,7 +24,10 @@ const DEFAULT_OPTIONS = Object.freeze({
   context: {},
   topic: 'logging',
   consoleEnabled: true,
-  websocketEnabled: true
+  // Vitest workers have no logging backend; opening the production transport
+  // there creates reconnect timers and can keep an otherwise-finished worker
+  // alive. Individual transport tests explicitly opt back in after mocking it.
+  websocketEnabled: import.meta.env?.MODE !== 'test'
 });
 
 // Module-level state

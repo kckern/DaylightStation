@@ -11,6 +11,7 @@
 
 import { NutriLog } from '#domains/nutrition/entities/NutriLog.mjs';
 import { computeNet } from '#domains/nutrition/index.mjs';
+import { ApplicationError } from '#apps/common/errors/index.mjs';
 import { buildDensityKeyboard, densityForLevel, densityPromptText } from '../lib/scaleNutribotConfig.mjs';
 
 /**
@@ -164,7 +165,9 @@ export class LogFoodFromScale {
     const gross = Math.round(Number(grams));
     if (!Number.isFinite(gross) || gross <= 0) {
       this.#logger.warn?.('logScale.badGrams', { scaleId, grams });
-      return { success: false, error: 'bad grams' };
+      throw new ApplicationError('bad grams', {
+        code: 'NUTRIBOT_SCALE_BAD_GRAMS', grams,
+      });
     }
 
     const cfg = this.#scaleConfig;

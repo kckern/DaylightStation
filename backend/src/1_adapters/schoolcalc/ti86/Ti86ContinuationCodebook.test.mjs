@@ -7,13 +7,13 @@ import {
 
 const catalog = {
   catalogId: 'schoolcalc-starter',
-  subjects: [{ subjectId: 'arts', courses: [{ courseId: 'culture', units: [{ unitId: 'pokemon', lessons: [{
+  subjects: [{ subjectId: 'arts', courses: [{ courseId: 'culture', units: [{ unitId: 'creature', lessons: [{
     lessonId: 'identify', modules: [{ moduleId: 'check', continuationCode: '098765' }],
   }] }]}]}],
 };
 const artifacts = [{
   artifactId: 'sc:ti86:ABCDEFG234',
-  source: { address: 'schoolcalc-starter/arts/culture/pokemon/identify' },
+  source: { address: 'schoolcalc-starter/arts/culture/creature/identify' },
 }];
 const learnerSlots = {
   soren: { slot: 0, learnerKey: 1 }, alan: { slot: 1, learnerKey: 2 },

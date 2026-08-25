@@ -169,11 +169,11 @@ systems:                    # console-level definitions
     label: Game Boy Color
 
 games:
-  - id: pokemon-crystal
+  - id: creature-crystal
     system: gbc
-    rom: pokemon-crystal.gbc
-    title: Pokémon Crystal
-    boxart: pokemon-crystal.png
+    rom: creature-crystal.gbc
+    title: Creature Crystal
+    boxart: creature-crystal.png
     chrome: gbc-teal        # bezel/background for this game
     shader: lcd-grid        # override default shader
     governance:             # per-game override (deep-merged over defaults)
@@ -207,7 +207,7 @@ back to defaults and are logged + skipped (mirrors audio-cue config tolerance).
 **Why it works:** libretro cores expose `RETRO_MEMORY_SYSTEM_RAM`. Under
 EmulatorJS the WASM module gives a pointer into the live RAM buffer
 (`_retro_get_memory_data` / `HEAPU8`). So we can sample console RAM and watch known
-addresses — exactly what RetroAchievements does. Pokémon Red's battle flag at CPU
+addresses — exactly what RetroAchievements does. Creature Red's battle flag at CPU
 `$D057` (0 = no battle), current map at `$D35E`, etc. are documented (datacrystal,
 RA memory maps) and stable.
 
@@ -216,7 +216,7 @@ RA memory maps) and stable.
 ```yaml
 # per-game in emulator/config.yml
 games:
-  - id: pokemon-red
+  - id: creature-red
     system: gb
     watches:
       - id: in_battle
@@ -242,7 +242,7 @@ frame — cheap), reads each watched region, evaluates predicates, and emits deb
 (GB WRAM `$C000`→0, etc.), table-driven so new systems are additive.
 
 **Scope/honesty:** the *engine* is buildable now; each game needs a hand-authored
-RAM map (seed Pokémon Red as the proof). The exact EmulatorJS memory accessor is
+RAM map (seed Creature Red as the proof). The exact EmulatorJS memory accessor is
 pinned down in a spike before committing — fallback is reading the core `Module`
 directly, which always works. Games with no `watches` never start the probe.
 
@@ -273,7 +273,7 @@ Three input modes, owned by the Emulator module:
 **Library browser** (`EmulatorLibrary.jsx`): a DaylightStation-styled,
 gamepad-navigable grid. Top row = consoles; selecting one reveals its games with
 box art and chrome. Each card shows the **resolved governance rule**
-("Pokémon Crystal · credit · warm") so the player knows the deal before launching.
+("Creature Crystal · credit · warm") so the player knows the deal before launching.
 Built with the existing fitness-menu focus/scroll idioms (`onPointerDown`, keyboard
 activation, `scrollIntoViewIfNeeded`). Catalog + art from `/api/v1/emulator/library`.
 
@@ -308,7 +308,7 @@ dynamic `import()` + WASM core fetch.
 3. **`<EmulatorConsole>` core**: lazy boot, governed run-loop, `open`-mode standalone first (proves decoupling).
 4. **GovernanceGate Fitness binding** — `gate` then `credit` mode.
 5. **Library browser** + gamepad capture seam.
-6. **MemoryProbe + HookDispatcher** — seed Pokémon Red map as proof.
+6. **MemoryProbe + HookDispatcher** — seed Creature Red map as proof.
 7. **Shaders/chrome** layer.
 8. Wire `module_direct` nav entry + `fitness.yml` reference.
 

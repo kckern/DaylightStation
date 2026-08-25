@@ -27,13 +27,14 @@ describe('RetroArchSyncAdapter', () => {
 
   beforeEach(() => {
     mockHttpClient = {
-      get: jest.fn()
-        // First call: directory listing
-        .mockResolvedValueOnce({
-          data: [{ name: 'Nintendo 64.lpl', type: 'file' }]
-        })
-        // Second call: playlist content
-        .mockResolvedValueOnce({ data: MOCK_PLAYLIST })
+      get: jest.fn(async (url) => {
+        if (url.endsWith('/playlists?cmd=list')) {
+          return { data: { files: [{ n: 'Nintendo 64.lpl', type: 'file' }] } };
+        }
+        if (url.includes('/playlists/Nintendo%2064.lpl')) return { data: MOCK_PLAYLIST };
+        if (url.includes('/saves?cmd=list')) return { data: { files: [] } };
+        return { data: Buffer.alloc(0) };
+      })
     };
 
     mockReadCatalog = jest.fn().mockReturnValue({
@@ -62,7 +63,13 @@ describe('RetroArchSyncAdapter', () => {
     it('fetches playlists, parses games, preserves overrides, and writes catalog', async () => {
       const result = await adapter.sync();
 
-      expect(mockHttpClient.get).toHaveBeenCalledTimes(2);
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('/playlists?cmd=list')
+      );
+      expect(mockHttpClient.get).toHaveBeenCalledWith(
+        expect.stringContaining('/playlists/Nintendo%2064.lpl'),
+        expect.objectContaining({ params: { cmd: 'file' } })
+      );
       expect(mockWriteCatalog).toHaveBeenCalledTimes(1);
 
       const writtenCatalog = mockWriteCatalog.mock.calls[0][0];

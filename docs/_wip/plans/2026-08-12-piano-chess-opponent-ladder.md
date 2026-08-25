@@ -27,10 +27,10 @@ something a five-year-old wants to beat.
 - **Default set:** a generated identicon per level plus generic names, graded so they *sound* like
   what they are — docile and harmless at the bottom, `Brutus`-flavoured at the top.
 - **Override set:** the whole roster is replaceable from YAML. The wanted first override is
-  **Pokémon** — the card game at `frontend/src/modules/Piano/PianoCardGame/` already ships Pokémon
+  **franchise theme** — the card game at `frontend/src/modules/Piano/PianoCardGame/` already ships franchise theme
   artwork and names, so the weakest creatures sit at level 0 and the legendaries at 20, and the
   children experience the ladder as battling their way up a roster they already care about.
-- The override is data only. The ladder's arithmetic must not know what a Pokémon is.
+- The override is data only. The ladder's arithmetic must not know what a franchise theme is.
 
 ## Where the state lives
 
