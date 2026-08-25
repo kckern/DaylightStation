@@ -18,14 +18,22 @@
  * `BuildAgenda`'s is the one that prints the paper a child is holding, so it is
  * the one every other surface must converge on.
  *
- * THE `attested` / `exceptions` FLAGS ARE NOT COSMETIC. They default to `true`
- * (the canonical recipe). They exist because `GetLearnerDayCompletion`
- * historically wrapped NEITHER overlay, and its verdict gates the piano-games
- * unlock in the household. Migrating that call site with the defaults would
- * silently move a reward gate a child can feel. It must migrate as
- * `{ attested: false, exceptions: false }` first, and any change to that is a
- * deliberate, separately-reviewed decision about completion semantics — never a
- * side effect of a refactor.
+ * THE `attested` / `exceptions` / `assignedPrograms` FLAGS ARE NOT COSMETIC.
+ * All three default to `true` (the canonical recipe). They exist because
+ * `GetLearnerDayCompletion` historically applied NONE of the three, and its
+ * verdict gates the piano-games unlock in the household. Migrating that call
+ * site with the defaults would silently move a reward gate a child can feel:
+ * the overlays change which unit is offered, and `assignedPrograms` changes how
+ * MANY sections the day is judged against — a flashcards or piano-course
+ * enrollment would newly have to be finished before "done for today" could be
+ * true. It migrates as `{ attested: false, exceptions: false,
+ * assignedPrograms: false }`, and `CloseSessionOutcome` (which also appended
+ * nothing) with the same three. Any change to that is a deliberate,
+ * separately-reviewed decision about completion semantics — never a side effect
+ * of a refactor.
+ *
+ * The point is not that the divergence is right. It is that it is now VISIBLE:
+ * three booleans at two call sites, instead of two files that quietly forgot.
  *
  * Two subtleties the recipe depends on and that a re-implementation keeps
  * getting wrong:
@@ -133,20 +141,32 @@ export class PlanProjection {
    * @param {Date|string|null} [args.now] - the instant to plan against. Null
    *   reads the clock; a dry-run asking what a particular study day would offer
    *   passes the midpoint of that day's window (`BuildAgenda`'s `studyDay`).
+   * @param {boolean} [args.assignedPrograms=true] - append the learner's
+   *   durable program enrollments (flashcards, piano-course) as plan entries.
+   *   NOT COSMETIC, for the same reason `attested` is not: an appended entry
+   *   becomes a SECTION, and a section is a thing the day can be judged
+   *   against. `GetLearnerDayCompletion` and `CloseSessionOutcome` never
+   *   appended them, so they must migrate with `false` — see the class header.
    * @param {((plan: object, ctx: {assignment: object|null, nowIso: string}) => void)|null}
    *   [args.augmentPlan] - the seam for a caller that injects its own synthetic
    *   entry between `planLearnerWork` and the assigned-program append, which is
    *   where `BuildAgenda` pushes the day's language reel. It runs INSIDE the
    *   assembly on purpose: an entry added after sectioning would be missing
    *   from `sections`, which is the surface everything downstream reads.
+   * @param {string} [args.planErrorEvent] - override the constructor's log
+   *   event name for THIS call. One shared projection can then serve every
+   *   surface without any of them losing the event name its dashboards and
+   *   runbooks already know, or gaining a second line beside it.
+   * @param {string} [args.launcherFailedEvent] - same, for a launcher that threw.
    * @returns {Promise<{plan: object, sections: object[],
    *   programStatuses: Record<string, object>, activeExceptions: object[],
    *   projection: {assignment: object|null, units: object[], sessions: object[],
    *                works: object[], nowIso: string}}>}
    */
   async project({
-    learnerId, attested = true, exceptions = true,
+    learnerId, attested = true, exceptions = true, assignedPrograms = true,
     programStatuses = null, now = null, augmentPlan = null,
+    planErrorEvent = this.#planErrorEvent, launcherFailedEvent = this.#launcherFailedEvent,
   } = {}) {
     if (typeof learnerId !== 'string' || !learnerId.trim()) {
       throw new Error('PlanProjection.project requires learnerId');
@@ -156,10 +176,15 @@ export class PlanProjection {
     // other than "the current plan for this learner", and two of them cannot be
     // compared for equality at all.
     const shareable = programStatuses == null && now == null && augmentPlan == null;
-    const key = `${learnerId}|${attested}|${exceptions}`;
+    // The event names are part of the key: two surfaces sharing one fan-out
+    // must not have one of them log a plan error under the other's name.
+    const key = `${learnerId}|${attested}|${exceptions}|${assignedPrograms}|${planErrorEvent}|${launcherFailedEvent}`;
     if (shareable && this.#inflight.has(key)) return this.#inflight.get(key);
 
-    const pending = this.#project({ learnerId, attested, exceptions, programStatuses, now, augmentPlan });
+    const pending = this.#project({
+      learnerId, attested, exceptions, assignedPrograms,
+      programStatuses, now, augmentPlan, planErrorEvent, launcherFailedEvent,
+    });
     if (!shareable) return pending;
     this.#inflight.set(key, pending);
     // Dropped on settle, success or failure: nothing here outlives its own
@@ -167,7 +192,10 @@ export class PlanProjection {
     return pending.finally(() => { this.#inflight.delete(key); });
   }
 
-  async #project({ learnerId, attested, exceptions, programStatuses, now, augmentPlan }) {
+  async #project({
+    learnerId, attested, exceptions, assignedPrograms,
+    programStatuses, now, augmentPlan, planErrorEvent, launcherFailedEvent,
+  }) {
     const at = now == null ? this.#clock() : (now instanceof Date ? now : new Date(now));
     const nowIso = at.toISOString();
 
@@ -199,14 +227,14 @@ export class PlanProjection {
       timezone: this.#timezone, coursePolicies,
     });
     augmentPlan?.(plan, { assignment, nowIso });
-    appendAssignedProgramEntries(plan, assignment);
+    if (assignedPrograms) appendAssignedProgramEntries(plan, assignment);
     if (plan.errors.length) {
-      this.#logger.warn?.(this.#planErrorEvent, { learnerId, errors: plan.errors });
+      this.#logger.warn?.(planErrorEvent, { learnerId, errors: plan.errors });
     }
 
     const statuses = programStatuses ?? await collectProgramStatuses({
       plan, learnerId, launchers: this.#launchers, logger: this.#logger,
-      logEvent: this.#launcherFailedEvent,
+      logEvent: launcherFailedEvent,
     });
 
     // RAW history, never the overlaid one — see the class header, subtlety 1.
