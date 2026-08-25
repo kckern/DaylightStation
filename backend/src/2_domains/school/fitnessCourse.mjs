@@ -279,12 +279,12 @@ function validateAuthoredUnits(value, errors) {
     if (unit.sourceId === undefined && (!Array.isArray(unit.segments) || !unit.segments.length)) {
       errors.push(`units[${index}] requires sourceId or segments`);
     }
-    validateSegments(unit.segments, errors, `units[${index}].segments`);
+    validateSegments(unit.segments, errors, `units[${index}].segments`, { plexSourceId: unit.sourceId });
     if (unit.success !== undefined) validatePolicy(unit.success, errors, `units[${index}].success`);
   });
 }
 
-function validateSegments(value, errors, field) {
+function validateSegments(value, errors, field, { plexSourceId = null } = {}) {
   if (value === undefined) return;
   if (!Array.isArray(value)) { errors.push(`${field} must be an array`); return; }
   value.forEach((segment, index) => {
@@ -293,7 +293,7 @@ function validateSegments(value, errors, field) {
     if (!SEGMENT_KINDS.has(segment.kind)) errors.push(`${at}.kind is unsupported`);
     if (segment.role !== undefined && !SEGMENT_ROLES.has(segment.role)) errors.push(`${at}.role is unsupported`);
     if (segment.required !== undefined && typeof segment.required !== 'boolean') errors.push(`${at}.required must be boolean`);
-    if (segment.kind === 'plex-video' && !isString(String(segment.sourceId ?? ''))) errors.push(`${at}.sourceId is required for plex-video`);
+    if (segment.kind === 'plex-video' && !isString(String(segment.sourceId ?? plexSourceId ?? ''))) errors.push(`${at}.sourceId is required for plex-video`);
     if (segment.kind === 'saved-workout' && !isString(segment.workoutId)) errors.push(`${at}.workoutId is required for saved-workout`);
   });
 }

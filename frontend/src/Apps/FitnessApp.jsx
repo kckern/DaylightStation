@@ -35,7 +35,10 @@ import { FitnessScreenProvider } from '../modules/Fitness/FitnessScreenProvider.
 import { registerBuiltinWidgets } from '../screen-framework/widgets/builtins.js';
 // Ensure fitness modules are registered in widget registry
 import '../modules/Fitness/index.js';
-import { saveActiveSession, loadActiveSession, clearActiveSession } from './fitnessSessionPersistence.js';
+import {
+  saveActiveSession, loadActiveSession, clearActiveSession,
+  saveActiveSchoolAttempt, loadActiveSchoolAttempt, clearActiveSchoolAttempt,
+} from './fitnessSessionPersistence.js';
 import MenuMusicController from '../modules/Fitness/nav/MenuMusicController.jsx';
 import EmergencyPlaybackController from '../modules/Fitness/player/EmergencyPlaybackController.jsx';
 import { FitnessFeedback, FeedbackCornerButton } from '../modules/Fitness/feedback';
@@ -64,6 +67,10 @@ const FitnessApp = () => {
   const [activeScreen, setActiveScreen] = useState(null); // screen_id from screens config
   const [pendingSelectedSessionId, setPendingSelectedSessionId] = useState(null); // pre-select just-ended session on home
   const [fitnessPlayQueue, setFitnessPlayQueue] = useState([]);
+  // A School attempt is owned by School but executed and evidenced here. This
+  // pointer contains no grade; it only lets the final Fitness session save be
+  // reconciled against the frozen attempt prepared by the backend.
+  const [activeSchoolAttempt, setActiveSchoolAttempt] = useState(() => loadActiveSchoolAttempt());
   const [menuMusicTracks, setMenuMusicTracks] = useState([]);
   // Quiet pre-fetch default: the configured menu_music.volume arrives async from
   // /menu-music. Defaulting low means a fetch failure/latency degrades quieter
@@ -77,6 +84,10 @@ const FitnessApp = () => {
     if (fitnessPlayQueue.length > 0) saveActiveSession(fitnessPlayQueue);
     else clearActiveSession();
   }, [fitnessPlayQueue]);
+  useEffect(() => {
+    if (activeSchoolAttempt) saveActiveSchoolAttempt(activeSchoolAttempt);
+    else clearActiveSchoolAttempt();
+  }, [activeSchoolAttempt]);
   const [kioskUI, setKioskUI] = useState(() => {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     if (isLocalhost) return false;
@@ -888,12 +899,75 @@ const FitnessApp = () => {
   // (the one guarding `if (fitnessPlayQueue.length > 0) return`, ~line 1157):
   // a launch must not clobber an already-loaded queue — fail toward not
   // interrupting, the household's busy-surface posture.
-  const handleFitnessLaunch = (episodeId, { learnerId } = {}) => {
-    logger.info('fitness-launch-dispatched', { episodeId, learnerId });
-    navigate(`/fitness/play/${episodeId}`, { replace: true });
-    handlePlayFromUrl(episodeId, { nogovern });
+  const handleFitnessLaunch = async (episodeId, { learnerId, schoolActivity = null } = {}) => {
+    logger.info('fitness-launch-dispatched', {
+      episodeId, learnerId, workSessionId: schoolActivity?.workSessionId ?? null,
+    });
+    if (!schoolActivity?.workSessionId) {
+      navigate(`/fitness/play/${episodeId}`, { replace: true });
+      await handlePlayFromUrl(episodeId, { nogovern });
+      return;
+    }
+
+    try {
+      const workSessionId = schoolActivity.workSessionId;
+      const plan = await DaylightAPI(`api/v1/fitness/school-attempts/${workSessionId}/plan`);
+      await DaylightAPI(`api/v1/fitness/school-attempts/${workSessionId}/accept`, { learnerId }, 'POST');
+      setActiveSchoolAttempt({ ...plan, learnerId });
+      // An explicit School launch is already sequence-authorized by School.
+      // It must not bounce back to the Plex show browser's ordinary sequential
+      // gate, so load it with the same bypass used by vetted resume traffic.
+      navigate(`/fitness/play/${episodeId}`, { replace: true });
+      await handlePlayFromUrl(episodeId, { nogovern: true });
+      logger.info('school-fitness-attempt-started', { workSessionId, learnerId, episodeId });
+    } catch (error) {
+      logger.error('school-fitness-attempt-start-failed', {
+        workSessionId: schoolActivity.workSessionId, learnerId, error: error?.message,
+      });
+    }
   };
-  useFitnessLaunch({ onLaunch: handleFitnessLaunch, busy: fitnessPlayQueue.length > 0 });
+  const handleSchoolLaunchDecline = async (schoolActivity, { learnerId } = {}) => {
+    try {
+      await DaylightAPI(`api/v1/fitness/school-attempts/${schoolActivity.workSessionId}/decline`, { learnerId }, 'POST');
+    } catch (error) {
+      logger.warn('school-fitness-attempt-decline-failed', {
+        workSessionId: schoolActivity.workSessionId, learnerId, error: error?.message,
+      });
+    }
+  };
+  useFitnessLaunch({
+    onLaunch: handleFitnessLaunch,
+    onSchoolDecline: handleSchoolLaunchDecline,
+    busy: fitnessPlayQueue.length > 0,
+  });
+
+  const handleSchoolAttemptClosed = useCallback(async ({ fitnessSessionId, observations }) => {
+    const attempt = activeSchoolAttempt;
+    if (!attempt?.workSessionId) return;
+    try {
+      const assessed = await DaylightAPI(
+        `api/v1/fitness/school-attempts/${attempt.workSessionId}/assess`,
+        {
+          learnerId: attempt.learnerId,
+          fitnessSessionIds: fitnessSessionId ? [fitnessSessionId] : [],
+          observations,
+        },
+        'POST',
+      );
+      logger.info('school-fitness-attempt-assessed', {
+        workSessionId: attempt.workSessionId,
+        assessmentId: assessed?.assessment?.assessmentId ?? null,
+        result: assessed?.assessment?.result ?? null,
+      });
+      setActiveSchoolAttempt(null);
+    } catch (error) {
+      // Keep the pointer so a retry/recovery path can still reconcile the
+      // already-persisted Fitness session; never manufacture a School result.
+      logger.error('school-fitness-attempt-assess-failed', {
+        workSessionId: attempt.workSessionId, fitnessSessionId, error: error?.message,
+      });
+    }
+  }, [activeSchoolAttempt, logger]);
 
   const handleHomePlay = useCallback((queueItem) => {
     // Boundary normalize: queueItem comes from upstream caller (widgets that
@@ -1595,6 +1669,7 @@ const FitnessApp = () => {
                   setPlayQueue={setFitnessPlayQueue}
                   viewportRef={viewportRef}
                   nogovern={nogovern}
+                  onSchoolAttemptClosed={activeSchoolAttempt ? handleSchoolAttemptClosed : null}
                   onSessionEndRedirect={(redirect) => {
                     if (!redirect) return;
                     // Short browse-out from a show: the FitnessShow is still mounted

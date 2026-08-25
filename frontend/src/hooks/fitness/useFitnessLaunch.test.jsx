@@ -55,7 +55,7 @@ describe('useFitnessLaunch', () => {
   it('logs launch-received with the learnerId and episodeId', () => {
     mount();
     deliver({ topic: 'fitness', type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345' });
-    expect(info).toHaveBeenCalledWith('launch-received', { learnerId: 'kid1', episodeId: '12345' });
+    expect(info).toHaveBeenCalledWith('launch-received', { learnerId: 'kid1', episodeId: '12345', schoolActivity: false });
   });
 
   it('ignores a message missing type', () => {
@@ -120,6 +120,41 @@ describe('useFitnessLaunch', () => {
 
       expect(onLaunch).toHaveBeenCalledWith('12345', { learnerId: 'kid1' });
       expect(warnFn).not.toHaveBeenCalled();
+    });
+
+    it('prompts locally and preserves the active queue when a School launch is declined', () => {
+      const confirmSwitch = vi.fn(() => false);
+      const onSchoolDecline = vi.fn();
+      const schoolActivity = { workSessionId: 'ses_school_1', unitId: 'pe.lesson-1' };
+      mount({ busy: true, confirmSwitch, onSchoolDecline });
+
+      deliver({ type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345', schoolActivity });
+
+      expect(confirmSwitch).toHaveBeenCalledOnce();
+      expect(onLaunch).not.toHaveBeenCalled();
+      expect(onSchoolDecline).toHaveBeenCalledWith(schoolActivity, { learnerId: 'kid1' });
+    });
+
+    it('switches only after the kiosk accepts a busy School launch', () => {
+      const confirmSwitch = vi.fn(() => true);
+      const schoolActivity = { workSessionId: 'ses_school_1', unitId: 'pe.lesson-1' };
+      mount({ busy: true, confirmSwitch });
+
+      deliver({ type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345', schoolActivity });
+
+      expect(onLaunch).toHaveBeenCalledWith('12345', { learnerId: 'kid1', schoolActivity });
+      expect(warnFn).not.toHaveBeenCalled();
+    });
+
+    it('launches an idle School request without prompting but preserves its attempt metadata', () => {
+      const confirmSwitch = vi.fn(() => true);
+      const schoolActivity = { workSessionId: 'ses_school_1', unitId: 'pe.lesson-1' };
+      mount({ confirmSwitch });
+
+      deliver({ type: 'fitness.launch', learnerId: 'kid1', episodeId: '12345', schoolActivity });
+
+      expect(confirmSwitch).not.toHaveBeenCalled();
+      expect(onLaunch).toHaveBeenCalledWith('12345', { learnerId: 'kid1', schoolActivity });
     });
   });
 });
