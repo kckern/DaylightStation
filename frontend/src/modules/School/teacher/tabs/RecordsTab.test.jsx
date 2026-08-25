@@ -152,6 +152,17 @@ describe('RecordsTab', () => {
     expect(screen.getByRole('link', { name: /PDF · Progress report/ })).toBeTruthy();
   });
 
+  it('renders the close button inside the period-admin section, below the report card', async () => {
+    schoolApi.reportCardFrozen.mockImplementation(({ periodId }) => (periodId
+      ? Promise.resolve({ ok: false, status: 404, data: null })
+      : Promise.resolve(ok([]))));
+    const { container } = mount(<RecordsTab learnerId="felix" kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close this period' })).toBeTruthy());
+    const admin = container.querySelector('.teacher-period-admin');
+    expect(admin).toBeTruthy();
+    expect(admin.querySelector('.teacher-close-period')).toBeTruthy();
+  });
+
   it('close-period is two-tap and posts the stamp + pin; supersede offered when already frozen', async () => {
     const { fireEvent, act } = await import('@testing-library/react');
     // frozen({learnerId, periodId}) -> 404 (not closed); frozen({learnerId}) -> list

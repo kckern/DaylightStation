@@ -15,7 +15,7 @@ import PanelFrame from './PanelFrame.jsx';
 
 export default function QuizRequestBacklog({ kids }) {
   const nameFor = (id) => kids.find((k) => k.id === id)?.name ?? id;
-  const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests' });
+  const requests = usePanelFetch(() => schoolApi.quizRequests(), { panel: 'quiz-requests', notFoundAs: 'unavailable' });
   // A degraded/older endpoint must leave this auxiliary panel empty, never
   // take down the whole dashboard.  The server contract is an array.
   const items = Array.isArray(requests.data) ? requests.data : [];
@@ -34,7 +34,7 @@ export default function QuizRequestBacklog({ kids }) {
   };
 
   return (
-    <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting.">
+    <PanelFrame title="Quiz requests" state={requests.state} retry={requests.retry} emptyCopy="No quiz requests waiting." unavailableCopy="Quiz requests aren't enabled on this install.">
       <ul className="teacher-quizreq">
         {items.map((r, i) => {
           const key = `${r.kind ?? 'quiz'}:${r.unitId ?? r.bankId}:${r.sessionId ?? ''}:${r.userId}`;
