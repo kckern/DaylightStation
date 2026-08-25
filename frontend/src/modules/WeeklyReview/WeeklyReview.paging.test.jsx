@@ -97,6 +97,13 @@ describe('WeeklyReview — multi-week paging', () => {
   const mount = async () => {
     const utils = render(<WeeklyReview clear={() => {}} />);
     await expectWindow('Aug 8 – Aug 15');
+    // WAIT FOR THE GRID TO SETTLE, not just for the header to name a window.
+    // Arrow presses are ignored while a window is loading, and the edge hint is
+    // suppressed outright (`edgeHint && !windowLoading`) — so a press landing
+    // in that gap arms nothing and the assertion waits for a hint that will
+    // never come. The header renders before the fetch resolves, so awaiting it
+    // alone is a race the sweep loses when the machine is busy.
+    await waitFor(() => expect(document.querySelector('.weekly-review-grid--loading')).toBeNull());
     return utils;
   };
 
