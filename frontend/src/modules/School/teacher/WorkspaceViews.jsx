@@ -22,6 +22,9 @@ import FeedbackNotes, { NoteComposer } from './panels/FeedbackNotes.jsx';
 import AttestationPanel from './panels/AttestationPanel.jsx';
 import ReassignPanel from './panels/ReassignPanel.jsx';
 import StaleSessions from './panels/StaleSessions.jsx';
+import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
+import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
+import { teacherBaseFor } from './teacherUrl.js';
 
 const sessionIdOf = (session) => session?.sessionId ?? session?.id ?? null;
 const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.createdAt ?? session?.issuedAt ?? null;
@@ -50,6 +53,12 @@ const outcomeLabel = (sessionState) => {
   if (outcome === 'passed' || ['closed', 'completed'].includes(sessionState?.state)) return 'Completed';
   if (outcome === 'needs_remediation') return 'Needs review';
   return labelize(sessionState?.state ?? outcome ?? 'Recorded');
+};
+const recordedAnswerLine = (item) => {
+  const answer = item.given ?? 'No recorded answer';
+  const expected = item.expected?.length ? ` · Correct answer: ${item.expected.join(', ')}` : '';
+  const verdict = item.verdict ? ` · ${labelize(item.verdict)}` : '';
+  return `Answer: ${answer}${expected}${verdict}`;
 };
 
 function CapabilityNotice({ children }) {
@@ -128,7 +137,7 @@ function AgendaPreview({ learnerId, learnerName }) {
       <ol className="teacher-agenda-list">
         {(plan.data?.sections ?? []).map((section) => (
           <li key={section.subject ?? section.id}>
-            <strong>{labelize(section.subject ?? 'School')}</strong>
+            <SubjectIdentity subject={section.subject} />
             <span>{section.servedToday
               ? (() => {
                 const completed = completedBySubject.get(section.subject);
@@ -213,7 +222,7 @@ function SessionList({ learnerId, onOpenSession, window = null }) {
           return (
             <li key={id ?? index}>
               <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
-                <span><strong>{session.lessonTitle ?? session.title ?? labelize(session.unitId) ?? 'Session'}</strong><small>{[labelize(session.subject), session.courseTitle, session.moduleTitle].filter(Boolean).join(' · ')}</small><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
+                <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? labelize(session.unitId)} posterUrl={session.posterUrl} compact /><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
                 <span className={`teacher-status teacher-status--${stateOf(session)}`}>{session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
               </button>
             </li>
@@ -269,6 +278,7 @@ export function LearnerOverview({ learnerId, learnerName, onOpenSession }) {
 }
 
 function CourseContext({ courseId, lessonId = null, learnerId = null }) {
+  const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const authorizedRead = useAuthorizedTeacherRead();
   const context = usePanelFetch(() => authorizedRead(() => (learnerId
     ? teacherWorkspaceApi.learnerCourse(learnerId, courseId)
@@ -277,8 +287,32 @@ function CourseContext({ courseId, lessonId = null, learnerId = null }) {
   });
   const data = context.data;
   const course = data?.course ?? data;
-  const units = data?.units ?? [];
-  return <PanelFrame title={course?.courseTitle ?? course?.title ?? labelize(courseId)} state={context.state} retry={context.retry} unavailableCopy="This course context is unavailable."><div className="teacher-course-context">{(course?.posterUrl ?? data?.posterUrl) && <img src={course.posterUrl ?? data.posterUrl} alt={`${course?.courseTitle ?? course?.title ?? labelize(courseId)} cover`} />}<div><p>{[course?.subject, course?.moduleTitle, course?.lessonTitle].filter(Boolean).join(' → ')}</p>{data?.total != null && <p><strong>{data.completed} of {data.total}</strong> lessons complete</p>}<ol>{units.map((unit) => <li key={unit.unitId}><a href={`/school/teacher/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(unit.unitId)}`}>{unit.title}</a><span className={`teacher-status teacher-status--${unit.status ?? 'remaining'}`}>{labelize(unit.status ?? unit.module ?? 'remaining')}</span></li>)}</ol></div></div></PanelFrame>;
+  const units = (data?.units?.length ? data.units : (data?.lessonId ? [data] : []));
+  return (
+    <PanelFrame title={course?.courseTitle ?? course?.title ?? 'Course'} state={context.state} retry={context.retry} unavailableCopy="This course context is unavailable.">
+      <div className="teacher-course-context">
+        {(course?.posterUrl ?? data?.posterUrl) && <img src={course.posterUrl ?? data.posterUrl} alt={`${course?.courseTitle ?? course?.title ?? 'Course'} cover`} />}
+        <div>
+          <SubjectIdentity subject={course?.subject} />
+          <p>{[course?.moduleTitle, course?.lessonTitle].filter(Boolean).map(labelize).join(' · ')}</p>
+          {data?.total != null && <p><strong>{data.completed} of {data.total}</strong> lessons complete</p>}
+          <ol>
+            {units.map((unit) => (
+              <li key={unit.unitId ?? unit.lessonId}>
+                <a href={`${base}/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(unit.unitId ?? unit.lessonId)}`}>{unit.title}</a>
+                {unit.hasDocument && (
+                  <a className="teacher-curriculum__preview" href={teacherWorkspaceApi.lessonPreviewUrl(courseId, unit.unitId ?? unit.lessonId)} target="_blank" rel="noreferrer">
+                    Preview worksheet
+                  </a>
+                )}
+                <span className={`teacher-status teacher-status--${unit.status ?? 'remaining'}`}>{labelize(unit.status ?? unit.module ?? 'remaining')}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </PanelFrame>
+  );
 }
 
 function CurriculumExceptionPanel({ kids = [], courseId = '', lessonId = '' }) {
@@ -369,7 +403,7 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
 }
 
 export function CurriculumView({ kids, courseId = null, lessonId = null }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? labelize(courseId) : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>{courseId && <CourseContext courseId={courseId} lessonId={lessonId} />}<CurriculumExceptionPanel kids={kids} courseId={courseId ?? ''} lessonId={lessonId ?? ''} /><SchoolMatrix kids={kids} /><CurriculumBrowser /><PeriodsTimeline /><EnrichmentPanel kids={kids} /></div>;
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>{courseId && <CourseContext courseId={courseId} lessonId={lessonId} />}<CurriculumExceptionPanel kids={kids} courseId={courseId ?? ''} lessonId={lessonId ?? ''} /><SchoolMatrix kids={kids} /><CurriculumBrowser /><PeriodsTimeline /><EnrichmentPanel kids={kids} /></div>;
 }
 
 export function OperationsView({ kids }) {
@@ -489,45 +523,6 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   );
 }
 
-function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null, originalUrl = null, replayUrl = null, kind = 'worksheet', availability = 'exact', index = null }) {
-  const [url, setUrl] = useState(null);
-  const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
-  const prepare = async () => {
-    setBusy(true);
-    setError(null);
-    const response = availability === 'deterministic-replay' && sessionId
-      ? await teacherWorkspaceApi.worksheetPdf(sessionId)
-      : (originalUrl ?? originalPdfUrl)
-      ? await (async () => {
-        try {
-          const fetched = await fetch(originalUrl ?? originalPdfUrl, { credentials: 'same-origin' });
-          return fetched.ok ? { ok: true, data: await fetched.blob() } : { ok: false };
-        } catch { return { ok: false }; }
-      })()
-      : await teacherWorkspaceApi.artifactOriginal(artifactId);
-    if (response.ok) {
-      setUrl((prior) => {
-        if (prior) URL.revokeObjectURL(prior);
-        return URL.createObjectURL(response.data);
-      });
-    } else setError('Couldn’t open the retained original.');
-    setBusy(false);
-  };
-  if (!['exact', 'deterministic-replay'].includes(availability)) {
-    return <span className="teacher-muted">{availability === 'semantic-reconstruction'
-      ? 'Only a semantic reconstruction is available for this historical record.'
-      : 'The original paper is not available in this historical record.'}</span>;
-  }
-  const originalLabel = kind === 'result-receipt' ? 'Open original receipt' : 'Open issued PDF';
-  return <>{url
-    ? <a target="_blank" rel="noreferrer" href={url}>{availability === 'exact' ? originalLabel : 'Open replayed worksheet PDF'}{index === null ? '' : ` ${index + 1}`}</a>
-    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `${availability === 'exact' ? originalLabel : 'Open replayed worksheet PDF'}${index === null ? '' : ` ${index + 1}`}…`}</button>}
-  {replayUrl && <a target="_blank" rel="noreferrer" href={replayUrl}>Open frozen replay</a>}
-  {error && <span className="teacher-panel__error">{error}</span>}</>;
-}
-
 function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
@@ -543,8 +538,8 @@ function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
     stepUp: { action: 'artifact.reprint', resource: artifactId },
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
-  const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Exact retained receipt' : 'Exact retained PDF';
-  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Reprint…</button> : <span className="teacher-reprint-confirm"><span>{label} · {preview.byteLength} bytes</span><button type="button" disabled={busy === key} onClick={print}>Confirm print</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
+  const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Result receipt' : 'Worksheet';
+  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Print another copy…</button> : <span className="teacher-reprint-confirm"><span>{label} ready to print</span><button type="button" disabled={busy === key} onClick={print}>Print now</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
@@ -592,7 +587,7 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
   return (
     <div className="teacher-view teacher-session-inspector">
       <button type="button" className="teacher-back" onClick={onBack}>← Back to history</button>
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">{labelize(session?.taxonomy?.subject ?? 'Session record')}</p><h2>{session?.taxonomy?.lessonTitle ?? sessionState?.title ?? 'Lesson'}</h2><p>{[ownerName, session?.taxonomy?.courseTitle, labelize(session?.taxonomy?.moduleTitle)].filter(Boolean).join(' · ')}</p></div></div>
+      <div className="teacher-session-heading"><LessonIdentity subject={session?.taxonomy?.subject} courseTitle={session?.taxonomy?.courseTitle} moduleTitle={session?.taxonomy?.moduleTitle} lessonTitle={session?.taxonomy?.lessonTitle ?? sessionState?.title} posterUrl={session?.taxonomy?.posterUrl} heading /><p>{ownerName ? `${ownerName} completed this lesson${humanDateTime(updatedAt) ? ` · ${humanDateTime(updatedAt)}` : ''}` : ''}</p></div>
       {result.state === 'loading' && <div className="teacher-panel__skeleton" aria-label="Loading session" />}
       {result.state === 'error' && <p className="teacher-panel__error">Couldn’t load this session. <button type="button" onClick={() => setAttempt((n) => n + 1)}>Retry</button></p>}
       {result.state === 'empty' && <CapabilityNotice>This session is not present in the available learner-history window. A dedicated session read endpoint is required to inspect older records.</CapabilityNotice>}
@@ -602,17 +597,17 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
           <section className="teacher-panel teacher-session-summary">
             <h3 className="teacher-panel__title">Outcome</h3>
             <dl>
-              <div><dt>Status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
-              <div><dt>Machine grade</dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
-              <div><dt>Effective grade</dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
-              <div><dt>Updated</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
+              <div><dt>Lesson status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
+              <div><dt>Marked score</dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
+              <div><dt>Current score</dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
+              <div><dt>Last recorded</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
             </dl>
             <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><button type="button" disabled title="Use completion credit from Student operations">Completion credit…</button></div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
           {session?.assignment && <section className="teacher-panel">
-            <h3 className="teacher-panel__title">Paper issued</h3>
-            <p className="teacher-muted">Created {humanDateTime(session.assignment.createdAt) ?? 'at session start'} · immutable published worksheet revision</p>
+            <h3 className="teacher-panel__title">Worksheet and questions</h3>
+            <p className="teacher-muted">Issued {humanDateTime(session.assignment.createdAt) ?? 'at session start'}.</p>
             <ol className="teacher-event-list teacher-question-list">
               {session.assignment.questions.map((question) => <li key={question.itemId ?? question.number}>
                 <strong>{question.number}. {question.prompt ?? 'Question text unavailable'}</strong>
@@ -624,21 +619,19 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             <h3 className="teacher-panel__title">Answers and result</h3>
             <ol className="teacher-event-list teacher-question-list">
               {session.assessment.items.map((item) => <li key={item.itemId ?? item.questionNumber}>
-                <strong>Question {item.questionNumber}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>Answer: {item.given ?? 'No recorded answer'} · Expected: {item.expected?.join(', ') || 'Unavailable'} · {item.verdict ?? 'Not yet reviewed'}</small>
+                <strong>Question {item.questionNumber}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>{recordedAnswerLine(item)}</small>
               </li>)}
             </ol>
           </section>}
-          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Assessment evidence</h3><p className="teacher-muted">Machine and effective assessment renderings are diagnostic evidence, not the printed thermal result receipt.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Machine assessment rendering" /></a><figcaption>Machine assessment</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current effective assessment rendering" /></a><figcaption>Current effective assessment</figcaption></figure></div></section>}
+          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Score record</h3><p className="teacher-muted">The first score and the current score are available here when they differ. The printed result receipt is above.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Original score record" /></a><figcaption>Original score</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current score record" /></a><figcaption>Current score</figcaption></figure></div></section>}
           {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
-          <section className="teacher-panel">
-            <h3 className="teacher-panel__title">Artifact lineage</h3>
-            {session?.artifacts?.length ? session.artifacts.map((artifact, index) => <div className="teacher-artifact-actions" key={artifact.artifactId}>
-              <strong>{artifact.kind === 'result-receipt' ? 'Result receipt' : artifact.title ?? session.assignment?.title ?? 'Historical document'}</strong>
-              <span className="teacher-muted">{artifact.availability === 'exact' ? 'Exact issued bytes retained' : artifact.availability === 'deterministic-replay' ? 'Replay from frozen issue inputs' : artifact.availability === 'semantic-reconstruction' ? 'Semantic reconstruction only' : 'Original unavailable'}</span>
-              {artifact.kind === 'result-receipt' && <span className="teacher-muted">{artifact.printed ? 'Printed at settlement' : `Not confirmed: ${artifact.printReason ?? 'printer unavailable'}`}</span>}
-              <ArtifactOriginal artifactId={artifact.artifactId} sessionId={sessionId} originalPdfUrl={artifact.originalPdfUrl} originalUrl={artifact.originalUrl} replayUrl={artifact.replayUrl} kind={artifact.kind} availability={artifact.availability ?? (artifact.exactBytesRetained === false ? 'deterministic-replay' : 'exact')} index={session.artifacts.length > 1 ? index : null} />
-              {artifact.availability === 'exact' && <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />}
-            </div>) : <CapabilityNotice>No worksheet artifact is linked to this session.</CapabilityNotice>}
+          <section className="teacher-panel teacher-session-materials">
+            <h3 className="teacher-panel__title">Issued materials and results</h3>
+            <p className="teacher-muted">These are the paper records from this lesson.</p>
+            {session?.artifacts?.length ? <div className="teacher-session-materials__cards">{session.artifacts.map((artifact) => <div className="teacher-session-materials__card" key={artifact.artifactId}>
+              <IssuedArtifactCard artifact={artifact} lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'} />
+              {artifact.availability === 'exact' && <div className="teacher-session-materials__print"><ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} /></div>}
+            </div>)}</div> : <CapabilityNotice>No issued worksheet or result receipt is linked to this session.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
           <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>

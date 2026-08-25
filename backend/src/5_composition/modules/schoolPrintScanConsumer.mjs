@@ -316,6 +316,10 @@ export function createSchoolPrintScanConsumer({
                     total,
                     percent,
                     sessionId: sectionOutcome.session.sessionId,
+                    subject: sectionOutcome.curriculum?.subjectId ?? null,
+                    course: sectionOutcome.curriculum?.courseId ?? null,
+                    unit: sectionOutcome.curriculum?.unitId ?? null,
+                    lesson: sectionOutcome.curriculum?.lessonId ?? null,
                   }).catch(() => {});
                   // Same outcome, second listener: the School panel ceremony
                   // (Slice D) needs this on the wire too. SAME session-sourced
@@ -356,6 +360,10 @@ export function createSchoolPrintScanConsumer({
                     pendingReview: sectionOutcome.session.pendingReview,
                     reasons: sectionOutcome.session.reasons,
                     items: sectionOutcome.session.items,
+                    subject: sectionOutcome.curriculum?.subjectId ?? null,
+                    course: sectionOutcome.curriculum?.courseId ?? null,
+                    unit: sectionOutcome.curriculum?.unitId ?? null,
+                    lesson: sectionOutcome.curriculum?.lessonId ?? null,
                   }).catch(() => {});
                   // Same outcome, second listener: the School panel ceremony
                   // (Slice D) needs this on the wire too.

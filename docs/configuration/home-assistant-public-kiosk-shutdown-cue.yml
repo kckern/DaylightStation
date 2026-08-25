@@ -10,3 +10,18 @@ public_kiosk_shutdown_cue:
         message: >-
           Lockdown started from {{ source | default('NFC') }}.
           Kiosks stay unavailable until {{ locked_until | default('the configured expiry') }}.
+
+school_worksheet_scan_notification:
+  alias: School worksheet scan notification
+  mode: queued
+  max: 20
+  sequence:
+    - service: notify.mobile_app_kc_phone
+      data:
+        title: "Worksheet {{ result | default('scan') | title }}"
+        message: >-
+          {{ student | default(learner_id | default('Unknown student')) }} —
+          {{ course | default('Course unknown') }} / {{ unit | default('Unit unknown') }} /
+          {{ lesson | default('Lesson unknown') }}.
+          Score: {{ earned | default('?') }}/{{ total | default('?') }}
+          ({{ percent | default('?') }}%).

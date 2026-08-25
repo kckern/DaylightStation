@@ -106,6 +106,31 @@ describe('courses', () => {
   });
 });
 
+describe('guest preview', () => {
+  it('derives a fresh day without reading or writing learner evidence', () => {
+    const ds = new FakeDatastore();
+    ds.appendEvent('milo', 'test-korean', {
+      at: new Date(AT).toISOString(), day: 9, seq: 1, rung: 'repetition', attributedTo: 'milo',
+    });
+    ds.writeProgress('milo', 'test-korean', {
+      corpus: 'test-korean', day: 9, daily_limit: 1, last_activity: new Date(AT).toISOString(),
+    });
+    const readProgress = vi.spyOn(ds, 'readProgress');
+    const readEvents = vi.spyOn(ds, 'readAllEvents');
+    const append = vi.spyOn(ds, 'appendEvent');
+    const write = vi.spyOn(ds, 'writeProgress');
+
+    const preview = makeService(ds).previewDay({ corpusId: 'test-korean', capabilities: EQUIPPED });
+
+    expect(preview).toMatchObject({ schema: 'school.sentence-ladder-guest-preview/v1', day: 1, dailyLimit: 5 });
+    expect(preview.queue.length).toBeGreaterThan(0);
+    expect(readProgress).not.toHaveBeenCalled();
+    expect(readEvents).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+});
+
 describe('guest rule', () => {
   it('refuses every operation without an identified learner', () => {
     const svc = makeService(new FakeDatastore());

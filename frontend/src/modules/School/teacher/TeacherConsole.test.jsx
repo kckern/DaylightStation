@@ -10,7 +10,6 @@ vi.mock('../schoolApi.js', () => {
     teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'felix', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
     lifecycleReview: vi.fn(async () => ({ ok: true, status: 200, data: { items: [] } })),
     learnerSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
-    printableWorksheetSessions: vi.fn(async () => ({ ok: true, status: 200, data: { sessions: [] } })),
     progress: vi.fn(async () => ({ ok: true, status: 200, data: { recentScores: [] } })),
     printPending: vi.fn(okEmpty), quizRequests: vi.fn(okEmpty), periods: vi.fn(okEmpty),
     assignments: vi.fn(async () => ({ ok: false, status: 404, data: null })),
@@ -105,7 +104,7 @@ describe('TeacherConsole workspace', () => {
     } });
     window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_1');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Machine grade').nextSibling.textContent).toBe('70%'));
+    await waitFor(() => expect(screen.getByText('Marked score').nextSibling.textContent).toBe('70%'));
     fireEvent.click(screen.getByRole('button', { name: 'Correct grade…' }));
     fireEvent.change(screen.getByLabelText('Effective percent'), { target: { value: '90' } });
     fireEvent.change(screen.getByLabelText('Grade correction reason'), { target: { value: 'Erased mark read incorrectly' } });
@@ -133,7 +132,7 @@ describe('TeacherConsole workspace', () => {
       } });
     window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_direct');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Machine grade').nextSibling.textContent).toBe('83%'));
+    await waitFor(() => expect(screen.getByText('Marked score').nextSibling.textContent).toBe('83%'));
     expect(teacherWorkspaceApi.session.mock.calls.length - priorSessionReads).toBe(1);
     expect(screen.getByRole('heading', { name: 'Atoms' })).toBeTruthy();
   });
@@ -149,7 +148,7 @@ describe('TeacherConsole workspace', () => {
     } });
     window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_2');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Paper issued')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Worksheet and questions')).toBeTruthy());
     expect(screen.getByText('Which state is Illinois?')).toBeTruthy();
     expect(screen.getByText('Question 19')).toBeTruthy();
     expect(screen.getByText('Answers and result')).toBeTruthy();

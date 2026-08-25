@@ -108,6 +108,18 @@ export function createLanguageRouter({ languageStudyService, studyGrants = null,
 
   router.get('/courses', wrap((req, res) => res.json(languageStudyService.listCourses())));
 
+  // A non-recording demonstration for teachers.  It is intentionally NOT a
+  // `/users/:userId/*` alias: that namespace carries a study grant and every
+  // mutating operation beneath it writes learner evidence.
+  router.get('/preview/:corpusId/day', wrap((req, res) => {
+    res.set('Cache-Control', 'private, no-store')
+      .set('X-School-Preview', 'guest-non-recording')
+      .json(languageStudyService.previewDay({
+        corpusId: req.params.corpusId,
+        capabilities: readCapabilities(req.query),
+      }));
+  }));
+
   router.get('/users/:userId/day', wrap((req, res) => {
     if (!authorized(req, res, req.query.corpus)) return;
     res.json(languageStudyService.getDay({

@@ -6,6 +6,7 @@ import { createLanguageRouter } from './language.mjs';
 function appWith({ verify = () => ({ ok: true }) } = {}) {
   const service = {
     listCourses: vi.fn(() => [{ id: 'korean' }]),
+    previewDay: vi.fn(() => ({ schema: 'school.sentence-ladder-guest-preview/v1', day: 1, queue: [] })),
     getDay: vi.fn(() => ({ day: 1, queue: [] })),
     logAttempt: vi.fn((value) => value), setPacing: vi.fn(() => ({})),
     rollDay: vi.fn(() => ({})), getHistory: vi.fn(() => ({ days: [] })),
@@ -26,6 +27,19 @@ describe('Sentence Ladder study grant boundary', () => {
     const { app } = appWith({ verify: () => ({ ok: false }) });
     expect((await request(app).get('/api/v1/school/sentence-ladder/courses')).status).toBe(200);
     expect((await request(app).get('/api/v1/school/sentence-ladder/audio/korean/1/KR')).status).toBe(404);
+  });
+
+  it('serves the guest preview without a study grant or learner route', async () => {
+    const { app, service } = appWith({ verify: () => ({ ok: false }) });
+    const res = await request(app)
+      .get('/api/v1/school/sentence-ladder/preview/korean/day?microphone=true&textInput=EN,KR');
+    expect(res.status).toBe(200);
+    expect(res.headers['x-school-preview']).toBe('guest-non-recording');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(service.previewDay).toHaveBeenCalledWith({
+      corpusId: 'korean', capabilities: { microphone: true, textInput: ['EN', 'KR'] },
+    });
+    expect(service.getDay).not.toHaveBeenCalled();
   });
 
   it('refuses a learner day without a valid header', async () => {

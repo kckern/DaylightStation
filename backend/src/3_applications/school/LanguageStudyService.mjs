@@ -265,6 +265,39 @@ export class SentenceLadderService {
   }
 
   /**
+   * A teacher's guest preview is deliberately a different operation from
+   * `getDay()`: it has no learner identity and reads no progress or event
+   * store.  The queue is a fresh, in-memory day-one example of this published
+   * corpus.  The browser may mark its local copy complete, but nothing it
+   * does can become School evidence.
+   */
+  previewDay({ corpusId, capabilities = {} }) {
+    const corpus = this.#requireCorpus(corpusId);
+    const gate = this.#gate();
+    const allowed = capabilitiesUnder(gate, capabilities);
+    const queue = buildDayQueue({
+      log: [], day: 1, dailyLimit: DEFAULT_DAILY_LIMIT,
+      corpusSize: corpus.size, capabilities: allowed,
+      languages: corpus.languages, playable: corpus.playable,
+      admission: null, rungChain: null,
+    });
+    return {
+      schema: 'school.sentence-ladder-guest-preview/v1',
+      corpus: { id: corpus.id, label: corpus.label, languages: corpus.languages, size: corpus.size },
+      day: 1,
+      dailyLimit: DEFAULT_DAILY_LIMIT,
+      chain: chainFor(allowed, corpus.languages),
+      creditChain: creditChain(null, corpus.languages),
+      missingCreditRungs: [],
+      enrollment: null,
+      gate: { level: gate.level, message: gateMessage(gate), missing: gate.missing },
+      queue: queue.map((entry) => this.#decorate(entry, corpus)),
+      summary: summarizeQueue(queue),
+      rollover: { roll: false, reason: 'guest-preview' },
+    };
+  }
+
+  /**
    * Attach everything a rung needs to render: the sentence text, and the
    * audio each prompt step should play — resolved from roles to concrete
    * language codes HERE, so no frontend component ever hardcodes EN or KR.

@@ -11,7 +11,7 @@ function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) 
     },
   };
   const loadSchoolConfig = () => (script ? { grading_hook: { script } } : {});
-  return { adapter: new SchoolGradingHookAdapter({ gateway, loadSchoolConfig }), calls };
+  return { adapter: new SchoolGradingHookAdapter({ gateway, loadSchoolConfig, resolveStudent: (id) => id === 'felix' ? 'Felix' : id }), calls };
 }
 
 const GRADED = {
@@ -28,9 +28,10 @@ describe('SchoolGradingHookAdapter', () => {
     expect(calls[0].domain).toBe('script');
     expect(calls[0].service).toBe('school_graded');
     expect(calls[0].data).toEqual({
-      result: 'graded', learner_id: 'felix', test_id: '4071314',
+      result: 'graded', learner_id: 'felix', student: 'Felix', test_id: '4071314',
       session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
       pending_review: null, reasons: [], items: [], code: null,
+      subject: null, course: null, unit: null, lesson: null,
     });
   });
 
@@ -38,9 +39,10 @@ describe('SchoolGradingHookAdapter', () => {
     const { adapter, calls } = makeAdapter();
     await adapter.fire({ result: 'unresolved', testId: '12123F', code: 'CARD_ID_UNREADABLE' });
     expect(calls[0].data).toEqual({
-      result: 'unresolved', learner_id: null, test_id: '12123F',
+      result: 'unresolved', learner_id: null, student: null, test_id: '12123F',
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: 'CARD_ID_UNREADABLE',
+      subject: null, course: null, unit: null, lesson: null,
     });
   });
 
@@ -53,6 +55,17 @@ describe('SchoolGradingHookAdapter', () => {
     expect(calls[0].data.pending_review).toBe(1);
     expect(calls[0].data.reasons).toEqual(['ambiguous']);
     expect(calls[0].data.items).toEqual(['q1']);
+  });
+
+  it('passes student, curriculum, and authoritative score metadata to Home Assistant', async () => {
+    const { adapter, calls } = makeAdapter();
+    await adapter.fire({
+      ...GRADED, student: 'Felix', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
+    });
+    expect(calls[0].data).toMatchObject({
+      student: 'Felix', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
+      earned: 5, total: 6, percent: 83,
+    });
   });
 
   it('accepts a bare service name without the script. prefix', async () => {
@@ -151,9 +164,10 @@ describe('SchoolGradingHookAdapter', () => {
     expect(res.ok).toBe(true);
     expect(calls).toHaveLength(1);
     expect(calls[0].data).toEqual({
-      result: null, learner_id: null, test_id: null,
+      result: null, learner_id: null, student: null, test_id: null,
       session_id: null, percent: null, earned: null, total: null,
       pending_review: null, reasons: [], items: [], code: null,
+      subject: null, course: null, unit: null, lesson: null,
     });
   });
 

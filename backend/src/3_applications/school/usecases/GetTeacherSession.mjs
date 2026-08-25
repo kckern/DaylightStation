@@ -65,6 +65,7 @@ export class GetTeacherSession {
       title: publishedWorksheet.title ?? unit?.title ?? null,
       createdAt: worksheet.issuedAt ?? state.createdAt ?? null,
       originalPdfUrl: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/worksheet.pdf`,
+      thumbnailUrl: `/api/v1/school/teacher/sessions/${encodeURIComponent(sessionId)}/worksheet.thumbnail.png`,
       exactBytesRetained: false,
       availability: 'deterministic-replay',
       rendererRevision: worksheet.rendererRevision ?? null,
@@ -109,6 +110,7 @@ export class GetTeacherSession {
       artifactIds: artifactRows.map((artifact) => artifact.artifactId),
       taxonomy: {
         subject: unit?.subject ?? course?.subject ?? null,
+        subjectIcon: unit?.subject ?? course?.subject ?? 'school',
         courseId, courseTitle: course?.title ?? courseId,
         moduleId: unit?.module ?? null, moduleTitle: module?.title ?? unit?.module ?? null,
         lessonId: state.unitId, lessonTitle: unit?.title ?? state.unitId,

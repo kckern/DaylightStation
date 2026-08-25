@@ -37,12 +37,14 @@ export function createSchoolRouter({
   schoolDatastore = null,
   regradeBankAttempts = null,
   getTeacherSession = null,
+  previewTeacherLessonMaterial = null,
   getLearnerTimeline = null,
   adjustSessionGrade = null,
   retractSessionGradeAdjustment = null,
   issuedArtifactStore = null,
   teacherAgendaDispatch = null,
   renderArtifactPostview = null,
+  renderWorksheetThumbnail = null,
   renderSessionResult = null,
   renderReceiptArtifact = null,
   sessionResultArtifacts = null,
@@ -1268,6 +1270,19 @@ export function createSchoolRouter({
       posterUrl: `/api/v1/school/teacher/curriculum/${encodeURIComponent(req.params.courseId)}/poster.jpg`,
     });
   }));
+  router.get('/teacher/curriculum/:courseId/lessons/:lessonId/preview.pdf', wrap(async (req, res) => {
+    if (!previewTeacherLessonMaterial) throw new EntityNotFoundError('teacher lesson preview', 'not configured');
+    const preview = await previewTeacherLessonMaterial.execute({
+      courseId: req.params.courseId,
+      lessonId: req.params.lessonId,
+      answerKey: req.query.answerKey === '1',
+    });
+    // Deliberately transient: never a session artifact, never printer output.
+    res.set('Cache-Control', 'private, no-store')
+      .set('X-School-Preview', 'teacher-non-recording')
+      .set('Content-Disposition', `inline; filename="preview-${slugify(preview.title)}.pdf"`)
+      .type('application/pdf').send(Buffer.from(preview.bytes));
+  }));
   router.get('/teacher/learners/:learnerId/courses/:courseId', wrap(async (req, res) => {
     if (!curriculumForSyllabus || !getLearnerTimeline) throw new EntityNotFoundError('learner course progress', 'not configured');
     const [units, timeline, exceptionRead] = await Promise.all([
@@ -1356,6 +1371,38 @@ export function createSchoolRouter({
       .set('X-School-Artifact', 'deterministic-replay')
       .set('Content-Disposition', `inline; filename="worksheet-${slugify(req.params.sessionId)}.pdf"`)
       .type('application/pdf').send(Buffer.from(result.bytes));
+  }));
+  // This is a small visual representation of the same frozen worksheet PDF,
+  // not a new artifact. The original/replay PDF remains the downloadable
+  // source of record.
+  router.get('/teacher/sessions/:sessionId/worksheet.thumbnail.png', wrap(async (req, res) => {
+    if (!getTeacherSession || !renderPrintDocument || !printDocumentsRepo || !renderWorksheetThumbnail) {
+      throw new EntityNotFoundError('worksheet preview', 'not configured');
+    }
+    const session = await getTeacherSession.execute({ sessionId: req.params.sessionId });
+    const assignment = session.assignment;
+    if (!assignment?.documentId || !assignment?.documentRevision) {
+      throw new EntityNotFoundError('worksheet artifact', req.params.sessionId);
+    }
+    const document = await printDocumentsRepo.getPublished(assignment.documentId, assignment.documentRevision);
+    if (!document) throw new EntityNotFoundError('published worksheet', assignment.documentId);
+    const instance = session.worksheetSnapshot;
+    const cardContext = instance?.omr?.cardId && instance?.omr?.rowRange
+      ? { ...buildReprintContext(instance), historicalCard: true }
+      : {
+        learnerId: instance?.learnerId ?? session.state?.learnerId ?? null,
+        learnerName: deriveLearnerName(instance?.learnerId ?? session.state?.learnerId ?? ''),
+        date: instance?.issuedAt ? deriveIssueDate(instance.issuedAt) : null,
+        sessionId: req.params.sessionId,
+      };
+    const rendered = await renderPrintDocument.execute({ document, context: {
+      ...cardContext,
+      passPercent: instance?.passingPercent ?? session.state?.gradedPassingPercent ?? null,
+    } });
+    const png = await renderWorksheetThumbnail(Buffer.from(rendered.bytes));
+    res.set('Cache-Control', 'private, no-store')
+      .set('X-School-Artifact', 'deterministic-replay-preview')
+      .type('image/png').send(png);
   }));
   router.get('/teacher/sessions/:sessionId/results/:kind.png', wrap(async (req, res) => {
     if (!getTeacherSession || !renderSessionResult) throw new EntityNotFoundError('rendered session result', 'not configured');

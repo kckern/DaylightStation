@@ -28,6 +28,21 @@ describe('teacher workspace routes', () => {
       .expect({ sessionId: 'ses_1', revision: 4 });
   });
 
+  it('renders a teacher lesson preview without issuing, printing, or creating an artifact', async () => {
+    const previewTeacherLessonMaterial = { execute: vi.fn(async (args) => ({
+      title: 'Illinois', bytes: Buffer.from('%PDF preview'), answerKey: args.answerKey,
+    })) };
+    await request(app({ previewTeacherLessonMaterial }))
+      .get('/api/v1/school/teacher/curriculum/atlas-us/lessons/illinois/preview.pdf')
+      .expect(200).expect('Content-Type', /application\/pdf/)
+      .expect('X-School-Preview', 'teacher-non-recording')
+      .expect('Cache-Control', 'private, no-store')
+      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('%PDF preview'))).toBe(0));
+    expect(previewTeacherLessonMaterial.execute).toHaveBeenCalledWith({
+      courseId: 'atlas-us', lessonId: 'illinois', answerKey: false,
+    });
+  });
+
   it('keeps grade writes preview-first and forwards explicit apply', async () => {
     const adjustSessionGrade = { execute: vi.fn(async (args) => ({ applied: args.apply, sessionId: args.sessionId })) };
     await request(app({ adjustSessionGrade })).post('/api/v1/school/teacher/sessions/ses_1/grade-adjustments')
@@ -52,6 +67,25 @@ describe('teacher workspace routes', () => {
       .expect(200).expect('Content-Type', /application\/pdf/).expect((response) => {
         expect(Buffer.compare(response.body, Buffer.from('%PDF exact'))).toBe(0);
       });
+  });
+
+  it('renders a read-only first-page thumbnail from the frozen worksheet replay', async () => {
+    const getTeacherSession = { execute: vi.fn(async () => ({
+      state: { learnerId: 'milo' }, assignment: { documentId: 'civilization/atlas', documentRevision: 3 },
+      worksheetSnapshot: { learnerId: 'milo', issuedAt: '2026-08-24T14:00:00.000Z' },
+    })) };
+    const printDocumentsRepo = { getPublished: vi.fn(async () => ({ id: 'atlas' })) };
+    const renderPrintDocument = { execute: vi.fn(async () => ({ bytes: Buffer.from('%PDF frozen worksheet') })) };
+    const renderWorksheetThumbnail = vi.fn(async (pdf) => {
+      expect(Buffer.compare(pdf, Buffer.from('%PDF frozen worksheet'))).toBe(0);
+      return Buffer.from('first page png');
+    });
+    await request(app({ getTeacherSession, printDocumentsRepo, renderPrintDocument, renderWorksheetThumbnail }))
+      .get('/api/v1/school/teacher/sessions/ses_1/worksheet.thumbnail.png')
+      .expect(200).expect('Content-Type', /image\/png/).expect('X-School-Artifact', 'deterministic-replay-preview')
+      .expect((response) => expect(Buffer.compare(response.body, Buffer.from('first page png'))).toBe(0));
+    expect(getTeacherSession.execute).toHaveBeenCalledWith({ sessionId: 'ses_1' });
+    expect(renderPrintDocument.execute).toHaveBeenCalledWith(expect.objectContaining({ document: { id: 'atlas' } }));
   });
 
   it('serves a retained receipt PNG and a separately labelled frozen replay', async () => {

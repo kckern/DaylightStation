@@ -7,6 +7,23 @@ import { useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
 import LearnerDay from './LearnerDay.jsx';
 import { teacherBaseFor, teacherSessionPath } from '../teacherUrl.js';
+import { LessonIdentity } from '../CurriculumIdentity.jsx';
+
+function humanDay(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : new Intl.DateTimeFormat(undefined, {
+    weekday: 'long', month: 'short', day: 'numeric',
+  }).format(date);
+}
+
+function outcomeLine(session) {
+  const score = session.effectiveScore;
+  if (score?.correctCount != null && score?.totalCount != null) {
+    return `${score.correctCount} of ${score.totalCount} correct${score.percent == null ? '' : ` · ${Math.round(score.percent)}%`}`;
+  }
+  return session.reviewStatus === 'pending_review' ? 'Awaiting review' : 'Not graded';
+}
 
 const SELF_LABEL = {
   not_yet: 'says: not yet', uncertain: 'says: not sure', ready: 'says: feels ready',
@@ -67,11 +84,11 @@ export default function RosterStrip({ rows, kids }) {
           )}
           {openId === row.learnerId && <div id={panelId} className="teacher-roster__details">
             {sessions.length > 0 && <div className="teacher-day-sessions">{sessions.map((session) => <a className="teacher-day-session" key={session.sessionId ?? session.unitId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}>
-              {session.posterUrl && <img src={session.posterUrl} alt="" />}
-              <span><strong>{session.lessonTitle ?? session.title ?? 'Lesson'}</strong><small>{[session.subject, session.courseTitle, session.moduleTitle].filter(Boolean).join(' → ')}</small><small>{session.studyDay ?? ''} · {session.effectiveScore?.percent == null ? 'Not graded' : `${session.effectiveScore.percent}%`} · {session.reviewStatus ?? session.state}</small></span>
+              <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title} posterUrl={session.posterUrl} compact />
+              <small className="teacher-day-session__outcome">{[humanDay(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
             </a>)}</div>}
             {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base)}><strong>{session.lessonTitle ?? 'Lesson'}</strong><span>Work from {session.studyDay} · processed {session.processedAt ? new Date(session.processedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'today'}</span></a>)}</section>}
-            <LearnerDay learnerId={row.learnerId} />
+            <LearnerDay sessions={sessions} />
           </div>}
           </>; })()}
         </div>

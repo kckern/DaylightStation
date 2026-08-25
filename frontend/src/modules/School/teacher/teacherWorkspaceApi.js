@@ -48,6 +48,9 @@ export const teacherWorkspaceApi = {
   worksheetPdf: (sessionId) => requestBlob(`/sessions/${encodeURIComponent(sessionId)}/worksheet.pdf`),
   course: (courseId) => request(`/curriculum/${encodeURIComponent(courseId)}`),
   lesson: (courseId, lessonId) => request(`/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`),
+  lessonPreviewUrl: (courseId, lessonId, { answerKey = false } = {}) => (
+    `${BASE}/curriculum/${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}/preview.pdf${answerKey ? '?answerKey=1' : ''}`
+  ),
   learnerCourse: (learnerId, courseId) => request(`/learners/${encodeURIComponent(learnerId)}/courses/${encodeURIComponent(courseId)}`),
   curriculumExceptions: () => request('/curriculum-exceptions'),
   answerSheet: (cardId) => request(`/answer-sheets/${encodeURIComponent(cardId)}`),

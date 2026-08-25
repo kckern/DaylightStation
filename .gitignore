@@ -8,6 +8,7 @@ backend/node_modules
 *.yml
 !docs/configuration/public-kiosk-shutdown.yml
 !docs/configuration/home-assistant-public-kiosk-shutdown-cue.yml
+!docs/configuration/school-grading-hook.yml
 !docker-compose.test.yml
 /shared/gaming/fixtures/
 /shared/presentation/fixtures/

@@ -34,12 +34,16 @@ describe('GetTeacherSession artifact read-through', () => {
 
     expect(result).toMatchObject({
       schema: 'school.teacher-session/v4',
-      taxonomy: { lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States', moduleTitle: 'United States Regions and States' },
+      taxonomy: {
+        subject: 'Civilization', lessonTitle: 'Illinois', courseTitle: 'Young People’s Atlas of the United States',
+        moduleTitle: 'United States Regions and States', posterUrl: '/api/v1/school/teacher/curriculum/young-peoples-atlas-us/poster.jpg',
+      },
       assignment: { documentRevision: 'frozen-rev', questions: [{ prompt: 'Which state is Illinois?' }] },
       assessment: { items: [{ given: 'Illinois', verdict: 'correct' }] },
       artifacts: [{ kind: 'assignment', origin: 'published-document', exactBytesRetained: false }],
     });
     expect(result.artifacts[0].originalPdfUrl).toContain('/sessions/ses_illinois/worksheet.pdf');
+    expect(result.artifacts[0].thumbnailUrl).toContain('/sessions/ses_illinois/worksheet.thumbnail.png');
     expect(getPublished).toHaveBeenCalledWith('civilization/young-peoples-atlas-us/ws-ses-illinois', 'frozen-rev');
   });
 });

@@ -7,10 +7,13 @@
  */
 import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
+import { languageApi } from '../../Programs/SentenceLadder/languageApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
 import { labelize } from '../labelize.js';
+import { teacherBaseFor } from '../teacherUrl.js';
+import { teacherWorkspaceApi } from '../teacherWorkspaceApi.js';
 
 function PassOverride({ unit, override, onSaved }) {
   const { run, busy, errors } = useTeacherWrite({ panel: 'pass-override' });
@@ -55,12 +58,14 @@ function PassOverride({ unit, override, onSaved }) {
 }
 
 export default function CurriculumBrowser() {
+  const base = teacherBaseFor(globalThis.location?.pathname ?? '');
   const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), {
     panel: 'curriculum',
     notFoundAs: 'unavailable',
     isEmpty: (d) => !(d?.units ?? []).length,
   });
   const overrides = usePanelFetch(() => schoolApi.passOverrides(), { panel: 'pass-overrides', nullAs: 'empty' });
+  const languageCourses = usePanelFetch(() => languageApi.courses(), { panel: 'sentence-ladder-preview', nullAs: 'empty' });
   const overrideMap = overrides.data?.overrides ?? {};
 
   const units = catalog.data?.units ?? [];
@@ -103,6 +108,11 @@ export default function CurriculumBrowser() {
         {(u.grades ?? []).length > 0 && (
           <p className="teacher-curriculum__grades">grades: {u.grades.join(', ')}</p>
         )}
+        {u.hasDocument && u.courseId && (
+          <a className="teacher-curriculum__preview" href={teacherWorkspaceApi.lessonPreviewUrl(u.courseId, u.unitId)} target="_blank" rel="noreferrer">
+            Preview worksheet
+          </a>
+        )}
       </details>
     </li>
   );
@@ -119,7 +129,7 @@ export default function CurriculumBrowser() {
         {[...byCourse.entries()].map(([courseId, list]) => (
           <div key={courseId} className="teacher-curriculum__course">
             <h3>
-              <a href={`/school/teacher/curriculum/${encodeURIComponent(courseId)}`}>{labelize(courseId)}</a>
+              <a href={`${base}/curriculum/${encodeURIComponent(courseId)}`}>{list.find((unit) => unit.courseTitle)?.courseTitle ?? 'Course'}</a>
               <a
                 className="teacher-reportcard__pdf"
                 href={`/api/v1/school/syllabus?courseId=${encodeURIComponent(courseId)}&format=pdf`}
@@ -137,6 +147,21 @@ export default function CurriculumBrowser() {
             <h3>Standalone</h3>
             <ul>{standalone.map(row)}</ul>
           </div>
+        )}
+        {languageCourses.state === 'ready' && (languageCourses.data ?? []).length > 0 && (
+          <section className="teacher-curriculum__sandbox" aria-label="Guest previews">
+            <h3>Try as guest</h3>
+            <p>Open a Sentence Ladder lesson without a learner, history, or saved work.</p>
+            <ul>
+              {languageCourses.data.map((course) => (
+                <li key={course.id}>
+                  <a className="teacher-curriculum__preview" href={`/school/sentence-ladder-preview/${encodeURIComponent(course.id)}`} target="_blank" rel="noreferrer">
+                    Try {course.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
     </PanelFrame>

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SentenceLadderProgram from './SentenceLadderProgram.jsx';
 
 const dayMock = vi.fn();
+const previewDayMock = vi.fn();
 const logMock = vi.fn();
 const rollMock = vi.fn();
 const pacingMock = vi.fn();
@@ -29,6 +30,7 @@ vi.mock('./languageApi.js', () => ({
   languageApi: {
     courses: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     day: (...a) => dayMock(...a),
+    previewDay: (...a) => previewDayMock(...a),
     log: (...a) => logMock(...a),
     roll: (...a) => rollMock(...a),
     pacing: (...a) => pacingMock(...a),
@@ -97,6 +99,20 @@ describe('identity', () => {
     render(<SentenceLadderProgram studyGrant="test-grant" userId={null} corpusId="glossika-korean" />);
     expect(await screen.findByText(/Sign in to study/i)).toBeTruthy();
     expect(dayMock).not.toHaveBeenCalled();
+  });
+
+  it('runs a guest preview without a learner call, grant, or saved attempt', async () => {
+    previewDayMock.mockResolvedValue(dayPayload({ queue: [entry(1, 'dictation')], chain: ['dictation'] }));
+    render(<SentenceLadderProgram corpusId="glossika-korean" preview />);
+
+    expect(await screen.findByText(/Guest preview — nothing is saved/i)).toBeTruthy();
+    expect(dayMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Type what you hear/i), { target: { value: '한국어 1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await screen.findByText(/Preview complete/i);
+    expect(logMock).not.toHaveBeenCalled();
   });
 });
 

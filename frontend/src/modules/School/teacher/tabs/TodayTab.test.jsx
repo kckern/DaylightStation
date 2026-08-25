@@ -12,19 +12,15 @@ vi.mock('../teacherWorkspaceApi.js', () => ({ teacherWorkspaceApi: {
   unlock: vi.fn(async (userId) => ({ ok: true, status: 200, data: { active: true, userId } })),
   lock: vi.fn(async () => ({ ok: true, status: 200, data: { locked: true } })),
   stepUp: vi.fn(async () => ({ ok: true, status: 200, data: { grantToken: 'grant' } })),
+  session: vi.fn(),
 } }));
 
 vi.mock('../../schoolApi.js', () => ({
   schoolApi: {
-    teacherToday: vi.fn(),
+    teacherDay: vi.fn(),
     lifecycleReview: vi.fn(),
-    learnerSessions: vi.fn(),
-    printableWorksheetSessions: vi.fn(),
-    composeWorksheets: vi.fn(),
-    progress: vi.fn(),
     printPending: vi.fn(),
     quizRequests: vi.fn(),
-    agendaPreview: vi.fn(),
     teachers: vi.fn(),
     resolveReview: vi.fn(),
     printApprove: vi.fn(),
@@ -57,23 +53,20 @@ beforeEach(() => {
   schoolApi.printApprove.mockResolvedValue(ok({ decision: 'printed' }));
   schoolApi.printDeny.mockResolvedValue(ok({ decision: 'denied' }));
   schoolApi.quizRequestDismiss.mockResolvedValue(ok({ dismissed: true }));
-  schoolApi.teacherToday.mockResolvedValue(ok([
-    { learnerId: 'felix', attemptsToday: 7, correctToday: 5, sessionsToday: [{ unitId: 'math.01', state: 'graded' }], pendingReview: 2 },
+  schoolApi.teacherDay.mockResolvedValue(ok([
+    { learnerId: 'felix', effectiveScoreTotals: { correct: 5, total: 7 }, sessions: [{ sessionId: 'ses_1', lessonTitle: 'Illinois', subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', posterUrl: '/course-poster.jpg', studyDay: '2026-08-24', effectiveScore: { correctCount: 5, totalCount: 7, percent: 71 }, state: 'graded' }], pendingReview: 2 },
     { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 },
   ]));
   schoolApi.lifecycleReview.mockResolvedValue(ok({ items: [
     { sessionId: 'ses_1', itemId: 'q3', learnerId: 'felix', prompt: 'Explain photosynthesis', given: 'plants eat light', questionNumber: 3 },
   ] }));
-  schoolApi.learnerSessions.mockResolvedValue(ok({ sessions: [{ sessionId: 'ses_1', state: 'graded', unitId: 'math.01' }] }));
-  schoolApi.printableWorksheetSessions.mockResolvedValue(ok({ sessions: [
-    { sessionId: 'ses_print_1', title: 'Fractions', subject: 'math', courseId: 'fractions', state: 'created' },
-    { sessionId: 'ses_print_2', title: 'Atoms', subject: 'science', courseId: 'chemistry', state: 'created' },
-  ] }));
-  schoolApi.composeWorksheets.mockResolvedValue(ok({ parts: [{ compositionId: 'composed/milo/ws-123' }] }));
-  schoolApi.progress.mockResolvedValue(ok({ recentScores: [] }));
-  schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
-    { subject: 'science', servedToday: false, next: { title: 'Creature Basics' } },
-  ] }));
+  teacherWorkspaceApi.session.mockResolvedValue(ok({
+    sessionId: 'ses_1', taxonomy: { subject: 'civilization', courseTitle: 'United States Regions and States', moduleTitle: 'Midwest', lessonTitle: 'Illinois', posterUrl: '/course-poster.jpg' },
+    artifacts: [
+      { artifactId: 'worksheet-1', kind: 'assignment', availability: 'deterministic-replay', originalPdfUrl: '/issued/illinois.pdf' },
+      { artifactId: 'receipt-1', kind: 'result-receipt', availability: 'exact', originalUrl: '/issued/illinois-receipt.png' },
+    ],
+  }));
   schoolApi.printPending.mockResolvedValue(ok([
     { id: 'pr_1', userId: 'felix', printableId: 'state-capitals', label: 'US State Capitals', pages: 6, copies: 1 },
   ]));
@@ -90,25 +83,18 @@ describe('TodayTab', () => {
     expect(screen.getByText(/5\s*\/\s*7/)).toBeTruthy(); // correct/attempts
   });
 
-  it('drill-in fetches the learner sessions with the study-day window', async () => {
+  it('drill-in fetches the canonical session and exposes its issued files', async () => {
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
-    await waitFor(() => expect(schoolApi.learnerSessions).toHaveBeenCalledWith('felix', { window: 'today' }));
-  });
-
-  it('a claimed teacher can select only printable current sessions and combine them', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
-    mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
-    await waitFor(() => expect(schoolApi.printableWorksheetSessions).toHaveBeenCalledWith('felix'));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Fractions/ }));
-    fireEvent.click(screen.getByRole('checkbox', { name: /Atoms/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Print 2 selected worksheets/ }));
-    await waitFor(() => expect(schoolApi.composeWorksheets).toHaveBeenCalledWith({
-      sessionIds: ['ses_print_1', 'ses_print_2'], issuedBy: 'kckern', pin: null,
-    }));
+    await waitFor(() => expect(teacherWorkspaceApi.session).toHaveBeenCalledWith('ses_1'));
+    expect(screen.getByText('Illinois')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open worksheet' }).getAttribute('href')).toBe('/issued/illinois.pdf');
+    expect(screen.getByRole('link', { name: 'Download PDF' }).getAttribute('download')).toBe('');
+    expect(screen.getByRole('link', { name: 'Open receipt' }).getAttribute('href')).toBe('/issued/illinois-receipt.png');
+    expect(screen.queryByText(/Print selected worksheets/i)).toBeNull();
+    expect(screen.queryByText(/No printable lessons/i)).toBeNull();
+    expect(screen.queryByText(/^assessment$/i)).toBeNull();
   });
 
   it('one failing panel leaves its siblings rendered', async () => {
@@ -121,7 +107,7 @@ describe('TodayTab', () => {
 
   it('all lifecycle panels unavailable -> exactly one banner, no per-panel noise', async () => {
     schoolApi.lifecycleReview.mockResolvedValue(fail(404));
-    schoolApi.teacherToday.mockResolvedValue(ok([])); // empty beside a non-empty roster = unwired tell
+    schoolApi.teacherDay.mockResolvedValue(ok([])); // empty beside a non-empty roster = unwired tell
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getAllByText(/lifecycle is not enabled/i).length).toBe(1));
     expect(screen.queryByText(/couldn.t load/i)).toBe(null);
@@ -240,14 +226,6 @@ describe('wave-2 mutations', () => {
 });
 
 describe('advocacy wave 6A', () => {
-  it('the drill-in shows what the kid SHOULD do today, from the dry-run plan', async () => {
-    sessionStorage.setItem('school-teacher-claim', 'kckern');
-    mount(<TodayTab kids={KIDS} />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /Felix/ })).toBeTruthy());
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
-    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenCalledWith('felix'));
-    await waitFor(() => expect(screen.getByText('Creature Basics')).toBeTruthy());
-  });
 
   it('review items show rubric, reason, and wait-age', async () => {
     sessionStorage.setItem('school-teacher-claim', 'kckern');

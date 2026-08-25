@@ -69,6 +69,7 @@ vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
   languageApi: {
     courses: (...a) => coursesMock(...a),
     day: (...a) => dayMock(...a),
+    previewDay: vi.fn(async () => ({ ok: true, status: 200, data: null })),
     log: vi.fn(), roll: vi.fn(), pacing: vi.fn(), history: vi.fn(), recording: vi.fn(),
     audioUrl: () => '', recordingUrl: () => '',
   },

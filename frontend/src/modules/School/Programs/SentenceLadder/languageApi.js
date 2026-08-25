@@ -43,6 +43,11 @@ const enc = encodeURIComponent;
 export const languageApi = {
   courses: () => req('/courses'),
 
+  previewDay: (corpus, capabilities, signal) => {
+    const params = capabilityQuery(capabilities);
+    return req(`/preview/${enc(corpus)}/day?${params}`, undefined, undefined, null, signal);
+  },
+
   day: (userId, corpus, capabilities, studyGrant, signal) => {
     const params = capabilityQuery(capabilities);
     params.set('corpus', corpus);
