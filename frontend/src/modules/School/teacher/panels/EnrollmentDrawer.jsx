@@ -5,7 +5,7 @@
  * re-materializing is the explicit act, and it is refused server-side while any
  * session on this course is open.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
 import { teacherLog } from '../teacherLog.js';
@@ -17,6 +17,21 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
   // Structural changes to a child's program are two-tap (the module's
   // arm→confirm house pattern): first tap names the consequence, second acts.
   const [armed, setArmed] = useState(null); // 'enroll' | 'rematerialize' | 'unenroll' | null
+  // A real dialog (PinPrompt's pattern): focus lands inside on open, Tab
+  // wraps, Escape closes.
+  const drawerRef = useRef(null);
+  const closeRef = useRef(null);
+  useEffect(() => { closeRef.current?.focus(); }, []);
+  const onKeyDown = (event) => {
+    if (event.key === 'Escape') { onClose?.(); return; }
+    if (event.key !== 'Tab') return;
+    const focusables = [...(drawerRef.current?.querySelectorAll('button, select, input, [tabindex]:not([tabindex="-1"])') ?? [])]
+      .filter((el) => !el.disabled);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
 
   // These are state changes, not fetches — and the syllabus is the whole point
   // of the change, so it travels with them. `teacher.write.*` filtered to one
@@ -36,10 +51,10 @@ export default function EnrollmentDrawer({ learner, courseId, courseTitle = 'Cou
   }), { onSuccess: after('enrollment-removed') });
 
   return (
-    <aside className="teacher-drawer" data-testid="enrollment-drawer" role="dialog" aria-label={`${learner.name} — ${courseTitle}`}>
+    <aside className="teacher-drawer" data-testid="enrollment-drawer" role="dialog" aria-modal="true" aria-label={`${learner.name} — ${courseTitle}`} ref={drawerRef} onKeyDown={onKeyDown}>
       <header className="teacher-drawer__head">
         <h3>{learner.name} · {courseTitle}</h3>
-        <button type="button" onClick={onClose} aria-label="Close">✕</button>
+        <button type="button" onClick={onClose} aria-label="Close" ref={closeRef}>✕</button>
       </header>
 
       {cell?.enrolled && (
