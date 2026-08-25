@@ -11,6 +11,31 @@ import { useTeacherWrite } from '../useTeacherWrite.js';
 import PanelFrame from './PanelFrame.jsx';
 import { teacherDate } from '../teacherDates.js';
 
+// Consecutive verdicts from the same session collapse into one expandable
+// summary row; notes always stand alone. "engine" is a machine id, not a
+// person — it never renders as an attribution.
+function groupFeedback(rows) {
+  const groups = [];
+  for (const item of rows) {
+    const key = item.kind === 'note' ? `note:${item.itemId}` : `ses:${item.sessionId}`;
+    const last = groups.at(-1);
+    if (last && last.key === key && last.kind !== 'note') last.items.push(item);
+    else groups.push({ key, kind: item.kind ?? 'verdict', items: [item] });
+  }
+  return groups;
+}
+
+function summaryLine(group) {
+  const correct = group.items.filter((item) => item.verdict === 'correct').length;
+  const title = group.items.find((item) => item.unitTitle)?.unitTitle ?? 'Lesson';
+  return `${correct} of ${group.items.length} correct · ${title}`;
+}
+
+function attribution(item) {
+  const by = item.gradedBy && item.gradedBy !== 'engine' ? ` — ${item.gradedBy}` : '';
+  return `${teacherDate(item.gradedAt)}${by}`;
+}
+
 export default function FeedbackNotes({ learnerId, learnerName }) {
   const [limit, setLimit] = useState(20);
   const feedback = usePanelFetch(() => schoolApi.reviewLearner(learnerId, { limit }), {
@@ -29,19 +54,38 @@ export default function FeedbackNotes({ learnerId, learnerName }) {
       emptyCopy={`No feedback delivered to ${learnerName ?? learnerId} yet.`}
     >
       <ul className="teacher-feedback">
-        {(Array.isArray(feedback.data) ? feedback.data : []).map((item) => (
-          <li key={`${item.sessionId ?? 'note'}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict ?? 'note'}>
-            <span className="teacher-feedback__verdict">{item.kind === 'note' ? 'note' : item.verdict}</span>
-            <span className="teacher-feedback__unit">{item.unitTitle ?? item.title ?? (item.kind === 'note' ? '' : 'Lesson feedback')}</span>
-            <span className="teacher-feedback__meta">
-              {teacherDate(item.gradedAt)}{item.gradedBy ? ` — ${item.gradedBy}` : ''}
-            </span>
-            {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
-            {item.kind === 'note' && (
-              <button type="button" className="teacher-feedback__retract" disabled={busy === item.itemId} onClick={() => retract(item)}>Retract</button>
-            )}
-            {errors[item.itemId] && <p className="teacher-panel__error">{errors[item.itemId]}</p>}
-          </li>
+        {groupFeedback(Array.isArray(feedback.data) ? feedback.data : []).map((group) => (
+          group.kind === 'note' || group.items.length === 1 ? group.items.map((item) => (
+            <li key={`${item.sessionId ?? 'note'}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict ?? 'note'}>
+              <span className="teacher-feedback__verdict">{item.kind === 'note' ? 'note' : item.verdict}</span>
+              <span className="teacher-feedback__unit">{item.unitTitle ?? item.title ?? (item.kind === 'note' ? '' : 'Lesson feedback')}</span>
+              <span className="teacher-feedback__meta">{attribution(item)}</span>
+              {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
+              {item.kind === 'note' && (
+                <button type="button" className="teacher-feedback__retract" disabled={busy === item.itemId} onClick={() => retract(item)}>Retract</button>
+              )}
+              {errors[item.itemId] && <p className="teacher-panel__error">{errors[item.itemId]}</p>}
+            </li>
+          )) : (
+            <li key={group.key} className="teacher-feedback__group">
+              <details>
+                <summary>
+                  <span className="teacher-feedback__unit">{summaryLine(group)}</span>
+                  <span className="teacher-feedback__meta">{teacherDate(group.items[0].gradedAt)}</span>
+                </summary>
+                <ul>
+                  {group.items.map((item) => (
+                    <li key={`${item.sessionId}:${item.itemId}`} className="teacher-feedback__row" data-verdict={item.verdict}>
+                      <span className="teacher-feedback__verdict">{item.verdict}</span>
+                      <span className="teacher-feedback__unit">{item.prompt ?? item.unitTitle ?? ''}</span>
+                      <span className="teacher-feedback__meta">{attribution(item)}</span>
+                      {item.note && <blockquote className="teacher-feedback__note">{item.note}</blockquote>}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </li>
+          )
         ))}
       </ul>
       {Array.isArray(feedback.data) && feedback.data.length >= limit && limit < 100 && (
