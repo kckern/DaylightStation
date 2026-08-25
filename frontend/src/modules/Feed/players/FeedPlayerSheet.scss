@@ -19,7 +19,7 @@
   left: 0;
   right: 0;
   z-index: 201;
-  background: #1a1b1e;
+  background: var(--feed-surface-2, #1e2125);
   border-radius: 16px 16px 0 0;
   transform: translateY(100%);
   visibility: hidden;
@@ -82,7 +82,7 @@
     width: 40px;
     height: 4px;
     border-radius: 2px;
-    background: #555;
+    background: var(--feed-text-3, #71787f);
   }
 
   @media (min-width: 900px) {
@@ -107,8 +107,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #25262b;
-  color: #5c636a;
+  background: var(--feed-surface-3, #262a2f);
+  color: var(--feed-text-3, #71787f);
 }
 
 .sheet-title {
@@ -128,7 +128,7 @@
 
 .sheet-source {
   font-size: 0.8rem;
-  color: #5c636a;
+  color: var(--feed-text-3, #71787f);
   text-transform: uppercase;
   font-weight: 600;
   text-align: center;
@@ -146,13 +146,13 @@
 .sheet-scrubber-track {
   position: relative;
   height: 4px;
-  background: #333;
+  background: var(--feed-surface-3, #262a2f);
   border-radius: 2px;
 }
 
 .sheet-scrubber-fill {
   height: 100%;
-  background: #228be6;
+  background: var(--feed-accent, #4dabf7);
   border-radius: 2px;
   width: 0%;
   position: relative;
@@ -180,7 +180,7 @@
   display: flex;
   justify-content: space-between;
   font-size: 0.7rem;
-  color: #5c636a;
+  color: var(--feed-text-3, #71787f);
   font-variant-numeric: tabular-nums;
   margin-top: 4px;
 }
@@ -235,9 +235,9 @@
 
 .sheet-speed-pill {
   background: transparent;
-  border: 1px solid #5c636a;
+  border: 1px solid var(--feed-border-strong, rgba(255,255,255,0.16));
   border-radius: 16px;
-  color: #868e96;
+  color: var(--feed-text-3, #71787f);
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
@@ -246,11 +246,11 @@
   min-width: 44px;
   min-height: 32px;
 
-  &:hover { color: #fff; border-color: #868e96; }
+  &:hover { color: #fff; border-color: var(--feed-text-3, #71787f); }
 
   &.active {
-    background: #228be6;
-    border-color: #228be6;
+    background: var(--feed-accent, #4dabf7);
+    border-color: var(--feed-accent, #4dabf7);
     color: #fff;
   }
 }
@@ -269,7 +269,7 @@
 }
 
 .sheet-volume-icon {
-  color: #868e96;
+  color: var(--feed-text-3, #71787f);
   flex-shrink: 0;
   cursor: pointer;
   min-width: 40px;
@@ -285,7 +285,7 @@
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  background: #333;
+  background: var(--feed-surface-3, #262a2f);
   border-radius: 2px;
   outline: none;
 

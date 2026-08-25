@@ -1,35 +1,67 @@
+@use '../feedMixins' as *;
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;600;700&display=swap');
+
+// =========================================================================
+// Headlines — a wire-terminal: dense columns of single-line condensed
+// headlines under colored outlet mastheads. Density is the identity;
+// nothing may reserve space at a headline's expense.
+// =========================================================================
+
 .headlines-view {
-  padding: 0.75rem;
-  background: #111214;
-  color: #ccc;
-  min-height: 100vh;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100%;
+  padding: 0.6rem 0.75rem 2rem;
+  background: var(--feed-canvas, #0f1113);
+  color: var(--feed-text-2, #a9b1b9);
   color-scheme: dark;
 }
+
+// ---- Toolbar: one quiet line ----
 
 .headlines-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
   margin-bottom: 0.5rem;
+
+  > div {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+  }
 }
 
 .headlines-view-switcher {
   display: flex;
-  gap: 0.35rem;
-  margin-bottom: 0.3rem;
+  gap: 0.3rem;
 
   button {
-    min-height: 40px;
-    border: 1px solid #444;
-    border-radius: 999px;
-    background: #202226;
-    color: #bbb;
-    padding: 0.4rem 0.9rem;
-    cursor: pointer;
+    @include feed-chip;
+    min-height: 30px;
+    padding: 0.2rem 0.7rem;
+    font-size: 0.75rem;
+    color: var(--feed-text-2);
   }
 
-  button.active { background: #e9ecef; color: #111; border-color: #e9ecef; }
+  button.active { @include feed-chip-active; }
+}
+
+.headlines-meta {
+  color: var(--feed-text-3);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headlines-harvest-btn {
+  @include feed-chip;
+  min-height: 30px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  color: var(--feed-text-2);
+  flex-shrink: 0;
 }
 
 .headlines-error {
@@ -37,87 +69,19 @@
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  border: 1px solid #8a4c4c;
-  border-radius: 0.5rem;
-  background: #402626;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--feed-danger-border);
+  border-radius: var(--feed-radius-md);
+  background: var(--feed-danger-bg);
+  color: var(--feed-danger-text);
+  font-size: 0.85rem;
 
-  button { min-height: 40px; }
-}
-
-.headline-briefing {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.briefing-story {
-  border: 1px solid #35383d;
-  border-radius: 0.75rem;
-  background: #1a1b1e;
-  padding: 1rem;
-
-  &--lead { grid-column: 1 / -1; padding: clamp(1.2rem, 3vw, 2rem); }
-  h2 { margin: 0.25rem 0 0.65rem; font-size: clamp(1.2rem, 2.5vw, 1.65rem); line-height: 1.22; }
-  &--lead h2 { font-size: clamp(1.75rem, 4vw, 3rem); max-width: 22ch; }
-  a { color: #f5f5f5; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
-  p { max-width: 72ch; color: #c9cdd1; font-size: 1rem; line-height: 1.55; }
-  summary { cursor: pointer; color: #9ec5fe; min-height: 40px; padding-top: 0.5rem; }
-  li { margin: 0.55rem 0; line-height: 1.4; }
-}
-
-.briefing-story__eyebrow { color: #adb5bd; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-.briefing-story__new { color: #74c0fc; }
-
-.briefing-story__timeline {
-  ol { list-style: none; margin: 0.25rem 0 0; padding: 0 0 0 0.75rem; border-left: 2px solid #343a40; }
-  li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 0.5rem; }
-  time { color: #868e96; font-size: 0.78rem; white-space: nowrap; }
-}
-
-.briefing-story__event {
-  border-radius: 999px;
-  background: #343a40;
-  color: #ced4da;
-  padding: 0.08rem 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  text-transform: uppercase;
-
-  &--update { background: #184d74; color: #d0ebff; }
-  &--correction { background: #6b3c00; color: #ffec99; }
-}
-
-@media (max-width: 520px) {
-  .briefing-story__timeline li { grid-template-columns: auto minmax(0, 1fr); }
-  .briefing-story__timeline a { grid-column: 1 / -1; }
-}
-
-.headlines-meta {
-  color: #777;
-  font-size: 0.8rem;
-}
-
-.headlines-harvest-btn {
-  min-height: 40px;
-  padding: 0.4rem 0.9rem;
-  border: 1px solid #5c636a;
-  border-radius: 999px;
-  background: #25272a;
-  color: #f1f3f5;
-  cursor: pointer;
-  font-size: 0.8rem;
-  font-family: inherit;
-
-  &:hover { background: #343a40; border-color: #74c0fc; }
-  &:disabled { opacity: 0.4; cursor: default; }
+  button { @include feed-chip; min-height: 32px; }
 }
 
 // ============================================================
-// Matrix grid
+// Matrix grid (Outlets view — the default)
 // ============================================================
 
 .headlines-matrix {
@@ -161,8 +125,8 @@
 
 .source-cell {
   flex: 1;
-  background: #1a1b1e;
-  border-radius: 6px;
+  background: var(--feed-surface-1, #17191c);
+  border-radius: var(--feed-radius-sm, 4px);
   overflow: visible;
   min-width: 0;
 
@@ -171,13 +135,13 @@
   }
 }
 
-// Colored header bar (now an <a> link)
+// Colored masthead bar
 .source-cell-header {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   padding: 0.3rem 0.5rem;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--feed-radius-sm, 4px) var(--feed-radius-sm, 4px) 0 0;
   text-decoration: none;
   color: inherit;
 }
@@ -194,8 +158,8 @@
   width: 14px;
   height: 14px;
   border-radius: 2px;
-  background: rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.7);
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 0.55rem;
   font-weight: 700;
   flex-shrink: 0;
@@ -205,7 +169,7 @@
   flex: 1;
   font-size: 0.72rem;
   font-weight: 600;
-  color: rgba(255,255,255,0.9);
+  color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -214,37 +178,37 @@
 
 .source-meta {
   font-size: 0.6rem;
-  color: rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.4);
   flex-shrink: 0;
 }
 
 .source-refresh-btn {
   background: none;
   border: none;
-  color: rgba(255,255,255,0.35);
+  color: rgba(255, 255, 255, 0.35);
   cursor: pointer;
   font-size: 0.8rem;
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 28px;
+  min-height: 24px;
   padding: 0;
   line-height: 1;
   flex-shrink: 0;
 
-  &:hover { color: rgba(255,255,255,0.7); }
+  &:hover { color: rgba(255, 255, 255, 0.7); }
   &:disabled { opacity: 0.3; cursor: default; }
 }
 
 .source-refresh-error {
   padding: 0.45rem 0.6rem;
-  background: #402626;
-  color: #ffe3e3;
+  background: var(--feed-danger-bg);
+  color: var(--feed-danger-text);
   font-size: 0.75rem;
 
-  button { border: 0; background: transparent; color: #74c0fc; text-decoration: underline; cursor: pointer; }
+  button { border: 0; background: transparent; color: var(--feed-accent-strong); text-decoration: underline; cursor: pointer; }
 }
 
 // ============================================================
-// Headlines list
+// Headlines list — single-line, condensed, nothing reserved
 // ============================================================
 
 .source-headlines {
@@ -255,24 +219,24 @@
 
 .source-headline {
   position: relative;
-  font-size: var(--feed-ui-size, 0.82rem);
-  line-height: 1.25;
-  padding: 0.1rem 0;
-  position: relative;
+  font-family: var(--feed-font-condensed, 'Roboto Condensed', 'Arial Narrow', sans-serif);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  padding: 0.08rem 0;
 
   &::marker {
-    color: #444;
+    color: #3a3f45;
   }
 
   a {
-    color: #999;
+    display: block;
+    color: #9aa1a8;
     text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: block;
 
-    &:hover { color: #ccc; }
+    &:hover { color: var(--feed-text-1, #f1f3f5); }
   }
 
   .headline-tooltip {
@@ -283,10 +247,10 @@
     z-index: 200;
     width: 300px;
     padding: 0.5rem 0.65rem;
-    border-radius: 6px;
-    background: #c8c8c8;
-    border: 1px solid #aaa;
-    box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
+    border-radius: var(--feed-radius-md, 8px);
+    background: #eceef0;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    box-shadow: 0 -2px 16px rgba(0, 0, 0, 0.4);
     pointer-events: none;
 
     &::after {
@@ -295,7 +259,7 @@
       top: 100%;
       left: 1.2rem;
       border: 5px solid transparent;
-      border-top-color: #c8c8c8;
+      border-top-color: #eceef0;
     }
   }
 
@@ -307,13 +271,13 @@
   &--tooltip-below .headline-tooltip {
     bottom: auto;
     top: calc(100% + 6px);
-    box-shadow: 0 2px 16px rgba(0,0,0,0.4);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.4);
 
     &::after {
       top: auto;
       bottom: 100%;
       border-top-color: transparent;
-      border-bottom-color: #c8c8c8;
+      border-bottom-color: #eceef0;
     }
   }
 
@@ -336,8 +300,8 @@
     width: 12px;
     height: 12px;
     border-radius: 2px;
-    background: rgba(0,0,0,0.12);
-    color: rgba(0,0,0,0.5);
+    background: rgba(0, 0, 0, 0.12);
+    color: rgba(0, 0, 0, 0.5);
     font-size: 0.5rem;
     font-weight: 700;
   }
@@ -345,7 +309,7 @@
   .headline-tooltip-source {
     font-size: 0.6rem;
     font-weight: 600;
-    color: rgba(0,0,0,0.4);
+    color: rgba(0, 0, 0, 0.4);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -354,7 +318,7 @@
     width: 100%;
     max-height: 160px;
     object-fit: cover;
-    border-radius: 4px;
+    border-radius: var(--feed-radius-sm, 4px);
     margin-bottom: 0.35rem;
   }
 
@@ -368,52 +332,122 @@
 
   .headline-tooltip-desc {
     margin-top: 0.25rem;
-    color: rgba(0,0,0,0.5);
+    color: rgba(0, 0, 0, 0.5);
     font-size: 0.68rem;
     line-height: 1.35;
     white-space: normal;
   }
 }
 
-.source-headline > a { padding-right: 6rem; }
-
+// Quick actions overlay the line-end on hover/focus only — they cost the
+// headline zero space when idle. Hidden entirely on touch (state actions
+// live in Briefing and Reader there).
 .headline-quick-actions {
   position: absolute;
-  top: 0.25rem;
-  right: 0.2rem;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
   display: flex;
+  align-items: center;
+  padding-left: 16px;
+  background: linear-gradient(90deg, transparent, var(--feed-surface-1, #17191c) 14px);
   opacity: 0;
+  pointer-events: none;
 
   button {
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 26px;
+    min-height: 22px;
     border: 0;
-    background: #202225;
-    color: #ffd43b;
+    background: transparent;
+    color: var(--feed-text-3, #71787f);
+    font-size: 0.72rem;
+    padding: 0;
     cursor: pointer;
+
+    &:hover { color: var(--feed-accent-strong, #74c0fc); }
+    &[aria-pressed="true"] { color: var(--feed-accent-strong, #74c0fc); }
   }
 }
 
 .source-headline:hover .headline-quick-actions,
-.source-headline:focus-within .headline-quick-actions,
-.headline-quick-actions:has(button[aria-pressed="true"]) { opacity: 1; }
+.source-headline:focus-within .headline-quick-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+// ============================================================
+// Briefing view (secondary)
+// ============================================================
+
+.headline-briefing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.briefing-story {
+  border: 1px solid var(--feed-border);
+  border-radius: var(--feed-radius-lg);
+  background: var(--feed-surface-1);
+  padding: 0.9rem 1rem;
+
+  &--lead { grid-column: 1 / -1; padding: 1.1rem 1.25rem; }
+  h2 { margin: 0.2rem 0 0.5rem; font-size: 1.1rem; line-height: 1.3; }
+  &--lead h2 { font-size: clamp(1.35rem, 2.6vw, 1.9rem); max-width: 30ch; }
+  a { color: var(--feed-text-1); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  p { max-width: 68ch; color: var(--feed-text-2); font-size: 0.88rem; line-height: 1.5; margin: 0.3rem 0 0.5rem; }
+  summary { cursor: pointer; color: var(--feed-accent-strong); font-size: 0.8rem; min-height: 32px; padding-top: 0.35rem; }
+  li { margin: 0.4rem 0; line-height: 1.4; font-size: 0.85rem; }
+}
+
+.briefing-story__eyebrow { color: var(--feed-text-3); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.briefing-story__new { color: var(--feed-accent-strong); }
+
+.briefing-story__timeline {
+  ol { list-style: none; margin: 0.25rem 0 0; padding: 0 0 0 0.75rem; border-left: 2px solid var(--feed-border-strong); }
+  li { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: baseline; gap: 0.5rem; }
+  time { color: var(--feed-text-3); font-size: 0.75rem; white-space: nowrap; }
+}
+
+.briefing-story__event {
+  border-radius: 999px;
+  background: var(--feed-surface-3);
+  color: var(--feed-text-2);
+  padding: 0.08rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+
+  &--update { background: var(--feed-accent-bg); color: var(--feed-accent-strong); }
+  &--correction { background: var(--feed-warning-bg); color: var(--feed-warning-text); }
+}
 
 .headline-state-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
-  margin: 0.65rem 0;
+  margin: 0.5rem 0;
 
-  button { min-height: 40px; border: 1px solid #6b7075; border-radius: 999px; background: #272a2e; color: #fff; padding: 0.35rem 0.75rem; cursor: pointer; }
-  button[aria-pressed="true"] { border-color: #74c0fc; background: #164c72; }
+  button { @include feed-chip; min-height: 32px; padding: 0.25rem 0.75rem; font-size: 0.75rem; }
+  button[aria-pressed="true"] { @include feed-chip-active; }
+}
+
+@media (max-width: 520px) {
+  .briefing-story__timeline li { grid-template-columns: auto minmax(0, 1fr); }
+  .briefing-story__timeline a { grid-column: 1 / -1; }
 }
 
 @media (max-width: 700px) {
-  .headlines-view { padding: 0.65rem; }
-  .headlines-toolbar { align-items: flex-start; padding-right: 7rem; }
+  .headlines-view { padding: 0.5rem 0.5rem 2rem; }
+  .headlines-toolbar { flex-wrap: wrap; }
   .headline-briefing { grid-template-columns: 1fr; }
   .briefing-story,
   .briefing-story--lead { grid-column: auto; }
   .headline-tooltip { display: none !important; }
-  .headline-quick-actions { opacity: 1; }
+}
+
+@media (pointer: coarse) {
+  .headline-quick-actions { display: none; }
 }
