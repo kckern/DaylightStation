@@ -95,3 +95,44 @@ describe('ThermalPrinterAdapter abort-on-timeout contract', () => {
     );
   });
 });
+
+describe('connect timeout default', () => {
+  it('a default-constructed adapter is still waiting at 10s and has given up by 25s', async () => {
+    jest.useFakeTimers();
+    try {
+      const adapter = new ThermalPrinterAdapter(
+        { host: '10.0.0.50', port: 9100 },              // NO explicit timeout
+        { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
+      );
+      const settled = jest.fn();
+      const printing = adapter.print(textJob).then(settled);
+
+      await jest.advanceTimersByTimeAsync(10000);
+      // Would already have resolved false under the old 5s default.
+      expect(settled).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(15000);
+      await printing;
+      expect(settled).toHaveBeenCalledWith(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('still honours an explicit timeout from config', async () => {
+    jest.useFakeTimers();
+    try {
+      const adapter = new ThermalPrinterAdapter(
+        { host: '10.0.0.50', port: 9100, timeout: 250 },
+        { logger: quietLogger(), createTransport: (h, p) => new LateNetwork(h, p) },
+      );
+      const settled = jest.fn();
+      const printing = adapter.print(textJob).then(settled);
+      await jest.advanceTimersByTimeAsync(1000);   // past the 500ms queue delay + 250ms
+      await printing;
+      expect(settled).toHaveBeenCalledWith(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
