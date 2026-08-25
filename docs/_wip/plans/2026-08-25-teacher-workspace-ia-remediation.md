@@ -950,11 +950,16 @@ function PrintedAgenda({ learnerId, studyDay }) {
 
 function DayRow({ row, onOpenSession }) {
   const session = row.session;
+  // The SESSION's subject wins over the section's. The planner buckets
+  // non-canonical subjects into 'other', so a unit-matched piano lesson
+  // arrives on an 'other' section and would otherwise be filed under a
+  // heading reading "Other" (found in Task 1b review).
+  const subject = session?.subject ?? row.subject;
   const title = session?.lessonTitle ?? session?.title ?? row.planned;
   const body = session
-    ? <LessonIdentity compact subject={session.subject} courseTitle={session.courseTitle}
+    ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
         moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
-    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={row.subject} />
+    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
         <strong>{row.planned ?? 'No work offered'}</strong></div>;
   return (
     <li className={`teacher-day-row teacher-day-row--${row.status}`}>
