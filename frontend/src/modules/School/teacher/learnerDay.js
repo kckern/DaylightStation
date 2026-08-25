@@ -4,11 +4,29 @@
  * Retracing a school day used to mean reading three surfaces: the agenda
  * planner (what was OFFERED), the day projection (what was DONE), and the
  * History tab (which has no date control at all). Neither read is complete
- * alone, so this joins them into one list keyed by subject — including the
- * two cases both surfaces used to drop on the floor: work that was planned
- * and skipped, and work that happened without ever being planned.
+ * alone, so this joins them into one list — including the two cases both
+ * surfaces used to drop on the floor: work that was planned and skipped, and
+ * work that happened without ever being planned.
  *
- * Pure by design: no fetching, no React. The view owns the reads.
+ * Unit identity outranks subject. The two sides do not agree on subject: the
+ * planner buckets any non-canonical subject into the literal string 'other'
+ * while the day projection keeps the raw subject, so a piano lesson arrives as
+ * an 'other' section and a 'piano' session. A subject-keyed join renders that
+ * one activity as two rows ("Not started" plus "Extra") — exactly the
+ * repetition this view exists to end. `section.next.unitId` and
+ * `session.unitId` are one id space, so a unit match is authoritative and is
+ * tried across every unclaimed session whatever bucket it landed in. Subject
+ * matching is the fallback, for sessions carrying no unit. Mirroring the
+ * planner's canonical-subject list here instead would rot the first time the
+ * backend's list changed.
+ *
+ * Sections CLAIM sessions, and a session can be claimed once. The module
+ * therefore does not depend on the planner emitting one section per subject
+ * (agenda.mjs does today); two sections sharing a subject each take their own
+ * units rather than the first swallowing both.
+ *
+ * Pure by design: no fetching, no React, no mutation of the caller's input.
+ * The view owns the reads.
  */
 
 const NO_SUBJECT = '__no-subject__';
@@ -23,27 +41,40 @@ export const DAY_STATUS_LABEL = {
   extra: 'Extra',
 };
 
-function groupSessionsBySubject(sessions) {
-  const grouped = new Map();
-  for (const session of sessions) {
-    const key = subjectKey(session?.subject ?? null);
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push(session);
-  }
-  return grouped;
-}
+/** Wrap each session so claims are tracked without touching the caller's array. */
+const claimPool = (sessions) => sessions.map((session) => ({ session, claimed: false }));
 
 /**
- * Order a subject's sessions so the one the planner actually offered leads.
- * Both sides carry `unitId`, so the match can be exact; the old subject-only
- * join could not tell "did the planned lesson" from "did some other lesson
- * in the same subject".
+ * The sessions one section accounts for, unit matches first.
+ *
+ * A unit match is exact — it distinguishes "did the planned lesson" from "did
+ * some other lesson in the same subject" — and ignores the subject bucket
+ * entirely. Units only compare when BOTH sides carry one: a session on some
+ * other unit belongs to another section (or to none), so subject is the
+ * fallback only where a unit comparison is unavailable.
  */
-function orderByPlannedUnit(sessions, plannedUnitId) {
-  if (!plannedUnitId) return { ordered: sessions, matchedOn: sessions.length ? 'subject' : null };
-  const index = sessions.findIndex((session) => session.unitId === plannedUnitId);
-  if (index < 0) return { ordered: sessions, matchedOn: sessions.length ? 'subject' : null };
-  return { ordered: [sessions[index], ...sessions.filter((_, i) => i !== index)], matchedOn: 'unit' };
+function claimFor(section, pool) {
+  const plannedUnitId = section?.next?.unitId ?? null;
+  const key = subjectKey(section?.subject ?? null);
+  const byUnit = [];
+  const bySubject = [];
+
+  for (const claim of pool) {
+    if (claim.claimed) continue;
+    const unitId = claim.session?.unitId ?? null;
+    if (plannedUnitId && unitId) {
+      if (unitId === plannedUnitId) byUnit.push(claim);
+      continue;
+    }
+    if (subjectKey(claim.session?.subject ?? null) === key) bySubject.push(claim);
+  }
+
+  const claimed = [...byUnit, ...bySubject];
+  claimed.forEach((claim) => { claim.claimed = true; });
+  let matchedOn = null;
+  if (byUnit.length) matchedOn = 'unit';
+  else if (bySubject.length) matchedOn = 'subject';
+  return { matched: claimed.map((claim) => claim.session), matchedOn };
 }
 
 /**
@@ -54,61 +85,63 @@ function orderByPlannedUnit(sessions, plannedUnitId) {
  * @returns {{ studyDay: string|null, rows: Array, counts: object }}
  */
 export function joinLearnerDay({ sections = [], sessions = [], studyDay = null } = {}) {
-  const unmatched = groupSessionsBySubject(Array.isArray(sessions) ? sessions : []);
+  const pool = claimPool(Array.isArray(sessions) ? sessions : []);
   const rows = [];
 
-  for (const section of Array.isArray(sections) ? sections : []) {
+  (Array.isArray(sections) ? sections : []).forEach((section, position) => {
     const subject = section?.subject ?? null;
     const key = subjectKey(subject);
-    const found = unmatched.get(key) ?? [];
-    unmatched.delete(key);
+    // Sections sharing a subject would otherwise collide on the row key.
+    const rowKey = (status) => `${key}:${position}:${status}`;
     const planned = section?.next?.title ?? null;
-    const { ordered: matched, matchedOn } = orderByPlannedUnit(found, section?.next?.unitId ?? null);
+    const { matched, matchedOn } = claimFor(section, pool);
 
     if (matched.length) {
       // The plan is stated once for the subject, not repeated per session —
       // repeating it is the duplication the teachers objected to (IA1).
       matched.forEach((session, index) => rows.push({
-        key: session.sessionId ?? `${key}:done:${index}`,
+        key: session.sessionId ?? `${rowKey('done')}:${index}`,
         subject, status: 'done', planned: index === 0 ? planned : null, session, detail: null,
         matchedOn: index === 0 ? matchedOn : null,
       }));
-      continue;
+      return;
     }
     if (section?.suppressed) {
       rows.push({
-        key: `${key}:deferred`, subject, status: 'deferred', planned, session: null,
+        key: rowKey('deferred'), subject, status: 'deferred', planned, session: null,
         detail: section.suppressed.bySubject ? `Deferred for ${section.suppressed.bySubject} focus` : 'Deferred',
       });
-      continue;
+      return;
     }
     if (section?.lockedRemedy) {
-      rows.push({ key: `${key}:blocked`, subject, status: 'blocked', planned, session: null, detail: section.lockedRemedy });
-      continue;
+      rows.push({ key: rowKey('blocked'), subject, status: 'blocked', planned, session: null, detail: section.lockedRemedy });
+      return;
     }
     if (section?.servedToday) {
       rows.push({
-        key: `${key}:served`, subject, status: 'done', planned, session: null,
+        key: rowKey('served'), subject, status: 'done', planned, session: null,
         detail: 'Completed — no session record',
       });
-      continue;
+      return;
     }
     rows.push({
-      key: `${key}:planned`, subject, status: 'planned', planned, session: null,
+      key: rowKey('planned'), subject, status: 'planned', planned, session: null,
       detail: section?.timingNotice ?? null,
     });
-  }
+  });
 
   // Anything recorded that the plan never offered. Silently dropping these
   // made the day record lie about what the child actually did.
-  for (const [key, matched] of unmatched) {
-    matched.forEach((session, index) => rows.push({
-      key: session.sessionId ?? `${key}:extra:${index}`,
-      subject: key === NO_SUBJECT ? null : key,
+  pool.forEach(({ session, claimed }, index) => {
+    if (claimed) return;
+    const key = subjectKey(session?.subject ?? null);
+    rows.push({
+      key: session?.sessionId ?? `${key}:extra:${index}`,
+      subject: session?.subject ?? null,
       status: 'extra', planned: null, session,
       detail: 'Not on the day’s plan',
-    }));
-  }
+    });
+  });
 
   const counts = rows.reduce(
     (acc, row) => ({ ...acc, [row.status]: (acc[row.status] ?? 0) + 1, total: acc.total + 1 }),
