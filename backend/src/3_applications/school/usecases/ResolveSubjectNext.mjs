@@ -4,12 +4,15 @@
  *
  * `BuildAgenda` mints one sessionless ticket per subject and moves on; this is
  * the second caller of the same computation, invoked at SCAN time rather than
- * PRINT time. It reads the plan and the daily sections exactly as `BuildAgenda`
- * does — same planner, same `planDailyAgenda`, same per-program `status()`
- * fan-out with its own try/catch — because the ticket names a learner and a
- * subject, not a moment, and the only way to keep it meaning something as the
- * day's work advances underneath it is to recompute "what's next" from
- * scratch on every scan.
+ * PRINT time. The ticket names a learner and a subject, not a moment, so the
+ * only way to keep it meaning something as the day's work advances underneath
+ * it is to recompute "what's next" from scratch on every scan.
+ *
+ * It recomputes it through the SAME `PlanProjection` the agenda printed from —
+ * not "the same way", which is what this file used to say while carrying its
+ * own copy of the attestation overlay. Two copies that are byte-identical
+ * today are two copies, and the day one of them is edited is the day a child
+ * scans a ticket for work the panel then refuses.
  *
  * This use case COMPUTES; it never prints. `ResolveScanAction#subjectNext` is
  * the only caller and is the only place a physical outcome (a worksheet, a
@@ -27,15 +30,21 @@
  * events itself — that would risk seeing a different moment than the one this
  * decision was actually made against.
  */
-import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
-import { collectProgramStatuses } from '../programStatusCollection.mjs';
+import { programStatusFor } from '#domains/school/agenda.mjs';
+import { PlanProjection } from '../PlanProjection.mjs';
 import { ensureSession, nextMove } from './offerSession.mjs';
-import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
-import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
+import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
+import { projectProgramEntry } from '../assignedProgramPlan.mjs';
 
 export class ResolveSubjectNext {
-  #curriculum; #assignments; #sessions; #launchers; #timezone; #clock; #newSessionId; #logger; #attestations; #curriculumExceptions;
+  // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
+  // not held: the plan is assembled in ONE place now, and a second handle to
+  // its inputs is how this file grew its own copy of the recipe in the first
+  // place. `sessions` stays — `ensureSession` is this use case's own job.
+  // `launchers` and `logger` are not held either: the only reads this file made
+  // of them were the launcher fan-out and the plan-error line, both of which
+  // now happen inside the projection under this surface's own event names.
+  #sessions; #timezone; #clock; #newSessionId; #planProjection;
 
   /**
    * @param {object} deps
@@ -56,21 +65,25 @@ export class ResolveSubjectNext {
     // Attestation gate-unlock source (spec D2), optional.
     attestations = null,
     curriculumExceptions = null,
+    // Shared with `BuildAgenda` and `ResolveAccessCode` in composition, so a
+    // scanned ticket can never mean something the printed paper did not say.
+    planProjection = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || typeof newSessionId !== 'function') {
       throw new Error('ResolveSubjectNext requires curriculum, assignments, sessions and newSessionId');
     }
-    this.#curriculum = curriculum;
-    this.#assignments = assignments;
     this.#sessions = sessions;
-    this.#launchers = launchers;
     this.#timezone = timezone;
     this.#clock = clock;
     this.#newSessionId = newSessionId;
-    this.#logger = logger;
-    this.#attestations = attestations;
-    this.#curriculumExceptions = curriculumExceptions;
+    this.#planProjection = planProjection ?? new PlanProjection({
+      curriculum, assignments, sessions, attestations, curriculumExceptions,
+      launchers, timezone, clock,
+      planErrorEvent: 'school.subject.plan-errors',
+      launcherFailedEvent: 'school.subject.launcher-failed',
+      logger,
+    });
   }
 
   /**
@@ -87,40 +100,18 @@ export class ResolveSubjectNext {
    * >}
    */
   async execute({ learnerId, subject, continueToday = false } = {}) {
-    const nowIso = this.#clock().toISOString();
-    const [assignment, units, rawHistory, works] = await Promise.all([
-      this.#assignments.get(learnerId),
-      this.#curriculum.listUnits(),
-      this.#sessions.listForLearner(learnerId),
-      this.#curriculum.listWorks?.() ?? [],
-    ]);
-    // Same attestation gate-unlock as BuildAgenda: the PLANNER sees the
-    // attested unit as passed so its successor unlocks; the daily-serving
-    // layer below reads RAW history only — an attestation must not mark the
-    // subject served on the repair day itself.
-    const attested = (this.#attestations?.list?.({ learnerId }) ?? []).map((a) => ({
-      sessionId: `attested:${a.id}`, learnerId, unitId: a.unitId,
-      outcome: { result: 'passed' }, attested: true, terminal: true, updatedAt: a.at,
-    }));
-    const activeExceptions = await this.#curriculumExceptions?.active?.() ?? [];
-    const history = withCurriculumExceptions(
-      attested.length ? [...rawHistory, ...attested] : rawHistory, activeExceptions, learnerId,
-    );
-
-    const coursePolicies = Object.fromEntries((works ?? [])
-      .map((work) => [work.work, work.progression]).filter(([, progression]) => progression));
-    const plan = planLearnerWork({
-      learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
+    // BuildAgenda's recipe, not a copy of it. The ticket names a learner and a
+    // subject rather than a moment, so "what's next" is recomputed on every
+    // scan — and it must be recomputed the same WAY the paper was printed, or
+    // the receipt promises work the panel then refuses.
+    const {
+      plan, sections, activeExceptions, programStatuses, projection,
+    } = await this.#planProjection.project({
+      learnerId,
+      planErrorEvent: 'school.subject.plan-errors',
+      launcherFailedEvent: 'school.subject.launcher-failed',
     });
-    appendAssignedProgramEntries(plan, assignment);
-    if (plan.errors.length) {
-      this.#logger.warn?.('school.subject.plan-errors', { learnerId, subject, errors: plan.errors });
-    }
-
-    const programStatuses = await this.#collectProgramStatuses(plan, learnerId);
-    const { sections } = planDailyAgenda({
-      plan, sessions: rawHistory, programStatuses, now: nowIso, timezone: this.#timezone,
-    });
+    const { units, nowIso } = projection;
 
     const section = sections.find((s) => s.subject === subject);
     if (!section) return { kind: 'empty' };
@@ -158,19 +149,6 @@ export class ResolveSubjectNext {
     };
   }
 
-  /**
-   * One read-only `status()` call per DISTINCT program instance among the plan's
-   * entries — mirrors `BuildAgenda#collectProgramStatuses` exactly. A program
-   * that throws or was never registered must not blank the rest of the
-   * subject's resolution — it degrades to `{ error: true }`, which
-   * `planDailyAgenda` turns into `programUnavailable`.
-   */
-  async #collectProgramStatuses(plan, learnerId) {
-    return collectProgramStatuses({
-      plan, learnerId, launchers: this.#launchers, logger: this.#logger,
-      logEvent: 'school.subject.launcher-failed',
-    });
-  }
 }
 
 export default ResolveSubjectNext;
