@@ -109,7 +109,7 @@ export class DoNowService {
    * @param {string} params.requestedBy - Provenance: 'school-scan' | 'school-program' | 'api' | 'trigger' | ...
    * @param {*} [params.ref] - Caller's correlation id (dedup + log key).
    * @param {string} [params.programId] - Threaded through to the dispatch log when supplied.
-   * @param {string} [params.force] - undefined | 'never_ask' (deny instead of pending).
+   * @param {string} [params.force] - undefined | 'never_ask' | 'interrupt'.
    * @returns {Promise<{decision: 'dispatched'|'pending_approval'|'denied'|'failed', approvalId?: string, message: string}>}
    */
   async dispatch({

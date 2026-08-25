@@ -46,7 +46,7 @@
  * the failure the whole subsystem exists to avoid.
  */
 import { planLearnerWork } from '#domains/school/planner.mjs';
-import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { planDailyAgenda, programStatusFor } from '#domains/school/agenda.mjs';
 import { collectProgramStatuses } from '../programStatusCollection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
@@ -54,6 +54,7 @@ import { buildContextualLaunchCard } from '#domains/school/selfService/contextua
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor, withCurriculumExceptions } from '../curriculumExceptionProjection.mjs';
+import { appendAssignedProgramEntries, projectProgramEntry } from '../assignedProgramPlan.mjs';
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -341,6 +342,7 @@ export class ResolveAccessCode {
         learnerId, missing: 'learner-display-name', ...(displayNameError ? { error: displayNameError } : {}),
       });
     }
+    const programContext = unit?.programContext ?? null;
     return buildContextualLaunchCard({
       resolution,
       learner: { id: learnerId, displayName },
@@ -348,14 +350,14 @@ export class ResolveAccessCode {
       // A valid unit already proves the course association. Catalog metadata
       // enriches its label, but a missing/temporarily-invalid work index must
       // not erase that context from the learner's card.
-      course: unit?.courseId ? { id: unit.courseId, title: course?.title ?? unit.courseId } : null,
-      module: unit?.module ? {
+      course: programContext?.course ?? (unit?.courseId ? { id: unit.courseId, title: course?.title ?? unit.courseId } : null),
+      module: programContext?.unit ?? (unit?.module ? {
         id: unit.module,
         title: moduleRow?.title ?? unit.module,
         position: moduleIndex >= 0 ? moduleIndex + 1 : null,
-      } : null,
-      lesson: unit?.unitId ? { id: unit.unitId, title: unit.title } : null,
-      progress: progress?.map((row, index) => ({
+      } : null),
+      lesson: programContext?.lesson ?? (unit?.unitId ? { id: unit.unitId, title: unit.title } : null),
+      progress: unit?.programProgress ?? progress?.map((row, index) => ({
         scope: index === 0 ? 'course' : 'module',
         ...row,
       })) ?? [],
@@ -414,6 +416,7 @@ export class ResolveAccessCode {
     const plan = planLearnerWork({
       learnerId, assignment, units, sessions: history, now: nowIso, timezone: this.#timezone, coursePolicies,
     });
+    appendAssignedProgramEntries(plan, assignment);
     if (plan.errors.length) {
       this.#logger.warn?.('school.selfservice.plan-errors', { learnerId, subject, errors: plan.errors });
     }
@@ -440,7 +443,10 @@ export class ResolveAccessCode {
     }
 
     const unit = new Map(units.map((u) => [u.unitId, u])).get(entry.unitId) ?? null;
-    if (entry.program) return withProjection({ kind: 'program', programId: entry.program, unit });
+    if (entry.program) return withProjection({
+      kind: 'program', programId: entry.program,
+      unit: projectProgramEntry(entry, programStatusFor(programStatuses, entry)),
+    });
 
     const paused = pausedExceptionFor(activeExceptions, entry.unitId);
     if (paused) return withProjection({ kind: 'locked', remedy: `Content paused: ${paused.reason}` });

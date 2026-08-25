@@ -34,7 +34,7 @@
  * instead (both curriculum catalog-load AND live dispatch call this same
  * method).
  */
-import { isSheetMusicContentId } from '#domains/donow/pianoContentShape.mjs';
+import { isSheetMusicContentId, isPianoCourseLessonAction } from '#domains/donow/pianoContentShape.mjs';
 
 /** ScorePlayer's modes — mirrors VALID_MODES in modes/SheetMusic/ScorePlayer.jsx. */
 const PLAY_MODES = ['listen', 'learn', 'polish', 'perform'];
@@ -66,6 +66,11 @@ export class PianoKioskSurface {
   /** @param {{contentId: string}} raw */
   validateAction(raw) {
     if (!raw || typeof raw !== 'object') return ['action must be an object'];
+    if (raw.kind === 'course-lesson') {
+      return isPianoCourseLessonAction(raw)
+        ? []
+        : ['course-lesson action requires Plex courseId, Plex lessonId, and learnerId'];
+    }
     if (typeof raw.contentId !== 'string' || raw.contentId.length === 0) return ['action.contentId is required'];
     if (!isSheetMusicContentId(raw.contentId)) {
       return [`action.contentId "${raw.contentId}" is not a reachable piano-kiosk content shape (expected source:localId, e.g. hymn:12)`];
@@ -91,12 +96,27 @@ export class PianoKioskSurface {
   }
 
   /** @returns {Promise<{dispatched: boolean}>} */
-  async dispatch({ action }) {
+  async dispatch({ action, learnerId = null }) {
     if (!this.#eventBus) {
       this.#logger.warn?.('donow.piano-kiosk.no-bus', { contentId: action?.contentId });
       return { dispatched: false };
     }
     try {
+      if (action.kind === 'course-lesson') {
+        this.#eventBus.broadcast('kiosk.launch', {
+          topic: 'kiosk.launch',
+          deviceId: this.#kioskDeviceParam,
+          type: 'piano.course-lesson.launch',
+          learnerId: action.learnerId ?? learnerId,
+          courseId: action.courseId,
+          courseTitle: action.courseTitle ?? null,
+          unitId: action.unitId ?? null,
+          unitTitle: action.unitTitle ?? null,
+          lessonId: action.lessonId,
+          lessonTitle: action.lessonTitle ?? null,
+        });
+        return { dispatched: true };
+      }
       this.#eventBus.broadcast('kiosk.launch', {
         topic: 'kiosk.launch',
         deviceId: this.#kioskDeviceParam,

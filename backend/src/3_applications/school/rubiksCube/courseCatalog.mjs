@@ -1,11 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
 import { inverseMove, scramble } from '#shared/gaming/rulesets/rubiks-cube/index.mjs';
+import { RUBIKS_CUBE_COURSE_SOURCE as source } from './courseSource.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const source = yaml.load(fs.readFileSync(path.join(HERE, 'course.yml'), 'utf8'));
 if (source?.schema !== 'school.rubiks-cube-course/v1') throw new Error('Invalid Rubik’s Cube course source');
 
 const FOUNDATION_CHECKS = [

@@ -124,6 +124,41 @@ beforeEach(async () => { await build(); });
 // ---------------------------------------------------------------------------
 
 describe('reading a code', () => {
+  it('projects a piano enrollment into School course, unit, and lesson vocabulary', async () => {
+    const status = {
+      doneToday: false,
+      progressLabel: '34/344 · next: Lesson 3',
+      context: {
+        course: { id: 'plex:675689', title: 'Hoffman Academy' },
+        unit: { id: 'season-4', title: 'Unit 4', position: 4 },
+        lesson: { id: 'plex:9003', title: 'Lesson 3', position: 3 },
+      },
+      progress: [
+        { scope: 'course', label: 'Course', completed: 34, total: 344 },
+        { scope: 'module', label: 'Unit 4', completed: 2, total: 20 },
+      ],
+    };
+    await build({
+      assignmentSeed: [{
+        learnerId: 'kid1', programs: [{ programId: 'piano-course', courseId: 'plex:675689', subject: 'arts' }],
+      }],
+      codes: [{ code: CODE, learnerId: 'kid1', subject: 'arts' }],
+      launchers: new Map([['piano-course', { status: async () => status }]]),
+    });
+    const card = await useCase.execute({ code: CODE });
+    expect(card.context.taxonomy).toEqual({
+      subject: { id: 'arts', label: 'Arts & Culture' },
+      course: { id: 'plex:675689', title: 'Hoffman Academy', artwork: { kind: 'course-poster', courseId: 'plex:675689' } },
+      module: { id: 'season-4', title: 'Unit 4', position: 4 },
+      lesson: { id: 'plex:9003', title: 'Lesson 3' },
+    });
+    expect(card.context.progress).toEqual(status.progress);
+    expect(card.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'program', target: 'piano-course' }),
+    ]));
+    expect(appended).toEqual([]);
+  });
+
   it('appends no events when the entry has no session yet', async () => {
     const card = await useCase.execute({ code: CODE });
 

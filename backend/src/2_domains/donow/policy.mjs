@@ -17,6 +17,11 @@ export const DECISIONS = Object.freeze(['dispatch', 'pending_approval', 'denied'
  * @returns {'dispatch'|'pending_approval'|'denied'}
  */
 export function decideDispatch({ occupancy, learnerId, force }) {
+  // An explicit interrupt is reserved for workflows whose whole purpose is to
+  // replace the surface's current activity (School handing a lesson to its
+  // dedicated kiosk). Keep it visible in the dispatch record rather than
+  // falsifying occupancy as idle.
+  if (force === 'interrupt') return 'dispatch';
   if (occupancy.state === 'idle') {
     return 'dispatch';
   }

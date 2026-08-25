@@ -70,7 +70,8 @@ export function useKioskLaunchCommand({
   deviceId = KIOSK_DEVICE_ID,
   allow = null,
   enabled = true,
-  onPianoOpen = null
+  onPianoOpen = null,
+  onPianoCourseOpen = null
 } = {}) {
   // Resolved per launch rather than cached at mount: a parent who edits the
   // allowlist expects the next launch to honor it, and the kiosk can sit for
@@ -99,14 +100,31 @@ export function useKioskLaunchCommand({
 
   const handle = useCallback(async (msg) => {
     if (!enabled) return;
-    const contentId = msg?.contentId;
-    if (!contentId) return;
-
     // Not addressed to this tablet — the common case on a multi-kiosk bus.
     if (!deviceId || msg.deviceId !== deviceId) {
       logger().debug('ignored-other-device', { target: msg?.deviceId, self: deviceId });
       return;
     }
+
+    if (msg.type === 'piano.course-lesson.launch') {
+      logger().info('piano-course-launch-received', {
+        learnerId: msg.learnerId, courseId: msg.courseId, lessonId: msg.lessonId, deviceId,
+      });
+      if (typeof onPianoCourseOpen === 'function') onPianoCourseOpen({
+        learnerId: msg.learnerId,
+        courseId: msg.courseId,
+        courseTitle: msg.courseTitle ?? null,
+        unitId: msg.unitId ?? null,
+        unitTitle: msg.unitTitle ?? null,
+        lessonId: msg.lessonId,
+        lessonTitle: msg.lessonTitle ?? null,
+      });
+      else logger().warn('piano-course-content-open-unreachable', { deviceId });
+      return;
+    }
+
+    const contentId = msg?.contentId;
+    if (!contentId) return;
 
     // piano.launch is a DIFFERENT arm entirely — open piano content, never a
     // RetroArch intent. Branches out before the allowlist/intent machinery
@@ -178,7 +196,7 @@ export function useKioskLaunchCommand({
 
     logger().info('launch-dispatched', { contentId, target });
     publishResult({ contentId, ok: true });
-  }, [enabled, deviceId, resolveAllow, publishResult, onPianoOpen]);
+  }, [enabled, deviceId, resolveAllow, publishResult, onPianoOpen, onPianoCourseOpen]);
 
   useWebSocketSubscription(KIOSK_LAUNCH_TOPIC, handle, [handle]);
 }

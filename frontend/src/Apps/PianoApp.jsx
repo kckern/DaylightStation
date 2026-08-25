@@ -22,7 +22,7 @@ import {
 import { usePianoScreenOff } from '../modules/Piano/PianoKiosk/usePianoScreenOff.js';
 import { KIOSK_DEVICE_ID } from '../modules/Piano/PianoKiosk/kioskDeviceIdentity.js';
 import { useKioskLaunchCommand } from '../modules/Piano/PianoKiosk/useKioskLaunchCommand.js';
-import { openPianoContent } from '../modules/Piano/PianoKiosk/pianoContentOpen.js';
+import { openPianoContent, openPianoCourseLesson } from '../modules/Piano/PianoKiosk/pianoContentOpen.js';
 import {
   PianoPlaybackProvider,
   usePianoPlayback,
@@ -103,11 +103,24 @@ function PianoFleetPublisher() {
 function KioskLaunchListener() {
   const navigate = useNavigate();
   const { basePath } = usePianoKioskConfig();
+  const { setCurrentUser } = usePianoUser();
+  const { setPlaying, setVideoActive } = usePianoPlayback();
+  const { sendPanic } = usePianoMidi();
   const onPianoOpen = useCallback(
     (contentId, { play = null } = {}) => { openPianoContent({ contentId, basePath, navigate, play }); },
     [basePath, navigate]
   );
-  useKioskLaunchCommand({ onPianoOpen });
+  const onPianoCourseOpen = useCallback(({ learnerId, courseId, lessonId }) => {
+    // The School handoff owns the kiosk now. Navigation unmounts the current
+    // mode/player; these explicit resets silence scheduled MIDI immediately
+    // and prevent the prior activity's identity locks from leaking visually.
+    setPlaying(false);
+    setVideoActive(false);
+    sendPanic?.();
+    setCurrentUser(learnerId);
+    openPianoCourseLesson({ courseId, lessonId, basePath, navigate });
+  }, [basePath, navigate, sendPanic, setCurrentUser, setPlaying, setVideoActive]);
+  useKioskLaunchCommand({ onPianoOpen, onPianoCourseOpen });
   return null;
 }
 

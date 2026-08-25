@@ -299,6 +299,8 @@ import { LanguageReelService } from './3_applications/school/LanguageReelService
 import { createLanguageReelsRouter } from './4_api/v1/routers/languageReels.mjs';
 import { RubiksCubeCourseService } from './3_applications/school/rubiksCube/RubiksCubeCourseService.mjs';
 import { RubiksPacketPlanner } from './3_applications/school/rubiksCube/RubiksPacketPlanner.mjs';
+import { YamlDocumentFileStore } from './1_adapters/school/YamlDocumentFileStore.mjs';
+import { RUBIKS_CUBE_REVISION } from './3_applications/school/rubiksCube/courseCatalog.mjs';
 import { createRubiksCubeRouter } from './4_api/v1/routers/rubiksCube.mjs';
 import { GetSchoolReport } from './3_applications/school/GetSchoolReport.mjs';
 import { GetLearningProgress } from './3_applications/school/GetLearningProgress.mjs';
@@ -2881,9 +2883,9 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   try { schoolCubeGrants = new HmacSchoolCubeGrantIssuer({ key: jwtSecret }); } catch (error) {
     rootLogger.error('school.rubiks-cube.grants-unavailable', { error: error.message });
   }
-  const languageReelService = new LanguageReelService({ configService });
+  const languageReelService = new LanguageReelService({ configService, store: new YamlDocumentFileStore() });
   const rubiksRecoverySolver = new KociembaCubeRecoverySolver();
-  const rubiksCubeService = new RubiksCubeCourseService({ configService, recoverySolver: rubiksRecoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: rubiksRecoverySolver }) });
+  const rubiksCubeService = new RubiksCubeCourseService({ configService, store: new YamlDocumentFileStore(), recoverySolver: rubiksRecoverySolver, packetPlanner: new RubiksPacketPlanner({ solver: rubiksRecoverySolver }) });
   const languageStudyService = new SentenceLadderService({
     datastore: new YamlLanguageStudyDatastore({ configService }),
     readProgramEnrollment: (learnerId, corpusId) => languageAssignments.readProgramEnrollment(learnerId, corpusId),
@@ -3355,6 +3357,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       // what the kiosk reads (progress, sequential gating, co-progress lock)
       // instead of a second implementation that could disagree with it.
       pianoPlayableUnits: pianoContainer?.getPlayableUnits?.() ?? null,
+      learningEvidenceRepository: schoolLearningEvidence,
       // Same adapter class the grading hook uses, pointed at its own
       // `school.yml` block. Guarded on the HA gateway exactly as the grading
       // hook is: no Home Assistant means the Portal banner still fires and
@@ -3897,7 +3900,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     logger: rootLogger.child({ module: 'school-language-reels-api' }),
   }));
   v1Routers.school.use('/rubiks-cube', createRubiksCubeRouter({
-    service: rubiksCubeService, grants: schoolCubeGrants,
+    service: rubiksCubeService, grants: schoolCubeGrants, revision: RUBIKS_CUBE_REVISION,
     logger: rootLogger.child({ module: 'school-rubiks-cube-api' }),
   }));
 

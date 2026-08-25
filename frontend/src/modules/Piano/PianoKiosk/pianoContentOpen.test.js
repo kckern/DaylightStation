@@ -8,7 +8,10 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
   default: (...args) => getLoggerMock(...args),
 }));
 
-import { isSheetMusicContentId, sheetMusicViewPath, openPianoContent } from './pianoContentOpen.js';
+import {
+  isSheetMusicContentId, sheetMusicViewPath, openPianoContent,
+  pianoCourseLessonPath, openPianoCourseLesson,
+} from './pianoContentOpen.js';
 
 describe('isSheetMusicContentId', () => {
   it('is true for an explicit source:localId id', () => {
@@ -90,5 +93,17 @@ describe('openPianoContent', () => {
     expect(opened).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
     expect(warnFn).toHaveBeenCalledWith('piano-launch-content-open-unreachable', { contentId: '359812' });
+  });
+});
+
+describe('openPianoCourseLesson', () => {
+  it('builds and opens the direct video lesson route', () => {
+    const navigate = vi.fn();
+    expect(pianoCourseLessonPath('/piano', 'plex:675689', 'plex:9001'))
+      .toBe('/piano/videos/675689/plex:9001');
+    expect(openPianoCourseLesson({
+      basePath: '/piano', courseId: 'plex:675689', lessonId: 'plex:9001', navigate,
+    })).toBe(true);
+    expect(navigate).toHaveBeenCalledWith('/piano/videos/675689/plex:9001');
   });
 });

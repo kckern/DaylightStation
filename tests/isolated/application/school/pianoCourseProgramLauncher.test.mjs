@@ -146,22 +146,54 @@ describe('PianoCourseProgramLauncher.status', () => {
 });
 
 describe('PianoCourseProgramLauncher launch contract', () => {
-  it('declares itself unmountable so the agenda mints no QR and no panel code', () => {
+  it('declares itself mountable so the agenda mints a QR and panel code', () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
-    expect(launcher.mountable).toBe(false);
+    expect(launcher.mountable).toBe(true);
     expect(launcher.surface).toBe('piano-kiosk');
     expect(launcher.locationHint).toBe('at the piano');
   });
 
-  it('refuses to launch rather than reporting a dispatch that cannot happen', async () => {
+  it('fails in words when DoNow is not wired', async () => {
     const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
     const result = await launcher.launch({ userId: 'felix' });
     expect(result.decision).toBe('failed');
     expect(result.message).toMatch(/piano/i);
   });
 
-  it('throws rather than handing back a launch target no surface can open', () => {
-    const launcher = launcherFor({ items: [] }, '2026-08-25T20:00:00Z');
-    expect(() => launcher.issueLaunchTarget({ userId: 'felix' })).toThrow(/cannot be opened remotely/);
+  it('maps the exact next Plex season and episode into a kiosk launch target', async () => {
+    const launcher = launcherFor({
+      compoundId: COURSE,
+      info: { title: 'Hoffman Academy' },
+      parents: { 'season-4': { title: 'Unit 4', index: 4 } },
+      items: [{
+        id: 'plex:9001', title: 'Lesson 1', parentId: 'season-4',
+        parentTitle: 'Unit 4', parentIndex: 4, itemIndex: 1,
+        userWatched: false, isReference: false,
+      }],
+    }, '2026-08-25T20:00:00Z');
+    await expect(launcher.issueLaunchTarget({ userId: 'felix', programInstance: COURSE }))
+      .resolves.toEqual({
+        kind: 'course-lesson', learnerId: 'felix', courseId: COURSE,
+        courseTitle: 'Hoffman Academy', unitId: 'season-4', unitTitle: 'Unit 4',
+        lessonId: 'plex:9001', lessonTitle: 'Lesson 1',
+      });
+  });
+
+  it('dispatches as an explicit interrupt to the Piano kiosk', async () => {
+    const calls = [];
+    const launcher = new PianoCourseProgramLauncher({
+      getPlayableUnits: fakeUnits({
+        compoundId: COURSE, info: { title: 'Hoffman Academy' },
+        items: [{ id: 'plex:9001', title: 'Lesson 1', userWatched: false }],
+      }),
+      donow: { dispatch: async (request) => { calls.push(request); return { decision: 'dispatched', message: 'Started.' }; } },
+      timezone: TZ, clock: () => new Date('2026-08-25T20:00:00Z'), logger: { warn() {}, info() {} },
+    });
+    await expect(launcher.launch({ userId: 'felix', programInstance: COURSE, unitId: `piano-course:${COURSE}` }))
+      .resolves.toMatchObject({ decision: 'dispatched' });
+    expect(calls[0]).toMatchObject({
+      surface: 'piano-kiosk', learnerId: 'felix', force: 'interrupt', programId: 'piano-course',
+      action: { kind: 'course-lesson', courseId: COURSE, lessonId: 'plex:9001', learnerId: 'felix' },
+    });
   });
 });

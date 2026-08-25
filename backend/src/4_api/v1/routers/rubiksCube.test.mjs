@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRubiksCubeRouter } from './rubiksCube.mjs';
 
 function app({ grants = { verify: vi.fn(() => ({ ok: false })) }, service = { preview: vi.fn(() => ({ preview: true })) } } = {}) {
-  const result = express(); result.use('/cube', createRubiksCubeRouter({ service, grants })); return result;
+  const result = express(); result.use('/cube', createRubiksCubeRouter({ service, grants, revision: 3 })); return result;
 }
 
 describe('Rubik’s Cube router', () => {
@@ -35,7 +35,7 @@ describe('Rubik’s Cube router', () => {
 
   it('binds paper-packet creation to the learner named in the grant', async () => {
     const service = { preview: vi.fn(), generatePacket: vi.fn(async () => ({ packet: true })) };
-    const grants = { verify: vi.fn(() => ({ ok: true, payload: { learnerId: 'milo', courseId: 'beginner-v1', revision: 2 } })) };
+    const grants = { verify: vi.fn(() => ({ ok: true, payload: { learnerId: 'milo', courseId: 'beginner-v1', revision: 3 } })) };
     const res = await request(app({ service, grants })).post('/cube/users/not-milo/courses/beginner-v1/packets').set('X-School-Cube-Grant', 'token').send({ lessonId: 'centres-and-pieces' });
     expect(res.status).toBe(200); expect(service.generatePacket).toHaveBeenCalledWith({ userId: 'milo', lessonId: 'centres-and-pieces' });
   });
