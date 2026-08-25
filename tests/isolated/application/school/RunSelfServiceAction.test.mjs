@@ -427,11 +427,32 @@ describe('retry', () => {
     expect(result).toMatchObject({
       outcome: 'done', action: 'retry', sessionId: 'ses_retry',
       sentence: 'Printing a fresh sheet to try again.',
+      transition: 'confirm-print',
     });
     expect(result.effect).toMatchObject({ remediationOf: 'ses_failed', variant: 1 });
     // Same rule on the retry's print: the fresh sheet is not retired by
     // coming out of the printer either.
     expect(spies.closeSessionOutcome.execute.calls).toEqual([]);
+  });
+
+  it('runs the fresh card operation instead of assuming every retry prints', async () => {
+    // The default fixture starts with media. A remediation therefore needs to
+    // play the fresh session, even though the stable action identity remains
+    // `retry` for stale-card validation and telemetry.
+    await failedToday();
+    const offered = (await card.execute({ code: CODE })).actions[0];
+    expect(offered).toMatchObject({ kind: 'retry', operation: 'play' });
+
+    const result = await useCase.execute({ code: CODE, action: 'retry' });
+
+    expect(spies.openRemediation.execute.calls).toEqual([{ sessionId: 'ses_failed' }]);
+    expect(spies.dispatchMedia.execute.calls).toEqual([{
+      sessionId: 'ses_retry', target: 'livingroom-tv',
+    }]);
+    expect(spies.issueDocument.execute.calls).toEqual([]);
+    expect(result).toMatchObject({
+      outcome: 'done', action: 'retry', sessionId: 'ses_retry', transition: 'message',
+    });
   });
 
   it('says so, and prints nothing, when there is nothing to try again', async () => {
@@ -561,7 +582,7 @@ describe('screen and program', () => {
 
     const result = await useCase.execute({ code: CODE, action: 'program' });
 
-    expect(spies.launcher.launch.calls).toEqual([{ userId: 'kid1', corpusId: null }]);
+    expect(spies.launcher.launch.calls).toMatchObject([{ userId: 'kid1', corpusId: null }]);
     expect(result.outcome).not.toBe('mount');
     expect(result.outcome).toBe('done');
     // DoNow's own wording, verbatim — it names the real surface.
@@ -741,7 +762,7 @@ describe('the response shape', () => {
     expect(result.sentence.trim().length).toBeGreaterThan(0);
   });
 
-  it('always carries outcome, sentence, action, sessionId and effect', async () => {
+  it('always carries outcome, sentence, action, sessionId, effect and transition', async () => {
     const runs = [
       await useCase.execute({ code: CODE, action: 'play' }),
       await useCase.execute({ code: CODE, action: 'exit' }),
@@ -749,10 +770,11 @@ describe('the response shape', () => {
     ];
     expect(runs).toHaveLength(3);
     for (const run of runs) {
-      expect(Object.keys(run).sort()).toEqual(['action', 'effect', 'outcome', 'sentence', 'sessionId']);
+      expect(Object.keys(run).sort()).toEqual(['action', 'effect', 'outcome', 'sentence', 'sessionId', 'transition']);
       expect(typeof run.outcome).toBe('string');
       expect(typeof run.sentence).toBe('string');
       expect(run.sentence.length).toBeGreaterThan(0);
+      expect(['confirm-print', 'mount', 'message', 'close']).toContain(run.transition);
     }
   });
 });

@@ -79,7 +79,7 @@ export const ACT_OUTCOMES = Object.freeze({
   FAILED: 'failed',
 });
 
-/** Kinds whose outcome is a print job the child has to go and collect. */
+/** Legacy v1 kinds whose outcome was inferred client-side as a print job. */
 const PRINT_KINDS = new Set(['print', 'retry']);
 
 /**
@@ -119,6 +119,11 @@ const isBackendFault = (payload) => payload?.reason !== 'unknown_code';
  */
 function launchTarget(action, effect) {
   if (effect?.kind === 'bank' && effect.bankId) return { kind: 'bank', bankId: effect.bankId };
+  if (effect?.kind === 'companion' && effect.companionId) return {
+    kind: 'companion', companionId: effect.companionId, presentation: effect.presentation ?? null,
+    title: effect.title ?? null, parts: effect.parts ?? [], state: effect.state ?? {},
+    participation: effect.participation ?? 'optional', learnerId: effect.learnerId ?? null,
+  };
   if (effect?.kind === 'program') {
     return {
       kind: 'program', program: effect.programId ?? action.target ?? null,
@@ -248,8 +253,9 @@ export function useSelfService({
     setView('card');
     schoolLog.selfService('code.resolved', { subject: res.data.subject ?? null });
     // Claim so a runner mounted from this card records against the learner the
-    // code named — the same soft-claim `useSchoolLaunch` performs. The card
-    // itself never shows the name, and the lock screen never has one to show.
+    // code named — the same soft-claim `useSchoolLaunch` performs. A valid
+    // contextual card confirms that identity; the keypad itself stays
+    // anonymous.
     const learnerId = res.data.learnerId
       ?? (typeof res.data.learner === 'string' ? res.data.learner : res.data.learner?.id)
       ?? null;
@@ -283,7 +289,7 @@ export function useSelfService({
       return;
     }
     // The real wire shape (`RunSelfServiceAction`): no top-level `target`.
-    const { outcome, sentence: said, effect } = res.data;
+    const { outcome, sentence: said, effect, transition = null } = res.data;
 
     // MOUNT IS DECIDED BY THE OUTCOME, NEVER BY THE ACTION KIND.
     //
@@ -323,7 +329,17 @@ export function useSelfService({
       return;
     }
 
-    if (PRINT_KINDS.has(action.kind)) {
+    if (transition === 'confirm-print') {
+      setView('confirm');
+      return;
+    }
+
+    // During the additive rollout an old backend has no `transition`, so keep
+    // the previous inference only for that wire shape. V2 decides the next UI
+    // state server-side from what ACTUALLY happened, which matters for a
+    // remediation action whose stable kind is `retry` but whose operation may
+    // be screen, play or launch rather than print.
+    if (transition === null && PRINT_KINDS.has(action.kind)) {
       if (outcome === ACT_OUTCOMES.DEBOUNCED) {
         // The debounce must be RENDERED, not swallowed: inside its cooldown
         // `IssueDocument` answers with an empty message — silence written for
@@ -345,6 +361,12 @@ export function useSelfService({
       }
       setView('confirm');
       return;
+    }
+
+    if (PRINT_KINDS.has(action.kind) && outcome === ACT_OUTCOMES.DEBOUNCED) {
+      schoolLog.selfService('print.debounced', { kind: action.kind });
+    } else if (PRINT_KINDS.has(action.kind) && outcome !== ACT_OUTCOMES.DONE) {
+      schoolLog.selfService('print.unfulfilled', { kind: action.kind, outcome: outcome ?? null });
     }
 
     // Everything else — play, launch, a DISPATCHED program, every refusal —

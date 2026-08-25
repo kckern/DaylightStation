@@ -23,7 +23,7 @@ export const TOKEN_PREFIX = 'sch:';
 /** Closed set — a new action class is a code change, never config. */
 export const TOKEN_CLASSES = Object.freeze([
   'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
-  'subject_next', 'learning_action', 'answer_sheet_lost',
+  'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion',
 ]);
 
 /**
@@ -132,6 +132,10 @@ export function createTokenRecord({
   } else if (tokenClass === 'subject_next') {
     if (!isNonEmptyString(subject.learnerId)) throw new Error(`${caller}: subject_next subject requires a learnerId`);
     if (!isNonEmptyString(subject.subject)) throw new Error(`${caller}: subject_next subject requires a subject`);
+  } else if (tokenClass === 'worksheet_companion') {
+    if (!isNonEmptyString(subject.learnerId)) throw new Error(`${caller}: worksheet_companion subject requires a learnerId`);
+    if (!isNonEmptyString(subject.companionId)) throw new Error(`${caller}: worksheet_companion subject requires a companionId`);
+    if (expiresAt == null) throw new Error(`${caller}: worksheet_companion token must expire`);
   } else if (tokenClass === 'learning_action') {
     if (!isNonEmptyString(subject.deviceId)) throw new Error(`${caller}: learning_action subject requires a deviceId`);
     if (!isNonEmptyString(subject.address)) throw new Error(`${caller}: learning_action subject requires an address`);
@@ -152,7 +156,7 @@ export function createTokenRecord({
   // reliably HAS an `expiresAt` for the code's clock to be shorter than —
   // `identify` and `learning_action` forbid an expiry outright, so a code on
   // those could never be held to the outlives-its-token rule below.
-  if (accessCode != null && tokenClass !== 'subject_next') {
+  if (accessCode != null && !['subject_next', 'worksheet_companion'].includes(tokenClass)) {
     throw new ValidationError(`${caller}: only a subject_next token carries an access code`, {
       code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS', details: { caller, tokenClass },
     });
@@ -243,7 +247,7 @@ export function isAccessCodeLive(record, { now } = {}) {
   // `subject_next` SHAPE — a subject carrying both a learner and a subject. An
   // `identify` card wearing a code would resolve to a record with no
   // `subject.subject` at all, which is a lesson nobody can open.
-  if (record.tokenClass !== 'subject_next') return false;
+  if (!['subject_next', 'worksheet_companion'].includes(record.tokenClass)) return false;
   if (!isAccessCodeShaped(record.accessCode)) return false;
   if (!isIsoTimestamp(record.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
   // At the rollover it is already dead: the boundary belongs to the next day.

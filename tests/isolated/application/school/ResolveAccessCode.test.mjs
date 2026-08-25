@@ -53,6 +53,7 @@ const build = async ({
   codes = [{ code: CODE, learnerId: 'kid1', subject: 'math' }],
   programIds = [],
   launchers = new Map(),
+  roster = { displayName: (id) => ({ kid1: 'Kid One', kid2: 'Kid Two' })[id] ?? null },
 } = {}) => {
   clock = fakeClock();
   appended = [];
@@ -94,6 +95,7 @@ const build = async ({
     issueDocument: {
       canIssueBank: (bankId) => { bankAsked.push(bankId); return canIssueBank(bankId); },
     },
+    roster,
     selfService: { mediaSurface },
     clock: clock.now,
     logger: silentLogger,
@@ -156,7 +158,7 @@ describe('reading a code', () => {
 
     expect(card.ok).toBe(true);
     expect(card.title).toBe(fixtureUnit(MEDIA_UNIT).title);
-    expect(card.actions[0]).toEqual({ kind: 'screen', label: 'Answer on the screen' });
+    expect(card.actions[0]).toMatchObject({ kind: 'screen', label: 'Answer on the screen' });
     expect(appended).toEqual([]);
     expect(sessions.ids()).toEqual(['ses_open']);
   });
@@ -262,16 +264,31 @@ describe('a code that works', () => {
     const card = await useCase.execute({ code: CODE });
 
     expect(card).toMatchObject({
+      schema: 'school.self-service-card/v2',
       ok: true,
       learner: 'kid1',
       subject: 'math',
       title: fixtureUnit(MEDIA_UNIT).title,
       sentence: null,
+      context: {
+        learner: { id: 'kid1', displayName: 'Kid One', avatar: { kind: 'learner', id: 'kid1' } },
+        taxonomy: {
+          subject: { id: 'math', label: 'Math & Money' },
+          course: {
+            id: 'math-fractions', title: 'math-fractions',
+            artwork: { kind: 'course-poster', courseId: 'math-fractions' },
+          },
+          lesson: { id: MEDIA_UNIT, title: fixtureUnit(MEDIA_UNIT).title },
+        },
+      },
     });
     // Unit 1 carries media, so the card sends the child to the configured room.
-    expect(card.actions).toEqual([
-      { kind: 'play', label: 'Play in the living room', target: 'livingroom-tv' },
-      { kind: 'exit', label: 'Go back' },
+    expect(card.actions).toMatchObject([
+      {
+        kind: 'play', label: 'Play in the living room', target: 'livingroom-tv',
+        role: 'primary', operation: 'play', followUp: 'message',
+      },
+      { kind: 'exit', label: 'Go back', role: 'secondary', operation: 'exit', followUp: 'close' },
     ]);
   });
 
@@ -282,12 +299,12 @@ describe('a code that works', () => {
 
     await build({ units: bankOnly(), canIssueBank: () => false });
     const onScreen = await useCase.execute({ code: CODE });
-    expect(onScreen.actions[0]).toEqual({ kind: 'screen', label: 'Answer on the screen' });
+    expect(onScreen.actions[0]).toMatchObject({ kind: 'screen', label: 'Answer on the screen' });
     expect(bankAsked).toEqual([MEDIA_BANK_ID]);
 
     await build({ units: bankOnly(), canIssueBank: () => true });
     const onPaper = await useCase.execute({ code: CODE });
-    expect(onPaper.actions[0]).toEqual({ kind: 'print', label: 'Print your worksheet' });
+    expect(onPaper.actions[0]).toMatchObject({ kind: 'print', label: 'Print your worksheet' });
   });
 
   it('resolves a sibling code to THAT sibling card, with no panel memory', async () => {
@@ -337,7 +354,7 @@ describe('a subject behind a program', () => {
 
     expect(card.ok).toBe(true);
     expect(card.subject).toBe('language');
-    expect(card.actions).toEqual([
+    expect(card.actions).toMatchObject([
       { kind: 'program', label: `Open ${fixtureUnit('language-daily').title}`, target: 'language' },
       { kind: 'exit', label: 'Go back' },
     ]);
@@ -354,7 +371,7 @@ describe('a subject behind a program', () => {
     // `{error: true}` -> `programUnavailable` -> a card, not a 500.
     expect(card.ok).toBe(true);
     expect(card.sentence).toBe('Tell a grown-up.');
-    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(card.actions).toMatchObject([{ kind: 'exit', label: 'Go back' }]);
     expect(appended).toEqual([]);
   });
 
@@ -369,7 +386,7 @@ describe('a subject behind a program', () => {
 
     expect(card.ok).toBe(true);
     expect(card.sentence).toBe('Tell a grown-up.');
-    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(card.actions).toMatchObject([{ kind: 'exit', label: 'Go back' }]);
   });
 });
 
@@ -384,7 +401,7 @@ describe('a card with nothing to offer', () => {
 
     expect(card.ok).toBe(true);
     expect(card.sentence).toBe('You already did this today.');
-    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(card.actions).toMatchObject([{ kind: 'exit', label: 'Go back' }]);
     expect(appended).toEqual([]);
   });
 
@@ -395,7 +412,7 @@ describe('a card with nothing to offer', () => {
 
     expect(card.ok).toBe(true);
     expect(card.sentence).toBe(`Finish “${fixtureUnit(MEDIA_UNIT).title}” first`);
-    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(card.actions).toMatchObject([{ kind: 'exit', label: 'Go back' }]);
     expect(appended).toEqual([]);
   });
 
@@ -405,6 +422,6 @@ describe('a card with nothing to offer', () => {
 
     expect(card.ok).toBe(true);
     expect(card.sentence).toBe('Tell a grown-up.');
-    expect(card.actions).toEqual([{ kind: 'exit', label: 'Go back' }]);
+    expect(card.actions).toMatchObject([{ kind: 'exit', label: 'Go back' }]);
   });
 });
