@@ -55,7 +55,7 @@ describe('teacherWorkspaceApi', () => {
     const result = await teacherWorkspaceApi.artifactOriginal('art/1');
     expect(result.ok).toBe(true);
     expect(result.data).toBeInstanceOf(Blob);
-    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/original.pdf', expect.objectContaining({
+    expect(fetch).toHaveBeenCalledWith('/api/v1/school/teacher/artifacts/art%2F1/original', expect.objectContaining({
       credentials: 'same-origin', headers: {},
     }));
   });

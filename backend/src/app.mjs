@@ -3666,6 +3666,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       bankReader: schoolService,
       teacherGate: schoolTeacherGate,
       learnerDirectory: schoolLearnerDirectory,
+      sessions: schoolLifecycle.stores?.sessions ?? null,
+      worksheetInstances: schoolLifecycle.stores?.worksheetInstances ?? null,
+      // A systematic bank correction must update the session's effective
+      // grade through the same append-only, reward-aware path as a one-off
+      // teacher adjustment. That path also creates the corrected receipt
+      // artifact; regrading attempts alone must never pretend history changed.
+      sessionCorrection: schoolLifecycle.stores?.sessions ? async (args) => new AdjustSessionGrade({
+        sessions: schoolLifecycle.stores.sessions,
+        teacherGate: schoolTeacherGate,
+        worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
+        reviewQueue: schoolLifecycle.stores.reviewQueue ?? null,
+        curriculum: schoolLifecycle.stores.curriculum ?? null,
+        economy: economyApi.economyService,
+        economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
+        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
+        logger: rootLogger.child({ module: 'school-systematic-regrade' }),
+      }).execute(args) : null,
       logger: rootLogger.child({ module: 'school-regrade' }),
     }) : null,
     getTeacherSession: schoolLifecycle.stores?.sessions
@@ -3677,6 +3694,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         allocationStore: schoolLifecycle.stores.allocationStore ?? null,
         worksheetInstances: schoolLifecycle.stores.worksheetInstances ?? null,
         curriculumExceptions: schoolLifecycle.stores.curriculumExceptionStore ?? null,
+        printDocuments: schoolLifecycle.stores.printDocuments ?? null,
       }) : null,
     getLearnerTimeline: schoolLifecycle.stores?.sessions
       ? new GetLearnerTimeline({ sessions: schoolLifecycle.stores.sessions }) : null,
@@ -3689,6 +3707,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         curriculum: schoolLifecycle.stores.curriculum ?? null,
         economy: economyApi.economyService,
         economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
+        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
         logger: rootLogger.child({ module: 'school-grade-adjustment' }),
       }) : null,
     retractSessionGradeAdjustment: schoolLifecycle.stores?.sessions && schoolTeacherGate
@@ -3698,17 +3717,20 @@ export async function createApp({ server, logger, configPaths, configExists, ena
         curriculum: schoolLifecycle.stores.curriculum ?? null,
         economy: economyApi.economyService,
         economyEnabled: schoolFullConfig.lifecycle?.economy?.enabled === true,
+        receiptIssuer: schoolLifecycle.useCases?.issueCorrectedResultReceipt ?? null,
         logger: rootLogger.child({ module: 'school-grade-adjustment' }),
       }) : null,
     issuedArtifactStore: schoolLifecycle.stores?.issuedArtifacts ?? null,
     teacherAgendaDispatch: schoolLifecycle.useCases?.teacherAgendaDispatch ?? null,
     reprintIssuedArtifact: schoolLifecycle.useCases?.reprintIssuedArtifact ?? null,
+    reprintResultReceiptArtifact: schoolLifecycle.useCases?.reprintResultReceiptArtifact ?? null,
     manageCurriculumException: schoolLifecycle.useCases?.manageCurriculumException ?? null,
     teacherCapabilitySessions,
     teacherGate: schoolTeacherGate,
     openRemediation: schoolLifecycle.useCases?.openRemediation ?? null,
     renderArtifactPostview: createArtifactPostviewRenderer(),
     renderSessionResult: renderSessionResultPng,
+    renderReceiptArtifact: schoolLifecycle.renderReceiptArtifact ?? null,
     sessionResultArtifacts: schoolSessionResultArtifacts,
     renderCoursePosterFallback,
     milestoneStore: schoolMilestoneStore,

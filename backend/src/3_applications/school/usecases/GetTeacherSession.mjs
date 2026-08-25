@@ -25,7 +25,7 @@ export class GetTeacherSession {
     const events = await this.#sessions.readEvents(sessionId);
     if (!events.length) throw new EntityNotFoundError('session', sessionId);
     const state = reduceSession(events);
-    const [unit, works, worksheet, reviewEvidence, issuedArtifactRows, learnerSessions, exceptions] = await Promise.all([
+    const [unit, works, worksheet, reviewEvidence, issuedArtifactRows, receiptArtifactRows, learnerSessions, exceptions] = await Promise.all([
       this.#curriculum?.getUnit?.(state.unitId) ?? null,
       this.#curriculum?.listWorks?.() ?? [],
       this.#worksheets?.findBySession?.(sessionId) ?? null,
@@ -35,6 +35,16 @@ export class GetTeacherSession {
         return artifact ? { ...artifact.manifest, availability: 'exact', exactBytesRetained: true,
           originalPdfUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(artifactId)}/original.pdf` }
           : { artifactId, availability: 'unavailable', exactBytesRetained: false };
+      })),
+      Promise.all((state.resultReceiptArtifacts ?? []).map(async (receipt) => {
+        const artifact = await this.#artifacts?.get?.(receipt.artifactId);
+        return artifact ? {
+          ...artifact.manifest, role: 'result-receipt', availability: 'exact', exactBytesRetained: true,
+          originalUrl: `/api/v1/school/teacher/artifacts/${encodeURIComponent(receipt.artifactId)}/original`,
+          replayUrl: artifact.manifest.sourceDocument
+            ? `/api/v1/school/teacher/artifacts/${encodeURIComponent(receipt.artifactId)}/replay.png` : null,
+          printed: receipt.printed, printReason: receipt.printReason, capturedAt: receipt.at,
+        } : { ...receipt, role: 'result-receipt', availability: 'unavailable', exactBytesRetained: false };
       })),
       this.#sessions.listForLearner(state.learnerId),
       this.#exceptions?.active?.() ?? [],
@@ -59,7 +69,7 @@ export class GetTeacherSession {
       availability: 'deterministic-replay',
       rendererRevision: worksheet.rendererRevision ?? null,
     } : null;
-    let artifactRows = [...issuedArtifactRows];
+    let artifactRows = [...issuedArtifactRows, ...receiptArtifactRows];
     if (legacyArtifact) {
       const legacyIndex = artifactRows.findIndex((artifact) => artifact.artifactId === legacyArtifact.artifactId
         || (artifact.documentId === legacyArtifact.documentId && artifact.documentRevision === legacyArtifact.documentRevision));

@@ -208,11 +208,36 @@ with the frozen questions, item-level assessment evidence, and an artifact
 lineage. Internal ids remain links between records; they are never the title
 shown to a teacher.
 
-Every newly issued artifact uses `school.session-artifact/v2`. Its manifest
-records the linked session or sessions, document revision, frozen render
-context, OMR mapping, parent lineage, and an integrity hash over retained
+Every newly issued worksheet artifact uses `school.session-artifact/v2`. Its
+manifest records the linked session or sessions, document revision, frozen
+render context, OMR mapping, parent lineage, and an integrity hash over retained
 bytes. A composed worksheet is one shared artifact linked to every included
 session; it is never reconstructed as several individual worksheets.
+
+Settlement result receipts use `school.session-artifact/v3`. Before the
+thermal job is sent, the rendered PNG and the complete result-document input
+(including its timestamp, learner context, score, question marks, feedback,
+and action codes) are captured immutably. The printer receives those retained
+PNG bytes, so **Open original receipt** and a subsequent reprint refer to the
+same object the child was handed — viewing teacher history never renders or
+creates an artifact. `result_receipt_captured` links the receipt to its session
+without placing it in the worksheet issue/reprint list; `result_receipt_reprinted`
+records a separately authorized physical dispatch.
+
+Teacher history can also offer **Open frozen replay** for a v3 receipt. That is
+a new compatible rendering of the frozen `sourceDocument`, clearly labelled as
+a replay; it never replaces, overwrites, or claims to be the retained original.
+An adult grade adjustment or retraction creates a new non-printing
+`result-correction` receipt artifact, parented to the previous receipt, and
+leaves the original result and original paper untouched. Legacy records retain
+their legacy/exact availability label and are never silently restyled.
+
+The same rule applies to a systematic bank regrade. It first appends corrected
+attempt evidence; only when all of a session's immutable graded roster can be
+accounted for does it append a deterministic effective-grade correction through
+the normal reward-aware adjustment path, which captures a parented corrected
+receipt. Sessions with a later manual adjustment or incomplete evidence are
+reported as skipped rather than guessed at.
 
 There are four honest artifact representations during the incremental rollout:
 

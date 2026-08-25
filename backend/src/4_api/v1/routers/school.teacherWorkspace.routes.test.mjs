@@ -54,6 +54,36 @@ describe('teacher workspace routes', () => {
       });
   });
 
+  it('serves a retained receipt PNG and a separately labelled frozen replay', async () => {
+    const issuedArtifactStore = { get: vi.fn(async () => ({
+      manifest: { artifactId: 'receipt_1', kind: 'result-receipt',
+        representation: { mediaType: 'image/png', extension: 'png' }, sourceDocument: { id: 'receipt_1' } },
+      bytes: Buffer.from('original raster'),
+    })) };
+    const renderReceiptArtifact = vi.fn(async () => ({ bytes: Buffer.from('frozen replay') }));
+    const server = app({ issuedArtifactStore, renderReceiptArtifact, teacherCapabilitySessions: activeCapability() });
+    await teacherCookie(request(server).get('/api/v1/school/teacher/artifacts/receipt_1/original'))
+      .expect(200).expect('Content-Type', /image\/png/).expect((response) => {
+        expect(Buffer.compare(response.body, Buffer.from('original raster'))).toBe(0);
+      });
+    await teacherCookie(request(server).get('/api/v1/school/teacher/artifacts/receipt_1/replay.png'))
+      .expect(200).expect('X-School-Artifact', 'frozen-replay').expect((response) => {
+        expect(Buffer.compare(response.body, Buffer.from('frozen replay'))).toBe(0);
+      });
+    expect(renderReceiptArtifact).toHaveBeenCalledWith({ id: 'receipt_1' });
+  });
+
+  it('dispatches receipt reprints to the retained-raster printer path', async () => {
+    const issuedArtifactStore = { get: vi.fn(async () => ({ manifest: { kind: 'result-receipt' }, bytes: Buffer.from('png') })) };
+    const reprintResultReceiptArtifact = { execute: vi.fn(async (args) => ({ applied: args.apply, kind: 'receipt' })) };
+    await request(app({ issuedArtifactStore, reprintResultReceiptArtifact }))
+      .post('/api/v1/school/teacher/artifacts/receipt_1/reprint').set('Idempotency-Key', 'reprint-1')
+      .send({ reprintedBy: 'parent', pin: '1234', apply: true }).expect(201).expect({ applied: true, kind: 'receipt' });
+    expect(reprintResultReceiptArtifact.execute).toHaveBeenCalledWith(expect.objectContaining({
+      artifactId: 'receipt_1', idempotencyKey: 'reprint-1', apply: true,
+    }));
+  });
+
   it('refuses teacher history and original artifacts while the teacher session is locked', async () => {
     const teacherCapabilitySessions = { status: vi.fn(() => ({ active: false })) };
     await request(app({ getLearnerTimeline: { execute: vi.fn() }, teacherCapabilitySessions }))

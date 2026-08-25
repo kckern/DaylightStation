@@ -442,7 +442,7 @@ function GradeAdjustmentRetraction({ sessionId, adjustment, revision, onApplied 
   );
 }
 
-function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null, availability = 'exact', index = null }) {
+function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null, originalUrl = null, replayUrl = null, kind = 'worksheet', availability = 'exact', index = null }) {
   const [url, setUrl] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -452,10 +452,10 @@ function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null,
     setError(null);
     const response = availability === 'deterministic-replay' && sessionId
       ? await teacherWorkspaceApi.worksheetPdf(sessionId)
-      : originalPdfUrl
+      : (originalUrl ?? originalPdfUrl)
       ? await (async () => {
         try {
-          const fetched = await fetch(originalPdfUrl, { credentials: 'same-origin' });
+          const fetched = await fetch(originalUrl ?? originalPdfUrl, { credentials: 'same-origin' });
           return fetched.ok ? { ok: true, data: await fetched.blob() } : { ok: false };
         } catch { return { ok: false }; }
       })()
@@ -473,13 +473,15 @@ function ArtifactOriginal({ artifactId, sessionId = null, originalPdfUrl = null,
       ? 'Only a semantic reconstruction is available for this historical record.'
       : 'The original paper is not available in this historical record.'}</span>;
   }
+  const originalLabel = kind === 'result-receipt' ? 'Open original receipt' : 'Open issued PDF';
   return <>{url
-    ? <a target="_blank" rel="noreferrer" href={url}>{availability === 'exact' ? 'Open issued PDF' : 'Open replayed worksheet PDF'}{index === null ? '' : ` ${index + 1}`}</a>
-    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `${availability === 'exact' ? 'Open issued PDF' : 'Open replayed worksheet PDF'}${index === null ? '' : ` ${index + 1}`}…`}</button>}
+    ? <a target="_blank" rel="noreferrer" href={url}>{availability === 'exact' ? originalLabel : 'Open replayed worksheet PDF'}{index === null ? '' : ` ${index + 1}`}</a>
+    : <button type="button" disabled={busy} onClick={prepare}>{busy ? 'Preparing…' : `${availability === 'exact' ? originalLabel : 'Open replayed worksheet PDF'}${index === null ? '' : ` ${index + 1}`}…`}</button>}
+  {replayUrl && <a target="_blank" rel="noreferrer" href={replayUrl}>Open frozen replay</a>}
   {error && <span className="teacher-panel__error">{error}</span>}</>;
 }
 
-function ArtifactReprint({ artifactId, onPrinted }) {
+function ArtifactReprint({ artifactId, kind = 'worksheet', onPrinted }) {
   const [preview, setPreview] = useState(null);
   const [idempotencyKey, setIdempotencyKey] = useState(null);
   const { run, busy, errors } = useTeacherWrite({ panel: 'artifact-reprint' });
@@ -494,7 +496,8 @@ function ArtifactReprint({ artifactId, onPrinted }) {
     stepUp: { action: 'artifact.reprint', resource: artifactId },
     onSuccess: () => { setPreview(null); setIdempotencyKey(null); onPrinted?.(); },
   });
-  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Reprint…</button> : <span className="teacher-reprint-confirm"><span>Exact retained PDF · Student No. {preview.cardId ?? 'none'} · {preview.byteLength} bytes</span><button type="button" disabled={busy === key} onClick={print}>Confirm print</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
+  const label = kind === 'result-receipt' || kind === 'result-correction' ? 'Exact retained receipt' : 'Exact retained PDF';
+  return <>{!preview ? <button type="button" disabled={busy === key} onClick={prepare}>Reprint…</button> : <span className="teacher-reprint-confirm"><span>{label} · {preview.byteLength} bytes</span><button type="button" disabled={busy === key} onClick={print}>Confirm print</button><button type="button" onClick={() => { setPreview(null); setIdempotencyKey(null); }}>Cancel</button></span>}{errors[key] && <span className="teacher-panel__error">{errors[key]}</span>}</>;
 }
 
 export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
@@ -577,15 +580,16 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
               </li>)}
             </ol>
           </section>}
-          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Assessment renderings</h3><p className="teacher-muted">These are the machine assessment rendering and the current effective assessment. They are not the thermal receipt or a photograph of the scanned answer card.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Machine assessment rendering" /></a><figcaption>Machine assessment</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current effective assessment rendering" /></a><figcaption>Current effective assessment</figcaption></figure></div></section>}
+          {session?.results && <section className="teacher-panel"><h3 className="teacher-panel__title">Assessment evidence</h3><p className="teacher-muted">Machine and effective assessment renderings are diagnostic evidence, not the printed thermal result receipt.</p><div className="teacher-result-previews"><figure><a href={session.results.machine} target="_blank" rel="noreferrer"><img src={session.results.machine} alt="Machine assessment rendering" /></a><figcaption>Machine assessment</figcaption></figure><figure><a href={session.results.effective} target="_blank" rel="noreferrer"><img src={session.results.effective} alt="Current effective assessment rendering" /></a><figcaption>Current effective assessment</figcaption></figure></div></section>}
           {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
           <section className="teacher-panel">
             <h3 className="teacher-panel__title">Artifact lineage</h3>
             {session?.artifacts?.length ? session.artifacts.map((artifact, index) => <div className="teacher-artifact-actions" key={artifact.artifactId}>
-              <strong>{artifact.title ?? session.assignment?.title ?? 'Historical document'}</strong>
+              <strong>{artifact.kind === 'result-receipt' ? 'Result receipt' : artifact.title ?? session.assignment?.title ?? 'Historical document'}</strong>
               <span className="teacher-muted">{artifact.availability === 'exact' ? 'Exact issued bytes retained' : artifact.availability === 'deterministic-replay' ? 'Replay from frozen issue inputs' : artifact.availability === 'semantic-reconstruction' ? 'Semantic reconstruction only' : 'Original unavailable'}</span>
-              <ArtifactOriginal artifactId={artifact.artifactId} sessionId={sessionId} originalPdfUrl={artifact.originalPdfUrl} availability={artifact.availability ?? (artifact.exactBytesRetained === false ? 'deterministic-replay' : 'exact')} index={session.artifacts.length > 1 ? index : null} />
-              {artifact.availability === 'exact' && <ArtifactReprint artifactId={artifact.artifactId} onPrinted={() => setAttempt((n) => n + 1)} />}
+              {artifact.kind === 'result-receipt' && <span className="teacher-muted">{artifact.printed ? 'Printed at settlement' : `Not confirmed: ${artifact.printReason ?? 'printer unavailable'}`}</span>}
+              <ArtifactOriginal artifactId={artifact.artifactId} sessionId={sessionId} originalPdfUrl={artifact.originalPdfUrl} originalUrl={artifact.originalUrl} replayUrl={artifact.replayUrl} kind={artifact.kind} availability={artifact.availability ?? (artifact.exactBytesRetained === false ? 'deterministic-replay' : 'exact')} index={session.artifacts.length > 1 ? index : null} />
+              {artifact.availability === 'exact' && <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />}
             </div>) : <CapabilityNotice>No worksheet artifact is linked to this session.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${new Date(adjustment.at).toLocaleString()}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}

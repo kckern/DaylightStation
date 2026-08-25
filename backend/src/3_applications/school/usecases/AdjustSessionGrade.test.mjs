@@ -30,6 +30,23 @@ function fixture() {
 }
 
 describe('AdjustSessionGrade', () => {
+  it('issues one immutable correction receipt only after an adjustment is applied', async () => {
+    const f = fixture();
+    const receiptIssuer = { execute: vi.fn(async () => ({ artifactId: 'receipt/ses_1/correction/adj_1', created: true })) };
+    const adjust = new AdjustSessionGrade({ sessions: f.sessions, teacherGate: f.teacherGate, receiptIssuer,
+      clock: () => new Date('2026-08-02T12:00:00.000Z'), logger: { info() {} } });
+    const args = { sessionId: 'ses_1', adjustmentId: 'adj_1', percent: 100,
+      reason: 'scanner missed a mark', adjustedBy: 'parent', baseSeq: 6 };
+
+    await adjust.execute(args);
+    expect(receiptIssuer.execute).not.toHaveBeenCalled();
+    const applied = await adjust.execute({ ...args, apply: true });
+
+    expect(applied.receiptArtifact).toMatchObject({ artifactId: 'receipt/ses_1/correction/adj_1' });
+    expect(receiptIssuer.execute).toHaveBeenCalledOnce();
+    expect(receiptIssuer.execute).toHaveBeenCalledWith({ sessionId: 'ses_1', correctionId: 'adj_1', reason: 'scanner missed a mark' });
+  });
+
   it('previews without writing, then appends one annotation and is idempotent', async () => {
     const f = fixture();
     const args = { sessionId: 'ses_1', adjustmentId: 'adj_erase', percent: 100,

@@ -36,6 +36,7 @@
 // answering — false, and no amount of retrying could clear it.
 
 import path from 'path';
+import os from 'node:os';
 import { promises as fs } from 'fs';
 import { YamlCurriculumDatastore } from '#adapters/persistence/yaml/YamlCurriculumDatastore.mjs';
 import { YamlWorkSessionDatastore } from '#adapters/persistence/yaml/YamlWorkSessionDatastore.mjs';
@@ -77,6 +78,9 @@ import { RecordMediaCompletion } from '#apps/school/usecases/RecordMediaCompleti
 import { SubmitPaperWork } from '#apps/school/usecases/SubmitPaperWork.mjs';
 import { GradeSubmission } from '#apps/school/usecases/GradeSubmission.mjs';
 import { CloseSessionOutcome } from '#apps/school/usecases/CloseSessionOutcome.mjs';
+import { CaptureResultReceiptArtifact } from '#apps/school/usecases/CaptureResultReceiptArtifact.mjs';
+import { ReprintResultReceiptArtifact } from '#apps/school/usecases/ReprintResultReceiptArtifact.mjs';
+import { IssueCorrectedResultReceipt } from '#apps/school/usecases/IssueCorrectedResultReceipt.mjs';
 import { OpenRemediation } from '#apps/school/usecases/OpenRemediation.mjs';
 import { ResolvePersonalCard } from '#apps/school/usecases/ResolvePersonalCard.mjs';
 import { ResolveScanAction } from '#apps/school/usecases/ResolveScanAction.mjs';
@@ -625,6 +629,30 @@ export async function createSchoolLifecycle({
   const allocationStore = new YamlAllocationStore({ directory: printDocumentsRoot, timeZone: timezone });
   const worksheetInstances = new YamlWorksheetInstanceStore({ configService, logger });
   const issuedArtifacts = new YamlIssuedArtifactStore({ configService });
+  // Capture the same canvas the thermal raster path draws. The application
+  // receives a small port returning immutable PNG bytes, never a renderer.
+  const receiptCapture = receiptPngRenderer ? new CaptureResultReceiptArtifact({
+    issuedArtifacts,
+    renderReceipt: async (document) => {
+      const rendered = await receiptPngRenderer.createCanvas(document);
+      return { bytes: rendered.canvas.toBuffer('image/png'), width: rendered.width, height: rendered.height };
+    },
+    logger,
+  }) : null;
+  const receiptArtifactPrinter = receiptPrinter ? {
+    async print({ bytes, representation, jobName }) {
+      if (representation?.mediaType !== 'image/png') return false;
+      const tempPath = path.join(os.tmpdir(), `school-retained-receipt-${shortId(16)}.png`);
+      await fs.writeFile(tempPath, bytes, { flag: 'wx' });
+      try {
+        return await receiptPrinter.print({
+          items: [{ type: 'image', path: tempPath, width: representation.width ?? 384,
+            height: representation.height ?? 1, align: 'left', threshold: 128 }],
+          footer: { paddingLines: 3, autoCut: true }, jobName,
+        });
+      } finally { await fs.unlink(tempPath).catch(() => {}); }
+    },
+  } : null;
   const renderPrintDocument = new RenderPrintDocument({
     repository: printDocuments,
     banks: createYamlBankReader({ dataDir }),
@@ -657,6 +685,12 @@ export async function createSchoolLifecycle({
     issuedArtifacts, sessions: stores.sessions, printer: laserPrinter, teacherGate,
     curriculumExceptions: curriculumExceptionStore, clock, logger,
   });
+  const reprintResultReceiptArtifact = receiptArtifactPrinter ? new ReprintResultReceiptArtifact({
+    issuedArtifacts, sessions: stores.sessions, teacherGate, receiptArtifactPrinter, clock,
+  }) : null;
+  const issueCorrectedResultReceipt = receiptCapture ? new IssueCorrectedResultReceipt({
+    sessions: stores.sessions, curriculum, worksheetInstances, receiptCapture, clock, timezone,
+  }) : null;
   const dispatchMedia = playback
     ? new DispatchMedia({
       curriculum, sessions: stores.sessions, playback,
@@ -691,6 +725,8 @@ export async function createSchoolLifecycle({
     // child's hand. Without this the close-out returned JSON and the loop
     // dead-ended.
     receipts,
+    receiptCapture,
+    receiptArtifactPrinter,
     economy: economyService,
     economyAction: lifecycleCfg.economy?.action || 'school-unit-complete',
     economyEnabled: lifecycleCfg.economy?.enabled === true,
@@ -930,7 +966,7 @@ export async function createSchoolLifecycle({
     resolvePersonalCard, resolveScanAction, resolveReviewItem, setAssignments, closeLanguageDay,
     previewAgenda, markSessionAbandoned, replaceLostAnswerSheet, createLostAnswerSheetTicket,
     enrollLearner, unenrollLearner, resolveAccessCode, runSelfServiceAction,
-    getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, manageCurriculumException,
+    getLearnerDayCompletion, teacherAgendaDispatch, reprintIssuedArtifact, reprintResultReceiptArtifact, issueCorrectedResultReceipt, manageCurriculumException,
   };
 
   const router = createSchoolLifecycleRouter({
@@ -1029,6 +1065,10 @@ export async function createSchoolLifecycle({
       document: documentRenderer, receipt: receiptRenderer,
       receiptPng: receiptPngRenderer, receiptPrint: receiptPrintRenderer,
     },
+    renderReceiptArtifact: receiptPngRenderer ? async (document) => {
+      const rendered = await receiptPngRenderer.createCanvas(document);
+      return { bytes: rendered.canvas.toBuffer('image/png'), width: rendered.width, height: rendered.height };
+    } : null,
     // Null when no eventBus was wired (see above) — `app.mjs` calls
     // `schoolLifecycle.donowSchoolBridge?.stop()` on shutdown, same
     // conditional-on-existence pattern as its other graceful-shutdown hooks.

@@ -17,6 +17,8 @@ const PAYLOADS = {
   created: { learnerId: 'kid1', unitId: 'math-add-1' },
   issued: { artifactId: 'doc_1' },
   reprinted: { artifactId: 'doc_1' },
+  result_receipt_captured: { artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: true },
+  result_receipt_reprinted: { artifactId: 'receipt/ses_abc123/out:ses_abc123', idempotencyKey: 'rp_1', reprintedBy: 'parent1' },
   media_dispatched: { dispatchId: 'dsp_1', target: 'shield-tv', contentId: 'plex:1234' },
   media_completed: {},
   media_stalled: {},
@@ -26,6 +28,8 @@ const PAYLOADS = {
   graded: { attemptIds: ['att_1'], percent: 90 },
   outcome_recorded: { outcomeId: `out:${SID}`, result: 'passed' },
   rewarded: { txnId: 'txn_1' },
+  reward_reconciled: { reconciliationId: 'rec_1', delta: 1, txnId: 'txn_2' },
+  reward_reconciliation_failed: { reconciliationId: 'rec_2', delta: -1, reason: 'economy unavailable' },
   remediation_opened: { newSessionId: 'ses_next', variant: 1 },
   reassigned: { fromLearnerId: 'kid1', toLearnerId: 'kid2' },
   failed: { stage: 'print', reason: 'printer offline' },
@@ -50,9 +54,10 @@ const log = (types, overrides = {}) => {
 describe('EVENT_TYPES', () => {
   it('is the closed spec §5.2 set', () => {
     expect(EVENT_TYPES).toEqual([
-      'created', 'issued', 'reprinted',
+      'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
       'media_dispatched', 'media_completed', 'media_stalled',
       'launch_dispatched', 'program_dispatched', 'submitted', 'graded', 'outcome_recorded', 'rewarded',
+      'reward_reconciled', 'reward_reconciliation_failed',
       'remediation_opened', 'reassigned', 'grade_adjusted', 'grade_adjustment_retracted', 'failed', 'abandoned',
     ]);
   });
@@ -69,6 +74,18 @@ describe('EVENT_TYPES', () => {
 });
 
 describe('append-only teacher grade corrections', () => {
+  it('records a retained result receipt without advancing the learning state', () => {
+    const state = reduceSession(log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'result_receipt_captured'], {
+      result_receipt_captured: { artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: true },
+    }));
+    expect(state.errors).toEqual([]);
+    expect(state.state).toBe('outcome_recorded');
+    expect(state.issuedArtifacts).toEqual(['doc_1']);
+    expect(state.resultReceiptArtifacts).toEqual([expect.objectContaining({
+      artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: true,
+    })]);
+  });
+
   it('preserves machine evidence while projecting the latest active correction through pass state', () => {
     const events = log(['created', 'issued', 'submitted', 'graded', 'outcome_recorded', 'rewarded'], {
       graded: { percent: 60, passingPercent: 80, correctCount: 3, totalCount: 5 },

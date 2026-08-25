@@ -16,11 +16,11 @@ function stableAdjustmentId({ sessionId, baseSeq, adjustedBy, reason, percent, c
 
 /** Append-only, preview-first correction of one settled session's grade. */
 export class AdjustSessionGrade {
-  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger;
+  #sessions; #teacherGate; #worksheets; #reviews; #curriculum; #economy; #economyEnabled; #clock; #logger; #receiptIssuer;
 
   constructor({ sessions, teacherGate, worksheetInstances = null, reviewQueue = null,
     curriculum = null, economy = null, economyEnabled = false,
-    clock = () => new Date(), logger = console } = {}) {
+    receiptIssuer = null, clock = () => new Date(), logger = console } = {}) {
     if (!sessions) throw new Error('AdjustSessionGrade requires sessions');
     if (!teacherGate) throw new Error('AdjustSessionGrade requires teacherGate');
     this.#sessions = sessions;
@@ -30,6 +30,7 @@ export class AdjustSessionGrade {
     this.#curriculum = curriculum;
     this.#economy = economy;
     this.#economyEnabled = economyEnabled === true;
+    this.#receiptIssuer = receiptIssuer;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -98,12 +99,15 @@ export class AdjustSessionGrade {
         sessionId, adjustmentId: id, adjustedBy, from: state.gradedPercent, to: preview.gradedPercent,
       });
     }
+    const receiptArtifact = apply === true
+      ? await this.#receiptIssuer?.execute?.({ sessionId, correctionId: id, reason: reason.trim() }) : null;
     return {
       schema: 'school.grade-adjustment-receipt/v1', applied: apply === true, idempotent: false,
       sessionId, adjustmentId: id, baseSeq: currentSeq,
       machineGrade: preview.machineGrade, previousEffectiveGrade: gradeOf(state),
       effectiveGrade: gradeOf(preview), previousOutcome: state.outcome, outcome: preview.outcome,
       rewardChanged: reconciliation.delta !== 0, rewardReconciliation: reconciliation,
+      receiptArtifact,
     };
   }
 
@@ -205,10 +209,10 @@ export class AdjustSessionGrade {
 }
 
 export class RetractSessionGradeAdjustment {
-  #sessions; #teacherGate; #clock; #logger; #rewardReconciler;
+  #sessions; #teacherGate; #clock; #logger; #rewardReconciler; #receiptIssuer;
 
   constructor({ sessions, teacherGate, clock = () => new Date(), logger = console,
-    curriculum = null, economy = null, economyEnabled = false } = {}) {
+    curriculum = null, economy = null, economyEnabled = false, receiptIssuer = null } = {}) {
     if (!sessions) throw new Error('RetractSessionGradeAdjustment requires sessions');
     if (!teacherGate) throw new Error('RetractSessionGradeAdjustment requires teacherGate');
     this.#sessions = sessions;
@@ -217,6 +221,7 @@ export class RetractSessionGradeAdjustment {
     this.#logger = logger;
     this.#rewardReconciler = new AdjustSessionGrade({ sessions, teacherGate, clock, logger,
       curriculum, economy, economyEnabled });
+    this.#receiptIssuer = receiptIssuer;
   }
 
   async execute({ sessionId, adjustmentId, reason, retractedBy = null, pin = null, baseSeq, apply = false } = {}) {
@@ -262,10 +267,12 @@ export class RetractSessionGradeAdjustment {
         sourceAdjustmentId: adjustmentId, reconciliationId: `grade-adjustment-retraction:${adjustmentId}` });
       this.#logger.info?.('school.session.grade-adjustment-retracted', { sessionId, adjustmentId, retractedBy });
     }
+    const receiptArtifact = apply === true
+      ? await this.#receiptIssuer?.execute?.({ sessionId, correctionId: `retraction-${adjustmentId}`, reason: reason.trim() }) : null;
     return { schema: 'school.grade-adjustment-retraction-receipt/v1', applied: apply === true,
       idempotent: false, sessionId, adjustmentId, baseSeq: currentSeq,
       previousEffectiveGrade: gradeOf(state), effectiveGrade: gradeOf(preview), outcome: preview.outcome,
-      rewardChanged: reconciliation?.delta !== 0, rewardReconciliation: reconciliation };
+      rewardChanged: reconciliation?.delta !== 0, rewardReconciliation: reconciliation, receiptArtifact };
   }
 }
 

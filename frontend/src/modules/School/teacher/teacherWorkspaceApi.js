@@ -80,7 +80,7 @@ export const teacherWorkspaceApi = {
     { method: 'POST', body, headers: grantToken ? { 'X-Teacher-Step-Up': grantToken } : {} },
   ),
   artifact: (artifactId) => request(`/artifacts/${encodeURIComponent(artifactId)}`),
-  artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original.pdf`),
+  artifactOriginal: (artifactId) => requestBlob(`/artifacts/${encodeURIComponent(artifactId)}/original`),
   reprintArtifact: (artifactId, body, idempotencyKey, grantToken = null) => request(
     `/artifacts/${encodeURIComponent(artifactId)}/reprint`, { method: 'POST', body: { ...body, idempotencyKey }, headers: {
       'Idempotency-Key': idempotencyKey, ...(grantToken ? { 'X-Teacher-Step-Up': grantToken } : {}),
