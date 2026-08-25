@@ -26,10 +26,11 @@
  * nothing was accomplished, so there is nothing to celebrate. Only a real
  * completion rings.
  *
- * IDEMPOTENT BY learnerId + studyDate, and deliberately in-memory: a restart
- * loses the ledger, and the worst case is one repeated chime after a deploy.
- * Persisting it would buy very little and add a write to a path whose whole
- * job is to be fire-and-forget.
+ * CEREMONY DEDUPE IS learnerId + studyDate and deliberately in-memory: a
+ * restart can repeat a chime, but it cannot duplicate educational progress.
+ * School's course/unit/lesson projection is append-only evidence keyed by
+ * learner + Plex lesson, and boot reconciliation rebuilds it from Piano's
+ * authoritative completion ledger.
  *
  * NEITHER LIMB CAN BREAK THE OTHER, OR PLAYBACK. The Portal broadcast and the
  * Home Assistant script are dispatched independently, each with its own
@@ -53,8 +54,10 @@ export class PianoLessonCeremonyBridge {
   /**
    * @param {object} config
    * @param {{subscribe: Function, broadcast?: Function, publish?: Function}} config.eventBus
-   * @param {{get: Function}} config.assignments - the learner assignment store
+   * @param {{get: Function, list?: Function}} config.assignments - the learner assignment store
    * @param {{id: string, status: Function}} config.launcher - PianoCourseProgramLauncher
+   * @param {{appendEvidence: Function}|null} [config.evidenceRepository] - School's
+   *   append-only learning evidence repository; duplicate evidenceIds must be idempotent.
    * @param {{fire: Function}|null} [config.hook] - SchoolGradingHookAdapter bound to
    *   `piano_lesson_hook`; null in a household with no Home Assistant.
    * @param {Function|null} [config.resolveStudent] - learnerId -> display name

@@ -597,9 +597,9 @@ export class RunSelfServiceAction {
       // DoNow's own wording, verbatim — it names the real surface through
       // that surface's adapter label, which is why nothing here re-words it.
       sentence: result?.message || 'Could not start that. Ask a grown-up to set this up.',
-      // Deliberately NOT `kind: 'program'`: there is nothing here for a panel
-      // to mount, and an effect that looks mountable would invite exactly the
-      // false "opening here" this method exists to remove.
+      // Deliberately NOT `kind: 'program'`: an external-surface handoff is not
+      // mounted on the panel. A successful dispatch closes the launch card;
+      // the Piano kiosk owns the activity from that point forward.
       effect: { decision, surface, programId, unitId },
       ...(decision === 'dispatched' ? { transition: 'close' } : {}),
     };

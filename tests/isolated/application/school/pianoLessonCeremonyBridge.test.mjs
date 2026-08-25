@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
+import { validateLearningEvidence } from '#domains/school/progress/index.mjs';
 
 const COURSE = 'plex:675689';
 
@@ -91,6 +92,41 @@ describe('PianoLessonCeremonyBridge', () => {
       measures: { completions: 1 },
       source: { surface: 'piano-kiosk', transport: 'playback' },
     });
+    expect(validateLearningEvidence(ctx.evidence[0]).errors).toEqual([]);
+  });
+
+  it('reconciles historical Piano completions into idempotent School course/unit/lesson evidence', async () => {
+    const rows = new Map();
+    const bridge = new PianoLessonCeremonyBridge({
+      eventBus: fakeBus(),
+      assignments: {
+        get: async () => null,
+        list: async () => [{ learnerId: 'felix', programs: ENROLLED }],
+      },
+      launcher: {
+        id: 'piano-course',
+        status: async () => ({ completedLessons: [completion(), completion('plex:9002', 'Unit 3 Lesson 8')] }),
+      },
+      evidenceRepository: {
+        appendEvidence: async (row) => {
+          if (!rows.has(row.evidenceId)) rows.set(row.evidenceId, row);
+          return { status: rows.get(row.evidenceId) === row ? 'recorded' : 'duplicate' };
+        },
+      },
+      logger: { warn() {}, info() {} },
+    });
+
+    await bridge.reconcile();
+    await bridge.reconcile();
+
+    expect([...rows.keys()]).toEqual([
+      'piano-lesson:felix:plex:9001',
+      'piano-lesson:felix:plex:9002',
+    ]);
+    expect([...rows.values()].map((row) => row.learning)).toEqual([
+      expect.objectContaining({ courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9001' }),
+      expect.objectContaining({ courseId: COURSE, unitId: 'plex:season:3', lessonId: 'plex:9002' }),
+    ]);
   });
 
   it('fires once per learner per study day, not once per lesson', async () => {
