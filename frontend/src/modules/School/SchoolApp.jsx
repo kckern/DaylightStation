@@ -554,22 +554,26 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     onLaunch: onPortalLaunch,
   });
 
+  const [lockSide, setLockSide] = useState('keypad-left');
+
+  // The two static panes trade sides only while the anonymous keypad is up.
+  // Keeping them mounted preserves an entry already in progress and avoids a
+  // bright, fixed image sitting on the same half of the Portal all day.
+  useEffect(() => {
+    if (!lock.locked || selfService.view !== 'keypad' || active || section) return undefined;
+    const timer = window.setInterval(() => {
+      setLockSide((side) => (side === 'keypad-left' ? 'keypad-right' : 'keypad-left'));
+    }, 90_000);
+    return () => window.clearInterval(timer);
+  }, [active, lock.locked, section, selfService.view]);
+
   // The scan ceremony (Slice D, omr-grading-integrity design): a scan must
   // always be acknowledged on screen. Subscribed here — not inside the lock
   // branch below — because a scan can land while the panel is either locked
   // or open (KC: "a scan must always be acknowledged on screen").
   const ceremony = useScanCeremony();
 
-  // Split lock screen (kiosk wave 5): keypad in one pane, the read-only
-  // AgendaStatusBoard in the other. The sides swap on a fixed cadence for
-  // burn-in — a layout flip only (grid direction), so keypad entry state
-  // survives every swap. Local date: toISOString flips to tomorrow at 5pm PDT.
-  const [lockSide, setLockSide] = useState('keypad-left');
-  useEffect(() => {
-    if (!lock.locked) return undefined;
-    const timer = setInterval(() => setLockSide((side) => (side === 'keypad-left' ? 'keypad-right' : 'keypad-left')), 90_000);
-    return () => clearInterval(timer);
-  }, [lock.locked]);
+  // Local date: toISOString flips to tomorrow at 5pm PDT.
   const statusDay = (() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; })();
 
   // Going home also clears any guest-refusal notice: the notice belongs to

@@ -12,8 +12,8 @@ android {
         minSdk 26
         targetSdk 28
         // BUMP on every build — install -r rejects a lower versionCode.
-        versionCode 14
-        versionName "0.14-le-legacy"
+        versionCode 15
+        versionName "0.15-control-center-toggle"
     }
 
     buildTypes {

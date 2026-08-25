@@ -1330,6 +1330,12 @@ idle; activity resets it, and cards, runners, scans, and in-flight requests
 suppress it. The keypad always provides a two-tap **Turn off screen** control.
 If the bridge is unavailable, the panel stays on and shows a visible failure.
 
+The locked resting screen is a stable two-pane wall: the keypad and a read-only
+per-learner `Today at school` board share the panel evenly. The board is
+informational only—no teacher controls or links—and its delayed refresh never
+changes the keypad's size or position. Every 90 seconds the panes trade sides
+to spread static-screen wear without remounting a code a child is entering.
+
 Minting and locking are independent so the rollout can be staged: print codes
 first, confirm one resolves, lock the panel last. **Both off is exactly the
 behaviour before this feature existed**, pinned by a characterisation test.
