@@ -71,6 +71,12 @@ const DEFAULT_CODE_PAGE = 'cp858';
  * to do with how big the job was. This guards CONNECT only; `device.open`'s
  * callback clears it, so a large job's own transfer and drain time is never
  * charged against it.
+ *
+ * NOTE: production never falls through to this default. `backend/src/app.mjs`
+ * constructs the live adapter with an explicit `timeout` sourced from
+ * `thermal_printer_defaults.timeout` in `data/system/config/adapters.yml` —
+ * both printers inherit that config value. Changing this constant alone does
+ * NOT change production behaviour; the config value must be changed too.
  */
 export const DEFAULT_CONNECT_TIMEOUT_MS = 20000;
 
