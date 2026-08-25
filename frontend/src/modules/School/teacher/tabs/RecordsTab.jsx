@@ -4,8 +4,9 @@
  * presentational components (CurriculumHistoryOverview /
  * InstructionalInsightsOverview) — same read models, teacher-side chrome.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
+import { curriculumTitles } from '../curriculumTitles.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from '../panels/PanelFrame.jsx';
 import ReportCardView from '../panels/ReportCardView.jsx';
@@ -44,6 +45,23 @@ export default function RecordsTab({ learnerId, kids = [] }) {
       isEmpty: (d) => !d || Object.values(d).every((v) => (Array.isArray(v) ? v.length === 0 : v == null)),
     },
   );
+  // The history tree carries only ids (pure domain); the teacher page owns a
+  // catalog read, so it can resolve authored titles the kid surface can't.
+  const catalog = usePanelFetch(() => schoolApi.curriculumUnits(), { panel: 'records-catalog', notFoundAs: 'unavailable' });
+  const catalogUnits = catalog.data?.units ?? [];
+  const resolveNodeTitle = useCallback((node) => {
+    if (!catalogUnits.length) return null;
+    const titles = curriculumTitles(catalogUnits);
+    if (node.kind === 'unit' || node.kind === 'lesson') {
+      const title = titles.lesson(node.id);
+      return title === 'Lesson title unavailable' ? null : title;
+    }
+    if (node.kind === 'course') {
+      const title = titles.course(node.id);
+      return title === 'Course title unavailable' ? null : title;
+    }
+    return null;
+  }, [catalogUnits]);
 
   if (!learnerId) {
     return (
@@ -94,7 +112,7 @@ export default function RecordsTab({ learnerId, kids = [] }) {
         retry={history.retry}
         emptyCopy="No recorded evidence yet."
       >
-        {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} />}
+        {history.data?.curriculumHistory && <CurriculumHistoryOverview history={history.data.curriculumHistory} resolveTitle={resolveNodeTitle} />}
       </PanelFrame>
       <PanelFrame
         title="Tutor insights"

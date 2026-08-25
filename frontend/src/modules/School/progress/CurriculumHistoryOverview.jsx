@@ -5,10 +5,10 @@ const KIND_LABEL = {
   catalog: 'Catalog', subject: 'Subject', course: 'Course', unit: 'Unit', lesson: 'Lesson', module: 'Module',
 };
 
-export function flattenCurriculumHistory(roots = []) {
+export function flattenCurriculumHistory(roots = [], resolveTitle = null) {
   const items = [];
   const visit = (node, ancestors = []) => {
-    const label = displayId(node.id);
+    const label = resolveTitle?.(node) ?? displayId(node.id);
     const trail = [...ancestors, label];
     items.push({ ...node, label, trail, depth: ancestors.length });
     (node.children ?? []).forEach((child) => visit(child, trail));
@@ -18,9 +18,9 @@ export function flattenCurriculumHistory(roots = []) {
 }
 
 /** Cross-surface progress/history view using the shared overview grammar. */
-export default function CurriculumHistoryOverview({ history }) {
+export default function CurriculumHistoryOverview({ history, resolveTitle = null }) {
   const [listView, setListView] = useState(false);
-  const items = useMemo(() => flattenCurriculumHistory(history?.roots), [history]);
+  const items = useMemo(() => flattenCurriculumHistory(history?.roots, resolveTitle), [history, resolveTitle]);
   if (items.length === 0) return null;
 
   return (
@@ -76,10 +76,17 @@ export default function CurriculumHistoryOverview({ history }) {
   );
 }
 
+// Slugs are last-resort labels: page/unit codes (p044) carry no meaning for a
+// human and "us" is an acronym, not a word. A real catalog title (via
+// `resolveTitle`) always beats this prettifier.
 function displayId(value) {
   return String(value ?? '')
     .replace(/[-_]+/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    .replace(/\b[pP]\d{2,4}\b/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bUs\b/g, 'US');
 }
 
 function dateLabel(value) {
