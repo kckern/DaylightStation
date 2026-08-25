@@ -1286,7 +1286,23 @@ start the next. Panel codes close that loop without handing children a scanner.
 `BuildAgenda` mints one six-digit code per subject alongside the `subject_next`
 token it already mints, and `agendaDocument` prints it on the lesson card as
 **`PANEL CODE 481920`**. A child types it into the school-room Portal, which
-answers with a **launch card**: one button for that lesson, plus a way out.
+answers with an identified, contextual **launch card**: the learner's avatar
+and name, subject/course/module/lesson trail, course poster, available course
+and unit progress, one primary action for that lesson, and a consistent way
+out. The keypad remains anonymous; identity appears only after a valid code has
+resolved, so the card also confirms whose paper and progress are about to be
+changed.
+
+The wire format is additive `school.self-service-card/v2`. The domain builds
+semantic context (including `{kind:'learner'}` avatar and
+`{kind:'course-poster'}` artwork references) without URLs or I/O. The
+application layer joins roster, curriculum, enrollment, and session facts; the
+frontend resolves those references through existing avatar infrastructure and
+the learner-safe
+`GET /api/v1/school/self-service/curriculum/:courseId/poster.jpg` route. That
+route serves only poster bytes or the generated poster fallback—never course
+answers, assignment data, or history. Missing metadata degrades to stable IDs
+and placeholders rather than removing the context shell.
 
 **Three six-digit codes now exist, two of them on the same sheet of paper.**
 
@@ -1321,9 +1337,19 @@ then the child has pressed a button.
 by the session event schema in both directions (`issued` has no media edge;
 `media_dispatched` is not in `IssueDocument`'s `ISSUABLE`). A video with a
 worksheet offers `play`; after it completes, the recomputed card offers `print`.
-`offeredActions` owns every button's wording — the panel renders `action.label`
-verbatim and sends `action.kind` back, so there is exactly one authority on what
-a card says.
+`offeredActions` owns every button's wording and semantics — the panel renders
+`action.label` verbatim and sends `action.kind` back, while `role`, `operation`,
+and `followUp` keep primary/secondary styling and post-action transitions
+independent of wording. In particular, a stable `retry` can print, play, mount a
+bank, or dispatch a launch according to the fresh remediation session instead
+of every retry pretending to be a print. `/act` returns the authoritative
+`transition` (`confirm-print`, `mount`, `message`, or `close`).
+
+The card shell persists through printing confirmation and the final outcome:
+identity, poster, breadcrumb-style trail, and progress do not disappear while
+the learner answers **Did it print?** or reads a refusal. All action states use
+the same two-column grid and 72-pixel minimum target; a single action spans the
+grid, and narrow screens stack the same controls in the same order.
 
 **Never a dead end.** An unknown code, an expired one, a backend that is down —
 every path returns HTTP 200 with a sentence a child can act on. `ok:false`

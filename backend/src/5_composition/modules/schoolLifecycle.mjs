@@ -165,6 +165,8 @@ function cryptoRng(crypto) {
  * @param {object} [deps.tokenRegistry] shared School token registry
  * @param {object} [deps.schoolCalcActionResolver] device-bound lesson-action resolver
  * @param {object} [deps.schoolCalcStudies] Adaptive Study issuance service
+ * @param {(courseId: string) => Buffer} [deps.renderCoursePosterFallback]
+ *   rendering-layer fallback for the learner-safe self-service poster route
  * @returns {Promise<{
  *   wired: boolean, reason: string|null,
  *   handlesCode: (code: string) => boolean,
@@ -186,6 +188,7 @@ export async function createSchoolLifecycle({
   rubiksCubeGrants = null,
   donow = null, donowSurfaces = null, donowDatastore = null,
   tokenRegistry = null, schoolCalcActionResolver = null, schoolCalcStudies = null,
+  renderCoursePosterFallback = null,
   clock = () => new Date(), rng = null, logger = console,
 } = {}) {
   const cfg = configService.getHouseholdAppConfig?.(householdId, 'school') || {};
@@ -980,6 +983,7 @@ export async function createSchoolLifecycle({
     curriculumExceptions: curriculumExceptionStore,
     issueDocument,
     companions,
+    roster: displayRoster,
     selfService: cfg.selfService,
     timezone,
     clock,
@@ -1058,7 +1062,13 @@ export async function createSchoolLifecycle({
   // `school.yml` needs a restart to take effect.
   const selfServiceEnabled = cfg.selfService?.enabled === true;
   const selfServiceRouter = selfServiceEnabled
-    ? createSchoolSelfServiceRouter({ resolveAccessCode, runSelfServiceAction, recordLessonCompanionProgress })
+    ? createSchoolSelfServiceRouter({
+      resolveAccessCode,
+      runSelfServiceAction,
+      recordLessonCompanionProgress,
+      curriculum,
+      renderCoursePosterFallback,
+    })
     : null;
   if (!selfServiceEnabled) {
     logger.info?.('school.lifecycle.self-service-off', { reason: 'selfService.enabled is not true' });

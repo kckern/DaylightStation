@@ -39,13 +39,28 @@
  */
 
 /** The way out. Every card ends with one — the paper path's never-dead-end rule. */
-const EXIT = Object.freeze({ kind: 'exit', label: 'Go back' });
+const followUpFor = (operation) => {
+  if (operation === 'print') return 'confirm-print';
+  // Screen work is structurally local. Programs and companions are not: their
+  // adapters may mount here, dispatch elsewhere, pend, or refuse, so `/act`'s
+  // transition remains authoritative for those operations.
+  if (operation === 'screen') return 'mount';
+  if (operation === 'exit') return 'close';
+  return 'message';
+};
+
+const action = (kind, label, target, { operation = kind, role = 'primary' } = {}) => ({
+  kind,
+  label,
+  ...(target == null ? {} : { target }),
+  role,
+  operation,
+  followUp: followUpFor(operation),
+});
+
+const EXIT = Object.freeze(action('exit', 'Go back', null, { role: 'secondary' }));
 
 const TELL_A_GROWN_UP = 'Tell a grown-up.';
-
-const action = (kind, label, target) => (
-  target == null ? { kind, label } : { kind, label, target }
-);
 
 const capitalise = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
 
@@ -159,7 +174,12 @@ function workAction(resolution, { mediaSurface, bankPrintable }) {
       if (resolution.state?.outcome?.result === 'needs_remediation') {
         const fresh = atCreated(unit, { mediaSurface, bankPrintable });
         if (!fresh) return action('retry', 'Try again');
-        return action('retry', fresh.kind === 'print' ? 'Print a fresh sheet' : fresh.label);
+        return action(
+          'retry',
+          fresh.kind === 'print' ? 'Print a fresh sheet' : fresh.label,
+          fresh.target,
+          { operation: fresh.kind },
+        );
       }
       return null;
 
@@ -214,6 +234,11 @@ function buildCard(resolution, { mediaSurface = null, bankPrintable = false, now
       const name = resolution.unit?.title ?? resolution.programId;
       return { work: action('program', `Open ${name}`, resolution.programId), sentence: null };
     }
+    case 'companion':
+      return {
+        work: action('companion', resolution.offer?.companion?.label ?? 'Open companion'),
+        sentence: 'Open this lesson companion whenever you are ready.',
+      };
     case 'move': {
       const work = workAction(resolution, { mediaSurface, bankPrintable });
       // A button normally says it all, with one exception: work first handed
@@ -339,6 +364,12 @@ function waitingSentence(resolution) {
 export function offeredActions(resolution, options) {
   const { work } = buildCard(resolution, options);
   return work ? [work, EXIT] : [EXIT];
+}
+
+/** One computation for consumers that need the whole presentation decision. */
+export function offeredCard(resolution, options) {
+  const { work, sentence } = buildCard(resolution, options);
+  return { sentence, actions: work ? [work, EXIT] : [EXIT] };
 }
 
 /**
