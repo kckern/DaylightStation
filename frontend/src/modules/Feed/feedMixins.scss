@@ -1,0 +1,41 @@
+// =========================================================================
+// Feed control mixins — the ONLY two button treatments in the Feed app.
+// Token values (--feed-*) are defined on .feed-app in FeedApp.scss.
+// =========================================================================
+
+// Standard control chip: filter toggles, view switchers, action pills.
+@mixin feed-chip {
+  min-height: var(--feed-control, 36px);
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--feed-border-strong, rgba(255, 255, 255, 0.16));
+  border-radius: 999px;
+  background: var(--feed-surface-2, #1e2125);
+  color: var(--feed-text-1, #f1f3f5);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+
+  &:hover { border-color: var(--feed-accent, #4dabf7); }
+  &:disabled { opacity: 0.45; cursor: default; }
+
+  @media (pointer: coarse) { min-height: 44px; }
+}
+
+// Selected/pressed state for a chip.
+@mixin feed-chip-active {
+  border-color: var(--feed-accent, #4dabf7);
+  background: var(--feed-accent-bg, rgba(77, 171, 247, 0.16));
+  color: var(--feed-accent-strong, #74c0fc);
+}
+
+// Quiet button: borderless, low-emphasis (icon buttons, inline actions).
+@mixin feed-quiet {
+  border: 0;
+  border-radius: var(--feed-radius-sm, 4px);
+  background: transparent;
+  color: var(--feed-text-3, #71787f);
+  cursor: pointer;
+
+  &:hover { color: var(--feed-text-1, #f1f3f5); background: var(--feed-surface-2, #1e2125); }
+  &:disabled { opacity: 0.45; cursor: default; }
+}

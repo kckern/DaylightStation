@@ -3,7 +3,7 @@
   margin: 1.5rem auto 0;
   padding: 1rem;
   border: 1px solid rgba(128, 128, 128, 0.28);
-  border-radius: 0.65rem;
+  border-radius: var(--feed-radius-lg, 12px);
   color: inherit;
 }
 
@@ -21,7 +21,7 @@
 .feed-annotations select {
   min-height: 36px;
   border: 1px solid rgba(128, 128, 128, 0.45);
-  border-radius: 0.4rem;
+  border-radius: var(--feed-radius-sm, 4px);
   background: rgba(128, 128, 128, 0.13);
   color: inherit;
   padding: 0.35rem 0.65rem;
@@ -31,7 +31,7 @@
   width: 100%;
   resize: vertical;
   border: 1px solid rgba(128, 128, 128, 0.45);
-  border-radius: 0.45rem;
+  border-radius: var(--feed-radius-md, 8px);
   background: rgba(128, 128, 128, 0.1);
   color: inherit;
   padding: 0.65rem;

@@ -12,7 +12,7 @@ export default function Headlines({ pageId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = searchParams.get('view') === 'outlets' ? 'outlets' : 'briefing';
+  const view = searchParams.get('view') === 'briefing' ? 'briefing' : 'outlets';
   const data = pages[pageId] || null;
   const { getLastVisit, markVisited, mutateItems, applyPendingMutations } = useFeedWorkspace();
   const previousVisit = useRef(getLastVisit('headlines'));
@@ -65,7 +65,7 @@ export default function Headlines({ pageId }) {
 
   const setView = nextView => {
     const next = new URLSearchParams(searchParams);
-    if (nextView === 'briefing') next.delete('view'); else next.set('view', nextView);
+    if (nextView === 'outlets') next.delete('view'); else next.set('view', nextView);
     setSearchParams(next, { replace: true });
   };
 
@@ -94,8 +94,8 @@ export default function Headlines({ pageId }) {
       <header className="headlines-toolbar">
         <div>
           <div className="headlines-view-switcher" role="group" aria-label="Headline view">
-            <button type="button" aria-pressed={view === 'briefing'} className={view === 'briefing' ? 'active' : ''} onClick={() => setView('briefing')}>Briefing</button>
             <button type="button" aria-pressed={view === 'outlets'} className={view === 'outlets' ? 'active' : ''} onClick={() => setView('outlets')}>Outlets</button>
+            <button type="button" aria-pressed={view === 'briefing'} className={view === 'briefing' ? 'active' : ''} onClick={() => setView('briefing')}>Briefing</button>
           </div>
           <span className="headlines-meta">{Object.keys(sources).length} sources{data?.lastHarvest && ` · updated ${formatTime(data.lastHarvest)}`}</span>
         </div>
