@@ -1631,22 +1631,6 @@
 .school-selfservice__title {
   margin: 0; font-size: 1.9rem; font-weight: 800; letter-spacing: 0.01em;
 }
-.school-selfservice__keyboard {
-  display: inline-flex; align-items: center; gap: 0.5rem; margin: -0.35rem 0 0;
-  color: var(--school-muted); font-size: 0.95rem; font-weight: 700;
-}
-.school-selfservice__keyboard-led {
-  width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--school-muted);
-  box-shadow: 0 0 0.45rem currentColor;
-}
-.school-selfservice__keyboard.is-connected { color: #70d6a5; }
-.school-selfservice__keyboard.is-connected .school-selfservice__keyboard-led { background: currentColor; }
-.school-selfservice__keyboard.is-disconnected,
-.school-selfservice__keyboard.is-not-paired { color: var(--school-warn); }
-.school-selfservice__keyboard.is-disconnected .school-selfservice__keyboard-led,
-.school-selfservice__keyboard.is-not-paired .school-selfservice__keyboard-led { background: currentColor; }
-.school-selfservice__keyboard.is-unavailable { color: var(--school-muted); }
-
 .school-selfservice__entry {
   display: flex; gap: clamp(0.35rem, 1.1vw, 0.55rem); width: 100%;
   // The refusal happens HERE, in the slots the digits were just typed into —
