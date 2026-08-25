@@ -396,7 +396,8 @@
   &--lead { grid-column: 1 / -1; padding: 1.1rem 1.25rem; }
   h2 { margin: 0.2rem 0 0.5rem; font-size: 1.1rem; line-height: 1.3; }
   &--lead h2 { font-size: clamp(1.35rem, 2.6vw, 1.9rem); max-width: 30ch; }
-  a { color: var(--feed-text-1); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
+  a { color: var(--feed-text-1); text-decoration: none; }
+  h2 a:hover { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
   p { max-width: 68ch; color: var(--feed-text-2); font-size: 0.88rem; line-height: 1.5; margin: 0.3rem 0 0.5rem; }
   summary { cursor: pointer; color: var(--feed-accent-strong); font-size: 0.8rem; min-height: 32px; padding-top: 0.35rem; }
   li { margin: 0.4rem 0; line-height: 1.4; font-size: 0.85rem; }
@@ -441,7 +442,9 @@
 
 @media (max-width: 700px) {
   .headlines-view { padding: 0.5rem 0.5rem 2rem; }
-  .headlines-toolbar { flex-wrap: wrap; }
+  // Right clearance keeps the absolutely-positioned edition picker
+  // (.feed-edition-picker, FeedApp.scss mobile rule) off the toolbar.
+  .headlines-toolbar { flex-wrap: wrap; padding-right: 7.5rem; }
   .headline-briefing { grid-template-columns: 1fr; }
   .briefing-story,
   .briefing-story--lead { grid-column: auto; }
