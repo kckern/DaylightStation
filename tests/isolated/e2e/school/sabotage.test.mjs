@@ -286,12 +286,21 @@ const OMR_DECODE_RETURNS_THE_LETTER = {
   edits: [['entries[itemId] = hits[0].label ?? hits[0].choice;', 'entries[itemId] = hits[0].choice;']],
 };
 
+// Sabotage the BRANCH, not one of its arms. This used to blank `#printed()`,
+// which was the only way a result receipt reached paper — until the retained
+// -artifact path (`#printCapturedReceipt`) was added and became the live one
+// whenever an artifact was captured. The mutation then landed on a branch the
+// scenario no longer takes, so the injected defect was invisible and the case
+// reported the suite as holed. Cutting the assignment covers both arms and
+// stays honest if a third is ever added.
 const CLOSE_OUT_PRINTS_NOTHING = {
   file: 'backend/src/3_applications/school/usecases/CloseSessionOutcome.mjs',
   specifier: '#apps/school/usecases/CloseSessionOutcome.mjs',
   edits: [[
-    "if (!this.#receipts) return { printed: false, printReason: 'not_wired' };",
-    "return { printed: false, printReason: 'sabotage' };",
+    `printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
+        ? await this.#printCapturedReceipt(receiptArtifact.artifact, document)
+        : await this.#printed(document);`,
+    "printing = { printed: false, printReason: 'sabotage' };",
   ]],
 };
 

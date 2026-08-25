@@ -206,6 +206,14 @@ export class CloseSessionOutcome {
       });
     }
 
+    if (state.state === 'external_activity_assessed') {
+      return this.#recordOutcomeAndSettle({
+        sessionId, state, unit, nowIso, signedOff, rewardOverride,
+        result: state.externalActivity?.result ?? 'needs_remediation',
+        reason: 'external_activity_assessed',
+      });
+    }
+
     if (state.state !== 'graded') {
       return this.#unavailable(sessionId, 'That work has not been marked yet.');
     }
@@ -346,7 +354,7 @@ export class CloseSessionOutcome {
     const marks = (worksheet?.questions?.length && worksheet.questions.length === state.gradedTotalCount)
       ? worksheet.questions.map((question) => !missed.has(question.itemId))
       : null;
-    const document = state.state === 'program_dispatched' ? null : resultDocument({
+    const document = ['program_dispatched', 'external_activity_assessed'].includes(state.state) ? null : resultDocument({
       sessionId,
       unitTitle: unit?.title ?? state.unitId,
       result: outcome.result,
@@ -374,7 +382,8 @@ export class CloseSessionOutcome {
     });
 
     let receiptArtifact = null;
-    let printing = document ? { printed: false, printReason: 'not_wired' } : { printed: false, printReason: 'program' };
+    let printing = document ? { printed: false, printReason: 'not_wired' }
+      : { printed: false, printReason: state.state === 'external_activity_assessed' ? 'digital_activity' : 'program' };
     if (document) {
       const artifactId = `receipt/${sessionId}/${outcome.outcomeId}`;
       try {
@@ -392,7 +401,7 @@ export class CloseSessionOutcome {
       // Older installs deliberately retain their existing ReceiptPrinting
       // fallback, which is still truthful but cannot promise byte identity.
       printing = receiptArtifact?.artifact && this.#receiptArtifactPrinter
-        ? await this.#printCapturedReceipt(receiptArtifact.artifact)
+        ? await this.#printCapturedReceipt(receiptArtifact.artifact, document)
         : await this.#printed(document);
       if (receiptArtifact?.created) {
         const built = createEvent({ type: 'result_receipt_captured', at: nowIso, sessionId,
@@ -450,12 +459,20 @@ export class CloseSessionOutcome {
     return { printed: outcome.printed, printReason: outcome.reason };
   }
 
-  async #printCapturedReceipt(artifact) {
+  /**
+   * `sourceDocument` rides along so the printer can say what the bytes SAY, not
+   * just print them: a raster job has no text item, so without it the operator
+   * transcript for every captured result receipt was empty. It is the same
+   * document that was rasterized, so the harvested words describe exactly these
+   * bytes.
+   */
+  async #printCapturedReceipt(artifact, sourceDocument = null) {
     try {
       const confirmed = await this.#receiptArtifactPrinter.print({
         bytes: artifact.bytes,
         representation: artifact.manifest.representation,
         jobName: `school-result-${artifact.manifest.artifactId}`,
+        sourceDocument,
       });
       if (confirmed === true) return { printed: true, printReason: null };
       return { printed: false, printReason: 'printer_unconfirmed' };

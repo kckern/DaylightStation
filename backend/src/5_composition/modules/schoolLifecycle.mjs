@@ -63,6 +63,8 @@ import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
+import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
+import { codesFrom as receiptCodesFrom } from '#rendering/school/documents/DocumentReceiptRasterRenderer.mjs';
 import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
 import { PianoLessonCeremonyBridge } from '#apps/school/PianoLessonCeremonyBridge.mjs';
 import { DoNowSchoolBridge } from '#apps/school/DoNowSchoolBridge.mjs';
@@ -697,8 +699,38 @@ export async function createSchoolLifecycle({
     logger,
   }) : null;
   const receiptArtifactPrinter = receiptPrinter ? {
-    async print({ bytes, representation, jobName }) {
+    /**
+     * Printing RETAINED bytes still has to say what they say.
+     *
+     * A raster job carries no text item, so the operator transcript (and the
+     * list of codes a child could scan off the paper) cannot be derived from
+     * `items` — `DocumentReceiptRasterRenderer` handles that by rendering the
+     * document a second time through the ESC/POS renderer purely to harvest
+     * its words. This path bypassed that renderer entirely, so every result
+     * receipt printed from a captured artifact recorded an EMPTY transcript:
+     * the paper was right, the record of it was blank, and the e2e assertion
+     * "the result receipt is a thing a child can read" had nothing to read.
+     *
+     * `sourceDocument` is the same document that was rasterized, so harvesting
+     * from it describes exactly the bytes being printed. It is optional and
+     * best-effort: a document the text renderer refuses must not sink a print
+     * whose bytes are already correct.
+     */
+    async print({ bytes, representation, jobName, sourceDocument = null }) {
       if (representation?.mediaType !== 'image/png') return false;
+      let transcript;
+      let codes;
+      if (sourceDocument && receiptRenderer) {
+        try {
+          const textJob = await receiptRenderer.render(sourceDocument, {});
+          transcript = transcribeEscPosItems(textJob.items);
+          codes = receiptCodesFrom(textJob);
+        } catch (err) {
+          logger.warn?.('school.receipt.artifact-transcript-unavailable', {
+            jobName, error: err.message,
+          });
+        }
+      }
       const tempPath = path.join(os.tmpdir(), `school-retained-receipt-${shortId(16)}.png`);
       await fs.writeFile(tempPath, bytes, { flag: 'wx' });
       try {
@@ -706,6 +738,8 @@ export async function createSchoolLifecycle({
           items: [{ type: 'image', path: tempPath, width: representation.width ?? 384,
             height: representation.height ?? 1, align: 'left', threshold: 128 }],
           footer: { paddingLines: 3, autoCut: true }, jobName,
+          ...(typeof transcript === 'string' ? { transcript } : {}),
+          ...(codes ? { codes } : {}),
         });
       } finally { await fs.unlink(tempPath).catch(() => {}); }
     },
