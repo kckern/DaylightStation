@@ -823,7 +823,7 @@ const FitnessApp = () => {
   }, [fitnessConfiguration, contentSource]);
 
   // Handle /fitness/play/:id route
-  const handlePlayFromUrl = async (episodeId, { nogovern = false } = {}) => {
+  const handlePlayFromUrl = async (episodeId, { nogovern = false, append = false, schoolSegment = null } = {}) => {
     try {
       // Fetch episode metadata from API to get labels for governance
       const response = await DaylightAPI(`api/v1/info/${contentSource}/${episodeId}`);
@@ -840,11 +840,12 @@ const FitnessApp = () => {
           title: `Episode ${episodeId}`,
           videoUrl: DaylightMediaPath(`api/v1/play/${contentSource}/${episodeId}`),
           thumbId: episodeId,
-          image: DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`)
+          image: DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
+          ...(schoolSegment ? { schoolSegment } : {}),
         };
-        setFitnessPlayQueue([fallbackItem]);
+        setFitnessPlayQueue((previous) => append ? [...previous, fallbackItem] : [fallbackItem]);
         logger.info('fitness-play-url-started-fallback', { episodeId, contentSource });
-        return;
+        return true;
       }
 
       // Block route-based play for sequential shows — redirect to show UI
@@ -859,7 +860,7 @@ const FitnessApp = () => {
           setSelectedShow(String(showId));
           setCurrentView('show');
           navigate(`/fitness/show/${showId}`, { replace: true });
-          return;
+          return false;
         }
       }
 
@@ -877,14 +878,18 @@ const FitnessApp = () => {
         thumbId: response.metadata?.thumbId || response.thumbId || episodeId,
         image: response.image || DaylightMediaPath(`api/v1/display/${contentSource}/${episodeId}`),
         labels: response.labels || response.metadata?.labels || [],
-        summary: response.metadata?.summary || null
+        summary: response.metadata?.summary || null,
+        duration: Number(response.duration ?? response.metadata?.duration ?? 0) || null,
+        ...(schoolSegment ? { schoolSegment } : {}),
       };
 
-      setFitnessPlayQueue([queueItem]);
+      setFitnessPlayQueue((previous) => append ? [...previous, queueItem] : [queueItem]);
       logger.info('fitness-play-url-started', { episodeId, contentSource, hasLabels: queueItem.labels.length > 0 });
+      return true;
     } catch (err) {
       logger.error('fitness-play-url-error', { episodeId, contentSource, error: err.message });
       navigate('/fitness', { replace: true });
+      return false;
     }
   };
 
@@ -917,9 +922,21 @@ const FitnessApp = () => {
       // An explicit School launch is already sequence-authorized by School.
       // It must not bounce back to the Plex show browser's ordinary sequential
       // gate, so load it with the same bypass used by vetted resume traffic.
-      navigate(`/fitness/play/${episodeId}`, { replace: true });
-      await handlePlayFromUrl(episodeId, { nogovern: true });
-      logger.info('school-fitness-attempt-started', { workSessionId, learnerId, episodeId });
+      const playableSegments = (plan.segments ?? []).filter((segment) => segment.kind === 'plex-video');
+      if (!playableSegments.length) throw new Error('School Fitness plan has no playable video segment');
+      for (const [index, segment] of playableSegments.entries()) {
+        // Preserve authored warmup/main/cooldown order in one Fitness queue.
+        // eslint-disable-next-line no-await-in-loop
+        const loaded = await handlePlayFromUrl(segment.sourceId, {
+          nogovern: true, append: index > 0, schoolSegment: segment,
+        });
+        if (!loaded) throw new Error(`School Fitness segment ${segment.id} could not be loaded`);
+        if (index === 0) navigate(`/fitness/play/${segment.sourceId}`, { replace: true });
+      }
+      logger.info('school-fitness-attempt-started', {
+        workSessionId, learnerId, episodeId: playableSegments[0].sourceId,
+        playableSegments: playableSegments.length,
+      });
     } catch (error) {
       logger.error('school-fitness-attempt-start-failed', {
         workSessionId: schoolActivity.workSessionId, learnerId, error: error?.message,

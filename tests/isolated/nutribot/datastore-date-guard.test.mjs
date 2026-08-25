@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -12,14 +12,14 @@ describe('YamlNutriListDatastore date guard', () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nutrilist-test-'));
     const dataService = {
       user: {
-        resolveDir: jest.fn().mockImplementation((subpath, userId) => {
+        resolveDir: vi.fn().mockImplementation((subpath, userId) => {
           return path.join(tmpDir, 'users', userId, subpath);
         }),
       },
     };
     store = new YamlNutriListDatastore({
       dataService,
-      logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
   });
 

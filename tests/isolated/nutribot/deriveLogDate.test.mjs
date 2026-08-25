@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect } from 'vitest';
 import { deriveLogDate } from '#apps/nutribot/lib/deriveLogDate.mjs';
 
 describe('deriveLogDate', () => {

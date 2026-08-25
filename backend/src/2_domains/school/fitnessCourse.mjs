@@ -7,6 +7,8 @@
  * ordinary School works/units; Fitness remains the owner of referenced media,
  * workouts, sensor streams and the resulting assessment record.
  */
+import { validateUnit } from './curriculum/unitValidation.mjs';
+import { validateWork } from './curriculum/workValidation.mjs';
 
 export const FITNESS_COURSE_SCHEMA = 'school.fitness-course/v1';
 export const FITNESS_ACTIVITY_PROVIDER = 'fitness';
@@ -88,6 +90,17 @@ export function compileFitnessCourse(raw, sourceProjection, ctx = {}) {
   const authoredModules = Array.isArray(raw.modules) ? raw.modules : [];
   const derivedModules = deriveModules(selected);
   const modules = authoredModules.length ? authoredModules.map((module) => ({ ...module })) : derivedModules;
+  const moduleIds = new Set();
+  modules.forEach((module, index) => {
+    if (moduleIds.has(module.module)) errors.push(`modules[${index}]: duplicate module "${module.module}"`);
+    moduleIds.add(module.module);
+  });
+  for (const [groupIndex, group] of (raw.mapping?.groups ?? []).entries()) {
+    if (!moduleIds.has(group.module)) errors.push(`mapping.groups[${groupIndex}].module "${group.module}" is not declared`);
+    for (const sourceId of group.sourceIds) {
+      if (!byId.has(String(sourceId))) errors.push(`mapping.groups[${groupIndex}].sourceId "${sourceId}" is not selected`);
+    }
+  }
   const moduleBySource = sourceModuleMap(raw.mapping, selected, modules);
 
   const unitSpecs = Array.isArray(raw.units) && raw.units.length
@@ -106,6 +119,16 @@ export function compileFitnessCourse(raw, sourceProjection, ctx = {}) {
   });
   if (errors.length) return { errors };
 
+  units.forEach((unit, index) => {
+    if (!moduleIds.has(unit.module)) errors.push(`units[${index}].module "${unit.module}" is not declared`);
+    for (const segment of unit.activity.segments) {
+      if (segment.kind === 'plex-video' && !byId.has(String(segment.sourceId))) {
+        errors.push(`units[${index}].segments: Plex source "${segment.sourceId}" is not selected`);
+      }
+    }
+  });
+  if (errors.length) return { errors };
+
   const work = {
     work: raw.work,
     title: raw.title,
@@ -119,6 +142,15 @@ export function compileFitnessCourse(raw, sourceProjection, ctx = {}) {
       module_order: 'fixed', lesson_order: 'fixed', mode: 'sequential',
     },
   };
+  const workValidation = validateWork(work, { subject: raw.subject, work: raw.work });
+  errors.push(...workValidation.errors.map((error) => `work: ${error}`));
+  units.forEach((unit, index) => {
+    const unitValidation = validateUnit(unit, {
+      activityValidators: new Map([[FITNESS_ACTIVITY_PROVIDER, validateFitnessActivityDescriptor]]),
+    });
+    errors.push(...unitValidation.errors.map((error) => `units[${index}]: ${error}`));
+  });
+  if (errors.length) return { errors };
   return { errors: [], projection: { work, units, courseRevision } };
 }
 
