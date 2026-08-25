@@ -31,10 +31,24 @@ import { validateWork } from '#domains/school/curriculum/workValidation.mjs';
 
 const DEFAULT_TTL_MS = 15_000;
 
+// The catalog snapshot is re-read every TTL (15s) for the lifetime of the
+// process, so a stable set of dropped drafts would otherwise re-log the same
+// warning ~3,500 times a day. Logging is keyed to the SET changing, not to
+// the read happening: the count is the point (`count` always carries the
+// full total), but the `ids` are for a human to go look at, and 175 of them
+// on every line is the flood that buried the rest of the log store.
+const DRAFT_ID_SAMPLE_LIMIT = 10;
+
 export class CurriculumAccess {
   #catalog; #bankIds; #programIds; #surfaceValidators; #activityValidators; #ttlMs; #clock; #logger;
   #snapshot = null;
   #loading = null;
+  // The dropped-draft set last WARNED about (sorted, joined ids), so #load can
+  // tell "still 175 drafts" apart from "now 190" without diffing arrays every
+  // time. null both before the first load and whenever the dropped set is
+  // currently empty — so a set that empties out and later reappears (rather
+  // than merely growing) logs again too.
+  #lastDraftsLogKey = null;
 
   /**
    * @param {object} deps
@@ -120,8 +134,23 @@ export class CurriculumAccess {
       else droppedDraftIds.push(id);
     });
     if (errors.length) this.#logger.warn?.('school.curriculum.invalid-units', { count: errors.length, errors });
+    // Change-detection, not rate-limiting: log whenever the SET of dropped ids
+    // differs from what was last warned about (grows, shrinks, or reappears
+    // after being empty), never merely because this catalog read happened —
+    // the catalog is re-read every TTL, and a stable 175 must produce one
+    // line, not one every re-read. A growth from 175 to 190 changes the key
+    // and logs immediately; it is never suppressed waiting on a timer.
     if (droppedDraftIds.length) {
-      this.#logger.warn?.('school.curriculum.drafts-dropped', { count: droppedDraftIds.length, ids: droppedDraftIds });
+      const draftsKey = [...droppedDraftIds].sort().join(',');
+      if (draftsKey !== this.#lastDraftsLogKey) {
+        this.#lastDraftsLogKey = draftsKey;
+        this.#logger.warn?.('school.curriculum.drafts-dropped', {
+          count: droppedDraftIds.length,
+          sampleIds: droppedDraftIds.slice(0, DRAFT_ID_SAMPLE_LIMIT),
+        });
+      }
+    } else {
+      this.#lastDraftsLogKey = null;
     }
 
     // Works are validated against the shelf and folder they were found in, which
