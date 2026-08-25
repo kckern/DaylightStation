@@ -1,0 +1,12 @@
+# Merge into Home Assistant's scripts.yaml, then call script.reload (or restart
+# Home Assistant). The backend supplies `locked_until` and `source` variables.
+public_kiosk_shutdown_cue:
+  alias: Public kiosk shutdown cue
+  mode: restart
+  sequence:
+    - service: notify.mobile_app_kc_phone
+      data:
+        title: Public kiosk shutdown
+        message: >-
+          Lockdown started from {{ source | default('NFC') }}.
+          Kiosks stay unavailable until {{ locked_until | default('the configured expiry') }}.

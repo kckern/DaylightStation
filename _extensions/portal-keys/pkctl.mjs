@@ -10,6 +10,7 @@
 //   node pkctl.mjs config                 # effective config (password redacted)
 //   node pkctl.mjs config set <k> <v>     # patch ONE key
 //   node pkctl.mjs fkbpw                  # push the FKB password from 1Password/cache
+//   node pkctl.mjs lockdown-token <token> # provision the server-only shutdown token
 //   node pkctl.mjs watch                  # stream key events over the WebSocket
 //
 // `status` leads with serviceBound because the dominant failure mode is the Android
@@ -167,6 +168,18 @@ const commands = {
     else pretty(out);
   },
 
+  // This token is intentionally supplied explicitly: the CLI never reads it
+  // from repo configuration or prints it back from the device.
+  async 'lockdown-token'([token]) {
+    if (!token) {
+      console.error('usage: lockdown-token <secret>');
+      process.exit(1);
+    }
+    const out = await req(`/config?key=lockdownToken&value=${encodeURIComponent(token)}`);
+    if (out?.lockdownTokenSet) console.log('✓ shutdown token provisioned');
+    else pretty(out);
+  },
+
   // ADB-free APK deploy. ADB-over-WiFi cannot survive a reboot on this panel (`adb root`
   // is refused on a production build, `setprop persist.adb.tcp.port` needs root), so this
   // is the durable upgrade path. Requires REQUEST_INSTALL_PACKAGES, granted once over USB.
@@ -218,6 +231,7 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  log                    recent key, screen-toggle and config events');
   console.log('  config                 show config (password redacted)');
   console.log('  config set <k> <v>     patch one key');
+  console.log('  lockdown-token <token> provision the server shutdown capability token');
   console.log('  preflight              verify wake locks BEFORE enabling the sleep gesture');
   console.log('  fkbpw                  push the FKB password from 1Password/cache');
   console.log('  update <apk-url>       ADB-free APK upgrade (one tap on the panel)');

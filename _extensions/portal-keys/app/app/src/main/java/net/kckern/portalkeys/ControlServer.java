@@ -3,6 +3,8 @@ package net.kckern.portalkeys;
 import android.util.Log;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
@@ -10,6 +12,7 @@ import java.util.concurrent.Executors;
 
 
 import fi.iki.elonen.NanoWSD;
+import fi.iki.elonen.NanoHTTPD.Method;
 
 /**
  * WebSocket + HTTP control plane, mirroring piano-bridge's ControlServer.
@@ -161,6 +164,7 @@ public class ControlServer extends NanoWSD {
             if ("/presence".equals(uri)) return json(presence == null ? "{}" : presence.toJson());
             if ("/log".equals(uri))    return json(eventLog.toJsonArray());
             if ("/config".equals(uri)) return json(handleConfig(session));
+            if ("/lockdown".equals(uri)) return handleLockdown(session);
             // ADB-free deploy + diagnosis — see SelfUpdater for why these exist.
             if ("/update".equals(uri)) {
                 String url = session.getParms().get("url");
@@ -242,7 +246,8 @@ public class ControlServer extends NanoWSD {
             } catch (NumberFormatException e) {
                 return "{\"error\":\"gateHeartbeatMs must be an integer\"}";
             }
-        } else if (Config.KEY_GATE_ENDPOINT.equals(key) || Config.KEY_GATE_TOKEN.equals(key)) {
+        } else if (Config.KEY_GATE_ENDPOINT.equals(key) || Config.KEY_GATE_TOKEN.equals(key)
+                || Config.KEY_LOCKDOWN_TOKEN.equals(key)) {
             // Empty IS meaningful here: it disables reporting.
             config.setString(key, value == null ? "" : value);
         } else if (Config.KEY_FKB_HOST.equals(key) || Config.KEY_FKB_PASSWORD.equals(key)) {
@@ -257,8 +262,47 @@ public class ControlServer extends NanoWSD {
         return config.toJsonRedacted();
     }
 
+    /**
+     * Authenticated, idempotent endpoint used by the server-side shutdown
+     * reconciler. A null deadline with locked=true is an intentional
+     * fail-closed lock used only while its YAML state cannot be parsed.
+     */
+    private Response handleLockdown(IHTTPSession session) throws Exception {
+        if (session.getMethod() != Method.PUT) {
+            return json(Response.Status.METHOD_NOT_ALLOWED, "{\"error\":\"PUT required\"}");
+        }
+        String expected = config.lockdownToken();
+        String supplied = session.getHeaders().get("x-lockdown-token");
+        if (expected.isEmpty() || supplied == null || !MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8))) {
+            return json(Response.Status.UNAUTHORIZED, "{\"error\":\"unauthorized\"}");
+        }
+        Map<String, String> files = new java.util.HashMap<>();
+        session.parseBody(files);
+        String body = files.get("postData");
+        boolean locked = body != null && body.matches("(?s).*\\\"locked\\\"\\s*:\\s*true.*");
+        Long until = null;
+        if (body != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("\\\"lockedUntil\\\"\\s*:\\s*(\\d+)").matcher(body);
+            if (m.find()) {
+                try { until = Long.parseLong(m.group(1)); } catch (NumberFormatException ignored) { }
+            }
+        }
+        if (locked && until != null && until <= System.currentTimeMillis()) {
+            return json(Response.Status.BAD_REQUEST, "{\"error\":\"lockedUntil must be in the future\"}");
+        }
+        config.setLockdown(locked, until);
+        eventLog.add("lockdown " + (locked ? (until == null ? "indefinite" : until) : "cleared"));
+        return json(config.toJsonRedacted());
+    }
+
     private Response json(String body) {
-        Response r = newFixedLengthResponse(Response.Status.OK, "application/json", body);
+        return json(Response.Status.OK, body);
+    }
+
+    private Response json(Response.Status status, String body) {
+        Response r = newFixedLengthResponse(status, "application/json", body);
         r.addHeader("Access-Control-Allow-Origin", "*");
         return r;
     }

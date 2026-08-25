@@ -153,7 +153,8 @@ export function createApiRouter(config) {
     '/school': 'school',
     '/donow': 'donow',
     '/content-filter': 'content-filter',
-    '/wikipedia': 'wikipedia'
+    '/wikipedia': 'wikipedia',
+    '/shutdown': 'shutdown',
   };
 
   // Mount each router at its path

@@ -41,6 +41,7 @@ import LaunchCard from './selfService/LaunchCard.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 import { useScanCeremony } from './selfService/useScanCeremony.js';
+import { ShutdownBlackout, useShutdownLock } from '../../hooks/useShutdownLock.js';
 import './School.scss';
 
 /**
@@ -909,7 +910,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
  * they must be nested under a layout child's `props:` key, which is all
  * `PanelRenderer` spreads. Both absent is today, exactly: a browsable School.
  */
-export default function SchoolApp({
+function SchoolShutdownGate(props) {
+  const urlBase = useMemo(schoolUrlBase, []);
+  const screenId = useMemo(() => screenIdFromUrlBase(urlBase), [urlBase]);
+  const shutdown = useShutdownLock(`school:${screenId}`);
+  if (shutdown.locked) return <ShutdownBlackout />;
+  return <SchoolAppInner {...props} />;
+}
+
+function SchoolAppInner({
   clear,
   mode = null,
   idleTimeoutSeconds = null,
@@ -928,3 +937,5 @@ export default function SchoolApp({
     </SchoolProfileProvider>
   );
 }
+
+export default function SchoolApp(props) { return <SchoolShutdownGate {...props} />; }

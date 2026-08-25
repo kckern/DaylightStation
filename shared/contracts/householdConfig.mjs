@@ -74,6 +74,10 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   // A named policy file reads better than a generic config.yml sitting beside
   // records/ and runtime/.
   school:           'school/school',
+  // Shared, durable safety policy for public kiosk shutdown.  Runtime state
+  // remains beside it in shutdown/lockdown.yml so a parent can inspect or
+  // revoke it by editing/removing that one record.
+  shutdown:         'shutdown/config',
   sheets:           'sheets/config',
   vehicles:         'automotive/vehicles',
 });

@@ -197,6 +197,25 @@ Then push the FKB password (never stored in the repo — read from 1Password/cac
 node _extensions/portal-keys/pkctl.mjs fkbpw
 ```
 
+### Public-kiosk shutdown
+
+The shared shutdown service can temporarily black out the School and Piano
+kiosks after its configured NFC card is scanned. While locked, this APK also
+consumes both volume buttons before they can reach the SPA, Android volume, or
+the double-press screen control. The deadline is synchronized by authenticated
+`PUT /lockdown`; it expires locally even if the server is offline.
+
+Provision a distinct token once (it is redacted from every APK response), then
+store the same value in the household auth entry named by
+`shutdown/config.yml`'s `portal_keys.auth_ref`:
+
+```bash
+node _extensions/portal-keys/pkctl.mjs lockdown-token '<server-only-secret>'
+```
+
+The complete, tracked YAML template is
+[`docs/configuration/public-kiosk-shutdown.yml`](../../docs/configuration/public-kiosk-shutdown.yml).
+
 ### The grant is the fragility
 
 `settings` is denied to `untrusted_app`, so **the APK cannot re-enable itself**. An OS update or
@@ -212,7 +231,8 @@ node _extensions/portal-keys/pkctl.mjs watch    # live key stream over the WebSo
 node _extensions/portal-keys/pkctl.mjs config set <key> <value>
 ```
 
-Keys: `fkbHost`, `fkbPassword`, `screenToggleEnabled`, `consumeVolume`, `doublePressMs`.
+Keys: `fkbHost`, `fkbPassword`, `screenToggleEnabled`, `consumeVolume`, `doublePressMs`,
+`lockdownToken`.
 
 `consumeVolume false` is the escape hatch: if the SPA breaks, it hands volume back to Android
 without a reinstall or a trip to the panel.
