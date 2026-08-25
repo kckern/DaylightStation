@@ -33,6 +33,24 @@ scanners:
     sniff_mode: false                # decode sheets; set true only to re-investigate framing
     topic: omr
 
+    # ---- optional OTA (over-the-air firmware updates) -----------------------
+    # Needs the dual-slot partition table in platformio.ini (min_spiffs.csv).
+    # The previous huge_app.csv had ONE app slot and could not OTA at all, so
+    # every fix meant taking the reader apart for a USB cable. The FIRST flash
+    # after that change is still USB — the partition table lives at 0x8000,
+    # outside any app slot, and cannot be delivered over the air.
+    #
+    #   PLATFORMIO_UPLOAD_FLAGS="--auth=<password>" \
+    #     pio run -e m5-atom-ota -t upload --upload-port <device-ip>
+    #
+    # gen-config.mjs HARD-ERRORS on enabled-without-password. The board's
+    # diagnostics server on :80 is unauthenticated and read-only by design; an
+    # open flash endpoint beside it is a much bigger door, and forgetting a line
+    # must not be what opens it.
+    ota:
+      enabled: false
+      password: ""                   # required when enabled; keep it out of the repo
+
     # ---- optional NFC tap reader -------------------------------------------
     # M5 Unit NFC (SKU U216, ST25R3916) on the ATOM's Grove port. Lets a student
     # tap a card to start a session; the relay emits an `nfc` message over the
