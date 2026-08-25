@@ -121,7 +121,8 @@ describe('dated module schedules', () => {
     });
 
     expect(plan.entries.map((entry) => entry.unitId)).toEqual(['w37.d1']);
-    expect(plan.next.unitId).toBe('w37.d1');
+    // `plan.next` is gone (see planner.mjs); `available` carries the ordering.
+    expect(plan.available[0].unitId).toBe('w37.d1');
   });
 
   it('uses the frozen v2 policy even if the catalog later changes mode', () => {
@@ -134,7 +135,7 @@ describe('dated module schedules', () => {
       sessions: [], now: '2026-08-24T09:00:00.000Z',
       coursePolicies: { cfm: { mode: 'sequential' } },
     });
-    expect(plan.next.unitId).toBe('w35.d1');
+    expect(plan.available[0].unitId).toBe('w35.d1');
     expect(plan.entries.find((entry) => entry.unitId === 'w36.d1').status).toBe('upcoming');
   });
 

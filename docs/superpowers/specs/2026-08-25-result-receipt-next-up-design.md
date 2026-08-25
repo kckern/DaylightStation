@@ -62,6 +62,15 @@ Plan entry shape (`planner.mjs:337-340`): `{ unitId, title, subject, courseId, s
 
 ## Design
 
+> **SUPERSEDED (2026-08-25, structural hardening task 2).** The ordering step below reads
+> `plan.next`, which has since been DELETED from `planLearnerWork` — see
+> *What `plan.next` was not* in `2026-08-25-agenda-integrity-design.md`. It has no served-today
+> suppression, no program done-today status, no focus displacement and no paused-content
+> exception, so a receipt built on it would promise work the panel then refuses: the exact
+> 12:15 failure. The receipt's "next up" must come from the same `PlanProjection` sections the
+> agenda and the panel read. The rest of this document (terminal states, dedupe rule, token
+> behaviour, copy) stands.
+
 ### Ordering
 
 Delete `#nextUnlocked`. In `CloseSessionOutcome`, call `planLearnerWork` with the already-loaded

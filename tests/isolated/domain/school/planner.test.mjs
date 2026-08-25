@@ -42,12 +42,24 @@ const plan = (over = {}) => planLearnerWork({
 });
 
 const byId = (result, unitId) => result.entries.find((e) => e.unitId === unitId);
+/**
+ * The planner's ordering contract: an open session outranks an untouched unit,
+ * and `available` is already sorted by `byEffectivePriority`.
+ *
+ * Derived here rather than read off the plan. `planLearnerWork` used to publish
+ * this as `plan.next`; nothing consumed it, and a global "one thing to do" that
+ * ignores served-today, program status and subject sectioning is wrong for
+ * every real surface — so it was deleted rather than left looking canonical.
+ * The ORDERING it summarised is still a real contract, which is what these
+ * cases assert.
+ */
+const topOfPlan = (result) => [...result.inProgress, ...result.available][0] ?? null;
 
 describe('shape and totality', () => {
   it('is total over junk input', () => {
     const result = planLearnerWork();
     expect(result.entries).toEqual([]);
-    expect(result.next).toBeNull();
+    expect(topOfPlan(result)).toBeNull();
     expect(result.learnerId).toBeNull();
   });
 
@@ -213,18 +225,18 @@ describe('next', () => {
     const result = plan({
       sessions: [passed('math-fractions.01'), session({ unitId: 'math-fractions.02', state: 'issued', sessionId: 'ses_b' })],
     });
-    expect(result.next.unitId).toBe('math-fractions.02');
+    expect(topOfPlan(result).unitId).toBe('math-fractions.02');
   });
 
   it('falls back to the first available unit', () => {
-    expect(plan().next.unitId).toBe('math-fractions.01');
+    expect(topOfPlan(plan()).unitId).toBe('math-fractions.01');
   });
 
   it('is null when everything assigned is finished', () => {
     const result = plan({
       sessions: ['math-fractions.01', 'math-fractions.02', 'math-fractions.03'].map((id) => passed(id)),
     });
-    expect(result.next).toBeNull();
+    expect(topOfPlan(result)).toBeNull();
     expect(result.completed).toHaveLength(3);
   });
 
@@ -233,7 +245,7 @@ describe('next', () => {
     // with neither complete cannot both lock), so it is asserted rather than
     // assumed: a plan with no next move must say so, not invent one.
     const result = plan({ assignment: { units: ['math-fractions.03'] } });
-    expect(result.next).toBeNull();
+    expect(topOfPlan(result)).toBeNull();
     expect(result.locked).toHaveLength(1);
   });
 });
@@ -337,7 +349,7 @@ describe('dated_modules gating', () => {
   });
 
   it('offers the current week even though an earlier week is unfinished', () => {
-    expect(datedPlan('2026-09-01T09:00:00.000Z').next.unitId).toBe('cfm.w2.d1');
+    expect(topOfPlan(datedPlan('2026-09-01T09:00:00.000Z')).unitId).toBe('cfm.w2.d1');
   });
 
   it('still chains lessons inside a week and never offers a future week', () => {
@@ -349,22 +361,22 @@ describe('dated_modules gating', () => {
   it('falls back to catch-up after completing the current week', () => {
     const completed = [1, 2, 3].map((day) => passed(`cfm.w2.d${day}`));
     const result = datedPlan('2026-09-01T09:00:00.000Z', completed);
-    expect(result.next.unitId).toBe('cfm.w1.d1');
-    expect(result.next.timingState).toBe('catch_up');
+    expect(topOfPlan(result).unitId).toBe('cfm.w1.d1');
+    expect(topOfPlan(result).timingState).toBe('catch_up');
   });
 
   it('falls back to the newest unfinished closed week', () => {
     const completed = [1, 2, 3].flatMap((day) => passed(`cfm.w3.d${day}`));
     const result = datedPlan('2026-09-08T09:00:00.000Z', completed);
-    expect(result.next.unitId).toBe('cfm.w2.d1');
-    expect(result.next.timingState).toBe('catch_up');
+    expect(topOfPlan(result).unitId).toBe('cfm.w2.d1');
+    expect(topOfPlan(result).timingState).toBe('catch_up');
   });
 
   it('keeps a closed in-progress worksheet resumable', () => {
     const result = datedPlan('2026-09-08T09:00:00.000Z', [session({ unitId: 'cfm.w1.d1' })]);
     expect(byId(result, 'cfm.w1.d1').status).toBe('in_progress');
-    expect(result.next.unitId).toBe('cfm.w1.d1');
-    expect(result.next.timing.mode).toBe('catch_up');
+    expect(topOfPlan(result).unitId).toBe('cfm.w1.d1');
+    expect(topOfPlan(result).timing.mode).toBe('catch_up');
   });
 
   it('keeps an in-progress catch-up worksheet optional through agenda and completion', () => {
