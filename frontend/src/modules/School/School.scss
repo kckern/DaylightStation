@@ -1864,6 +1864,37 @@
   &:disabled { opacity: 0.5; cursor: default; transform: none; }
 }
 
+// "Did it print?" — the ~15s clock, drawn INSIDE the Yes button so the thing
+// filling up is the thing that will happen. The fill is a scaled pseudo-layer
+// rather than an animated `width`: width would lay the button out again on
+// every tick (and this panel is a low-end tablet WebView), while `transform`
+// stays on the compositor. Never animate `filter` here or anywhere in this
+// codebase — it repaints the whole subtree.
+//
+// Decorative only: `useSelfService` owns the countdown and the resolution, so
+// a WebView that drops the transform changes nothing about when the panel
+// moves on. The label sits above it in its own stacking context so the fill
+// can never wash the word out.
+.school-selfservice-card__action[data-countdown='running'] {
+  position: relative; overflow: hidden; isolation: isolate;
+}
+.school-selfservice-card__action-fill {
+  position: absolute; inset: 0; z-index: 0;
+  transform-origin: left center; transform: scaleX(0);
+  // Matches the hook's tick so the fill reads as continuous rather than
+  // stepped; `linear` because a child is reading it as a clock, not an
+  // animation.
+  transition: transform 250ms linear;
+  background: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+}
+.school-selfservice-card__action-label { position: relative; z-index: 1; }
+// Says out loud what the fill implies. Without it, a screen that moves on by
+// itself reads as the panel losing the child's work.
+.school-selfservice-card__confirm-hint {
+  margin: 0; text-align: center; font-size: 1rem; opacity: 0.7;
+}
+
 @media (max-width: 720px) {
   .school-selfservice-card { min-height: auto; }
   .school-selfservice-card__shell {

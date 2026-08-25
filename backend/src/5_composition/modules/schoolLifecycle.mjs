@@ -95,6 +95,7 @@ import { ResolveSubjectNext } from '#apps/school/usecases/ResolveSubjectNext.mjs
 import { ResolveAccessCode } from '#apps/school/usecases/ResolveAccessCode.mjs';
 import { RunSelfServiceAction } from '#apps/school/usecases/RunSelfServiceAction.mjs';
 import { RecordLessonCompanionProgress } from '#apps/school/usecases/RecordLessonCompanionProgress.mjs';
+import { ReadPrinterHealth } from '#apps/school/usecases/ReadPrinterHealth.mjs';
 import { LessonCompanionHandlers, ReadalongLessonCompanionHandler } from '#apps/school/companions/LessonCompanionHandlers.mjs';
 import { ResolveReviewItem } from '#apps/school/usecases/ResolveReviewItem.mjs';
 import { SetAssignments } from '#apps/school/usecases/SetAssignments.mjs';
@@ -1085,6 +1086,11 @@ export async function createSchoolLifecycle({
     logger,
   });
   const recordLessonCompanionProgress = new RecordLessonCompanionProgress({ companions, handlers: companionHandlers });
+  // The SAME `laserPrinter` every tracked worksheet and receipt prints
+  // through, so "is the printer OK?" is asked of the device the child's paper
+  // was actually sent to — not a second, separately-configured one that could
+  // be healthy while the real one sits jammed.
+  const readPrinterHealth = new ReadPrinterHealth({ printer: laserPrinter, logger });
 
   const listLearnerSessions = new ListLearnerSessions({ sessions: stores.sessions, timezone, clock });
   const listPrintableWorksheetSessions = new ListPrintableWorksheetSessions({ listLearnerSessions, curriculum });
@@ -1134,6 +1140,7 @@ export async function createSchoolLifecycle({
       resolveAccessCode,
       runSelfServiceAction,
       recordLessonCompanionProgress,
+      readPrinterHealth,
       curriculum,
       renderCoursePosterFallback,
     })

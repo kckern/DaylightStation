@@ -57,12 +57,22 @@ import {
 const CARD = { ok: true, code: '123456', subject: 'math', actions: [{ kind: 'print', label: 'Print it' }] };
 const okCard = () => ({ ok: true, status: 200, data: CARD });
 
-/** Drive the hook from the keypad to the "Did it print?" view. */
-async function toConfirm(result) {
+/**
+ * Drive the hook from the keypad through a successful print action. Does NOT
+ * assert where it lands: the printer poll fires immediately on entering the
+ * confirm view, so a printer that is ALREADY faulted moves the panel straight
+ * past the question — which is the behaviour, not a failure.
+ */
+async function runPrint(result) {
   h.resolve.mockResolvedValue(okCard());
   h.act.mockResolvedValue({ ok: true, status: 200, data: { outcome: 'done', sentence: 'Printing.', transition: 'confirm-print' } });
   await act(async () => { await result.current.submit('123456'); });
   await act(async () => { await result.current.runAction({ kind: 'print' }); });
+}
+
+/** …and assert the panel is asking, for the cases where it should be. */
+async function toConfirm(result) {
+  await runPrint(result);
   expect(result.current.view).toBe('confirm');
 }
 
@@ -149,7 +159,7 @@ describe('useSelfService: the print confirmation consults the printer', () => {
         sentence: 'The printer is out of paper — tell a grown-up.',
       },
     });
-    await toConfirm(result);
+    await runPrint(result);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
 
@@ -162,7 +172,7 @@ describe('useSelfService: the print confirmation consults the printer', () => {
     h.printerStatus.mockResolvedValue({
       ok: true, status: 200, data: { ok: true, healthy: false, state: 'stopped', reasons: [], sentence: null },
     });
-    await toConfirm(result);
+    await runPrint(result);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(result.current.sentence).toBe(PRINTER_FAULT_SENTENCE);
   });

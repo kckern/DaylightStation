@@ -11,6 +11,12 @@ import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
 
 const PRINT_QUESTION = 'Did it print?';
 const CONFIRM_YES = 'Yes';
+/**
+ * Said under the question while the clock runs. The screen moving on by itself
+ * is only reassuring if the child was told it would — otherwise it reads as
+ * the panel losing their work.
+ */
+const PRINT_AUTO_HINT = 'This closes by itself.';
 const CONFIRM_NO = 'No';
 const SYNTHESISED_EXIT = 'Close';
 
@@ -111,17 +117,32 @@ function CardAction({ action, onAction, onExit, busy, actionRef = null }) {
  * @param {object} props
  * @param {object} props.card - `/resolve` contextual card (v2, with v1 fallback).
  * @param {'card'|'confirm'|'sentence'} props.view
+ * @param {number|null} [props.confirmRemainingMs] - ms left in the "Did it
+ *   print?" window, or `null` when there is no clock (a deployment that
+ *   disabled it, or any view other than the confirm). `useSelfService` owns
+ *   the countdown and the resolution; this component only draws it.
+ * @param {number|null} [props.confirmTotalMs] - the full window, so the fill
+ *   is a FRACTION rather than this component owning a duration of its own —
+ *   two places believing different things about how long a child has is
+ *   exactly the drift worth designing out.
  */
 export default function LaunchCard({
   card,
   view = 'card',
   sentence = null,
   busy = false,
+  confirmRemainingMs = null,
+  confirmTotalMs = null,
   onAction,
   onConfirm,
   onExit,
 }) {
   const actionFocusRef = useRef(null);
+  // 0 → 1 as the window runs out; `null` when there is nothing to draw. A
+  // total of 0 (or missing) yields null rather than a division by zero.
+  const confirmElapsed = (view === 'confirm' && confirmRemainingMs !== null && confirmTotalMs > 0)
+    ? Math.min(1, Math.max(0, 1 - confirmRemainingMs / confirmTotalMs))
+    : null;
   const actions = Array.isArray(card?.actions) ? card.actions : [];
   const hasExit = actions.some((action) => action.kind === 'exit');
   const context = card?.context ?? null;
@@ -208,10 +229,27 @@ export default function LaunchCard({
                     ref={actionFocusRef}
                     className="school-selfservice-card__action is-primary"
                     data-testid="selfservice-print-ok"
+                    data-countdown={confirmElapsed === null ? undefined : 'running'}
                     onClick={() => onConfirm(true)}
                     disabled={busy}
                   >
-                    {CONFIRM_YES}
+                    {/*
+                      The clock, drawn INSIDE the Yes button rather than beside
+                      it: the thing filling up is the thing that will happen,
+                      which is the whole message. Purely decorative — the
+                      button's own label is what a screen reader announces, and
+                      `useSelfService` owns the actual resolution, so a fill
+                      that fails to paint (a WebView that drops the transform)
+                      changes nothing about when the panel moves on.
+                    */}
+                    {confirmElapsed !== null && (
+                      <span
+                        className="school-selfservice-card__action-fill"
+                        style={{ transform: `scaleX(${confirmElapsed})` }}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span className="school-selfservice-card__action-label">{CONFIRM_YES}</span>
                   </button>
                   <button
                     type="button"
@@ -223,6 +261,9 @@ export default function LaunchCard({
                     {CONFIRM_NO}
                   </button>
                 </div>
+                {confirmElapsed !== null && (
+                  <p className="school-selfservice-card__confirm-hint">{PRINT_AUTO_HINT}</p>
+                )}
               </div>
             )}
 

@@ -45,6 +45,7 @@ export function createSchoolSelfServiceRouter({
   resolveAccessCode,
   runSelfServiceAction,
   recordLessonCompanionProgress = null,
+  readPrinterHealth = null,
   curriculum = null,
   renderCoursePosterFallback = null,
 } = {}) {
@@ -88,6 +89,25 @@ export function createSchoolSelfServiceRouter({
       const { code, action } = req.body || {};
       const result = await runSelfServiceAction.execute({ code, action });
       res.set('Cache-Control', 'no-store').json(result);
+    }));
+  }
+  // Is the printer able to print at all? Polled by the panel only while it is
+  // asking a child "Did it print?", so it can stop asking and name a jam or an
+  // empty tray instead of making a seven-year-old adjudicate one.
+  //
+  // A GET, and the ONLY route here that is neither a code nor a secret: it
+  // says nothing about any child, any lesson or any code — just what the
+  // hardware in the kitchen is doing. `no-store` all the same, because a
+  // cached "it's fine" is worse than no answer at the moment a tray runs out.
+  //
+  // Never a 4xx/5xx: `ReadPrinterHealth` catches its own faults and answers
+  // `healthy: null` for "cannot tell". The panel's rule is that only an
+  // explicit `healthy: false` changes what a child sees, so an unknown here
+  // costs nothing and an error status would only tempt a caller to treat
+  // "the status check is broken" as "the printer is broken".
+  if (readPrinterHealth) {
+    router.get('/printer-status', asyncHandler(async (req, res) => {
+      res.set('Cache-Control', 'no-store').json(await readPrinterHealth.execute());
     }));
   }
   if (recordLessonCompanionProgress) {
