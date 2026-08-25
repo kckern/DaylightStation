@@ -249,7 +249,20 @@ function buildJestArgs(args, folders) {
       const pattern = folders.map(f => `tests/integration/suite/${f}`).join('|');
       jestArgs.push(`--testPathPattern=${pattern}`);
     } else {
-      jestArgs.push('--testPathPattern=tests/integration/suite');
+      // `tests/integration/suite/` is the --only/--skip-filterable population.
+      // `tests/integration/school/` is a second, ungated jest-owned tree
+      // (bootImage.test.mjs) that predates any folder-discovery convention
+      // here — included explicitly rather than widening the pattern to all of
+      // `tests/integration/`, which would also sweep up the top-level
+      // vitest-authored files (e.g. playback-hub-bootstrap.test.mjs) that
+      // jest cannot execute at all ("Cannot redefine property:
+      // Symbol($$jest-matchers-object)"), turning this harness red for a
+      // file it was never meant to own.
+      // Quoted: this harness spawns jest with `shell: true` and an args
+      // array, which node concatenates into a shell command WITHOUT
+      // escaping — an unquoted `(`/`|` here is shell syntax, not regex
+      // syntax, and blows up with "Syntax error: ( unexpected".
+      jestArgs.push('--testPathPattern="tests/integration/(suite|school)"');
     }
   }
 
