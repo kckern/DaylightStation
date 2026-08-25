@@ -4,7 +4,8 @@
  * and allocation records: composition changes paper layout, never grading
  * ownership.
  */
-import { reduceSession, createEvent, statesAccepting } from '#domains/school/sessions/sessionEvents.mjs';
+import { reduceSession, createEvent, statesAccepting, transitionViolation } from '#domains/school/sessions/sessionEvents.mjs';
+import { DomainInvariantError } from '#domains/core/errors/index.mjs';
 import { createWorksheetInstance, worksheetInstanceDocument, composedWorksheetDocument } from '#domains/school/questionBankV2.mjs';
 import { PublishPrintDocument } from '#apps/school/documents/PublishPrintDocument.mjs';
 import { deriveLearnerName, deriveIssueDate } from '#apps/school/documents/reprintContext.mjs';
@@ -14,7 +15,29 @@ import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 
 // Derived from the transition table, not hand-copied — see `IssueDocument`'s
 // own ISSUABLE for why the answer is the union of these two events' states.
-const ISSUABLE = new Set([...statesAccepting('issued'), ...statesAccepting('reprinted')]);
+const ISSUE_FROM = statesAccepting('issued');
+const REPRINT_FROM = statesAccepting('reprinted');
+const ISSUABLE = new Set([...ISSUE_FROM, ...REPRINT_FROM]);
+
+/**
+ * Which event a section's session may take, decided by the SESSION'S STATE.
+ *
+ * This used to read `section.created ? 'issued' : 'reprinted'` — "did this call
+ * mint a worksheet instance?" — which answers a different question entirely. The
+ * instance is persisted before the print, so a jammed printer left instances on
+ * disk and the retry then emitted `reprinted` for sessions still sitting in
+ * `created`; conversely a session already issued a solo sheet has no composed
+ * instance yet and got a second `issued`. Both are illegal edges the datastore
+ * now refuses — after the composite sheet has already printed.
+ *
+ * @param {string|null} state
+ * @returns {'issued'|'reprinted'|null} null when the session can take neither
+ */
+function composedEventTypeFor(state) {
+  if (ISSUE_FROM.has(state)) return 'issued';
+  if (REPRINT_FROM.has(state)) return 'reprinted';
+  return null;
+}
 
 function answerSheetPolicy(raw) {
   const reuse = raw?.reuse ?? 'after_scan';
@@ -134,6 +157,9 @@ export class IssueComposedWorksheet {
     }
     return {
       id: `section-${slugify(sessionId)}`, instance, created, state, unit,
+      // Decided here, from the state this section was READ at, and re-checked
+      // once more before the printer is touched (see #issueChunk).
+      eventType: composedEventTypeFor(state.state),
       subjectId: unit.subject ?? 'school', courseId: unit.courseId ?? null,
       subject: unit.subject ?? 'School', course: unit.courseTitle ?? unit.courseId ?? null,
       breadcrumb: [unit.courseTitle ?? unit.courseId, unit.module].filter(Boolean).join(' › '),
@@ -214,6 +240,31 @@ export class IssueComposedWorksheet {
         },
       });
     }
+    // ALL-OR-NOTHING, and the gate stands BEFORE the printer.
+    //
+    // The loop below has no rollback: it appends one event per session against a
+    // single composite sheet that is already in the teacher's hand by then. If a
+    // section turns out to have nowhere legal to record its issue, aborting
+    // mid-loop leaves half the batch recorded and a piece of paper the record
+    // disagrees with — the one outcome a parent reading this log can never
+    // reconstruct. So every section's event is proved legal here, while the only
+    // thing that has to be undone is a card allocation.
+    const illegal = sections
+      .map((section) => ({
+        sessionId: section.state.sessionId, from: section.state.state,
+        reason: section.eventType
+          ? transitionViolation(section.state.state, section.eventType)
+          : `session cannot be issued from state ${section.state.state}`,
+      }))
+      .filter((row) => row.reason);
+    if (illegal.length) {
+      this.#logger.warn?.('school.composed-worksheet.refused', { compositionId, learnerId, illegal });
+      await this.#allocations.release({ cardId: rendered.allocation.cardId });
+      throw new DomainInvariantError(
+        `composed worksheet cannot be recorded for ${illegal.map((row) => row.sessionId).join(', ')}`,
+        { code: 'COMPOSED_ISSUE_NOT_RECORDABLE', details: { compositionId, sessions: illegal } },
+      );
+    }
     let printResult;
     try {
       printResult = await this.#printer.printPdf(rendered.bytes, {
@@ -224,9 +275,8 @@ export class IssueComposedWorksheet {
       throw err;
     }
     for (const section of sections) {
-      const type = section.created ? 'issued' : 'reprinted';
       const { errors, event } = createEvent({
-        type, at: nowIso, sessionId: section.state.sessionId, artifactId: compositionId,
+        type: section.eventType, at: nowIso, sessionId: section.state.sessionId, artifactId: compositionId,
         // Preview/capture printers can explicitly say no physical paper was
         // dispatched.  Preserve the issue lineage but do not arm the real
         // print cooldown from a sheet that never reached the tray.
