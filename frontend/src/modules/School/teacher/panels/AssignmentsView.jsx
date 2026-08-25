@@ -11,7 +11,9 @@ import { useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { useTeacherWrite } from '../useTeacherWrite.js';
+import { useTeacherProfile } from '../TeacherProfileContext.jsx';
 import { curriculumTitles } from '../curriculumTitles.js';
+import { labelize } from '../labelize.js';
 
 /** Stored entries can be strings or {courseId|unitId, elective} objects
  * (CurriculumPlanner.toStored always writes the object form). Everything in
@@ -49,8 +51,13 @@ export default function AssignmentsView({ learnerId, learnerName }) {
     isEmpty: (d) => !(d?.units ?? []).length,
   });
   const { run, busy, errors } = useTeacherWrite({ panel: 'assignments' });
+  const profile = useTeacherProfile();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({ courses: [], units: [] });
+  // assignedBy is a user id, never display copy — resolve to a name.
+  const teacherName = (id) => (profile.teachers ?? []).find((t) => t.id === id)?.name
+    ?? (profile.currentTeacher?.id === id ? profile.currentTeacher.name : null)
+    ?? labelize(id);
 
   const units = catalog.data?.units ?? [];
   const courseIds = [...new Set(units.filter((u) => u.courseId).map((u) => u.courseId))];
@@ -110,7 +117,7 @@ export default function AssignmentsView({ learnerId, learnerName }) {
                 </div>
               )}
               {record.data.assignedBy && (
-                <p className="teacher-assignments__meta">Assigned by {record.data.assignedBy}</p>
+                <p className="teacher-assignments__meta">Assigned by {teacherName(record.data.assignedBy)}</p>
               )}
             </div>
           )}

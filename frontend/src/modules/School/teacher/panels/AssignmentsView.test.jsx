@@ -71,6 +71,17 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
     vi.clearAllMocks();
   });
 
+  it('resolves assignedBy to a display name, never the raw user id', async () => {
+    schoolApi.assignments.mockResolvedValue({
+      ok: true, status: 200,
+      data: { courses: [ENROLLED], units: [], assignedBy: 'kckern', updatedAt: '2026-08-13T00:00:00Z' },
+    });
+    schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
+    render(<AssignmentsView learnerId="felix" learnerName="Felix" />);
+    await waitFor(() => expect(screen.getByText('Assigned by KC')).toBeTruthy());
+    expect(screen.queryByText('Assigned by kckern')).toBeNull();
+  });
+
   it('round-trips an enrolled course unchanged when saved without edits', async () => {
     // Set up: learner has one enrolled course + catalog has courses available
     schoolApi.assignments.mockResolvedValue({

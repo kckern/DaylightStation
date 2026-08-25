@@ -20,6 +20,7 @@ import { usePanelFetch } from '../usePanelFetch.js';
 import PanelFrame from './PanelFrame.jsx';
 import EnrollmentDrawer from './EnrollmentDrawer.jsx';
 import { curriculumTitles } from '../curriculumTitles.js';
+import { labelize } from '../labelize.js';
 
 /** Pure model: rows per learner, columns per course, plus the flag sets. */
 export function deriveMatrix({ assignments, units, kids, syllabi = [] }) {
@@ -145,7 +146,7 @@ export default function SchoolMatrix({ kids }) {
             <p>Assignments naming courses the catalog no longer publishes — these subjects are silently missing from the child&rsquo;s day:</p>
             <ul>
               {model.rows.filter((r) => r.deadRefs.length).map((r) => (
-                <li key={r.learnerId}><strong>{r.name}</strong>: {r.deadRefs.join(', ')}</li>
+                <li key={r.learnerId}><strong>{r.name}</strong>: {r.deadRefs.map(labelize).join(', ')}</li>
               ))}
             </ul>
           </div>
