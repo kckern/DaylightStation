@@ -365,7 +365,7 @@ export default joinLearnerDay;
 npx vitest run frontend/src/modules/School/teacher/learnerDay.test.js
 ```
 
-Expected: PASS, 10 tests.
+Expected: PASS, 12 tests (one per `it` block above).
 
 **Step 5: Commit**
 
@@ -373,6 +373,14 @@ Expected: PASS, 10 tests.
 git add frontend/src/modules/School/teacher/learnerDay.js frontend/src/modules/School/teacher/learnerDay.test.js
 git commit -m "feat(school/teacher): pure plan-vs-actual join for a learner's study day"
 ```
+
+**Step 6 (Task 1b): match by unit across subject buckets**
+
+The subject-keyed join above has a defect found in review. `backend/src/2_domains/school/agenda.mjs:134` buckets any subject outside its canonical list into the literal `'other'`, while day-projection sessions carry the **raw** subject. A piano lesson therefore arrives as an `'other'` section plus a `'piano'` session, and renders as TWO rows — "Not started" and "Extra" — for ONE activity. That is precisely the repetition this view exists to end.
+
+Do **not** fix it by copying the backend's canonical subject list into the frontend; that list would rot. Fix it with identity: `section.next.unitId` and `session.unitId` share an id space, so a unit match is authoritative and must be tried across **all** unclaimed sessions regardless of subject bucket. Subject matching remains the fallback for sessions carrying no `unitId`.
+
+While restructuring, drop the unconditional `unmatched.delete(key)`: sections should **claim** the sessions they match and leave the rest available, so two sections sharing a subject can no longer have the first swallow both. Add the four tests in the Task 1b brief covering the `'other'`-bucket match, two same-subject sections each claiming their own unit, one session never claimed twice, and a genuinely unplanned session still landing as `extra`.
 
 ---
 
@@ -793,6 +801,51 @@ describe('LearnerDayView', () => {
     expect(screen.getByText(/graded today/i)).toBeInTheDocument();
     expect(screen.getByText(/Aug 23/)).toBeInTheDocument();
   });
+
+  // --- The printed agenda (operator requirement, 2026-08-25) --------------
+  it('offers the exact printer image for the selected day', async () => {
+    mount();
+    const toggle = await screen.findByRole('button', { name: /show the printed agenda/i });
+    fireEvent.click(toggle);
+    const image = await screen.findByAltText(/printed agenda/i);
+    expect(image).toHaveAttribute('src', expect.stringContaining('/agenda/preview'));
+    expect(image).toHaveAttribute('src', expect.stringContaining('studyDay=2026-08-25'));
+    // format=json is the DATA read; the image must be the PNG branch.
+    expect(image.getAttribute('src')).not.toContain('format=json');
+  });
+
+  it('promises in plain words that the previewed codes are dead', async () => {
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    expect(await screen.findByText(/codes on this copy don’t work/i)).toBeInTheDocument();
+    // The old five-noun disclaimer is gone.
+    expect(screen.queryByText(/agenda artifact, print record, working QR/i)).not.toBeInTheDocument();
+  });
+
+  it('re-points the printer image when the day changes', async () => {
+    const { rerender } = render(
+      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-25"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    expect(await screen.findByAltText(/printed agenda/i)).toHaveAttribute('src', expect.stringContaining('2026-08-25'));
+    rerender(
+      <LearnerDayView learnerId="learner-a" learnerName="A" studyDay="2026-08-24"
+        onChangeStudyDay={vi.fn()} onOpenSession={vi.fn()} />,
+    );
+    await waitFor(() => expect(screen.getByAltText(/printed agenda/i))
+      .toHaveAttribute('src', expect.stringContaining('2026-08-24')));
+  });
+
+  it('never issues a non-GET to any agenda route', async () => {
+    // Previewing must not mint a session, ticket, QR, or digit code.
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: /show the printed agenda/i }));
+    await screen.findByAltText(/printed agenda/i);
+    expect(schoolApi.agendaDispatch).not.toBeDefined();
+    // The only agenda call the view makes is the read-only JSON preview.
+    expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner-a', '2026-08-25');
+  });
 });
 ```
 
@@ -815,7 +868,7 @@ Create `frontend/src/modules/School/teacher/panels/LearnerDayView.jsx`:
  * third copy of both. The two reads it joins are unchanged and side-effect
  * free — previewing a day never creates a session, print, or code.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { schoolApi } from '../../schoolApi.js';
 import { usePanelFetch } from '../usePanelFetch.js';
 import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
@@ -859,13 +912,54 @@ function DayNav({ studyDay, onChangeStudyDay }) {
   );
 }
 
+/**
+ * The exact image the thermal printer would produce for this day.
+ *
+ * This is a dry run of the child's own agenda, not a re-layout of it: the
+ * teacher sees the physical artifact. `previewAgenda` (BuildAgenda with
+ * `previewOnly: true`) renders it with `token: null, tokenClass: 'preview'`
+ * and relabels every offer "Preview only — ask a grown-up to start this
+ * lesson", so the QR and digit codes on it are inert BY CONSTRUCTION, not by
+ * convention. The route is GET-only and sets `X-School-Preview:
+ * agenda-non-recording`; no session, ticket, or print record is created,
+ * for today or for any other day.
+ *
+ * Loaded on demand — a printer-resolution PNG is not worth fetching for a
+ * teacher who only wanted to read the list.
+ */
+function PrintedAgenda({ learnerId, studyDay }) {
+  const [open, setOpen] = useState(false);
+  const src = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({ studyDay })}`;
+  return (
+    <section className="teacher-printed-agenda">
+      <div className="teacher-action-row">
+        <button type="button" className="teacher-btn" onClick={() => setOpen((value) => !value)}>
+          {open ? 'Hide the printed agenda' : 'Show the printed agenda'}
+        </button>
+        {open && <a className="teacher-btn teacher-btn--quiet" href={src} target="_blank" rel="noreferrer">Open full size ↗</a>}
+      </div>
+      {open && <>
+        <p className="teacher-printed-agenda__promise">
+          This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.
+        </p>
+        <img className="teacher-printed-agenda__image" src={src} alt={`Printed agenda for ${humanDate(studyDay) ?? 'the selected day'}`} />
+      </>}
+    </section>
+  );
+}
+
 function DayRow({ row, onOpenSession }) {
   const session = row.session;
+  // The SESSION's subject wins over the section's. The planner buckets
+  // non-canonical subjects into 'other', so a unit-matched piano lesson
+  // arrives on an 'other' section and would otherwise be filed under a
+  // heading reading "Other" (found in Task 1b review).
+  const subject = session?.subject ?? row.subject;
   const title = session?.lessonTitle ?? session?.title ?? row.planned;
   const body = session
-    ? <LessonIdentity compact subject={session.subject} courseTitle={session.courseTitle}
+    ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
         moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
-    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={row.subject} />
+    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
         <strong>{row.planned ?? 'No work offered'}</strong></div>;
   return (
     <li className={`teacher-day-row teacher-day-row--${row.status}`}>
@@ -941,6 +1035,10 @@ export default function LearnerDayView({ learnerId, learnerName, studyDay, onCha
           {joined.rows.map((row) => <DayRow key={row.key} row={row} onOpenSession={onOpenSession} />)}
         </ul>
       </PanelFrame>
+      {/* Outside the PanelFrame deliberately: PanelFrame renders children
+          only in the `ok` state, and "what would today's paper look like?"
+          is a fair question on a day with nothing planned or recorded. */}
+      <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
       {processed.length > 0 && (
         <PanelFrame title="Also graded today" state="ok">
           <p className="teacher-muted">Work from an earlier study day that was marked on this date.</p>
@@ -1033,6 +1131,16 @@ Add at the end of `Teacher.scss`:
   &--blocked { background: #f7e2da; color: #8d452c; }
   &--extra { background: #e6e9f2; color: #45507a; }
   &--processed { background: #eae6f0; color: #57457a; }
+}
+/* The dry-run printout. Constrained so a tall receipt-format PNG cannot
+   run away with the page, and given paper-white ground + a drop shadow so
+   it reads as a physical artifact rather than as page furniture. */
+.teacher-printed-agenda {
+  margin-top: 4px; padding: 10px; border: 1px solid #e5dccb; border-radius: 10px; background: #fffdf8;
+  &__promise { margin: 10px 0 0; padding: 8px 11px; border-radius: 8px; background: #f4ecdb; color: #6f5c33; font-size: 12px; line-height: 1.45; }
+  &__image { display: block; max-width: min(100%, 420px); max-height: 70vh; margin: 10px auto 2px;
+    border: 1px solid #d9d0c0; background: white; object-fit: contain;
+    box-shadow: 0 8px 25px rgba(45, 36, 22, .12); }
 }
 .teacher-paper-record {
   summary { color: #745326; cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; }
@@ -1151,6 +1259,14 @@ export function LearnerOverview({ learnerId, learnerName, onOpenSession, studyDa
 ```
 
 Then **delete** the `AgendaPreview` function (lines ~74–139) from `WorkspaceViews.jsx`. Leave `SessionList` — `HistoryView` still uses it.
+
+⚠ **Before deleting, confirm the day view carries its two capabilities forward.** `AgendaPreview` owned both the JSON plan read *and* the thermal-printer PNG preview. Task 5's `LearnerDayView` must already provide both — the joined plan-vs-record list, and `PrintedAgenda` with its "the codes on this copy don’t work" promise. Verify with:
+
+```bash
+grep -n "agenda/preview" frontend/src/modules/School/teacher/panels/LearnerDayView.jsx
+```
+
+Expected: two hits — the `format=json` data read and the PNG `src`. **If the PNG hit is missing, stop and fix Task 5 first.** Deleting `AgendaPreview` without it silently removes the operator-required ability to dry-run a child's printed agenda, which is the one thing the old Overview tab did that nothing else does.
 
 **Step 3c: Wire the route in `TeacherConsole.jsx`**
 
@@ -2541,7 +2657,33 @@ test('retraces any study day in one place — plan, record, and paper', async ({
 
   await page.screenshot({ path: path.join(OUT_DIR, 'learner-day.png'), fullPage: true });
 });
+
+test('dry-runs the printed agenda without minting a session, ticket, or code', async ({ page }) => {
+  const writes = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (request.method() !== 'GET' && /\/agenda\//.test(url.pathname)) {
+      writes.push({ method: request.method(), path: url.pathname });
+    }
+  });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installTeacherReadModel(page);
+  await page.goto('/school/teacher/students/learner-b/day/2026-08-24');
+
+  await page.getByRole('button', { name: /show the printed agenda/i }).click();
+  const printed = page.getByAltText(/printed agenda/i);
+  await expect(printed).toBeVisible();
+  await expect(printed).toHaveAttribute('src', /agenda\/preview\?.*studyDay=2026-08-24/);
+  await expect(page.getByText(/codes on this copy don’t work/i)).toBeVisible();
+  // No affordance anywhere that would send this to a real printer.
+  await expect(page.getByRole('button', { name: /print .* agenda/i })).toHaveCount(0);
+  expect(writes).toEqual([]);
+
+  await page.screenshot({ path: path.join(OUT_DIR, 'printed-agenda-preview.png'), fullPage: true });
+});
 ```
+
+The mock's `/agenda/preview` branch already answers an SVG for the non-JSON case — keep it. That branch is what proves the view fetches the **printer image** rather than re-laying the plan out in HTML.
 
 Extend the mock's agenda-preview branch to return real `sections` (at minimum one `civilization` section with `next.title`, one unplayed subject, and one `suppressed` section) so the join has something to show.
 
@@ -2632,6 +2774,12 @@ and `GET /teacher/day?studyDay=…` (the record) — through the pure function
 `learnerDay.js#joinLearnerDay`, which classifies each subject as done,
 not started, deferred, blocked, or extra. Previewing a day never writes.
 
+- It also carries the **printed-agenda dry run**: the exact thermal-printer PNG
+  for the selected day, from the same GET route, on demand. `previewAgenda` is
+  `BuildAgenda` with `previewOnly: true`, which emits `token: null,
+  tokenClass: 'preview'` and relabels every offer "Preview only — ask a
+  grown-up to start this lesson" — so the QR and digit codes on a previewed
+  sheet are inert by construction. Nothing is minted, for today or any day.
 - The dashboard and the History tab both LINK here; neither re-renders it.
 - `/students/:id` and `/students/:id/overview` both resolve to the day record.
 - Paper records (worksheet PDF, result receipt) are fetched lazily per lesson
