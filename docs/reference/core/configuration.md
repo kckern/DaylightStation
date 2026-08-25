@@ -159,6 +159,17 @@ Unusable values (zero, negative, non-numeric) fall back to the defaults rather
 than producing a transport that rotates on every line. Read by
 `backend/src/0_system/logging/generalSinks.mjs`.
 
+**AI usage ledger.** Every OpenAI/Anthropic API call is recorded twice: an
+`openai.usage` / `anthropic.usage` info event in the structured log (model,
+tokens in/out, estimated `costUsd`, duration, status), and a durable JSONL row
+appended to `<dataDir>/system/history/ai-usage/YYYY-MM.jsonl` — the billing
+trail that outlives the log store's 7-day retention. Cost estimates come from
+`backend/src/1_adapters/ai/aiPricing.mjs`; unknown models record `costUsd: null`
+(tokens still recorded) until a price is added there or via the `pricing:` map
+on the provider's integration config. Written by
+`backend/src/1_adapters/ai/AiUsageLedger.mjs`; recording never breaks the call
+it observes.
+
 ### system-local.{ENV}.yml (Environment Overrides)
 
 Per-environment overrides merged on top of system.yml.

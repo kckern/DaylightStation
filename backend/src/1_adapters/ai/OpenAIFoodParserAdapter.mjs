@@ -1,6 +1,7 @@
 // backend/src/2_adapters/ai/OpenAIFoodParserAdapter.mjs
 import { FoodItem } from '#domains/lifelog/entities/FoodItem.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
+import { estimateCostUsd } from './aiPricing.mjs';
 
 /**
  * OpenAI-based food parser implementing IFoodParser
@@ -14,6 +15,8 @@ export class OpenAIFoodParserAdapter {
   #baseUrl;
   #httpClient;
   #logger;
+  #usageLedger;
+  #pricing;
 
   /**
    * @param {Object} config
@@ -41,9 +44,44 @@ export class OpenAIFoodParserAdapter {
     this.#baseUrl = 'https://api.openai.com/v1';
     this.#httpClient = deps.httpClient;
     this.#logger = deps.logger || console;
+    this.#usageLedger = deps.aiUsageLedger || null;
+    this.#pricing = config.pricing || null;
+  }
+
+  /**
+   * Billing trail for this adapter's own HTTP calls — it does not route
+   * through OpenAIAdapter, so it must record its own spend. Never throws.
+   * @private
+   */
+  #recordUsage({ result = null, durationMs, error = null }) {
+    try {
+      const usage = result?.usage || {};
+      const model = result?.model || this.#model;
+      const promptTokens = usage.prompt_tokens ?? null;
+      const completionTokens = usage.completion_tokens ?? null;
+      const entry = {
+        provider: 'openai',
+        endpoint: '/chat/completions',
+        caller: 'food-parser',
+        model,
+        requestedModel: this.#model,
+        promptTokens,
+        completionTokens,
+        totalTokens: usage.total_tokens ?? null,
+        costUsd: error ? 0 : estimateCostUsd(model, { promptTokens, completionTokens }, this.#pricing),
+        durationMs,
+        status: error ? 'error' : 'ok',
+        ...(error ? { error: error.message } : {}),
+      };
+      this.#logger.info?.('openai.usage', entry);
+      this.#usageLedger?.record(entry);
+    } catch (recordError) {
+      this.#logger.warn?.('openai.usage.record-failed', { error: recordError.message });
+    }
   }
 
   async #callOpenAI(messages, options = {}) {
+    const startedAt = Date.now();
     try {
       const response = await this.#httpClient.post(
         `${this.#baseUrl}/chat/completions`,
@@ -66,9 +104,11 @@ export class OpenAIFoodParserAdapter {
         const err = new Error('AI API request failed');
         err.code = 'AI_API_ERROR';
         err.isTransient = false;
+        this.#recordUsage({ durationMs: Date.now() - startedAt, error: err });
         throw err;
       }
 
+      this.#recordUsage({ result: response.data, durationMs: Date.now() - startedAt });
       return response.data.choices[0].message.content;
     } catch (error) {
       if (error.code === 'AI_API_ERROR') throw error;
@@ -77,6 +117,7 @@ export class OpenAIFoodParserAdapter {
         error: error.message,
         code: error.code
       });
+      this.#recordUsage({ durationMs: Date.now() - startedAt, error });
       const wrapped = new Error('Failed to call AI API');
       wrapped.code = error.code || 'UNKNOWN_ERROR';
       wrapped.isTransient = error.isTransient || false;

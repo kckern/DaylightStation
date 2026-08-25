@@ -505,6 +505,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let householdAdapters = null;
   const defaultHouseholdId = configService.getDefaultHouseholdId() || 'default';
 
+  // Durable per-call AI spend trail (tokens, model, cost) — the log store only
+  // keeps 7 days, so every AI adapter also appends to a monthly file here.
+  const { createAiUsageLedger } = await import('#adapters/ai/AiUsageLedger.mjs');
+  const aiUsageLedger = createAiUsageLedger({
+    dir: path.join(configService.getDataDir(), 'system', 'history', 'ai-usage'),
+    // Per-writer files: the data tree is Dropbox-synced, and prod + a dev
+    // machine appending to one file is the backend.log conflict loop again.
+    source: process.env.DAYLIGHT_ENV || 'docker',
+    logger: rootLogger.child({ module: 'ai-usage-ledger' }),
+  });
+
   try {
     integrationSystem = await initializeIntegrations({
       configService,
@@ -515,7 +526,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     householdAdapters = await loadHouseholdIntegrations({
       householdId: defaultHouseholdId,
       httpClient: axios,
-      logger: rootLogger.child({ module: 'integrations' })
+      logger: rootLogger.child({ module: 'integrations' }),
+      aiUsageLedger
     });
 
     rootLogger.info('integrations.loaded', {
@@ -544,7 +556,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   let sharedAiGateway = householdAdapters?.has?.('ai') ? householdAdapters.get('ai') : null;
   if (!sharedAiGateway && openaiApiKey) {
     const { OpenAIAdapter } = await import('#adapters/ai/OpenAIAdapter.mjs');
-    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }) });
+    sharedAiGateway = new OpenAIAdapter({ apiKey: openaiApiKey }, { httpClient: axios, logger: rootLogger.child({ module: 'shared-ai' }), aiUsageLedger });
     rootLogger.debug('ai.adapter.fallback', { reason: 'Using hardcoded OpenAI adapter creation' });
   }
 
@@ -4794,7 +4806,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     const { AnthropicAdapter } = await import('#adapters/ai/AnthropicAdapter.mjs');
     aiAnthropicAdapter = new AnthropicAdapter(
       { apiKey: anthropicApiKey },
-      { httpClient: axios, logger: rootLogger.child({ module: 'ai-anthropic' }) }
+      { httpClient: axios, logger: rootLogger.child({ module: 'ai-anthropic' }), aiUsageLedger }
     );
   }
 
