@@ -46,6 +46,7 @@ import { resultDocument, noticeDocument, reviewNoteLines } from '#domains/school
 import { planLearnerWork } from '#domains/school/planner.mjs';
 import { inProgressSegments } from '#domains/school/progressRows.mjs';
 import { studyDayWindow } from '#domains/school/studyDay.mjs';
+import { moduleOrdinal } from './BuildAgenda.mjs';
 
 export class CloseSessionOutcome {
   #curriculum; #sessions; #tokens; #assignments; #economy; #economyAction; #economyEnabled;
@@ -317,12 +318,15 @@ export class CloseSessionOutcome {
     const work = (await this.#curriculum.listWorks?.() ?? []).find((candidate) => candidate.work === unit?.courseId);
     const learnerAssignment = await this.#assignments.get(state.learnerId);
     const enrollment = learnerAssignment?.courses?.find((course) => course.courseId === unit?.courseId)?.enrollment;
-    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit?.module) ?? -1;
+    // 1-based, via the same helper `BuildAgenda` uses — this printed line was
+    // reading `.indexOf()` directly (0-based) and disagreeing with the
+    // progress label on the same receipt (was "Unit 0", regression fix).
+    const unitOrdinal = moduleOrdinal({ enrollment, entry: unit });
     const moduleTitle = work?.modules?.find((module) => module.module === unit?.module)?.title;
     const taxonomy = {
       subject: unit?.subject ? unit.subject[0].toUpperCase() + unit.subject.slice(1) : 'School',
       course: work?.title ?? unit?.courseId ?? 'Independent study',
-      unit: moduleIndex >= 0 ? `Unit ${moduleIndex}: ${moduleTitle}` : (moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId),
+      unit: unitOrdinal !== null ? `Unit ${unitOrdinal}: ${moduleTitle}` : (moduleTitle ?? unit?.module ?? unit?.title ?? state.unitId),
       lesson: unit?.title ?? state.unitId,
     };
     const worksheet = await this.#worksheetInstances?.findBySession?.(sessionId) ?? null;
@@ -610,7 +614,11 @@ export class CloseSessionOutcome {
     if (!next || next.status === 'locked') return null;
     const assignmentCourse = assignment?.courses?.find((entry) => entry.courseId === unit.courseId);
     const course = (works ?? []).find((work) => work.work === next.courseId);
-    const nextModuleIndex = assignmentCourse?.enrollment?.moduleOrder?.indexOf(next.module) ?? -1;
+    // Same "Unit N" bug, third site in this file (not part of the original
+    // two-site audit that prompted this fix, found while reusing the helper
+    // above — fixed the same way rather than left as a third divergent
+    // `.indexOf()`).
+    const nextUnitOrdinal = moduleOrdinal({ enrollment: assignmentCourse?.enrollment, entry: next });
     const nextModuleTitle = course?.modules?.find((module) => module.module === next.module)?.title;
     return {
       unitId: next.unitId, title: next.title, description: next.description ?? null,
@@ -619,7 +627,7 @@ export class CloseSessionOutcome {
           ? (next.subject ?? unit.subject)[0].toUpperCase() + (next.subject ?? unit.subject).slice(1)
           : 'School',
         course: course?.title ?? next.courseId,
-        unit: nextModuleIndex >= 0 ? `Unit ${nextModuleIndex}: ${nextModuleTitle}` : (nextModuleTitle ?? next.module ?? next.title),
+        unit: nextUnitOrdinal !== null ? `Unit ${nextUnitOrdinal}: ${nextModuleTitle}` : (nextModuleTitle ?? next.module ?? next.title),
         lesson: next.title,
       },
     };
@@ -647,7 +655,9 @@ export class CloseSessionOutcome {
       const entries = plan.entries.filter((entry) => entry.courseId === unit.courseId && entry.module === module);
       return entries.length > 0 && entries.every((entry) => entry.status === 'completed');
     }).length;
-    const moduleIndex = enrollment?.moduleOrder?.indexOf(unit.module) ?? -1;
+    // 1-based, via the same helper as the taxonomy block above (was "Unit 0",
+    // same regression, second site).
+    const unitOrdinal = moduleOrdinal({ enrollment, entry: unit });
     // PAST, PRESENT, FUTURE. The course bar used to have only two states —
     // units done and units not — which quietly filed the unit the child is
     // ACTUALLY IN with the ones they have never opened. They just finished a
@@ -670,7 +680,7 @@ export class CloseSessionOutcome {
         ...(courseInProgress ? { inProgress: courseInProgress } : {}),
       },
       {
-        label: moduleIndex >= 0 ? `Unit ${moduleIndex}` : 'Unit',
+        label: unitOrdinal !== null ? `Unit ${unitOrdinal}` : 'Unit',
         completed: moduleEntries.filter((entry) => entry.status === 'completed').length,
         total: moduleEntries.length,
       },
