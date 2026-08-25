@@ -818,6 +818,8 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               view={selfService.view}
               sentence={selfService.sentence}
               busy={selfService.busy}
+              confirmRemainingMs={selfService.confirmRemainingMs}
+              confirmTotalMs={selfService.confirmTotalMs}
               onAction={selfService.runAction}
               onConfirm={selfService.confirmPrint}
               onExit={selfService.exit}

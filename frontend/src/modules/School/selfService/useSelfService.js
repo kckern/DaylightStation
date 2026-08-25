@@ -37,6 +37,15 @@
  *    generation guard below, a `/act` resolving afterwards flips the panel back
  *    to a confirm with `card` already null, and the NEXT child answers "Did it
  *    print?" about someone else's worksheet.
+ *
+ * 5. NO QUESTION WAITS FOREVER. "Did it print?" carries a visible ~15s clock
+ *    and resolves itself to YES when it runs out, and while it is up the
+ *    PRINTER is polled so a jam or an empty tray is named rather than left for
+ *    a child to adjudicate. This is rule 4's problem arriving by a different
+ *    door: a child who simply walked away used to leave the panel parked on
+ *    their question for the next child to answer. See
+ *    `PRINT_CONFIRM_TIMEOUT_MS` / `PRINTER_POLL_MS` below for why it expires
+ *    to yes, and why the poll can never become a precondition.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { schoolApi } from '../schoolApi.js';
@@ -58,7 +67,64 @@ export const TRY_AGAIN_SENTENCE = 'Try again.';
  */
 export const NO_WORDS_SENTENCE = 'Something went wrong here. Tell a grown-up.';
 
+/** Said when the printer reports a fault it did not give us words for. */
+export const PRINTER_FAULT_SENTENCE = 'Something is wrong with the printer — tell a grown-up.';
+
 export const DEFAULT_IDLE_TIMEOUT_SECONDS = 120;
+
+/**
+ * "DID IT PRINT?" MUST NOT WAIT FOREVER (rule 5).
+ *
+ * The panel used to ask and then sit there. A child who took their worksheet
+ * and walked away left the wall screen parked on their question, which the
+ * next child then answered about someone else's paper — the exact confusion
+ * rule 4's generation guard exists to prevent, arriving by a different door.
+ *
+ * So the question has a clock, and the clock is VISIBLE: the Yes button fills
+ * over this window (`LaunchCard`), so a child can see that the screen will
+ * move on by itself and does not have to guess whether tapping is required.
+ * 15s is long enough to pick a sheet out of the tray and look at it, short
+ * enough that a walk-away is cleared before the next child arrives.
+ *
+ * IT EXPIRES TO YES, deliberately. The alternative — expiring to "no" — books
+ * a reprint of a sheet that is very probably already in a child's hand, which
+ * wastes paper and, worse, teaches a child that the panel reprints if they
+ * ignore it. A print action only reaches this question after `/act` answered
+ * `done` (the printer accepted the job), and the poll below independently
+ * rules out the ways a printer fails to turn an accepted job into paper. Yes
+ * is the overwhelmingly likely truth, and the failure mode of guessing wrong
+ * is one missing sheet the child can print again — against a stranded panel,
+ * which is what we had.
+ */
+export const PRINT_CONFIRM_TIMEOUT_MS = 15000;
+
+/**
+ * How often the fill redraws. Fine enough to read as motion on a wall panel,
+ * coarse enough that a locked kiosk is not re-rendering a card at 60Hz for
+ * fifteen seconds.
+ */
+const PRINT_CONFIRM_TICK_MS = 250;
+
+/**
+ * ASK THE PRINTER, NOT ONLY THE CHILD.
+ *
+ * A seven-year-old is the wrong person to adjudicate a paper jam, and we can
+ * do better than asking them — just not per-JOB. The laser printer is driven
+ * fire-and-forget (JetDirect/9100): `printPdf` resolves on SEND, not on paper,
+ * and a jam does not fail it on the real device. But printer-LEVEL state is
+ * real and readable — IPP `printer-state` / `printer-state-reasons`, via
+ * `ReadPrinterHealth` — so out-of-paper, jammed, cover-open and offline are
+ * all knowable, just not attributable to one job. That is enough: when one
+ * shows up while we are asking, we stop asking and say what is wrong.
+ *
+ * THE HARD RULE: THE QUESTION MAY NEVER DEPEND ON THIS. Every failure of the
+ * poll — a 404 from a deployment with no printer wired, a network error, a
+ * body with no verdict in it, a call that never comes back — leaves the plain
+ * timer above running and the question on screen. Only an explicit
+ * `healthy === false` changes anything. A broken status check must not strand
+ * a child worse than before this existed.
+ */
+const PRINTER_POLL_MS = 3000;
 
 /**
  * The `/act` outcome union — `RunSelfServiceAction.mjs:153-155`. Named here
@@ -150,6 +216,8 @@ export function useSelfService({
   idleTimeoutSeconds = DEFAULT_IDLE_TIMEOUT_SECONDS,
   claim = null,
   onLaunch = null,
+  printConfirmTimeoutMs = PRINT_CONFIRM_TIMEOUT_MS,
+  printerPollMs = PRINTER_POLL_MS,
 } = {}) {
   // 'keypad' is the lock screen; every other view is a card on top of it.
   const [view, setView] = useState('keypad');
@@ -158,6 +226,10 @@ export function useSelfService({
   const [degraded, setDegraded] = useState(false);
   const [sentence, setSentence] = useState(null); // shown on the card
   const [busy, setBusy] = useState(false);
+  // Rule 5: how much of the "Did it print?" window is left, in ms. `null`
+  // whenever the panel is not asking — the LaunchCard reads it as "draw no
+  // clock", so the indicator can never be left over on another view.
+  const [confirmRemainingMs, setConfirmRemainingMs] = useState(null);
   // The code stays valid across an exit or a timeout — nothing here revokes
   // it, so the child can simply type it again.
   const codeRef = useRef(null);
@@ -408,6 +480,87 @@ export function useSelfService({
     if (!resolved) say(said ?? DEGRADED_SENTENCE);
   }, [say, submit, toLock]);
 
+  // Both rule-5 effects reach `confirmPrint`/`say` through refs rather than
+  // through the dependency array. `confirmPrint` is rebuilt whenever `submit`
+  // is, and a dependency on it would tear down and restart the countdown
+  // mid-window — resetting a clock a child is watching, and (because the
+  // restart re-reads `Date.now()`) potentially never letting it finish at all.
+  const confirmPrintRef = useRef(confirmPrint);
+  confirmPrintRef.current = confirmPrint;
+  const sayRef = useRef(say);
+  sayRef.current = say;
+
+  /**
+   * Rule 5, the clock. Armed ONLY on the confirm view, so it can neither
+   * outlive the question nor fire against a panel that has moved on: leaving
+   * this view (a tap, the Escape key, the idle timeout, an unmount) runs the
+   * cleanup, and `confirmPrint`'s own `workRef` guard covers the remaining
+   * race where a tap and the expiry land in the same tick.
+   */
+  useEffect(() => {
+    if (view !== 'confirm') {
+      setConfirmRemainingMs(null);
+      return undefined;
+    }
+    const total = Number(printConfirmTimeoutMs);
+    // `<= 0` disables the clock entirely — the old wait-forever behaviour,
+    // kept reachable for a deployment that wants it, and for tests that are
+    // asserting something other than the timeout.
+    if (!Number.isFinite(total) || total <= 0) {
+      setConfirmRemainingMs(null);
+      return undefined;
+    }
+    const startedAt = Date.now();
+    setConfirmRemainingMs(total);
+    const timer = setInterval(() => {
+      const left = Math.max(0, total - (Date.now() - startedAt));
+      setConfirmRemainingMs(left);
+      if (left > 0) return;
+      clearInterval(timer);
+      schoolLog.selfService('print.confirm-timeout', { timeoutMs: total });
+      // YES on expiry — see PRINT_CONFIRM_TIMEOUT_MS for why. This is the
+      // same call a tap on Yes makes, so it inherits every guard that has.
+      confirmPrintRef.current(true);
+    }, PRINT_CONFIRM_TICK_MS);
+    return () => clearInterval(timer);
+  }, [view, printConfirmTimeoutMs]);
+
+  /**
+   * Rule 5, the printer. Polled only while the question is up, and structured
+   * so that EVERY way this can go wrong is a no-op: a rejected promise, a
+   * non-2xx, a body without a verdict, a response that arrives after the view
+   * changed. Only `healthy === false` — the backend explicitly saying the
+   * hardware is stopped — moves the child off the question, and it moves them
+   * onto words with a Done rather than another decision to make.
+   */
+  useEffect(() => {
+    if (view !== 'confirm') return undefined;
+    const ms = Number(printerPollMs);
+    if (!Number.isFinite(ms) || ms <= 0) return undefined;
+    let cancelled = false;
+    const check = async () => {
+      let res = null;
+      try {
+        res = await schoolApi.selfServicePrinterStatus();
+      } catch {
+        // `schoolApi` already promises never to throw; this is belt and
+        // braces for a mocked/patched client that does. Silence is correct:
+        // not knowing is not the same as knowing something is wrong.
+        return;
+      }
+      if (cancelled) return;
+      if (!res?.ok || res.data?.healthy !== false) return;
+      schoolLog.selfServiceError('printer.fault', {
+        state: res.data.state ?? null,
+        reason: res.data.reason ?? null,
+      });
+      sayRef.current(res.data.sentence || PRINTER_FAULT_SENTENCE);
+    };
+    check();
+    const timer = setInterval(check, ms);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [view, printerPollMs]);
+
   // Idle timeout. Armed only while a card is open — the lock screen IS the
   // resting state, so there is nothing to time out to from there.
   useEffect(() => {
@@ -452,6 +605,11 @@ export function useSelfService({
 
   return {
     view, card, message, degraded, sentence, busy,
+    // Rule 5's clock, for the card to draw. `confirmTotalMs` rides along so
+    // the card can compute a fraction without importing the constant and
+    // without any chance of the two disagreeing about the window.
+    confirmRemainingMs,
+    confirmTotalMs: confirmRemainingMs === null ? null : Number(printConfirmTimeoutMs),
     submit, retry, runAction, confirmPrint, exit: toLock, reload,
   };
 }

@@ -1417,6 +1417,44 @@ at the panel can see and hear the printer and the confirm step can simply ask
 "Did it print?". If the laser ever moves out of sight of the panel, that step
 needs revisiting — the confirm assumes the child can check.
 
+**"Did it print?" never waits forever, and never asks alone.** The Yes button
+carries a visible ~15-second fill and the question resolves itself to **yes**
+when it expires, so a child who takes their sheet and walks away does not leave
+the panel parked on their worksheet for the next child to answer about. Yes,
+not no: the question is only reached after the print action succeeded, and a
+"no" on expiry would book a reprint of a sheet already in a child's hand.
+
+While the question is up the panel polls
+`GET /api/v1/school/self-service/printer-status`, which reads printer-level IPP
+state (`printer-state` / `printer-state-reasons`) through `ReadPrinterHealth`.
+Per-*job* confirmation does not exist — the laser is fire-and-forget, and a jam
+does not fail the print call — but out-of-paper, jam, cover-open and offline are
+all readable at the *printer*, and any of them stops the question and tells the
+child what is wrong instead of making them adjudicate it. The bar for declaring
+a fault is deliberately high (a `stopped` printer, or a named blocking reason;
+`-warning`/`-report` severities and unrecognised reasons are not faults),
+because a false fault replaces an answerable question with a dead end.
+
+The poll is an enhancement, never a precondition: a status call that 404s,
+errors, hangs or answers without a verdict leaves the plain timer behaviour
+exactly as it was. Only an explicit `healthy: false` changes what a child sees.
+
+**The scan ceremony is a fallback, not a receipt.** A graded scan whose result
+receipt reached paper shows **nothing** on the panel — the paper in the child's
+hand is the feedback, and repeating the score on a wall screen both duplicates
+it and reads a grade out loud to whoever is in the room. The banner survives for
+the case where the sheet was read but the outcome never printed, and there it
+says *"I got your sheet — it's marked, but nothing printed"* without the score:
+the child's next move is to fetch a grown-up, not to learn their mark from a
+wall. Every other outcome (`scan-review`, `scan-unresolved`, `scan-refused`,
+`scan-stale-sheet`, `reader-error`) still shows regardless, because those are
+precisely the scans that produced no paper at all. Suppression requires an
+explicit `printed: true` on the `scan-graded` broadcast — sourced from
+`CloseSessionOutcome`'s `{printed, printReason}`, the same pair
+`ReceiptPrinting.print()` returns — so a missing field, an older backend or a
+failed settle all still speak. A suppressed scan is still logged, so a silent
+screen never becomes indistinguishable from a scan that never arrived.
+
 ### NFC personal cards — tap to agenda
 
 > **Verified end to end on hardware 2026-07-29.** A tap produced

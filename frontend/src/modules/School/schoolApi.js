@@ -202,6 +202,15 @@ export const schoolApi = {
   // `program` | `retry`); `exit` never reaches the wire.
   selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
   companionProgress: (id, body) => req(`/self-service/companions/${encodeURIComponent(id)}/progress`, body),
+  // "Can the printer print right now?" — polled ONLY while the panel is asking
+  // a child "Did it print?", so it can name a jam or an empty tray instead of
+  // making them adjudicate one. Answers `{ ok, healthy, state, reasons,
+  // sentence }`, where `healthy: null` means "cannot tell" (no printer wired,
+  // or the status read failed). The caller must treat ONLY an explicit
+  // `healthy === false` as a fault: this endpoint is an ENHANCEMENT to the
+  // question, never a precondition for it, and a broken status check must
+  // leave a child exactly where they were.
+  selfServicePrinterStatus: () => req('/self-service/printer-status'),
   // The mounted screen's own config (`/api/v1/screens/<id>`), which is where
   // lock mode lives (D6: per-screen, so a parent's browser stays browsable).
   // Different base to BASE, hence the raw fetch — same never-throws contract.
