@@ -830,9 +830,6 @@ Expected: the first test FAILS with `printed` length 5 — the exact production 
 
 - [ ] **Step 4: Add a per-learner mutex**
 
-At module scope in `ResolvePersonalCard.mjs`, after the imports:
-
-```js
 **Scope note:** make this an **instance** field (`#inFlightByLearner = new Map();` declared alongside the other private fields), *not* a module-level `const`. A module-scope map is shared by every adapter instance in the process and leaks across test files inside a vitest worker, which makes failures depend on file ordering. One composition root builds one `ResolvePersonalCard`, so an instance field gives the identical production guarantee without the cross-test coupling.
 
 ```js
@@ -1834,6 +1831,7 @@ When the score that just landed is the *last* outstanding work, the receipt shou
     // pass for the wrong reason, so prove the projection actually reads text.
     expect(printed).toContain('North Dakota');
   });
+```
 
 - [ ] **Step 2: Run to verify it fails**
 
