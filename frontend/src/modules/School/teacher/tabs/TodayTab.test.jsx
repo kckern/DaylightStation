@@ -90,8 +90,11 @@ describe('TodayTab', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Felix/ })); });
     await waitFor(() => expect(teacherWorkspaceApi.session).toHaveBeenCalledWith('ses_1'));
     expect(screen.getByText('Illinois')).toBeTruthy();
+    // One control per destination: the thumbnail and the text link share a
+    // target, and a separate "Download" link pointing at the same URL was pure
+    // redundancy (2026-08-25 review).
     expect(screen.getByRole('link', { name: 'Open worksheet' }).getAttribute('href')).toBe('/issued/illinois.pdf');
-    expect(screen.getByRole('link', { name: 'Download PDF' }).getAttribute('download')).toBe('');
+    expect(screen.queryByRole('link', { name: 'Download PDF' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open receipt' }).getAttribute('href')).toBe('/issued/illinois-receipt.png');
     expect(screen.queryByText(/Print selected worksheets/i)).toBeNull();
     expect(screen.queryByText(/No printable lessons/i)).toBeNull();
