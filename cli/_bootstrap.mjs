@@ -114,7 +114,11 @@ export async function getHaGateway() {
 
   _haInitPromise = (async () => {
     const cfg = await getConfigService();
-    const integration = cfg.getHouseholdIntegration(null, 'homeassistant');
+    // Home Assistant is a provider under the household capability
+    // `home_automation`; older households may instead use the provider name
+    // itself as the integration key. Accept both config-driven layouts.
+    const integration = cfg.getHouseholdIntegration(null, 'homeassistant')
+      ?? cfg.getHouseholdIntegration(null, 'home_automation');
     if (!integration) {
       throw new Error('Home Assistant integration not configured for default household.');
     }
