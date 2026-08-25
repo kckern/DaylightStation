@@ -36,3 +36,18 @@ describe('InstructionalInsightsOverview copy', () => {
     expect(screen.getByText('Illinois Labor Unions')).toBeTruthy();
   });
 });
+
+describe('CurriculumHistoryOverview labels', () => {
+  it('strips page codes, upcases US, and prefers a resolver title', async () => {
+    const { flattenCurriculumHistory } = await import('./CurriculumHistoryOverview.jsx');
+    const roots = [{
+      key: 'c', kind: 'course', id: 'young-peoples-atlas-us', summary: { scorePercent: 92, activityCount: 4 },
+      children: [{ key: 'u', kind: 'unit', id: 'atlas-us-p044-illinois', summary: { scorePercent: 100, activityCount: 1 }, children: [] }],
+    }];
+    const plain = flattenCurriculumHistory(roots);
+    expect(plain[0].label).toBe('Young Peoples Atlas US');
+    expect(plain[1].label).toBe('Atlas US Illinois');
+    const resolved = flattenCurriculumHistory(roots, (node) => (node.kind === 'unit' ? 'Illinois' : null));
+    expect(resolved[1].label).toBe('Illinois');
+  });
+});
