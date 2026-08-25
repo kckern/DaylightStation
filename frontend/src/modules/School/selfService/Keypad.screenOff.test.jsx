@@ -45,15 +45,17 @@ describe('School self-service keypad screen off', () => {
     expect(screen.getByTestId('selfservice-keyboard-status')).toHaveClass('is-connected');
   });
 
-  it('accepts Bluetooth HID digits, backspace, and Enter', async () => {
+  it('accepts HID keyboard digits, backspace, and an explicit Enter submit', async () => {
     const onSubmit = vi.fn().mockResolvedValue({ resolved: true });
     renderKeypad({ onSubmit });
     for (const key of ['1', '2', '3', '4', '5', '6']) fireEvent.keyDown(window, { key });
-    expect(screen.getByRole('button', { name: 'Go' })).toBeEnabled();
+    expect(onSubmit).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: 'Backspace' });
-    expect(screen.getByRole('button', { name: 'Go' })).toBeDisabled();
     fireEvent.keyDown(window, { key: '6' });
+    // Enter submits immediately, ahead of the auto-submit settle timer, which
+    // is never advanced in this test.
     await act(async () => { fireEvent.keyDown(window, { key: 'Enter' }); });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith('123456');
   });
 

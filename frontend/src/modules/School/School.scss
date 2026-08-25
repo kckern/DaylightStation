@@ -1715,14 +1715,6 @@
   &:disabled { opacity: 0.45; }
   &--clear, &--back { font-size: 1.2rem; color: var(--school-muted); }
 }
-.school-selfservice__go {
-  width: 100%; min-height: clamp(3.75rem, 8vh, 4.25rem); border: none; border-radius: 14px;
-  background: var(--school-accent); color: var(--school-accent-ink);
-  font-size: 1.5rem; font-weight: 800; cursor: pointer;
-  touch-action: manipulation;
-  &:active { transform: scale(0.99); }
-  &:disabled { background: var(--school-surface-2); color: var(--school-muted); cursor: default; }
-}
 .school-selfservice__screen-off {
   position: fixed; right: max(1rem, env(safe-area-inset-right));
   bottom: max(1rem, env(safe-area-inset-bottom)); z-index: 2;
@@ -1775,7 +1767,7 @@
     box-shadow: 0 0 20px rgba(224, 90, 79, 0.5);
     text-shadow: 0 0 14px rgba(255, 112, 99, 0.8);
   }
-  .school-selfservice__key:active, .school-selfservice__go:active { transform: none; }
+  .school-selfservice__key:active { transform: none; }
 }
 
 .school-selfservice-card {
