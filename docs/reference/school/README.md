@@ -1468,6 +1468,19 @@ explicit `printed: true` on the `scan-graded` broadcast — sourced from
 failed settle all still speak. A suppressed scan is still logged, so a silent
 screen never becomes indistinguishable from a scan that never arrived.
 
+**A scan never happens silently.** A sheet that reaches the consumer and earns
+no ceremony of its own gets `scan-not-recorded` — an `error`-toned banner
+reading *"Already done — I read that sheet, but there was nothing new to
+mark."* It covers every terminal state that records nothing: a re-fed sheet
+whose session is already `rewarded`, rows recorded on an earlier pass
+(`duplicate-scan`), a missing session, a partial re-feed. Recording nothing is
+often correct; saying nothing about it never is. The flag is tracked per
+**sheet**, not per record — a card can carry six allocation records, and six
+sounds at a child standing at the scanner is an alarm rather than feedback.
+It fires only when a recorder is actually wired: the resolve-and-score-only
+composition never attempted to record, so it is in no position to announce
+that nothing was recorded.
+
 ### NFC personal cards — tap to agenda
 
 > **Verified end to end on hardware 2026-07-29.** A tap produced

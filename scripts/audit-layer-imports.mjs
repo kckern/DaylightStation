@@ -26,6 +26,14 @@ export const RULES = [
   { rule: 'apps-no-config-internals', layer: '3_applications/', bad: s => /^#system\/config\//.test(s) },
   { rule: 'apps-no-fs', layer: '3_applications/', bad: s => /^(node:)?(fs|fs\/promises|child_process)$/.test(s) },
   { rule: 'apps-no-fileio', layer: '3_applications/', bad: s => /#system\/utils\/FileIO\.mjs$/.test(s) },
+  // FileIO.mjs states the rule in its own header: "ALL file operations in
+  // adapters/services MUST go through these utilities. NEVER use direct fs.*
+  // calls outside of this file." Nothing enforced it, so adapters reached past
+  // it — and on 2026-08-26 a lesson-companion record was corrupted by an async
+  // read-modify-write over a bare `fs.writeFile`, while the atomic writer that
+  // prevents exactly that (`saveYamlToPathAtomic`) had existed in FileIO all
+  // along, unused. `path` is deliberately NOT flagged: joining paths is not I/O.
+  { rule: 'adapters-no-direct-fs', layer: '1_adapters/', bad: s => /^(node:)?(fs|fs\/promises)$/.test(s) },
   { rule: 'adapters-no-config-singleton', layer: '1_adapters/', bad: s => /^#system\/config\//.test(s) },
   { rule: 'adapters-no-rendering', layer: '1_adapters/', bad: s => /^#rendering\//.test(s) },
   { rule: 'adapters-no-cross-adapter', layer: '1_adapters/', bad: s => /^#adapters\//.test(s) },
