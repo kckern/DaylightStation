@@ -19,6 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
+import { writeFileAtomic } from '#system/utils/FileIO.mjs';
 
 /** Matches the dump options the admin services already used. */
 const DUMP_OPTS = { indent: 2, lineWidth: -1, noRefs: true, sortKeys: false };
@@ -61,10 +62,11 @@ export class YamlConfigFileStore {
     return yaml.load(raw) ?? fallback;
   }
 
-  /** Write text, creating the parent directory. */
+  /** Write text, creating the parent directory. Atomic: a full replacement
+   *  that truncates first can be read (or crashed into) mid-write, and this
+   *  store owns config files that something else is always reading. */
   writeText(absPath, contents) {
-    fs.mkdirSync(path.dirname(absPath), { recursive: true });
-    fs.writeFileSync(absPath, contents, 'utf8');
+    writeFileAtomic(absPath, contents);
     return absPath;
   }
 

@@ -354,6 +354,31 @@ export function writeFile(filePath, content) {
 }
 
 /**
+ * Atomically replace a text file by staging beside it and renaming. Readers
+ * observe either the old complete file or the new complete one, never the
+ * truncated middle that `writeFile` briefly exposes.
+ *
+ * The text counterpart to `saveYamlToPathAtomic` / `writeBinaryAtomic`; it
+ * existed for YAML and for buffers but not for plain text, which pushed
+ * callers back onto `node:fs` for the one case it did not cover.
+ * @param {string} filePath - Full file path
+ * @param {string} content - File content
+ */
+export function writeFileAtomic(filePath, content) {
+  const dir = path.dirname(filePath);
+  ensureDir(dir);
+  const stagingPath = atomicStagingPath(filePath);
+  try {
+    fs.writeFileSync(stagingPath, content, 'utf8');
+    fs.renameSync(stagingPath, filePath);
+  } catch (err) {
+    try { if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath); } catch { /* preserve original error */ }
+    logPermissionError(filePath, err);
+    throw err;
+  }
+}
+
+/**
  * Load YAML from a full path (when extension is already known)
  * @param {string} filePath - Full file path with extension
  * @returns {any|null} Parsed content, or null if doesn't exist
