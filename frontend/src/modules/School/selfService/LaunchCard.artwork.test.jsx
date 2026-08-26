@@ -58,6 +58,28 @@ describe('LaunchCard course artwork', () => {
     expect(src).not.toContain('/self-service/curriculum/');
   });
 
+  /**
+   * The client's rule is ONE line and stays that way: a canonical
+   * `plex:<ratingKey>` goes to the image proxy, everything else to the
+   * curriculum package. A course id wearing a second `plex:` (the piano
+   * launcher's `compoundId`) is NOT canonical, so it lands on the curriculum
+   * route, which has no cover for a Plex-hosted course. That is precisely why
+   * the card canonicalises the id server-side, in
+   * `#domains/school/selfService/contextualLaunchCard.mjs` — this test pins the
+   * consequence of ever stopping.
+   */
+  it('has no rule for a doubly-prefixed plex id — the server owes it a canonical one', () => {
+    renderCard({
+      id: 'plex:plex:675689',
+      title: 'Hoffman Academy',
+      artwork: { kind: 'course-poster', courseId: 'plex:plex:675689' },
+    });
+
+    const src = screen.getByRole('img', { name: 'Hoffman Academy cover' }).getAttribute('src');
+    expect(src).not.toContain('/api/v1/proxy/plex/photo/:/transcode');
+    expect(src).toContain('/self-service/curriculum/');
+  });
+
   it('asks the curriculum route for a course whose poster ships in its package', () => {
     renderCard({
       id: 'fractions',

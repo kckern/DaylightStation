@@ -35,6 +35,36 @@ const crumb = (kind, id, label) => (
 );
 
 /**
+ * A Plex-hosted course wearing any number of scoping prefixes — `plex:675689`,
+ * the piano launcher's doubly-prefixed `plex:plex:675689` (its `compoundId` is
+ * `plex:` prepended to an enrollment id that already said `plex:`), or the
+ * plan's synthetic `piano-course:plex:675689`. All three name ONE Plex rating
+ * key, and the tail is the only part that identifies it.
+ */
+const PLEX_COURSE_TAIL = /(?:^|:)plex:(\d+)$/;
+
+/**
+ * ONE ID FOR ONE COURSE, DECIDED HERE.
+ *
+ * The panel finds a cover by a single rule: `plex:<ratingKey>` is asked of the
+ * house's Plex image proxy, and anything else of the curriculum package the
+ * course shipped in. A course id that says `plex:` twice matches neither, so it
+ * fell through to the curriculum route — which has no cover for a Plex-hosted
+ * course and correctly 404s — and a child stood in front of a placeholder
+ * instead of Hoffman Academy.
+ *
+ * Canonicalising HERE, where every launch card's course id is minted, means
+ * that rule stays one line on the client no matter how many prefixes the
+ * program that owns a course decides to stack on it. A curriculum id is not a
+ * Plex id and passes through untouched.
+ */
+const canonicalCourseId = (value) => {
+  const id = String(value);
+  const plex = PLEX_COURSE_TAIL.exec(id);
+  return plex ? `plex:${plex[1]}` : id;
+};
+
+/**
  * @param {object} args
  * @param {object} args.resolution
  * @param {{id:string, displayName?:string|null}} args.learner
@@ -62,10 +92,11 @@ export function buildContextualLaunchCard({
     displayName: learner.displayName || null,
     avatar: { kind: 'learner', id: learner.id },
   } : null;
-  const normalizedCourse = course?.id ? {
-    id: course.id,
-    title: course.title || course.id,
-    artwork: { kind: 'course-poster', courseId: course.id },
+  const courseId = course?.id ? canonicalCourseId(course.id) : null;
+  const normalizedCourse = courseId ? {
+    id: courseId,
+    title: course.title || courseId,
+    artwork: { kind: 'course-poster', courseId },
   } : null;
   const normalizedModule = module?.id ? {
     id: module.id,
