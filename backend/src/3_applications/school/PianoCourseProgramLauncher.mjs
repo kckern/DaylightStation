@@ -54,6 +54,42 @@ const numericOrder = (value) => Number.isFinite(Number(value)) ? Number(value) :
 const bareId = (value) => String(value ?? '').replace(/^plex:/, '');
 
 /**
+ * A lesson's own blurb, cleaned of the shape Plex stores it in.
+ *
+ * Hoffman's summaries arrive with Windows line endings, and a handful of them
+ * carry a raw `<a href>` to the store. A kiosk card renders TEXT — the markup
+ * would either display as literal angle brackets or, worse, be trusted. Both
+ * problems are artifacts of where the string came from, so both are answered
+ * here at the boundary rather than re-discovered by every surface that shows a
+ * lesson. Length is not this layer's business; the card decides that.
+ */
+const lessonSummary = (item) => {
+  const raw = item?.metadata?.summary ?? item?.description;
+  if (typeof raw !== 'string') return null;
+  const text = raw
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[^\S\n]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return text || null;
+};
+
+/**
+ * The episode still, as the house's Plex image proxy PATH the media adapter
+ * already minted — same origin, no credentials, reachable from a kiosk. A
+ * direct Plex URL is none of those things, so anything that is not a rooted
+ * path is dropped rather than passed on: a card with no picture is fine, a card
+ * with a broken one is not.
+ */
+const lessonThumbnail = (item) => {
+  const src = typeof item?.thumbnail === 'string' ? item.thumbnail.trim() : '';
+  return src.startsWith('/') ? src : null;
+};
+
+/**
  * Does the co-progress lock actually stand between this learner and THIS
  * lesson? A lock that exempts the lesson is a pacing note about the rest of the
  * course, not an obstacle to today's assigned work — see the class doc.
@@ -293,6 +329,8 @@ export class PianoCourseProgramLauncher {
   #lessonContext({ result, item }) {
     if (!item) return { course: null, unit: null, lesson: null, completedAt: null };
     const parent = result?.parents?.[item.parentId] ?? null;
+    const thumbnail = lessonThumbnail(item);
+    const description = lessonSummary(item);
     return {
       course: {
         id: result?.compoundId ?? null,
@@ -307,6 +345,11 @@ export class PianoCourseProgramLauncher {
         id: lessonId(item),
         title: item.title ?? lessonId(item) ?? 'Piano lesson',
         ...(Number.isFinite(Number(item.itemIndex)) ? { position: Number(item.itemIndex) } : {}),
+        // Both optional and both absent for most of School's work — a worksheet
+        // or a quiz bank has neither. Omitted rather than emptied so a consumer
+        // can branch on presence instead of on truthiness of an empty string.
+        ...(thumbnail ? { thumbnail } : {}),
+        ...(description ? { description } : {}),
       },
       completedAt: item.userCompletedAt ?? null,
     };
