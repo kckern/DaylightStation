@@ -47,8 +47,9 @@
  *
  * `agenda-suppressed` (Slice G, 2026-08-22-omr-grading-integrity) joins the
  * same five: a repeat NFC card tap inside the agenda print cooldown
- * (`nfcTapIngress.mjs` broadcasting `ResolvePersonalCard`'s
- * `agenda_suppressed` outcome) gets NO paper, but this is that tap's only
+ * (`learnerCardActions.mjs`'s print-agenda handler broadcasting
+ * `ResolvePersonalCard`'s `agenda_suppressed` outcome) gets NO paper, but this
+ * is that tap's only
  * acknowledgement — the exact rule the original five exist for, just off a
  * different source event.
  *

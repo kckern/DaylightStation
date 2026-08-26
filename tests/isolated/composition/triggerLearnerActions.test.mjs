@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
+import { makePrintAgendaHandler } from '#composition/modules/learnerCardActions.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 
@@ -182,14 +183,131 @@ describe('trigger learner actions — a failed action must be retryable', () => 
     expect(second.debounced).toBe(true);
   });
 
-  // CONTRACT PIN for the expression in app.mjs's print-agenda registration.
-  // It cannot be imported yet — plan 01 Task 9 extracts it into
-  // `learnerCardActions.mjs`; until then this holds the shape it must keep.
+  // The REAL wrapper, imported. This used to reconstruct the expression from
+  // app.mjs by hand, which pinned a copy rather than the code — editing the
+  // registration could not have failed it.
   it('the print-agenda wrapper marks print_failed retryable and nothing else', async () => {
-    const wrap = (result) => (result?.status === 'print_failed' ? { ...result, retryable: true } : result);
-    expect(wrap({ status: 'print_failed', printed: false })).toMatchObject({ status: 'print_failed', retryable: true });
-    expect(wrap({ status: 'agenda_printed', printed: true }).retryable).toBeUndefined();
-    expect(wrap({ status: 'agenda_suppressed', sinceMinutes: 3 }).retryable).toBeUndefined();
-    expect(wrap({ status: 'unknown_learner' }).retryable).toBeUndefined();
+    const statuses = [
+      { status: 'print_failed', printed: false },
+      { status: 'agenda_printed', printed: true },
+      { status: 'agenda_suppressed', sinceMinutes: 3 },
+      { status: 'unknown_learner' },
+    ];
+    const results = [];
+    for (const result of statuses) {
+      const handler = makePrintAgendaHandler({
+        resolvePersonalCard: { execute: async () => result },
+        eventBus: { broadcast() {} },
+        logger: silent,
+      });
+      results.push(await handler({ learnerId: 'learner-d', location: 'study' }));
+    }
+    expect(results[0]).toMatchObject({ status: 'print_failed', retryable: true });
+    expect(results[1].retryable).toBeUndefined();
+    expect(results[2].retryable).toBeUndefined();
+    expect(results[3].retryable).toBeUndefined();
+  });
+});
+
+// Slice G, 2026-08-22-omr-grading-integrity, Rule 3. This broadcast used to live
+// in `nfcTapIngress`; the fork deletion moved it here, to the one place that
+// knows a print was suppressed. It is the ONLY feedback a child gets for a tap
+// that produces no paper — `useScanCeremony.js` renders it — so losing it means
+// the child taps harder, which is the exact behaviour the cooldown exists to
+// stop. It rides the `omr` topic because `useScanCeremony.js` already subscribes
+// there; no new transport.
+describe('print-agenda — the cooldown acknowledgement', () => {
+  const suppressed = {
+    status: 'agenda_suppressed', printed: false, sinceMinutes: 3, cooldownMinutes: 15,
+  };
+
+  it('broadcasts agenda-suppressed so a cooldown tap is still acknowledged on screen', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+
+    await handler({ learnerId: 'learner-d', location: 'study' });
+
+    expect(broadcasts).toEqual([{
+      topic: 'omr',
+      payload: expect.objectContaining({
+        event: 'agenda-suppressed', learnerId: 'learner-d', sinceMinutes: 3, cooldownMinutes: 15,
+      }),
+    }]);
+  });
+
+  it('does NOT broadcast on an ordinary agenda_printed tap', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => ({ status: 'agenda_printed', printed: true }) },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+    await handler({ learnerId: 'learner-d', location: 'study' });
+    expect(broadcasts).toEqual([]);
+  });
+
+  it('reaches the panel through the whole pipeline, not just when called directly', async () => {
+    const broadcasts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    }));
+
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(result.dispatch.status).toBe('agenda_suppressed');
+    expect(broadcasts.map((b) => b.payload.event)).toEqual(['agenda-suppressed']);
+  });
+
+  it('carries nulls rather than dropping the acknowledgement when the use case omits the timings', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => ({ status: 'agenda_suppressed' }) },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+    await handler({ learnerId: 'learner-d', location: 'study' });
+    expect(broadcasts[0].payload).toMatchObject({ sinceMinutes: null, cooldownMinutes: null });
+  });
+
+  it('never lets a missing or throwing broadcast turn a real outcome into a failure', async () => {
+    // `responseHandlers.learner` catches a throw and answers `failed, retryable`
+    // — so a broken bus would report a SUCCESSFUL suppression as a failed tap
+    // AND release the debounce, printing on the very next tap. The
+    // acknowledgement is best-effort; the outcome is not.
+    for (const eventBus of [undefined, {}, { broadcast() { throw new Error('bus is gone'); } }]) {
+      const handler = makePrintAgendaHandler({
+        resolvePersonalCard: { execute: async () => suppressed },
+        eventBus,
+        logger: silent,
+      });
+      await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+        .resolves.toMatchObject({ status: 'agenda_suppressed' });
+    }
+  });
+
+  it('a throwing logger cannot break the tap either', async () => {
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast() {} },
+      logger: { info() { throw new Error('log transport down'); } },
+    });
+    await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+      .resolves.toMatchObject({ status: 'agenda_suppressed' });
+  });
+
+  it('a use case that answers nothing at all is named, not silently ok', async () => {
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => undefined },
+      eventBus: { broadcast() {} },
+      logger: silent,
+    });
+    expect(await handler({ learnerId: 'learner-d', location: 'study' })).toEqual({ status: 'unknown' });
   });
 });
