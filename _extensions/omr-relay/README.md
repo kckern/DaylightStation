@@ -322,7 +322,7 @@ can change reader state or clear the queue. All JSON.
 
 | Route | Returns |
 |---|---|
-| `/`, `/health` | identity, uptime, free heap, WiFi (IP/RSSI), bus state, **the UART config as actually compiled**, all counters, queue summary, and a top-level `ok` (false if anything was ever dropped or truncated) |
+| `/`, `/health` | identity, uptime, free heap, WiFi (IP/RSSI), bus state, **the UART config as actually compiled**, **`boot_count` + `last_reset`**, all counters, queue summary, and a top-level `ok` (false if anything was ever dropped or truncated) |
 | `/queue` | length, bytes, dropped, delivered, high-water depth, **and the full verbatim payload of every queued item** — payloads are small, and during an outage you want to confirm a specific card is safely held |
 | `/recent` | the last 16 frames the UART saw (delivered or not) with `kind`, `len`, `truncated` and a hex preview |
 | `/events` | a rolling window of the **lifecycle** — card read, ack confirmed, ack timed out, WS connect/disconnect — newest first, with `msAgo`, plus `ackOk`/`ackTimeout` totals. This is the route for "I tapped it and nothing happened": it answers the question after the fact, without a serial cable and without having been watching. Distinct from `/recent`, which is raw UART frames. |
@@ -331,6 +331,45 @@ can change reader state or clear the queue. All JSON.
 `/health` reporting the compiled UART config matters for bring-up: it's the only
 way to confirm which pins were actually flashed without reading `config.h` on the
 build host.
+
+### `boot_count` / `last_reset` — confirming a brownout instead of inferring one
+
+```json
+{ "boot_count": 47, "last_reset": "BROWNOUT" }
+```
+
+Added 2026-08-25, after a child's sheet failed to feed three times and every
+piece of evidence was *consistent with* a power fault without being one: NFC
+reads (no motor) kept working, the motor-driven feed did not, this board's HTTP
+server was unreachable, and the socket reconnected around each attempt. Nothing
+in the payload could confirm or kill the hypothesis. These two fields can.
+
+- `last_reset` is `esp_reset_reason()` captured as the first thing `setup()`
+  does, before M5, FastLED, the UART or WiFi can panic and overwrite it. Same
+  vocabulary as kitchen-relay and pressure-mat-relay: `POWERON`, `EXT`, `SW`,
+  `PANIC`, `INT_WDT`, `TASK_WDT`, `WDT`, `DEEPSLEEP`, `BROWNOUT`, `SDIO`,
+  `UNKNOWN`.
+- `boot_count` is a monotonic counter in **NVS (flash)**, namespace `omr-relay`,
+  key `boots`. Flash, not RTC memory, on purpose: RTC memory does not survive a
+  true power loss, which is exactly the event under investigation.
+
+**Read them together, and read `boot_count` over time.** One reading tells you
+how the last life ended; the sequence tells you whether the board is cycling.
+
+| What you see | What it means |
+|---|---|
+| `BROWNOUT` | the supply sagged. Suspect the USB brick, the cable, the connector — in that order. This is the confirmation, not a hint. |
+| `boot_count` climbing across a short window | the board is rebooting, whatever `last_reset` says. |
+| `boot_count` **steady** across a reconnect burst | the board never rebooted. The socket is flapping — a network fault wearing a power fault's clothes. Stop looking at the supply. |
+| `POWERON` | the plug, or a human power-cycling a wedge. Expected after a household reset; suspicious if nobody touched it. |
+| `PANIC` | a firmware crash — read `/events` for the moments before it. |
+| `SW` | a clean software reset. An OTA delivery ends this way. |
+
+Both fields are also pushed on the `relay-status` message the relay sends on
+every (re)connect — see [Bus message](../../docs/reference/omr/README.md#bus-message).
+**That is the channel that matters during a fault:** when this board is
+browning out, `curl http://<ip>/health` is exactly what stops answering, so the
+only report that still gets out is the one the board sends itself.
 
 **This is what makes the Step 1b loopback test remote.** Jumper `R` to `T`, wait
 for the 60 s re-arm, then `curl http://<ip>/recent` — if the `I00` download comes

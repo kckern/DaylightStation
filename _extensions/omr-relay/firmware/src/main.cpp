@@ -31,6 +31,8 @@
 #include <ArduinoJson.h>
 #include <FastLED.h>
 #include <ArduinoOTA.h>
+#include <Preferences.h>
+#include <esp_system.h>
 #include "config.h"
 
 // A config.h generated before the NFC/buzzer keys existed simply has none of
@@ -347,6 +349,44 @@ static void setLed(const CRGB &c) {
   FastLED.show();
 }
 
+// ============================ boot post-mortem ===============================
+// Why the LAST life ended, and how many lives there have been. Added after
+// 2026-08-25, when a child's sheet failed to feed three times and the evidence
+// pointed at power without being able to prove it: NFC reads (no motor) kept
+// working, the motor-driven feed did not, this board's own HTTP server was
+// unreachable, and the socket reconnected around each attempt. Every one of
+// those is consistent with a brownout and none of them is a brownout, so the
+// hypothesis could be neither confirmed nor killed. These two fields settle it.
+//
+// Read them TOGETHER. `last_reset` alone describes one death; `boot_count`
+// climbing across a short window is what proves the board is cycling rather
+// than the link merely flapping. A reconnect burst with a STEADY boot_count is
+// a network fault, not a power fault — the board never rebooted.
+//
+// Both live in NVS (flash), not RTC memory: RTC memory does not survive a true
+// power loss, which is precisely the case being investigated, so it would go
+// blank exactly when the answer was needed.
+static Preferences prefs;
+static uint32_t bootCount = 0;
+static esp_reset_reason_t resetReason = ESP_RST_UNKNOWN;
+
+/** Human-readable esp_reset_reason. BROWNOUT is the one that fingers a bad supply. */
+static const char* resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:  return "POWERON";    // plug pulled, or a human power-cycling a wedge
+    case ESP_RST_EXT:      return "EXT";
+    case ESP_RST_SW:       return "SW";         // our own reboot, or an OTA finishing
+    case ESP_RST_PANIC:    return "PANIC";      // crash — check /events before it
+    case ESP_RST_INT_WDT:  return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";   // a task wedged and the WDT recovered it
+    case ESP_RST_WDT:      return "WDT";
+    case ESP_RST_DEEPSLEEP:return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT: return "BROWNOUT";   // supply sagged — suspect the USB brick
+    case ESP_RST_SDIO:     return "SDIO";
+    default:               return "UNKNOWN";
+  }
+}
+
 // ============================ counters =======================================
 // Every discard path increments something here, and everything here is exposed
 // over HTTP. "It just didn't show up" must always be answerable.
@@ -519,6 +559,12 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t len) {
       doc["dropped"]   = qDropped;
       doc["truncated"] = cTruncated;
       doc["uptimeMs"]  = millis();
+      // The post-mortem rides the RECONNECT, not just /health. When this board
+      // is misbehaving its HTTP server is often the first thing unreachable —
+      // that is exactly what 2026-08-25 looked like — so the only channel that
+      // still carries the answer is the one it opens itself.
+      doc["boot_count"] = bootCount;
+      doc["last_reset"] = resetReasonName(resetReason);
       emit(doc);
 
       // Subscribe to our own topic so the backend's re-broadcast comes BACK to
@@ -676,6 +722,11 @@ static void fillStatus(JsonDocument &doc) {
   doc["topic"]     = BUS_TOPIC;
   doc["uptimeMs"]  = millis();
   doc["freeHeap"]  = ESP.getFreeHeap();
+  // Post-mortem of the PREVIOUS life. Flat, and named identically to the fields
+  // on the `relay-status` reconnect message, so one grep answers the question
+  // whichever channel it came off.
+  doc["boot_count"] = bootCount;
+  doc["last_reset"] = resetReasonName(resetReason);
 
   JsonObject net = doc["net"].to<JsonObject>();
   net["ip"]       = WiFi.localIP().toString();
@@ -952,6 +1003,18 @@ static void connectWifi() {
 
 void setup() {
   Serial.begin(115200);
+
+  // Post-mortem FIRST, before M5/FastLED/UART/WiFi can panic or reset and
+  // overwrite the answer. esp_reset_reason() describes the boot we are IN, and
+  // it is only trustworthy while nothing else has had a chance to end.
+  resetReason = esp_reset_reason();
+  prefs.begin("omr-relay", false);
+  bootCount = prefs.getUInt("boots", 0) + 1;
+  prefs.putUInt("boots", bootCount);
+  prefs.end();
+  logEvent("boot", "#%u, last reset: %s", (unsigned)bootCount, resetReasonName(resetReason));
+  Serial.printf("[omr-relay] boot #%u (last reset: %s)\n",
+                (unsigned)bootCount, resetReasonName(resetReason));
 
 #if NFC_ENABLED
   // M5Unified BEFORE FastLED. M5.begin() also touches the ATOM's onboard RGB on

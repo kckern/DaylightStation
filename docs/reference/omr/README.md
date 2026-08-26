@@ -377,6 +377,36 @@ does **not** translate columns into answers — that mapping is per-form, and
 scoring is a backend concern because the reader is read-only (it cannot print,
 imprint, or grade).
 
+### Relay status (sent on every reconnect)
+
+The relay announces itself whenever its socket comes up, before anything else:
+
+```json
+{
+  "source": "omr-relay",
+  "type": "relay-status",
+  "id": "<reader-id>",
+  "queued": 0,
+  "dropped": 0,
+  "truncated": 0,
+  "uptimeMs": 8412,
+  "boot_count": 47,
+  "last_reset": "BROWNOUT"
+}
+```
+
+`boot_count` and `last_reset` are the reader's **post-mortem of its previous
+life** — added 2026-08-25 to make a suspected brownout confirmable. `last_reset`
+is `esp_reset_reason()` captured as the first statement in `setup()`;
+`boot_count` is a monotonic counter kept in NVS (flash), so it survives a true
+power loss, which RTC memory would not. Both also appear on `/health`.
+
+They ride this message and not only the HTTP server on purpose: when the reader
+is faulting, its HTTP server is typically the first thing to stop answering, so
+the report it pushes itself is the only one that still arrives. See
+[Troubleshooting](#nfc-taps-register-but-sheets-will-not-feed) for how to read
+them.
+
 ### NFC tap (optional, added 2026-07-29)
 
 A reader may also carry an **M5 Unit NFC** (ST25R3916) on the ATOM's Grove port so
