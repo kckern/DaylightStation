@@ -365,6 +365,32 @@ describe('the school-day calendar', () => {
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 
+  it('a focus day does not spend a block on a section that was not in session at all', () => {
+    const urgentTiming = {
+      schema: 'school.timing/v1', availability: {}, target: { dueOn: '2026-08-31', strength: 'firm' },
+      basePriority: 'high', flexibility: 'protected', agenda: { normalBlocks: 1, urgentBlocks: 2 }, urgencyLeadDays: 7,
+    };
+    const flexibleTiming = {
+      schema: 'school.timing/v1', availability: {}, basePriority: 'low', flexibility: 'flexible',
+      agenda: { normalBlocks: 1, urgentBlocks: 1 }, urgencyLeadDays: 7,
+    };
+    const { sections } = on(SATURDAY, {
+      plan: plan([
+        entry({ unitId: 'focus1', subject: 'math', timing: urgentTiming, timingState: 'urgent', timingPriority: 1 }),
+        // Lowest priority, so it is the FIRST thing a focus block would reach
+        // for — and it is a course that is not in session today.
+        entry({ unitId: 'off1', subject: 'science', courseId: 'c-sci', timing: flexibleTiming, timingPriority: 5, schedule: WEEKDAYS }),
+        entry({ unitId: 'flex1', subject: 'arts', courseId: 'c-art', timing: flexibleTiming, timingPriority: 4 }),
+      ]),
+    });
+    const science = sections.find((s) => s.subject === 'science');
+    expect(science.obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+    expect(science.suppressed).toBeNull();
+    // The single extra block lands on the subject that WAS in session.
+    const arts = sections.find((s) => s.subject === 'arts');
+    expect(arts.obligation).toEqual({ state: 'excused', reason: 'suppressed_by_focus' });
+  });
+
   it('an elective-only subject still reads elective_only, not not_a_school_day', () => {
     const { sections } = on(SATURDAY, {
       plan: plan([entry({ unitId: 'u1', subject: 'math', elective: true, schedule: WEEKDAYS })]),

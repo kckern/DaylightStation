@@ -417,6 +417,10 @@ export function planDailyAgenda({
       suppressed: null,
       obligation,
       _subjectPosition: subjectPosition,
+      // Internal, like _subjectPosition: the focus pass below needs to know
+      // which sections are off today. Deleted before the sections are
+      // returned — nothing outside this function reads it yet.
+      _notASchoolDay: noSchoolToday,
     };
   });
 
@@ -430,6 +434,11 @@ export function planDailyAgenda({
     while (remaining > 0) {
       const candidate = sections
         .filter((section) => section !== focus && section.next && !section.suppressed
+          // A section that is not in session today cannot be displaced: there
+          // is nothing to hold back, spending a scarce extra block on it wastes
+          // the block, and the rewrite below would relabel a course that was
+          // never open as "held back for focus work".
+          && !section._notASchoolDay
           && section.next.status !== 'in_progress' && section.next.timing?.flexibility === 'flexible')
         .sort((left, right) => byEntryPriority(right.next, left.next) || right._subjectPosition - left._subjectPosition)[0];
       if (!candidate) break;
@@ -449,7 +458,10 @@ export function planDailyAgenda({
     }
   });
 
-  sections.forEach((section) => { delete section._subjectPosition; });
+  sections.forEach((section) => {
+    delete section._subjectPosition;
+    delete section._notASchoolDay;
+  });
 
   return { sections };
 }
