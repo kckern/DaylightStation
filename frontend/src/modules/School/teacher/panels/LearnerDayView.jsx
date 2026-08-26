@@ -17,9 +17,10 @@ import { LessonIdentity, SubjectIdentity } from '../CurriculumIdentity.jsx';
 import PanelFrame from './PanelFrame.jsx';
 import SessionPaperRecord from './SessionPaperRecord.jsx';
 
-// `reviewStatus` is 'pending' | 'complete'. RosterStrip tests for the
-// non-existent 'pending_review' and so has never once said "Awaiting
-// review" — accept both spellings so the fix survives a backend rename.
+// `reviewStatus` is 'pending' | 'complete' | null — null until the session has
+// something reviewable, so an untouched lesson no longer carries a verdict.
+// The historical 'pending_review' spelling is accepted too, so a backend
+// rename cannot silence the label.
 const AWAITING = new Set(['pending', 'pending_review']);
 const scoreLine = (session) => {
   const score = session?.effectiveScore ?? session?.machineScore;

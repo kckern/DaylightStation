@@ -89,7 +89,15 @@ function progressRowsFor(statuses) {
 /**
  * Blended grade: mean of the latest graded% for each ATTEMPTED curriculum
  * unit (unattempted units are simply absent, never a zero) plus each
- * non-error program's `score * 100`. Null when there is no evidence at all.
+ * non-error program's `score`. Null when there is no evidence at all.
+ *
+ * A PROGRAM `score` IS ALREADY A PERCENT, on the same 0–100 scale as
+ * `gradedPercent` — which is the only reason the two can be averaged together
+ * at all. Every producer agrees: the piano launcher computes
+ * `(completed / total) * 100`, the flashcard launcher passes the same mastery
+ * figure it prints as "N% mastered", and PianoLessonCeremonyBridge reads the
+ * field straight into a `percent`. This function used to scale it a second
+ * time, which is how an arts section came back with `gradePercent: 1000`.
  */
 function gradeFor(list, latestBySessionUnit, statuses) {
   const values = [];
@@ -98,7 +106,7 @@ function gradeFor(list, latestBySessionUnit, statuses) {
     if (graded) values.push(graded.gradedPercent);
   });
   statuses.forEach((s) => {
-    if (!s.error && typeof s.score === 'number') values.push(s.score * 100);
+    if (!s.error && typeof s.score === 'number') values.push(s.score);
   });
   if (!values.length) return null;
   const mean = values.reduce((sum, v) => sum + v, 0) / values.length;

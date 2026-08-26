@@ -11,6 +11,19 @@ import { reduceSession } from '#domains/school/sessions/sessionEvents.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 
 const DEFAULT_BOUNDARY_HOUR = 4;
+// A session has something reviewable only once it has been submitted; before
+// that there is no verdict to report, and reporting one invites a reader to
+// act on it. Kept next to PROCESSED_TYPES because both encode the same
+// question: how far has this session actually got?
+const REVIEWABLE_STATES = new Set([
+  'submitted', 'graded', 'outcome_recorded', 'rewarded',
+  'media_completed', 'external_activity_assessed',
+]);
+function reviewStatusFor(state, pending, sessionId) {
+  if (pending.some((item) => item.sessionId === sessionId)) return 'pending';
+  return REVIEWABLE_STATES.has(state) ? 'complete' : null;
+}
+
 const PROCESSED_TYPES = new Set(['submitted', 'graded', 'grade_adjusted', 'grade_adjustment_retracted']);
 
 function daysTouchedBy({ startAtMs, endAtMs }) {
@@ -161,7 +174,13 @@ export class GetTeacherToday {
             percent: state.gradedPercent, correctCount: state.gradedCorrectCount,
             totalCount: state.gradedTotalCount,
           },
-          reviewStatus: pending.some((item) => item.sessionId === row.sessionId) ? 'pending' : 'complete',
+          // 'pending' | 'complete' | null. The field answers "is this session
+          // in the review queue", so the old two-way form called a session
+          // that had never been worked 'complete' — a REVIEW verdict on work
+          // nobody had done, which is what made a reader treat "complete" as
+          // meaningful and led a card to ask for a grade on an untouched
+          // lesson. Null until there is something reviewable.
+          reviewStatus: reviewStatusFor(state.state, pending, row.sessionId),
           outcome: state.outcome,
           artifacts: artifactRefs(state),
         };
