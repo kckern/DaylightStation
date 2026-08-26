@@ -100,6 +100,24 @@ const DEFAULT_BURST_WINDOW_MS = 600_000;
 //     lands right after a deploy — is still short of it.
 const DEFAULT_STARTUP_GRACE_MS = 60_000;
 
+// A reconnect burst carrying `TASK_WDT` and one carrying `BROWNOUT` are the same
+// symptom and opposite investigations: the first says the reader HUNG and its own
+// watchdog rebooted it (a firmware/software fault that recovered itself — go read
+// /events), the second says the supply sagged (go look at the brick and the
+// cable). The relay only speaks esp_reset_reason, so the classification belongs
+// here rather than making every future reader of this log line know that
+// vocabulary. Unmapped and absent stay distinguishable: 'other' means the board
+// reported a reason we do not classify, null means it reported none at all.
+const RESET_DIAGNOSIS = {
+  TASK_WDT: 'hung-and-recovered',
+  INT_WDT: 'hung-and-recovered',
+  WDT: 'hung-and-recovered',
+  BROWNOUT: 'power',
+  POWERON: 'power-or-human',
+  PANIC: 'crash',
+  SW: 'deliberate',
+};
+
 /**
  * @param {object} deps
  * @param {object} deps.eventBus - needs onClientConnection, onClientSubscription,
@@ -229,6 +247,9 @@ export function createOmrReaderLiveness({
       // cannot tell you" and "it told you nothing happened" are different
       // answers, and the query that reads this line should be able to see which.
       lastReset: boot?.lastReset ?? null,
+      // What that reason MEANS, so the line separates a reader that hung and
+      // recovered itself from one whose supply sagged without the query having to.
+      resetDiagnosis: boot?.lastReset ? (RESET_DIAGNOSIS[boot.lastReset] ?? 'other') : null,
       bootCount: boot?.bootCount ?? null,
     });
   }
