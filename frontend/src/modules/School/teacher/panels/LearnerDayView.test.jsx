@@ -84,6 +84,31 @@ describe('LearnerDayView', () => {
     expect(screen.getByText(/Aug 23/)).toBeInTheDocument();
   });
 
+  it('credits a subject served by carried-over work instead of calling it unrecorded', async () => {
+    // The real 2026-08-25 payload: the Midwest sheet was issued Aug 23 and
+    // scanned today, so the planner reports the subject served with nothing
+    // left to offer, while the session sits in the carry-over lane.
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+      { subject: 'civilization', servedToday: true, next: null },
+    ], errors: [] }));
+    schoolApi.teacherDay.mockResolvedValue(ok({ learners: [{
+      learnerId: 'learner-a', sessions: [],
+      processedToday: [{ sessionId: 'ses_old', subject: 'civilization', lessonTitle: 'The Midwestern States',
+        studyDay: '2026-08-23', processedAt: '2026-08-25T14:03:00Z',
+        effectiveScore: { correctCount: 9, totalCount: 10, percent: 90 } }],
+    }] }));
+    mount();
+
+    await waitFor(() => expect(screen.getByText('The Midwestern States')).toBeInTheDocument());
+    expect(screen.queryByText(/no session record/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no work offered/i)).not.toBeInTheDocument();
+    // Claimed by the day's own list, so the carry-over block must not repeat it.
+    expect(screen.getAllByText('The Midwestern States')).toHaveLength(1);
+    expect(screen.getByText('9 of 10 correct')).toBeInTheDocument();
+    // Crediting it to today must not hide WHEN it was assigned.
+    expect(screen.getByText(/Study day Aug 23/)).toBeInTheDocument();
+  });
+
   // --- The printed agenda (operator requirement) --------------------------
   it('offers the exact printer image for the selected day', async () => {
     mount();
