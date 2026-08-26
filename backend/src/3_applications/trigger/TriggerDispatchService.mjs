@@ -67,6 +67,7 @@ export class TriggerDispatchService {
     screenBroadcast = null,
     commandResolver = null,
     endpointGateway = null,
+    learnerActions = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -74,7 +75,9 @@ export class TriggerDispatchService {
   }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, endpointGateway, logger };
+    // #deps is an explicit whitelist, not a spread of the constructor args —
+    // a dep that is not named here never reaches responseHandlers.
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
@@ -226,6 +229,20 @@ export class TriggerDispatchService {
       response = intent.kind ? intent : mapIntentToResponse(intent);
     } catch (err) {
       const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'INVALID_INTENT';
+      // An action nothing can map is, from the tap's point of view, exactly a
+      // tag nobody registered: nothing happens. So give it the same treatment —
+      // placeholder write, notify_unknown push, debounce — instead of an error
+      // that reaches only the log. Without this the unmappable case was WORSE
+      // than the unregistered one, because this return sits BELOW the
+      // `if (!intent)` branch that does all three.
+      //
+      // It matters most for an action configured before its handler ships: the
+      // arming event is a one-line YAML edit to a reader in a tree shared with
+      // prod, which no test observes and no code comment reaches.
+      if (modality === 'nfc') {
+        await this.#handleUnknownNfc(location, normalizedValue, locationConfig);
+        this.#debounce.set(debounceKey, this.#clock());
+      }
       this.#logger.error?.('trigger.fired', { ...baseLog, error: err.message, code });
       this.#emit(location, modality, { ...baseLog, ok: false, error: err.message });
       return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };

@@ -126,3 +126,15 @@ describe('parseNfcLocations — learner_action validation', () => {
     expect(out.study.learner_action).toBeNull();
   });
 });
+
+// The validation trimmed; the write did not. `learner_action: ' print-agenda '`
+// therefore passed the guard and became an action no handler could ever be
+// keyed by — a whitespace-only mismatch that reads as correct in the YAML and
+// as a named refusal at the reader, pointing at nothing.
+describe('parseNfcLocations — learner_action whitespace', () => {
+  it('stores the trimmed learner_action, not the raw one it validated', () => {
+    const out = parseNfcLocations({ study: { target: 'portal', learner_action: '  print-agenda  ' } });
+    expect(out.study.learner_action).toBe('print-agenda');
+  });
+});
+

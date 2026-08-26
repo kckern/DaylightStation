@@ -82,6 +82,7 @@ import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
 import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
@@ -4020,10 +4021,28 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after startup — so we bind the reference instead.
   let scaleNutribotBridge = null;
 
+  // What a school learner card DOES, per reader. Registered here rather than
+  // inside the trigger module so the trigger pipeline keeps no School import:
+  // it knows op names and nothing about School.
+  //
+  // `reading-session` is deliberately NOT registered. Until it is, a learner
+  // card tapped in the living room answers `no_handler` and logs which op and
+  // which reader — rather than printing an agenda in the study because that is
+  // the only learner action wired. A preschooler tapping their card and hearing
+  // a printer start up two rooms away is worse than nothing happening.
+  const learnerActions = createLearnerActions({ logger: rootLogger.child({ module: 'trigger-learner' }) });
+  if (schoolLifecycle.useCases?.resolvePersonalCard) {
+    learnerActions.register('print-agenda', ({ learnerId }) =>
+      schoolLifecycle.useCases.resolvePersonalCard.execute({ learnerId }));
+  } else {
+    rootLogger.warn('trigger.learner.school-unwired', { reason: 'no resolvePersonalCard' });
+  }
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
   const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
     listDir,
+    learnerActions,
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
