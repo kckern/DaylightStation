@@ -2,7 +2,48 @@
 
 **Date:** 2026-08-26
 **Branch:** `school/teacher-roster-header` (branched from `deployed/school-scan` @ `97ccb1f0c`). All file:line references below are against that branch. Local `main` has an older `RosterStrip.jsx` (card design, no day dots) — do not read or patch `main`.
-**Scope:** 13 reported UX defects on the Today tab of the teacher console (`/school/teacher`). This plan groups them into five frontend work items plus a backend follow-up set. Nothing here is implemented yet.
+**Scope:** 13 reported UX defects on the Today tab of the teacher console (`/school/teacher`). This plan groups them into five frontend work items plus a backend follow-up set.
+
+**Status: ALL ITEMS IMPLEMENTED (2026-08-26).** W0 · W1 `ff316dee7` · W2
+`84f1c74a2` · W3 `822537816` · W4 `e07af2b15` · B1+B3 `437ceef36` · B2
+`cd14582f7`. 1476 tests pass across the school domain, applications, and
+frontend. Verified by feeding the live payloads from §0 through the new join:
+
+```
+civilization  | Done         | passed(green)   | Ohio
+scripture     | Not started  | idle(faint)     | Tuesday · Psalms 62–66, 69
+arts          | Done         | passed(green)   | Rhythm Improvisation with Chords
+              | detail: Completed in its own program
+ROW SUMMARY: "2 of 3 lessons done"      "Not graded" anywhere: no
+```
+
+Two notes for whoever deploys this. The arts card renders the clean lesson
+name only once B2's backend change is live; until then the frontend chain
+falls back to `progressLabel` and shows the whole "Done today — … · 35/366"
+sentence, which is correct-but-clunky rather than wrong. And three
+`rubiksCube` test files fail to load on this branch for unrelated reasons
+(no test suite in the file) — they fail identically with these changes
+stashed.
+
+Deviations from the plan as written, all discovered while implementing:
+
+1. **A recorded score outranks an absent `state`.** Marks exist only for work
+   that happened, so a scored session is done even when the payload omits
+   `state`. Without this a real fixture (5/5, 100%, no state) classified as
+   "Not started". Cannot resurrect the original bug: the untouched session has
+   no score at all.
+2. **A missing `artifacts` field is not an empty one.** The "no worksheet"
+   note fires only when the field is present and both members are empty —
+   announcing it on silence would invent a fact.
+3. **`'Not on the day's plan'` moved out of `detail` entirely** and became the
+   `unplanned` tag, which is what removes the need for a precedence rule when
+   a row is both unplanned and paperless.
+4. **The poster fallback is not a `SafeImg` fallback prop** (which wraps its
+   argument in a `<p>`): the subject glyph sits in the frame and the image
+   covers it, so a missing URL and a 404 render identically.
+5. **B2 went further than "improves copy with zero frontend rework".** The
+   launcher was formatting the lesson name into a sentence and discarding the
+   structure; it now returns both, and the card prefers the name.
 
 **Three open questions settled by brainstorm on 2026-08-26** — the plan below
 reflects the resolutions, and the superseded first drafts are gone rather than
