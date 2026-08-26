@@ -397,6 +397,23 @@ export function useReadingSession({
         say({ tone: 'warn', title: "I don't know that book yet", detail: 'Ask a grown-up to add it.' });
         return;
       }
+      case 'session-refused': {
+        // D2 — a card tapped while unrelated content plays. No session opened
+        // and nothing touched the TV; this notice is the ENTIRE feedback the
+        // child gets, and it renders with no session behind it (see the widget's
+        // idle branch). A reading session never seizes the TV from whoever is
+        // already watching it — but it does have to say so.
+        readingLog.session('session-refused', {
+          learnerId: payload.learnerId ?? null, reason: payload.reason ?? null,
+        });
+        cue('warn');
+        say({
+          tone: 'warn',
+          title: 'Something else is playing',
+          detail: 'We can read when this is finished.',
+        });
+        return;
+      }
       case 'session-error': {
         readingLog.error('session-error', { reason: payload.reason ?? null, learnerId: payload.learnerId ?? null });
         cue('warn');

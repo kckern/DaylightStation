@@ -187,3 +187,15 @@
   font-size: 8vh;
   color: #9ff2b0;
 }
+
+/**
+ * D2 — the refusal that renders with NO session behind it, over content that is
+ * still playing. The base rule paints an opaque full-screen ground, which here
+ * would black out the very movie the refusal promises to leave alone. So the
+ * idle shell is a transparent, click-through frame around one notice: the
+ * child's tap is answered, and nobody else's film is interrupted to do it.
+ */
+.reading-session--idle {
+  background: none;
+  pointer-events: none;
+}
