@@ -417,10 +417,10 @@ Prereqs: PlatformIO (`pio`), Node, the ATOM on USB (`/dev/cu.usbserial-*`).
 ```bash
 cd firmware
 # one shot: gen config from SSOT, build, upload (autodetects port)
-node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/config/omr-readers.yml" study-omr
+node tools/flash.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/omr/readers.yml" study-omr
 
 # or step by step
-node tools/gen-config.mjs "$DAYLIGHT_BASE_PATH/data/household/config/omr-readers.yml" study-omr
+node tools/gen-config.mjs "$DAYLIGHT_BASE_PATH/data/household/hardware/omr/readers.yml" study-omr
 pio run -e m5-atom -t upload --upload-port /dev/cu.usbserial-XXXX
 pio device monitor -b 115200        # watch bytes; first goal is a `raw` capture
 ```
@@ -721,7 +721,7 @@ Two implementation notes, both of which were bugs waiting to happen:
 - The flash expiry compares with `(int32_t)(millis() - ledOffAtMs) >= 0` so it
   stays correct across the ~49-day `millis()` rollover.
 
-## Config — `data/household/config/omr-readers.yml` ✅ WRITTEN
+## Config — `data/household/hardware/omr/readers.yml` ✅ WRITTEN
 
 The real file lives in **private household data** (Dropbox-synced), never in
 this repo. `config.example.yml` here is the schema only. Written 2026-07-29 and
@@ -735,7 +735,7 @@ serial + decode params. Current reader: **`study-omr`**, topic `omr`,
 
 ```bash
 node firmware/tools/gen-config.mjs \
-  "$DAYLIGHT_BASE_PATH/data/household/config/omr-readers.yml" study-omr
+  "$DAYLIGHT_BASE_PATH/data/household/hardware/omr/readers.yml" study-omr
 # -> firmware/include/config.h  backend=<host>:<port>/ws  9600/7E1 sniff=1
 ```
 

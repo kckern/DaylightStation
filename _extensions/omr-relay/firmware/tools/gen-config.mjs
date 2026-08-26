@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // =============================================================================
 // gen-config.mjs — generate firmware include/config.h from the household SSOT
-// (data/household/config/omr-readers.yml). Keeps Wi-Fi creds + instance values OUT
+// (data/household/hardware/omr/readers.yml). Keeps Wi-Fi creds + instance values OUT
 // of the repo: the output config.h is gitignored.
 //
 // Usage:

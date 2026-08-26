@@ -1,11 +1,11 @@
 # Example schema for the omr-relay SSOT. The REAL file lives in household
 # data (private, Dropbox-synced), NOT in this repo:
-#   data/household/config/omr-readers.yml
+#   data/household/hardware/omr/readers.yml
 #
 # A registry: each key under `scanners:` is one physical OMR reader + its relay
 # ATOM. Add more keys and flash one ATOM per key with the matching id.
 # Regenerate + reflash after editing:
-#   node firmware/tools/flash.mjs <dataDir>/household/config/omr-readers.yml <id>
+#   node firmware/tools/flash.mjs <dataDir>/household/hardware/omr/readers.yml <id>
 
 provisioning:
   wifi_ssid: "YOUR_SSID"
