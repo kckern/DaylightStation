@@ -252,7 +252,11 @@ export function createFitnessApiRouter(config) {
   // built from ONE base so they cannot drift apart again.
   const MENU_MUSIC_REL = 'fitness/ux/menus';
   const menuMusicProvider = () => {
+<<<<<<< HEAD
+    const musicDir = path.join(configService.getMediaDir(), 'fitness', 'ux', 'menus');
+=======
     const musicDir = path.join(configService.getMediaDir(), ...MENU_MUSIC_REL.split('/'));
+>>>>>>> 956e44fa8604e2cd8170da3888f0a13fba17547c
     try {
       return nodeFs.readdirSync(musicDir)
         .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
