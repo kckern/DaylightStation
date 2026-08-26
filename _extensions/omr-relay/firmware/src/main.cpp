@@ -33,6 +33,7 @@
 #include <ArduinoOTA.h>
 #include <Preferences.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 
 // A config.h generated before the NFC/buzzer keys existed simply has none of
@@ -387,6 +388,57 @@ static const char* resetReasonName(esp_reset_reason_t r) {
   }
 }
 
+// ============================ task watchdog ==================================
+// `last_reset` above only says how the last life ENDED. A wedged loop() never
+// ends: it produces no reset reason, no reconnect, no log line — it simply goes
+// quiet. That is precisely what 2026-08-25 looked like from outside the case,
+// with this board's own HTTP server unreachable and the socket reconnecting
+// around each failed feed. So the post-mortem is half a diagnostic until a wedge
+// is GUARANTEED to become a reboot, and that guarantee is what this is.
+// kitchen-relay has had one since it went dark for twelve days; this relay did
+// not, and the two boards should not run two dialects of the same idea.
+//
+// SIXTY SECONDS, and the length is the whole design. A watchdog that fires
+// during normal operation turns a working reader into one that reboots every
+// minute — strictly worse than a rare wedge. The legitimate long stalls on this
+// task, read off the libraries as actually vendored rather than guessed:
+//
+//   ~14 s  DNS for BACKEND_HOST inside ws.loop()'s reconnect. hostByName() waits
+//          on WIFI_DNS_DONE_BIT for 15 s ("real internal timeout in lwip library
+//          is 14[s]"), and it runs on EVERY reconnect attempt while the backend
+//          is unreachable — which is exactly the condition under which someone
+//          would also suspect a wedge.
+//    +5 s  the TCP connect that follows it (WEBSOCKETS_TCP_TIMEOUT).
+//   +12 s  http.handleClient() servicing one half-open client: HTTP_MAX_DATA_WAIT
+//          5 s, HTTP_MAX_SEND_WAIT 5 s, HTTP_MAX_CLOSE_WAIT 2 s.
+//
+// Nothing stops those landing in the same iteration, so the worst LEGITIMATE
+// stall is ~31 s. 60 s is not quite double it, and that margin is the point: a
+// slightly-too-slow watchdog still catches a true wedge, because a true wedge
+// never ends at all. A too-fast one boot-loops a reader that lives inside a case
+// and needs a USB cable to rescue. (kitchen-relay's 30 s is not a typo being
+// copied wrong — its loop() has no HTTP parse path in front of the same
+// reconnect, and this one does.)
+//
+// ONE PATH EXCEEDS ANY SANE TIMEOUT and is therefore fed from INSIDE, not
+// cleared by the timeout: ArduinoOTA's _runUpdate() receives the ENTIRE image
+// within a single ArduinoOTA.handle() call — ~1 MB over espota is tens of
+// seconds on a good link and unbounded on a weak one, which is why loop()
+// early-returns for the duration. No timeout safe for a wedge could cover that,
+// so the feed goes in onProgress(), which fires once per 1460-byte chunk. What
+// stays watched is a STALLED transfer, and rebooting through one is the right
+// outcome: a failed OTA never switches the boot partition, so the board comes
+// back on the old image.
+//
+// The boot-time WiFi wait is handled by ORDER rather than by a feed — the
+// subscription is the last thing setup() does, after connectWifi(). See there.
+//
+// Note the TWDT is already running before we touch it: Arduino-ESP32 builds with
+// CONFIG_ESP_TASK_WDT=y at 5 s with the CPU0 idle task subscribed. This raises
+// that to 60 s, which also relaxes the idle check on the core the NFC poll owns.
+// That is deliberately the conservative direction.
+#define WDT_TIMEOUT_S 60
+
 // ============================ counters =======================================
 // Every discard path increments something here, and everything here is exposed
 // over HTTP. "It just didn't show up" must always be answerable.
@@ -565,6 +617,7 @@ static void onWsEvent(WStype_t type, uint8_t *payload, size_t len) {
       // still carries the answer is the one it opens itself.
       doc["boot_count"] = bootCount;
       doc["last_reset"] = resetReasonName(resetReason);
+      doc["wdt_s"]      = WDT_TIMEOUT_S;   // absent => this board cannot self-recover
       emit(doc);
 
       // Subscribe to our own topic so the backend's re-broadcast comes BACK to
@@ -727,6 +780,10 @@ static void fillStatus(JsonDocument &doc) {
   // whichever channel it came off.
   doc["boot_count"] = bootCount;
   doc["last_reset"] = resetReasonName(resetReason);
+  // Present at all = this board CAN reboot itself out of a wedge. A reader still
+  // running pre-watchdog firmware reports no `wdt_s`, and for that one "no
+  // TASK_WDT in last_reset" proves nothing — there was nothing to produce it.
+  doc["wdt_s"]      = WDT_TIMEOUT_S;
 
   JsonObject net = doc["net"].to<JsonObject>();
   net["ip"]       = WiFi.localIP().toString();
@@ -1104,6 +1161,13 @@ void setup() {
     http.stop();
     logEvent("ota", "update starting; nfc+ws+http quiesced");
   });
+  // The ONE place the watchdog is fed from anywhere but the top of loop().
+  // _runUpdate() takes the whole image inside a single handle() call, so loop()
+  // — and its feed — does not come round again until the transfer is over. This
+  // fires per 1460-byte chunk, which leaves a STALLED transfer watched (correct:
+  // a failed OTA never switched the boot partition, so the reboot lands back on
+  // the old image) while a merely slow one is not. See WDT_TIMEOUT_S.
+  ArduinoOTA.onProgress([](unsigned int, unsigned int) { esp_task_wdt_reset(); });
   ArduinoOTA.onEnd([]() { logEvent("ota", "update complete, rebooting"); });
   ArduinoOTA.onError([](ota_error_t e) {
     // Half-suspended is a worse state than rebooting: the NFC task is stopped,
@@ -1131,6 +1195,26 @@ void setup() {
 
   delay(200);
   downloadMode();
+
+  // Arm the task watchdog LAST, so setup() itself is never watched. connectWifi()
+  // blocks up to 20 s, and the reason that wait exists at all is the power-cut
+  // case in the README: the router and this board come back together and the ATOM
+  // wins the race, so an AP that is absent for MINUTES at boot is normal, not a
+  // fault. Watching setup() would reboot the reader for the very condition it was
+  // written to survive — and each reboot would restart the 20 s wait, which is a
+  // boot loop that outlasts the outage causing it. Subscribing here removes the
+  // question instead of trying to feed through it.
+  //
+  // panic=true: a wedge must become a LOGGED TASK_WDT reset that names itself on
+  // the next /health and the next relay-status, not a board that quietly hangs
+  // until a child reports that the reader "stopped responding".
+  if (esp_task_wdt_init(WDT_TIMEOUT_S, true) == ESP_OK && esp_task_wdt_add(NULL) == ESP_OK) {
+    logEvent("wdt", "armed (%ds)", WDT_TIMEOUT_S);
+    Serial.printf("[wdt] armed (%ds)\n", WDT_TIMEOUT_S);
+  } else {
+    logEvent("wdt", "arm FAILED — a wedge will hang, not reboot");
+    Serial.println("[wdt] arm FAILED — a wedge will hang, not reboot");
+  }
 }
 
 // Records are CR-terminated, so CR is the frame boundary. The idle timeout is
@@ -1165,6 +1249,13 @@ static void flushFrame() {
 static uint32_t lastWifiTryMs = 0;
 
 void loop() {
+  // Feed FIRST — before ArduinoOTA.handle(), before ws.loop(), before the UART
+  // drain. Everything below this line can legitimately block for tens of seconds
+  // (DNS, a TCP connect to a dead backend, a half-open HTTP client), and a
+  // watchdog fed at the END of the iteration would be rebooting a board that was
+  // merely busy. Nothing may be added above this call.
+  esp_task_wdt_reset();
+
 #if OTA_ENABLED
   ArduinoOTA.handle();
   // Once a write is in flight this is the ONLY thing that may run. Every line

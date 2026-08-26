@@ -322,7 +322,7 @@ can change reader state or clear the queue. All JSON.
 
 | Route | Returns |
 |---|---|
-| `/`, `/health` | identity, uptime, free heap, WiFi (IP/RSSI), bus state, **the UART config as actually compiled**, **`boot_count` + `last_reset`**, all counters, queue summary, and a top-level `ok` (false if anything was ever dropped or truncated) |
+| `/`, `/health` | identity, uptime, free heap, WiFi (IP/RSSI), bus state, **the UART config as actually compiled**, **`boot_count` + `last_reset` + `wdt_s`**, all counters, queue summary, and a top-level `ok` (false if anything was ever dropped or truncated) |
 | `/queue` | length, bytes, dropped, delivered, high-water depth, **and the full verbatim payload of every queued item** — payloads are small, and during an outage you want to confirm a specific card is safely held |
 | `/recent` | the last 16 frames the UART saw (delivered or not) with `kind`, `len`, `truncated` and a hex preview |
 | `/events` | a rolling window of the **lifecycle** — card read, ack confirmed, ack timed out, WS connect/disconnect — newest first, with `msAgo`, plus `ackOk`/`ackTimeout` totals. This is the route for "I tapped it and nothing happened": it answers the question after the fact, without a serial cable and without having been watching. Distinct from `/recent`, which is raw UART frames. |
@@ -364,12 +364,67 @@ how the last life ended; the sequence tells you whether the board is cycling.
 | `POWERON` | the plug, or a human power-cycling a wedge. Expected after a household reset; suspicious if nobody touched it. |
 | `PANIC` | a firmware crash — read `/events` for the moments before it. |
 | `SW` | a clean software reset. An OTA delivery ends this way. |
+| `TASK_WDT` | the loop hung and the watchdog rebooted it. **Not a power fault — stop looking at the brick.** See below. |
 
 Both fields are also pushed on the `relay-status` message the relay sends on
 every (re)connect — see [Bus message](../../docs/reference/omr/README.md#bus-message).
 **That is the channel that matters during a fault:** when this board is
 browning out, `curl http://<ip>/health` is exactly what stops answering, so the
 only report that still gets out is the one the board sends itself.
+
+### Task watchdog — `TASK_WDT` is what makes `last_reset` worth reading
+
+```json
+{ "boot_count": 48, "last_reset": "TASK_WDT", "wdt_s": 60 }
+```
+
+**A reset reason only describes how the last boot ENDED.** Without a watchdog a
+wedged `loop()` never ends: it emits no reset reason, no reconnect, no log line.
+It just goes quiet — which is exactly what 2026-08-25 looked like from outside
+the case, and why `boot_count` / `last_reset` on their own could not close that
+incident. The watchdog supplies the other outcome, and *that* is what turns the
+post-mortem into a diagnosis:
+
+| `last_reset` | What actually happened | Where to look |
+|---|---|---|
+| `TASK_WDT` | The main loop stopped feeding the watchdog for 60 s and the board **rebooted itself**. Something in the firmware wedged and recovered. The reader was unavailable for ~70 s (timeout + boot), then came back on its own. | `/events` for the moments before it, and the queue: a card fed during the wedge is in `qDropped`. This is a **software** fault. The supply is fine. |
+| `BROWNOUT` | The 3.3 V rail sagged below the detector. Nothing wedged; the board was cut off mid-instruction. | The USB brick, the cable, the connector — in that order. This is a **power** fault. The firmware is fine. |
+| `POWERON` | The plug — or a human power-cycling a board that was hung. | Ask whether anybody touched it. A `POWERON` nobody caused, on a board that has a watchdog, is the one combination that should still bother you. |
+
+They are the same symptom (the reader "stopped responding") and opposite
+investigations, so do not read `TASK_WDT` as "some kind of power thing".
+
+`wdt_s` reports the compiled timeout. **Its absence is itself information:** a
+reader still running pre-watchdog firmware cannot produce `TASK_WDT` at all, so
+for that board "no `TASK_WDT` in `last_reset`" proves nothing.
+
+**Why 60 s, and why it will not boot-loop.** A watchdog that fires during normal
+operation is strictly worse than the wedge it was meant to catch. The legitimate
+long stalls on this task, read off the vendored libraries rather than guessed:
+~14 s of DNS for `BACKEND_HOST` inside the WebSocket reconnect (lwIP's own
+timeout), +5 s for the TCP connect behind it, +12 s for `handleClient()`
+servicing one half-open HTTP client. Nothing prevents those landing in the same
+iteration, so the worst *legitimate* stall is ~31 s and the timeout is not quite
+double it. A true wedge never ends, so a slightly slow watchdog still catches it;
+a fast one boot-loops a reader that lives inside a case.
+
+Two paths are handled by structure rather than by the timeout:
+
+- **Boot-time WiFi.** The watchdog is armed as the *last* thing `setup()` does,
+  after `connectWifi()`. A power cut brings the router and this board back
+  together and the ATOM wins that race, so an absent AP for minutes at boot is
+  normal — and watching `setup()` would reboot into the same 20 s wait forever.
+- **OTA.** `ArduinoOTA` receives the whole image inside a single `handle()` call,
+  which no wedge-safe timeout could ever cover, so the feed lives in the
+  per-chunk `onProgress` callback instead. A *stalled* transfer is still watched,
+  and rebooting through one is correct: a failed OTA never switched the boot
+  partition, so the board comes back on the old image.
+
+Backend-side, `omrReaderLiveness` already carries `last_reset` on its
+reconnect-burst warning and now classifies it too, as `resetDiagnosis`:
+`hung-and-recovered` for `TASK_WDT`/`INT_WDT`/`WDT` versus `power` for
+`BROWNOUT`. `null` there means the reader reported no reason; `other` means it
+reported one we do not classify — different answers, kept distinguishable.
 
 **This is what makes the Step 1b loopback test remote.** Jumper `R` to `T`, wait
 for the 60 s re-arm, then `curl http://<ip>/recent` — if the `I00` download comes
@@ -382,9 +437,14 @@ rebroadcasts on `omr` and persists sheets + reader errors. See Step 5.
 
 ## Build & flash — BUILDS CLEAN ✅ (2026-07-29)
 
-`pio run -e m5-atom` succeeds: RAM 14.2% (46,612 / 327,680), Flash 29.2%
-(919,701 / 3,145,728). Three defects fixed to get there and to survive first
-contact:
+`pio run -e m5-atom` succeeds. Current, re-measured 2026-08-25 against the
+dual-OTA partition table (the old figure of 29.2% was against `huge_app.csv`'s
+single 3 MB slot and is not comparable): **RAM 15.9% (52,040 / 327,680), Flash
+49.1% (965,249 / 1,966,080)** for an OMR-only reader; **RAM 18.5%, Flash 65.1%
+(1,279,565)** with NFC and OTA both compiled in. The figure that matters is the
+one against 1,966,080 — that is the app slot an OTA delivery has to fit.
+
+Three defects fixed to get there and to survive first contact:
 
 - **`CRGB::Amber` does not exist** — amber is not a W3C named color, so FastLED's
   HTML color enum has no such constant and the build failed outright. Defined as

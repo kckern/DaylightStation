@@ -299,7 +299,45 @@ describe('createOmrReaderLiveness — boot post-mortem on a burst', () => {
     expect(warned).toHaveLength(1);
     expect(warned[0].data).toMatchObject({
       id: READER_ID, reconnects: 3, lastReset: 'BROWNOUT', bootCount: 12,
+      resetDiagnosis: 'power',
     });
+  });
+
+  it('separates a reader that hung and recovered itself from one that lost power', () => {
+    // Same burst, same shape, opposite investigations — the whole reason the
+    // firmware now carries a task watchdog. TASK_WDT means loop() wedged and the
+    // watchdog rebooted it, which is a software fault that fixed itself; BROWNOUT
+    // means the supply sagged. Reading esp_reset_reason names is not the job of
+    // whoever queries this line.
+    const h = harness();
+    settle(h);
+
+    flapWithBoot(h, 'c1', 60_000, { last_reset: 'POWERON', boot_count: 20 });
+    flapWithBoot(h, 'c2', 60_000, { last_reset: 'TASK_WDT', boot_count: 21 });
+    flapWithBoot(h, 'c3', 0, { last_reset: 'TASK_WDT', boot_count: 22 });
+
+    expect(bursts(h)[0].data).toMatchObject({
+      lastReset: 'TASK_WDT', resetDiagnosis: 'hung-and-recovered',
+    });
+  });
+
+  it('says nothing where a pre-watchdog reader says nothing, and "other" for a reason it cannot classify', () => {
+    // null and 'other' are different answers: the first is "this firmware cannot
+    // tell you", the second is "it told you something we do not classify".
+    const h = harness();
+    settle(h);
+
+    flap(h, 'c1', 60_000);
+    flap(h, 'c2', 60_000);
+    flap(h, 'c3', 0);
+    expect(bursts(h)[0].data.resetDiagnosis).toBeNull();
+
+    const g = harness();
+    settle(g);
+    flapWithBoot(g, 'd1', 60_000, { last_reset: 'SDIO', boot_count: 3 });
+    flapWithBoot(g, 'd2', 60_000, { last_reset: 'SDIO', boot_count: 4 });
+    flapWithBoot(g, 'd3', 0, { last_reset: 'SDIO', boot_count: 5 });
+    expect(bursts(g)[0].data.resetDiagnosis).toBe('other');
   });
 
   it('a steady boot_count says the board never rebooted — a link fault, not a power fault', () => {
