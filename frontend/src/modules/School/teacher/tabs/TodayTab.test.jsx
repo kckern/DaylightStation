@@ -90,11 +90,56 @@ beforeEach(() => {
 });
 
 describe('TodayTab', () => {
-  it('joins digest rows with roster names and shows the day numbers', async () => {
+  it('joins digest rows with roster names and counts the day, not one lesson', async () => {
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
     expect(screen.getByRole('button', { name: /Learner B/ })).toBeTruthy();
-    expect(screen.getByText(/5\s*\/\s*7/)).toBeTruthy(); // correct/attempts
+    // "5 / 7 correct" was one worksheet's marks standing for a whole
+    // student-day. The row is scoped to a day, so it counts lessons.
+    await waitFor(() => expect(screen.getByText('1 of 2 lessons done')).toBeInTheDocument());
+    expect(screen.queryByText(/\d+\s*\/\s*\d+\s*correct/)).toBeNull();
+    expect(screen.queryByText(/5\s*\/\s*7/)).toBeNull();
+  });
+
+  it('draws one dot per assigned lesson, toned by what actually happened', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    // Scoped to ONE learner's row: every learner draws their own day.
+    const dots = await waitFor(() => {
+      const entry = document.querySelectorAll('.teacher-roster__entry')[0];
+      const found = entry.querySelectorAll('.teacher-roster__dot');
+      expect(found.length).toBe(2);   // Illinois (graded) + Fractions (not started)
+      return found;
+    });
+    expect(dots[0].className).toMatch(/--failed/);   // 71% is under the 80% bar
+    expect(dots[1].className).toMatch(/--idle/);     // never started
+  });
+
+  // The entry resolved a studyDay (prop → row → local today) and then handed
+  // the grid the RAW `row.studyDay`, which a v1 digest does not carry — so the
+  // link navigated with no date at all.
+  it('links the day record to the day it is showing', async () => {
+    // The digest's v2 object shape names the day; the ROW does not, in either
+    // shape — which is the whole bug. The entry resolved it correctly and then
+    // passed the raw row value down anyway.
+    schoolApi.teacherDay.mockResolvedValue(ok({ studyDay: '2026-08-26', learners: [
+      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+    ] }));
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    const link = await screen.findByRole('link', { name: /Open the full day record/ });
+    expect(link.getAttribute('href')).toContain('2026-08-26');
+  });
+
+  // Both used to sit absolutely positioned in the same corner of the row,
+  // 20px apart, over a button whose whole surface is the toggle.
+  it('keeps the agenda link outside the row toggle', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
+    const agenda = screen.getAllByRole('link', { name: /printed agenda/i })[0];
+    const toggle = screen.getByRole('button', { name: /Learner A/ });
+    expect(toggle.contains(agenda)).toBe(false);
+    // The chevron, by contrast, belongs to the surface it describes.
+    expect(toggle.querySelector('.teacher-roster__disclosure')).not.toBeNull();
   });
 
   it('drill-in names the lesson and costs no session fetch', async () => {
