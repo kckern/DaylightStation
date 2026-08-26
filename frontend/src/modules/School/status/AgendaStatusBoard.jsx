@@ -1,6 +1,9 @@
 /**
  * AgendaStatusBoard — a read-only, at-a-glance board of every student's school
- * day: how many agenda lessons exist, how many are done, and a status word.
+ * day: WHICH subjects are on the plan, which of them are done, and a status
+ * word. The per-subject segments carry the subject wall's own icons, so a kid
+ * walking past reads their day as pictures rather than as a bar chart; the
+ * "x of y" line stays because a count is the one thing icons cannot say.
  *
  * Deliberately NON-INTERACTIVE (kiosk spec wave 5): it renders on the locked
  * Portal beside the keypad as a reminder/preview only — codes and printed
@@ -12,10 +15,41 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import Icon, { hasIcon } from '../home/icons/Icon.jsx';
+import { subjectLabel } from '../home/subjects.js';
+import { labelize } from '../teacher/labelize.js';
 import { schoolApi } from '../schoolApi.js';
 import { schoolLog } from '../schoolLog.js';
 
 const REFRESH_MS = 5 * 60_000;
+
+// The subject wall's own icon set, addressed by subject id (icons/MANIFEST.md:
+// "filenames are the subject ids"), so the board and the wall say the same
+// thing about `math` without a second mapping to keep in sync. An agenda can
+// name a subject that is not one of the nine shelves — the planner's `other`
+// bucket, a legacy id — and those get the school's own apple rather than a
+// blank disc, because a segment with no mark reads as a rendering bug.
+const FALLBACK_ICON = 'apple';
+// Warned-about subjects, remembered for the life of the tab: this runs inside
+// render on a board that repaints every five minutes forever, and a wall
+// fixture must not turn one missing file into an endless log.
+const warnedSubjects = new Set();
+function iconFor(subject) {
+  if (hasIcon(subject)) return subject;
+  if (!warnedSubjects.has(subject)) {
+    warnedSubjects.add(subject);
+    schoolLog.surface('subject-icon-missing', { subject: subject ?? null });
+  }
+  return FALLBACK_ICON;
+}
+
+// Shelf label where there is a shelf, humanized slug otherwise. This is the
+// segment's ONLY name now that the tile carries no text, so it has to be
+// speakable for every id the agenda can hand us, not just the nine.
+function nameFor(subject) {
+  const label = subjectLabel(subject);
+  return label === subject ? labelize(subject) : label;
+}
 
 export function dayStatus({ total, done }) {
   if (!total) return null;
@@ -34,8 +68,16 @@ export function summarize(sections, sessions) {
   const passedSubjects = new Set((sessions ?? [])
     .filter((session) => session.outcome?.result === 'passed')
     .map((session) => session.subject));
-  const done = planned.filter((section) => section.servedToday || passedSubjects.has(section.subject)).length;
-  return { total: planned.length, done };
+  // The board draws one segment PER SUBJECT now, so the join has to survive as
+  // a list and not collapse straight to a count: which subject is done is the
+  // whole point of the icons. `total`/`done` stay derived from it so the
+  // status word and the "x of y" readout cannot drift from the segments.
+  const segments = planned.map((section) => ({
+    subject: section.subject,
+    label: nameFor(section.subject),
+    done: Boolean(section.servedToday || passedSubjects.has(section.subject)),
+  }));
+  return { total: segments.length, done: segments.filter((s) => s.done).length, segments };
 }
 
 export default function AgendaStatusBoard({ kids = [], day }) {
@@ -100,11 +142,37 @@ export default function AgendaStatusBoard({ kids = [], day }) {
               </div>
               {summary && summary.total > 0 && (
                 <>
-                  <span className="school-status-board__pills" aria-hidden="true">
-                    {Array.from({ length: summary.total }, (_, i) => (
-                      <i key={i} className={`school-status-board__pill${i < summary.done ? ' is-done' : ''}`} />
+                  {/* The segments used to be an anonymous meter, hidden from
+                      assistive tech because they said nothing a sighted reader
+                      could not get from the count. Carrying a subject icon
+                      makes each one a fact of its own — so it has to be
+                      readable too. The disc is decorative; the NAME rides on
+                      the icon (Icon's `label` gives it role="img"), which
+                      keeps the list semantics of the row intact. */}
+                  {/* The count is a LAYOUT input, not decoration: CSS cannot
+                      count its own children, and the discs divide the row
+                      between themselves so a nine-subject day fits one line
+                      (School.scss, `&__pill`). */}
+                  <ul
+                    className="school-status-board__pills"
+                    style={{ '--count': summary.segments.length }}
+                  >
+                    {summary.segments.map((segment, i) => (
+                      <li
+                        // Two sections can share a subject; the index keeps the
+                        // key unique without pretending order is meaningful.
+                        // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+                        key={`${segment.subject}-${i}`}
+                        className="school-status-board__pill"
+                        data-done={segment.done ? 'true' : 'false'}
+                      >
+                        <Icon
+                          name={iconFor(segment.subject)}
+                          label={`${segment.label}: ${segment.done ? 'done' : 'not done'}`}
+                        />
+                      </li>
                     ))}
-                  </span>
+                  </ul>
                   <span className="school-status-board__count">{summary.done} of {summary.total}</span>
                 </>
               )}

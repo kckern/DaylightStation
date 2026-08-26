@@ -25,6 +25,20 @@
   --school-accent-ink: #07210f;
   --school-danger: #e05a4f;
   --school-warn: #e0a83a;
+  // The locked Portal's Today board is a wall fixture in its own warm palette
+  // (cream on dark), not app chrome — so it gets named tokens rather than
+  // reusing --school-accent, which is the interactive green and would make a
+  // non-interactive board look tappable. Naming the pair also means "done" and
+  // "not yet" are one edit each instead of four literals scattered downfile.
+  --school-board-ink: #efe9dc;
+  --school-board-done: #7fb069;
+  // Ink INSIDE a filled done-disc: near-black, because a cream glyph on sage
+  // is the one pairing on this board with no contrast to spare.
+  --school-board-done-ink: #16260f;
+  // Not-yet discs. Deliberately lighter than the 22% they carried as hairline
+  // bars: at bar height the fill was a hint, at disc size it is the backdrop
+  // an icon has to read against, and 22% left the glyph swimming.
+  --school-board-pending: color-mix(in srgb, var(--school-board-ink) 34%, transparent);
   --kind-video: #5b8dd6;  // blue — watch
   --kind-audio: #b085e6;  // violet — listen
   --kind-app:   #3fbfae;  // teal — do
@@ -2072,7 +2086,7 @@
 // the available height between them, whatever each card has to say. A card
 // with no plan keeps the same footprint — four matching cards are the point.
 .school-status-board {
-  color: #efe9dc;
+  color: var(--school-board-ink);
   display: flex; flex-direction: column;
   width: 100%; height: 100%; min-height: 0;
 
@@ -2100,13 +2114,65 @@
     font-weight: 800; font-size: clamp(1.15rem, 2.8vh, 1.6rem);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  // The meter spans the card, one segment per lesson: comparable bar-to-bar
-  // even when the lesson counts differ.
-  &__pills { display: flex; gap: clamp(0.3rem, 0.8vw, 0.5rem); align-items: center; width: 100%; }
+  // Discs, one per SUBJECT, each wearing that subject's icon off the wall.
+  //
+  // This was a stretched meter — segments sharing the card's width, so every
+  // learner's strip was the same length and only the fill differed. That made
+  // the bars comparable and the day anonymous: nothing on the board said what
+  // the work WAS. Fixed-size discs give that up on purpose. The strip's length
+  // now encodes how much is planned, the icons say which subjects, and the
+  // count below stays for the one fact pictures can't carry.
+  //
+  // Circle over rounded-square (the household's own suggestion, taken): these
+  // sit inside a 16px-radius card, and a small rounded rectangle in there reads
+  // as a nested card rather than a state marker, while a disc reads as a bead
+  // on a string — which is exactly what "3 of 7 done" is. A circle only
+  // inscribes ~71% of its box, so the diameter below is sized for the ICON
+  // rather than the disc, and the disc is simply what's left over.
+  &__pills {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: wrap; align-items: center;
+    --disc-gap: clamp(0.25rem, 0.7vh, 0.4rem);
+    gap: var(--disc-gap);
+  }
   &__pill {
-    flex: 1 1 0; max-width: 4.5rem; height: clamp(0.5rem, 1.3vh, 0.7rem);
-    border-radius: 999px; background: rgba(239, 233, 220, 0.22);
-    &.is-done { background: #7fb069; }
+    // TWO ceilings, whichever bites first.
+    //
+    // Height first: four cards share the pane, so the card's height is what's
+    // actually scarce — 5.2vh lands a ~2.6rem disc on the 1280x800 Portal,
+    // which is the smallest circle that still shows a recognisable glyph at
+    // arm's length. Width second: nine subjects is the curriculum's ceiling
+    // (home/subjects.js), and nine discs at 2.6rem are ~12px wider than the
+    // card's text column, so they would wrap. Rather than wrap — a second
+    // line steals the height the count line needs — the row divides itself:
+    // the component hands us the segment count and the disc takes an equal
+    // share when, and only when, that is smaller than the height ceiling.
+    // Measured on the real pane, nine still come out ~2.5rem, so the crowded
+    // day costs a hair of size and never a line. `flex-wrap` stays as the
+    // backstop for anything narrower still; nothing here may scroll, because
+    // the locked panel accepts no touch.
+    --disc: min(
+      clamp(1.6rem, 5.2vh, 2.65rem),
+      calc((100% - (var(--count, 1) - 1) * var(--disc-gap)) / var(--count, 1))
+    );
+    flex: 0 0 auto;
+    width: var(--disc); aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    background: var(--school-board-pending);
+    color: var(--school-board-ink);
+
+    // The subject SVGs ship at an intrinsic 1em, which ignores the disc
+    // entirely; scale them off it instead. 58% keeps the glyph inside the
+    // circle's inscribed square (~71%) with breathing room, and the SVGs'
+    // own viewBoxes letterbox rather than stretch.
+    .school-icon { display: flex; width: 58%; height: 58%; line-height: 1; }
+    svg { width: 100%; height: 100%; }
+
+    &[data-done='true'] {
+      background: var(--school-board-done);
+      color: var(--school-board-done-ink);
+    }
   }
   &__count { font-size: clamp(0.85rem, 1.9vh, 1rem); opacity: 0.75; }
   &__status {
@@ -2116,8 +2182,8 @@
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
   &__row[data-status='Done for the day'] {
-    border-color: color-mix(in srgb, #7fb069 45%, var(--school-border));
-    .school-status-board__status { color: #7fb069; opacity: 1; }
+    border-color: color-mix(in srgb, var(--school-board-done) 45%, var(--school-border));
+    .school-status-board__status { color: var(--school-board-done); opacity: 1; }
   }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short
