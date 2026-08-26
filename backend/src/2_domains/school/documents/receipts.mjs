@@ -52,12 +52,13 @@ const text = (md) => ({ type: 'rich_text', md });
  */
 function lessonAction({
   token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null,
-  rail = null, accessCode,
+  rail = null, progress = null, accessCode,
 } = {}) {
   const block = {
     type: 'scan_action', action: token, label: title,
     presentation: 'lesson', eyebrow, hideCode: true,
     ...(isNonEmptyString(rail) ? { rail } : {}),
+    ...(Array.isArray(progress) && progress.length ? { progress } : {}),
     ...(isNonEmptyString(description) ? { description } : {}),
     ...(isNonEmptyString(icon) ? { icon } : {}),
     ...(isNonEmptyString(meta) ? { meta } : {}),
@@ -397,11 +398,20 @@ export function agendaDocument({
         // location hint does not read as a verb phrase; the scan-corner glyph
         // beside it is what says "scan" (print-documents.md, "Agenda and
         // result-receipt language").
-        meta: [
-          isNonEmptyString(next.actionLabel) ? next.actionLabel.toUpperCase() : 'SCAN TO PRINT',
-          next.progressLabel ?? section.progressLabel,
-          Number.isFinite(section.gradePercent) ? `Grade ${Math.round(section.gradePercent)}%` : null,
-        ].filter(isNonEmptyString).join(' · '),
+        // The action label ALONE. The progress label used to ride here too, and
+        // for a program course that is `34/366 · next: <title>` — a raw tally
+        // the child does not act on, ending in a verbatim repeat of the card's
+        // own title two rows above. Progress now goes to `progress` below as a
+        // bar, which is what the result receipt already does with the same data.
+        // A grade percentage is likewise not a thing to do; it belongs to the
+        // result receipt, which is where a child sees it.
+        //
+        // The default is SCAN TO START, not SCAN TO PRINT: the child is holding
+        // printed paper, so "print" describes something that already happened.
+        meta: isNonEmptyString(next.actionLabel)
+          ? next.actionLabel.toUpperCase()
+          : 'SCAN TO START',
+        progress: section.progressRows,
         taxonomy: next.taxonomy,
         // Keyed by TOKEN (Slice H): whatever this specific card's own code
         // is, if any. Absent from the map (self-service off, or nothing
