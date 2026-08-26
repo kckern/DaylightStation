@@ -32,7 +32,11 @@ export const CEREMONY_DEBOUNCE_MS = 400;
 
 // Ported from useUnlock.js (retired in a later task). Both sound path and volume
 // are config-driven (fitness.yml → unlock.{sound,volume}); these are fallbacks.
-const DEFAULT_UNLOCK_SOUND = 'apps/fitness/ux/unlock.mp3';
+// NO ASSET FILENAME HERE — the chime is `unlock.sound` in the fitness config.
+// A hardcoded fallback is a second source of truth that nothing updates: when
+// the UX assets moved out from under `apps/`, the config was corrected and the
+// constant here was not, so the "fallback" pointed at a 404. Unset means
+// silent (`playCueOnce` returns false on a falsy sound), which is honest.
 const DEFAULT_UNLOCK_VOLUME = 0.15;
 // Safety cap on the success-screen hold: if the chime never reports completion
 // (silent/autoplay-rejected device), resolve the verdict anyway after this.
@@ -82,11 +86,11 @@ export function IdentityProvider({ children }) {
 
   // Config-driven chime sound/volume, held in refs so the async match closure reads
   // live values (fitness.yml → unlock.{sound,volume}; root sometimes wrapped .fitness).
-  const soundRef = useRef(DEFAULT_UNLOCK_SOUND);
+  const soundRef = useRef(null);
   const volumeRef = useRef(DEFAULT_UNLOCK_VOLUME);
   const cfgRoot = fitnessConfiguration?.fitness || fitnessConfiguration || {};
   const cfgSound = cfgRoot?.unlock?.sound;
-  soundRef.current = (typeof cfgSound === 'string' && cfgSound.trim()) ? cfgSound.trim() : DEFAULT_UNLOCK_SOUND;
+  soundRef.current = (typeof cfgSound === 'string' && cfgSound.trim()) ? cfgSound.trim() : null;
   const cfgVolume = Number(cfgRoot?.unlock?.volume);
   volumeRef.current = Number.isFinite(cfgVolume) ? cfgVolume : DEFAULT_UNLOCK_VOLUME;
 

@@ -41,16 +41,21 @@ const TICK_MS = 250;
 // cycle game already uses, and it is enough warning to get back to the bar.
 const CUE_FROM_SECONDS = 3;
 
-const DEFAULT_TICK_SOUND = 'apps/fitness/ux/cycle-game-countdown.wav';
-const DEFAULT_GO_SOUND = 'apps/fitness/ux/cycle-game-go.wav';
+// NO ASSET FILENAMES LIVE HERE. Cue paths come from the fitness config
+// (`rest_timer.tick_sound` / `rest_timer.go_sound`) and are passed in by
+// WorkoutRunner. A hardcoded default is a second, invisible source of truth:
+// when the UX assets moved out from under `apps/`, the config was updated and
+// these constants were not, so the fallback silently pointed at a 404.
+// Unset means SILENT — both play sites already guard on a falsy value — which
+// is the honest failure for a missing cue.
 
 export default function RestTimer({
   seconds,
   nextLabel = null,
   afterLabel = null,
   onDone = null,
-  tickSound = DEFAULT_TICK_SOUND,
-  goSound = DEFAULT_GO_SOUND
+  tickSound = null,
+  goSound = null
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'rest-timer' }), []);
 

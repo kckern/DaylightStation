@@ -47,8 +47,13 @@ import {
 // Must remain `false` on main; flip locally when needed.
 export const FITNESS_DEBUG = false;
 
-// Create context
-const FitnessContext = createContext(null);
+// Create context.
+// EXPORTED so a component can read config without the throw. `useFitness`
+// (=== `useFitnessContext`) raises when there is no provider, which is right
+// for components that genuinely cannot function without one — but a widget
+// that only wants an optional cue path should degrade to silence, not crash
+// its own unit tests. Those read `useContext(FitnessContext)?.…` directly.
+export const FitnessContext = createContext(null);
 
 const normalizeLabelList = (raw) => {
   if (!Array.isArray(raw)) return [];
