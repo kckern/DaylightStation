@@ -22,7 +22,9 @@
 //            reads (no motor) kept working and the motor-driven feed did not,
 //            and the device's own HTTP status server was unreachable. See
 //            DEFAULT_BURST_* below for how that day's numbers set the
-//            thresholds.
+//            thresholds. The burst warning also carries the reader's own
+//            `last_reset` / `boot_count` when its firmware reports them, which
+//            is what turns that suspicion into an answer — see bootInfoByIp.
 //
 // DETECTION ONLY. Neither check attempts a remedy: what is being caught here
 // is a hardware fault, and the useful thing software can do about it is say
@@ -135,6 +137,25 @@ export function createOmrReaderLiveness({
   // named.
   const readerIdByIp = new Map();
 
+  // ip -> { lastReset, bootCount }, the reader's own post-mortem of its previous
+  // life, learned from the same identifying message as the id above. Both fields
+  // are OPTIONAL: a board still running firmware from before they existed simply
+  // never populates this, and every line below has to read the same either way.
+  //
+  // This is what turns the burst warning from a symptom into a diagnosis. A
+  // burst alone says "the socket keeps dropping" and stops there; the same burst
+  // reporting `lastReset: 'BROWNOUT'` names the cause, and one reporting a
+  // STEADY `bootCount` says the board never rebooted at all — a network fault
+  // wearing a power fault's clothes.
+  //
+  // Staleness by exactly one connection is intended, not an oversight: a
+  // connection is recorded here the instant it arrives, before the new socket's
+  // own hello has been received, so the values reported are those of the
+  // PRECEDING connection. That is the right ones — a brownout that killed
+  // connection N is reported by the hello of connection N+1, which has already
+  // landed by the time connection N+2 completes the burst.
+  const bootInfoByIp = new Map();
+
   // clientId -> { ip, connectedAt, cleared, warned }. `cleared` means this
   // connection has proven it is NOT the deaf state — either it subscribed,
   // or it has sent at least one ingest message (which the relay already
@@ -194,6 +215,7 @@ export function createOmrReaderLiveness({
     if (burstReported.get(ip)) return;
 
     burstReported.set(ip, true);
+    const boot = bootInfoByIp.get(ip);
     // `warn`, never `debug`: debug is not shipped to the production log store,
     // and a line nobody can query is exactly how this failure mode stayed
     // invisible while a child re-fed the same sheet three times.
@@ -203,6 +225,11 @@ export function createOmrReaderLiveness({
       reconnects: times.length,
       windowMs: burstWindowMs,
       spanMs: times[times.length - 1] - times[0],
+      // Null, not absent, when the reader has not reported them: "this firmware
+      // cannot tell you" and "it told you nothing happened" are different
+      // answers, and the query that reads this line should be able to see which.
+      lastReset: boot?.lastReset ?? null,
+      bootCount: boot?.bootCount ?? null,
     });
   }
 
@@ -216,6 +243,22 @@ export function createOmrReaderLiveness({
     const entry = pending.get(clientId);
     const ip = entry?.ip;
     if (ip && typeof message.id === 'string' && message.id) readerIdByIp.set(ip, message.id);
+    // The relay's boot post-mortem, carried on its `relay-status` reconnect
+    // message. Each field is taken only when the reader actually sent one of the
+    // right shape, so a malformed or older payload leaves the previous (or
+    // absent) value alone rather than overwriting it with junk.
+    if (ip) {
+      const lastReset = typeof message.last_reset === 'string' && message.last_reset
+        ? message.last_reset : null;
+      const bootCount = Number.isFinite(message.boot_count) ? message.boot_count : null;
+      if (lastReset !== null || bootCount !== null) {
+        const prev = bootInfoByIp.get(ip);
+        bootInfoByIp.set(ip, {
+          lastReset: lastReset ?? prev?.lastReset ?? null,
+          bootCount: bootCount ?? prev?.bootCount ?? null,
+        });
+      }
+    }
     // A message on the ingest path proves this connection is talking to us,
     // regardless of subscription state.
     if (entry) entry.cleared = true;
