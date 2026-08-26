@@ -19,6 +19,14 @@ export function localDay(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+/** Move a YYYY-MM-DD day by whole days. Noon-anchored, so DST can't eat a day. */
+export function shiftDay(day, delta = 1) {
+  const date = dateFor(day);
+  if (!date) return null;
+  date.setDate(date.getDate() + delta);
+  return localDay(date);
+}
+
 /** "Monday, Aug 24" — weekday-led day label. Null on garbage, so callers can ?? a fallback. */
 export function humanDate(value) {
   const date = dateFor(value);

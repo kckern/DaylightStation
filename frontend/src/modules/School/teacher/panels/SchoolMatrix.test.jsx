@@ -21,7 +21,7 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
 }));
 import { schoolApi } from '../../schoolApi.js';
 
-const KIDS = [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }];
+const KIDS = [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }];
 const UNITS = [
   { unitId: 'frac.01', courseId: 'math-fractions' },
   { unitId: 'caps.01', courseId: 'history-capitals' },
@@ -34,8 +34,8 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
       kids: KIDS,
       units: UNITS,
       assignments: [
-        { learnerId: 'felix', courses: ['math-fractions', { courseId: 'history-capitals', elective: true }] },
-        { learnerId: 'milo', courses: ['math-fractions'] },
+        { learnerId: 'learner-a', courses: ['math-fractions', { courseId: 'history-capitals', elective: true }] },
+        { learnerId: 'learner-b', courses: ['math-fractions'] },
       ],
     });
     expect(m.courseIds).toEqual(['creature-basics', 'history-capitals', 'math-fractions']);
@@ -47,7 +47,7 @@ describe('deriveMatrix (admin advocacy A4 — the bird\'s-eye view)', () => {
     const m = deriveMatrix({
       kids: KIDS,
       units: UNITS,
-      assignments: [{ learnerId: 'felix', courses: ['math-fractions', 'ghost-course'] }],
+      assignments: [{ learnerId: 'learner-a', courses: ['math-fractions', 'ghost-course'] }],
     });
     expect(m.rows[0].deadRefs).toEqual(['ghost-course']);
   });
@@ -69,7 +69,7 @@ describe('deriveMatrix — enrollment cells', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
       assignments: [{
-        learnerId: 'felix',
+        learnerId: 'learner-a',
         courses: [{ courseId: 'history-capitals', profile: 'upper', syllabusId: 'atlas-upper', enrollment: { schema: 'school.course-enrollment/v1' } }],
       }],
     });
@@ -82,7 +82,7 @@ describe('deriveMatrix — enrollment cells', () => {
   it('marks a hand-authored enrollment as unmanaged rather than broken', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
-      assignments: [{ learnerId: 'felix', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
+      assignments: [{ learnerId: 'learner-a', courses: [{ courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } }] }],
     });
     expect(m.rows[0].cells['history-capitals']).toMatchObject({
       enrolled: true, managed: false, profile: 'upper', hasEnrollment: true,
@@ -98,7 +98,7 @@ describe('deriveMatrix — enrollment cells', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: SYLLABI,
       assignments: [{
-        learnerId: 'felix',
+        learnerId: 'learner-a',
         courses: [
           'math-fractions',
           { courseId: 'history-capitals', profile: 'upper', enrollment: { schema: 'school.course-enrollment/v1' } },
@@ -119,7 +119,7 @@ describe('deriveMatrix — enrollment cells', () => {
   it('treats a bare-string course as enrolled with no enrollment record', () => {
     const m = deriveMatrix({
       kids: KIDS, units: UNITS, syllabi: [],
-      assignments: [{ learnerId: 'milo', courses: ['math-fractions'] }],
+      assignments: [{ learnerId: 'learner-b', courses: ['math-fractions'] }],
     });
     expect(m.rows[1].cells['math-fractions']).toMatchObject({ enrolled: true, managed: false, hasEnrollment: false, syllabusId: null });
   });
@@ -134,7 +134,7 @@ describe('SchoolMatrix — transposed render', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     schoolApi.allAssignments.mockResolvedValue({ ok: true, status: 200, data: { assignments: [
-      { learnerId: 'felix', courses: [{ courseId: 'history-capitals', syllabusId: 'atlas-upper', profile: 'upper', enrollment: {} }] },
+      { learnerId: 'learner-a', courses: [{ courseId: 'history-capitals', syllabusId: 'atlas-upper', profile: 'upper', enrollment: {} }] },
     ] } });
     schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [
       { unitId: 'caps.01', courseId: 'history-capitals', courseTitle: 'History Capitals' },
@@ -146,10 +146,10 @@ describe('SchoolMatrix — transposed render', () => {
   });
 
   it('renders courses as rows and students as columns, with a legend', async () => {
-    render(<SchoolMatrix kids={[{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }]} />);
+    render(<SchoolMatrix kids={[{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }]} />);
     await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
     const headers = screen.getAllByRole('columnheader').map((th) => th.textContent);
-    expect(headers).toEqual(['Course', 'Felix', 'Milo']);
+    expect(headers).toEqual(['Course', 'Learner A', 'Learner B']);
     const rowHeaders = screen.getAllByRole('rowheader').map((th) => th.textContent);
     expect(rowHeaders).toEqual(['Creature Basics', 'History Capitals']);
     expect(screen.getByText('⚑ hand-authored enrollment · — not enrolled')).toBeInTheDocument();
@@ -160,9 +160,9 @@ describe('SchoolMatrix — transposed render', () => {
   });
 
   it('an unenrolled intersection renders — and still opens the drawer', async () => {
-    render(<SchoolMatrix kids={[{ id: 'felix', name: 'Felix' }]} />);
+    render(<SchoolMatrix kids={[{ id: 'learner-a', name: 'Learner A' }]} />);
     await waitFor(() => expect(screen.getByTestId('school-matrix')).toBeInTheDocument());
-    const cell = screen.getByRole('button', { name: 'Felix, Creature Basics' });
+    const cell = screen.getByRole('button', { name: 'Learner A, Creature Basics' });
     expect(cell.textContent).toBe('—');
   });
 });

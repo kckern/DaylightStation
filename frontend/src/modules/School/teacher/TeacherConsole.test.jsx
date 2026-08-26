@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import TeacherConsole from './TeacherConsole.jsx';
 
@@ -6,8 +6,8 @@ vi.mock('../schoolApi.js', () => {
   const okEmpty = async () => ({ ok: true, status: 200, data: [] });
   return { schoolApi: {
     teachers: vi.fn(async () => ({ ok: true, status: 200, data: { configured: true, teachers: [{ id: 'teacher', name: 'Teacher' }] } })),
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'felix', name: 'Felix' }, { id: 'milo', name: 'Milo' }] })),
-    teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'felix', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'milo', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner-a', name: 'Learner A' }, { id: 'learner-b', name: 'Learner B' }] })),
+    teacherToday: vi.fn(async () => ({ ok: true, status: 200, data: [{ learnerId: 'learner-a', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }, { learnerId: 'learner-b', attemptsToday: 0, correctToday: 0, sessionsToday: [], pendingReview: 0 }] })),
     teacherDay: vi.fn(async (studyDay = null) => ({ ok: true, status: 200, data: {
       schema: 'school.teacher-day/v2', studyDay: studyDay ?? new Date().toISOString().slice(0, 10), learners: [],
     } })),
@@ -78,17 +78,19 @@ describe('TeacherConsole workspace', () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     await ready();
     act(() => fireEvent.click(screen.getByRole('navigation', { name: 'Students' }).querySelector('button')));
-    expect(window.location.pathname).toBe('/school/teacher/students/felix/overview');
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Felix workspace' })).toBeTruthy());
+    // Picking a learner lands on their day record — the workspace's organizing
+    // unit — not on the retired Overview tab.
+    expect(window.location.pathname).toBe('/school/teacher/students/learner-a/day');
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Learner A workspace' })).toBeTruthy());
     act(() => fireEvent.click(screen.getByRole('button', { name: 'History' })));
-    expect(window.location.pathname).toBe('/school/teacher/students/felix/history');
+    expect(window.location.pathname).toBe('/school/teacher/students/learner-a/history');
     await waitFor(() => expect(screen.getByText('No sessions recorded.')).toBeTruthy());
   });
 
   it('restores route state on browser navigation', async () => {
     await ready();
-    act(() => { window.history.pushState({}, '', '/school/teacher/students/milo/reports'); window.dispatchEvent(new PopStateEvent('popstate')); });
-    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Milo workspace' })).toBeTruthy());
+    act(() => { window.history.pushState({}, '', '/school/teacher/students/learner-b/reports'); window.dispatchEvent(new PopStateEvent('popstate')); });
+    await waitFor(() => expect(screen.getByRole('navigation', { name: 'Learner B workspace' })).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Reports' }).getAttribute('aria-current')).toBe('page');
   });
 
@@ -102,15 +104,15 @@ describe('TeacherConsole workspace', () => {
     sessionStorage.setItem('school-teacher-claim', 'teacher');
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v1', sessionId: 'ses_1', revision: 4, artifactIds: ['art_1'],
-      state: { learnerId: 'felix', unitId: 'fractions', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 70 }, events: [],
+      state: { learnerId: 'learner-a', unitId: 'fractions', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 70 }, events: [],
     } });
     teacherWorkspaceApi.adjustGrade.mockResolvedValueOnce({ ok: true, status: 200, data: {
       applied: false, baseSeq: 4, adjustmentId: 'adj_1', previousEffectiveGrade: { percent: 70 }, effectiveGrade: { percent: 90 }, outcome: { result: 'passed' },
     } });
-    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_1');
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/history/sessions/ses_1');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Marked score').nextSibling.textContent).toBe('70%'));
-    fireEvent.click(screen.getByRole('button', { name: 'Correct grade…' }));
+    await waitFor(() => expect(screen.getByText('Score').nextSibling.textContent).toBe('70%'));
+    fireEvent.click(screen.getByRole('button', { name: 'Fix a marked answer' }));
     fireEvent.change(screen.getByLabelText('Effective percent'), { target: { value: '90' } });
     fireEvent.change(screen.getByLabelText('Grade correction reason'), { target: { value: 'Erased mark read incorrectly' } });
     fireEvent.click(screen.getByRole('button', { name: 'Preview correction' }));
@@ -133,11 +135,11 @@ describe('TeacherConsole workspace', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, data: {
         schema: 'school.teacher-session/v3', sessionId: 'ses_direct', revision: 1, artifacts: [],
         taxonomy: { subject: 'Science', courseTitle: 'Chemistry', lessonTitle: 'Atoms' },
-        state: { learnerId: 'felix', state: 'closed', machineGrade: { percent: 83 }, gradedPercent: 83 }, events: [],
+        state: { learnerId: 'learner-a', state: 'closed', machineGrade: { percent: 83 }, gradedPercent: 83 }, events: [],
       } });
-    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_direct');
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/history/sessions/ses_direct');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Marked score').nextSibling.textContent).toBe('83%'));
+    await waitFor(() => expect(screen.getByText('Score').nextSibling.textContent).toBe('83%'));
     expect(teacherWorkspaceApi.session.mock.calls.length - priorSessionReads).toBe(1);
     expect(screen.getByRole('heading', { name: 'Atoms' })).toBeTruthy();
   });
@@ -146,17 +148,19 @@ describe('TeacherConsole workspace', () => {
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v3', sessionId: 'ses_2', revision: 1,
       taxonomy: { subject: 'Civilization', courseTitle: 'United States', lessonTitle: 'Illinois' },
-      state: { learnerId: 'felix', state: 'closed', machineGrade: { percent: 100 }, gradedPercent: 100 }, events: [],
+      state: { learnerId: 'learner-a', state: 'closed', machineGrade: { percent: 100 }, gradedPercent: 100 }, events: [],
       assignment: { createdAt: '2026-08-24T14:28:43.031Z', questions: [{ itemId: 'q1', number: 19, prompt: 'Which state is Illinois?', choices: [{ text: 'Illinois' }, { text: 'Ohio' }] }] },
       assessment: { items: [{ itemId: 'q1', questionNumber: 19, prompt: 'Which state is Illinois?', given: 'Illinois', verdict: 'correct' }] },
       artifacts: [],
     } });
-    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_2');
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/history/sessions/ses_2');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByText('Worksheet and questions')).toBeTruthy());
-    expect(screen.getByText('Which state is Illinois?')).toBeTruthy();
-    expect(screen.getByText('Question 19')).toBeTruthy();
-    expect(screen.getByText('Answers and result')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Questions and answers')).toBeTruthy());
+    // The worksheet's own number, printed once, with the recorded answer on
+    // the same row — not the same question listed twice under two headings.
+    expect(screen.getAllByText('Which state is Illinois?')).toHaveLength(1);
+    expect(screen.getByText('19.')).toBeTruthy();
+    expect(screen.getByText('Illinois', { selector: '.teacher-graded-q__given' })).toBeTruthy();
     expect(screen.queryByText('assessment')).toBeNull();
   });
 
@@ -165,7 +169,7 @@ describe('TeacherConsole workspace', () => {
     teacherWorkspaceApi.session.mockResolvedValueOnce({ ok: true, status: 200, data: {
       schema: 'school.teacher-session/v1', sessionId: 'ses_3', revision: 7, artifactIds: [],
       state: {
-        learnerId: 'felix', unitId: 'geometry', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 90,
+        learnerId: 'learner-a', unitId: 'geometry', state: 'closed', machineGrade: { percent: 70 }, gradedPercent: 90,
         gradeAdjustments: [{ adjustmentId: 'adj_3', percent: 90, reason: 'Scanner miss', adjustedBy: 'teacher', retracted: false }],
       },
       events: [],
@@ -173,7 +177,7 @@ describe('TeacherConsole workspace', () => {
     teacherWorkspaceApi.retractGradeAdjustment
       .mockResolvedValueOnce({ ok: true, status: 200, data: { applied: false, baseSeq: 7, effectiveGrade: { percent: 70 } } })
       .mockResolvedValueOnce({ ok: true, status: 201, data: { applied: true } });
-    window.history.pushState({}, '', '/school/teacher/students/felix/history/sessions/ses_3');
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/history/sessions/ses_3');
     render(<TeacherConsole />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Retract…' })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Retract…' }));
@@ -217,15 +221,41 @@ describe('TeacherConsole workspace', () => {
   });
 
   it('offers an arbitrary-day agenda as a non-recording planning preview', async () => {
-    window.history.pushState({}, '', '/school/teacher/students/felix/overview');
+    // The day record owns this now: its own day picker ("Jump to"), and the
+    // dry-run promise sits on the printed-agenda fold rather than on a
+    // permanently-visible "planning preview" disclaimer.
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/day');
     render(<TeacherConsole />);
-    await waitFor(() => expect(screen.getByLabelText('Study day')).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('Study day'), { target: { value: '2026-08-25' } });
-    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenLastCalledWith('felix', '2026-08-25'));
-    expect(screen.getByText(/never creates a session, agenda artifact, print record/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('Jump to')).toBeTruthy());
+    // A day the picker cannot already be showing — an unchanged controlled
+    // value fires no onChange, and a stale mock call would pass vacuously.
+    schoolApi.agendaPreview.mockClear();
+    fireEvent.change(screen.getByLabelText('Jump to'), { target: { value: '2099-01-01' } });
+    await waitFor(() => expect(schoolApi.agendaPreview).toHaveBeenLastCalledWith('learner-a', '2099-01-01'));
+    expect(window.location.pathname).toBe('/school/teacher/students/learner-a/day/2099-01-01');
+    fireEvent.click(screen.getByRole('button', { name: 'Show the printed agenda' }));
+    expect(screen.getByText(/don’t work\. Nothing here starts a lesson/i)).toBeTruthy();
     expect(screen.queryByRole('button', { name: /print .* agenda/i })).toBeNull();
     expect(teacherWorkspaceApi.agendaDispatchPreview).not.toHaveBeenCalled();
     expect(teacherWorkspaceApi.agendaDispatch).not.toHaveBeenCalled();
   });
 
+  it('lands a learner on their day record and keeps the URL in step with the day', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/day/2026-08-25');
+    render(<TeacherConsole />);
+    await waitFor(() => expect(screen.getByText('Tuesday, Aug 25')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /previous day/i }));
+    await waitFor(() => expect(window.location.pathname).toBe('/school/teacher/students/learner-a/day/2026-08-24'));
+  });
+
+  it('shows Day first in the learner tab strip', async () => {
+    window.history.pushState({}, '', '/school/teacher/students/learner-a/day');
+    render(<TeacherConsole />);
+    // Scoped to the learner strip: the global rail also owns an "Operations"
+    // button, and it precedes this nav in document order.
+    const strip = await screen.findByRole('navigation', { name: 'Learner A workspace' });
+    const tabs = within(strip).getAllByRole('button');
+    expect(tabs[0]).toHaveTextContent('Day');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Day', 'Courses', 'History', 'Reports', 'Operations']);
+  });
 });

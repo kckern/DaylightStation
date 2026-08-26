@@ -14,11 +14,12 @@ import { TeacherProfileProvider, useTeacherProfile } from './TeacherProfileConte
 import { schoolApi } from '../schoolApi.js';
 import { teacherLog } from './teacherLog.js';
 import {
-  parseTeacherPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
+  parseTeacherPath, teacherDayPath, teacherLearnerPath, teacherSectionPath, teacherSessionPath,
 } from './teacherUrl.js';
+import { localDay } from './teacherDates.js';
 import TabErrorBoundary from './TabErrorBoundary.jsx';
 import {
-  CoursesView, CurriculumView, DashboardView, HistoryView, LearnerOperationsView,
+  CoursesView, CurriculumView, DashboardView, HistoryView, LearnerDayScreen, LearnerOperationsView,
   LearnerOverview, OperationsView, QueueView, ReportsView, SessionInspector,
 } from './WorkspaceViews.jsx';
 import './Teacher.scss';
@@ -33,7 +34,7 @@ const GLOBAL_NAV = [
   { id: 'operations', label: 'Operations', short: 'Ops' },
 ];
 const LEARNER_NAV = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'day', label: 'Day' },
   { id: 'courses', label: 'Courses' },
   { id: 'history', label: 'History' },
   { id: 'reports', label: 'Reports' },
@@ -103,8 +104,10 @@ function TeacherShell() {
 
   const learner = kids.find((kid) => kid.id === route.learnerId) ?? null;
   const goGlobal = (section) => navigate(teacherSectionPath(section, route.base));
-  const goLearner = (learnerId, section = 'overview', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
+  const goLearner = (learnerId, section = 'day', detail = null) => navigate(teacherLearnerPath(learnerId, section, detail, route.base));
   const goSession = (sessionId) => navigate(teacherSessionPath(route.learnerId, sessionId, route.base));
+  const studyDay = route.studyDay ?? localDay();
+  const goDay = (nextDay) => navigate(teacherDayPath(route.learnerId, nextDay, route.base));
 
   if (status !== 'ready') return <div className="teacher-console-page"><div className="teacher-console teacher-console--loading">Loading teacher workspace…</div></div>;
 
@@ -119,13 +122,16 @@ function TeacherShell() {
     view = <SessionInspector learnerId={route.learnerId} sessionId={route.sessionId} kids={kids} onBack={() => (fromToday || !route.learnerId ? goGlobal('dashboard') : goLearner(route.learnerId, 'history'))} />;
   } else if (route.kind === 'learner' && learner) {
     const views = {
-      overview: <LearnerOverview learnerId={learner.id} learnerName={learner.name} onOpenSession={goSession} />,
+      day: <LearnerDayScreen learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
+        onChangeStudyDay={goDay} onOpenSession={goSession} />,
+      overview: <LearnerOverview learnerId={learner.id} learnerName={learner.name} studyDay={studyDay}
+        onChangeStudyDay={goDay} onOpenSession={goSession} />,
       courses: <CoursesView learnerId={learner.id} learnerName={learner.name} courseId={route.courseId} kids={kids} />,
       history: <HistoryView learnerId={learner.id} learnerName={learner.name} onOpenSession={goSession} />,
       reports: <ReportsView learnerId={learner.id} kids={kids} />,
       operations: <LearnerOperationsView learnerId={learner.id} learnerName={learner.name} kids={kids} />,
     };
-    view = views[route.section] ?? views.overview;
+    view = views[route.section] ?? views.day;
   } else {
     const views = {
       dashboard: <DashboardView kids={kids} onSelectLearner={(id) => goLearner(id)} onOpenQueue={() => goGlobal('queue')} />,

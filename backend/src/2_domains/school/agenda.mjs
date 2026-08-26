@@ -332,6 +332,16 @@ export function planDailyAgenda({
       subject,
       servedToday,
       next,
+      // Is the thing being OFFERED a lesson from a day that has already passed?
+      // The schedule deliberately keeps moving when a day is missed rather than
+      // waiting, so catching up is normal and expected — but on paper a backlog
+      // lesson is otherwise indistinguishable from today's own work, and a child
+      // cannot tell "you are backfilling Monday" from "this is today's". Stated
+      // as one flag rather than left for a presenter to infer from `timing`
+      // internals, and derived with the SAME `isBacklog` the obligation rules
+      // above use so the paper and the policy can never disagree about what
+      // counts as backlog.
+      catchUp: !!(next && isBacklog(next)),
       lockedRemedy,
       timingNotice,
       progressLabel: progressLabelFor(list, statuses),

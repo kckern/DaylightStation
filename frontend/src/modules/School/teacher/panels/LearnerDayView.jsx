@@ -1,0 +1,209 @@
+/**
+ * One child, one study day: what was planned, what was done, what was skipped
+ * and why — plus anything graded today that belongs to an earlier day.
+ *
+ * This is the workspace's organizing unit (UX audit IA2/IA3). It replaces the
+ * old split where the plan lived on Overview framed as a "planning preview",
+ * the record lived on a dateless History tab, and the dashboard rendered a
+ * third copy of both. The two reads it joins are unchanged and side-effect
+ * free — previewing a day never creates a session, print, or code.
+ */
+import { useMemo, useState } from 'react';
+import { schoolApi } from '../../schoolApi.js';
+import { usePanelFetch } from '../usePanelFetch.js';
+import { joinLearnerDay, DAY_STATUS_LABEL } from '../learnerDay.js';
+import { humanDate, teacherDate, teacherTime, localDay, shiftDay } from '../teacherDates.js';
+import { LessonIdentity, SubjectIdentity } from '../CurriculumIdentity.jsx';
+import PanelFrame from './PanelFrame.jsx';
+import SessionPaperRecord from './SessionPaperRecord.jsx';
+
+// `reviewStatus` is 'pending' | 'complete'. RosterStrip tests for the
+// non-existent 'pending_review' and so has never once said "Awaiting
+// review" — accept both spellings so the fix survives a backend rename.
+const AWAITING = new Set(['pending', 'pending_review']);
+const scoreLine = (session) => {
+  const score = session?.effectiveScore ?? session?.machineScore;
+  if (!score || score.correctCount == null || score.totalCount == null) {
+    if (AWAITING.has(session?.reviewStatus)) return 'Awaiting review';
+    return typeof session?.gradedPercent === 'number' ? `${Math.round(session.gradedPercent)}%` : null;
+  }
+  return `${score.correctCount} of ${score.totalCount} correct`;
+};
+
+function DayNav({ studyDay, onChangeStudyDay }) {
+  const isToday = studyDay === localDay();
+  return (
+    <div className="teacher-day-nav">
+      <button type="button" className="teacher-btn teacher-btn--quiet" aria-label="Previous day"
+        onClick={() => onChangeStudyDay(shiftDay(studyDay, -1))}>←</button>
+      <div className="teacher-day-nav__label">
+        <strong>{humanDate(studyDay) ?? 'Pick a day'}</strong>
+        {isToday && <span className="teacher-day-nav__today">Today</span>}
+      </div>
+      <button type="button" className="teacher-btn teacher-btn--quiet" aria-label="Next day"
+        onClick={() => onChangeStudyDay(shiftDay(studyDay, 1))}>→</button>
+      <label className="teacher-day-nav__pick">
+        <span>Jump to</span>
+        <input type="date" value={studyDay} onChange={(event) => event.target.value && onChangeStudyDay(event.target.value)} />
+      </label>
+      {!isToday && <button type="button" className="teacher-btn teacher-btn--quiet"
+        onClick={() => onChangeStudyDay(localDay())}>Back to today</button>}
+    </div>
+  );
+}
+
+/**
+ * The exact image the thermal printer would produce for this day.
+ *
+ * This is a dry run of the child's own agenda, not a re-layout of it: the
+ * teacher sees the physical artifact. `previewAgenda` (BuildAgenda with
+ * `previewOnly: true`) renders it with `token: null, tokenClass: 'preview'`
+ * and relabels every offer "Preview only — ask a grown-up to start this
+ * lesson", so the QR and digit codes on it are inert BY CONSTRUCTION, not by
+ * convention. The route is GET-only and sets `X-School-Preview:
+ * agenda-non-recording`; no session, ticket, or print record is created,
+ * for today or for any other day.
+ *
+ * Loaded on demand — a printer-resolution PNG is not worth fetching for a
+ * teacher who only wanted to read the list.
+ */
+function PrintedAgenda({ learnerId, studyDay }) {
+  const [open, setOpen] = useState(false);
+  const src = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({ studyDay })}`;
+  return (
+    <section className="teacher-printed-agenda">
+      <div className="teacher-action-row">
+        <button type="button" className="teacher-btn" onClick={() => setOpen((value) => !value)}>
+          {open ? 'Hide the printed agenda' : 'Show the printed agenda'}
+        </button>
+        {open && <a className="teacher-btn teacher-btn--quiet" href={src} target="_blank" rel="noreferrer">Open full size ↗</a>}
+      </div>
+      {open && <>
+        <p className="teacher-printed-agenda__promise">
+          This is the paper as it would print — but the codes on this copy don’t work. Nothing here starts a lesson.
+        </p>
+        <img className="teacher-printed-agenda__image" src={src} alt={`Printed agenda for ${humanDate(studyDay) ?? 'the selected day'}`} />
+      </>}
+    </section>
+  );
+}
+
+function DayRow({ row, onOpenSession }) {
+  const session = row.session;
+  // The SESSION's subject wins over the section's. The planner buckets
+  // non-canonical subjects into 'other', so a unit-matched piano lesson
+  // arrives on an 'other' section and would otherwise be filed under a
+  // heading reading "Other".
+  const subject = session?.subject ?? row.subject;
+  const title = session?.lessonTitle ?? session?.title ?? row.planned;
+  const body = session
+    ? <LessonIdentity compact subject={subject} courseTitle={session.courseTitle}
+        moduleTitle={session.moduleTitle} lessonTitle={title ?? 'Lesson'} posterUrl={session.posterUrl} />
+    : <div className="teacher-day-row__unstarted"><SubjectIdentity subject={subject} />
+        <strong>{row.planned ?? 'No work offered'}</strong></div>;
+  return (
+    <li className={`teacher-day-row teacher-day-row--${row.status}`}>
+      <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{DAY_STATUS_LABEL[row.status]}</span>
+      <div className="teacher-day-row__body">
+        {session
+          ? <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>{body}</button>
+          : body}
+        {row.detail && <small className="teacher-day-row__detail">{row.detail}</small>}
+      </div>
+      <div className="teacher-day-row__right">
+        {scoreLine(session) && <span className="teacher-day-row__score">{scoreLine(session)}</span>}
+        {session?.sessionId && <SessionPaperRecord sessionId={session.sessionId} lessonTitle={title ?? 'Lesson'} />}
+      </div>
+    </li>
+  );
+}
+
+export default function LearnerDayView({ learnerId, learnerName, studyDay, onChangeStudyDay, onOpenSession }) {
+  const agenda = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
+    deps: [learnerId, studyDay], panel: 'learner-day-agenda', notFoundAs: 'unavailable',
+  });
+  const day = usePanelFetch(() => schoolApi.teacherDay(studyDay), {
+    deps: [learnerId, studyDay], panel: 'learner-day-record', notFoundAs: 'unavailable',
+  });
+
+  const learnerRow = useMemo(
+    () => (day.data?.learners ?? (Array.isArray(day.data) ? day.data : [])).find((row) => row.learnerId === learnerId) ?? null,
+    [day.data, learnerId],
+  );
+  const joined = useMemo(() => joinLearnerDay({
+    sections: agenda.data?.sections ?? [],
+    sessions: learnerRow?.sessions ?? [],
+    studyDay,
+  }), [agenda.data, learnerRow, studyDay]);
+
+  const processed = (learnerRow?.processedToday ?? []).filter((session) => session.studyDay !== studyDay);
+  const summary = [
+    joined.counts.done ? `${joined.counts.done} done` : null,
+    joined.counts.planned ? `${joined.counts.planned} not started` : null,
+    joined.counts.deferred ? `${joined.counts.deferred} deferred` : null,
+    joined.counts.blocked ? `${joined.counts.blocked} blocked` : null,
+    joined.counts.extra ? `${joined.counts.extra} extra` : null,
+  ].filter(Boolean).join(' · ');
+
+  // Both reads failing at once is the install-lacks-lifecycle case; one panel
+  // notice, not two stacked ones.
+  const state = agenda.state === 'unavailable' && day.state === 'unavailable' ? 'unavailable'
+    : agenda.state === 'loading' || day.state === 'loading' ? 'loading'
+      : agenda.state === 'error' && day.state === 'error' ? 'error'
+        : joined.rows.length || processed.length ? 'ok' : 'empty';
+
+  return (
+    <section className="teacher-day" aria-label={`${learnerName ?? learnerId}'s day`}>
+      <DayNav studyDay={studyDay} onChangeStudyDay={onChangeStudyDay} />
+      <PanelFrame
+        title={`${learnerName ?? learnerId}’s work`}
+        state={state}
+        retry={() => { agenda.retry(); day.retry(); }}
+        emptyCopy="Nothing was planned or recorded for this day."
+        unavailableCopy="The day record needs the school lifecycle, which isn’t enabled on this install."
+      >
+        <p className="teacher-day__summary" data-testid="day-summary">{summary || 'Nothing recorded yet.'}</p>
+        {(agenda.data?.errors ?? []).length > 0 && (
+          <ul className="teacher-workspace__alerts">
+            {agenda.data.errors.map((error, index) => (
+              // eslint-disable-next-line react/no-array-index-key -- order stable within one fetch
+              <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
+            ))}
+          </ul>
+        )}
+        <ul className="teacher-day-rows">
+          {joined.rows.map((row) => <DayRow key={row.key} row={row} onOpenSession={onOpenSession} />)}
+        </ul>
+      </PanelFrame>
+      {/* Outside the PanelFrame deliberately: PanelFrame renders children
+          only in the `ok` state, and "what would today's paper look like?"
+          is a fair question on a day with nothing planned or recorded. */}
+      <PrintedAgenda learnerId={learnerId} studyDay={studyDay} />
+      {/* The heading deliberately avoids repeating the row chip's exact words:
+          "Graded today" is the per-row label, and the section should not say
+          the same phrase twice over one list. */}
+      {processed.length > 0 && (
+        <PanelFrame title="Also marked on this date" state="ok">
+          <p className="teacher-muted">Work from an earlier study day that was marked on this date.</p>
+          <ul className="teacher-day-rows">
+            {processed.map((session) => (
+              <li className="teacher-day-row teacher-day-row--processed" key={session.sessionId}>
+                <span className="teacher-day-chip teacher-day-chip--processed">Graded today</span>
+                <div className="teacher-day-row__body">
+                  <button type="button" className="teacher-day-row__open" onClick={() => onOpenSession(session.sessionId)}>
+                    <LessonIdentity compact subject={session.subject} courseTitle={session.courseTitle}
+                      moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson'} posterUrl={session.posterUrl} />
+                  </button>
+                  <small className="teacher-day-row__detail">
+                    Study day {teacherDate(session.studyDay)}
+                    {teacherTime(session.processedAt) ? ` · marked ${teacherTime(session.processedAt)}` : ''}
+                  </small>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </PanelFrame>
+      )}
+    </section>
+  );
+}

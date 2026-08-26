@@ -34,7 +34,7 @@ export function deriveMatrix({ assignments, units, kids, syllabi = [] }) {
     const assigned = new Set((rec?.courses ?? []).map(courseOf).filter(Boolean));
     // One cell per assigned course. `managed` is false for an enrollment with
     // no syllabusId -- a hand-authored record, which renders first-class and
-    // flagged, never as broken (felix.yml must keep working).
+    // flagged, never as broken (learner-a.yml must keep working).
     const cells = {};
     (rec?.courses ?? []).forEach((entry) => {
       const id = courseOf(entry);

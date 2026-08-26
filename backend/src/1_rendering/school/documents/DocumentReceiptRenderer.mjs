@@ -245,7 +245,43 @@ export function createDocumentReceiptRenderer({
       : [];
     ctx.font = theme.fonts.code;
     const metaParts = lesson && block.meta ? String(block.meta).split(' · ').filter(Boolean) : [];
-    const metaLines = metaParts.length ? ['footer'] : [];
+    // THE FOOTER ROW HAS TO BE MEASURED, NOT ASSUMED.
+    //
+    // This used to be `metaParts.length ? ['footer'] : []` — a single
+    // placeholder line whatever the content was — while the draw loop put
+    // `metaParts[0]` left-aligned and the remainder RIGHT-aligned on that same
+    // row with no width check at all. Two texts advancing toward each other
+    // from opposite edges collide as soon as they are long enough, and the
+    // remainder then runs on past the left edge of its own box. A real agenda
+    // hit it immediately: "WATCH ON THE PORTAL" beside "34/366 · next: Rhythm
+    // Improvisation with Chords" printed as overlapping mush spilling out of
+    // the card.
+    //
+    // So: measure both halves, and when they cannot share a row, stack the
+    // remainder underneath on as many wrapped rows as it needs. `metaRowCount`
+    // is what the box height is grown by, which is what keeps the invariant
+    // this file already claimed — the measured box never runs short of what
+    // gets drawn into it.
+    const META_ICON_SPAN = 25; // scan brackets (17) + gap (8); matches the draw
+    const META_MIN_GAP = 12;   // smallest readable gutter between the two halves
+    const metaLead = metaParts[0] ?? '';
+    const metaRest = metaParts.slice(1).join(' · ');
+    let metaLayout = null;
+    if (metaParts.length) {
+      if (!metaRest) {
+        metaLayout = { mode: 'single', lead: metaLead, restLines: [] };
+      } else {
+        const leadWidth = META_ICON_SPAN + ctx.measureText(metaLead).width;
+        const restWidth = ctx.measureText(metaRest).width;
+        metaLayout = leadWidth + META_MIN_GAP + restWidth <= labelWidth
+          ? { mode: 'inline', lead: metaLead, restLines: [metaRest] }
+          : { mode: 'stacked', lead: metaLead, restLines: wrapTight(ctx, metaRest, labelWidth) };
+      }
+    }
+    const metaRowCount = metaLayout
+      ? (metaLayout.mode === 'stacked' ? 1 + metaLayout.restLines.length : 1)
+      : 0;
+    const metaLines = metaParts.length ? new Array(metaRowCount).fill('footer') : [];
     ctx.font = theme.fonts.code;
     // The human-readable fallback code CHUNKS in fours past the scheme prefix
     // (design audit: 'sch:8V2QWGT4A / FXHHD4U' wrapped mid-token). A code a
@@ -260,6 +296,14 @@ export function createDocumentReceiptRenderer({
     // Falls back to the raw scan token (chunked in fours for typing
     // ergonomics) when there is no panel code and the caller did not
     // `hideCode` — unchanged behaviour for every non-aliased action.
+    // Marks a card as something other than ordinary today-work. The scheduler
+    // deliberately keeps moving when a day is missed, so a lesson from a past
+    // day can be offered today — correct behaviour that, unlabelled, is
+    // indistinguishable on paper from today's own work. A child reading the
+    // page cannot tell "you are backfilling Monday" from "this is today's".
+    const rail = lesson && typeof block.rail === 'string' && block.rail.trim()
+      ? block.rail.trim().toUpperCase()
+      : null;
     const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
       ? block.panelCode.trim()
       : null;
@@ -270,7 +314,11 @@ export function createDocumentReceiptRenderer({
     // populated row-group) so the measured box height never runs short of
     // what actually gets drawn into it.
     const textHeight = lesson
-      ? eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap
+      // Each row-group contributes its gap only when the group exists — the
+      // eyebrow's gap used to be unconditional, which reserved a blank row on a
+      // card that has no eyebrow at all.
+      ? eyebrowLines.length * theme.action.eyebrowLineHeight
+        + (eyebrowLines.length ? theme.action.rowGap : 0)
         + (taxonomy?.heightPx ?? 0) + (taxonomy ? theme.action.rowGap : 0)
         + labelLines.length * titleLineHeight + (descriptionLines.length ? theme.action.rowGap : 0)
         + descriptionLines.length * theme.action.descriptionLineHeight + (metaLines.length ? theme.action.rowGap : 0)
@@ -292,11 +340,15 @@ export function createDocumentReceiptRenderer({
       descriptionIndent,
       metaLines,
       metaParts,
+      metaLayout,
+      metaRowCount,
+      rail,
       taxonomy,
       codeLines,
       panelCode,
       heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding
-        + (metaLines.length ? 14 : 0),
+        + (metaLines.length ? 14 : 0)
+        + (rail ? theme.action.railHeight : 0),
     };
   }
 
@@ -843,15 +895,31 @@ export function createDocumentReceiptRenderer({
         continue;
       }
 
-      const boxHeight = op.heightPx;
+      // A railed card is a rail ON TOP OF a box, not a taller box: everything
+      // below measures from `boxTop`, so the rail cannot push content through
+      // the floor the way a bottom-pinned footer would.
+      const railHeight = op.rail ? theme.action.railHeight : 0;
+      const boxTop = op.yPx + railHeight;
+      const boxHeight = op.heightPx - railHeight;
+      if (op.rail) {
+        ctx.save();
+        ctx.fillStyle = theme.colors.text;
+        ctx.fillRect(x, op.yPx, contentWidth, railHeight);
+        ctx.fillStyle = theme.colors.headerText;
+        ctx.font = theme.fonts.rail;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(op.rail, x + theme.action.railPadX, op.yPx + railHeight / 2);
+        ctx.restore();
+      }
       ctx.lineWidth = theme.action.borderWidth;
       ctx.strokeStyle = theme.colors.border;
-      ctx.strokeRect(x, op.yPx, contentWidth, boxHeight);
+      ctx.strokeRect(x, boxTop, contentWidth, boxHeight);
 
       const codeX = op.lesson
         ? x + theme.action.padding
         : x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
-      const codeY = op.yPx + theme.action.padding;
+      const codeY = boxTop + theme.action.padding;
       let labelX = op.lesson
         ? codeX + theme.action.codeAreaPx + theme.action.lessonTextGap
         : x + theme.action.padding;
@@ -861,25 +929,30 @@ export function createDocumentReceiptRenderer({
         ctx.drawImage(
           iconImage,
           labelX,
-          op.yPx + (boxHeight - theme.action.iconPx) / 2,
+          boxTop + (boxHeight - theme.action.iconPx) / 2,
           theme.action.iconPx,
           theme.action.iconPx,
         );
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
-      let labelY = op.yPx + theme.action.padding;
+      let labelY = boxTop + theme.action.padding;
       if (op.lesson) {
-        // Sun optically centered on the TODAY text's own cap-height, not the
-        // font's line box — see textOpticalCenter. Was a flat "+11" that
-        // landed the sun visibly below the word (printed-copy feedback).
-        const eyebrowText = op.eyebrowLines[0] ?? '';
-        const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
-        drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
-        ctx.font = theme.fonts.eyebrow;
-        op.eyebrowLines.forEach((line, index) => ctx.fillText(
-          line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
-        ));
-        labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        // No eyebrow, no row and NO INDICATOR. The indicator used to be drawn
+        // unconditionally against `eyebrowLines[0] ?? ''`, so a card without an
+        // eyebrow got a sun floating beside nothing.
+        if (op.eyebrowLines.length) {
+          // Sun optically centered on the eyebrow text's own cap-height, not the
+          // font's line box — see textOpticalCenter. Was a flat "+11" that
+          // landed the sun visibly below the word (printed-copy feedback).
+          const eyebrowText = op.eyebrowLines[0];
+          const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
+          drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
+          ctx.font = theme.fonts.eyebrow;
+          op.eyebrowLines.forEach((line, index) => ctx.fillText(
+            line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
+          ));
+          labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        }
         await drawTaxonomy(op.taxonomy, labelX, labelY);
         labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? theme.action.rowGap : 0);
       }
@@ -895,7 +968,11 @@ export function createDocumentReceiptRenderer({
         ));
         labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? theme.action.rowGap : 0);
         if (op.metaParts.length) {
-          const footerY = op.yPx + boxHeight - theme.action.padding - theme.text.codeLineHeight;
+          // Bottom-pinned, but pinned by the WHOLE footer group rather than by
+          // one assumed row — a stacked footer that only reserved one row would
+          // start below the box floor and print over whatever follows.
+          const footerY = boxTop + boxHeight - theme.action.padding
+            - op.metaRowCount * theme.text.codeLineHeight;
           ctx.beginPath();
           ctx.lineWidth = 2;
           ctx.moveTo(labelX, footerY - 7);
@@ -909,17 +986,29 @@ export function createDocumentReceiptRenderer({
           // should be scooting up").
           const scanCenterY = footerY + textOpticalCenter(ctx, theme.fonts.code, op.metaParts[0]);
           const scanIconY = scanCenterY - SCAN_ICON_CENTER_Y;
-          if (op.metaParts.length === 1) {
+          const layout = op.metaLayout;
+          if (layout.mode === 'single') {
             const footerRight = x + contentWidth - theme.action.padding;
-            const groupWidth = 17 + 8 + ctx.measureText(op.metaParts[0]).width;
+            const groupWidth = 17 + 8 + ctx.measureText(layout.lead).width;
             const groupX = labelX + (footerRight - labelX - groupWidth) / 2;
             drawScanIndicator(groupX, scanIconY);
-            ctx.fillText(op.metaParts[0], groupX + 25, footerY);
-          } else {
+            ctx.fillText(layout.lead, groupX + 25, footerY);
+          } else if (layout.mode === 'inline') {
+            // Both halves measured as fitting — the original two-ends layout.
             drawScanIndicator(labelX, scanIconY);
-            ctx.fillText(op.metaParts[0], labelX + 25, footerY);
+            ctx.fillText(layout.lead, labelX + 25, footerY);
             ctx.textAlign = 'right';
-            ctx.fillText(op.metaParts.slice(1).join(' · '), x + contentWidth - theme.action.padding, footerY);
+            ctx.fillText(layout.restLines[0], x + contentWidth - theme.action.padding, footerY);
+          } else {
+            // Too long to share a row. The action label keeps the icon row; the
+            // progress text drops underneath, left-aligned to the same column
+            // rather than right-aligned, so a wrapped second line does not read
+            // as a separate ragged column.
+            drawScanIndicator(labelX, scanIconY);
+            ctx.fillText(layout.lead, labelX + 25, footerY);
+            layout.restLines.forEach((line, index) => ctx.fillText(
+              line, labelX, footerY + (index + 1) * theme.text.codeLineHeight,
+            ));
           }
           ctx.textAlign = 'left';
         }

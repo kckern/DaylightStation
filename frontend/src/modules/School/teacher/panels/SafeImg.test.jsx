@@ -10,4 +10,11 @@ describe('SafeImg', () => {
     expect(screen.queryByAltText('A worksheet')).toBeNull();
     expect(screen.getByText('Preview not available')).toBeTruthy();
   });
+
+  it('gives the fallback its own quiet class, not link styling', () => {
+    render(<SafeImg src="/broken.png" alt="x" />);
+    fireEvent.error(screen.getByAltText('x'));
+    const fallback = screen.getByText('Preview not available');
+    expect(fallback).toHaveClass('teacher-img-fallback');
+  });
 });
