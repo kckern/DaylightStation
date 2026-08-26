@@ -245,7 +245,7 @@ export function createFitnessApiRouter(config) {
   // Filesystem access the router used to do inline now lives behind these
   // injected providers (keeps the API layer free of fs/path).
   const menuMusicProvider = () => {
-    const musicDir = path.join(configService.getMediaDir(), 'apps', 'fitness', 'ux', 'menus');
+    const musicDir = path.join(configService.getMediaDir(), 'fitness', 'ux', 'menus');
     try {
       return nodeFs.readdirSync(musicDir)
         .filter(f => /\.(mp3|m4a|ogg|wav)$/i.test(f))
