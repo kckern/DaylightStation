@@ -656,18 +656,27 @@ ls "$DAYLIGHT_BASE_PATH/data/household/school/plans/learners/"
 
 **Step 2: Write the plan files**
 
+**Targets are DIFFERENT per child** — decided 2026-08-26. They are not a default to
+copy between files:
+
+| Learner | `target` |
+|---|---|
+| the older preschooler (`learner-c` in tests/docs) | **2** |
+| the younger preschooler (`learner-d` in tests/docs) | **1** |
+
 ```yaml
 learnerId: <preschooler-1>
 enrollments: []
 programs:
   - programId: story-time
     corpusId: null
-    target: 2
+    target: 2          # the OTHER preschooler's file gets target: 1
     subject: english
     title: Story time
 ```
 
-**Confirm the target with KC before writing.** `2` is this plan's assumption, not a decision anyone has made, and it may differ per child.
+This is exactly why `target` lives on the enrollment rather than in `school.yml` —
+see the design decisions above.
 
 **Step 3: Restart and verify the agenda**
 
