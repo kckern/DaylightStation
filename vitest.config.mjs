@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, realpathSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // In worktrees, frontend/node_modules may not exist — fall back to the main repo.
@@ -19,46 +19,6 @@ try {
   candidates.push(path.join(mainRepoRoot, 'frontend/node_modules'));
 } catch (_) { /* no node_modules symlink — rely on other candidates */ }
 const frontendNodeModules = candidates.find((p) => existsSync(p)) || frontendNodeModulesLocal;
-
-// ---------------------------------------------------------------------------
-// WHICH RUNNER OWNS A FILE IS DECIDED BY WHAT IT IMPORTS, NOT WHERE IT LIVES.
-//
-// The repo runs three runners over one `*.test.*` namespace. A directory-glob
-// vitest run therefore collects `node:test` files, finds no vitest suite, and
-// reports a FAILURE for a file that passes perfectly under `node --test` —
-// which trains everyone to skim past the gate's failing list, the exact habit
-// that lets a real regression through.
-//
-// This mirrors the ownership rule `scripts/gate-vitest.mjs` already applies
-// (see its header): an explicit `node:test` import means another runner owns
-// the file. Listing such files by hand instead — as this config did — is a
-// list that grows every time someone points vitest at a new directory; there
-// are 60-odd `node:test` files it could hit.
-const NODE_TEST_IMPORT = /from\s+['"]node:test['"]/;
-// Files kept in vitest's population ON PURPOSE, despite being node:test.
-// `pianoGames` fails 3 of 5 real tests under `node --test` (OpponentLadder
-// normalizeSeriesEntry, and a 'Level 1' vs 'Diglett' mismatch). That is a
-// genuine bug. Excluding it would hide the failure rather than fix how it is
-// reported, so it stays visible until the bug is fixed.
-const KEEP_VISIBLE = new Set(['pianoGames.test.mjs']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '_deleteme', '.claude', '.claire', '.worktrees']);
-
-function nodeTestFiles(dir, found = []) {
-  let entries;
-  try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return found; }
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) nodeTestFiles(path.join(dir, entry.name), found);
-    } else if (/\.test\.[cm]?[jt]sx?$/.test(entry.name) && !KEEP_VISIBLE.has(entry.name)) {
-      const full = path.join(dir, entry.name);
-      try {
-        if (NODE_TEST_IMPORT.test(readFileSync(full, 'utf8'))) found.push(full);
-      } catch { /* unreadable — leave it in the population */ }
-    }
-  }
-  return found;
-}
-const nodeTestExcludes = nodeTestFiles(__dirname).map((f) => path.relative(__dirname, f));
 
 // Load React plugin from frontend's node_modules (it's not installed at the root).
 const { default: react } = await import(path.join(frontendNodeModules, '@vitejs/plugin-react/dist/index.mjs'));
@@ -128,10 +88,37 @@ export default {
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
       '**/_deleteme/**',
-      // Every `node:test` file, found by what it imports (see above). This
-      // replaces a hand-maintained list; excluding them fixes the REPORTING,
-      // not the coverage — `npm run test:backend` still runs them all.
-      ...nodeTestExcludes,
+      // `node:test` files, not vitest ones. A directory-glob vitest run
+      // collects them and reports "no test suite found", which reads as a
+      // failure and trains everyone to skim past the gate's failing list —
+      // the exact habit that lets a real regression through. Each one below
+      // was RUN under `node --test` and passes; excluding it here fixes the
+      // reporting, not the coverage. Converting them to vitest is a bigger
+      // change than the noise justifies.
+      //
+      // EVERY entry here must be earned by running the file under
+      // `node --test` FIRST. "No test suite found" is not proof a file is
+      // harmless — see the pianoGames note below, where that assumption
+      // would have buried a real bug.
+      //
+      // Listed file by file, deliberately, rather than globbing
+      // `**/rubiksCube/*.test.mjs`: a directory pattern would also swallow a
+      // future *vitest* file added beside them, silently dropping it from
+      // the gate. Silent exclusion is the failure mode this block exists to
+      // fix, so it must not introduce one.
+      '**/nfcTapIngress.shutdown.test.mjs',
+      '**/rubiksCube/courseCatalog.test.mjs',
+      '**/rubiksCube/physicalCube.test.mjs',
+      '**/rubiksCube/RubiksCubeCourseService.test.mjs',
+      //
+      // NOT EXCLUDED, deliberately: `pianoGames.test.mjs` is a sibling
+      // `node:test` file with the same "no test suite found" symptom, but
+      // under `node --test` it fails 3 of 5 real tests (OpponentLadder
+      // rejects entries built by PianoGamesContainer.recordGame, plus a
+      // 'Level 1' vs 'Diglett' mismatch). That is a genuine bug, not glob
+      // noise — see docs/_wip/bugs/2026-08-26-pianogames-ladder-series-
+      // entries-rejected.md. Excluding it would hide the failure instead of
+      // just fixing how it is reported.
     ],
   },
 };
