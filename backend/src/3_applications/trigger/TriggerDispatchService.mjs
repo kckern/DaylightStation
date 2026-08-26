@@ -231,10 +231,12 @@ export class TriggerDispatchService {
       const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'INVALID_INTENT';
       // An action nothing can map is, from the tap's point of view, exactly a
       // tag nobody registered: nothing happens. So give it the same treatment —
-      // placeholder write, notify_unknown push, debounce — instead of an error
-      // that reaches only the log. Without this the unmappable case was WORSE
-      // than the unregistered one, because this return sits BELOW the
-      // `if (!intent)` branch that does all three.
+      // placeholder write and notify_unknown push — instead of an error that
+      // reaches only the log. Without this the unmappable case was WORSE than
+      // the unregistered one, because this return sits BELOW the `if (!intent)`
+      // branch that does both. (The debounce key is already set before
+      // resolution, so repeat taps collapse either way; refreshing it here just
+      // keeps the two branches identical.)
       //
       // It matters most for an action configured before its handler ships: the
       // arming event is a one-line YAML edit to a reader in a tree shared with
@@ -261,7 +263,14 @@ export class TriggerDispatchService {
 
     // Suppress the Zombie Wake Guard (or any per-target guard) for the duration
     // of the wake-and-load cycle. Fire-and-forget — don't block dispatch on it.
-    this.#suppressGuardForTarget(target, dispatchId);
+    //
+    // CONTENT ONLY. The guard exists because wake-and-load takes ~25s and the
+    // automation would kill the TV mid-wake; nothing else here wakes a target.
+    // Applied unconditionally it fired on the learner refusal too — the living
+    // room's `livingroom-tv` is the one guarded target — so the tap whose whole
+    // promise is that it changes nothing disabled a TV safety automation for 90
+    // seconds. A refusal must not reach Home Assistant.
+    if (response.kind === 'content') this.#suppressGuardForTarget(target, dispatchId);
 
     try {
       const dispatchResult = await dispatchResponse({ ...response, dispatchId }, this.#deps);

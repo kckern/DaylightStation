@@ -772,9 +772,10 @@ describe('TriggerDispatchService — barcode (frozen Response) through handleEve
 // An action nothing can dispatch is, from the tap's point of view, exactly a
 // tag nobody registered: nothing happens. Before this, it was WORSE than that —
 // the UNKNOWN_ACTION return sits below the `if (!intent)` branch, so it skipped
-// the placeholder write, the notify_unknown push AND the debounce set. The
-// arming event for that gap is a one-line YAML edit to a reader, which no test
-// observes and no code comment reaches, so the degradation has to live here.
+// the placeholder write and the notify_unknown push. (Not the debounce: that
+// key is set before resolution, so repeat taps were collapsing either way.)
+// The arming event for that gap is a one-line YAML edit to a reader, which no
+// test observes and no code comment reaches, so the degradation lives here.
 describe('TriggerDispatchService — an unmappable action degrades to the unknown-tag path', () => {
   let haGateway; let tagWriter; let broadcast; let logger; let now;
 
@@ -819,7 +820,7 @@ describe('TriggerDispatchService — an unmappable action degrades to the unknow
     expect(haGateway.callService).toHaveBeenCalledWith('notify', 'mobile_app_kc_phone', expect.any(Object));
   });
 
-  it('debounces the repeat taps, so one tap is one placeholder and one push', async () => {
+  it('one physical tap is one placeholder and one push, however many times HA fires it', async () => {
     const service = makeService(registry());
     await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
     const second = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
@@ -841,5 +842,43 @@ describe('TriggerDispatchService — an unmappable action degrades to the unknow
 
     expect(result.code).toBe('UNKNOWN_ACTION');
     expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+  });
+});
+
+// The guard suppression is scoped to content, so it needs a test that content
+// still gets it — otherwise scoping it reads as removing it.
+describe('TriggerDispatchService — zombie-wake-guard suppression is content-only', () => {
+  const guardedRegistry = (action, extra = {}) => ({
+    nfc: {
+      locations: { livingroom: { target: 'livingroom-tv', action, auth_token: null, notify_unknown: null, defaults: {} } },
+      tags: { '838e6806': { global: { plex: 620707, ...extra }, overrides: {} } },
+    },
+  });
+
+  function makeService(config, haGateway) {
+    return new TriggerDispatchService({
+      config,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService: { execute: vi.fn().mockResolvedValue({ ok: true }) },
+      haGateway,
+      deviceService: { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }), clearContent: vi.fn().mockResolvedValue({ ok: true }) }) },
+      tagWriter: { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
+      broadcast: vi.fn(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  }
+
+  it('disables the guard for a content play, which is what wakes the TV', async () => {
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    await makeService(guardedRegistry('play-next'), haGateway).handleTrigger('livingroom', 'nfc', '838e6806');
+    expect(haGateway.callService).toHaveBeenCalledWith('automation', 'turn_off', {
+      entity_id: 'automation.living_room_tv_zombie_wake_guard', stop_actions: true,
+    });
+  });
+
+  it('leaves it alone for a clear, which wakes nothing', async () => {
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    await makeService(guardedRegistry('clear'), haGateway).handleTrigger('livingroom', 'nfc', '838e6806');
+    expect(haGateway.callService).not.toHaveBeenCalled();
   });
 });
