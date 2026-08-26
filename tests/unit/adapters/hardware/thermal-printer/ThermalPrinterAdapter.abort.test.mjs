@@ -7,6 +7,9 @@
  * already deleted. The printer got headers + footer + cut and no raster: blank
  * paper, auto-cut, while the caller had been told the print was refused.
  *
+ * `print()` resolves `{dispatched, verified, printerState}` (2026-08-25); a
+ * job that timed out is `dispatched: false`, the claim the old boolean made.
+ *
  * NOTE ON MOCKING: the transport is INJECTED via `options.createTransport`,
  * never module-mocked. `escpos-network` is CJS and a module mock is silently
  * bypassed — the adapter then opens a REAL socket and prints. See the header of
@@ -56,7 +59,7 @@ describe('ThermalPrinterAdapter abort-on-timeout contract', () => {
     const adapter = makeAdapter(quietLogger());
     const printing = adapter.print(textJob);
 
-    await expect(printing).resolves.toBe(false);
+    await expect(printing).resolves.toMatchObject({ dispatched: false });
 
     const socket = LateNetwork.instances[0];
     expect(socket.closeCount).toBeGreaterThanOrEqual(1);
@@ -67,7 +70,7 @@ describe('ThermalPrinterAdapter abort-on-timeout contract', () => {
     const adapter = makeAdapter(logger);
     const printing = adapter.print(textJob);
 
-    expect(await printing).toBe(false);
+    expect(await printing).toMatchObject({ dispatched: false });
 
     // The connection finally lands, long after we gave up.
     const socket = LateNetwork.instances[0];
@@ -113,7 +116,7 @@ describe('connect timeout default', () => {
 
       await jest.advanceTimersByTimeAsync(15000);
       await printing;
-      expect(settled).toHaveBeenCalledWith(false);
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ dispatched: false }));
     } finally {
       jest.useRealTimers();
     }
@@ -130,7 +133,7 @@ describe('connect timeout default', () => {
       const printing = adapter.print(textJob).then(settled);
       await jest.advanceTimersByTimeAsync(1000);   // past the 500ms queue delay + 250ms
       await printing;
-      expect(settled).toHaveBeenCalledWith(false);
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ dispatched: false }));
     } finally {
       jest.useRealTimers();
     }
@@ -158,7 +161,7 @@ describe('connect timeout default', () => {
 
       await jest.advanceTimersByTimeAsync(3000);
       await printing;
-      expect(settled).toHaveBeenCalledWith(false);
+      expect(settled).toHaveBeenCalledWith(expect.objectContaining({ dispatched: false }));
     } finally {
       jest.useRealTimers();
     }

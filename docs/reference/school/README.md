@@ -1482,6 +1482,26 @@ screen never becomes indistinguishable from a scan that never arrived.
 > 19,895 ms / 698 MB RSS → 11,080 ms / 124 MB. `thermalPrinter.job.complete`
 > logs real byte counts, and only after the flush.
 
+> **A print reports what the printer knows, not what we hope.** The thermal
+> adapter answers a claim tier — `{dispatched, verified, printerState}` — and
+> asks the printer both before and after every job. The pre-flight rides the
+> job's own socket (this printer refuses concurrent connections) and refuses
+> before a byte goes out when the reply says no paper, cover open, or an error;
+> the post-job read runs on a fresh connection *after* the job's socket is
+> closed, and is how a roll that ran out halfway down a receipt is caught.
+> `ReceiptPrinting.print()` maps `verified` to `printed: true` and reports the
+> in-between case as `reason: 'unverified'` — the bytes went, the printer would
+> not confirm it — so a permanent `issued` fact is never written on a hope.
+>
+> `verified` means *"the printer reports it can print, and reports no fault
+> after the job"* and nothing more: this hardware answers all four `DLE EOT`
+> queries but supports neither `GS r` nor `ESC v`, so there is no end-of-job
+> barrier that could mean "this raster rendered". Cover state comes from
+> `DLE EOT 2` alone — bit 2 of `DLE EOT 1` is the cash-drawer pin, and the live
+> printer sets it while perfectly healthy. A status read that fails is an
+> absence of knowledge, never a fault: it drops `verified` and never blocks a
+> job, because a broken probe must not stop a household from printing.
+
 The personal card is NFC, not a printed barcode. A child taps it on the reader in
 the school room and a **sectioned daily agenda** prints — one block per assigned
 subject, at most one scannable ticket per subject per study day (see

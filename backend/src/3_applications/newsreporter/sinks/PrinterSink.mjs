@@ -48,7 +48,10 @@ export class PrinterSink extends ISink {
     // resolve() may throw on misconfig — let it propagate (the only throw path).
     const printer = this.#printerRegistry.resolve(printerName);
 
-    const ok = await printer.print(job);
+    // The thermal adapter answers a claim tier; anything else may still
+    // answer a plain boolean. `verified` is the only tier that means paper.
+    const outcome = await printer.print(job);
+    const ok = outcome === true || outcome?.verified === true;
     this.#logger.info?.('newsreporter.sink.emit', {
       type: 'printer',
       printer: printerName,

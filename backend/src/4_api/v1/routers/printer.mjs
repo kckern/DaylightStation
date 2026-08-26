@@ -14,6 +14,31 @@ import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
 
 /**
+ * Collapse the adapter's claim tier to the single yes/no these endpoints
+ * report. `verified` is the bar: `dispatched` alone means the bytes left, which
+ * is precisely the claim that let a receipt "succeed" without paper. A plain
+ * boolean is still honoured for any printer surface that answers true/false.
+ * @param {boolean|{dispatched: boolean, verified: boolean}} outcome
+ */
+function printConfirmed(outcome) {
+  return outcome === true || outcome?.verified === true;
+}
+
+/**
+ * Report the tier alongside the yes/no, so an operator can tell "the printer
+ * refused the job" from "the bytes went and the printer would not confirm it".
+ * Those look identical through `success` alone and need different actions.
+ */
+function printTier(outcome) {
+  if (typeof outcome !== 'object' || outcome === null) return {};
+  return {
+    dispatched: outcome.dispatched === true,
+    verified: outcome.verified === true,
+    printerState: outcome.printerState ?? null,
+  };
+}
+
+/**
  * Resolve the adapter for a request. Returns the adapter on success, or
  * sends a 404 response and returns null when the location is unknown.
  * @param {import('#adapters/hardware/thermal-printer/ThermalPrinterRegistry.mjs').ThermalPrinterRegistry} registry
@@ -82,8 +107,9 @@ export function createPrinterRouter(config) {
     const { text, options = {} } = req.body;
     if (!text) return res.status(400).json({ error: 'Text is required' });
     const printJob = adapter.createTextPrint(text, options);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Text printed successfully' : 'Print failed', printJob });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Text printed successfully' : 'Print failed', printJob });
   }));
 
   router.post('/image{/:location}', asyncHandler(async (req, res) => {
@@ -92,8 +118,9 @@ export function createPrinterRouter(config) {
     const { path, options = {} } = req.body;
     if (!path) return res.status(400).json({ error: 'Image path is required' });
     const printJob = adapter.createImagePrint(path, options);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Image printed successfully' : 'Print failed', printJob });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Image printed successfully' : 'Print failed', printJob });
   }));
 
   router.post('/receipt{/:location}', asyncHandler(async (req, res) => {
@@ -102,8 +129,9 @@ export function createPrinterRouter(config) {
     const receiptData = req.body;
     if (!receiptData) return res.status(400).json({ error: 'Receipt data is required' });
     const printJob = adapter.createReceiptPrint(receiptData);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Receipt printed successfully' : 'Print failed', printJob });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Receipt printed successfully' : 'Print failed', printJob });
   }));
 
   router.post('/table{/:location}', asyncHandler(async (req, res) => {
@@ -114,8 +142,9 @@ export function createPrinterRouter(config) {
       return res.status(400).json({ error: 'Table must have either headers or rows with data' });
     }
     const printJob = adapter.createTablePrint(tableData);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Table printed successfully' : 'Print failed', printJob });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Table printed successfully' : 'Print failed', printJob });
   }));
 
   router.post('/print{/:location}', asyncHandler(async (req, res) => {
@@ -123,8 +152,9 @@ export function createPrinterRouter(config) {
     if (!adapter) return;
     const printJob = req.body;
     if (!printJob?.items) return res.status(400).json({ error: 'Valid print object with items array is required' });
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Print job completed successfully' : 'Print failed', printJob });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Print job completed successfully' : 'Print failed', printJob });
   }));
 
   router.get('/feed-button{/:location}', asyncHandler(async (req, res) => {
@@ -142,16 +172,18 @@ export function createPrinterRouter(config) {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const printJob = adapter.setFeedButton(true);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Feed button enabled successfully' : 'Feed button enable failed', enabled: true });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Feed button enabled successfully' : 'Feed button enable failed', enabled: true });
   }));
 
   router.get('/feed-button/off{/:location}', asyncHandler(async (req, res) => {
     const adapter = resolveAdapter(printerRegistry, req, res);
     if (!adapter) return;
     const printJob = adapter.setFeedButton(false);
-    const success = await adapter.print(printJob);
-    res.json({ success, message: success ? 'Feed button disabled successfully' : 'Feed button disable failed', enabled: false });
+    const outcome = await adapter.print(printJob);
+    const success = printConfirmed(outcome);
+    res.json({ success, ...printTier(outcome), message: success ? 'Feed button disabled successfully' : 'Feed button disable failed', enabled: false });
   }));
 
   return router;

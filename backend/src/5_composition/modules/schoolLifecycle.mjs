@@ -786,13 +786,18 @@ export async function createSchoolLifecycle({
       const tempPath = path.join(os.tmpdir(), `school-retained-receipt-${shortId(16)}.png`);
       await fs.writeFile(tempPath, bytes, { flag: 'wx' });
       try {
-        return await receiptPrinter.print({
+        // Callers of this port (`CloseSessionOutcome`, `ReprintResultReceiptArtifact`)
+        // turn a `true` here into a permanent event, so only the adapter's
+        // CONFIRMED tier may become one. `dispatched` alone is the claim that
+        // let a receipt be recorded as issued without paper.
+        const outcome = await receiptPrinter.print({
           items: [{ type: 'image', path: tempPath, width: representation.width ?? 384,
             height: representation.height ?? 1, align: 'left', threshold: 128 }],
           footer: { paddingLines: 3, autoCut: true }, jobName,
           ...(typeof transcript === 'string' ? { transcript } : {}),
           ...(codes ? { codes } : {}),
         });
+        return outcome === true || outcome?.verified === true;
       } finally { await fs.unlink(tempPath).catch(() => {}); }
     },
   } : null;

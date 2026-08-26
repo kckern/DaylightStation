@@ -89,6 +89,74 @@ export const DEFAULT_CONNECT_TIMEOUT_MS = 20000;
 const RESYNC_PAD_BYTES = 512;
 
 /**
+ * The four `DLE EOT n` real-time status queries, in the order they are asked.
+ * Order is load-bearing: replies are one byte each and come back in the same
+ * order, and `#parseStatusResponses` indexes them by position.
+ *
+ * These are REAL-TIME commands — the printer answers them immediately instead
+ * of spooling them as content, which is why it is safe to send them down the
+ * same raw port 9100 socket that carries a job.
+ */
+const STATUS_QUERIES = [
+  Buffer.from([0x10, 0x04, 0x01]), // 1 - printer status
+  Buffer.from([0x10, 0x04, 0x02]), // 2 - offline cause (the ONLY cover authority)
+  Buffer.from([0x10, 0x04, 0x03]), // 3 - error status
+  Buffer.from([0x10, 0x04, 0x04]), // 4 - paper sensor status
+];
+
+/** Gap between successive status queries, and the grace after the last one. */
+const STATUS_QUERY_GAP_MS = 100;
+const STATUS_REPLY_GRACE_MS = 200;
+
+/**
+ * How long to let the printer settle after a job's socket is destroyed before
+ * opening a new one to ask how it went.
+ *
+ * `close()` is a `socket.destroy()`, and this printer refuses new connections
+ * for a spell afterwards — an ~11.5 s lockout was observed 2026-08-25, and a
+ * second connection arriving during a job is how that morning's incident
+ * cascaded. The post-job read therefore never runs inside the `device.open`
+ * callback; it waits out this settle and then connects on its own.
+ */
+export const POST_JOB_STATUS_SETTLE_MS = 1000;
+
+/** Post-job status read attempts (the printer may still be locking us out). */
+const POST_JOB_STATUS_ATTEMPTS = 2;
+
+/**
+ * Blocking conditions read out of a parsed status, or `null` for "nothing to
+ * report" — which includes "we learned nothing".
+ *
+ * A status read that failed, or answered nothing, is an ABSENCE of knowledge,
+ * never a fault: treating silence as a fault would refuse every job the moment
+ * the status path broke, and a broken status read must not stop a household
+ * from printing. Each field is judged only when the query that carries it was
+ * actually answered — replies arrive in query order, so an answer count is
+ * exactly how far down the list we got.
+ */
+function faultsIn(status) {
+  if (!status?.success) return null;
+  const answered = status.answered || 0;
+  if (answered < 1) return null;
+
+  const faults = [];
+  if (status.online === false) faults.push('offline');
+  if (answered >= 2 && status.coverOpen === true) faults.push('cover_open');
+  if (answered >= 3 && status.errors?.length) faults.push(...status.errors);
+  if (answered >= 4 && status.paperPresent === false) faults.push('no_paper');
+  return faults.length ? faults : null;
+}
+
+/**
+ * Whether a status read told us everything we asked. Anything less leaves the
+ * paper sensor (the last query, and the one the 2026-08-25 incident turned on)
+ * unread, so the job cannot be called verified.
+ */
+function statusIsConclusive(status) {
+  return status?.success === true && (status.answered || 0) >= STATUS_QUERIES.length;
+}
+
+/**
  * @typedef {Object} PrinterConfig
  * @property {string} host - Printer IP address
  * @property {number} [port=9100] - Printer port
@@ -134,6 +202,7 @@ export class ThermalPrinterAdapter {
   #printQueue;
   #createTransport;
   #needsResync = false;
+  #statusSettleMs;
 
   /**
    * @param {PrinterConfig} config
@@ -147,6 +216,9 @@ export class ThermalPrinterAdapter {
    *   mocked the socket silently opens a real one and prints. Injecting the
    *   transport is the only reliable way to exercise the write/close contract
    *   without paper coming out of a printer.
+   * @param {number} [options.statusSettleMs] - pause between a job's socket
+   *   being destroyed and the post-job status connection. Defaults to
+   *   `POST_JOB_STATUS_SETTLE_MS`; tests shorten it.
    */
   constructor(config, options = {}) {
     this.#host = config.host;
@@ -160,6 +232,9 @@ export class ThermalPrinterAdapter {
     this.#printQueue = Promise.resolve();
     this.#createTransport = options.createTransport
       || ((host, port) => new Network(host, port));
+    this.#statusSettleMs = Number.isFinite(options.statusSettleMs)
+      ? options.statusSettleMs
+      : POST_JOB_STATUS_SETTLE_MS;
   }
 
   /**
@@ -268,7 +343,14 @@ export class ThermalPrinterAdapter {
   }
 
   /**
-   * Query printer status
+   * Query printer status on a connection of its own.
+   *
+   * Opens, asks the four `DLE EOT` queries, closes. NEVER call this while a job
+   * holds the socket: this printer refuses concurrent connections, and a second
+   * connection arriving mid-job is how the 2026-08-25 incident cascaded. The
+   * print path's own pre-flight rides the job's socket instead (see
+   * `#executePrintJob`), and its post-job read runs only after `device.close()`.
+   *
    * @returns {Promise<{success: boolean, online?: boolean, paperPresent?: boolean, errors?: string[]}>}
    */
   async getStatus() {
@@ -276,81 +358,134 @@ export class ThermalPrinterAdapter {
       return { success: false, error: 'Printer IP not configured' };
     }
 
-    const device = new Network(this.#host, this.#port);
+    const device = this.#createTransport(this.#host, this.#port);
 
     return new Promise((resolve) => {
-      const timeoutId = setTimeout(() => {
-        resolve({ success: false, error: 'Connection timeout' });
-      }, this.#timeout);
+      let settled = false;
+      let timeoutId = null;
+
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        try { device.close(); } catch { /* never connected — nothing to destroy */ }
+        resolve(result);
+      };
+
+      timeoutId = setTimeout(
+        () => finish({ success: false, error: 'Connection timeout' }),
+        this.#timeout,
+      );
 
       device.open(async (error) => {
-        clearTimeout(timeoutId);
-
         if (error) {
-          resolve({ success: false, error: 'Connection failed', details: error.message });
+          finish({ success: false, error: 'Connection failed', details: error.message });
           return;
         }
-
-        try {
-          const responses = [];
-          const queries = [
-            Buffer.from([0x10, 0x04, 0x01]), // Printer status
-            Buffer.from([0x10, 0x04, 0x02]), // Offline status
-            Buffer.from([0x10, 0x04, 0x03]), // Error status
-            Buffer.from([0x10, 0x04, 0x04])  // Paper sensor status
-          ];
-
-          device.on('data', (data) => {
-            responses.push(data);
-          });
-
-          let queryIndex = 0;
-          const sendNextQuery = () => {
-            if (queryIndex < queries.length) {
-              device.write(queries[queryIndex]);
-              queryIndex++;
-              setTimeout(sendNextQuery, 100);
-            } else {
-              setTimeout(() => {
-                device.close();
-                const status = this.#parseStatusResponses(responses);
-                resolve({
-                  success: true,
-                  ...status,
-                  timestamp: nowTs24()
-                });
-              }, 200);
-            }
-          };
-
-          sendNextQuery();
-        } catch (processingError) {
-          device.close();
-          resolve({ success: false, error: 'Query processing error', details: processingError.message });
+        if (typeof device.read !== 'function') {
+          // A write-only transport cannot carry an answer. Say so rather than
+          // parsing an empty response set into a printer that looks broken.
+          finish({ success: false, error: 'Transport cannot read replies' });
+          return;
         }
+        const status = await this.#queryStatusOn(device);
+        finish(status || { success: false, error: 'Query processing error' });
       });
     });
   }
 
   /**
-   * Print a job
+   * Print a job.
+   *
+   * WHAT THE RETURN VALUE CLAIMS — and what it deliberately does not.
+   *
+   * `dispatched` means our bytes reached the socket and the printer was not
+   * reporting a blocking fault when we handed them over. `verified` means that
+   * after the job we asked again and it still reported itself able to print
+   * with nothing wrong — which is how a roll that ran out MID-receipt is
+   * caught, and it is the only tier a caller may turn into a permanent,
+   * cooldown-arming fact.
+   *
+   * `verified` is NOT "this raster rendered". Probed 2026-08-25: this hardware
+   * answers all four `DLE EOT` queries but supports neither `GS r` nor `ESC v`,
+   * so there is NO end-of-job barrier to wait on — nothing the printer will
+   * tell us corresponds to "the paper you asked for came out". The tier means
+   * exactly "the printer reports it CAN print, and reports no fault after the
+   * job". Do not read more into it.
+   *
+   * A status read that fails tells us nothing, and nothing is not a fault: it
+   * drops `verified` to false and never blocks the job.
+   *
    * @param {PrintJob} printJob
-   * @returns {Promise<boolean>}
+   * @returns {Promise<{dispatched: boolean, verified: boolean, printerState: object|null}>}
    */
   async print(printJob) {
     const result = await new Promise((resolve) => {
       this.#printQueue = this.#printQueue.then(async () => {
         try {
           await new Promise(r => setTimeout(r, 500)); // Delay between jobs
-          const res = await this.#executePrintJob(printJob);
-          resolve(res);
+          resolve(await this.#printWithClaimTier(printJob));
         } catch (e) {
           this.#logger.error?.('thermalPrinter.queue.error', { error: e.message });
-          resolve(false);
+          resolve({ dispatched: false, verified: false, printerState: null });
         }
       });
     });
     return result;
+  }
+
+  async #printWithClaimTier(printJob) {
+    const outcome = await this.#executePrintJob(printJob);
+    const preflightState = outcome.printerState ?? null;
+
+    if (!outcome.dispatched) {
+      return { dispatched: false, verified: false, printerState: preflightState };
+    }
+    if (!outcome.statusCapable) {
+      // Nothing on this transport can answer, so nothing here can be verified.
+      return { dispatched: true, verified: false, printerState: preflightState };
+    }
+
+    const post = await this.#readStatusAfterJob();
+    const faults = faultsIn(post);
+    if (faults) {
+      this.#logger.error?.('thermalPrinter.postjob.fault', {
+        target: `${this.#host}:${this.#port}`, faults,
+      });
+      return { dispatched: true, verified: false, printerState: post };
+    }
+    if (!statusIsConclusive(post)) {
+      this.#logger.warn?.('thermalPrinter.postjob.unverified', {
+        target: `${this.#host}:${this.#port}`,
+        error: post?.error ?? null,
+        answered: post?.answered ?? 0,
+      });
+      return { dispatched: true, verified: false, printerState: post ?? null };
+    }
+    this.#logger.info?.('thermalPrinter.postjob.ok', {
+      target: `${this.#host}:${this.#port}`,
+    });
+    return { dispatched: true, verified: true, printerState: post };
+  }
+
+  /**
+   * Ask how the job went — AFTER the job's socket is gone, never during.
+   *
+   * Retried once because the printer may still be refusing connections in the
+   * wake of our own `destroy()`; a refusal is not evidence of a fault, only of
+   * a closed door.
+   */
+  async #readStatusAfterJob() {
+    let last = null;
+    for (let attempt = 1; attempt <= POST_JOB_STATUS_ATTEMPTS; attempt += 1) {
+      await new Promise((r) => setTimeout(r, this.#statusSettleMs));
+      last = await this.getStatus();
+      if (statusIsConclusive(last) || faultsIn(last)) return last;
+      this.#logger.warn?.('thermalPrinter.postjob.status-unreadable', {
+        attempt, error: last?.error ?? null,
+      });
+    }
+    return last;
   }
 
   /**
@@ -581,8 +716,10 @@ export class ThermalPrinterAdapter {
     try {
       this.#logger.info?.('thermalPrinter.testFeedButton.start');
 
-      // Step 1: Disable feed button
-      const disableResult = await this.print(this.setFeedButton(false));
+      // Step 1: Disable feed button. `dispatched` is the right bar here: this
+      // sets a printer mode, it puts no paper out, so there is nothing for the
+      // post-job status tier to add.
+      const disableResult = (await this.print(this.setFeedButton(false))).dispatched;
       if (!disableResult) {
         return { success: false, error: 'Feed button test failed', details: 'Failed to disable feed button' };
       }
@@ -591,7 +728,7 @@ export class ThermalPrinterAdapter {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Step 2: Enable feed button
-      const enableResult = await this.print(this.setFeedButton(true));
+      const enableResult = (await this.print(this.setFeedButton(true))).dispatched;
       if (!enableResult) {
         return { success: false, error: 'Feed button test failed', details: 'Failed to enable feed button' };
       }
@@ -619,13 +756,23 @@ export class ThermalPrinterAdapter {
   // Private Methods
   // ============================================================================
 
+  /**
+   * Open, (optionally) ask the printer whether it can print, write, drain,
+   * close.
+   *
+   * @returns {Promise<{dispatched: boolean, printerState: object|null, statusCapable: boolean}>}
+   *   `statusCapable` reports whether this transport can carry a reply at all,
+   *   so the caller knows whether a post-job read is worth attempting.
+   */
   async #executePrintJob(printJob) {
     const startTime = Date.now();
+    const undispatched = (printerState = null, statusCapable = false) =>
+      ({ dispatched: false, printerState, statusCapable });
 
     try {
       if (!printJob?.items || !Array.isArray(printJob.items)) {
         this.#logger.error?.('thermalPrinter.invalidJob', { message: 'Must have items array' });
-        return false;
+        return undispatched();
       }
 
       const config = {
@@ -639,7 +786,7 @@ export class ThermalPrinterAdapter {
 
       if (!config.host) {
         this.#logger.error?.('thermalPrinter.noHost', { message: 'Printer IP not configured' });
-        return false;
+        return undispatched();
       }
 
       this.#logger.info?.('thermalPrinter.job.start', {
@@ -687,7 +834,7 @@ export class ThermalPrinterAdapter {
           this.#needsResync = true;
           this.#logger.error?.('thermalPrinter.timeout', { timeout: config.timeout });
           try { device.close(); } catch { /* never connected — nothing to destroy */ }
-          resolve(false);
+          resolve(undispatched());
         }, config.timeout);
 
         device.open(async (error) => {
@@ -707,8 +854,42 @@ export class ThermalPrinterAdapter {
 
           if (error) {
             this.#logger.error?.('thermalPrinter.connect.failed', { error: error.message });
-            resolve(false);
+            resolve(undispatched());
             return;
+          }
+
+          // PRE-FLIGHT, ON THE JOB'S OWN SOCKET.
+          //
+          // Asking on a second connection would mean two connects bracketing
+          // every job, and this printer refuses concurrent ones — that is
+          // exactly how the 2026-08-25 morning cascaded. Asking here costs no
+          // extra connection and is the strongest possible pre-condition: it is
+          // the same socket that is about to carry the job.
+          //
+          // Skipped entirely when the transport cannot `read`. A write-only
+          // transport cannot carry an answer, and inventing a fault out of
+          // silence would refuse every job — the failure mode this pre-flight
+          // exists to prevent, not to cause.
+          const statusCapable = typeof device.read === 'function';
+          let preflight = null;
+          if (statusCapable) {
+            preflight = await this.#queryStatusOn(device);
+            const faults = faultsIn(preflight);
+            if (faults) {
+              this.#logger.warn?.('thermalPrinter.preflight.refused', {
+                target: `${config.host}:${config.port}`, faults,
+              });
+              // Not a byte of the job goes out. Refusing here is the whole
+              // point: paper that will not come out must not be recorded as
+              // paper that did.
+              try { device.close(); } catch { /* best effort */ }
+              resolve(undispatched(preflight, true));
+              return;
+            }
+            this.#logger.info?.('thermalPrinter.preflight.ok', {
+              target: `${config.host}:${config.port}`,
+              answered: preflight?.answered ?? 0,
+            });
           }
 
           try {
@@ -797,23 +978,69 @@ export class ThermalPrinterAdapter {
               bytes: commands.length,
               drainMs,
             });
-            resolve(true);
+            resolve({ dispatched: true, printerState: preflight, statusCapable });
 
           } catch (processingError) {
-            // Includes a write that never flushed: the printer may be holding a
-            // half-delivered raster, so the NEXT job leads with a resync pad.
+            // Includes a write that never flushed AND an item that could not be
+            // built at all — see `#processItem`. Either way the printer may be
+            // holding a half-delivered raster, so the NEXT job leads with a
+            // resync pad. Nothing is written for a job that failed to build, so
+            // no blank paper is cut.
             this.#needsResync = true;
             this.#logger.error?.('thermalPrinter.process.error', { error: processingError.message });
             device.close();
-            resolve(false);
+            resolve(undispatched(preflight, statusCapable));
           }
         });
       });
 
     } catch (error) {
       this.#logger.error?.('thermalPrinter.error', { error: error.message });
-      return false;
+      return undispatched();
     }
+  }
+
+  /**
+   * Ask the four `DLE EOT` queries on an ALREADY-OPEN transport.
+   *
+   * @param {{read: Function, write: Function}} device
+   * @returns {Promise<object|null>} parsed status, or null if the exchange
+   *   could not even be attempted.
+   */
+  async #queryStatusOn(device) {
+    return new Promise((resolve) => {
+      try {
+        const responses = [];
+        // `escpos-network` surfaces printer bytes ONLY through `read(cb)`, which
+        // attaches to the underlying socket. Its `on('data')` is the WRAPPER's
+        // own EventEmitter and never re-emits what the socket received —
+        // listening there is why every status read parsed an empty response set
+        // and reported a healthy printer as offline with no paper.
+        device.read((data) => { responses.push(data); });
+
+        let queryIndex = 0;
+        const sendNextQuery = () => {
+          if (queryIndex < STATUS_QUERIES.length) {
+            device.write(STATUS_QUERIES[queryIndex]);
+            queryIndex += 1;
+            setTimeout(sendNextQuery, STATUS_QUERY_GAP_MS);
+            return;
+          }
+          setTimeout(() => {
+            resolve({
+              success: true,
+              ...this.#parseStatusResponses(responses),
+              timestamp: nowTs24(),
+            });
+          }, STATUS_REPLY_GRACE_MS);
+        };
+
+        sendNextQuery();
+      } catch (queryError) {
+        this.#logger.warn?.('thermalPrinter.status.query-failed', { error: queryError.message });
+        resolve(null);
+      }
+    });
   }
 
   async #processItem(item, config) {
@@ -849,7 +1076,15 @@ export class ThermalPrinterAdapter {
           this.#logger.warn?.('thermalPrinter.unknownItemType', { type: item.type });
       }
     } catch (error) {
+      // A JOB THAT CANNOT BUILD ITS CONTENT IS A FAILED JOB.
+      //
+      // This used to log and hand back whatever had accumulated, so a receipt
+      // whose image failed to load still emitted header, padding and AUTO-CUT:
+      // blank paper, cut and dispensed, logged as `job.complete`. Propagating
+      // unwinds before a single byte is written — `#executePrintJob` builds the
+      // whole buffer before it writes — so nothing is printed and nothing is cut.
       this.#logger.error?.('thermalPrinter.processItem.error', { type: item.type, error: error.message });
+      throw error;
     }
 
     return commands;
@@ -913,13 +1148,25 @@ export class ThermalPrinterAdapter {
     return commands;
   }
 
+  /**
+   * A missing or unreadable image THROWS.
+   *
+   * This is the 2026-08-25 blank-paper path in its purest form: the raster
+   * receipt is a single image item pointing at a scratch PNG, so an image that
+   * cannot be loaded means the receipt has no content whatsoever. Returning an
+   * empty buffer here printed the header, the padding and the cut around a hole
+   * where the receipt should have been. There is no partial receipt worth
+   * having — refuse the job instead.
+   */
   async #processImageItem(item) {
     let commands = Buffer.alloc(0);
 
     try {
       if (!item.path || !fileExists(item.path)) {
         this.#logger.error?.('thermalPrinter.image.notFound', { path: item.path });
-        return commands;
+        throw new InfrastructureError(`Print image not found: ${item.path || '(no path)'}`, {
+          code: 'PRINT_IMAGE_MISSING',
+        });
       }
 
       const image = await loadImage(item.path);
@@ -949,6 +1196,7 @@ export class ThermalPrinterAdapter {
 
     } catch (error) {
       this.#logger.error?.('thermalPrinter.image.error', { error: error.message });
+      throw error;
     }
 
     return commands;
@@ -1112,7 +1360,23 @@ export class ThermalPrinterAdapter {
     return out;
   }
 
+  /**
+   * Decode the `DLE EOT` replies.
+   *
+   * INDEXED BY BYTE POSITION, NOT BY CHUNK. Each reply is a single byte and
+   * they come back in the order asked, but TCP is free to coalesce them into
+   * one chunk — indexing the chunk array silently mis-assigns every reply the
+   * moment two land together, which reads a paper answer as a printer answer.
+   *
+   * `answered` is how many of the four queries actually came back; callers use
+   * it to tell "the printer says no paper" from "the printer said nothing".
+   */
   #parseStatusResponses(responses) {
+    const bytes = [];
+    for (const chunk of responses) {
+      for (const byte of chunk) bytes.push(byte);
+    }
+
     const status = {
       online: false,
       feedButtonEnabled: 'unknown',
@@ -1120,32 +1384,32 @@ export class ThermalPrinterAdapter {
       errors: [],
       coverOpen: false,
       cutterOk: true,
+      answered: bytes.length,
       rawResponses: responses.map(r => Array.from(r))
     };
 
-    responses.forEach((response, index) => {
-      if (response.length > 0) {
-        const byte = response[0];
+    // `DLE EOT 1` — printer status. Bit 3 (0x08) is offline.
+    //
+    // BIT 2 (0x04) IS THE CASH-DRAWER PIN, NOT THE COVER. This byte reports the
+    // drawer kick-out connector, and the live printer answers 0x16 — bit 2 SET
+    // — while perfectly healthy with its cover shut. Reading it as cover-open,
+    // as this did, meant any gate built on it would refuse EVERY job on healthy
+    // hardware. Cover state comes from `DLE EOT 2` and nowhere else.
+    if (bytes.length > 0) status.online = (bytes[0] & 0x08) === 0;
 
-        switch (index) {
-          case 0:
-            status.online = (byte & 0x08) === 0;
-            status.coverOpen = (byte & 0x04) !== 0;
-            break;
-          case 1:
-            status.coverOpen = status.coverOpen || (byte & 0x04) !== 0;
-            break;
-          case 2:
-            if (byte & 0x08) status.errors.push('cutter_error');
-            if (byte & 0x20) status.errors.push('unrecoverable_error');
-            if (byte & 0x40) status.errors.push('auto_recoverable_error');
-            break;
-          case 3:
-            status.paperPresent = (byte & 0x60) === 0;
-            break;
-        }
-      }
-    });
+    // `DLE EOT 2` — offline cause. Bit 2 (0x04) is cover open. Sole authority.
+    if (bytes.length > 1) status.coverOpen = (bytes[1] & 0x04) !== 0;
+
+    // `DLE EOT 3` — error cause.
+    if (bytes.length > 2) {
+      const byte = bytes[2];
+      if (byte & 0x08) { status.errors.push('cutter_error'); status.cutterOk = false; }
+      if (byte & 0x20) status.errors.push('unrecoverable_error');
+      if (byte & 0x40) status.errors.push('auto_recoverable_error');
+    }
+
+    // `DLE EOT 4` — paper sensors. Both roll-end bits clear means paper.
+    if (bytes.length > 3) status.paperPresent = (bytes[3] & 0x60) === 0;
 
     return status;
   }
