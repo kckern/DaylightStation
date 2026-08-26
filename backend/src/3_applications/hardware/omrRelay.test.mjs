@@ -10,6 +10,21 @@ import { YamlDayLogDatastore } from '#adapters/persistence/yaml/YamlDayLogDatast
 const NOOP_LOGGER = { warn() {}, info() {}, debug() {}, error() {} };
 const READER_ID = 'study-omr';
 
+/**
+ * Polls until `predicate()` is truthy. Replaces fixed sleeps, which encode a
+ * guess about how long work takes — a guess that is wrong under parallel load
+ * and produces a test that is red for reasons unrelated to the code.
+ */
+async function until(predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await predicate();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`until(): condition not met within ${timeoutMs}ms`);
+    await new Promise((r) => { setTimeout(r, intervalMs); });
+  }
+}
+
 // Minimal in-memory event bus that routes broadcasts to subscribers
 // synchronously — mirroring WebSocketEventBus's producer/subscriber wiring.
 function makeBus() {
@@ -63,15 +78,19 @@ describe('createOmrRelay', () => {
     }
   }
 
-  // Appends are serialized on an internal promise chain; drain the microtask/
-  // timer queue until the file reaches the expected length (or give up).
+  // Appends are serialized on an internal promise chain; poll until the file
+  // reaches the expected length (or give up and hand back whatever is there,
+  // so a failing `expect(...).toHaveLength(n)` reports the real short count
+  // rather than an opaque timeout).
   async function waitForRecords(n, id = READER_ID) {
-    for (let i = 0; i < 50; i++) {
-      const recs = await readRecords(id);
-      if (recs.length >= n) return recs;
-      await new Promise((r) => setTimeout(r, 5));
+    try {
+      return await until(async () => {
+        const recs = await readRecords(id);
+        return recs.length >= n ? recs : null;
+      });
+    } catch {
+      return readRecords(id);
     }
-    return readRecords(id);
   }
 
   beforeEach(async () => {
@@ -111,12 +130,17 @@ describe('createOmrRelay', () => {
     expect(recs[0].marks).toEqual([0, 2048, 0, 16]);
   });
 
-  it('honors a per-reader topic override from config', () => {
+  it('honors a per-reader topic override from config', async () => {
     const bus = wire({ config: { scanners: { [READER_ID]: { topic: 'omr-study' } } } });
     bus.emit(sheetFrame([1]));
 
     expect(bus.broadcasts.some((b) => b.topic === 'omr-study')).toBe(true);
     expect(bus.broadcasts.some((b) => b.topic === 'omr')).toBe(false);
+
+    // The persist subscription still listens on the override topic and queues
+    // a write; drain it before the test ends (afterEach fs.rm race — not in
+    // the original ~10 sleeps; this test had no wait of any kind before).
+    await waitForRecords(1);
   });
 
   it('derives columns/markedColumns from marks[] rather than trusting the wire', async () => {
@@ -134,8 +158,14 @@ describe('createOmrRelay', () => {
     bus.emit(sheetFrame([8, 0, 512]));
     bus.emit(sheetFrame([8, 0, 512])); // reader `R` retransmit, or a re-fed card
 
-    await new Promise((r) => setTimeout(r, 40));
-    const recs = await readRecords();
+    // The dedup decision is made synchronously when the second frame is
+    // emitted (see lastSheet in omrRelay.mjs) — only the disk write is async.
+    // Poll for exactly 1, not >=1: once observed, no further append is ever
+    // scheduled for this pair, so a stale "1" can't hide a later "2".
+    const recs = await until(async () => {
+      const found = await readRecords();
+      return found.length === 1 ? found : null;
+    });
     expect(recs).toHaveLength(1);
   });
 
@@ -171,8 +201,16 @@ describe('createOmrRelay', () => {
     bus.emit({ source: 'omr-relay', type: 'raw', id: READER_ID, hex: '2020', len: 2 });
 
     expect(bus.broadcasts.some((b) => b.payload.event === 'raw')).toBe(true);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(0);
+
+    // `raw` is never queued for persistence (see onPayload in omrRelay.mjs), so
+    // there is no async write to poll for directly. Drive a distinct,
+    // always-persisted sentinel frame through the SAME serialized write chain:
+    // appends land in enqueue order, so once the sentinel is on disk, anything
+    // the raw frame might have queued would already be there too.
+    bus.emit(sheetFrame([2]));
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'sheet', marks: [2] });
   });
 
   // ---- NFC taps (optional Grove NFC unit on the same relay) ----------------
@@ -205,6 +243,11 @@ describe('createOmrRelay', () => {
     bus.emit(nfcFrame('04669c0fcb2a81'));
     const live = bus.broadcasts.find((b) => b.payload.event === 'nfc');
     expect(live.payload.uid).toBe('04669C0FCB2A81');
+
+    // The tap also queues a persist write; drain it before the test ends so
+    // afterEach's fs.rm on dataDir doesn't race an in-flight append
+    // (ENOTEMPTY, observed under load — not in the original ~10 sleeps).
+    await waitForRecords(1);
   });
 
   it('drops a tap with no usable UID rather than broadcasting an unidentifiable one', async () => {
@@ -214,8 +257,14 @@ describe('createOmrRelay', () => {
     bus.emit({ source: 'omr-relay', type: 'nfc', id: READER_ID });
 
     expect(bus.broadcasts.filter((b) => b.payload.event === 'nfc')).toHaveLength(0);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(0);
+
+    // None of these ever reach eventBus.broadcast (bad-UID rejection happens
+    // before that call), so nothing was ever queued to persist. Prove it with
+    // a sentinel through the same write chain rather than a blind sleep.
+    bus.emit(sheetFrame([4]));
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'sheet', marks: [4] });
   });
 
   it('suppresses a repeat of the SAME card inside the dedup window', async () => {
@@ -224,8 +273,15 @@ describe('createOmrRelay', () => {
     const bus = wire({ config: { persistence: { dir: 'omr', dedupWindowMs: 2000 } } });
     bus.emit(nfcFrame());
     bus.emit(nfcFrame());
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(1);
+
+    // As with the sheet dedup case, the suppress decision (lastNfc) is made
+    // synchronously on the second emit — only the single scheduled write is
+    // async. Poll for exactly 1, not >=1.
+    const recs = await until(async () => {
+      const found = await readRecords();
+      return found.length === 1 ? found : null;
+    });
+    expect(recs).toHaveLength(1);
   });
 
   it('records a DIFFERENT card tapped immediately after — dedup is per UID', async () => {
@@ -251,6 +307,10 @@ describe('createOmrRelay', () => {
     const nfcBroadcasts = bus.broadcasts.filter((b) => b.payload?.event === 'nfc');
     expect(nfcBroadcasts).toHaveLength(1);
     expect(nfcBroadcasts[0].payload.uid).toBe('04DB930CCB2A81');
+
+    // One persist write was queued for the surviving tap; drain it before the
+    // test ends (afterEach fs.rm race — not in the original ~10 sleeps).
+    await waitForRecords(1);
   });
 
   it('does not suppress a DIFFERENT card tapped immediately after', async () => {
@@ -263,6 +323,12 @@ describe('createOmrRelay', () => {
       .filter((b) => b.payload?.event === 'nfc')
       .map((b) => b.payload.uid);
     expect(uids).toEqual(['04DB930CCB2A81', '048BA600CC2A81']);
+
+    // Two persist writes were queued (different UIDs, no dedup); drain both
+    // before the test ends. This is the exact ENOTEMPTY race reproduced while
+    // building this fix: afterEach's fs.rm on dataDir collided with one of
+    // these in-flight appends — not in the original ~10 sleeps.
+    await waitForRecords(2);
   });
 
   it('backdates a queued tap by ageMs so it carries the TAP time', async () => {
@@ -287,8 +353,14 @@ describe('createOmrRelay', () => {
     bus.emit({ ...sheetFrame([1]), source: 'food-scale-relay' });
 
     expect(bus.broadcasts).toHaveLength(0);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(0);
+
+    // A foreign source is rejected before eventBus.broadcast is ever called,
+    // so nothing was queued to persist. Sentinel through the write chain
+    // instead of a blind sleep.
+    bus.emit(sheetFrame([8]));
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'sheet', marks: [8] });
   });
 
   it.each([
@@ -302,8 +374,15 @@ describe('createOmrRelay', () => {
     bus.emit({ source: 'omr-relay', type: 'sheet', id: READER_ID, marks });
 
     expect(bus.broadcasts).toHaveLength(0);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(0);
+
+    // normalizeMarks() rejects before eventBus.broadcast is called, so nothing
+    // was ever queued to persist. Sentinel through the write chain instead of
+    // a blind sleep; each case gets a fresh dataDir (beforeEach), so a fixed
+    // sentinel mark is fine across the table.
+    bus.emit(sheetFrame([16]));
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'sheet', marks: [16] });
   });
 
   it('keeps each reader in its own history directory', async () => {
@@ -335,12 +414,10 @@ describe('createOmrRelay', () => {
     // one asserting local-vs-UTC bucketing — silently UTC-dependent, so it failed
     // every evening once local and UTC dates diverged. Discover the file instead.
     const dir = path.join(dataDir, 'omr', READER_ID);
-    let files = [];
-    for (let i = 0; i < 50; i++) {
-      files = await fs.readdir(dir).catch(() => []);
-      if (files.length) break;
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    const files = await until(async () => {
+      const found = await fs.readdir(dir).catch(() => []);
+      return found.length ? found : null;
+    });
     expect(files).toHaveLength(1);
 
     // en-CA renders as YYYY-MM-DD, which is the bucket format.
@@ -390,8 +467,14 @@ describe('createOmrRelay', () => {
     bus.emit({ source: 'omr-relay', type: 'relay-status', id: READER_ID, queued: 2, dropped: 0, truncated: 0 });
 
     expect(bus.broadcasts.some((b) => b.payload.event === 'relay-status')).toBe(true);
-    await new Promise((r) => setTimeout(r, 40));
-    expect(await readRecords()).toHaveLength(0);
+
+    // onPayload only enqueues a relay-status when dropped/truncated > 0, so
+    // nothing was queued here. Sentinel through the write chain instead of a
+    // blind sleep.
+    bus.emit(sheetFrame([32]));
+    const recs = await waitForRecords(1);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ event: 'sheet', marks: [32] });
   });
 
   it('requires an event bus with onClientMessage + subscribe', () => {
@@ -406,7 +489,13 @@ describe('createOmrRelay', () => {
     relay.dispose();
     bus.emit(sheetFrame([1]));
 
-    await new Promise((r) => setTimeout(r, 40));
+    // Unlike the other "never persisted" cases, there is no later sentinel to
+    // wait for: dispose() removes the persist subscription for good (see
+    // `unsubs` in omrRelay.mjs), so this relay instance will never queue
+    // another write. Nothing to poll for — and nothing to race, either: the
+    // test bus's ingest -> broadcast -> subscriber fan-out (makeBus above) is
+    // fully synchronous, so the decision not to persist is already final by
+    // the time emit() returns.
     expect(await readRecords()).toHaveLength(0);
   });
 });
