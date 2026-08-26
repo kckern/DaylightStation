@@ -231,6 +231,19 @@ describe('TodayTab', () => {
     expect(document.querySelector('.teacher-lesson-card__poster-glyph')).toBeInTheDocument();
   });
 
+  // The card's reading order is subject → lesson → locator. The breadcrumb
+  // sat in the header band and out-weighed the title it was there to locate.
+  it('keeps the breadcrumb out of the header band, under the lesson name', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    const crumb = await screen.findByText('United States Regions and States › Midwest');
+    expect(crumb.closest('.teacher-lesson-card__header')).toBeNull();
+    expect(crumb.closest('.teacher-lesson-card__copy')).not.toBeNull();
+    // …and it sits after the title inside that column, not before it.
+    const copy = crumb.closest('.teacher-lesson-card__copy');
+    expect(copy.firstElementChild).toHaveClass('teacher-lesson-card__title');
+  });
+
   it('names the curriculum work a served section credited', async () => {
     schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
       { subject: 'civilization', servedToday: true, next: null,
