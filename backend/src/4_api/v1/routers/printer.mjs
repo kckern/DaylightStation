@@ -12,28 +12,38 @@
 
 import express from 'express';
 import { asyncHandler } from '#system/http/middleware/index.mjs';
+import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
 /**
  * Collapse the adapter's claim tier to the single yes/no these endpoints
- * report. `verified` is the bar: `dispatched` alone means the bytes left, which
- * is precisely the claim that let a receipt "succeed" without paper. A plain
+ * report. `verified` means paper — but so does `dispatched` with a
+ * `verification: 'unreadable'` status: the pre-flight already refuses when the
+ * printer reports it cannot print, so once bytes clear a passing pre-flight,
+ * the printer simply not confirming is the ordinary case on this hardware
+ * (port 9100 gives no per-job acknowledgment), not evidence of failure. Only
+ * a reported fault, or never dispatching at all, is a real failure. A plain
  * boolean is still honoured for any printer surface that answers true/false.
- * @param {boolean|{dispatched: boolean, verified: boolean}} outcome
+ * @param {boolean|{dispatched?: boolean, verified?: boolean, verification?: string}} outcome
  */
 function printConfirmed(outcome) {
-  return outcome === true || outcome?.verified === true;
+  return readPrintOutcome(outcome).printed;
 }
 
 /**
  * Report the tier alongside the yes/no, so an operator can tell "the printer
- * refused the job" from "the bytes went and the printer would not confirm it".
- * Those look identical through `success` alone and need different actions.
+ * refused the job" from "the printer reported a fault" from "the bytes went
+ * and the printer would not confirm it". Those all look identical through
+ * `success` alone (or through `dispatched`/`verified` alone) and need
+ * different actions — `verification`/`faults` is what actually distinguishes
+ * the three tiers.
  */
 function printTier(outcome) {
   if (typeof outcome !== 'object' || outcome === null) return {};
   return {
     dispatched: outcome.dispatched === true,
     verified: outcome.verified === true,
+    verification: outcome.verification ?? null,
+    faults: outcome.faults ?? null,
     printerState: outcome.printerState ?? null,
   };
 }

@@ -1,4 +1,5 @@
 import { ISink } from '#apps/newsreporter/ports/ISink.mjs';
+import { readPrintOutcome } from '#domains/core/utils/printOutcome.mjs';
 
 /**
  * Printer sink (3_applications glue).
@@ -49,15 +50,23 @@ export class PrinterSink extends ISink {
     const printer = this.#printerRegistry.resolve(printerName);
 
     // The thermal adapter answers a claim tier; anything else may still
-    // answer a plain boolean. `verified` is the only tier that means paper.
+    // answer a plain boolean. `verified` means paper, but so does a dispatched
+    // job the printer merely couldn't confirm — port 9100 gives no per-job
+    // acknowledgment, so silence past a passing pre-flight is the ordinary
+    // case, not evidence of failure (see readPrintOutcome). Only a reported
+    // fault, or never dispatching at all, is a real failure.
     const outcome = await printer.print(job);
-    const ok = outcome === true || outcome?.verified === true;
-    this.#logger.info?.('newsreporter.sink.emit', {
+    const { printed, confirmed } = readPrintOutcome(outcome);
+    // Never `error` for a print that went out unconfirmed — that would be the
+    // same mistake, just moved into the sink instead of the adapter reading.
+    // Still visible to operators at `warn` rather than a plain `info`.
+    const level = printed ? (confirmed ? 'info' : 'warn') : 'warn';
+    this.#logger[level]?.('newsreporter.sink.emit', {
       type: 'printer',
       printer: printerName,
-      status: ok ? 'ok' : 'error',
+      status: printed ? 'ok' : 'error',
     });
 
-    return { status: ok ? 'ok' : 'error' };
+    return { status: printed ? 'ok' : 'error' };
   }
 }
