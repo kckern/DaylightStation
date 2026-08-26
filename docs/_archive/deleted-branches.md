@@ -311,3 +311,5 @@ The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/
 ### Still open
 
 `backup/pre-pii-rewrite` (f74979545e) is **deliberately retained**, decision deferred 2026-08-25. No code is lost by deleting it — all six of its substantive commits are on main. What it uniquely holds is the last copy of the repo's pre-rewrite history, which is the only thing that could be diffed against main to confirm the rewrite itself was faithful (never verified end-to-end). Against that: it is also the last local copy of the PII the rewrite existed to remove. Resolve deliberately, not incidentally.
+| 2026-08-26 | school/reading-final | 462582b58 | Safety ref during the living-room reading-session build; main confirmed intact |
+| 2026-08-26 | school/preschool-reading | e81474200 | Preschool daily-reading plan set; fast-forwarded into main |
