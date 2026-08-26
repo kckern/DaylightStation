@@ -345,9 +345,27 @@ const VALIDATORS = {
    */
   done_summary(raw, push) {
     if (!isNonEmptyString(raw.label)) push('done_summary label must be a non-empty string');
-    if (!isNonEmptyStringArray(raw.subjects)) {
-      push('done_summary subjects must be a non-empty array of non-empty strings');
+    if (!Array.isArray(raw.entries) || raw.entries.length === 0) {
+      push('done_summary entries must be a non-empty array');
+      return;
     }
+    raw.entries.forEach((entry, i) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        push(`done_summary entries[${i}] must be a mapping`);
+        return;
+      }
+      if (!isNonEmptyString(entry.subject)) push(`done_summary entries[${i}].subject must be a non-empty string`);
+      if (entry.icon !== undefined && !isNonEmptyString(entry.icon)) {
+        push(`done_summary entries[${i}].icon must be a non-empty string when present`);
+      }
+      if (entry.titles !== undefined && !(Array.isArray(entry.titles) && entry.titles.every(isNonEmptyString))) {
+        push(`done_summary entries[${i}].titles must be an array of non-empty strings when present`);
+      }
+      if (entry.percent !== undefined
+          && (typeof entry.percent !== 'number' || !Number.isFinite(entry.percent))) {
+        push(`done_summary entries[${i}].percent must be a finite number when present`);
+      }
+    });
   },
   passage(raw, push) {
     if (!isNonEmptyString(raw.text)) push('passage text must be a non-empty string');

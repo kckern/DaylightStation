@@ -487,10 +487,13 @@ describe('progress ticks count lessons, not tenths', () => {
     return (tallest?.[1] ?? []).sort((a, b) => a - b);
   }
 
-  it("draws one tick per lesson for a 13-lesson unit — not the old ten", async () => {
+  it("divides the track into one segment per lesson — not the old ten", async () => {
     const xs = await tickXsFor({ label: 'Unit 1', completed: 1, total: 13 });
-    // 13 interior ticks (indices 0..12) plus the closing end cap.
-    expect(xs).toHaveLength(14);
+    // 13 segments need 12 INTERIOR dividers: the unified bar is an outlined
+    // track, so its own border supplies both outer bounds. The old bare-rule
+    // drawing painted a tick at x=0 and a closing end cap as well (14 marks),
+    // which on a boxed track would just be ink on top of the border.
+    expect(xs).toHaveLength(12);
   });
 
   it('puts the filled edge exactly on a tick, which is the whole point', async () => {
@@ -502,7 +505,8 @@ describe('progress ticks count lessons, not tenths', () => {
 
   it('still matches when the total is under the old cap — course progress was right by luck', async () => {
     const xs = await tickXsFor({ label: 'Course', completed: 1, total: 7 });
-    expect(xs).toHaveLength(8);
+    // 7 segments, 6 interior dividers — the track's border closes both ends.
+    expect(xs).toHaveLength(6);
   });
 
   it('drops the ticks entirely rather than drawing a wrong count when they would not be countable', async () => {
@@ -523,7 +527,18 @@ describe('progress ticks count lessons, not tenths', () => {
  * the confusion being fixed.
  */
 describe('the in-progress segment on a progress bar', () => {
-  /** Vertical strokes drawn inside the bar band, by x. */
+  /**
+   * Vertical strokes drawn inside the bar band, by x — and by STROKE WIDTH.
+   *
+   * These used to be told apart by height: the hatch was exactly bar-height
+   * and the ticks overhung it by 2px each side, because the bar was a bare
+   * rule with its ticks standing outside it. The unified bar
+   * (`progressBar.mjs`) draws an outlined TRACK with both marks inside it, so
+   * they are now the same height and height can no longer separate them.
+   * Stroke width can, and is a real part of the design rather than a
+   * side-effect: `progress.tickWidth` (2) is furniture, `progress.hatchWidth`
+   * (3) is texture.
+   */
   async function bandStrokes(progress) {
     const originalMoveTo = CanvasRenderingContext2D.prototype.moveTo;
     const originalLineTo = CanvasRenderingContext2D.prototype.lineTo;
@@ -534,7 +549,9 @@ describe('the in-progress segment on a progress bar', () => {
       return originalMoveTo.call(this, x, y);
     };
     CanvasRenderingContext2D.prototype.lineTo = function patchedLineTo(x, y) {
-      if (pending && Math.abs(pending.x - x) < 0.001 && y > pending.y) segments.push({ x, height: y - pending.y });
+      if (pending && Math.abs(pending.x - x) < 0.001 && y > pending.y) {
+        segments.push({ x, height: y - pending.y, lineWidth: this.lineWidth });
+      }
       return originalLineTo.call(this, x, y);
     };
     try {
@@ -548,8 +565,11 @@ describe('the in-progress segment on a progress bar', () => {
     return segments;
   }
 
-  /** Hatch strokes are exactly bar-height; ticks overhang it by 2px each side. */
-  const hatchOf = (segments) => segments.filter((s) => Math.abs(s.height - theme.result.progressHeight) < 0.001);
+  /** The hatch is the heavier stroke; segment ticks are the lighter one. */
+  const hatchOf = (segments) => segments.filter(
+    (s) => Math.abs(s.height - theme.progress.barHeight) < 0.001
+      && Math.abs(s.lineWidth - theme.progress.hatchWidth) < 0.001,
+  );
 
   it('draws nothing extra when no segment is underway', async () => {
     expect(hatchOf(await bandStrokes({ label: 'Course', completed: 2, total: 7 }))).toEqual([]);
@@ -574,7 +594,7 @@ describe('the in-progress segment on a progress bar', () => {
     // At the theme's pitch a ~76px segment carries a double-digit stripe count,
     // while the segment TICKS on the same bar are one per ~76px.
     expect(hatch.length).toBeGreaterThan(8);
-    expect(theme.result.progressHatchPitch).toBeLessThan(segmentWidth / 4);
+    expect(theme.progress.hatchPitch).toBeLessThan(segmentWidth / 4);
   });
 
   it('refuses to run past the end of the bar', async () => {

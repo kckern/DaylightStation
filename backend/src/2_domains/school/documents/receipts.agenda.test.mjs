@@ -28,7 +28,14 @@ describe('agendaDocument lesson cards', () => {
     // directly beneath already reads "Arts › Hoffman Academy Piano › Unit 3"
     // with the subject's own SVG in the gutter, so an eyebrow repeating its
     // first word costs a row and pushes the title down.
-    expect(lessonCard(build([section()])).eyebrow).toBeNull();
+    //
+    // ABSENT, not null. `lessonAction` omits the key entirely rather than
+    // writing `eyebrow: null`, because the block validator's guard is
+    // `!== undefined` — a literal null reads as "present but not a string" and
+    // fails validateDocument() for the whole agenda. Asserting `toBeNull()`
+    // demanded the exact shape that breaks the sheet, so this test has been
+    // red since that fix landed.
+    expect(lessonCard(build([section()]))).not.toHaveProperty('eyebrow');
   });
 
   it('prints the offer\'s OWN action label, never a wording of its own', () => {

@@ -352,7 +352,18 @@ export function agendaDocument({
       : (isNonEmptyString(section.progressLabel) ? ` — ${section.progressLabel}` : '');
     // Already served today: nothing more to offer for this subject.
     if (section.servedToday) {
-      doneSubjects.push(String(section.subject || '').trim() || 'work');
+      const subject = String(section.subject || '').trim() || 'work';
+      const done = (Array.isArray(section.servedWork) ? section.servedWork : [])
+        .map((work) => (isNonEmptyString(work?.title) ? work.title.trim() : null))
+        .filter(Boolean);
+      doneSubjects.push({
+        subject,
+        // The subject id doubles as its shelf-icon id everywhere else on the
+        // sheet; the renderer degrades to no icon for one with no file.
+        icon: subject,
+        titles: done,
+        ...(Number.isFinite(section.gradePercent) ? { percent: Math.round(section.gradePercent) } : {}),
+      });
       return;
     }
 
@@ -458,13 +469,17 @@ export function agendaDocument({
     blocks.push({
       type: 'done_summary',
       label: nothingLeft ? 'All done today' : 'Done today',
-      subjects: doneSubjects,
+      entries: doneSubjects,
     });
   }
   appendNoteLines(blocks, noteLines);
   const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
   if (footer || hasCalculator) blocks.push(text(footer || 'Enter the calculator code to start.'));
-  if (printedAt) blocks.push({ ...text(printedAt), align: 'center' });
+  // The printed time is not part of the day's work — it answers "is this still
+  // today's?", asked when a stray sheet turns up later. A rule above it says
+  // so: everything over the line is the child's day, the line under it is the
+  // sheet's own metadata.
+  if (printedAt) blocks.push({ ...text(printedAt), align: 'center', rule: 'above' });
   return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
 }
 
