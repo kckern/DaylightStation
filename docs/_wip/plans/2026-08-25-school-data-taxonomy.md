@@ -63,7 +63,7 @@ flattens a genuinely hierarchical id into names like:
 
 ```
 artifacts/issued/receipt%2Fses_hmSsHlJR%2Fout%3Ases_hmSsHlJR.png
-artifacts/issued/agenda%2Ffelix%2F2026-08-26T01%3A56%3A59.577Z.png
+artifacts/issued/agenda%2Flearner-one%2F2026-08-26T01%3A56%3A59.577Z.png
 ```
 
 The ids are fine; the storage mapping is what is ugly. Hazard beyond aesthetics: the
