@@ -13,6 +13,82 @@ program was required.
 Sentence Ladder is the first code-registered program. Its canonical id is
 `sentence-ladder`; `language` is a deprecated read/write compatibility alias.
 
+## Story time — a program with no course at all
+
+`story-time` is the first program whose obligation is a plain daily COUNT:
+"finish N stories today". There is no curriculum behind it — no units, no
+sequence, no gate, no grade — so it is the clearest example of what the program
+lane is for. An entry in `assignment.programs[]` with `courseId: null` is
+projected by `appendAssignedProgramEntries` into a `cadence: 'daily'` agenda
+entry, and `StoryTimeProgramLauncher` owns the evidence. Nothing in
+`agenda.mjs`, `completion.mjs` or `AgendaStatusBoard` knows it exists; they read
+`doneToday` as they already did.
+
+```yaml
+programs:
+  - programId: story-time
+    corpusId: null
+    target: 2          # per learner — a four-year-old's count is not a sibling's
+    subject: english
+    title: Story time
+```
+
+**The target lives on the enrollment, never in `school.yml`.** How many stories
+a child owes is a per-learner teaching decision; a household-wide default would
+force two children onto one number. `validateStoryTimeEnrollment`
+(`#domains/school/storyTime.mjs`) applies a default of 2, and refuses anything
+outside 1–20 — an unmeetable target is a config typo that would otherwise leave
+a tile permanently red with no error anywhere.
+
+The program is **never terminal**: tomorrow it asks again. That is what
+separates it from a `cadence: 'once'` program, which leaves the agenda when its
+launcher reports terminal. Reading past the target is never a penalty — a third
+story reads `3 of 2 stories` and stays done.
+
+`corpusId: null` makes `SetAssignments`' dedupe key `story-time\0`, so a second
+story-time enrollment for the same learner is refused.
+
+### The evidence log shards by STUDY DAY, not by UTC date
+
+`YamlReadingLogStore` writes
+`household/school/records/reading/{learnerId}/{studyDay}.yml`, where `studyDay`
+is the household's own 4am→4am key from `studyDayForInstant` — stamped by
+`RecordStoryRead` at the moment the story finishes, not derived at read time.
+
+This is a deliberate departure from `SurfaceProgramLauncher`, which reads
+DoNow's dispatch log — a log it does not own, sharded by UTC date — and
+therefore has to read TWO shards and filter them with `isSameStudyDay`: a
+5:01pm PDT event is already tomorrow in UTC and lands in tomorrow's shard.
+Owning this store means the shard key IS the key the agenda asks about, so
+`doneToday` is a single file read with no timezone reconciliation. Never
+compute the key with `toISOString().slice(0,10)`.
+
+It lives under `records/`, not `runtime/`: a finished story is durable evidence
+a report card is reconstructed from, and is never pruned by a cooldown or a
+session close.
+
+`listForDay` fails open — a missing OR corrupt file both answer `[]`. An
+unreadable log is a different thing: the launcher returns `error: true` rather
+than a false zero, so the agenda reports the program unavailable and the day
+indeterminate. Showing a child who read three books as owing three books would
+be worse than admitting the log could not be read.
+
+### Recording a read by hand
+
+Evidence normally arrives when the audiobook FINISHES (a story abandoned two
+minutes in is not a story read). `school ops read` is the manual-correction
+path — a book read on a lap, a mis-scanned sticker:
+
+```bash
+node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681
+node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681 --apply
+```
+
+Unlike every other `ops` command it writes to the reading log directly rather
+than through the API, so it works with no server running — which is when a
+parent is most likely to need it. Because there is no event bus, it records the
+read without the on-screen ceremony a real living-room finish gets.
+
 ## Operations CLI
 
 The complete operational contract is in [School operations](./operations.md).
