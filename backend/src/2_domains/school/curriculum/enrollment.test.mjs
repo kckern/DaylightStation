@@ -172,6 +172,23 @@ describe('dated module schedules', () => {
     expect(enrollment.moduleOrder).toEqual(['w35', 'w36', 'w37']);
   });
 
+  it('snapshots the school-day schedule, deep-copied like progression', () => {
+    const schedule = { daysOfWeek: [1, 2, 3, 4, 5], except: [{ from: '2026-12-21', to: '2027-01-01' }] };
+    const enrollment = createCourseEnrollment({ courseId: 'atlas', units, policy, schedule, rng: () => 0 });
+    expect(enrollment.schedule).toEqual(schedule);
+    // A syllabus edited after enrollment must not reach into a plan a learner
+    // is already living in — the same reason progression is cloned.
+    schedule.daysOfWeek.push(6);
+    schedule.except[0].to = '2027-06-01';
+    expect(enrollment.schedule.daysOfWeek).toEqual([1, 2, 3, 4, 5]);
+    expect(enrollment.schedule.except[0].to).toBe('2027-01-01');
+  });
+
+  it('adds no schedule key to an enrollment that declares none', () => {
+    const enrollment = createCourseEnrollment({ courseId: 'atlas', units, policy, rng: () => 0 });
+    expect(enrollment).not.toHaveProperty('schedule');
+  });
+
   it('adds no moduleSchedule to a course that is not dated', () => {
     const enrollment = createCourseEnrollment({
       courseId: 'atlas', units: [{ unitId: 'a.1', courseId: 'atlas', module: 'midwest', sequence: 1 }],

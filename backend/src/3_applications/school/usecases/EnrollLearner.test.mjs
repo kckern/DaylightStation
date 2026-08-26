@@ -34,6 +34,11 @@ const TIMED_SYLLABUS = {
     normalBlocks: 1, urgentBlocks: 3, urgencyLeadDays: 10,
   },
 };
+const SCHEDULED_SYLLABUS = {
+  ...SYLLABUS,
+  syllabusId: 'elements-weekdays',
+  schedule: { daysOfWeek: [1, 2, 3, 4, 5], except: [{ from: '2026-12-21', to: '2027-01-01' }] },
+};
 const DATED_WORK = {
   work: 'cfm',
   progression: { mode: 'dated_modules', module_order: 'fixed', lesson_order: 'shuffle_once' },
@@ -70,6 +75,7 @@ function harness({ assignment = null, open = [] } = {}) {
           if (id === 'elements-lower') return SYLLABUS;
           if (id === 'elements-upper') return SYLLABUS_NO_PROFILE;
           if (id === 'elements-fourth-of-july') return TIMED_SYLLABUS;
+          if (id === 'elements-weekdays') return SCHEDULED_SYLLABUS;
           return null;
         },
       },
@@ -110,6 +116,18 @@ describe('EnrollLearner', () => {
     expect(entry.passing).toBe(60);
     expect(entry.enrollment.schema).toBe('school.course-enrollment/v2');
     expect(entry.enrollment.moduleOrder[0]).toBe('foundations');
+  });
+
+  it('snapshots the syllabus school-day schedule onto the enrollment', async () => {
+    await h.useCase.execute({ learnerId: 'learner-a', syllabusId: 'elements-weekdays', enrolledBy: 'kckern', pin: '7410' });
+    const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.enrollment.schedule).toEqual(SCHEDULED_SYLLABUS.schedule);
+  });
+
+  it('leaves an unscheduled enrollment without a schedule at all', async () => {
+    await h.useCase.execute({ learnerId: 'learner-a', syllabusId: 'elements-lower', enrolledBy: 'kckern', pin: '7410' });
+    const entry = h.saved[0].courses.find((c) => c.courseId === 'elements');
+    expect(entry.enrollment).not.toHaveProperty('schedule');
   });
 
   it('scopes materialization to the syllabus course only', async () => {
