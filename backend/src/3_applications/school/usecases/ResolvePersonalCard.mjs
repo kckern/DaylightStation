@@ -49,7 +49,23 @@ const DEFAULT_AGENDA_COOLDOWN_MINUTES = 15;
  * drifts.
  */
 export function agendaArtifactId({ learnerId, issuedAt }) {
-  return `agenda/${learnerId}/${issuedAt}`;
+  return `agenda/${learnerId}/${compactInstant(issuedAt)}`;
+}
+
+/**
+ * `2026-08-26T01:56:59.577Z` -> `20260826T015659577Z` (ISO basic).
+ *
+ * A full ISO instant carries colons, and a colon is illegal in a filename on
+ * Windows and awkward in Finder — today only whole-id percent-encoding hid
+ * that, which is the very thing being unwound. Basic format keeps the exact
+ * instant and the chronological sort while staying filename-legal everywhere.
+ * A value that is not a recognisable instant passes through untouched rather
+ * than being mangled: an unparseable timestamp is a caller bug, and silently
+ * rewriting it would bury it.
+ */
+function compactInstant(issuedAt) {
+  const text = String(issuedAt ?? '');
+  return /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(text) ? text.replace(/[-:.]/g, '') : text;
 }
 
 /**
