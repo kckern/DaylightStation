@@ -284,3 +284,27 @@ Every open branch was audited against main by **content**, not commit hash — t
 | 2026-08-25 | piano-retroarch-tile | be9d8e3b2e | Misleading name — tip was FKB intent-URI encoding + a camera cold-archive pipeline; the RetroArch tile sat deeper in history. All three workstreams are on main (`frontend/src/lib/fkb.js` is a superset, `ReolinkRecordingAdapter.mjs` + `BuildDetectionLedger.mjs` scheduler-wired, `RetroArchAdapter.mjs` present). |
 | 2026-08-25 | feature/sheetmusic-learn-listen | d83f9ef636 | Learn-mode "drive axis" (play just the practice range, looping). Main solved the same problem **one day earlier** via `1e1c8501ef` ("Learn state matrix — wave-3 B") with the opposite resolution: range + loop OFF plays the whole piece. `LearnDriveControl.jsx` / `loopTimeline.js` exist nowhere in main. The range-playback *idea* survives as a possible feature request against the current Learn state matrix; the code was ~1749 commits behind an architecture that lacked `learnRange.js` / `RangeHandleLayer.jsx` / `countIn.js`, so it was unmergeable. |
 | 2026-08-25 | wip/stall-frame-liveness | 082ebec4c5 | Frame-counter stall liveness + two-phase suspicion, parked "preserved for port". The port happened: main's `12a41e059c` ports it onto the ledger-era controller, and `stallVerdict.js` diffs to zero lines against the WIP version. The lifeplan commits beneath it landed via the 2026-07-10 Life app usability remediation. |
+
+### What was actually lost
+
+History, not code. Nothing that runs existed only on these branches. Recorded per branch so a future reader doesn't have to re-derive it:
+
+- **`feat/teacher-workspace-ia`** — nothing. Files were byte-identical to main. The only content unique to the branch was the *un-scrubbed* version of test fixtures (real learner names) that main had already fixed. Deleting it removed a PII regression, not work.
+- **`feature/fitness-chart-perf-and-log-basis`** and **`piano-retroarch-tile`** — nothing. Both were fully represented on main; their ~970-file merge conflicts were the tree-wide PII scrub, not code divergence. What is gone is a pre-rewrite snapshot of the whole repo at those points.
+- **`feature/glossika-school-integration`** — an early draft of the thinking. The code became Sentence Ladder on main and went further. Unique to the branch was the older wording of the design and handoff docs (2026-08-23, back when the domain said "banks" instead of "bands"). Main carries its own newer files at those same paths.
+- **`feature/sheetmusic-learn-listen`** — one design idea, not the code. Main's Learn mode plays the *whole piece* when loop is off; this branch played *only the practice range*, looping. That is a real behavioral difference and remains a legitimate feature request against the current Learn state matrix — but the implementation was unmergeable, sitting ~1749 commits behind an architecture that had no `learnRange.js` / `RangeHandleLayer.jsx` / `countIn.js`.
+- **`feature/obd-relay`**, **`feat/obd-relay-hardening`**, **`fix/chess-opponent-telemetry`**, **`wip/stall-frame-liveness`** — nothing. Main held a superset in every case.
+
+**Confidence boundary.** For the two ~8000-commit branches, "nothing lost" comes from checking each named workstream against main by content — not from diffing every commit file-by-file. Solid for the features those branches were about; not a proof across the entire tree.
+
+**Recovery window.** Deleting a branch does not destroy its commits. They stay reachable via the reflog until git garbage-collects unreachable objects (~30 days by default). Every hash above is recorded, so `git checkout -b <name> <hash>` works within that window.
+
+### Why the conflict counts were misleading
+
+The 2026-08-16 PII history rewrite changed every commit hash in the repo. Branches predating it report thousands of false "unmerged" commits and hundreds of false conflicts — scrubbed-vs-unscrubbed content, not real divergence. **Judge such branches by content, never by hash or by `git merge-tree` conflict count.** A branch that "conflicts in 981 files" may be a strict subset of main.
+
+The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/sheetmusic-learn-listen` were both the same work built a second time, days or hours apart, because the local branch never saw what had already landed. See the sync-with-deployed-source warning in `CLAUDE.local.md`.
+
+### Still open
+
+`backup/pre-pii-rewrite` (f74979545e) is **deliberately retained**, decision deferred 2026-08-25. No code is lost by deleting it — all six of its substantive commits are on main. What it uniquely holds is the last copy of the repo's pre-rewrite history, which is the only thing that could be diffed against main to confirm the rewrite itself was faithful (never verified end-to-end). Against that: it is also the last local copy of the PII the rewrite existed to remove. Resolve deliberately, not incidentally.
