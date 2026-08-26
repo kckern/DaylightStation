@@ -60,6 +60,31 @@ export function createSchoolSelfServiceRouter({
     }));
   }
 
+  // The same card, opened from a link instead of six digits — a grown-up
+  // looking at what a learner's panel would draw, without minting anything.
+  //
+  // A SEPARATE ROUTE, NOT A FLAG ON `/resolve`. A `?preview=1` on the live
+  // route would put "is this real?" inside the one request path a child's code
+  // travels, where a caller's typo or a stray query string becomes a question
+  // about whether a session opens. The split is the same one `/resolve` and
+  // `/act` already draw, for the same reason: the guarantee lives in which
+  // door you came through.
+  //
+  // A GET, because it is neither a secret nor a mutation: the segment names a
+  // learner and a subject and grants nothing. `no-store` all the same — a
+  // cached preview of a plan that has since moved on is a lie about a child's
+  // day.
+  //
+  // Never a 4xx for a bad link: an unreadable payload is a 200 carrying a
+  // sentence, exactly as an unknown code is. The panel has one way of saying
+  // "that didn't work", and it is words.
+  if (resolveAccessCode?.preview) {
+    router.get('/preview/:link', asyncHandler(async (req, res) => {
+      const card = await resolveAccessCode.preview({ link: req.params.link });
+      res.set('Cache-Control', 'no-store').json(card);
+    }));
+  }
+
   // Learner-safe artwork for the contextual card. This is intentionally not
   // under `/teacher`: it exposes only the published course cover, never
   // curriculum answers, assignments or history.

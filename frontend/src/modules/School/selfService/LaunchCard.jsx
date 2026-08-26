@@ -149,7 +149,7 @@ function ProgressRows({ rows }) {
   );
 }
 
-function CardAction({ action, onAction, onExit, busy, actionRef = null }) {
+function CardAction({ action, onAction, onExit, busy, inert = false, actionRef = null }) {
   const role = action.role ?? (action.kind === 'exit' ? 'secondary' : 'primary');
   return (
     <button
@@ -158,11 +158,55 @@ function CardAction({ action, onAction, onExit, busy, actionRef = null }) {
       className={`school-selfservice-card__action is-${role}`}
       data-kind={action.kind}
       data-testid={`selfservice-action-${action.kind}`}
-      onClick={() => (action.kind === 'exit' ? onExit() : onAction(action))}
-      disabled={busy}
+      // Belt AND braces. `disabled` is what a grown-up sees and what stops a
+      // tap; the guard is what stops a synthetic click, a stray Enter on a
+      // focused button, or a future prop that forgets to pass `disabled`
+      // through. Neither alone is worth a printer waking up on a preview.
+      onClick={() => {
+        if (inert) return;
+        return action.kind === 'exit' ? onExit() : onAction(action);
+      }}
+      disabled={busy || inert}
+      aria-disabled={inert || undefined}
     >
       {action.label}
     </button>
+  );
+}
+
+/**
+ * The preview band.
+ *
+ * A grown-up may open this card on the Portal itself — the same 1280×800 glass
+ * a child stands in front of all day — so "this is not live" has to be
+ * unmissable at a glance and from across the room, not a subtitle. It sits
+ * ABOVE the card rather than inside it, in the chrome, because it is not part
+ * of what the child would have seen.
+ *
+ * It also carries the ONLY live control on the screen. Every button inside the
+ * card is disabled, including the card's own exit, so the way out has to live
+ * somewhere that is unambiguously not the card.
+ */
+function PreviewBanner({ card, onExit }) {
+  const learner = card?.context?.learner?.displayName ?? card?.learner ?? null;
+  const subject = card?.context?.taxonomy?.subject?.label ?? card?.subject ?? null;
+  const scope = [learner, subject].filter(Boolean).join(' · ');
+  return (
+    <div className="school-selfservice-card__preview" data-testid="selfservice-preview-banner">
+      <div className="school-selfservice-card__preview-copy">
+        <strong>Preview</strong>
+        <span>Nothing here is live — no work opens, nothing prints.</span>
+        {scope && <span className="school-selfservice-card__preview-scope">{scope}</span>}
+      </div>
+      <button
+        type="button"
+        className="school-selfservice-card__preview-leave"
+        data-testid="selfservice-preview-leave"
+        onClick={onExit}
+      >
+        Leave preview
+      </button>
+    </div>
   );
 }
 
@@ -178,18 +222,26 @@ function CardAction({ action, onAction, onExit, busy, actionRef = null }) {
  *   is a FRACTION rather than this component owning a duration of its own —
  *   two places believing different things about how long a child has is
  *   exactly the drift worth designing out.
+ * @param {boolean} [props.preview] - a grown-up is looking at this card from a
+ *   deep link rather than a child having typed a code. The card is drawn
+ *   exactly as the panel would draw it — that is the point — but every action
+ *   on it is disabled, and a band above it says so. The card itself also
+ *   arrives marked (`card.preview`), so either source turns the mode on and a
+ *   caller cannot accidentally render a preview card live.
  */
 export default function LaunchCard({
   card,
   view = 'card',
   sentence = null,
   busy = false,
+  preview = false,
   confirmRemainingMs = null,
   confirmTotalMs = null,
   onAction,
   onConfirm,
   onExit,
 }) {
+  const isPreview = preview === true || card?.preview === true;
   const actionFocusRef = useRef(null);
   // 0 → 1 as the window runs out; `null` when there is nothing to draw. A
   // total of 0 (or missing) yields null rather than a division by zero.
@@ -220,7 +272,9 @@ export default function LaunchCard({
       className="school-selfservice-card"
       data-testid="selfservice-card"
       data-status={card?.presentation?.status ?? 'ready'}
+      data-preview={isPreview ? 'true' : undefined}
     >
+      {isPreview && <PreviewBanner card={card} onExit={onExit} />}
       <div className="school-selfservice-card__shell">
         <aside className="school-selfservice-card__art">
           <CourseArtwork course={taxonomy.course} subject={subject} />
@@ -260,9 +314,16 @@ export default function LaunchCard({
                       onAction={onAction}
                       onExit={onExit}
                       busy={busy}
+                      // In a preview EVERY action is dead, the card's own exit
+                      // included: the way out is the band above, which is
+                      // unambiguously not part of what a child would see.
+                      inert={isPreview || action.inert === true}
                     />
                   ))}
-                  {!hasExit && (
+                  {/* A preview never synthesises an exit — the band carries it,
+                      and a second "Close" inside the card would be the one
+                      live-looking button on a dead card. */}
+                  {!hasExit && !isPreview && (
                     <CardAction
                       action={{ kind: 'exit', label: SYNTHESISED_EXIT, role: 'secondary' }}
                       actionRef={actions.length === 0 ? actionFocusRef : null}

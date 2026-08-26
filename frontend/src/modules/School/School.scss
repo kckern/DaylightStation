@@ -1776,6 +1776,55 @@
   // crumbs it divides.
   li > span[aria-hidden='true'] { opacity: 0.5; }
 }
+// PREVIEW. A grown-up may open a launch card on the Portal itself — the same
+// glass a child stands in front of all day — so "this is not live" has to be
+// readable from across the room, not a subtitle. Warning-yellow, full width,
+// above the card and outside it: it is chrome around the card, never part of
+// what a child would have seen.
+//
+// The dimmed card underneath is deliberate. Disabled buttons alone are a detail
+// you have to walk up to; a card that is visibly held back reads as inert at a
+// glance, and the band explains why.
+.school-selfservice-card__preview {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  padding: 0.75rem clamp(1rem, 2.5vw, 1.5rem);
+  border: 2px solid #b78103; border-radius: 16px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(214, 158, 15, 0.22) 0 14px,
+    rgba(214, 158, 15, 0.10) 14px 28px
+  );
+  color: var(--school-fg);
+}
+.school-selfservice-card__preview-copy {
+  display: flex; align-items: baseline; gap: 0.6rem 1rem; flex-wrap: wrap; min-width: 0;
+  strong {
+    font-size: 1.35rem; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  span { font-size: 1.05rem; font-weight: 650; }
+}
+.school-selfservice-card__preview-scope {
+  padding: 0.15rem 0.6rem; border-radius: 999px;
+  background: var(--school-surface-2); color: var(--school-muted);
+}
+.school-selfservice-card__preview-leave {
+  flex: 0 0 auto; min-height: 56px; padding: 0 1.4rem;
+  border: 1px solid var(--school-border); border-radius: 12px;
+  background: var(--school-surface); color: var(--school-fg);
+  font-size: 1.05rem; font-weight: 700; cursor: pointer; touch-action: manipulation;
+  &:focus-visible { outline: 3px solid var(--school-fg); outline-offset: 3px; }
+}
+// Every control inside a preview card is dead, so the card reads dead: held
+// back from the band above it, which is the one thing on screen at full
+// strength.
+.school-selfservice-card[data-preview='true'] .school-selfservice-card__shell {
+  opacity: 0.82;
+  box-shadow: none;
+  border-style: dashed;
+}
+
 .school-selfservice-card__shell {
   flex: 1 1 auto; min-height: 0;
   display: grid; grid-template-columns: minmax(12rem, 15.5rem) minmax(0, 1fr);

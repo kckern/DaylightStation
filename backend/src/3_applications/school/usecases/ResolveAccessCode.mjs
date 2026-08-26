@@ -53,6 +53,7 @@ import { PlanProjection } from '../PlanProjection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
 import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
+import { decodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
 import { nextMove } from './offerSession.mjs';
@@ -279,6 +280,84 @@ export class ResolveAccessCode {
       return {
         card: this.#faulted('resolve', { learnerId, subject, error: error?.message ?? String(error) }),
         resolution: null,
+      };
+    }
+  }
+
+  /**
+   * The same card, opened from a link instead of six digits.
+   *
+   * A grown-up testing the panel had to mint a real code first: print an
+   * agenda, read the digits, type them before they expired. This is that,
+   * without the paper — and deliberately WITHOUT the token.
+   *
+   * IT IS NOT A SECOND SURFACE, and that is the entire design. It skips
+   * exactly one step — the registry lookup that turns six digits into a
+   * learner and a subject — and then runs `#resolve` and `#projectionFor`, the
+   * same two calls `resolve` makes, in the same order, with the same options.
+   * A preview assembled any other way would answer questions about a card the
+   * house does not actually draw, which is worse than having no preview.
+   *
+   * IT MINTS NOTHING. `#resolve` is the read-only resolver this whole file
+   * exists to provide (see the header), so a preview cannot open a session,
+   * append an event, arm a cooldown or issue an artifact. It never touches
+   * `#tokens` at all — there is no code to look up and none is created.
+   *
+   * AND ITS BUTTONS CANNOT FIRE. Every action comes back marked `inert`, and
+   * the card marked `preview`. That marking is belt to the braces: `/act`
+   * takes a `code` and recomputes the card from it, so a preview — which has
+   * no code — has no way to reach a use case even if a client tried. The
+   * marking is what lets the panel SHOW the real buttons, disabled, so a
+   * grown-up can see which offer a card makes.
+   *
+   * @param {object} args
+   * @param {string} args.link - the opaque payload segment from the URL
+   * @returns {Promise<object>} the wire card, `ok: false` with a sentence when
+   *   the link cannot be read. Never throws — same rule as `resolve`.
+   */
+  async preview({ link } = {}) {
+    const decoded = decodeLaunchPreviewLink(link);
+    if (!decoded.ok) {
+      this.#logger.info?.('school.selfservice.preview.rejected', { reason: decoded.reason });
+      return {
+        ok: false, preview: true, reason: decoded.reason,
+        learner: null, subject: null, title: null,
+        sentence: decoded.sentence, actions: [],
+      };
+    }
+    const { learnerId, subject, continueToday } = decoded.payload;
+    try {
+      const resolution = await this.#resolve({ learnerId, subject, continueToday });
+      const options = {
+        mediaSurface: this.#mediaSurface,
+        bankPrintable: this.#bankPrintable(resolution.unit),
+        now: this.#clock(),
+      };
+      const projection = await this.#projectionFor({ resolution, learnerId, subject, options });
+      this.#logger.info?.('school.selfservice.preview.resolved', {
+        learnerId, subject, kind: resolution.kind,
+        unitId: resolution.unit?.unitId ?? null,
+        offered: projection.actions.map((a) => a.kind),
+      });
+      return {
+        ok: true,
+        preview: true,
+        learner: learnerId,
+        subject,
+        title: resolution.unit?.title ?? null,
+        sentence: projection.presentation.message,
+        ...projection,
+        presentation: { ...projection.presentation, preview: true },
+        actions: projection.actions.map((action) => ({ ...action, inert: true })),
+      };
+    } catch (error) {
+      this.#logger.error?.('school.selfservice.preview.failed', {
+        learnerId, subject, error: error?.message ?? String(error),
+      });
+      return {
+        ok: false, preview: true, reason: 'not_answering',
+        learner: learnerId, subject, title: null,
+        sentence: NOT_ANSWERING.sentence, actions: [],
       };
     }
   }

@@ -42,6 +42,7 @@ import { moduleLaunchAllowed } from './catalog/certification.js';
 import Keypad from './selfService/Keypad.jsx';
 import AgendaStatusBoard from './status/AgendaStatusBoard.jsx';
 import LaunchCard from './selfService/LaunchCard.jsx';
+import LaunchCardPreview from './selfService/LaunchCardPreview.jsx';
 import ScanCeremony from './selfService/ScanCeremony.jsx';
 import { useSelfService, DEFAULT_IDLE_TIMEOUT_SECONDS } from './selfService/useSelfService.js';
 import { useScanCeremony } from './selfService/useScanCeremony.js';
@@ -222,6 +223,13 @@ export function parseSchoolPath(urlBase) {
   // from the learner launch below: no learner can be reconstructed from a
   // deep link and no grant is accepted here.
   if (seg[0] === 'sentence-ladder-preview' && seg[1]) return { section: `sentence-ladder-preview:${seg[1]}`, materialPath: [] };
+  // Teacher-only look at a launch card, on the same terms. The segment is an
+  // opaque payload naming a learner and a subject; the backend decodes it and
+  // resolves the card through the panel's own read-only resolver, so nothing is
+  // minted and nothing is granted. Carried through byte-for-byte — this parser
+  // never re-encodes it, because a payload that arrived unreadable must reach
+  // the backend unreadable and come back with a sentence saying so.
+  if (seg[0] === 'launch-preview' && seg[1]) return { section: `launch-preview:${seg[1]}`, materialPath: [] };
   // Sentence Ladder authority is memory-only. A direct URL or reload must
   // return to School rather than reconstructing a learner-scoped launch.
   return empty;
@@ -240,6 +248,7 @@ function sectionPathFor(urlBase, section) {
   if (section === 'chess') return `${urlBase}/chess`;
   if (section === 'rubiks-cube') return `${urlBase}/rubiks-cube`;
   if (section.startsWith('sentence-ladder-preview:')) return `${urlBase}/sentence-ladder-preview/${encodeURIComponent(section.slice(24))}`;
+  if (section.startsWith('launch-preview:')) return `${urlBase}/launch-preview/${encodeURIComponent(section.slice(15))}`;
   if (section.startsWith('sentence-ladder:')) return `${urlBase}/sentence-ladder/${encodeURIComponent(section.slice(16))}`;
   return urlBase;
 }
@@ -685,6 +694,10 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   const courseId = section?.startsWith('sentence-ladder:') ? section.slice(16) : null;
   const previewCourseId = section?.startsWith('sentence-ladder-preview:') ? section.slice(24) : null;
   const languageCourseId = courseId ?? previewCourseId;
+  // The opaque payload from a `/launch-preview/<payload>` link. Never decoded
+  // here — the backend owns the codec, and a client that also decoded it would
+  // be a second opinion about what a link means.
+  const launchPreviewLink = section?.startsWith('launch-preview:') ? section.slice(15) : null;
   const sectionLabel = !section ? null
       : subjectId ? subjectLabel(subjectId)
       : section === 'library' ? 'Library'
@@ -695,6 +708,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
               : section === 'typing' ? 'Typing'
                 : section === 'geography' ? 'Geography'
                   : section === 'rubiks-cube' ? 'Rubik’s Cube'
+                  : launchPreviewLink ? 'Launch card preview'
                   : languageCourseId ? (courses.find((c) => c.id === languageCourseId)?.label ?? 'Language')
                     : section;
 
@@ -783,6 +797,15 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             inside it — a scan can land whether the panel is locked or open,
             and this must render either way. */}
         {ceremony.current && <ScanCeremony {...ceremony.current} onDismiss={ceremony.clear} />}
+        {/* Launch-card preview (teacher-only deep link). A sibling of the lock
+            branch below, not inside it: the Portal is the screen most worth
+            checking a card on and it is always locked, while a parent's browser
+            never is — the same link has to open on both. It renders instead of
+            the keypad because `section` is set, and it can mint nothing, so a
+            locked panel is not weakened by being able to draw it. */}
+        {launchPreviewLink && !active && (
+          <LaunchCardPreview link={launchPreviewLink} onExit={goHome} />
+        )}
         {/* LOCKED PANEL (design §3). The keypad IS the resting state; a
             resolved code puts the launch card over it. Runners are rendered
             below, OUTSIDE this branch, so on-screen work mounted from a code —

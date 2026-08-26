@@ -47,7 +47,9 @@ sequential work.
 ## Preview versus issuance
 
 `GET /learners/:id/agenda` and `/agenda/preview` are side-effect free. They do
-not mint sessions, tokens, access codes, or paper records.
+not mint sessions, tokens, access codes, or paper records. So is the launch-card
+preview link, which opens the panel's own card for a learner and subject without
+a code — see [operations](./operations.md#preview-a-launch-card).
 
 Issuing/printing an agenda is the write path. For each offered curriculum
 subject, `BuildAgenda` creates or reuses a work session and mints a
