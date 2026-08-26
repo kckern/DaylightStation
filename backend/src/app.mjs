@@ -4032,16 +4032,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // a printer start up two rooms away is worse than nothing happening.
   const learnerActions = createLearnerActions({ logger: rootLogger.child({ module: 'trigger-learner' }) });
   if (schoolLifecycle.useCases?.resolvePersonalCard) {
-    learnerActions.register('print-agenda', async ({ learnerId }) => {
-      const result = await schoolLifecycle.useCases.resolvePersonalCard.execute({ learnerId });
-      // `print_failed` is the one status that tells the child to scan again —
-      // ResolvePersonalCard REPORTS it rather than throwing, so nothing else
-      // would release the 30s trigger debounce and the retry it asked for would
-      // be swallowed with the handler never invoked. Every other status is a
-      // finished answer: a printed agenda and a cooldown suppression both WANT
-      // the lockout, and an unknown learner is no more known on the next tap.
-      return result?.status === 'print_failed' ? { ...result, retryable: true } : result;
-    });
+    // The handler lives in `learnerCardActions.mjs` rather than inline here so
+    // its contract — the retryable `print_failed`, and the `agenda-suppressed`
+    // acknowledgement that is a cooldown tap's only feedback — is testable
+    // without booting the app.
+    const { makePrintAgendaHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    learnerActions.register('print-agenda', makePrintAgendaHandler({
+      resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
+      eventBus,
+      logger: rootLogger.child({ module: 'trigger-learner' }),
+    }));
   } else {
     rootLogger.warn('trigger.learner.school-unwired', { reason: 'no resolvePersonalCard' });
   }
