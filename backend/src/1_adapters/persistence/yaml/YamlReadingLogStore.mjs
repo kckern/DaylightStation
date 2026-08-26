@@ -14,6 +14,13 @@
  * reads a UTC-sharded log it does not own and therefore has to read two shards
  * and filter. Owning the store is what buys the single read.
  *
+ * IDEMPOTENT ON `pickId`, per study day. The caller mints one id per finish and
+ * may send it more than once — a retried request, a remounted player. Since
+ * `doneToday` is `rows.length >= target`, a duplicate row is a duplicate BOOK,
+ * so a repeat returns the row already on disk and writes nothing. A `null`
+ * pickId is NOT a key and never dedupes: two hand-recorded reads of the same
+ * book are two reads.
+ *
  * NEVER THROWS ON READ. A missing OR corrupt file both answer `[]` — "no
  * evidence on record". That is the fail-open direction for a *reader*: the
  * worst a bad file can do is show a child as owing stories they already
@@ -190,7 +197,10 @@ export class YamlReadingLogStore extends IReadingLogStore {
       title: orNull(row.title),
       tagUid: orNull(row.tagUid),
       location: orNull(row.location),
+      pickId: orNull(row.pickId),
     };
+    // `orNull` is what makes '' not a key: only a real string dedupes.
+    const pickId = stored.pickId;
     // Serialized like the sibling YAML stores: this is a read-modify-write, and
     // two books finishing seconds apart in the same room must not race one row
     // out of the file — nor side-file the same corrupt shard twice.
@@ -216,6 +226,30 @@ export class YamlReadingLogStore extends IReadingLogStore {
         });
       }
       this.#warnUnrecognised(learnerId, studyDay, loaded);
+
+      // IDEMPOTENT ON pickId. One finish, one row — a retried POST or a player
+      // that remounts and fires `ended` twice must not credit a child twice for
+      // one book, because `doneToday` is `rows.length >= target`.
+      //
+      // Scanned over `rows`, not `entries`: an entry we could not parse cannot
+      // carry a matching key, and must still ride through the rewrite untouched.
+      // Free here — the day's rows are already in hand inside the write chain,
+      // so this costs no extra read.
+      //
+      // Scoped to this shard, which IS the scope: the same story finished again
+      // tomorrow is a new obligation, not a repeat of today's.
+      if (pickId) {
+        const already = loaded.rows.find((entry) => entry.pickId === pickId);
+        if (already) {
+          this.#logger.debug?.('school.reading-log.duplicate-pick', {
+            learnerId, studyDay, pickId, file: loaded.file,
+          });
+          // Return what is ON DISK, not what was handed in, and write nothing
+          // at all — so a repeat cannot disturb the shard in any way.
+          return already;
+        }
+      }
+
       // `entries`, not `rows`: an entry we could not parse is still an entry we
       // are not allowed to delete. It rides through the rewrite verbatim.
       const existing = loaded.status === 'corrupt'
