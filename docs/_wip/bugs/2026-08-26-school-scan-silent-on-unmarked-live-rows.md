@@ -1,7 +1,6 @@
 # School scan — a fed sheet produced no ceremony and no sound — 2026-08-26
 
-**Status:** diagnosed; F-1–F-4 implemented and tested, not yet deployed
-(F-5 outstanding — see §7)
+**Status:** F-1–F-5 implemented, tested, and deployed
 **Window:** 2026-08-26 08:32–08:35 PDT (`15:32`–`15:35Z`)
 **Surfaces:** `backend/src/5_composition/modules/schoolPrintScanConsumer.mjs`,
 `backend/src/3_applications/school/documents/ResolveCardScan.mjs`,
@@ -286,13 +285,13 @@ one place that asserts a ceremony was emitted — so a future early return canno
 silently opt out of the guarantee the way this one did. This is the durable fix;
 F-1 and F-2 close today's instance.
 
-### F-5 (secondary) — an entirely blank card is also silent
+### F-5 (secondary) — an entirely blank card was initially silent, now routes correctly
 
-If a card with a live record is fed with **no** marks anywhere,
-`answeredRows.size === 0`, so `unknownCard` and `deadCard` (both of which
-require answers) are skipped, `silentLiveRecords` is not populated (it also
-requires `answeredRows.size > 0`), and `results` is empty — the same silent exit.
-Lower-frequency, same class of defect, and F-4 would cover it.
+**Original claim (now superseded):** If a card with a live record is fed with **no** marks anywhere, `answeredRows.size === 0`, so `unknownCard` and `deadCard` (both of which require answers) are skipped, `silentLiveRecords` is not populated (it also requires `answeredRows.size > 0`), and `results` is empty — the same silent exit.
+
+**What is actually true:** The residual defect was never silence after F-3/F-4 landed. Empirically verified on 2026-08-26: a blank card with a live record emitted `scan-not-recorded` plus two `warn` lines. The real defect was misleading copy: `scan-not-recorded` renders as "Already done / I read that sheet, but there was nothing new to mark" — factually false for a card nobody filled in.
+
+**Fix, now shipped (commits `568c0f058`, `71229f604`):** `ResolveCardScan.mjs` dropped the `answeredRows.size > 0` precondition from its `silentLiveRecords` push, so a blank card now routes into the `scan-rows-unmarked` ceremony instead. That ceremony's copy already names the rows to fill in ("Your new questions are rows {start}–{end}. Fill them in, then scan again.") and rings the `error` tone.
 
 ---
 
