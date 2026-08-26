@@ -788,17 +788,24 @@ through the per-unit override store) live on the per-course drill-in page.
 transposed — courses as rows, students as columns — with a legend and an
 unassigned-course count. The dashboard is the Today digest plus a compact
 backlog-count strip; the Action queue owns the item-level review/print/quiz
-lists. Expanding a learner on the dashboard shows the whole day as a grid of
-roughly square lesson cards — done work with its score as green-check/red-cross
+lists. Every learner's roster card carries a one-tap link to that day's printed
+agenda — the child's paper is what a parent reaches for before deciding whether
+to open anything else, so it sits on the card, not behind the disclosure.
+Expanding a learner shows the whole day as a grid of
+lesson cards — done work with its score as green-check/red-cross
 marks plus a percentage, planned-but-unstarted offers, deferred/blocked
 subjects, and unplanned extras — built by joining the digest row with the
 learner's agenda preview (one lazy, non-recording read per expand) through the
-same day-join the day record uses. Each graded card carries small worksheet
-(PDF) and result-receipt icons whose links ride the digest itself: the digest
-derives artifact URLs from session state at read time, so the dashboard never
-pays a per-session document fetch to show them. Tapping an icon opens the
-archived artifact in an overlay above the dashboard; the drill-in also offers
-the printed-agenda preview and one link into the full day record. Destructive flows are two-tap arm→confirm everywhere (enrollment
+same day-join the day record uses. The grid waits for that read rather than
+growing rows under a teacher mid-scan, and every card slot — the 2:3 poster
+frame above all — is reserved at full size before its content exists, so
+nothing on the grid moves or resizes once art loads or fails. Each graded card
+carries small worksheet (PDF) and result-receipt icons whose links ride the
+digest itself: the digest derives artifact URLs from session state at read
+time, so the dashboard never pays a per-session document fetch to show them.
+There is exactly one destination behind each icon, so there is no interstitial:
+the icon IS the artifact. The drill-in also offers one link into the full day
+record. Destructive flows are two-tap arm→confirm everywhere (enrollment
 changes included), the curriculum-exceptions form starts neutral, and the
 period-close control lives with the closed periods below the live report
 card.
@@ -1638,8 +1645,12 @@ unit — is grouped by its `subject` (the nine-subject wall order, then
 `other`); only a subject with at least one assigned entry gets a block, and
 each block offers **at most one** scannable action, drawn with its subject's
 shelf icon — the same nine SVGs the School home grid renders
-(`frontend/src/modules/School/home/icons/`), shared rather than copied. A subject already served today prints its header with a
-`done today` mark and its progress so far — no code. Otherwise it prints one
+(`frontend/src/modules/School/home/icons/`), shared rather than copied. A
+subject already served today gets no header at all: every finished subject is
+collected into a single **Done today** strip — a rule, a tick, and the subject
+names — printed once at the foot of the sheet, below the work still open. A
+tally of what is already behind the child never outranks what is in front of
+them. Otherwise the subject prints one
 line naming the next thing to do (or, if everything assigned in that subject is
 locked, the lock's own remedy) with a QR beside it. "Served today" comes from
 either a **passing** curriculum outcome recorded this study day, or a program

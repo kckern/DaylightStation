@@ -12,7 +12,7 @@ describe('BLOCK_TYPES', () => {
     expect(BLOCK_TYPES).toEqual([
       'rich_text', 'math', 'plot', 'geometry', 'asset',
       'question', 'answer_space', 'omr_response',
-      'media_action', 'scan_action', 'result_summary',
+      'media_action', 'scan_action', 'result_summary', 'done_summary',
       'passage', 'figure', 'inset', 'list',
       'wordbank', 'matching', 'cloze', 'short_answer', 'essay',
       'divider', 'spacer', 'page_break',

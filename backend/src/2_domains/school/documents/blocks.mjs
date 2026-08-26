@@ -338,6 +338,17 @@ const VALIDATORS = {
       }
     }
   },
+  /**
+   * The agenda's finished-work tally: one strip naming every subject already
+   * served today. Receipt-only — it exists to keep completed subjects off the
+   * page's headline stack, a problem no Letter document has.
+   */
+  done_summary(raw, push) {
+    if (!isNonEmptyString(raw.label)) push('done_summary label must be a non-empty string');
+    if (!isNonEmptyStringArray(raw.subjects)) {
+      push('done_summary subjects must be a non-empty array of non-empty strings');
+    }
+  },
   passage(raw, push) {
     if (!isNonEmptyString(raw.text)) push('passage text must be a non-empty string');
     else if (REQUIRE_MACRO.test(raw.text)) push(requireError('passage text'));

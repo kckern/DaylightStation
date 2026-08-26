@@ -119,7 +119,9 @@ describe('the v2 agenda — math and language together, one card', () => {
 
     await h.scanCard();
     const tapC = h.lastReceiptText();
-    expect(tapC).toMatch(/MATH.*done today/i);
+    // A served subject reads off the foot-of-sheet tally — "Done today" and
+    // then the subject names — not a per-subject heading above the open work.
+    expect(tapC).toMatch(/done today[\s\S]*MATH/i);
     const offeredC = h.tokensInLastReceipt();
     expect(offeredC).toHaveLength(1); // ONE token: math served, language is not
     expect(offeredC[0].printed).toMatch(/on the portal/i);

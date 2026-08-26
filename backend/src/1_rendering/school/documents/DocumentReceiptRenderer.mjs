@@ -46,7 +46,7 @@ const DEFAULT_ICON_DIR = fileURLToPath(
 );
 
 /** Blocks this target can print. Anything else is refused by name. */
-const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action', 'result_summary']);
+const SUPPORTED = new Set(['rich_text', 'math', 'question', 'media_action', 'scan_action', 'result_summary', 'done_summary']);
 
 export class ReceiptBlockError extends Error {
   constructor(message, blockType) {
@@ -372,6 +372,18 @@ export function createDocumentReceiptRenderer({
       + (descriptionLines.length ? theme.action.rowGap : 0)
       + descriptionLines.length * theme.action.descriptionLineHeight;
     const mainBand = Math.max(codeBlockHeight, titleColumn);
+    // WHERE THE TITLE SITS INSIDE THE BAND.
+    //
+    // The QR-and-code column is a fixed 168px; the title column is however
+    // tall the words are. With a description under it the two are close enough
+    // that top-alignment reads as one row. Without one — the common case — a
+    // one-line title top-aligned against a full-height QR leaves the entire
+    // bottom half of the band empty, and the card reads as a picture with a
+    // caption stuck to its ceiling. Centring the short column in the tall one
+    // splits that slack above and below, which is what makes the pairing read
+    // as deliberate. Only ever a DOWNWARD offset (the band is the max of the
+    // two), so this can never push the title out of its own box.
+    const titleOffset = descriptionLines.length ? 0 : Math.max(0, (mainBand - titleColumn) / 2);
     const progressBand = progressRows.length ? theme.action.rowGap + progressHeight : 0;
     // 14 is the footer rule and its breathing room, matching the draw.
     const footerBand = metaRowCount
@@ -391,6 +403,7 @@ export function createDocumentReceiptRenderer({
       unitIndent,
       descriptionLines,
       descriptionIndent,
+      titleOffset,
       metaLines,
       metaParts,
       metaLayout,
@@ -441,6 +454,28 @@ export function createDocumentReceiptRenderer({
       case 'math':
         ops.push(await mathOp(block.tex, block.display !== false));
         break;
+
+      case 'done_summary': {
+        const done = theme.done;
+        // Measured in the face it is DRAWN in — the label is bold, the
+        // subjects are not, and wrapping against the wrong one overruns.
+        ctx.font = theme.fonts.code;
+        const subjectIndent = done.markSize + done.markGap;
+        const subjectLines = wrapTight(
+          ctx,
+          block.subjects.map((subject) => String(subject).toUpperCase()).join('  ·  '),
+          contentWidth - subjectIndent,
+        );
+        ops.push({
+          kind: 'done-summary',
+          label: String(block.label).toUpperCase(),
+          subjectLines,
+          subjectIndent,
+          heightPx: done.ruleWidth + done.ruleGap + done.labelHeight
+            + subjectLines.length * done.subjectLineHeight + done.padBottom,
+        });
+        break;
+      }
 
       case 'question':
         ops.push(textOps(ctx, `${block.number}.`, { font: theme.fonts.label, lineHeight: theme.text.bodyLineHeight }));
@@ -733,6 +768,37 @@ export function createDocumentReceiptRenderer({
         } else {
           op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
         }
+        continue;
+      }
+      if (op.kind === 'done-summary') {
+        const done = theme.done;
+        ctx.fillStyle = theme.colors.text;
+        ctx.fillRect(x, op.yPx, contentWidth, done.ruleWidth);
+        const labelY = op.yPx + done.ruleWidth + done.ruleGap;
+        // The tick sits on the label's OPTICAL centre, not the centre of its
+        // line box — same correction the unit marker makes. A `textBaseline:
+        // 'top'` draw leaves several pixels of ascent above the cap height, so
+        // splitting the line box hangs the mark visibly high.
+        const markY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, op.label)
+          - done.markSize / 2;
+        ctx.save();
+        ctx.strokeStyle = theme.colors.text;
+        ctx.lineWidth = done.markStrokeWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x + done.markInset, markY + done.markSize * 0.55);
+        ctx.lineTo(x + done.markSize * 0.42, markY + done.markSize - done.markInset);
+        ctx.lineTo(x + done.markSize - done.markInset, markY + done.markInset);
+        ctx.stroke();
+        ctx.restore();
+        ctx.font = theme.fonts.eyebrow;
+        ctx.textAlign = 'left';
+        ctx.fillText(op.label, x + op.subjectIndent, labelY);
+        ctx.font = theme.fonts.code;
+        op.subjectLines.forEach((line, index) => ctx.fillText(
+          line, x + op.subjectIndent, labelY + done.labelHeight + index * done.subjectLineHeight,
+        ));
         continue;
       }
       if (op.kind === 'math') {
@@ -1042,7 +1108,9 @@ export function createDocumentReceiptRenderer({
         );
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
-      let labelY = op.lesson ? bandY : boxTop + theme.action.padding;
+      // `titleOffset` centres a description-less title column against the
+      // taller QR column; it is 0 whenever a description is present.
+      let labelY = op.lesson ? bandY + (op.titleOffset ?? 0) : boxTop + theme.action.padding;
       if (op.unitLines?.length) {
         // Marker on the first line only — it labels the run, and repeating it
         // per wrapped line would read as a bulleted list of units.

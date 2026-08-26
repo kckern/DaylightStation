@@ -86,11 +86,16 @@ const FIXTURE_BLOCK = {
     correctCount: 4,
     totalCount: 5,
   },
+  done_summary: {
+    type: 'done_summary',
+    label: 'Done today',
+    subjects: ['civilization', 'scripture'],
+  },
 };
 
 /** No Letter renderer exists at all (any theme) — see measure.mjs's own comment. */
 const NO_RENDERER_YET = new Set(['plot', 'geometry']);
-const RECEIPT_ONLY = new Set(['result_summary']);
+const RECEIPT_ONLY = new Set(['result_summary', 'done_summary']);
 
 describe('BLOCK_TARGET_SUPPORT matrix — every entry validates and renders under createWorkbookTheme() (F1)', () => {
   const types = Object.keys(BLOCK_TARGET_SUPPORT);

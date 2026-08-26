@@ -107,8 +107,8 @@ describe('TodayTab', () => {
     expect(await screen.findByRole('link', { name: /Open the full day record/i })).toBeInTheDocument();
     expect(screen.getByText('Illinois')).toBeTruthy();
     expect(screen.getByText('United States Regions and States')).toBeTruthy();
-    expect(await screen.findByRole('button', { name: /Peek at the worksheet/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Peek at the result receipt/i })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /Open the worksheet/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open the result receipt/i })).toBeInTheDocument();
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
     expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Print selected worksheets/i)).toBeNull();
@@ -128,18 +128,30 @@ describe('TodayTab', () => {
     expect(within(grid).getByText('Fractions Intro')).toBeInTheDocument();
   });
 
-  it('peeking at an artifact opens it in place, from digest data alone', async () => {
+  it('an artifact icon IS the artifact — no interstitial, from digest data alone', async () => {
+    // There is one destination behind each icon, so there is nothing for a
+    // modal to disambiguate: the worksheet icon is the PDF link itself, and
+    // the receipt icon opens the PNG. Neither costs a session fetch.
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     mount(<TodayTab kids={KIDS} />);
     fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
-    fireEvent.click(await screen.findByRole('button', { name: /Peek at the worksheet/i }));
-    const dialog = await screen.findByRole('dialog', { name: /Worksheet — Illinois/i });
-    expect(within(dialog).getByRole('link', { name: /Open worksheet/i })).toHaveAttribute('href', '/issued/illinois.pdf');
-    fireEvent.click(within(dialog).getByRole('button', { name: /Close preview/i }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Worksheet — Illinois/i })).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /Peek at the result receipt/i }));
-    const receiptDialog = await screen.findByRole('dialog', { name: /Result receipt — Illinois/i });
-    expect(within(receiptDialog).getByRole('link', { name: /Open receipt/i })).toHaveAttribute('href', '/issued/illinois-receipt.png');
+    expect(await screen.findByRole('link', { name: /Open the worksheet/i }))
+      .toHaveAttribute('href', '/issued/illinois.pdf');
+    expect(screen.getByRole('link', { name: /Open the worksheet/i })).toHaveAttribute('target', '_blank');
+    fireEvent.click(screen.getByRole('button', { name: /Open the result receipt/i }));
+    expect(open).toHaveBeenCalledWith('/issued/illinois-receipt.png', '_blank', 'noopener');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it('the agenda is one tap from the roster card, outside the accordion', async () => {
+    mount(<TodayTab kids={KIDS} />);
+    const link = await screen.findByRole('link', { name: /Open Learner A's printed agenda/i });
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link.getAttribute('href')).toContain('/learners/learner-a/agenda/preview');
+    // Not behind the disclosure: it is there before anything is expanded.
+    expect(screen.queryByTestId('lesson-grid')).not.toBeInTheDocument();
   });
 
   it('a failed agenda read degrades to recorded work, never a dead drill-in', async () => {

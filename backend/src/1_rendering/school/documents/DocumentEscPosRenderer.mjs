@@ -36,7 +36,7 @@
 import { activeProgressPosition } from '#domains/school/progressRows.mjs';
 
 /** Blocks that can go on tape. Anything else is refused BY NAME, never dropped. */
-const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action', 'result_summary']);
+const SUPPORTED = new Set(['rich_text', 'scan_action', 'media_action', 'result_summary', 'done_summary']);
 
 export class ReceiptBlockError extends Error {
   constructor(message, blockType) {
@@ -111,6 +111,20 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
             ...(heading ? { style: { bold: true }, size: { width: 2, height: 2 } } : {}),
           });
         }
+        continue;
+      }
+
+      if (block.type === 'done_summary') {
+        // The canvas receipt draws a checked strip; here the same truth is
+        // words, for the same reason the result summary's marks are words —
+        // a ✓ is whatever codepage the printer happens to be in, and tofu
+        // where a tick should be is worse than no tick at all.
+        items.push({ type: 'space', lines: 1 });
+        items.push({ type: 'text', content: block.label, align: 'left', style: { bold: true } });
+        items.push({
+          type: 'text', align: 'left',
+          content: block.subjects.map((subject) => String(subject).toUpperCase()).join(' · '),
+        });
         continue;
       }
 

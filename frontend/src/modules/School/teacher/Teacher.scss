@@ -283,35 +283,54 @@
 }
 .teacher-roster__entry { position: relative; }
 .teacher-roster__disclosure { position: absolute; top: 20px; right: 12px; color: #66543c; pointer-events: none; }
+// The day's paper, one tap from the roster — a real link, so it can be
+// middle-clicked or long-pressed like any other.
+.teacher-roster__agenda-link { position: absolute; top: 8px; right: 32px; z-index: 1; text-decoration: none; }
 .teacher-roster__chevron { width: 14px; height: 14px; display: block; transition: transform 140ms ease;
   &--open { transform: rotate(90deg); }
 }
 .teacher-roster__details { padding: 8px 10px 14px; display: grid; gap: 12px; justify-items: start; }
 .teacher-roster__plan-notice { margin: 0; color: #8a5a2a; font-size: 13px; }
+// Reserved height, so settling from "loading" to the grid is one step, not a
+// collapse and a re-expand.
+.teacher-roster__plan-loading { margin: 0; min-height: 196px; color: #8a8272; font-size: 13px; }
 
 // ---------------------------------------------------------------------------
-// The day as a grid of lesson cards — side by side, roughly square (~16:19),
-// every lesson at a glance. Cards may grow taller than the ratio when a title
-// needs the room; they never clip content to keep the shape.
+// The day as a grid of lesson cards — side by side, every lesson at a glance.
+//
+// NOTHING ON THIS CARD MOVES AFTER FIRST PAINT. Every slot is reserved at its
+// final size before its content exists: the poster frame is a fixed 2:3 box
+// whether the image has loaded, failed, or was never there; the foot is
+// pinned to the bottom; the card holds a minimum height so a one-line title
+// and a three-line title sit in the same footprint. A card that resizes when
+// art arrives drags every card after it across the grid, under a hand already
+// reaching for one of them.
+//
+// Posters are shown at the 2:3 the art is drawn at. The old full-width 52px
+// band was a centre-crop of a portrait poster — a rug, with the title and the
+// faces cut off it.
 // ---------------------------------------------------------------------------
 .teacher-lesson-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
   gap: 10px; width: 100%; justify-self: stretch;
 }
 .teacher-lesson-card {
-  display: flex; flex-direction: column; gap: 6px;
-  aspect-ratio: 16 / 19; min-width: 0; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-height: 196px; min-width: 0; padding: 10px;
   border: 1px solid #e5dccb; border-radius: 10px; background: #fff;
   .teacher-day-chip { align-self: flex-start; }
   &--planned { border-style: dashed; background: #fbf8f1; }
   &--deferred, &--blocked { background: #fdf6e8; }
   &__open { color: inherit; text-decoration: none; display: block; min-width: 0;
     &:hover .teacher-lesson-card__title { color: #604521; text-decoration: underline; } }
-  &__identity { display: grid; gap: 3px; min-width: 0; }
-  &__poster { width: 100%; height: 52px; border-radius: 6px; object-fit: cover; background: #e9e1d3; }
+  &__identity { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; min-width: 0; }
+  // The frame, not the image: it keeps its 2:3 box with or without a poster.
+  &__poster { width: 58px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 5px; background: #ece5d8;
+    img { display: block; width: 100%; height: 100%; object-fit: cover; } }
+  &__copy { display: grid; align-content: start; gap: 3px; min-width: 0; }
   &__title { color: #302a22; font-size: 15px; line-height: 1.2; overflow-wrap: break-word; }
   &__course { color: #756b5d; font-size: 12px; }
-  &__foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; }
+  &__foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; min-height: 40px; }
   &__score { display: grid; gap: 2px; }
   &__marks { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; max-width: 100%; }
   &__mark-count { font-size: 13px; font-weight: 700; color: #4a4436; margin-right: 5px; }
@@ -329,16 +348,6 @@
   border: 1px solid #ddd2bd; border-radius: 8px; background: #fcfaf5; color: #66543c; cursor: pointer;
   svg { width: 20px; height: 20px; }
   &:hover { border-color: #ae8d5a; background: #fffdf8; }
-}
-// The artifact, right there: an overlay above the dashboard, not a route away.
-.teacher-artifact-peek {
-  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
-  padding: 24px; background: rgba(38, 30, 18, 0.55);
-  &__panel { position: relative; width: min(560px, 100%); max-height: 90vh; overflow-y: auto;
-    padding: 18px; border-radius: 12px; background: #fffdf8; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35); }
-  &__close { position: absolute; top: 10px; right: 10px; z-index: 1; display: grid; place-items: center;
-    width: 44px; height: 44px; border: 1px solid #ddd2bd; border-radius: 10px; background: #fff; color: #66543c; cursor: pointer;
-    svg { width: 18px; height: 18px; } &:hover { border-color: #ae8d5a; } }
 }
 .teacher-subject-identity { display: inline-flex; align-items: center; gap: 6px; color: #756b5d; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   &__icon { width: 18px; height: 18px; opacity: .25; }
@@ -530,7 +539,10 @@
     border: 1px solid #eee7d9;
     background: #fff;
     border-radius: 10px;
-    padding: 8px 12px;
+    // Right padding reserves the lane the agenda button and the disclosure
+    // chevron are absolutely positioned into, so a long name or a "3 to
+    // review" badge can never slide under either one.
+    padding: 8px 78px 8px 12px;
     font-size: 14px;
     cursor: pointer;
     text-align: left;

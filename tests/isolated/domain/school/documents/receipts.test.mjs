@@ -48,7 +48,7 @@ describe('agendaDocument', () => {
     });
     expect(doc.blocks.map((b) => b.type)).toEqual([
       'scan_action', // math's next, tokened
-      'rich_text', // ## LANGUAGE — done today
+      'done_summary', // the finished-work tally, BELOW the work still to do
       'rich_text', // printed at — the FOOT of the sheet, not the head
     ]);
   });
@@ -76,9 +76,34 @@ describe('agendaDocument', () => {
     expect(allMd).not.toContain('✓');
   });
 
-  it('uppercases the subject and marks a served section done today', () => {
-    const text = textOf(agendaDocument({ learnerId: 'kid1', sections, tokensBySubject }));
-    expect(text).toContain('## LANGUAGE — done today');
+  // A finished subject is a TALLY, not a headline: it used to print as its own
+  // `## LANGUAGE — done today` section header, at the same weight as the work
+  // still open and (because sections print in subject order) above it.
+  it('collects served subjects into one done strip, after the open work', () => {
+    const doc = agendaDocument({ learnerId: 'kid1', sections, tokensBySubject });
+    const strip = doc.blocks.find((b) => b.type === 'done_summary');
+    expect(strip).toEqual({ type: 'done_summary', label: 'Done today', subjects: ['language'] });
+    expect(doc.blocks.indexOf(strip)).toBeGreaterThan(doc.blocks.findIndex((b) => b.type === 'scan_action'));
+    expect(textOf(doc)).not.toContain('done today');
+    expect(textOf(doc)).not.toContain('LANGUAGE —');
+  });
+
+  it('says so plainly when every subject is already served', () => {
+    const doc = agendaDocument({
+      learnerId: 'kid1',
+      sections: [{ subject: 'math', servedToday: true }, { subject: 'language', servedToday: true }],
+    });
+    expect(doc.blocks.find((b) => b.type === 'done_summary'))
+      .toEqual({ type: 'done_summary', label: 'All done today', subjects: ['math', 'language'] });
+  });
+
+  it('emits no done strip at all when nothing has been served', () => {
+    const doc = agendaDocument({
+      learnerId: 'kid1',
+      sections: [sections[0]],
+      tokensBySubject,
+    });
+    expect(doc.blocks.some((b) => b.type === 'done_summary')).toBe(false);
   });
 
   it('ignores progressLabel for a served section (done today wins)', () => {
