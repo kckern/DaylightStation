@@ -286,6 +286,7 @@ Every open branch was audited against main by **content**, not commit hash — t
 | 2026-08-25 | wip/stall-frame-liveness | 082ebec4c5 | Frame-counter stall liveness + two-phase suspicion, parked "preserved for port". The port happened: main's `12a41e059c` ports it onto the ledger-era controller, and `stallVerdict.js` diffs to zero lines against the WIP version. The lifeplan commits beneath it landed via the 2026-07-10 Life app usability remediation. |
 | 2026-08-26 | school/teacher-roster-header | 51832efd5b | Teacher Today-dashboard UX remediation, cut from the DEPLOYED tree (`fix/school-scan-print-incident` @ 97ccb1f0c) rather than local main, because main's `RosterStrip.jsx` was an older card design. Stranded at the plan commit when a parallel session in the same checkout switched branches underneath it; all of its work reached main via `school/preschool-reading`. |
 | 2026-08-26 | worktree-school-teacher-verify | 0da449bf24 | Isolation worktree used to verify the teacher work once two sessions writing to one checkout made the shared tree untrustworthy. Holds the layout-harness update, the test triage (underscore-bounded name scrub, two stale household paths), and the data-exposure audit. Fast-forwarded into main. |
+| 2026-08-26 | backup/pre-pii-rewrite | f74979545e | Pre-rewrite copy of the display-capability-guard branch, retained 2026-08-25 to verify the 2026-08-16 surgical rewrite was faithful. The 2026-08-26 audit (`docs/_wip/audits/2026-08-26-pii-history-exposure.md` §3) completed that verification: the rewrite touched 10 commits, was faithful, and was never pushed. What the branch uniquely held was therefore the un-scrubbed household data itself and nothing else — no code, no history of independent value. Deleted. |
 
 ### What was actually lost
 
@@ -303,7 +304,7 @@ History, not code. Nothing that runs existed only on these branches. Recorded pe
 
 ### Why the conflict counts were misleading
 
-The 2026-08-16 PII history rewrite changed every commit hash in the repo. Branches predating it report thousands of false "unmerged" commits and hundreds of false conflicts — scrubbed-vs-unscrubbed content, not real divergence. **Judge such branches by content, never by hash or by `git merge-tree` conflict count.** A branch that "conflicts in 981 files" may be a strict subset of main.
+The 2026-08-16 rewrite was long believed to have changed every commit hash in the repo. The 2026-08-26 audit disproves that: it rewrote 10 commits on one branch and was never pushed, and current main shares 11,182 of the backup branch's 11,192 commits. The false-conflict effect described below is real for branches predating other history events, but this rewrite is not its cause. Branches predating it report thousands of false "unmerged" commits and hundreds of false conflicts — scrubbed-vs-unscrubbed content, not real divergence. **Judge such branches by content, never by hash or by `git merge-tree` conflict count.** A branch that "conflicts in 981 files" may be a strict subset of main.
 
 The corollary bit twice in this sweep: `feat/teacher-workspace-ia` and `feature/sheetmusic-learn-listen` were both the same work built a second time, days or hours apart, because the local branch never saw what had already landed. See the sync-with-deployed-source warning in `CLAUDE.local.md`.
 
