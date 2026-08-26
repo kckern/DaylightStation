@@ -275,6 +275,9 @@ const ACTION_ICON_FALLBACK = 'forward';
  */
 const PROGRAM_CTA = Object.freeze({
   'piano-course': { icon: 'piano', label: 'Learn at the piano' },
+  'sentence-ladder': { icon: 'language', label: 'Practice sentences' },
+  'language-reels': { icon: 'kind-video', label: 'Watch and listen' },
+  'rubiks-cube': { icon: 'skills', label: 'Solve the cube' },
 });
 
 function actionPresentation(action) {

@@ -282,13 +282,42 @@ describe('LaunchCard actions', () => {
     renderCard({
       ...PIANO_CARD,
       actions: [
-        { kind: 'program', label: 'Open Sentence Ladder', target: 'sentence-ladder', role: 'primary' },
+        // A programId the house has never heard of — the fallback has to be a
+        // real one, not merely an unmapped one, or this passes for the wrong
+        // reason the moment that program gains wording.
+        { kind: 'program', label: 'Open Astronomy Lab', target: 'astronomy-lab', role: 'primary' },
         { kind: 'exit', label: 'Go back', role: 'secondary' },
       ],
     });
 
     expect(screen.getByTestId('selfservice-action-program'))
-      .toHaveTextContent('Open Sentence Ladder');
+      .toHaveTextContent('Open Astronomy Lab');
+  });
+
+  // Every launcher `schoolLifecycle` registers, with the words a child reads.
+  // The icon assertion is the load-bearing half: `Icon` renders NOTHING for a
+  // name with no file behind it, so a typo'd icon key ships an unmarked button
+  // that looks deliberate. Asserting a real <path> is the only way to tell the
+  // two apart from a test — see the piano-svg trap above.
+  it.each([
+    ['piano-course', 'Learn at the piano'],
+    ['sentence-ladder', 'Practice sentences'],
+    ['language-reels', 'Watch and listen'],
+    ['rubiks-cube', 'Solve the cube'],
+  ])('says what a child does for %s', (target, label) => {
+    renderCard({
+      ...PIANO_CARD,
+      actions: [
+        { kind: 'program', label: `Open ${target}`, target, role: 'primary' },
+        { kind: 'exit', label: 'Go back', role: 'secondary' },
+      ],
+    });
+
+    const primary = screen.getByTestId('selfservice-action-program');
+    expect(primary).toHaveTextContent(label);
+    expect(primary).not.toHaveTextContent(`Open ${target}`);
+    expect(primary.querySelectorAll('.school-selfservice-card__action-icon svg path').length)
+      .toBeGreaterThan(0);
   });
 
   it('names the way out without borrowing the lesson title', () => {
