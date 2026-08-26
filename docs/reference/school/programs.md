@@ -48,12 +48,35 @@ story reads `3 of 2 stories` and stays done.
 `corpusId: null` makes `SetAssignments`' dedupe key `story-time\0`, so a second
 story-time enrollment for the same learner is refused.
 
+**A target the launcher cannot read is an error, never a guessed default.**
+`YamlAssignmentStore.get()` never throws — a missing plan file and unparseable
+YAML both answer `null` — so falling back to the default on "no enrollment
+found" would set every learner's target to 2 off one corrupt file. That asks
+the child whose target is 1 for a second book, and calls the child whose target
+is 5 DONE at two. A false done is worse than a false zero and fails silently, so
+the launcher answers `error: true` with `target: null` and logs
+`school.story-time.target-unknown`. Only an ABSENT target takes the default; a
+target that is present but not a positive integer (`target: '5'` in a
+hand-edited plan) is refused for the same reason.
+
+Both error branches answer the same shape as the success branch —
+`count`/`target`/`reads` are always present, `count: null` when unknown — so a
+caller reading `status().count` gets "unknown" rather than `undefined`.
+
 ### The evidence log shards by STUDY DAY, not by UTC date
 
 `YamlReadingLogStore` writes
 `household/school/records/reading/{learnerId}/{studyDay}.yml`, where `studyDay`
-is the household's own 4am→4am key from `studyDayForInstant` — stamped by
-`RecordStoryRead` at the moment the story finishes, not derived at read time.
+is the household's own 4am→4am key — stamped by `RecordStoryRead` at the moment
+the story finishes, not derived at read time.
+
+**One place computes that key.** `RecordStoryRead` takes a `studyDay()`
+function, not a timezone, and callers pass the story-time launcher's own. Two
+independently-injected timezones is a silent failure: a caller that omitted the
+timezone would default to UTC while the launcher stayed local, so a 10pm PT
+finish files under tomorrow, the launcher reads today, the count never rises and
+nothing errors. The parameter is required rather than defaulted so the mistake
+cannot be made quietly.
 
 This is a deliberate departure from `SurfaceProgramLauncher`, which reads
 DoNow's dispatch log — a log it does not own, sharded by UTC date — and
@@ -117,6 +140,15 @@ detected; the live shard has only what was logged afterwards. Merge the salvaged
 The shard itself is written with `saveYamlToPathAtomic`, so a torn write — one
 of the ways a shard goes bad — should not be the cause.
 
+### `pickId` — one finish, one row
+
+A caller mints a `pickId` when playback starts and sends it back when the story
+ends. `doneToday` is `rows.length >= target`, so a duplicate row is a duplicate
+BOOK: a retried request or a remounted player credits the child twice.
+`IReadingLogStore.append` is therefore specified as idempotent on `pickId` —
+return the existing row rather than appending a second — and a `null` pickId is
+not a key, so two hand-recorded reads of the same book stay two reads.
+
 ### Recording a read by hand
 
 Evidence normally arrives when the audiobook FINISHES (a story abandoned two
@@ -127,6 +159,12 @@ path — a book read on a lap, a mis-scanned sticker:
 node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681
 node cli/school.mjs ops read learner-c --title="The Jungle Book" --content=plex:620681 --apply
 ```
+
+The learner id is resolved against `school.yml` `students:` and an unknown one
+is refused — a typo is a well-formed id, and appending under it would print
+success while counting the read against nobody. `--pick ID` sets the `pickId`.
+After an `--apply` the command reads the count back through the launcher, so
+what it prints cannot disagree with the board.
 
 Unlike every other `ops` command it writes to the reading log directly rather
 than through the API, so it works with no server running — which is when a
