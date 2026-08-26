@@ -2,23 +2,41 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screenOff, screenOn, bindBackButton, onResume, launchApp } from './fkb.js';
 
 /**
- * THE NATIVE OBJECT IS NOT THE ALIAS.
+ * A NAME ON `window` IS NOT A CAPABILITY.
  *
- * `FullyKiosk` is what Android's `addJavascriptInterface` attaches: exactly the
- * `@JavascriptInterface` methods and nothing else. `fully` is a richer JS alias
- * FKB injects on top, and it alone carries `bind`. Treating the two as
- * interchangeable blanked the school Portal for eighty minutes — `bindBackButton`
- * runs at app startup behind a presence check, so `bind is not a function`
- * threw before React mounted and no error listener existed yet to see it.
+ * Probed on the school Portal: there is no `window.fully` at all, and the
+ * `window.FullyKiosk` that IS there is a blob/print helper (five methods:
+ * getBase64FromBlobData, getFullyVersion, getFullyVersionCode, grab, print) —
+ * not the kiosk-control object. Accepting it by name made availability lie,
+ * and `bindBackButton()` — which runs at app STARTUP — then called `.bind()`
+ * on an object that has none. The throw landed before any error listener the
+ * page installs, so React never mounted: a black panel and a silent log, for
+ * eighty minutes.
  *
- * These pin CAPABILITY, not presence: a bridge that is missing a method must
- * make the call a no-op, never a throw.
+ * These pin CAPABILITY: a candidate must carry a control method to qualify,
+ * and a missing method must be a no-op, never a throw.
  */
-describe('fkb bridge: the native object lacks the alias-only methods', () => {
+describe('fkb bridge: capability, not presence', () => {
   afterEach(() => {
     delete global.fully;
     delete global.FullyKiosk;
     vi.restoreAllMocks();
+  });
+
+  // THE PORTAL'S ACTUAL WINDOW, probed on-device: a `FullyKiosk` that is a
+  // blob/print helper, not the control interface. Matching it on name alone is
+  // what made availability lie and what blanked the panel.
+  const PORTAL_HELPER = {
+    getBase64FromBlobData() {}, getFullyVersion() {}, getFullyVersionCode() {},
+    grab() {}, print() {},
+  };
+
+  it('does not mistake the Portal helper object for the control interface', async () => {
+    global.FullyKiosk = PORTAL_HELPER;
+    const { isFKBAvailable } = await import('./fkb.js');
+    expect(isFKBAvailable()).toBe(false);
+    expect(screenOff()).toBe(false);
+    expect(() => bindBackButton()).not.toThrow();
   });
 
   it('bindBackButton does not throw when the bridge has no bind (native-only device)', () => {
@@ -60,13 +78,11 @@ describe('fkb screenOff/screenOn', () => {
     vi.restoreAllMocks();
   });
 
-  // THE NATIVE OBJECT, WHICH IS THE ONE THE SCHOOL PORTAL ACTUALLY HAS.
-  // `FullyKiosk` is what Android's `addJavascriptInterface` attaches; `fully`
-  // is a JS alias FKB injects on top of it, and on the Portal (Android 9, FKB
-  // 1.60.1 PLUS, interface enabled) that alias never lands — probed on-device
-  // after the button had been silently dead. Testing only the alias is what
-  // let this ship: the module was fully covered and fully broken.
-  it('screenOff works through the native FullyKiosk object, not just the `fully` alias', () => {
+  // A control interface under EITHER name works. The Portal does not have one
+  // (see the capability suite above), but a device that exposes the methods on
+  // `FullyKiosk` rather than `fully` must still be driven — testing only the
+  // alias is what let a fully covered module ship fully broken.
+  it('screenOff works through a control interface named FullyKiosk, not just `fully`', () => {
     const turnScreenOff = vi.fn();
     global.FullyKiosk = { turnScreenOff };
     expect(screenOff()).toBe(true);
