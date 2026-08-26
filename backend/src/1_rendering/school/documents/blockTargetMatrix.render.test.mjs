@@ -89,10 +89,7 @@ const FIXTURE_BLOCK = {
   done_summary: {
     type: 'done_summary',
     label: 'Done today',
-    entries: [
-      { subject: 'civilization', icon: 'civilization', titles: ['The Midwest: Illinois'], percent: 90 },
-      { subject: 'scripture', icon: 'scripture', titles: [] },
-    ],
+    subjects: ['civilization', 'scripture'],
   },
 };
 

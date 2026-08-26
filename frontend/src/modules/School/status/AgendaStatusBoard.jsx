@@ -1,16 +1,9 @@
 /**
  * AgendaStatusBoard — a read-only, at-a-glance board of every student's school
- * day: WHICH subjects are on the plan and which of them are done. The
- * per-subject discs carry the subject wall's own icons, so a kid walking past
- * reads their day as pictures rather than as a bar chart; one "x of y" in the
- * card's top corner carries the count, which is the one thing icons cannot say.
- *
- * A CLEARED DAY IS A STATE, NOT A SENTENCE. When every disc is filled the card
- * itself goes green and breathes — the child should be able to see they are
- * finished from across the room, without reading anything. That is the whole
- * reward this board offers, so it is worth the animation budget; it is also
- * the only motion on the panel, and it stops for anyone who has asked the OS
- * for reduced motion.
+ * day: WHICH subjects are on the plan, which of them are done, and a status
+ * word. The per-subject segments carry the subject wall's own icons, so a kid
+ * walking past reads their day as pictures rather than as a bar chart; the
+ * "x of y" line stays because a count is the one thing icons cannot say.
  *
  * Deliberately NON-INTERACTIVE (kiosk spec wave 5): it renders on the locked
  * Portal beside the keypad as a reminder/preview only — codes and printed
@@ -91,58 +84,31 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   const [rows, setRows] = useState(null);
   const [nonce, setNonce] = useState(0);
 
-  /**
-   * ONE CARD PER KID FROM THE FIRST PAINT, filled in as each read lands.
-   *
-   * This used to `Promise.all` the day digest and every learner's agenda and
-   * render nothing at all until the slowest one returned. Measured against the
-   * real Portal: the digest is ~150ms, and a learner with no open work answers
-   * in ~70ms — but a learner whose day still holds a PROGRAM subject (piano,
-   * whose launcher resolves against Plex) takes ~1s, so the whole board sat
-   * blank for as long as the slowest child's plan took. Four kids, four blank
-   * seconds, nothing on screen to say the panel was even working.
-   *
-   * The roster is known synchronously, so the cards, their rails, and their
-   * disc rows are drawn immediately as skeletons and each one swaps its own
-   * contents in place. Nothing moves when a plan arrives — the card was
-   * already the size it is going to be — and one slow learner no longer holds
-   * the other three hostage. It also stops being all-or-nothing: a single
-   * failed read now costs that learner's card, not the board.
-   */
   useEffect(() => {
     if (!kids.length || !day) return undefined;
     let alive = true;
-    setRows(kids.map((kid) => ({ kid, summary: null, loading: true })));
-
-    const settle = (kidId, summary) => {
-      if (!alive) return;
-      setRows((current) => (current ?? []).map((row) => (
-        row.kid.id === kidId ? { ...row, summary, loading: false } : row
-      )));
-    };
-
-    // The digest is one read for the whole roster; every learner's plan waits
-    // on it only for the "what is already passed" half, so it is awaited once
-    // and shared rather than refetched per card.
-    const digest = (schoolApi.teacherDay ? schoolApi.teacherDay(day) : Promise.resolve({ ok: false }))
-      .catch((error) => {
-        schoolLog.selfServiceError?.('status-board.digest-failed', { error: error?.message });
-        return { ok: false };
-      });
-
-    kids.forEach((kid) => {
-      Promise.all([schoolApi.agendaPreview(kid.id, day), digest])
-        .then(([plan, dayResponse]) => {
-          if (!plan?.ok) return settle(kid.id, null);
-          const learners = dayResponse.ok ? (dayResponse.data?.learners ?? []) : [];
+    const load = async () => {
+      try {
+        const [dayResponse, ...plans] = await Promise.all([
+          schoolApi.teacherDay ? schoolApi.teacherDay(day) : Promise.resolve({ ok: false }),
+          ...kids.map((kid) => schoolApi.agendaPreview(kid.id, day)),
+        ]);
+        if (!alive) return;
+        const learners = dayResponse.ok ? (dayResponse.data?.learners ?? []) : [];
+        const next = kids.map((kid, index) => {
+          const plan = plans[index];
+          if (!plan?.ok) return { kid, summary: null };
           const sessions = learners.find((row) => row.learnerId === kid.id)?.sessions ?? [];
-          return settle(kid.id, summarize(plan.data?.sections, sessions));
-        })
-        .catch((error) => {
-          schoolLog.selfServiceError?.('status-board.load-failed', { learnerId: kid.id, error: error?.message });
-          settle(kid.id, null);
+          return { kid, summary: summarize(plan.data?.sections, sessions) };
         });
-    });
+        setRows(next.every((row) => row.summary === null) ? null : next);
+      } catch (error) {
+        if (!alive) return;
+        schoolLog.selfServiceError?.('status-board.load-failed', { error: error?.message });
+        setRows(null);
+      }
+    };
+    load();
     return () => { alive = false; };
   }, [kids, day, nonce]);
 
@@ -155,58 +121,25 @@ export default function AgendaStatusBoard({ kids = [], day }) {
   }, []);
 
   const visible = useMemo(() => rows ?? [], [rows]);
-  // Once EVERY card has settled with nothing to show, the board is not a
-  // board — it steps off the panel entirely rather than standing there as
-  // four empty rows. While anything is still loading it stays put.
-  const settledEmpty = visible.length > 0
-    && visible.every((row) => !row.loading && row.summary === null);
-  if (!visible.length || settledEmpty) return null;
+  if (!visible.length) return null;
   return (
     <div className="school-status-board" data-testid="agenda-status-board">
       <h2 className="school-status-board__title">Today</h2>
       {/* One card per student, equal height whether or not a plan loaded —
           the board is a wall fixture, and four uneven rows read as broken. */}
       <ul className="school-status-board__rows">
-        {visible.map(({ kid, summary, loading }) => (
-          <li
-            key={kid.id}
-            className={`school-status-board__row${loading ? ' is-loading' : ''}`}
-            data-status={summary ? dayStatus(summary) : null}
-            data-complete={summary && summary.total > 0 && summary.done >= summary.total ? 'true' : 'false'}
-            aria-busy={loading ? 'true' : undefined}
-          >
-            {/* THE NAME RIDES WITH THE FACE. Together they are one rail — who
-                this card belongs to — which frees the whole width of the card
-                for the day itself, and lets the avatar grow into the height
-                the name used to take out of the row. */}
-            <div className="school-status-board__rail">
-              <span className="school-status-board__name">{kid.name}</span>
-              <ProfileAvatar id={kid.id} name={kid.name} size={192} />
-            </div>
+        {visible.map(({ kid, summary }) => (
+          <li key={kid.id} className="school-status-board__row" data-status={summary ? dayStatus(summary) : null}>
+            <ProfileAvatar id={kid.id} name={kid.name} size={192} />
             <div className="school-status-board__info">
-              {/* ONE READOUT, top right. It used to be a status WORD there and
-                  a count below the discs — two lines saying the same thing,
-                  one of them in words the discs already show. The count is
-                  what pictures cannot carry, so the count is what stays. */}
-              {loading ? (
-                <span className="school-status-board__status school-status-board__status--none">&nbsp;</span>
-              ) : summary && summary.total > 0 ? (
-                <span className="school-status-board__status">{summary.done} of {summary.total}</span>
-              ) : (
-                <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
-              )}
-              {/* SKELETON DISCS while the plan is in flight. Three is a guess
-                  at the count and deliberately so — the row's height is what
-                  has to be right, and it is fixed by the disc size, not by how
-                  many there turn out to be. They shimmer so the panel reads as
-                  working rather than as broken. */}
-              {loading && (
-                <ul className="school-status-board__pills" style={{ '--count': 3 }} aria-hidden="true">
-                  {[0, 1, 2].map((i) => (
-                    <li key={i} className="school-status-board__pill school-status-board__pill--skeleton" />
-                  ))}
-                </ul>
-              )}
+              <div className="school-status-board__line">
+                <span className="school-status-board__name">{kid.name}</span>
+                {summary && summary.total > 0 ? (
+                  <span className="school-status-board__status">{dayStatus(summary)}</span>
+                ) : (
+                  <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
+                )}
+              </div>
               {summary && summary.total > 0 && (
                 <>
                   {/* The segments used to be an anonymous meter, hidden from
@@ -240,6 +173,7 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                       </li>
                     ))}
                   </ul>
+                  <span className="school-status-board__count">{summary.done} of {summary.total}</span>
                 </>
               )}
             </div>

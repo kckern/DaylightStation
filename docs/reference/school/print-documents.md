@@ -811,19 +811,7 @@ lesson position. The fraction counts the active segment (`1/17` on the first
 unit), while solid ink still means completed and hatching means underway; it
 does not record an active lesson as completed. A single-lesson unit collapses
 to a compact complete/progress row instead of drawing a meaningless one-segment
-bar.
-
-**Every thermal surface draws the same progress bar**, from one function, with
-one set of theme values. An outlined track makes the empty remainder visible —
-a fill with no container says "this much" and never "…out of this" — solid ink
-fills it from the left, and the in-progress segment is hatched. Ticks divide
-the track one per lesson, so the filled edge lands exactly on the `completed`-th
-tick by construction, and they are dropped whole rather than thinned to a wrong
-count once each would get fewer than a legible number of pixels. The label row
-above reads the unit's name on the left and the child's POSITION (`16 of 23`,
-not a tally of what is behind them) on the right. A hatch too narrow to hold
-two stripes is omitted: on 203dpi tape it reads as printer dirt, not as a
-state. Assessments up to ten items show one box per item; larger exams
+bar. Assessments up to ten items show one box per item; larger exams
 switch to a compact ten-segment score bar beside the exact fraction rather than
 shrinking dozens of boxes past legibility. A passing result offers the next lesson. A failed result offers
 only a retry, lists hints for missed items according to the profile disclosure

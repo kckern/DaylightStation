@@ -1647,14 +1647,10 @@ each block offers **at most one** scannable action, drawn with its subject's
 shelf icon — the same nine SVGs the School home grid renders
 (`frontend/src/modules/School/home/icons/`), shared rather than copied. A
 subject already served today gets no header at all: every finished subject is
-collected into a single **Done today** strip printed once at the foot of the
-sheet, below the work still open — a tally of what is already behind the child
-never outranks what is in front of them. The strip is an outline, one row per
-subject: the subject's own shelf icon and name, the grade on the right, and the
-lesson that was actually done indented beneath. Naming the work is the point —
-a tally that can only say "scripture happened" is half a tally. A horizontal
-rule closes the sheet above the printed time, which is the paper's own metadata
-rather than the last line of the child's day. Otherwise the subject prints one
+collected into a single **Done today** strip — a rule, a tick, and the subject
+names — printed once at the foot of the sheet, below the work still open. A
+tally of what is already behind the child never outranks what is in front of
+them. Otherwise the subject prints one
 line naming the next thing to do (or, if everything assigned in that subject is
 locked, the lock's own remedy) with a QR beside it. "Served today" comes from
 either a **passing** curriculum outcome recorded this study day, or a program

@@ -32,9 +32,7 @@ import QRCode from 'qrcode';
 import { parseRichText } from './measure.mjs';
 import { documentReceiptTheme } from './documentReceiptTheme.mjs';
 import { texToSvg as mathJaxTexToSvg } from './mathSvg.mjs';
-import {
-  drawProgressRows, progressRowsHeight, usableProgressRows,
-} from './progressBar.mjs';
+import { activeProgressPosition } from '#domains/school/progressRows.mjs';
 
 /**
  * The subject shelf icons — the SAME nine SVG files the School home grid
@@ -333,8 +331,11 @@ export function createDocumentReceiptRenderer({
     // Course/unit progress, drawn as bars inside the card. Same row shape the
     // result receipt consumes, so the two surfaces cannot disagree about what
     // "how far along" looks like.
-    const progressRows = lesson ? usableProgressRows(block.progress) : [];
-    const progressHeight = progressRowsHeight(theme, progressRows);
+    const progressRows = lesson && Array.isArray(block.progress)
+      ? block.progress.filter((row) => row && Number.isInteger(row.total) && row.total > 0)
+      : [];
+    const progressHeight = progressRows.length
+      * (theme.action.progressLabelHeight + theme.action.progressBarHeight + theme.action.progressRowGap);
     const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
       ? block.panelCode.trim()
       : null;
@@ -371,31 +372,18 @@ export function createDocumentReceiptRenderer({
       + (descriptionLines.length ? theme.action.rowGap : 0)
       + descriptionLines.length * theme.action.descriptionLineHeight;
     const mainBand = Math.max(codeBlockHeight, titleColumn);
-    // HOW THE TITLE COLUMN IS DISTRIBUTED INSIDE THE BAND — space-around, not
-    // centred-as-a-block.
+    // WHERE THE TITLE SITS INSIDE THE BAND.
     //
     // The QR-and-code column is a fixed 168px; the title column is however
-    // tall the words are, and it is almost always shorter. Top-aligning it
-    // left the whole bottom half of the band empty — a picture with a caption
-    // stuck to its ceiling. Centring the stack fixed the outer margins but
-    // kept the rows welded together at their line height, so the gap between
-    // the unit and the title was nothing like the gap above and below it.
-    //
-    // Every row-group gets EQUAL AIR: n groups means n+1 gaps — above the
-    // first, between each pair, and below the last. Two groups (unit, title)
-    // gives three; add a description and it is four. The slack is whatever the
-    // QR column has over the text, so this only ever spreads space the band
-    // already owns — when the text is the taller column the slack is zero and
-    // the groups sit flush, exactly as they did.
-    const titleGroups = [
-      unitLines.length && theme.action.unitLineHeight * unitLines.length,
-      labelLines.length && titleLineHeight * labelLines.length,
-      descriptionLines.length && theme.action.descriptionLineHeight * descriptionLines.length,
-    ].filter(Boolean);
-    const titleContentHeight = titleGroups.reduce((sum, height) => sum + height, 0);
-    const titleGap = titleGroups.length
-      ? Math.max(0, (mainBand - titleContentHeight) / (titleGroups.length + 1))
-      : 0;
+    // tall the words are. With a description under it the two are close enough
+    // that top-alignment reads as one row. Without one — the common case — a
+    // one-line title top-aligned against a full-height QR leaves the entire
+    // bottom half of the band empty, and the card reads as a picture with a
+    // caption stuck to its ceiling. Centring the short column in the tall one
+    // splits that slack above and below, which is what makes the pairing read
+    // as deliberate. Only ever a DOWNWARD offset (the band is the max of the
+    // two), so this can never push the title out of its own box.
+    const titleOffset = descriptionLines.length ? 0 : Math.max(0, (mainBand - titleColumn) / 2);
     const progressBand = progressRows.length ? theme.action.rowGap + progressHeight : 0;
     // 14 is the footer rule and its breathing room, matching the draw.
     const footerBand = metaRowCount
@@ -415,7 +403,7 @@ export function createDocumentReceiptRenderer({
       unitIndent,
       descriptionLines,
       descriptionIndent,
-      titleGap,
+      titleOffset,
       metaLines,
       metaParts,
       metaLayout,
@@ -455,23 +443,11 @@ export function createDocumentReceiptRenderer({
         for (const part of parseRichText(block.md)) {
           if (part.kind === 'math') ops.push(await mathOp(part.tex, true));
           else if (part.style === 'heading') ops.push(textOps(ctx, part.text, { font: theme.fonts.heading, lineHeight: theme.text.headingLineHeight }));
-          else {
-            const base = textOps(ctx, part.text, {
-              font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight,
-            });
-            // A hairline drawn above the block, partitioning it from the work
-            // above it. The sheet's own metadata (when it printed) is not part
-            // of the child's day and should not read as its last line.
-            const rule = block.rule === 'above' ? 'above' : null;
-            const ruleHeight = rule ? theme.text.ruleWidth + theme.text.ruleGap : 0;
-            ops.push({
-              ...base,
-              heightPx: base.heightPx + ruleHeight,
-              compactReview: /^-\s+\d+:/.test(block.md),
-              align: block.align ?? null,
-              rule,
-            });
-          }
+          else ops.push({
+            ...textOps(ctx, part.text, { font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight }),
+            compactReview: /^-\s+\d+:/.test(block.md),
+            align: block.align ?? null,
+          });
         }
         break;
 
@@ -481,34 +457,22 @@ export function createDocumentReceiptRenderer({
 
       case 'done_summary': {
         const done = theme.done;
-        // ONE ROW PER SUBJECT, not a run of names. Side by side, the subjects
-        // read as a list of words; stacked as outline items — icon, subject,
-        // score on the right, the lesson itself indented under them — they
-        // read as a record of what was actually done. A tally that cannot
-        // name the work is only half a tally.
-        const entries = [];
-        for (const entry of block.entries) {
-          // eslint-disable-next-line no-await-in-loop
-          const icon = entry.icon ? await iconPng(entry.icon) : null;
-          ctx.font = theme.fonts.eyebrow;
-          const subject = String(entry.subject).toUpperCase();
-          const percent = Number.isFinite(entry.percent) ? `${Math.round(entry.percent)}%` : null;
-          ctx.font = theme.fonts.code;
-          const titleIndent = done.iconSize + done.iconGap;
-          const titleLines = (entry.titles ?? []).flatMap(
-            (title) => wrapTight(ctx, title, contentWidth - done.rowIndent - titleIndent),
-          );
-          entries.push({
-            subject, percent, icon, titleLines,
-            heightPx: done.subjectHeight + titleLines.length * done.titleLineHeight + done.entryGap,
-          });
-        }
+        // Measured in the face it is DRAWN in — the label is bold, the
+        // subjects are not, and wrapping against the wrong one overruns.
+        ctx.font = theme.fonts.code;
+        const subjectIndent = done.markSize + done.markGap;
+        const subjectLines = wrapTight(
+          ctx,
+          block.subjects.map((subject) => String(subject).toUpperCase()).join('  ·  '),
+          contentWidth - subjectIndent,
+        );
         ops.push({
           kind: 'done-summary',
           label: String(block.label).toUpperCase(),
-          entries,
+          subjectLines,
+          subjectIndent,
           heightPx: done.ruleWidth + done.ruleGap + done.labelHeight
-            + entries.reduce((sum, entry) => sum + entry.heightPx, 0) + done.padBottom,
+            + subjectLines.length * done.subjectLineHeight + done.padBottom,
         });
         break;
       }
@@ -532,8 +496,8 @@ export function createDocumentReceiptRenderer({
         const boxesWidth = displayBoxCount * boxSize + Math.max(0, displayBoxCount - 1) * theme.result.boxGap;
         const summaryIcon = block.icon ? await iconPng(block.icon) : null;
         const taxonomy = taxonomyOp(ctx, block.taxonomy, contentWidth, { icon: summaryIcon });
-        const progressRows = usableProgressRows(block.progress);
-        const progressHeight = progressRowsHeight(theme, progressRows);
+        const progressRows = Array.isArray(block.progress) ? block.progress : (block.progress ? [block.progress] : []);
+        const progressHeight = progressRows.length * 54;
         ctx.font = theme.fonts.code;
         // Wrapped against the PANEL's inner width, not the page's: these
         // rows now live inside the result panel's border.
@@ -794,20 +758,15 @@ export function createDocumentReceiptRenderer({
         continue;
       }
       if (op.kind === 'text') {
-        if (op.rule === 'above') {
-          ctx.fillStyle = theme.colors.text;
-          ctx.fillRect(x, op.yPx, contentWidth, theme.text.ruleWidth);
-        }
         ctx.font = op.font;
-        const textY = op.yPx + (op.rule === 'above' ? theme.text.ruleWidth + theme.text.ruleGap : 0);
         if (op.align === 'center') {
           ctx.textAlign = 'center';
           op.lines.forEach((line, index) => ctx.fillText(
-            line, x + contentWidth / 2, textY + index * op.lineHeight,
+            line, x + contentWidth / 2, op.yPx + index * op.lineHeight,
           ));
           ctx.textAlign = 'left';
         } else {
-          op.lines.forEach((line, index) => ctx.fillText(line, x, textY + index * op.lineHeight));
+          op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
         }
         continue;
       }
@@ -835,37 +794,11 @@ export function createDocumentReceiptRenderer({
         ctx.restore();
         ctx.font = theme.fonts.eyebrow;
         ctx.textAlign = 'left';
-        ctx.fillText(op.label, x + done.markSize + done.markGap, labelY);
-
-        let entryY = labelY + done.labelHeight;
-        for (const entry of op.entries) {
-          const rowX = x + done.rowIndent;
-          if (entry.icon) {
-            // eslint-disable-next-line no-await-in-loop
-            const iconImage = await loadImage(entry.icon);
-            ctx.drawImage(
-              iconImage, rowX,
-              entryY + (done.subjectHeight - done.iconSize) / 2,
-              done.iconSize, done.iconSize,
-            );
-          }
-          ctx.font = theme.fonts.eyebrow;
-          ctx.textAlign = 'left';
-          ctx.fillText(entry.subject, rowX + done.iconSize + done.iconGap, entryY);
-          if (entry.percent) {
-            ctx.textAlign = 'right';
-            ctx.font = theme.fonts.code;
-            ctx.fillText(entry.percent, x + contentWidth, entryY);
-            ctx.textAlign = 'left';
-          }
-          ctx.font = theme.fonts.code;
-          entry.titleLines.forEach((line, index) => ctx.fillText(
-            line,
-            rowX + done.iconSize + done.iconGap,
-            entryY + done.subjectHeight + index * done.titleLineHeight,
-          ));
-          entryY += entry.heightPx;
-        }
+        ctx.fillText(op.label, x + op.subjectIndent, labelY);
+        ctx.font = theme.fonts.code;
+        op.subjectLines.forEach((line, index) => ctx.fillText(
+          line, x + op.subjectIndent, labelY + done.labelHeight + index * done.subjectLineHeight,
+        ));
         continue;
       }
       if (op.kind === 'math') {
@@ -1031,11 +964,78 @@ export function createDocumentReceiptRenderer({
           ctx.fillText(`Score: ${Math.round(op.percent)}%`, theme.canvas.width / 2, sy);
           sy += 34;
         }
-        // The one progress bar (progressBar.mjs). This surface used to draw
-        // its own thermometer — a 4px rule with a slab of fill on it, ticks
-        // standing outside the line, no container — while the agenda card 40
-        // lines below drew an outlined railroad track for the same fact.
-        sy += drawProgressRows(ctx, { theme, rows: op.progressRows, x, y: sy, width: contentWidth });
+        for (const progress of op.progressRows) {
+          ctx.textAlign = 'left';
+          ctx.font = theme.fonts.eyebrow;
+          const complete = progress.completed === progress.total;
+          ctx.fillText(`${progress.label.toUpperCase()} ${complete ? 'COMPLETE' : 'PROGRESS'}`, x, sy);
+          ctx.textAlign = 'right';
+          ctx.font = theme.fonts.code;
+          ctx.fillText(`${activeProgressPosition(progress)} of ${progress.total}`, x + contentWidth, sy);
+          sy += 31;
+          // ONE TICK PER LESSON. This used to be
+          // `Math.min(progressSegments, total)` with `progressSegments: 10`,
+          // which silently disagreed with the bar beside it: the FILL is
+          // `completed / total`, so on a 13-lesson unit the track was divided
+          // into 10 and the filled edge landed nowhere near a tick. A child
+          // counting ticks to see how much is left was counting the wrong
+          // thing, and "1 of 13" sat above ten marks. Course progress looked
+          // correct only by luck — 7 units is under the old cap.
+          //
+          // With `segments === total` the filled edge lands EXACTLY on the
+          // `completed`-th tick, by construction rather than coincidence.
+          const segments = Math.max(1, progress.total);
+          const trackY = sy + theme.result.progressHeight / 2;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(x, trackY);
+          ctx.lineTo(x + contentWidth, trackY);
+          ctx.stroke();
+          const filledWidth = (progress.completed / progress.total) * contentWidth;
+          if (filledWidth > 0) ctx.fillRect(x, sy, filledWidth, theme.result.progressHeight);
+          // THE PRESENT TENSE. Solid means done and empty means untouched;
+          // the unit a child is actually working through is neither, and
+          // filing it with "never opened" is the state this hatch adds.
+          // Vertical stripes rather than an outline: the empty track is
+          // already an outline, so an outlined segment would read as future,
+          // which is the exact confusion being fixed. A hatch reads as
+          // "partly there" at a glance and survives 203 dpi, where a
+          // proportional part-fill of one narrow segment would not.
+          const inProgress = Number.isInteger(progress.inProgress) ? progress.inProgress : 0;
+          if (inProgress > 0 && progress.completed + inProgress <= progress.total) {
+            const hatchStart = x + filledWidth;
+            const hatchEnd = x + ((progress.completed + inProgress) / progress.total) * contentWidth;
+            ctx.save();
+            ctx.lineWidth = theme.result.progressHatchWidth;
+            for (let hx = hatchStart + theme.result.progressHatchPitch / 2; hx < hatchEnd; hx += theme.result.progressHatchPitch) {
+              ctx.beginPath();
+              ctx.moveTo(hx, sy);
+              ctx.lineTo(hx, sy + theme.result.progressHeight);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+          // Below a legible gap the ticks stop being countable and read as a
+          // hatch, so they are DROPPED rather than thinned to a wrong count —
+          // a tick that does not mean one lesson is the bug this replaced.
+          // The bar, its end caps and the "n of m" label still carry the
+          // whole story.
+          if (contentWidth / segments >= theme.result.progressMinTickGap) {
+            for (let index = 0; index < segments; index += 1) {
+              ctx.lineWidth = 2;
+              const tickX = x + (index / segments) * contentWidth;
+              ctx.beginPath();
+              ctx.moveTo(tickX, sy - 2);
+              ctx.lineTo(tickX, sy + theme.result.progressHeight + 2);
+              ctx.stroke();
+            }
+          }
+          ctx.beginPath();
+          ctx.moveTo(x + contentWidth, sy - 2);
+          ctx.lineTo(x + contentWidth, sy + theme.result.progressHeight + 2);
+          ctx.stroke();
+          sy += 23;
+        }
         ctx.textAlign = 'left';
         continue;
       }
@@ -1108,11 +1108,9 @@ export function createDocumentReceiptRenderer({
         );
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
-      // `titleGap` is the space-around gap: one above the first row-group,
-      // one between each pair, one below the last. Zero on a non-lesson card
-      // and whenever the text column is the taller of the two.
-      const titleGap = op.lesson ? (op.titleGap ?? 0) : 0;
-      let labelY = (op.lesson ? bandY : boxTop + theme.action.padding) + titleGap;
+      // `titleOffset` centres a description-less title column against the
+      // taller QR column; it is 0 whenever a description is present.
+      let labelY = op.lesson ? bandY + (op.titleOffset ?? 0) : boxTop + theme.action.padding;
       if (op.unitLines?.length) {
         // Marker on the first line only — it labels the run, and repeating it
         // per wrapped line would read as a bulleted list of units.
@@ -1124,14 +1122,13 @@ export function createDocumentReceiptRenderer({
         op.unitLines.forEach((line, index) => ctx.fillText(
           line, labelX + op.unitIndent, labelY + index * theme.action.unitLineHeight,
         ));
-        labelY += op.unitLines.length * theme.action.unitLineHeight + titleGap;
+        labelY += op.unitLines.length * theme.action.unitLineHeight;
       }
       const titleFont = op.lesson ? theme.fonts.lessonTitle : theme.fonts.label;
       const titleLineHeight = op.lesson ? theme.action.titleLineHeight : theme.text.bodyLineHeight;
       ctx.font = titleFont;
       op.labelLines.forEach((line, index) => ctx.fillText(line, labelX, labelY + index * titleLineHeight));
-      labelY += op.labelLines.length * titleLineHeight
-        + (op.descriptionLines.length ? Math.max(titleGap, op.lesson ? 0 : theme.action.rowGap) : 0);
+      labelY += op.labelLines.length * titleLineHeight + (op.descriptionLines.length ? theme.action.rowGap : 0);
       if (op.lesson) {
         ctx.font = theme.fonts.description;
         op.descriptionLines.forEach((line, index) => ctx.fillText(
@@ -1143,11 +1140,59 @@ export function createDocumentReceiptRenderer({
 
         if (op.progressRows.length) {
           bandY += theme.action.rowGap;
-          // The one progress bar (progressBar.mjs) — the same drawing the
-          // result receipt shows this child ten minutes later.
-          bandY += drawProgressRows(ctx, {
-            theme, rows: op.progressRows, x: innerX, y: bandY, width: innerRight - innerX,
-          });
+          for (const row of op.progressRows) {
+            const complete = row.completed >= row.total;
+            ctx.fillStyle = theme.colors.text;
+            ctx.font = theme.fonts.eyebrow;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${String(row.label).toUpperCase()}${complete ? ' COMPLETE' : ''}`, innerX, bandY);
+            ctx.textAlign = 'right';
+            ctx.font = theme.fonts.code;
+            // POSITION, not a tally: "35 of 366" is where the child IS. The
+            // agenda used to print `34/366` — how many are behind them, which
+            // is not the thing they act on.
+            ctx.fillText(`${activeProgressPosition(row)} of ${row.total}`, innerRight, bandY);
+            ctx.textAlign = 'left';
+            const barY = bandY + theme.action.progressLabelHeight;
+            const barW = innerRight - innerX;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(innerX, barY, barW, theme.action.progressBarHeight);
+            const filled = Math.max(0, Math.min(1, row.completed / row.total)) * barW;
+            if (filled > 0) ctx.fillRect(innerX, barY, filled, theme.action.progressBarHeight);
+            // THE PRESENT TENSE. Solid is finished and empty is untouched; the
+            // unit a child is actually inside is neither, and filing it with
+            // "never opened" is what this hatch fixes. Vertical stripes, not an
+            // outline — the empty track is already an outline.
+            const active = Number.isInteger(row.inProgress) ? row.inProgress : 0;
+            if (active > 0 && row.completed + active <= row.total) {
+              const hatchEnd = innerX + ((row.completed + active) / row.total) * barW;
+              ctx.save();
+              ctx.lineWidth = theme.result.progressHatchWidth;
+              for (let hx = innerX + filled + theme.result.progressHatchPitch / 2; hx < hatchEnd;
+                hx += theme.result.progressHatchPitch) {
+                ctx.beginPath();
+                ctx.moveTo(hx, barY);
+                ctx.lineTo(hx, barY + theme.action.progressBarHeight);
+                ctx.stroke();
+              }
+              ctx.restore();
+            }
+            // Ticks only while they can still be told apart — see
+            // `progressTickMax`. At 366 lessons each tick is a third of a pixel
+            // and the bar prints as a smudge.
+            if (row.total <= theme.action.progressTickMax) {
+              ctx.lineWidth = 2;
+              for (let i = 1; i < row.total; i += 1) {
+                const tx = innerX + (i / row.total) * barW;
+                ctx.beginPath();
+                ctx.moveTo(tx, barY);
+                ctx.lineTo(tx, barY + theme.action.progressBarHeight);
+                ctx.stroke();
+              }
+            }
+            bandY += theme.action.progressLabelHeight + theme.action.progressBarHeight
+              + theme.action.progressRowGap;
+          }
         }
 
         if (op.metaParts.length) {

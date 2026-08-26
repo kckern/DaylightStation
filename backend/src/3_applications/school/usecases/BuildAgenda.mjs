@@ -366,68 +366,43 @@ export class BuildAgenda {
     // document sees only the SUFFIX here — the offer above carries the full
     // label, which is a different consumer's concern (Task 11's resolver).
     const worksById = new Map((works ?? []).map((work) => [work.work, work]));
-
-    /**
-     * The human names for an offer: Subject › Course › Unit › Lesson, plus
-     * where the lesson sits in its unit.
-     *
-     * THIS USED TO EXIST ONLY FOR THE PRINTED SHEET. The raw offer carries ids
-     * — `courseId: 'plex:675689'`, `module: '676027'` — which no reader can
-     * read, so every consumer needs the same resolution against `works` and
-     * the learner's enrollment. Computing it inline inside the document branch
-     * meant the JSON `sections` (the teacher dashboard, the learner's own
-     * rail) got the ids and nothing else, and rendered a planned lesson as a
-     * bare title with no course, no unit, and no art. One function, both
-     * consumers.
-     */
-    const offerPresentation = (section) => {
-      const entry = section.next;
-      if (!entry) return null;
-      const work = worksById.get(entry.courseId);
-      const enrollment = assignment?.courses?.find((course) => course.courseId === entry.courseId)?.enrollment;
-      const subjectLabel = section.subject ? section.subject[0].toUpperCase() + section.subject.slice(1) : 'School';
-      const moduleLabel = moduleDisplay({
-        work, enrollment, moduleId: entry.module, fallbackTitle: entry.module ?? entry.title,
-      });
-      // A program course (piano) already resolved its own names when it
-      // planned the day — `programContext` IS the resolution, so re-deriving
-      // it from `works` would only lose to it.
-      const taxonomy = entry.programContext
-        ? {
-          subject: subjectLabel,
-          course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
-          unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
-          lesson: entry.programContext.lesson?.title ?? entry.title,
-        }
-        : {
-          subject: subjectLabel,
-          course: courseDisplay({ work, enrollment, fallback: entry.courseId ?? 'Independent study' }).title,
-          unit: moduleLabel.taxonomyLabel,
-          lesson: entry.title,
-        };
-      const lessons = enrollment?.lessonOrder?.[entry.module] ?? [];
-      const lessonIndex = lessons.indexOf(entry.unitId);
-      const progressLabel = Number.isInteger(moduleLabel.number) && lessonIndex >= 0
-        ? `Unit ${moduleLabel.number} · ${lessonIndex + 1}/${lessons.length}`
-        : section.progressLabel;
-      // The lesson's own artwork when the program has one (Plex thumbnails,
-      // already proxied), otherwise the course cover. Null rather than a
-      // substitute: a made-up poster claiming to be the lesson's is the
-      // failure the self-service poster route exists to refuse.
-      const posterUrl = entry.programContext?.lesson?.thumbnail
-        ?? (entry.courseId
-          ? `/api/v1/school/selfservice/curriculum/${encodeURIComponent(entry.courseId)}/poster.jpg`
-          : null);
-      return { taxonomy, progressLabel, posterUrl };
-    };
-
-    // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
-    // document sees only the SUFFIX here — the offer above carries the full
-    // label, which is a different consumer's concern (Task 11's resolver).
     const sectionsForDocument = sections.map((section) => (actionLabelBySubject.has(section.subject)
       ? { ...section, next: {
         ...section.next,
-        ...(({ posterUrl, ...printed }) => printed)(offerPresentation(section) ?? {}),
+        taxonomy: (() => {
+          const entry = section.next;
+          const work = worksById.get(entry?.courseId);
+          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
+          if (entry?.programContext) return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: entry.programContext.course?.title ?? entry.programContext.course?.id ?? 'Piano course',
+            unit: entry.programContext.unit?.title ?? entry.programContext.unit?.id ?? 'Unit',
+            lesson: entry.programContext.lesson?.title ?? entry.title,
+          };
+          const courseLabel = courseDisplay({ work, enrollment, fallback: entry?.courseId ?? 'Independent study' });
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
+          return {
+            subject: section.subject[0].toUpperCase() + section.subject.slice(1),
+            course: courseLabel.title,
+            unit: moduleLabel.taxonomyLabel,
+            lesson: entry?.title,
+          };
+        })(),
+        progressLabel: (() => {
+          const entry = section.next;
+          const work = worksById.get(entry?.courseId);
+          const enrollment = assignment?.courses?.find((course) => course.courseId === entry?.courseId)?.enrollment;
+          const lessons = enrollment?.lessonOrder?.[entry?.module] ?? [];
+          const lessonIndex = lessons.indexOf(entry?.unitId);
+          const moduleLabel = moduleDisplay({
+            work, enrollment, moduleId: entry?.module, fallbackTitle: entry?.module ?? entry?.title,
+          });
+          return Number.isInteger(moduleLabel.number) && lessonIndex >= 0
+            ? `Unit ${moduleLabel.number} · ${lessonIndex + 1}/${lessons.length}`
+            : section.progressLabel;
+        })(),
         actionLabel: actionLabelBySubject.get(section.subject),
         ...(calculatorBySubject.has(section.subject)
           ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
@@ -435,17 +410,9 @@ export class BuildAgenda {
       } }
       : section));
 
-    const enrichedSections = sections.map((section) => {
-      const presentation = offerPresentation(section);
-      if (!presentation && !calculatorBySubject.has(section.subject)) return section;
-      return { ...section, next: {
-        ...section.next,
-        ...(presentation ?? {}),
-        ...(calculatorBySubject.has(section.subject)
-          ? { schoolcalcHandoff: calculatorBySubject.get(section.subject) }
-          : {}),
-      } };
-    });
+    const enrichedSections = sections.map((section) => (calculatorBySubject.has(section.subject)
+      ? { ...section, next: { ...section.next, schoolcalcHandoff: calculatorBySubject.get(section.subject) } }
+      : section));
 
     const notes = await this.#collectNotes(learnerId, now.getTime());
 

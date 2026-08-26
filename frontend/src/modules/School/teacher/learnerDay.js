@@ -101,12 +101,6 @@ export function joinLearnerDay({
     // Sections sharing a subject would otherwise collide on the row key.
     const rowKey = (status) => `${key}:${position}:${status}`;
     const planned = section?.next?.title ?? null;
-    // THE OFFER ITSELF, not just its title. `next` carries the resolved
-    // taxonomy (Subject › Course › Unit › Lesson) and the lesson's poster —
-    // everything a view needs to render a planned lesson as richly as a
-    // recorded one. Dropping all but `title` here is why an unstarted card
-    // used to show a bare line where the course, unit, and art belonged.
-    const offer = section?.next ?? null;
     const { matched, matchedOn } = claimFor(section, pool);
 
     if (matched.length) {
@@ -114,23 +108,20 @@ export function joinLearnerDay({
       // repeating it is the duplication the teachers objected to (IA1).
       matched.forEach((session, index) => rows.push({
         key: session.sessionId ?? `${rowKey('done')}:${index}`,
-        subject, status: 'done', planned: index === 0 ? planned : null, offer, session, detail: null,
+        subject, status: 'done', planned: index === 0 ? planned : null, session, detail: null,
         matchedOn: index === 0 ? matchedOn : null,
       }));
       return;
     }
     if (section?.suppressed) {
       rows.push({
-        key: rowKey('deferred'), subject, status: 'deferred', planned, offer, session: null,
+        key: rowKey('deferred'), subject, status: 'deferred', planned, session: null,
         detail: section.suppressed.bySubject ? `Deferred for ${section.suppressed.bySubject} focus` : 'Deferred',
       });
       return;
     }
     if (section?.lockedRemedy) {
-      rows.push({
-        key: rowKey('blocked'), subject, status: 'blocked', planned, offer, session: null,
-        detail: section.lockedRemedy,
-      });
+      rows.push({ key: rowKey('blocked'), subject, status: 'blocked', planned, session: null, detail: section.lockedRemedy });
       return;
     }
     if (section?.servedToday) {
@@ -142,7 +133,7 @@ export function joinLearnerDay({
       if (carried.length) {
         carried.forEach((session, index) => rows.push({
           key: session.sessionId ?? `${rowKey('carried')}:${index}`,
-          subject, status: 'done', planned: index === 0 ? planned : null, offer, session,
+          subject, status: 'done', planned: index === 0 ? planned : null, session,
           detail: null, carriedOver: true,
           matchedOn: index === 0 ? carriedOn : null,
         }));
@@ -151,13 +142,13 @@ export function joinLearnerDay({
       // Still reachable, and still honest: a subject served by a program that
       // owns its completion outside a work session has no session to show.
       rows.push({
-        key: rowKey('served'), subject, status: 'done', planned, offer, session: null,
+        key: rowKey('served'), subject, status: 'done', planned, session: null,
         detail: 'Completed — no session record',
       });
       return;
     }
     rows.push({
-      key: rowKey('planned'), subject, status: 'planned', planned, offer, session: null,
+      key: rowKey('planned'), subject, status: 'planned', planned, session: null,
       detail: section?.timingNotice ?? null,
     });
   });

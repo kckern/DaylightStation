@@ -42,31 +42,11 @@ function encodeIntentPart(part) {
 }
 
 /**
- * The FKB JavaScript interface object, or null when we are not inside FKB.
- *
- * TWO NAMES, AND ONLY ONE OF THEM IS THE BRIDGE ITSELF. `FullyKiosk` is the
- * NATIVE object Android's `addJavascriptInterface` attaches; `fully` is a
- * JavaScript alias FKB creates for it by injecting its own script into the
- * page. Every function in this file used to test for `fully` alone, so on any
- * device where that alias does not land the whole module went quietly inert —
- * `screenOff()` returned false and logged `fkb.screenOff.unavailable` forever,
- * which is exactly what the school Portal (Facebook Portal, Android 9, FKB
- * 1.60.1 PLUS, JS interface ENABLED) has been doing: probed on-device, the
- * page had `FullyKiosk` and `FullyLicense` on `window` and no `fully` at all.
- *
- * The native object carries the same method names, so preferring the alias and
- * falling back to it costs nothing and makes the module work on both.
- */
-function bridge() {
-  if (typeof globalThis === 'undefined') return null;
-  return globalThis.fully ?? globalThis.FullyKiosk ?? null;
-}
-
-/**
- * Check if the FKB JavaScript interface is available (under either name).
+ * Check if the FKB JavaScript interface is available.
+ * The `fully` global is injected by FKB into all WebView pages.
  */
 export function isFKBAvailable() {
-  return bridge() !== null;
+  return typeof fully !== 'undefined';
 }
 
 /**
@@ -85,7 +65,7 @@ export function launchApp(packageName) {
   logger().info('fkb.launch.attempt', { packageName });
   // Always use 1-arg form — FKB's 3-arg form (package, action, activity)
   // doesn't work reliably. Android resolves the default launcher activity.
-  bridge().startApplication(packageName);
+  fully.startApplication(packageName);
   return true;
 }
 
@@ -101,13 +81,13 @@ export function launchApp(packageName) {
  * @returns {boolean} true if FKB was available and the launch was attempted
  */
 export function startApplication(packageName, activityName) {
-  if (!isFKBAvailable() || typeof bridge().startApplication !== 'function') {
+  if (!isFKBAvailable() || typeof fully.startApplication !== 'function') {
     logger().warn('fkb.startApplication.unavailable', { packageName, activityName });
     return false;
   }
   logger().info('fkb.startApplication.attempt', { packageName, activityName });
-  if (activityName) bridge().startApplication(packageName, activityName);
-  else bridge().startApplication(packageName);
+  if (activityName) fully.startApplication(packageName, activityName);
+  else fully.startApplication(packageName);
   return true;
 }
 
@@ -115,10 +95,9 @@ export function startApplication(packageName, activityName) {
  * Open an Android target (settings screen / app) via FKB, from a config object.
  * Prefers an intent ACTION (reliable across OEMs — e.g.
  * 'android.settings.BLUETOOTH_SETTINGS'), launched as an intent: URI through
- * the bridge's `startIntent`. Falls back to component launch only if no action
- * is given.
+ * fully.startIntent. Falls back to component launch only if no action is given.
  *
- * NOTE: bridge().startApplication(pkg, x) treats x as an intent ACTION, not an
+ * NOTE: fully.startApplication(pkg, x) treats x as an intent ACTION, not an
  * activity class — so a component must go through startIntent, not the 2-arg
  * startApplication form (which silently no-ops for a class string).
  *
@@ -128,7 +107,7 @@ export function startApplication(packageName, activityName) {
  */
 export function launchAndroidTarget(target = {}) {
   const { action, package: pkg, activity } = target;
-  if (!isFKBAvailable() || typeof bridge().startIntent !== 'function') {
+  if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
     logger().warn('fkb.launchTarget.unavailable', { action, pkg, activity });
     return false;
   }
@@ -153,14 +132,14 @@ export function launchAndroidTarget(target = {}) {
     uri = `intent:#Intent;component=${encodedPkg}/${encodedActivity};end`;
   } else if (pkg) {
     logger().info('fkb.launchTarget.app', { pkg });
-    bridge().startApplication(pkg);
+    fully.startApplication(pkg);
     return true;
   } else {
     logger().warn('fkb.launchTarget.empty', { target });
     return false;
   }
   logger().info('fkb.launchTarget.intent', { action, pkg, activity, uri });
-  bridge().startIntent(uri);
+  fully.startIntent(uri);
   return true;
 }
 
@@ -224,7 +203,7 @@ export function buildIntentUri(packageName, activityName, extras = {}) {
 }
 
 export function launchIntent(packageName, activityName, extras = {}) {
-  if (!isFKBAvailable() || typeof bridge().startIntent !== 'function') {
+  if (!isFKBAvailable() || typeof fully.startIntent !== 'function') {
     logger().warn('fkb.intent.unavailable', { packageName });
     return false;
   }
@@ -238,28 +217,25 @@ export function launchIntent(packageName, activityName, extras = {}) {
   }
 
   logger().info('fkb.intent.attempt', { packageName, activityName, extraKeys: Object.keys(extras), uri });
-  bridge().startIntent(uri);
+  fully.startIntent(uri);
   return true;
 }
 
 /**
- * Turn the tablet screen OFF via FKB's JS bridge (`turnScreenOff`).
+ * Turn the tablet screen OFF via FKB's JS bridge (`fully.turnScreenOff`).
  * Instant, dependency-free (no network, no deviceId) — the robust burn-in kill
  * switch. No-op (returns false) when FKB isn't present. Never throws.
  *
  * @returns {boolean} true if the FKB bridge handled the request
  */
 export function screenOff() {
-  if (!isFKBAvailable() || typeof bridge().turnScreenOff !== 'function') {
-    logger().warn('fkb.screenOff.unavailable', {
-      bridge: bridge() ? 'present' : 'absent',
-      method: typeof bridge()?.turnScreenOff,
-    });
+  if (!isFKBAvailable() || typeof fully.turnScreenOff !== 'function') {
+    logger().warn('fkb.screenOff.unavailable', {});
     return false;
   }
   logger().info('fkb.screenOff', {});
   try {
-    bridge().turnScreenOff();
+    fully.turnScreenOff();
     return true;
   } catch (error) {
     logger().warn('fkb.screenOff.failed', { error: error?.message ?? String(error) });
@@ -268,22 +244,19 @@ export function screenOff() {
 }
 
 /**
- * Turn the tablet screen ON via FKB's JS bridge (`turnScreenOn`).
+ * Turn the tablet screen ON via FKB's JS bridge (`fully.turnScreenOn`).
  * No-op (returns false) when FKB isn't present. Never throws.
  *
  * @returns {boolean} true if the FKB bridge handled the request
  */
 export function screenOn() {
-  if (!isFKBAvailable() || typeof bridge().turnScreenOn !== 'function') {
-    logger().warn('fkb.screenOn.unavailable', {
-      bridge: bridge() ? 'present' : 'absent',
-      method: typeof bridge()?.turnScreenOn,
-    });
+  if (!isFKBAvailable() || typeof fully.turnScreenOn !== 'function') {
+    logger().warn('fkb.screenOn.unavailable', {});
     return false;
   }
   logger().info('fkb.screenOn', {});
   try {
-    bridge().turnScreenOn();
+    fully.turnScreenOn();
     return true;
   } catch (error) {
     logger().warn('fkb.screenOn.failed', { error: error?.message ?? String(error) });
@@ -321,7 +294,7 @@ let _bound = false;
 export function onResume(callback) {
   _onResumeCallback = callback;
   if (!_bound && isFKBAvailable()) {
-    bridge().bind('onResume', () => {
+    fully.bind('onResume', () => {
       logger().info('fkb.resume');
       if (_onResumeCallback) _onResumeCallback();
     });
@@ -344,7 +317,7 @@ export function onResume(callback) {
 let _backBound = false;
 export function bindBackButton() {
   if (_backBound || !isFKBAvailable()) return;
-  bridge().bind('onBackButton', () => {
+  fully.bind('onBackButton', () => {
     logger().info('fkb.backButton');
     window.history.back();
   });
