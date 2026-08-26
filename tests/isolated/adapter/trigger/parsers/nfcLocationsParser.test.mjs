@@ -15,6 +15,7 @@ describe('parseNfcLocations', () => {
     expect(result.livingroom).toEqual({
       target: 'livingroom-tv',
       action: 'play-next',
+      learner_action: null,
       auth_token: null,
       notify_unknown: null,
       end: null,
@@ -88,5 +89,18 @@ describe('parseNfcLocations', () => {
       livingroom: { target: 'livingroom-tv' },
     });
     expect(result.livingroom.notify_unknown).toBeNull();
+  });
+
+  it('extracts learner_action as first-class config, not a tag default', () => {
+    const out = parseNfcLocations({
+      livingroom: { target: 'livingroom-tv', action: 'play-next', learner_action: 'reading-session' },
+    });
+    expect(out.livingroom.learner_action).toBe('reading-session');
+    expect(out.livingroom.defaults).not.toHaveProperty('learner_action');
+  });
+
+  it('defaults learner_action to null when the location does not declare one', () => {
+    const out = parseNfcLocations({ office: { target: 'office-tv' } });
+    expect(out.office.learner_action).toBeNull();
   });
 });
