@@ -140,6 +140,24 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
 
   useEffect(() => detachMedia, [detachMedia]);
 
+  // The living-room screen runs the ArtMode screensaver with `showOnLoad`, and
+  // a screensaver is a FULLSCREEN OVERLAY — it suppresses itself for active
+  // content and for a mounted overlay, and a reading session is neither. This
+  // widget renders into the layout underneath it, so without this the child
+  // taps their card and keeps looking at a framed painting.
+  //
+  // Once, on the way OUT of `idle`. Not per event: the overlay slot is shared,
+  // and a widget that dismissed on every payload would fight anything a later
+  // screen legitimately mounts mid-session.
+  const wasIdle = useRef(true);
+  useEffect(() => {
+    if (session.view !== 'idle' && wasIdle.current) {
+      dismissOverlay();
+      readingLog.screen('screensaver-cleared', { view: session.view });
+    }
+    wasIdle.current = session.view === 'idle';
+  }, [session.view, dismissOverlay]);
+
   const { view, learner, summary, pick, notice, confirmRemainingMs, confirmTotalMs } = session;
 
   // The whole screen belongs to the menu when nobody is standing at the reader,

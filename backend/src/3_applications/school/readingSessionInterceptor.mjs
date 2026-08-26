@@ -129,6 +129,51 @@ export class ReadingSessionInterceptor {
   }
 
   /**
+   * D9 — an unregistered book tag tapped inside a session.
+   *
+   * THIS CANNOT BE A CLAIM, and that is why it is a separate door. A tag that
+   * resolves to nothing never becomes a content `Response` at all: it
+   * dead-ends in the dispatcher's unknown-tag path, above the interceptor
+   * seam, so `claim` is never called and never will be. The screen has handled
+   * `book-unknown` since the widget shipped with nothing anywhere producing
+   * it, and the child tapping a book saw the TV do nothing while a push
+   * arrived on a phone in another room.
+   *
+   * IT ADDS, IT DOES NOT REPLACE. The observed-registry write and the
+   * `notify_unknown` push are what actually get the book enrolled; the caller
+   * does both regardless of what this answers, and this is only the half the
+   * four-year-old can see.
+   *
+   * TOTAL AND SYNCHRONOUS. It runs on the tap path with nothing to await it,
+   * so a throw here would surface as an unhandled rejection on a code path
+   * whose entire job is to be reliable about tags nobody knows.
+   *
+   * @param {{location?: string, tagUid?: string}} info
+   * @returns {boolean} whether the room was actually told
+   */
+  noteUnknownTag(info) {
+    try {
+      const location = info?.location;
+      if (!location) return false;
+      const session = this.#sessions.current(location);
+      if (!session) return false;
+      const told = this.#broadcast(location, {
+        event: 'book-unknown', tagUid: info?.tagUid ?? null, location,
+        learnerId: session.learnerId, at: this.#clock().toISOString(),
+      });
+      this.#log('info', 'school.reading.book-unknown', {
+        location, learnerId: session.learnerId, tagUid: info?.tagUid ?? null, told,
+      });
+      return told;
+    } catch (err) {
+      this.#log('warn', 'school.reading.book-unknown-failed', {
+        location: info?.location ?? null, error: err?.message ?? String(err),
+      });
+      return false;
+    }
+  }
+
+  /**
    * D8 — the seam's OTHER question: may this dispatch keep the reader
    * location's `end` behaviour?
    *

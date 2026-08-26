@@ -1,6 +1,7 @@
 # Living-room reading sessions — lifecycle and state machine
 
-> **Status:** design, settled 2026-08-26. Not yet built.
+> **Status:** built and wired, 2026-08-26. Not yet verified on the hardware —
+> see §11 for what a person still has to watch happen on the actual TV.
 > Implementation plan: `docs/_wip/plans/2026-08-26-preschool-reading-03-livingroom-session-screen.md`.
 > This document is the authority on *behaviour*; the plan is the authority on *how*.
 
@@ -290,6 +291,84 @@ Identical, except:
 
 ---
 
+## 8a. The wire — events, routes, and where each piece lives
+
+Everything the screen knows arrives on **one WebSocket topic per reader**,
+`reading:<location>` (`reading:livingroom`). Everything the backend cannot see
+goes back over **three HTTP routes**. There is no other channel.
+
+### Events on `reading:<location>`
+
+| Event | Sent by | Payload | The screen does |
+|---|---|---|---|
+| `session-open` | `ReadingSessionService.open` | `learnerId, location, target, state, openedAt` | render the prompt for that child, fetch their summary, clear the screensaver |
+| `session-update` | `ReadingSessionService.update` | the whole session | **nothing** — the screen owns its own view; the session's mirror is not an instruction |
+| `session-close` | `ReadingSessionService.close` | the session, plus `reason` (`timeout`, …) | back to `idle`, unless a story is still playing — that outlives the session |
+| `session-refused` | the `reading-session` learner action | `learnerId, location, target, reason: 'content-playing'` | one notice over the running content, and **nothing else moves** (**D2**) |
+| `book-selected` | `ReadingSessionInterceptor.claim` | `learnerId, contentId, target, at` | cover, title, countdown. The same `contentId` twice confirms immediately (**D10**) |
+| `book-refused` | `ReadingSessionInterceptor.claim` | `learnerId, contentId, reason: 'finish-this-one'` | "Finish this one first" (**D5**, assignment mode) |
+| `book-unknown` | `ReadingSessionInterceptor.noteUnknownTag` | `learnerId, tagUid, location, at` | "I don't know that book yet" (**D9**) |
+| `session-error` | `ReadingSessionInterceptor.claim` | `learnerId, reason: 'obligation-unreadable'` | "I can't check your reading list" — and the prompt stays usable |
+
+Two of those are worth calling out because they arrive from OUTSIDE the
+interceptor, and could not arrive from inside it:
+
+- **`session-refused`** comes from the learner action, before any session
+  exists. There is nothing for an interceptor to intercept: the tap was a card,
+  not a book, and the answer is that no session opens at all.
+- **`book-unknown`** comes from the dispatcher's unknown-tag path. **An
+  unresolvable tag never becomes a content `Response`**, so the content
+  interceptor is never consulted and never can be. It is an *additional*
+  message: the observed-registry write and the `notify_unknown` push happen
+  exactly as they always did.
+
+### `enrolled` — three answers, not two
+
+`StoryTimeProgramLauncher.status()` carries `enrolled` so that **"this child owes
+nothing" and "nobody could read what they owe" stay different answers**:
+
+| `error` | `enrolled` | Mode | On screen |
+|---|---|---|---|
+| `false` | `true`, `count < target` | `assignment` | nothing special — the hardened path |
+| `false` | `true`, `count >= target` | `browsing` | nothing special — they are finished |
+| `false` | `false` | `browsing` | **nothing at all.** Not enrolled is an ordinary state, not a fault (**D1**) |
+| `true` | `null` | `browsing`, but reported | `session-error` — relaxed on a guess, and said out loud |
+
+While the last two shared one answer, an unreadable log switched a
+mid-assignment child's hardening off with nothing anywhere to say so.
+
+### Routes — `/api/v1/school/reading`
+
+| Route | Body / query | Why it exists |
+|---|---|---|
+| `POST /playing` | `location, learnerId, contentId, pickId` | **Nothing else moves a session to `reading`.** The backend cannot see the first frame; without this, `state` never leaves `confirm`, D5 never fires in the field, and every book tapped during a story is claimed as a fresh prompt. It reports PLAYBACK START, not countdown expiry — they differ by however long the content takes to load, and that gap is exactly when a stray tap misbehaves. |
+| `POST /read` | `learnerId, contentId, title, tagUid, location, pickId` | The only path that writes evidence. `pickId` is the idempotency key. It also performs `READING → PROMPT`: a session left at `reading` refuses the next book while nothing plays (D5) and never expires (D6), so the TV stays on all night. |
+| `GET /summary` | `?learnerId=` | What the prompt puts in front of the child: display name, today's count, target, and yesterday's books. Every part degrades on its own — the one thing that must never happen is a blank TV in front of a four-year-old. |
+
+**Attribution is carried, never re-derived.** Both POSTs take `learnerId` from
+the body — the screen's own snapshot of who the session belonged to when the
+book was **picked**. Reading it back off the session here would credit a story
+to whoever wandered past the reader while it played (**D4**), which is the one
+mistake this feature can make that nobody would ever notice.
+
+### Where each piece lives
+
+| Piece | Path |
+|---|---|
+| Session store (in-memory, per location, idle sweep) | `backend/src/3_applications/school/ReadingSessionService.mjs` |
+| Content interceptor (claim, `suppressEnd`, `noteUnknownTag`) | `backend/src/3_applications/school/readingSessionInterceptor.mjs` |
+| The interceptor seam + D8 suppression | `backend/src/3_applications/trigger/responseHandlers.mjs` (`content`) |
+| The unknown-tag observer | `backend/src/3_applications/trigger/TriggerDispatchService.mjs` |
+| The `reading-session` learner action (D2 lives here) | `backend/src/5_composition/modules/learnerCardActions.mjs` |
+| Evidence | `backend/src/3_applications/school/usecases/RecordStoryRead.mjs` |
+| HTTP door | `backend/src/4_api/v1/routers/reading.mjs` |
+| Screen state machine | `frontend/src/modules/School/reading/useReadingSession.js` |
+| Screen | `frontend/src/modules/School/reading/ReadingSessionScreen.jsx` |
+| Composition | `backend/src/app.mjs` (search `Living-room reading sessions`) |
+| Mount | `data/household/screens/living-room.yml` → `widget: school-reading` |
+
+---
+
 ## 9. Failure paths
 
 Not state transitions, but each must land somewhere visible.
@@ -316,3 +395,35 @@ Not state transitions, but each must land somewhere visible.
    A child who taps and sees nothing taps harder.
 6. **A reading session never seizes the TV** from content already playing.
 7. **In assignment mode: one story at a time.** No queue, no on-deck, nothing silent.
+
+---
+
+## 11. What is still unverified
+
+Every rule above is pinned by a test. None of it has been watched happen on the
+actual living-room TV, and three of these cannot be settled any other way:
+
+1. **The ceremony rendering before the TV powers off** (the D8 hazard). A
+   passing test proves `endBehavior` was stripped; only the room proves the
+   ceremony was seen.
+2. **The audible cue.** `playScanCeremonyTone` is a programmatic `Audio.play()`
+   on the Shield's WebView. Book taps already start audible playback there with
+   no user gesture, so there is no autoplay gate for the CONTENT — whether a
+   short synthesized tone behaves the same way is a separate claim, and it has
+   not been checked on the hardware. It logs its own failure, so the log store
+   will answer it.
+3. **The screensaver.** `living-room.yml` runs ArtMode with `showOnLoad: true`,
+   and a screensaver is a fullscreen overlay over the layout this widget renders
+   into. The widget dismisses it once on the way out of `idle`; whether that is
+   enough on the real screen, at the real idle timings, is a thing to watch.
+
+Two known gaps, both deliberate:
+
+- **A story abandoned mid-playback leaves the session at `reading`.** The screen
+  knows (`notePlaybackDismissed`), and there is no route that tells the backend.
+  The session then sits exempt from the idle sweep until something else moves
+  it. `POST /read` covers the normal path; a bail does not.
+- **Teardown after the ceremony is the idle timeout, not an explicit step.** The
+  screen returns to the prompt after the celebration and the session expires ~2
+  minutes later (D6). The TV does power off; it does so on the timeout's clock
+  rather than the ceremony's.
