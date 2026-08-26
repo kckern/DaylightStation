@@ -236,6 +236,30 @@ describe('createSchoolPrintScanConsumer: a live worksheet with blank rows still 
     expect(bus.broadcast.mock.calls.filter(([, p]) => p?.event?.startsWith('scan-'))).toHaveLength(1);
   });
 
+  it('tells a child with a BLANK card what to fill in, not that it was already done', async () => {
+    // `scan-not-recorded` reads "Already done — there was nothing new to
+    // mark", which is false for a card nobody filled in and points the child
+    // away from the one thing they need to do.
+    const bus = build({
+      outcome: {
+        results: [],
+        cardRecordCount: 7,
+        silentLiveRecords: [{
+          recordId: 'civilization/atlas/ws-today@rev1:v0:34-39',
+          documentId: 'civilization/atlas/ws-today',
+          rowRange: { start: 34, end: 39 },
+          learnerId: 'milo',
+        }],
+      },
+      recorder: duplicateRecorder(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-rows-unmarked')).toHaveLength(1);
+    expect(eventsNamed(bus, 'scan-not-recorded')).toHaveLength(0);
+  });
+
   it('stays quiet for a legacy bubble sheet the store has no records for at all', async () => {
     // The deliberate silence this early return was originally written for, and
     // the one case that must survive the fix: a sheet on this bus that was
