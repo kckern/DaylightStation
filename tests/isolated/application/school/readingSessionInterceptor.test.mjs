@@ -416,3 +416,60 @@ describe('ReadingSessionInterceptor — suppressing the location end behaviour (
     expect(loaded[0]).toMatchObject({ endBehavior: 'tv-off', endLocation: 'livingroom' });
   });
 });
+
+/**
+ * D9 — an unregistered book tag tapped INSIDE a session says so on screen.
+ *
+ * The screen has handled `book-unknown` since the widget shipped and NOTHING
+ * produced it, because an unresolvable tag never becomes a content `Response`
+ * — it dead-ends in the dispatcher's unknown-tag path, well above the
+ * interceptor seam. So the child tapped a book, the phone got a push in
+ * another room, and the TV in front of them said nothing at all.
+ *
+ * The screen message is ADDITIONAL. The observed-registry write and the
+ * `notify_unknown` push are what get the book enrolled, and they are not
+ * replaced by anything here.
+ */
+describe('ReadingSessionInterceptor — an unknown tag inside a session (D9)', () => {
+  it('tells the screen when a session is open at that reader', () => {
+    const { interceptor, sessions, sent } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(true);
+    expect(sent.at(-1)).toMatchObject({
+      topic: 'reading:livingroom',
+      payload: { event: 'book-unknown', tagUid: '04a1b2c3', learnerId: 'learner-c' },
+    });
+  });
+
+  it('says nothing when no session is open — an unknown tag in an empty room is not news', () => {
+    const { interceptor, sent } = build();
+    expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it('says nothing about a reader in another room', () => {
+    const { interceptor, sessions, sent } = build();
+    sessions.open({ location: 'study', learnerId: 'learner-c' });
+    const before = sent.length;
+    expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
+    expect(sent).toHaveLength(before);
+  });
+
+  it('never throws, whatever it is handed', () => {
+    const { interceptor } = build();
+    for (const bad of [undefined, null, {}, { location: null }, { tagUid: 'x' }]) {
+      expect(() => interceptor.noteUnknownTag(bad)).not.toThrow();
+    }
+  });
+
+  it('a dead bus is a log line, not a throw — the registry write must still happen upstream', () => {
+    const sessions = new ReadingSessionService({ logger: silent });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    const interceptor = new ReadingSessionInterceptor({
+      sessions, storyTime: owing,
+      eventBus: { broadcast() { throw new Error('bus is gone'); } },
+      logger: silent,
+    });
+    expect(interceptor.noteUnknownTag({ location: 'livingroom', tagUid: '04a1b2c3' })).toBe(false);
+  });
+});
