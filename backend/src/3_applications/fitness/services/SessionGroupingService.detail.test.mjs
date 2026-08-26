@@ -5,8 +5,8 @@ const T0 = Date.parse('2026-06-05T16:22:00-07:00');
 const tl = (ticks, val) => ({ series: { 'user_3:heart_rate': Array(ticks).fill(val) }, events: [], tick_count: ticks, interval_seconds: 5 });
 
 // two no-video sessions that groupSessions will merge (overlap on user_3); 10-min idle gap
-const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { user_3: { displayName: 'user_3' }, user_4: { displayName: 'user_4' } }, media: null, totalCoins: 100 };
-const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { user_3: { displayName: 'user_3' } }, media: null, totalCoins: 50 };
+const s1 = { sessionId: '20260605162200', date: '2026-06-05', startTime: T0, durationMs: 15000, participants: { user_3: { displayName: 'user_3' }, user_4: { displayName: 'user_4' } }, media: null, totalRings: 100 };
+const s2 = { sessionId: '20260605163000', date: '2026-06-05', startTime: T0 + 600000, durationMs: 10000, participants: { user_3: { displayName: 'user_3' } }, media: null, totalRings: 50 };
 
 const sessionService = {
   resolveHouseholdId: () => 'household',
@@ -58,20 +58,20 @@ describe('SessionGroupingService.getGroupDetail', () => {
   });
 
   it('keeps cumulative series continuous across seams (offsets later segments by the running total)', async () => {
-    // user_3:coins is cumulative and restarts each session; heart_rate is instantaneous
+    // user_3:rings is cumulative and restarts each session; heart_rate is instantaneous
     const svcSessions = {
       resolveHouseholdId: () => 'household',
       listSessionsByDate: async () => [ { ...s1 }, { ...s2 } ],
       getSession: async (id) => ({
         timeline: id === s1.sessionId
-          ? { series: { 'user_3:coins': [10, 20, 30], 'user_3:heart_rate': [100, 100, 100] }, events: [], tick_count: 3, interval_seconds: 5 }
-          : { series: { 'user_3:coins': [5, 15], 'user_3:heart_rate': [120, 120] }, events: [], tick_count: 2, interval_seconds: 5 },
+          ? { series: { 'user_3:rings': [10, 20, 30], 'user_3:heart_rate': [100, 100, 100] }, events: [], tick_count: 3, interval_seconds: 5 }
+          : { series: { 'user_3:rings': [5, 15], 'user_3:heart_rate': [120, 120] }, events: [], tick_count: 2, interval_seconds: 5 },
       }),
     };
     const svc = new SessionGroupingService({ activityRegistry: registry, sessionService: svcSessions });
     const detail = await svc.getGroupDetail('group:20260605162200', 'household');
     // cumulative: second segment offset by 30 (running total at the seam) -> 5+30, 15+30
-    expect(detail.timeline.series['user_3:coins']).toEqual([10, 20, 30, 35, 45]);
+    expect(detail.timeline.series['user_3:rings']).toEqual([10, 20, 30, 35, 45]);
     // instantaneous untouched
     expect(detail.timeline.series['user_3:heart_rate']).toEqual([100, 100, 100, 120, 120]);
   });
@@ -83,7 +83,7 @@ describe('SessionGroupingService.enrichSession (standalone session detail)', () 
   const SOLO_START = Date.parse('2026-06-12T08:14:13-07:00');
   const solo = {
     sessionId: SOLO, date: '2026-06-12', startTime: SOLO_START, durationMs: 690000,
-    participants: { user_2: { displayName: 'User_2' } }, media: null, totalCoins: 216,
+    participants: { user_2: { displayName: 'User_2' } }, media: null, totalRings: 216,
   };
   const raceReg = { enrich: async () => [{ type: 'cycle-game', count: 2, items: [
     { startMs: SOLO_START + 70000, endMs: SOLO_START + 130000, participants: ['user_2'], meta: { raceId: 'a', winnerId: 'user_2' } },

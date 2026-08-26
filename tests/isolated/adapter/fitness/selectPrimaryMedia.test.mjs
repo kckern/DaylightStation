@@ -240,7 +240,7 @@ describe('selectPrimaryMediaSummary (flat summary.media shape)', () => {
   test('picks the workout over a brief bleed-over episode from the previous session', () => {
     // Real case 20260718122955: Tuttle Twins played 75s (carryover), Dig Deeper 48min.
     const items = [
-      { contentId: 'plex:665662', title: 'Bitcoin and the Beast', mediaType: 'video', durationMs: 74893, labels: ['kidsfun'] },
+      { contentId: 'plex:665662', title: 'Bitring and the Beast', mediaType: 'video', durationMs: 74893, labels: ['kidsfun'] },
       { contentId: 'plex:598200', title: 'Total Body Circuit', mediaType: 'video', durationMs: 2892554 },
       { contentId: 'plex:140599', title: 'Stronger (Workout Mix)', mediaType: 'audio', durationMs: 6367 },
     ];

@@ -1,19 +1,19 @@
 import { describe, it, expect, vi } from 'vitest';
 
-describe('FitnessSession end() coin capture ordering', () => {
+describe('FitnessSession end() ring capture ordering', () => {
   it('captures treasureBox summary BEFORE reset clears state', () => {
     const treasureBox = {
-      totalCoins: 500,
+      totalRings: 500,
       buckets: { blue: 0, green: 200, yellow: 150, orange: 100, red: 50 },
       get summary() {
         return {
-          totalCoins: this.totalCoins,
+          totalRings: this.totalRings,
           buckets: { ...this.buckets },
         };
       },
       stop: vi.fn(),
       reset() {
-        this.totalCoins = 0;
+        this.totalRings = 0;
         this.buckets = {};
       },
     };
@@ -26,10 +26,10 @@ describe('FitnessSession end() coin capture ordering', () => {
     };
 
     const buggyResult = buggyCapture();
-    expect(buggyResult.totalCoins).toBe(0); // Bug: coins lost
+    expect(buggyResult.totalRings).toBe(0); // Bug: rings lost
 
     // Restore state for correct test
-    treasureBox.totalCoins = 500;
+    treasureBox.totalRings = 500;
     treasureBox.buckets = { blue: 0, green: 200, yellow: 150, orange: 100, red: 50 };
 
     // CORRECT ordering: summary before reset
@@ -41,12 +41,12 @@ describe('FitnessSession end() coin capture ordering', () => {
     };
 
     const correctResult = correctCapture();
-    expect(correctResult.totalCoins).toBe(500);
+    expect(correctResult.totalRings).toBe(500);
     expect(correctResult.buckets.green).toBe(200);
     expect(correctResult.buckets.orange).toBe(100);
 
     // After correct capture, treasureBox is still reset
-    expect(treasureBox.totalCoins).toBe(0);
+    expect(treasureBox.totalRings).toBe(0);
     expect(treasureBox.buckets).toEqual({});
   });
 });

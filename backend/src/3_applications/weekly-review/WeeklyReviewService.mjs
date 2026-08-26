@@ -134,7 +134,7 @@ export class WeeklyReviewService {
             durationMs: s.durationMs,
             participants: s.participants,
             media: s.media,
-            totalCoins: s.totalCoins,
+            totalRings: s.totalRings,
           }));
         }
       }

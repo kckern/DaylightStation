@@ -174,8 +174,8 @@ const LiveContextSection = () => {
           </div>
           <div className="cs-vitals-meta">
             <div>
-              <p className="cs-device-label">Treasure coins</p>
-              <p className="cs-device-value">{treasureBox?.coins ?? '—'}</p>
+              <p className="cs-device-label">Treasure rings</p>
+              <p className="cs-device-value">{treasureBox?.rings ?? '—'}</p>
             </div>
             <div>
               <p className="cs-device-label">Challenge</p>

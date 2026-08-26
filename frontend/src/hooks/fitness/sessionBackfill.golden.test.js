@@ -2,7 +2,7 @@
  * Golden-parity fixture test — real session 20260627195941 (2026-06-27,
  * Jane Fonda "Complete Workout"), trimmed to the 3 human occupants sharing
  * HR-strap device 10001: grannie (primary, full continuous trace, 966
- * coins), learner1 (2 HR samples then dropped strap), parent-two (1 HR sample
+ * rings), learner1 (2 HR samples then dropped strap), parent-two (1 HR sample
  * then dropped strap).
  *
  * This is the in-memory-shape counterpart to the backend's

@@ -3,7 +3,7 @@
  * (runSessionBackfill's series-aware path) into PersistenceManager._applyBackfill.
  *
  * Scenario: a synthetic/ghost participant ("parent-two") shows up on a device
- * for a handful of ticks with essentially no effort (1 HR sample, 0 coins,
+ * for a handful of ticks with essentially no effort (1 HR sample, 0 rings,
  * no active-zone time) before the device is properly claimed by "grannie",
  * who accrues a full session's worth of data. Duration alone (the legacy
  * threshold-only backfill) would NOT necessarily absorb parent-two's segment
@@ -61,7 +61,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
     // usage threshold (5 min) so the legacy duration-only backfill rule
     // (no `series` input) would NOT absorb her — she's not "sub-threshold"
     // by duration. It's only the EFFORT-based rule (near-zero HR samples /
-    // coins / active-zone time, from Task 1-3's runSessionBackfill effort
+    // rings / active-zone time, from Task 1-3's runSessionBackfill effort
     // path) that correctly identifies her as a ghost (e.g. a sensor that
     // stayed connected but was never actually worn/used). This is the exact
     // regression Task 4 closes: prior to wiring `series` through, this
@@ -72,7 +72,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
     const intervalMs = 5000;
     const tickCount = 180; // 15 min / 5s
 
-    // parent-two: first 10 min (120 ticks) on device 10001 — 1 HR sample, 0 coins.
+    // parent-two: first 10 min (120 ticks) on device 10001 — 1 HR sample, 0 rings.
     const parentTwoEnd = sessionStart + 10 * 60 * 1000;
     // grannie: claims the device for the remaining 5 min, full data.
     const grannieStart = parentTwoEnd;
@@ -104,7 +104,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
           startTime: sessionStart,
           endTime: parentTwoEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-grannie-1',
@@ -114,7 +114,7 @@ describe('PersistenceManager — effort-based reconciliation on the live save pa
           startTime: grannieStart,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {

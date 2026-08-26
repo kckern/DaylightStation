@@ -8,7 +8,7 @@ function fakeSession() {
     sessionId: 'S1',
     startTime: 1000_000,            // ms
     endTime: 1000_000 + 60_000,
-    treasureBox: { totalCoins: 120 },
+    treasureBox: { totalRings: 120 },
     timeline: {
       interval_seconds: 5,
       tick_count: 12,
@@ -65,14 +65,14 @@ test('reads RLE stats at the right tick', () => {
   assert.equal(frames[10].rpm, 80);
 });
 
-test('carries show title (grandparentTitle) and animates coins up to the total', () => {
+test('carries show title (grandparentTitle) and animates rings up to the total', () => {
   const mapper = new TimelapseFrameMapper();
   const frames = mapper.buildFrames(fakeSession(), { speedup: 10, outputFps: 10 });
   assert.equal(frames[0].showTitle, 'Game Cycling');
   assert.equal(frames[50].title, 'Daytona USA');
-  // coins are non-decreasing and reach the total by the final frame
-  assert.ok(frames[10].coins <= frames[50].coins);
-  assert.equal(frames.at(-1).coins, 120);
+  // rings are non-decreasing and reach the total by the final frame
+  assert.ok(frames[10].rings <= frames[50].rings);
+  assert.equal(frames.at(-1).rings, 120);
 });
 
 test('honors a provided resolveName for participant display names', () => {

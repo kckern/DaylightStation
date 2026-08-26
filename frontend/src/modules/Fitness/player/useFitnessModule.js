@@ -116,7 +116,7 @@ const useFitnessModule = (moduleId) => {
     // Phase 5: Entity registry access
     entityRegistry: fitnessCtx.entityRegistry,
     getEntitiesForProfile: fitnessCtx.getEntitiesForProfile,
-    getProfileCoinsTotal: fitnessCtx.getProfileCoinsTotal,
+    getProfileRingsTotal: fitnessCtx.getProfileRingsTotal,
     
     // Devices
     // Phase 2 SSOT: Prefer activeHeartRateParticipants over heartRateDevices for roster-based data

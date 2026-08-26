@@ -9,7 +9,7 @@
  * NEW intent (effort model — Task 10): effort REPLACES duration as the absorb
  * gate on the series path. `runSessionBackfill` no longer calls
  * `applyAbsorbRules`; only `applyEffortAbsorb` folds segments, and only when
- * effort is INSIGNIFICANT (near-zero coins / active-zone / HR samples). The
+ * effort is INSIGNIFICANT (near-zero rings / active-zone / HR samples). The
  * 30s test-user-a segment carries 6 real HR samples (> the 3-sample
  * significance floor) → it is a "brief-but-REAL burst" and is now KEPT, not
  * absorbed. This is the deliberate improvement the task calls out: a short but
@@ -134,7 +134,7 @@ describe('PersistenceManager — symmetric threshold application (W1.C / OI-3)',
           // still on the old 60s default, or the segment endpoint
           // happened to flip status to dropped via a different path).
           status: 'dropped',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-test-user-b-1',
@@ -144,7 +144,7 @@ describe('PersistenceManager — symmetric threshold application (W1.C / OI-3)',
           startTime: aEnd,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {

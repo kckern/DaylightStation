@@ -1,6 +1,6 @@
 /**
  * StravaSessionBuilder — Pure functions to reconstruct fitness session
- * timeline data (HR, zones, coins) from per-second heart rate arrays.
+ * timeline data (HR, zones, rings) from per-second heart rate arrays.
  *
  * Used by:
  * - FitnessActivityEnrichmentService (webhook pipeline, Strava-only sessions)
@@ -12,11 +12,11 @@
 const INTERVAL_SECONDS = 5;
 
 const ZONES = [
-  { name: 'cool',   short: 'c',    min: 0,   color: 'blue',   coins: 0 },
-  { name: 'active', short: 'a',    min: 100, color: 'green',  coins: 1 },
-  { name: 'warm',   short: 'w',    min: 120, color: 'yellow', coins: 2 },
-  { name: 'hot',    short: 'h',    min: 140, color: 'orange', coins: 3 },
-  { name: 'fire',   short: 'fire', min: 160, color: 'red',    coins: 5 },
+  { name: 'cool',   short: 'c',    min: 0,   color: 'blue',   rings: 0 },
+  { name: 'active', short: 'a',    min: 100, color: 'green',  rings: 1 },
+  { name: 'warm',   short: 'w',    min: 120, color: 'yellow', rings: 2 },
+  { name: 'hot',    short: 'h',    min: 140, color: 'orange', rings: 3 },
+  { name: 'fire',   short: 'fire', min: 160, color: 'red',    rings: 5 },
 ];
 
 function getZone(hr) {
@@ -38,14 +38,14 @@ export function deriveZones(hrSamples) {
   return hrSamples.map(hr => hr == null ? null : getZone(hr).short);
 }
 
-export function deriveCoins(hrSamples) {
-  const coins = [];
+export function deriveRings(hrSamples) {
+  const rings = [];
   let cumulative = 0;
   for (const hr of hrSamples) {
-    if (hr != null) cumulative += getZone(hr).coins;
-    coins.push(cumulative);
+    if (hr != null) cumulative += getZone(hr).rings;
+    rings.push(cumulative);
   }
-  return coins;
+  return rings;
 }
 
 export function computeZoneMinutes(zoneSeries, interval = INTERVAL_SECONDS) {
@@ -69,8 +69,8 @@ export function computeBuckets(zoneSeries) {
   for (const z of zoneSeries) {
     if (z == null) continue;
     const zoneDef = ZONES.find(zd => zd.short === z);
-    if (!zoneDef || zoneDef.coins === 0) continue;
-    bucketMap[zoneDef.color] += zoneDef.coins;
+    if (!zoneDef || zoneDef.rings === 0) continue;
+    bucketMap[zoneDef.color] += zoneDef.rings;
   }
   return bucketMap;
 }
@@ -90,14 +90,14 @@ export function buildStravaSessionTimeline(hrPerSecond) {
 
   const hrSamples = resampleHR(hrPerSecond);
   const zoneSeries = deriveZones(hrSamples);
-  const coinsSeries = deriveCoins(hrSamples);
-  const totalCoins = coinsSeries.length > 0 ? coinsSeries[coinsSeries.length - 1] : 0;
+  const ringsSeries = deriveRings(hrSamples);
+  const totalRings = ringsSeries.length > 0 ? ringsSeries[ringsSeries.length - 1] : 0;
 
   return {
     hrSamples,
     zoneSeries,
-    coinsSeries,
-    totalCoins,
+    ringsSeries,
+    totalRings,
     zoneMinutes: computeZoneMinutes(zoneSeries),
     buckets: computeBuckets(zoneSeries),
     hrStats: computeHRStats(hrSamples),

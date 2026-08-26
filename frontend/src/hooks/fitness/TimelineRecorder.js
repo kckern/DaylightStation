@@ -10,7 +10,7 @@
  * Dependencies (injected):
  * - DeviceManager: Source of device metrics
  * - UserManager: User state and device-to-user mapping
- * - TreasureBox: Coin accumulation (called synchronously during tick)
+ * - TreasureBox: Ring accumulation (called synchronously during tick)
  * - FitnessTimeline: Time-series data storage
  * - ActivityMonitor: Single source of truth for participant activity state
  * - EventJournal: Structured event logging
@@ -89,8 +89,8 @@ export class TimelineRecorder {
     this._cumulativeBeats = new Map();
     this._cumulativeRotations = new Map();
 
-    // Track which users have had initial coins_total=0 recorded
-    this._usersWithCoinsRecorded = new Set();
+    // Track which users have had initial rings_total=0 recorded
+    this._usersWithRingsRecorded = new Set();
 
     // Vibration trackers reference (injected via setVibrationTrackers)
     this._vibrationTrackers = null;
@@ -177,7 +177,7 @@ export class TimelineRecorder {
   reset() {
     this._cumulativeBeats.clear();
     this._cumulativeRotations.clear();
-    this._usersWithCoinsRecorded.clear();
+    this._usersWithRingsRecorded.clear();
     this._pendingSnapshotRef = null;
     this._chartDebugLogged = { noSeries: false };
   }
@@ -470,14 +470,14 @@ export class TimelineRecorder {
       this._activityMonitor.recordTick(currentTickIndex, activeParticipantIds, { timestamp });
     }
 
-    // -------------------- Baseline Coin Recording --------------------
+    // -------------------- Baseline Ring Recording --------------------
 
-    // Ensure every roster user gets a baseline coins_total=0 once
+    // Ensure every roster user gets a baseline rings_total=0 once
     userMetricMap.forEach((entry) => {
       const userId = entry?.userId;
-      if (userId && !this._usersWithCoinsRecorded.has(userId)) {
-        assignMetric(`user:${userId}:coins_total`, 0);
-        this._usersWithCoinsRecorded.add(userId);
+      if (userId && !this._usersWithRingsRecorded.has(userId)) {
+        assignMetric(`user:${userId}:rings_total`, 0);
+        this._usersWithRingsRecorded.add(userId);
       }
     });
 
@@ -488,20 +488,20 @@ export class TimelineRecorder {
 
       const treasureSummary = this._treasureBox.summary;
       if (treasureSummary) {
-        assignMetric('global:coins_total', treasureSummary.totalCoins);
+        assignMetric('global:rings_total', treasureSummary.totalRings);
       }
 
       // Chart diagnostics
       this._logChartDiagnostics(roster, currentTickIndex);
 
-      // Per-user coin totals
-      const perUserCoinTotals = typeof this._treasureBox.getPerUserTotals === 'function'
+      // Per-user ring totals
+      const perUserRingTotals = typeof this._treasureBox.getPerUserTotals === 'function'
         ? this._treasureBox.getPerUserTotals()
         : null;
-      if (perUserCoinTotals && typeof perUserCoinTotals.forEach === 'function') {
-        perUserCoinTotals.forEach((coins, key) => {
+      if (perUserRingTotals && typeof perUserRingTotals.forEach === 'function') {
+        perUserRingTotals.forEach((rings, key) => {
           if (!key) return;
-          const coinValue = Number.isFinite(coins) ? coins : null;
+          const ringValue = Number.isFinite(rings) ? rings : null;
 
           // Handle legacy entity keys
           if (typeof key === 'string' && key.startsWith('entity-')) {
@@ -509,12 +509,12 @@ export class TimelineRecorder {
             const profileId = acc?.profileId;
             this._log('treasurebox_entity_key_seen', { entityId: key, profileId });
             if (profileId) {
-              assignMetric(`user:${profileId}:coins_total`, coinValue);
+              assignMetric(`user:${profileId}:rings_total`, ringValue);
             }
             return;
           }
 
-          assignMetric(`user:${key}:coins_total`, coinValue);
+          assignMetric(`user:${key}:rings_total`, ringValue);
         });
       }
     }
@@ -639,7 +639,7 @@ export class TimelineRecorder {
         const slug = key.replace('user:', '').replace(':heart_rate', '');
         const hrSeries = this._timeline.series[key] || [];
         const beatsSeries = this._timeline.series[`user:${slug}:heart_beats`] || [];
-        const coinsSeries = this._timeline.series[`user:${slug}:coins_total`] || [];
+        const ringsSeries = this._timeline.series[`user:${slug}:rings_total`] || [];
 
         const nullCount = hrSeries.filter(v => v === null).length;
         const validCount = hrSeries.filter(v => v !== null && Number.isFinite(v) && v > 0).length;
@@ -650,7 +650,7 @@ export class TimelineRecorder {
           validCount,
           lastHR: hrSeries.slice(-10),
           lastBeats: beatsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v),
-          lastCoins: coinsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v),
+          lastRings: ringsSeries.slice(-10).map(v => v?.toFixed?.(1) ?? v),
           isActiveNow: activeHRSet.has(slug)
         };
       }

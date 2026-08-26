@@ -55,11 +55,11 @@ export class SessionGroupingService {
     }
     const totalDurationMs = offsetTicks * intervalMs;
 
-    // Cumulative series (coins/beats/rotations totals) restart at 0 in each member session.
+    // Cumulative series (rings/beats/rotations totals) restart at 0 in each member session.
     // After concatenation they'd reset at every seam — offset each segment by the prior
     // running total so the cumulative line stays continuous across the time breaks.
     // Instantaneous series (heart-rate/rpm/zone) are left untouched.
-    const CUMULATIVE_METRICS = new Set(['beats', 'coins', 'rotations']);
+    const CUMULATIVE_METRICS = new Set(['beats', 'rings', 'rotations']);
     const isCumulativeKey = (key) => CUMULATIVE_METRICS.has(String(key).split(':').pop());
     for (const [key, arr] of Object.entries(merged.series || {})) {
       if (!Array.isArray(arr) || !isCumulativeKey(key)) continue;
@@ -121,7 +121,7 @@ export class SessionGroupingService {
       // `start` / `duration_seconds` mirror the normal-session shape the detail header reads
       start: group.startTime,
       duration_seconds: Math.round(totalDurationMs / 1000),
-      participants: group.participants, totalCoins: group.totalCoins,
+      participants: group.participants, totalRings: group.totalRings,
       media: null, segments, seams, activities, timeline: merged,
     };
   }

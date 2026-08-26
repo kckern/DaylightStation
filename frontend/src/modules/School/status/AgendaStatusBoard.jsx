@@ -12,6 +12,17 @@
  * the only motion on the panel, and it stops for anyone who has asked the OS
  * for reduced motion.
  *
+ * RINGS ARE A SECOND, INDEPENDENT READ (2026-08-26). The discs say what school
+ * work is planned and done; the ring count says how much the child has MOVED
+ * this week (Sunday 04:00 → Saturday 04:00). It is deliberately additive: the
+ * measures request is fired alongside the per-learner plans and a failure
+ * costs the number, never the card. v1 displays the figure only — no target,
+ * no progress bar, no gate.
+ *
+ * The ring is STATIC here. This board's motion budget is spent on the
+ * cleared-day breathe below, and four spinning rings would compete with the
+ * one animation that is supposed to mean something.
+ *
  * Deliberately NON-INTERACTIVE (kiosk spec wave 5): it renders on the locked
  * Portal beside the keypad as a reminder/preview only — codes and printed
  * agendas remain the only entry path, so the rows accept no taps and the
@@ -22,6 +33,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import ProfileAvatar from '../../../lib/identity/ProfileAvatar.jsx';
+import RingIcon from '../../../lib/icons/RingIcon.jsx';
 import Icon, { hasIcon } from '../home/icons/Icon.jsx';
 import { subjectLabel } from '../home/subjects.js';
 import { labelize } from '../teacher/labelize.js';
@@ -87,9 +99,23 @@ export function summarize(sections, sessions) {
   return { total: segments.length, done: segments.filter((s) => s.done).length, segments };
 }
 
+/** learnerId -> ring count, from one roster-wide measures read. */
+export function ringsByLearner(payload) {
+  const out = {};
+  for (const row of payload?.learners ?? []) {
+    const rings = (row.measures ?? []).find((m) => m.id === 'fitness.rings');
+    if (row.learnerId && Number.isFinite(rings?.value)) out[row.learnerId] = rings.value;
+  }
+  return out;
+}
+
 export default function AgendaStatusBoard({ kids = [], day }) {
   const [rows, setRows] = useState(null);
   const [nonce, setNonce] = useState(0);
+  // Kept out of `rows` on purpose: the plan reads settle per-card and this one
+  // covers the whole roster, so folding it in would mean re-settling every
+  // card when it lands — and a slow measures read would hold the plans back.
+  const [rings, setRings] = useState({});
 
   /**
    * ONE CARD PER KID FROM THE FIRST PAINT, filled in as each read lands.
@@ -129,6 +155,16 @@ export default function AgendaStatusBoard({ kids = [], day }) {
         schoolLog.selfServiceError?.('status-board.digest-failed', { error: error?.message });
         return { ok: false };
       });
+
+    // Fired alongside the plans, never awaited by them. A failed or slow
+    // measures read costs the ring numbers and nothing else.
+    if (schoolApi.measuresWeekly) {
+      schoolApi.measuresWeekly(day)
+        .then((res) => { if (alive && res?.ok) setRings(ringsByLearner(res.data)); })
+        .catch((error) => {
+          schoolLog.selfServiceError?.('status-board.measures-failed', { error: error?.message });
+        });
+    }
 
     kids.forEach((kid) => {
       Promise.all([schoolApi.agendaPreview(kid.id, day), digest])
@@ -194,6 +230,18 @@ export default function AgendaStatusBoard({ kids = [], day }) {
                 <span className="school-status-board__status">{summary.done} of {summary.total}</span>
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
+              )}
+              {/* Rings this week. Rendered only once the number has arrived —
+                  a placeholder zero would be a claim we cannot support yet,
+                  and "0" and "not loaded" are different facts. Labelled "this
+                  week" because a Sunday workout counts toward the NEXT week,
+                  so this figure and the fitness app's own totals can honestly
+                  differ for one day. */}
+              {Number.isFinite(rings[kid.id]) && (
+                <span className="school-status-board__rings" title="Rings this week">
+                  <RingIcon size="1.1em" label={`${rings[kid.id]} rings this week`} />
+                  <span className="school-status-board__rings-count">{rings[kid.id]}</span>
+                </span>
               )}
               {/* SKELETON DISCS while the plan is in flight. Three is a guess
                   at the count and deliberately so — the row's height is what

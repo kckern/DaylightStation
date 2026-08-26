@@ -108,7 +108,7 @@ export class ActivityMonitor {
   /**Record a dropout event for a participant
    * @param {string} participantId
    * @param {number} tick
-   * @param {any} value - The value at the dropout point (e.g. total coins or distance)
+   * @param {any} value - The value at the dropout point (e.g. total rings or distance)
    * @param {number} [timestamp]
    */
   recordDropout(participantId, tick, value, timestamp) {
@@ -159,7 +159,7 @@ export class ActivityMonitor {
     
     participantIds.forEach(userId => {
       const hrSeries = getSeries(userId, 'heart_rate') || [];
-      const coinSeries = getSeries(userId, 'coins_total') || [];
+      const ringSeries = getSeries(userId, 'rings_total') || [];
       
       let isTracking = false;
       let lastActiveTick = -1;
@@ -177,7 +177,7 @@ export class ActivityMonitor {
           if (isTracking) {
             // Detected dropout (transition from active to inactive)
             // The dropout marker belongs at the last active tick
-            const value = coinSeries[lastActiveTick] || 0;
+            const value = ringSeries[lastActiveTick] || 0;
             const timestamp = timebase ? (timebase.startTime + (lastActiveTick * 1000)) : this._tickToTimestamp(lastActiveTick);
             
             this.recordDropout(userId, lastActiveTick, value, timestamp);

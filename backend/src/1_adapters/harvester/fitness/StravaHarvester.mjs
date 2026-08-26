@@ -697,7 +697,7 @@ export class StravaHarvester extends IHarvester {
             : moment.tz(data.session.start, data.timezone || this.#timezone)
                 .add(data.session.duration_seconds || 0, 'seconds'),
           participants: Object.keys(data.participants || {}),
-          coins: data.treasureBox?.totalCoins ?? 0,
+          rings: data.treasureBox?.totalRings ?? 0,
           media: (data.timeline?.events || [])
             .filter(e => e.type === 'media')
             .map(e => e.data?.title)
@@ -811,7 +811,7 @@ export class StravaHarvester extends IHarvester {
       const entry = entries.find(e => e.id === match.activityId);
       if (entry) {
         entry.homeSessionId = match.sessionId;
-        entry.homeCoins = match.session.coins;
+        entry.homeRings = match.session.rings;
         if (match.session.media) entry.homeMedia = match.session.media;
       }
     }
@@ -827,7 +827,7 @@ export class StravaHarvester extends IHarvester {
       const archive = await this.#lifelogStore.load(username, archiveName);
       if (archive?.data) {
         archive.data.homeSessionId = match.sessionId;
-        archive.data.homeCoins = match.session.coins;
+        archive.data.homeRings = match.session.rings;
         if (match.session.media) archive.data.homeMedia = match.session.media;
         await this.#lifelogStore.save(username, archiveName, archive);
       }

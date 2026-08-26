@@ -10,7 +10,7 @@ describe('PersistenceManager v3 integration', () => {
       startTime: 1767728933431,
       endTime: 1767732533431,
       timezone: 'America/Los_Angeles',
-      treasureBox: { totalCoins: 100, buckets: {} },
+      treasureBox: { totalRings: 100, buckets: {} },
       timeline: { timebase: { intervalMs: 5000, tickCount: 10 }, series: {} }
     };
 
@@ -29,7 +29,7 @@ describe('PersistenceManager v3 integration', () => {
       startTime: 1767730800000,
       endTime: 1767734400000,
       timezone: 'America/Los_Angeles',
-      treasureBox: { totalCoins: 250, buckets: { hot: 50, warm: 100, active: 100 } },
+      treasureBox: { totalRings: 250, buckets: { hot: 50, warm: 100, active: 100 } },
       participants: {
         'user-abc': {
           display_name: 'Test User',
@@ -54,7 +54,7 @@ describe('PersistenceManager v3 integration', () => {
     expect(payload.session.date).toBe('2026-01-06');
     expect(payload.session.duration_seconds).toBe(3600);
     expect(payload.totals).toBeDefined();
-    expect(payload.totals.coins).toBe(250);
+    expect(payload.totals.rings).toBe(250);
     expect(payload.participants).toBeDefined();
     expect(payload.participants['user-abc']).toBeDefined();
     expect(payload.participants['user-abc'].display_name).toBe('Test User');

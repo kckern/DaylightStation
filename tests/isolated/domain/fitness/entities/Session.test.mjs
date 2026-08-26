@@ -283,9 +283,9 @@ describe('Session', () => {
           user_4: { display_name: 'User_4', is_primary: true, hr_device: '28676' }
         },
         entities: [
-          { entityId: 'e1', profileId: 'user_4', status: 'active', coins: 100 }
+          { entityId: 'e1', profileId: 'user_4', status: 'active', rings: 100 }
         ],
-        treasureBox: { totalCoins: 313, buckets: { green: 209, yellow: 104 } },
+        treasureBox: { totalRings: 313, buckets: { green: 209, yellow: 104 } },
         session: { id: '20260206182302', date: '2026-02-06', start: '2026-02-06 10:23:02' },
         roster: [{ name: 'User_4', isPrimary: true }]
       });
@@ -300,8 +300,8 @@ describe('Session', () => {
       expect(restored.events[1].type).toBe('voice_memo');
       expect(restored.participants.user_4.display_name).toBe('User_4');
       expect(restored.entities).toHaveLength(1);
-      expect(restored.entities[0].coins).toBe(100);
-      expect(restored.treasureBox.totalCoins).toBe(313);
+      expect(restored.entities[0].rings).toBe(100);
+      expect(restored.treasureBox.totalRings).toBe(313);
       expect(restored.session.id).toBe('20260206182302');
 
       // Core fields: startTime/roster are NOT persisted at root in v3 —

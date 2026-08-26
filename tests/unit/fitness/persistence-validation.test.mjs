@@ -46,7 +46,7 @@ describe('PersistenceManager — validation', () => {
         series: {
           'alice:hr': [0, 0, 0, 0, 0, 0],
           'alice:zone': [null, null, null, null, null, null],
-          'alice:coins': [0, 0, 0, 0, 0, 0],
+          'alice:rings': [0, 0, 0, 0, 0, 0],
         }
       }
     };
@@ -67,7 +67,7 @@ describe('PersistenceManager — validation', () => {
         timebase: { tickCount: 6 },
         series: {
           'alice:zone': ['cool', '', '', '', '', ''],
-          'alice:coins': [0, 0, 0, 0, 0, 0],
+          'alice:rings': [0, 0, 0, 0, 0, 0],
         }
       }
     };
@@ -105,7 +105,7 @@ describe('PersistenceManager — validation', () => {
         series: {
           'alice:hr': [120, 125, 130, 128, 132, 135],
           'alice:zone': ['active', '', '', '', '', ''],
-          'alice:coins': [0, 1, 2, 3, 4, 5],
+          'alice:rings': [0, 1, 2, 3, 4, 5],
         }
       }
     };

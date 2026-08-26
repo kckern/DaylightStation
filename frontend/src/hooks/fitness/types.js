@@ -11,7 +11,7 @@
  * Timeline Series Key Format
  * @typedef {string} TimelineSeriesKey
  * @description All participant timeline series MUST use 3 segments: <scope>:<participantId>:<metric>
- * @example "user:user_1:coins_total"
+ * @example "user:user_1:rings_total"
  */
 
 /**

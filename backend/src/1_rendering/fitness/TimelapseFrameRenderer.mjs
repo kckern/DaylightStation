@@ -13,13 +13,13 @@ const { createCanvas, loadImage, registerFont } = canvasPkg;
  * Full-bleed cinematic layout:
  *   - The camera fills the WHOLE frame (cover-crop, un-mirrored) — it is the hero,
  *     so there is no dead letterbox or empty rail.
- *   - A top gradient scrim carries the title (left), coin counter (centre) and
+ *   - A top gradient scrim carries the title (left), ring counter (centre) and
  *     elapsed time (right); a bottom scrim carries the per-participant HR readouts
  *     (left) and the session zone + cadence (right).
  *   - The player PiP and show poster float as rounded cards over the camera.
  *
- * Icons (heart, coin) are drawn as native canvas vector paths, NOT font glyphs —
- * Roboto Condensed has no ♥/coin glyph, so a font-drawn symbol renders as a
+ * Icons (heart, ring) are drawn as native canvas vector paths, NOT font glyphs —
+ * Roboto Condensed has no ♥/ring glyph, so a font-drawn symbol renders as a
  * `.notdef` tofu box (the literal "2665" codepoint box seen in the wild). Vector
  * paths always render and stay crisp at any scale.
  *
@@ -111,7 +111,7 @@ export function createTimelapseFrameRenderer(config = {}) {
       }
     }
 
-    // ---- Header band: title (left) · coin counter (centre) · elapsed (right).
+    // ---- Header band: title (left) · ring counter (centre) · elapsed (right).
     if (showScrims) {
       drawBand(ctx, 0, 0, W, headerH, 'bottom');
       const cy = Math.round(headerH * 0.5);
@@ -123,17 +123,17 @@ export function createTimelapseFrameRenderer(config = {}) {
       ctx.font = `600 ${titleFpx}px "${FONT_FAMILY}"`;
       const timeW = ctx.measureText(timeStr).width;
 
-      // Coin cluster (centre): vector coin + value. Measured so it stays centred.
-      let coinClusterW = 0;
-      const coinR = Math.round(titleFpx * 0.42);
-      const coinGap = Math.round(titleFpx * 0.32);
-      const coinVal = descriptor.coins != null ? formatCoins(descriptor.coins) : null;
+      // Ring cluster (centre): vector ring + value. Measured so it stays centred.
+      let ringClusterW = 0;
+      const ringR = Math.round(titleFpx * 0.42);
+      const ringGap = Math.round(titleFpx * 0.32);
+      const ringVal = descriptor.rings != null ? formatRings(descriptor.rings) : null;
       ctx.font = `700 ${titleFpx}px "${FONT_FAMILY}"`;
-      const coinValW = coinVal != null ? ctx.measureText(coinVal).width : 0;
-      if (coinVal != null) coinClusterW = coinR * 2 + coinGap + coinValW;
+      const ringValW = ringVal != null ? ctx.measureText(ringVal).width : 0;
+      if (ringVal != null) ringClusterW = ringR * 2 + ringGap + ringValW;
 
-      // Title (left) — truncate with ellipsis so it never collides with coins/time.
-      const titleMax = W / 2 - coinClusterW / 2 - margin * 2;
+      // Title (left) — truncate with ellipsis so it never collides with rings/time.
+      const titleMax = W / 2 - ringClusterW / 2 - margin * 2;
       ctx.fillStyle = COL.text;
       ctx.textAlign = 'left';
       ctx.font = `700 ${titleFpx}px "${FONT_FAMILY}"`;
@@ -152,14 +152,14 @@ export function createTimelapseFrameRenderer(config = {}) {
         ctx.fillText(wall, W - margin, cy + Math.round(headerH * 0.26));
       }
 
-      // Coins (centre).
-      if (coinVal != null) {
-        const startX = Math.round(W / 2 - coinClusterW / 2);
-        drawCoin(ctx, startX + coinR, cy, coinR);
+      // Rings (centre).
+      if (ringVal != null) {
+        const startX = Math.round(W / 2 - ringClusterW / 2);
+        drawRing(ctx, startX + ringR, cy, ringR);
         ctx.textAlign = 'left';
         ctx.font = `700 ${titleFpx}px "${FONT_FAMILY}"`;
-        ctx.fillStyle = COL.coin;
-        ctx.fillText(coinVal, startX + coinR * 2 + coinGap, cy);
+        ctx.fillStyle = COL.ring;
+        ctx.fillText(ringVal, startX + ringR * 2 + ringGap, cy);
       }
     }
 
@@ -377,15 +377,15 @@ function drawHeart(ctx, x, cy, size, color) {
   ctx.restore();
 }
 
-function drawCoin(ctx, cx, cy, r) {
+function drawRing(ctx, cx, cy, r) {
   ctx.save();
   const g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.2, cx, cy, r);
   g.addColorStop(0, '#ffe79a');
-  g.addColorStop(1, COL.coin);
+  g.addColorStop(1, COL.ring);
   ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fillStyle = g; ctx.fill();
   ctx.lineWidth = Math.max(1, r * 0.12);
-  ctx.strokeStyle = COL.coinRim; ctx.stroke();
+  ctx.strokeStyle = COL.ringRim; ctx.stroke();
   ctx.beginPath(); ctx.arc(cx, cy, r * 0.62, 0, Math.PI * 2);
   ctx.strokeStyle = 'rgba(200,150,31,0.6)'; ctx.lineWidth = Math.max(1, r * 0.08); ctx.stroke();
   ctx.restore();
@@ -400,7 +400,7 @@ function drawPanel(ctx, img, x, y, w, h, { flip = false }) {
   ctx.restore();
 }
 
-// Simplified FitnessChart: per-participant cumulative-coins "race" lines (in each
+// Simplified FitnessChart: per-participant cumulative-rings "race" lines (in each
 // person's identity colour) up to the current tick, with a zone-coloured endpoint
 // dot, over faint gridlines. Sits under the game feed.
 function drawChart(ctx, chart, x, y, w, h) {
@@ -409,17 +409,17 @@ function drawChart(ctx, chart, x, y, w, h) {
   const padX = Math.round(w * 0.02);
   const padTop = Math.round(h * 0.22);
   const padBot = Math.round(h * 0.1);
-  const maxC = Math.max(1, chart.maxCoins);
+  const maxC = Math.max(1, chart.maxRings);
   const maxT = Math.max(1, chart.totalTicks - 1);
 
-  // Scale labels: a left coin-axis (max at top … 0 at bottom) and per-rider
+  // Scale labels: a left ring-axis (max at top … 0 at bottom) and per-rider
   // endpoint totals on the right. Reserve a gutter for each so they never sit on
   // the race lines; both gutters size to the widest number actually shown.
   const scaleFpx = Math.max(10, Math.round(h * 0.085));
   ctx.font = `600 ${scaleFpx}px "${FONT_FAMILY}"`;
-  const maxLabelW = ctx.measureText(formatCoins(maxC)).width;
+  const maxLabelW = ctx.measureText(formatRings(maxC)).width;
   const axisGap = Math.round(w * 0.012);
-  const leftAxisW = maxLabelW + axisGap;          // left coin scale
+  const leftAxisW = maxLabelW + axisGap;          // left ring scale
   const dotR = Math.max(3, Math.round(h * 0.03));
   const rightGutter = maxLabelW + dotR + axisGap; // right endpoint values
 
@@ -429,7 +429,7 @@ function drawChart(ctx, chart, x, y, w, h) {
   const sx = (t) => ix + (t / maxT) * iw;
   const sy = (c) => iy + ih - (Math.max(0, c) / maxC) * ih;
 
-  // Gridlines + left coin-scale numbers. With only ~4 lines, drop the inner two
+  // Gridlines + left ring-scale numbers. With only ~4 lines, drop the inner two
   // (keep min/max) when they'd crowd; also dedupe equal rounded values.
   const GRID = 3;
   const rowGap = ih / GRID;
@@ -448,26 +448,26 @@ function drawChart(ctx, chart, x, y, w, h) {
     if (val === lastVal) continue;                 // dedupe (small ranges)
     lastVal = val;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    ctx.fillText(formatCoins(val), ix - axisGap, gy);
+    ctx.fillText(formatRings(val), ix - axisGap, gy);
   }
 
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `700 ${Math.round(h * 0.12)}px "${FONT_FAMILY}"`;
-  ctx.fillText('COIN RACE', x + padX, y + Math.round(h * 0.155));
+  ctx.fillText('RING RACE', x + padX, y + Math.round(h * 0.155));
 
   const tick = Math.min(chart.tick, maxT);
   const endpoints = [];
   for (const s of chart.series) {
-    const coins = s.coins || [];
-    if (!coins.length) continue;
+    const rings = s.rings || [];
+    if (!rings.length) continue;
     ctx.strokeStyle = s.color || COL.text;
     ctx.lineWidth = Math.max(2, Math.round(h * 0.018));
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.beginPath();
     let started = false, lx = ix, ly = sy(0), lc = 0;
     for (let t = 0; t <= tick; t++) {
-      const c = coins[t]; if (c == null) continue;
+      const c = rings[t]; if (c == null) continue;
       const px = sx(t), py = sy(c);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
       lx = px; ly = py; lc = c;
@@ -494,7 +494,7 @@ function drawChart(ctx, chart, x, y, w, h) {
     if (placed.some(py => Math.abs(py - e.y) < scaleFpx * 1.05)) continue;
     placed.push(e.y);
     ctx.fillStyle = e.color;
-    ctx.fillText(formatCoins(e.value), labelX, e.y);
+    ctx.fillText(formatRings(e.value), labelX, e.y);
   }
   ctx.textBaseline = 'middle';
 }
@@ -531,7 +531,7 @@ function buildTitle(descriptor) {
   return ep || show || 'Workout';
 }
 
-function formatCoins(n) { return Number(n).toLocaleString('en-US'); }
+function formatRings(n) { return Number(n).toLocaleString('en-US'); }
 
 // Wall-clock date + time-of-day in the session's timezone, e.g. "Jun 19 · 3:45 PM".
 function formatWallClock(ms, timezone) {

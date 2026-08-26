@@ -45,12 +45,12 @@ const handleAvatarError = (event) => {
 };
 const AVATAR_RADIUS = 30;
 const ABSENT_BADGE_RADIUS = 10;
-const COIN_LABEL_GAP = 8;
+const RING_LABEL_GAP = 8;
 const Y_SCALE_BASE = 20;
 const MIN_GRID_LINES = 4;
 const PATH_STROKE_WIDTH = 5;
 const TICK_FONT_SIZE = 20;
-const COIN_FONT_SIZE = 20;
+const RING_FONT_SIZE = 20;
 const slugifyId = (value, fallback = 'user') => {
 	if (!value) return fallback;
 	const slug = String(value)
@@ -111,7 +111,7 @@ function cacheEntryEqual(a, b) {
  * @param {Object} timebase - Timeline timebase config
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
- * @param {Array} [options.zoneConfig] - Zone configuration for coin rate lookup (fixes sawtooth)
+ * @param {Array} [options.zoneConfig] - Zone configuration for ring rate lookup (fixes sawtooth)
  */
 const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 	const { activityMonitor, zoneConfig } = options;
@@ -218,11 +218,11 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 			// Collect richer diagnostics
 			const details = debugItems.map((item) => {
 				const hrSeries = typeof getSeries === 'function' ? getSeries(item.id, 'heart_rate', { clone: true }) || [] : [];
-				const coinsSeries = typeof getSeries === 'function' ? getSeries(item.id, 'coins_total', { clone: true }) || [] : [];
+				const ringsSeries = typeof getSeries === 'function' ? getSeries(item.id, 'rings_total', { clone: true }) || [] : [];
 				const lastHr = hrSeries.length ? hrSeries[hrSeries.length - 1] : null;
-				const lastCoins = coinsSeries.length ? coinsSeries[coinsSeries.length - 1] : null;
+				const lastRings = ringsSeries.length ? ringsSeries[ringsSeries.length - 1] : null;
 				const hrLen = hrSeries.length;
-				const coinsLen = coinsSeries.length;
+				const ringsLen = ringsSeries.length;
 				const lastFiniteHr = (() => {
 					for (let i = hrSeries.length - 1; i >= 0; i -= 1) {
 						if (Number.isFinite(hrSeries[i])) return hrSeries[i];
@@ -239,8 +239,8 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 					hrLen,
 					lastHr,
 					lastFiniteHr,
-					coinsLen,
-					lastCoins,
+					ringsLen,
+					lastRings,
 					activityStatus: activityMonitor ? activityMonitor.getStatus?.(item.id) ?? null : null,
 					isActiveFromMonitor: activityMonitor ? activityMonitor.isActive?.(item.id) ?? null : null,
 				};
@@ -303,7 +303,7 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string[]} historicalParticipantIds - IDs of historical participants
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
- * @param {Array} [options.zoneConfig] - Zone configuration for coin rate lookup (fixes sawtooth)
+ * @param {Array} [options.zoneConfig] - Zone configuration for ring rate lookup (fixes sawtooth)
  * @param {string} [options.sessionId] - Session ID to clear cache when session changes (memory leak fix)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
@@ -590,7 +590,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 /**
  * PERF (2026-07-21): the chart re-renders at ~12Hz because `participantRoster`'s
  * identity is keyed on live heart rate, so any ≥1bpm change from any rider
- * invalidates it. The coin race itself only advances on the 5s tick, so the SVG
+ * invalidates it. The ring race itself only advances on the 5s tick, so the SVG
  * subtree was being reconciled ~60x more often than its data changes — which is
  * what pinned the garage kiosk's page render to 12fps for a whole session.
  *
@@ -661,7 +661,7 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 				textAnchor="end"
 				fontSize={12}
 			>
-				COINS
+				RINGS
 			</text>
 		</g>
 		<g className="race-chart__paths">
@@ -763,19 +763,19 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 				return sorted.map((avatar, idx) => {
 					const size = AVATAR_RADIUS * 2;
 					const labelPos = avatar.labelPosition || 'right';
-					let labelX = AVATAR_RADIUS + COIN_LABEL_GAP;
+					let labelX = AVATAR_RADIUS + RING_LABEL_GAP;
 					let labelY = 0;
 					let textAnchor = 'start';
 					if (labelPos === 'left') {
-						labelX = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+						labelX = -(AVATAR_RADIUS + RING_LABEL_GAP);
 						textAnchor = 'end';
 					} else if (labelPos === 'top') {
 						labelX = 0;
-						labelY = -(AVATAR_RADIUS + COIN_LABEL_GAP);
+						labelY = -(AVATAR_RADIUS + RING_LABEL_GAP);
 						textAnchor = 'middle';
 					} else if (labelPos === 'bottom') {
 						labelX = 0;
-						labelY = AVATAR_RADIUS + COIN_LABEL_GAP + 12;
+						labelY = AVATAR_RADIUS + RING_LABEL_GAP + 12;
 						textAnchor = 'middle';
 					}
 					const clipSafeId = slugifyId(avatar.id, 'user');
@@ -801,10 +801,10 @@ const RaceChartSvgBase = ({ paths, avatars, badges, connectors = EMPTY_ARRAY, xT
 								<text
 									x={labelX}
 									y={labelY}
-									className="race-chart__coin-label"
+									className="race-chart__ring-label"
 									textAnchor={textAnchor}
 									dominantBaseline="middle"
-									fontSize={COIN_FONT_SIZE}
+									fontSize={RING_FONT_SIZE}
 									aria-hidden="true"
 								>
 									{formatCompactNumber(avatar.value)}
@@ -866,7 +866,7 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMedi
 		timebase,
 		registerLifecycle,
 		activityMonitor,  // Phase 2 - centralized activity tracking
-		zoneConfig,       // Zone config for coin rate lookup (fixes sawtooth)
+		zoneConfig,       // Zone config for ring rate lookup (fixes sawtooth)
 		sessionId,        // Session ID for cache cleanup on session change
 		participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
 		sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
@@ -989,12 +989,12 @@ const FitnessChart = ({ mode, onClose, config, onMount, sessionData, primaryMedi
 				const slug = id ? String(id).toLowerCase() : 'unknown';
 				const hr = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'heart_rate', { clone: true }) || []) : [];
 				const beats = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'heart_beats', { clone: true }) || []) : [];
-				const coins = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'coins_total', { clone: true }) || []) : [];
+				const rings = typeof chartGetSeries === 'function' ? (chartGetSeries(slug, 'rings_total', { clone: true }) || []) : [];
 				return {
 					id: slug,
 					heartRateSamples: hr.length,
 					heartBeatsSamples: beats.length,
-					coinsSamples: coins.length,
+					ringsSamples: rings.length,
 					isActive: p.isActive !== false
 				};
 			})

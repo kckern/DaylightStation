@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { groupSessions, GROUP_MAX_GAP_MS } from './groupSessions.mjs';
 
 const H = (h, m) => Date.parse(`2026-06-05T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-07:00`);
-const sess = (id, start, durMin, riders, media = null, coins = 0) => ({
+const sess = (id, start, durMin, riders, media = null, rings = 0) => ({
   sessionId: id, date: '2026-06-05', startTime: start, durationMs: durMin * 60000,
-  participants: Object.fromEntries(riders.map(r => [r, { displayName: r }])), media, totalCoins: coins,
+  participants: Object.fromEntries(riders.map(r => [r, { displayName: r }])), media, totalRings: rings,
 });
 
 const today = [
@@ -26,11 +26,11 @@ describe('groupSessions', () => {
     expect(ids).toEqual([['s1','s2','s3','s4','s5','s6'], ['s7']]);
   });
 
-  it('flags video groups and sums coins + unions rosters across rotating riders', () => {
+  it('flags video groups and sums rings + unions rosters across rotating riders', () => {
     const [g1] = groupSessions(today);
     expect(g1.id).toBe('group:s1');
     expect(g1.isGroup).toBe(true);
-    expect(g1.totalCoins).toBe(60 + 8 + 1139 + 466 + 151 + 194);
+    expect(g1.totalRings).toBe(60 + 8 + 1139 + 466 + 151 + 194);
     expect(Object.keys(g1.participants).sort()).toEqual(['user_2','user_3','user_4']);
     expect(g1.media).toBeNull();
     expect(g1.segments[0].gapBeforeMs).toBe(0);

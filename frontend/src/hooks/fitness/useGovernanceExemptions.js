@@ -2,7 +2,7 @@
  * `useGovernanceExemptions` — read `governance.exemptions` (usernames) from the
  * fitness config.
  *
- * Consumers are presentation-layer (the coin chart's scale basis), so this is
+ * Consumers are presentation-layer (the ring chart's scale basis), so this is
  * deliberately cheap: the request is de-duplicated at module scope, so N chart
  * mounts share ONE fetch and each mount pays at most a single extra render when
  * it resolves. Do not turn this into a per-render fetch — the chart is already

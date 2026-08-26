@@ -12,8 +12,8 @@ export const timelapseFrameTheme = {
   colors: {
     text: '#ffffff',
     textDim: 'rgba(255,255,255,0.62)',
-    coin: '#ffd24a',
-    coinRim: '#c8961f',
+    ring: '#ffd24a',
+    ringRim: '#c8961f',
     heart: '#ff5167',
     cardBorder: 'rgba(255,255,255,0.9)',
     bgFallback: '#0d0d0d',

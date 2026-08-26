@@ -8,10 +8,10 @@ describe('buildSessionSummary', () => {
     series: {
       'user:user_4:heart_rate': [80, 90, 100, 110, 120],
       'user:user_4:zone_id': ['c', 'c', 'a', 'a', 'w'],
-      'user:user_4:coins_total': [0, 2, 5, 9, 14],
+      'user:user_4:rings_total': [0, 2, 5, 9, 14],
     },
     events: [],
-    treasureBox: { totalCoins: 14, buckets: { blue: 0, green: 4, yellow: 6, orange: 4, red: 0 } },
+    treasureBox: { totalRings: 14, buckets: { blue: 0, green: 4, yellow: 6, orange: 4, red: 0 } },
     intervalSeconds: 5,
     ...overrides,
   });
@@ -33,7 +33,7 @@ describe('buildSessionSummary', () => {
       const result = buildSessionSummary(makeInput({
         series: {
           'user:user_4:zone_id': ['c', 'a'],
-          'user:user_4:coins_total': [0, 3],
+          'user:user_4:rings_total': [0, 3],
         },
       }));
       const user_4 = result.participants.user_4;
@@ -45,22 +45,22 @@ describe('buildSessionSummary', () => {
   });
 
   // ========================================================
-  // Per-participant coins from final cumulative value
+  // Per-participant rings from final cumulative value
   // ========================================================
-  describe('participant coins', () => {
-    it('extracts coins from final cumulative value', () => {
+  describe('participant rings', () => {
+    it('extracts rings from final cumulative value', () => {
       const result = buildSessionSummary(makeInput());
-      expect(result.participants.user_4.coins).toBe(14);
+      expect(result.participants.user_4.rings).toBe(14);
     });
 
-    it('returns 0 when coins series is missing', () => {
+    it('returns 0 when rings series is missing', () => {
       const result = buildSessionSummary(makeInput({
         series: {
           'user:user_4:heart_rate': [80, 90],
           'user:user_4:zone_id': ['c', 'a'],
         },
       }));
-      expect(result.participants.user_4.coins).toBe(0);
+      expect(result.participants.user_4.rings).toBe(0);
     });
   });
 
@@ -82,7 +82,7 @@ describe('buildSessionSummary', () => {
       const result = buildSessionSummary(makeInput({
         series: {
           'user:user_4:heart_rate': [80, 90],
-          'user:user_4:coins_total': [0, 3],
+          'user:user_4:rings_total': [0, 3],
         },
       }));
       expect(result.participants.user_4.zone_minutes).toEqual({});
@@ -90,15 +90,15 @@ describe('buildSessionSummary', () => {
   });
 
   // ========================================================
-  // Compact key format (slug:hr, slug:zone, slug:coins)
+  // Compact key format (slug:hr, slug:zone, slug:rings)
   // ========================================================
   describe('compact series key format', () => {
-    it('reads HR, zone, coins from compact keys', () => {
+    it('reads HR, zone, rings from compact keys', () => {
       const result = buildSessionSummary(makeInput({
         series: {
           'user_4:hr': [70, 80, 90],
           'user_4:zone': ['a', 'a', 'w'],
-          'user_4:coins': [0, 5, 12],
+          'user_4:rings': [0, 5, 12],
         },
       }));
       const user_4 = result.participants.user_4;
@@ -106,7 +106,7 @@ describe('buildSessionSummary', () => {
       expect(user_4.hr_avg).toBe(80);
       expect(user_4.hr_max).toBe(90);
       expect(user_4.hr_min).toBe(70);
-      expect(user_4.coins).toBe(12);
+      expect(user_4.rings).toBe(12);
       expect(user_4.zone_minutes.active).toBeCloseTo(10 / 60, 2);
       expect(user_4.zone_minutes.warm).toBeCloseTo(5 / 60, 2);
     });
@@ -116,12 +116,12 @@ describe('buildSessionSummary', () => {
   // v2 key format (user:slug:heart_rate, etc.)
   // ========================================================
   describe('v2 series key format', () => {
-    it('reads HR, zone, coins from v2 keys', () => {
+    it('reads HR, zone, rings from v2 keys', () => {
       const result = buildSessionSummary(makeInput({
         series: {
           'user:user_4:heart_rate': [100, 120, 140],
           'user:user_4:zone_id': ['w', 'h', 'h'],
-          'user:user_4:coins_total': [0, 8, 20],
+          'user:user_4:rings_total': [0, 8, 20],
         },
       }));
       const user_4 = result.participants.user_4;
@@ -129,7 +129,7 @@ describe('buildSessionSummary', () => {
       expect(user_4.hr_avg).toBe(120);
       expect(user_4.hr_max).toBe(140);
       expect(user_4.hr_min).toBe(100);
-      expect(user_4.coins).toBe(20);
+      expect(user_4.rings).toBe(20);
       expect(user_4.zone_minutes.warm).toBeCloseTo(5 / 60, 2);
       expect(user_4.zone_minutes.hot).toBeCloseTo(10 / 60, 2);
     });
@@ -145,20 +145,20 @@ describe('buildSessionSummary', () => {
         series: {
           'user:user_4:heart_rate': [80, 100],
           'user:user_4:zone_id': ['c', 'a'],
-          'user:user_4:coins_total': [0, 5],
+          'user:user_4:rings_total': [0, 5],
           'user:beth:heart_rate': [110, 130],
           'user:beth:zone_id': ['w', 'h'],
-          'user:beth:coins_total': [0, 8],
+          'user:beth:rings_total': [0, 8],
         },
         events: [],
-        treasureBox: { totalCoins: 13, buckets: {} },
+        treasureBox: { totalRings: 13, buckets: {} },
         intervalSeconds: 5,
       });
 
       expect(result.participants.user_4.hr_avg).toBe(90);
       expect(result.participants.beth.hr_avg).toBe(120);
-      expect(result.participants.user_4.coins).toBe(5);
-      expect(result.participants.beth.coins).toBe(8);
+      expect(result.participants.user_4.rings).toBe(5);
+      expect(result.participants.beth.rings).toBe(8);
     });
   });
 
@@ -257,21 +257,21 @@ describe('buildSessionSummary', () => {
   });
 
   // ========================================================
-  // Coins total and buckets from treasureBox
+  // Rings total and buckets from treasureBox
   // ========================================================
-  describe('coins from treasureBox', () => {
-    it('extracts totalCoins and buckets', () => {
+  describe('rings from treasureBox', () => {
+    it('extracts totalRings and buckets', () => {
       const result = buildSessionSummary(makeInput());
 
-      expect(result.coins.total).toBe(14);
-      expect(result.coins.buckets).toEqual({ blue: 0, green: 4, yellow: 6, orange: 4, red: 0 });
+      expect(result.rings.total).toBe(14);
+      expect(result.rings.buckets).toEqual({ blue: 0, green: 4, yellow: 6, orange: 4, red: 0 });
     });
 
     it('returns zero total and empty buckets when treasureBox is missing', () => {
       const result = buildSessionSummary(makeInput({ treasureBox: undefined }));
 
-      expect(result.coins.total).toBe(0);
-      expect(result.coins.buckets).toEqual({});
+      expect(result.rings.total).toBe(0);
+      expect(result.rings.buckets).toEqual({});
     });
   });
 
@@ -393,7 +393,7 @@ describe('buildSessionSummary', () => {
       expect(user_4.hr_avg).toBe(0);
       expect(user_4.hr_max).toBe(0);
       expect(user_4.hr_min).toBe(0);
-      expect(user_4.coins).toBe(0);
+      expect(user_4.rings).toBe(0);
       expect(user_4.zone_minutes).toEqual({});
     });
 
@@ -416,7 +416,7 @@ describe('buildSessionSummary', () => {
 
       expect(result).toHaveProperty('participants');
       expect(result).toHaveProperty('media');
-      expect(result).toHaveProperty('coins');
+      expect(result).toHaveProperty('rings');
       expect(result).toHaveProperty('challenges');
       expect(result).toHaveProperty('voiceMemos');
     });

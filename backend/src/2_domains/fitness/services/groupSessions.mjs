@@ -39,7 +39,7 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
     if (mustBreak) {
       cur = { id: `group:${s.sessionId}`, isGroup: true, date: s.date,
               startTime: startMs, endTime: endMs, segments: [], _lastEndMs: endMs,
-              _hasVideo: hasVideo(s), _hasForeign: isForeignSport(s), _coins: 0, _prevEnd: endMs, _sessions: [] };
+              _hasVideo: hasVideo(s), _hasForeign: isForeignSport(s), _rings: 0, _prevEnd: endMs, _sessions: [] };
       union = new Set(newRoster);
       groups.push(cur);
     } else {
@@ -50,12 +50,12 @@ export function groupSessions(sessions, { maxGapMs = GROUP_MAX_GAP_MS } = {}) {
 
     cur.segments.push({
       sessionId: s.sessionId, start: startMs, end: endMs, durationMs: s.durationMs || 0,
-      participants: s.participants || {}, coins: s.totalCoins || 0,
+      participants: s.participants || {}, rings: s.totalRings || 0,
       gapBeforeMs: cur.segments.length === 0 ? 0 : Math.max(0, startMs - cur._prevEnd),
       media: s.media || null, stravaActivityId: s.stravaActivityId ?? null,
     });
     cur._prevEnd = endMs;
-    cur._coins += s.totalCoins || 0;
+    cur._rings += s.totalRings || 0;
     cur._union = union;
     cur._sessions.push(s);
   }
@@ -102,7 +102,7 @@ function finalize(g) {
     durationMs: g.segments.reduce((sum, x) => sum + (x.durationMs || 0), 0),
     segments: g.segments,
     participants,
-    totalCoins: g._coins,
+    totalRings: g._rings,
     media: g._hasVideo ? g.segments[0].media : null,
     timezone: sessions[0]?.timezone,
     voiceMemos,

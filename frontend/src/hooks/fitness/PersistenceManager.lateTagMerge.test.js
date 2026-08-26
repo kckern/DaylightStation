@@ -101,7 +101,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           startTime: sessionStart,
           endTime: sessionStart + 10 * 60 * 1000,
           status: 'dropped',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-test-friend-1',
@@ -111,7 +111,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {
@@ -178,7 +178,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           startTime: sessionStart,
           endTime: sessionStart + 10 * 60 * 1000,
           status: 'dropped',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-bob-1',
@@ -188,7 +188,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {
@@ -263,7 +263,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           // KEY: the in-session grace-period flow already absorbed this
           // segment. The save-time backfill MUST short-circuit it.
           status: 'transferred',
-          coins: 0
+          rings: 0
         },
         {
           entityId: 'entity-test-friend-1',
@@ -273,7 +273,7 @@ describe('PersistenceManager — late-tag untagged placeholder merge (W1.B / Dec
           startTime: sessionStart + 10 * 60 * 1000,
           endTime: sessionEnd,
           status: 'active',
-          coins: 0
+          rings: 0
         }
       ],
       timeline: {

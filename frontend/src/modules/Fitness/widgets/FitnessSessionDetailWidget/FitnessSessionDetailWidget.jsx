@@ -19,7 +19,7 @@ import { selectVideoMarkerEvents } from './timelineOverlay.js';
 import { deriveRecap } from './recapVideo.js';
 import { useSettledRecapPlay } from './recapPlayback.js';
 
-const CoinIcon = ({ size = 12 }) => (
+const RingIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
     <circle cx="8" cy="8" r="7" fill="#f5c542" stroke="#c9a020" strokeWidth="1" />
     <circle cx="8" cy="8" r="5" fill="none" stroke="#c9a020" strokeWidth="0.5" opacity="0.5" />
@@ -271,7 +271,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
       raceCount: act?.count || 0,
       segmentCount: Array.isArray(sessionData.segments) ? sessionData.segments.length : 0,
       riders: Object.entries(participants).map(([id, p]) => ({ id, name: p?.displayName || id })),
-      totalCoins: sessionData.treasureBox?.totalCoins || summary.coins?.total || sessionData.totalCoins || 0,
+      totalRings: sessionData.treasureBox?.totalRings || summary.rings?.total || sessionData.totalRings || 0,
       sufferScore,
       stravaActivityId,
       voiceMemos: Array.isArray(summary.voiceMemos) ? summary.voiceMemos.filter(m => m.transcript) : [],
@@ -386,7 +386,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
             <div className="session-detail__stats-row">
               {(() => {
                 // Build only the present meta items, then interleave separators — no dangling
-                // "·" when time/duration/coins are missing (e.g. merged race-group sessions).
+                // "·" when time/duration/rings are missing (e.g. merged race-group sessions).
                 const items = [];
                 if (header?.date) items.push(<span key="date" className="session-detail__meta-item">{header.date}</span>);
                 // groups show a start–end range; single sessions show the start time
@@ -397,7 +397,7 @@ export default function FitnessSessionDetailWidget({ sessionId }) {
                 );
                 if (header?.durationMin) items.push(<span key="dur" className="session-detail__meta-item">{header.durationMin}m</span>);
                 if (header?.isGroup && header?.raceCount > 0) items.push(<span key="races" className="session-detail__meta-item">{header.raceCount} races</span>);
-                if (header?.totalCoins > 0) items.push(<span key="coins" className="session-detail__meta-item session-detail__coins"><CoinIcon size={14} /> {header.totalCoins}</span>);
+                if (header?.totalRings > 0) items.push(<span key="rings" className="session-detail__meta-item session-detail__rings"><RingIcon size={14} /> {header.totalRings}</span>);
                 if (header?.sufferScore != null) items.push(
                   header.stravaActivityId
                     ? <a key="suffer" href={`https://www.strava.com/activities/${header.stravaActivityId}`} target="_blank" rel="noopener noreferrer" className="session-detail__meta-item session-detail__suffer"><StravaIcon size={14} /> {header.sufferScore}</a>

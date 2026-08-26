@@ -28,29 +28,29 @@ describe('isKnownUserId', () => {
 });
 
 describe('occupantEffort + isInsignificant', () => {
-  it('computes coins (last non-null), active/warm/hot zone seconds, hr sample count', () => {
+  it('computes rings (last non-null), active/warm/hot zone seconds, hr sample count', () => {
     const decoded = {
       'a:hr': [null, 120, 0, 130, null],
       'a:zone': [null, 'a', 'c', 'w', 'h'],
-      'a:coins': [0, 1, 3, 3, 3]
+      'a:rings': [0, 1, 3, 3, 3]
     };
     const effort = occupantEffort(decoded, 'a', 5);
-    expect(effort).toEqual({ coins: 3, activeWarmZoneSeconds: 15, hrSampleCount: 2 });
+    expect(effort).toEqual({ rings: 3, activeWarmZoneSeconds: 15, hrSampleCount: 2 });
   });
 
   it('is insignificant for a near-idle strap regardless of duration', () => {
-    expect(isInsignificant({ coins: 1, activeWarmZoneSeconds: 0, hrSampleCount: 2 }, DEFAULT_CFG)).toBe(true);
+    expect(isInsignificant({ rings: 1, activeWarmZoneSeconds: 0, hrSampleCount: 2 }, DEFAULT_CFG)).toBe(true);
   });
 
   it('is not insignificant when any bound is exceeded', () => {
-    expect(isInsignificant({ coins: 5, activeWarmZoneSeconds: 0, hrSampleCount: 2 })).toBe(false);
-    expect(isInsignificant({ coins: 0, activeWarmZoneSeconds: 30, hrSampleCount: 2 })).toBe(false);
-    expect(isInsignificant({ coins: 0, activeWarmZoneSeconds: 0, hrSampleCount: 50 })).toBe(false);
+    expect(isInsignificant({ rings: 5, activeWarmZoneSeconds: 0, hrSampleCount: 2 })).toBe(false);
+    expect(isInsignificant({ rings: 0, activeWarmZoneSeconds: 30, hrSampleCount: 2 })).toBe(false);
+    expect(isInsignificant({ rings: 0, activeWarmZoneSeconds: 0, hrSampleCount: 50 })).toBe(false);
   });
 });
 
 describe('planHeal — insignificant occupant removal', () => {
-  it('removes a 1-sample/0-coin ghost, keeps the substantial occupant', () => {
+  it('removes a 1-sample/0-ring ghost, keeps the substantial occupant', () => {
     const session = {
       entities: [
         { deviceId: '10001', profileId: 'parent-two', startTime: 0, endTime: 5000, status: 'active' },
@@ -60,9 +60,9 @@ describe('planHeal — insignificant occupant removal', () => {
         interval_seconds: 5,
         series: {
           'parent-two:hr': [116, null],
-          'parent-two:coins': [0, 0],
+          'parent-two:rings': [0, 0],
           'grannie:hr': [80, 90],
-          'grannie:coins': [5, 10],
+          'grannie:rings': [5, 10],
           'grannie:zone': ['a', 'w']
         }
       }
@@ -85,7 +85,7 @@ describe('planHeal — insignificant occupant removal', () => {
         interval_seconds: 5,
         series: {
           'grannie:hr': [80, 90, 100, 110],
-          'grannie:coins': [5, 10, 15, 20],
+          'grannie:rings': [5, 10, 15, 20],
           'grannie:zone': ['a', 'w', 'h', 'h']
         }
       }
@@ -111,9 +111,9 @@ describe('planHeal — known-user two-device split merge', () => {
         interval_seconds: 5,
         series: {
           'kckern:hr': [120, 121, null, null],
-          'kckern:coins': [1, 2, 2, 2],
+          'kckern:rings': [1, 2, 2, 2],
           'kckern_alt:hr': [null, null, 130, 131],
-          'kckern_alt:coins': [3, 4, 10, 20]
+          'kckern_alt:rings': [3, 4, 10, 20]
         }
       }
     };
@@ -135,7 +135,7 @@ describe('planHeal — known-user two-device split merge', () => {
         interval_seconds: 5,
         series: {
           'kckern:hr': [120, 121, 122, 123],
-          'kckern:coins': [10, 20, 30, 40]
+          'kckern:rings': [10, 20, 30, 40]
         }
       }
     };
@@ -159,7 +159,7 @@ describe('planHeal — series-only occupant discovery + successor fallback', () 
         series: {
           'learner1:hr': [116, 116, null],
           'grannie:hr': [null, null, 80],
-          'grannie:coins': [1, 2, 10]
+          'grannie:rings': [1, 2, 10]
         }
       }
     };
@@ -183,9 +183,9 @@ describe('planHeal — RLE-encoded on-disk series (decode integration)', () => {
         series: {
           // RLE: [116, 1] then null x1 -> one 116, one null
           'parent-two:hr': JSON.stringify([116, null]),
-          'parent-two:coins': JSON.stringify([[0, 2]]),
+          'parent-two:rings': JSON.stringify([[0, 2]]),
           'grannie:hr': JSON.stringify([[85, 4]]),
-          'grannie:coins': JSON.stringify([[20, 4]]),
+          'grannie:rings': JSON.stringify([[20, 4]]),
           'grannie:zone': JSON.stringify([['a', 4]])
         }
       }

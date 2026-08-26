@@ -226,9 +226,9 @@ export const TIMING = {
 // =============================================================================
 
 /**
- * Treasure box coin colors mapped to zones
+ * Treasure box ring colors mapped to zones
  */
-export const TREASURE_COIN_COLORS = {
+export const TREASURE_RING_COLORS = {
   red: '#ff6b6b',
   orange: '#ff922b',
   yellow: '#ffd43b',
@@ -237,9 +237,9 @@ export const TREASURE_COIN_COLORS = {
 };
 
 /**
- * Coin color rank (for sorting by intensity)
+ * Ring color rank (for sorting by intensity)
  */
-export const COIN_COLOR_RANK = {
+export const RING_COLOR_RANK = {
   red: 500,      // fire
   orange: 400,   // hot
   yellow: 300,   // warm
@@ -248,17 +248,17 @@ export const COIN_COLOR_RANK = {
 };
 
 /**
- * Get coin color rank
+ * Get ring color rank
  * @param {string} color - Color name or hex
  * @returns {number} Rank (higher = more intense)
  */
-export const getCoinColorRank = (color) => {
+export const getRingColorRank = (color) => {
   if (!color) return 0;
   const key = String(color).toLowerCase();
   
   // Check direct match
-  if (COIN_COLOR_RANK[key] != null) {
-    return COIN_COLOR_RANK[key];
+  if (RING_COLOR_RANK[key] != null) {
+    return RING_COLOR_RANK[key];
   }
   
   // Check hex match
@@ -308,9 +308,9 @@ export default {
   GOVERNANCE_PRIORITY,
   compareGovernanceStatus,
   TIMING,
-  TREASURE_COIN_COLORS,
-  COIN_COLOR_RANK,
-  getCoinColorRank,
+  TREASURE_RING_COLORS,
+  RING_COLOR_RANK,
+  getRingColorRank,
   SIDEBAR_SIZE_MODE,
   PLAYER_MODE
 };

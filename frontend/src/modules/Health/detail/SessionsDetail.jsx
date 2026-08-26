@@ -25,8 +25,8 @@ export default function SessionsDetail({ dashboard }) {
                   <Badge color="blue" variant="light" size="sm">
                     {Math.round((s.durationMs || 0) / 60000)} min
                   </Badge>
-                  {s.totalCoins > 0 && (
-                    <Badge color="yellow" variant="light" size="sm">🪙 {s.totalCoins}</Badge>
+                  {s.totalRings > 0 && (
+                    <Badge color="yellow" variant="light" size="sm">🪙 {s.totalRings}</Badge>
                   )}
                 </Group>
               </Group>

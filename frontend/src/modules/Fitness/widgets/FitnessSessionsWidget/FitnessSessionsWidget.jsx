@@ -12,7 +12,7 @@ import './FitnessSessionsWidget.scss';
 import { formatFitnessDate } from '@/modules/Fitness/lib/dateFormatter.js';
 import { resolveSessionTitle, resolveSessionActivity } from './sessionDisplay.js';
 
-const CoinIcon = ({ size = 12 }) => (
+const RingIcon = ({ size = 12 }) => (
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
     <circle cx="8" cy="8" r="7" fill="#f5c542" stroke="#c9a020" strokeWidth="1" />
     <circle cx="8" cy="8" r="5" fill="none" stroke="#c9a020" strokeWidth="0.5" opacity="0.5" />
@@ -242,8 +242,8 @@ function SessionsCard({ sessions, loading, onSessionClick, selectedSessionId }) 
                                     />
                                   </span>
                                 ))}
-                                {s.totalCoins > 0 && (
-                                  <span className="session-row__coins"><CoinIcon size={14} />{s.totalCoins}</span>
+                                {s.totalRings > 0 && (
+                                  <span className="session-row__rings"><RingIcon size={14} />{s.totalRings}</span>
                                 )}
                                 {s.maxSufferScore > 0 && (
                                   <span className="session-row__suffer"><StravaIcon size={14} />{s.maxSufferScore}</span>

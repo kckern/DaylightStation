@@ -24,7 +24,7 @@ describe('isExemptEntry', () => {
 
 describe('computeScaleBasisValue', () => {
   // The real 2026-07-21 session: four racers 382..463, baby joins at minute 20
-  // with 12 coins. 12 as the basis drives k -> ~0.38 and flattens the racers.
+  // with 12 rings. 12 as the basis drives k -> ~0.38 and flattens the racers.
   const session = [
     entry('learner4', 463),
     entry('learner2', 456),

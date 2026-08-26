@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   resampleHR,
   deriveZones,
-  deriveCoins,
+  deriveRings,
   computeZoneMinutes,
   computeBuckets,
   computeHRStats,
@@ -36,14 +36,14 @@ describe('StravaSessionBuilder', () => {
     });
   });
 
-  describe('deriveCoins', () => {
-    it('accumulates coins by zone', () => {
+  describe('deriveRings', () => {
+    it('accumulates rings by zone', () => {
       const samples = [80, 105, 125, 145, 165];
-      expect(deriveCoins(samples)).toEqual([0, 1, 3, 6, 11]);
+      expect(deriveRings(samples)).toEqual([0, 1, 3, 6, 11]);
     });
 
     it('carries forward on null', () => {
-      expect(deriveCoins([105, null, 125])).toEqual([1, 1, 3]);
+      expect(deriveRings([105, null, 125])).toEqual([1, 1, 3]);
     });
   });
 
@@ -63,7 +63,7 @@ describe('StravaSessionBuilder', () => {
   });
 
   describe('computeBuckets', () => {
-    it('sums coins by zone color', () => {
+    it('sums rings by zone color', () => {
       const zones = ['c', 'a', 'w', 'h', 'fire'];
       expect(computeBuckets(zones)).toEqual({
         blue: 0, green: 1, yellow: 2, orange: 3, red: 5,
@@ -91,8 +91,8 @@ describe('StravaSessionBuilder', () => {
 
       expect(result.hrSamples).toHaveLength(5);
       expect(result.zoneSeries).toHaveLength(5);
-      expect(result.coinsSeries).toHaveLength(5);
-      expect(result.totalCoins).toBe(10);
+      expect(result.ringsSeries).toHaveLength(5);
+      expect(result.totalRings).toBe(10);
       expect(result.hrStats.hrAvg).toBe(130);
       expect(result.buckets.yellow).toBe(10);
       expect(result.zoneMinutes.warm).toBeCloseTo(0.42, 1);

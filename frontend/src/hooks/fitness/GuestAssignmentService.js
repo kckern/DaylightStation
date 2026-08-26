@@ -6,7 +6,7 @@ import getLogger from '../../lib/logging/Logger.js';
  * Continuous-usage threshold for session transfers.
  *
  * If a participant has been active for less than `this.thresholdMs` when
- * replaced, their session data (coins, start time, timeline) is transferred
+ * replaced, their session data (rings, start time, timeline) is transferred
  * to the new participant; otherwise the previous segment is dropped.
  *
  * The threshold is injected via the constructor (sourced from
@@ -275,7 +275,7 @@ export class GuestAssignmentService {
           console.log('[GuestAssignmentService] Entity transfer complete:', {
             from: transferredFromEntity,
             to: entityId,
-            coinsTransferred: transferResult.coinsTransferred,
+            ringsTransferred: transferResult.ringsTransferred,
             seriesTransferred: transferResult.seriesTransferred?.length || 0
           });
         }
@@ -290,7 +290,7 @@ export class GuestAssignmentService {
           console.log('[GuestAssignmentService] User series transfer complete:', {
             from: transferFromUserId,
             to: newOccupantId,
-            coinsTransferred: transferResult.coinsTransferred,
+            ringsTransferred: transferResult.ringsTransferred,
             seriesTransferred: transferResult.seriesTransferred
           });
         }

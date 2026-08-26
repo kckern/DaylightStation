@@ -202,7 +202,7 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
     expect(data.session.start).toBe('2026-03-01 10:00:00');
   });
 
-  it('populates HR timeline, zones, coins when getActivityStreams returns data', async () => {
+  it('populates HR timeline, zones, rings when getActivityStreams returns data', async () => {
     const hrData = Array(15).fill(130);
     mockStravaClient.getActivityStreams = vi.fn().mockResolvedValue({
       heartrate: { data: hrData },
@@ -220,11 +220,11 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
 
     expect(data.timeline.series['testuser:hr']).toBeTruthy();
     expect(data.timeline.series['testuser:zone']).toBeTruthy();
-    expect(data.timeline.series['testuser:coins']).toBeTruthy();
-    expect(data.timeline.series['global:coins']).toBeTruthy();
-    expect(data.treasureBox.totalCoins).toBe(6); // 3 ticks × 2 coins (warm zone)
+    expect(data.timeline.series['testuser:rings']).toBeTruthy();
+    expect(data.timeline.series['global:rings']).toBeTruthy();
+    expect(data.treasureBox.totalRings).toBe(6); // 3 ticks × 2 rings (warm zone)
     expect(data.summary.participants.testuser.hr_avg).toBe(130);
-    expect(data.summary.participants.testuser.coins).toBe(6);
+    expect(data.summary.participants.testuser.rings).toBe(6);
   });
 
   it('falls back to empty timeline when getActivityStreams fails', async () => {
@@ -240,7 +240,7 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
 
     expect(data.version).toBe(3);
     expect(data.timeline.series).toEqual({});
-    expect(data.treasureBox.totalCoins).toBe(0);
+    expect(data.treasureBox.totalRings).toBe(0);
   });
 
   it('skips HR fetch when activity has no heartrate data', async () => {
@@ -270,12 +270,12 @@ describe('FitnessActivityEnrichmentService — Strava-only session creation', ()
     expect(data.timeline.encoding).toBe('rle');
 
     // TreasureBox scaffold
-    expect(data.treasureBox.totalCoins).toBe(0);
+    expect(data.treasureBox.totalRings).toBe(0);
     expect(data.treasureBox.buckets.blue).toBe(0);
 
     // Summary scaffold
     expect(data.summary.media).toEqual([]);
-    expect(data.summary.coins.total).toBe(0);
+    expect(data.summary.rings.total).toBe(0);
     expect(data.summary.challenges.total).toBe(0);
   });
 });

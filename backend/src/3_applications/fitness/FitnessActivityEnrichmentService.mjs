@@ -496,19 +496,19 @@ export class FitnessActivityEnrichmentService {
     }
 
     const timelineSeries = {};
-    let totalCoins = 0;
+    let totalRings = 0;
     let buckets = { blue: 0, green: 0, yellow: 0, orange: 0, red: 0 };
     let participantSummary = {};
 
     if (timelineData) {
       timelineSeries[`${username}:hr`] = encodeSingleSeries(timelineData.hrSamples);
       timelineSeries[`${username}:zone`] = encodeSingleSeries(timelineData.zoneSeries);
-      timelineSeries[`${username}:coins`] = encodeSingleSeries(timelineData.coinsSeries);
-      timelineSeries['global:coins'] = encodeSingleSeries(timelineData.coinsSeries);
-      totalCoins = timelineData.totalCoins;
+      timelineSeries[`${username}:rings`] = encodeSingleSeries(timelineData.ringsSeries);
+      timelineSeries['global:rings'] = encodeSingleSeries(timelineData.ringsSeries);
+      totalRings = timelineData.totalRings;
       buckets = timelineData.buckets;
       participantSummary = {
-        coins: timelineData.totalCoins,
+        rings: timelineData.totalRings,
         hr_avg: timelineData.hrStats.hrAvg,
         hr_max: timelineData.hrStats.hrMax,
         hr_min: timelineData.hrStats.hrMin,
@@ -573,11 +573,11 @@ export class FitnessActivityEnrichmentService {
         tick_count: timelineData ? timelineData.hrSamples.length : Math.ceil(durationSeconds / 5),
         encoding: 'rle',
       },
-      treasureBox: { coinTimeUnitMs: 5000, totalCoins, buckets },
+      treasureBox: { ringTimeUnitMs: 5000, totalRings, buckets },
       summary: {
-        participants: participantSummary.coins != null ? { [username]: participantSummary } : {},
+        participants: participantSummary.rings != null ? { [username]: participantSummary } : {},
         media: [],
-        coins: { total: totalCoins, buckets },
+        rings: { total: totalRings, buckets },
         challenges: { total: 0, succeeded: 0, failed: 0 },
         voiceMemos: [],
       },

@@ -3,10 +3,10 @@
  * 
  * A Session Entity is distinct from a User Profile:
  * - Profile: Identity (name, avatar, zones) - persists across sessions
- * - Entity: Session state (coins, start time, timeline) - per-device-assignment
+ * - Entity: Session state (rings, start time, timeline) - per-device-assignment
  * 
  * When a device is reassigned (guest switch), a new entity is created.
- * This enables fresh coin counts and session start times for each occupant.
+ * This enables fresh ring counts and session start times for each occupant.
  * 
  * @see /docs/design/guest-switch-session-transition.md
  */
@@ -53,7 +53,7 @@ export class SessionEntity {
     this.status = 'active'; // active | dropped | transferred | ended
     
     // Metrics snapshot - initialized at 0 for fresh entity
-    this.coins = 0;
+    this.rings = 0;
     this.cumulativeData = {
       heartRate: { readings: [], avgHR: 0, maxHR: 0, minHR: 0 },
       cadence: { readings: [], avgRPM: 0, totalRevolutions: 0 },
@@ -118,22 +118,22 @@ export class SessionEntity {
   }
 
   /**
-   * Update coins count
-   * @param {number} coins - New total coins
+   * Update rings count
+   * @param {number} rings - New total rings
    */
-  setCoins(coins) {
-    if (Number.isFinite(coins)) {
-      this.coins = coins;
+  setRings(rings) {
+    if (Number.isFinite(rings)) {
+      this.rings = rings;
     }
   }
 
   /**
-   * Add coins to current total
-   * @param {number} amount - Coins to add
+   * Add rings to current total
+   * @param {number} amount - Rings to add
    */
-  addCoins(amount) {
+  addRings(amount) {
     if (Number.isFinite(amount)) {
-      this.coins += amount;
+      this.rings += amount;
     }
   }
 
@@ -151,7 +151,7 @@ export class SessionEntity {
       endTime: this.endTime,
       durationMs: this.durationMs,
       status: this.status,
-      coins: this.coins,
+      rings: this.rings,
       transferredTo: this.transferredTo || null,
       transferReason: this.transferReason || null
     };
@@ -170,7 +170,7 @@ export class SessionEntity {
       startTime: this.startTime,
       endTime: this.endTime,
       status: this.status,
-      coins: this.coins,
+      rings: this.rings,
       transferredTo: this.transferredTo,
       transferReason: this.transferReason,
       cumulativeData: this.cumulativeData
@@ -195,7 +195,7 @@ export class SessionEntity {
     
     entity.endTime = data.endTime || null;
     entity.status = data.status || 'active';
-    entity.coins = Number.isFinite(data.coins) ? data.coins : 0;
+    entity.rings = Number.isFinite(data.rings) ? data.rings : 0;
     entity.transferredTo = data.transferredTo || null;
     entity.transferReason = data.transferReason || null;
     
@@ -312,7 +312,7 @@ export class SessionEntityRegistry {
     
     console.log('[SessionEntityRegistry] Ended entity:', entityId, {
       status: entity.status,
-      coins: entity.coins,
+      rings: entity.rings,
       durationMs: entity.durationMs
     });
   }

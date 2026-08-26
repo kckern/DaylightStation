@@ -17,11 +17,11 @@ export class FitnessTreasureBox {
     this._log('constructor', { hasSessionRef: !!sessionRef });
     this._zoneProfileStore = null; // ZoneProfileStore reference for committed zone lookup
     this.activityMonitor = null;  // ActivityMonitor for checking if user is active
-    this.coinTimeUnitMs = 5000; // default; will be overridden by configuration injection
-    this.globalZones = []; // array of {id,name,min,color,coins}
+    this.ringTimeUnitMs = 5000; // default; will be overridden by configuration injection
+    this.globalZones = []; // array of {id,name,min,color,rings}
     this.usersConfigOverrides = new Map(); // userId -> overrides object {active,warm,hot,fire}
-    this.buckets = {}; // color -> coin total
-    this.totalCoins = 0;
+    this.buckets = {}; // color -> ring total
+    this.totalRings = 0;
     this.perUser = new Map(); // userId -> accumulator
     this.lastTick = Date.now(); // for elapsed computation if needed
     this._timeline = {
@@ -31,8 +31,8 @@ export class FitnessTreasureBox {
     };
     // Compatibility: device -> entity mapping retained, but strict mode ignores entityId for accounting.
     this._deviceEntityMap = new Map(); // deviceId -> entityId
-    // Note: Per-user coin timelines removed (Priority 5)
-    // Coins are now written directly to main timeline via assignMetric('user:X:coins_total')
+    // Note: Per-user ring timelines removed (Priority 5)
+    // Rings are now written directly to main timeline via assignMetric('user:X:rings_total')
     // Chart uses getSeries() to read from main timeline
     // External mutation callback (set by context) to trigger UI re-render
     this._mutationCb = null;
@@ -55,7 +55,7 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Set the ActivityMonitor for activity-aware coin processing
+   * Set the ActivityMonitor for activity-aware ring processing
    * @param {import('../../modules/Fitness/domain/ActivityMonitor.js').ActivityMonitor} monitor
    */
   setActivityMonitor(monitor) {
@@ -70,14 +70,14 @@ export class FitnessTreasureBox {
   setMutationCallback(cb) { this._mutationCb = typeof cb === 'function' ? cb : null; }
   _notifyMutation() { if (this._mutationCb) { try { this._mutationCb(); } catch(_){} } }
 
-  configure({ coinTimeUnitMs, zones, users }) {
-    // Note: _userTimelines removed (Priority 5) - coins written to main timeline
+  configure({ ringTimeUnitMs, zones, users }) {
+    // Note: _userTimelines removed (Priority 5) - rings written to main timeline
 
-    if (typeof coinTimeUnitMs === 'number' && coinTimeUnitMs > 0) {
-      this.coinTimeUnitMs = coinTimeUnitMs;
+    if (typeof ringTimeUnitMs === 'number' && ringTimeUnitMs > 0) {
+      this.ringTimeUnitMs = ringTimeUnitMs;
     }
     if (this.sessionRef?.timebase) {
-      this.sessionRef.timebase.intervalMs = this.coinTimeUnitMs;
+      this.sessionRef.timebase.intervalMs = this.ringTimeUnitMs;
     }
     if (Array.isArray(zones)) {
       // Normalize zones sorted by min ascending for evaluation (we'll iterate descending)
@@ -86,7 +86,7 @@ export class FitnessTreasureBox {
         name: z.name,
         min: Number(z.min) || 0,
         color: z.color,
-        coins: Number(z.coins) || 0
+        rings: Number(z.rings) || 0
       })).sort((a,b) => a.min - b.min);
       // Pre-sort descending for resolveZone() to avoid re-sorting on every call
       this._globalZonesDescending = [...this.globalZones].reverse();
@@ -138,14 +138,14 @@ export class FitnessTreasureBox {
     // Backfill existing users with zone data
     this._backfillExistingUsers();
     // NOTE: Timer removed - TreasureBox is now tick-driven via processTick()
-    // This eliminates race conditions between coin awards and dropout detection
+    // This eliminates race conditions between ring awards and dropout detection
   }
 
   // DEPRECATED: Timer-based processing removed to fix race conditions
   // TreasureBox is now driven by FitnessSession._collectTimelineTick() via processTick()
   _startAutoTicker() {
     // No-op: timer-based processing has been removed
-    // Coin processing now happens synchronously during session tick
+    // Ring processing now happens synchronously during session tick
     this._log('auto_ticker_disabled', { usingTickDriven: true });
   }
 
@@ -159,12 +159,12 @@ export class FitnessTreasureBox {
     this._log('reset', { 
       hadUsers: this.perUser.size,
       hadTimelinePoints: this._timeline.cumulative.length,
-      totalCoins: this.totalCoins
+      totalRings: this.totalRings
     });
     
     // Clear all accumulated state
     this.buckets = {};
-    this.totalCoins = 0;
+    this.totalRings = 0;
     this.perUser.clear();
     this._timeline.perColor.clear();
     this._timeline.cumulative = [];
@@ -174,22 +174,22 @@ export class FitnessTreasureBox {
     this._zoneProfileOverrideCache = new Map();
     this._globalZonesDescending = [];
 
-    // Note: Keep globalZones, coinTimeUnitMs, callbacks - these are configuration, not session state
+    // Note: Keep globalZones, ringTimeUnitMs, callbacks - these are configuration, not session state
   }
 
   /**
    * Restore TreasureBox state from saved session data (for session resume).
-   * @param {Object} saved - { totalCoins, buckets }
+   * @param {Object} saved - { totalRings, buckets }
    */
   restore(saved) {
     if (!saved) return;
-    if (typeof saved.totalCoins === 'number') {
-      this.totalCoins = saved.totalCoins;
+    if (typeof saved.totalRings === 'number') {
+      this.totalRings = saved.totalRings;
     }
     if (saved.buckets && typeof saved.buckets === 'object') {
       this.buckets = { ...saved.buckets };
     }
-    this._log('restored', { totalCoins: this.totalCoins, buckets: Object.keys(this.buckets) });
+    this._log('restored', { totalRings: this.totalRings, buckets: Object.keys(this.buckets) });
   }
 
   /**
@@ -259,7 +259,7 @@ export class FitnessTreasureBox {
       currentColor: NO_ZONE_LABEL,
       lastColor: NO_ZONE_LABEL,
       lastZoneId: null,
-      totalCoins: 0
+      totalRings: 0
     };
   }
 
@@ -289,7 +289,7 @@ export class FitnessTreasureBox {
     return true;
   }
 
-  // Backfill highestZone from lastHR so already-on monitors immediately accrue coins
+  // Backfill highestZone from lastHR so already-on monitors immediately accrue rings
   _backfillExistingUsers() {
     if (!this.perUser.size || !this.globalZones.length) return;
     const now = Date.now();
@@ -308,9 +308,9 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * Process coin intervals for active participants only.
+   * Process ring intervals for active participants only.
    * Called synchronously from FitnessSession._collectTimelineTick() to ensure
-   * coin processing is aligned with session ticks and dropout detection.
+   * ring processing is aligned with session ticks and dropout detection.
    *
     * Strict mode: activeParticipants contains userIds, matching the keys in perUser Map.
    *
@@ -323,7 +323,7 @@ export class FitnessTreasureBox {
       tick,
       perUserSize: this.perUser.size,
       activeParticipants: Array.from(activeParticipants),
-      coinTimeUnitMs: this.coinTimeUnitMs,
+      ringTimeUnitMs: this.ringTimeUnitMs,
       perUserKeys: Array.from(this.perUser.keys())
     }, 'debug');
     if (!this.perUser.size) return;
@@ -347,7 +347,7 @@ export class FitnessTreasureBox {
       const profileId = acc.profileId || accKey;
 
       // CRITICAL: Only process intervals for ACTIVE participants
-      // This prevents coin accumulation during dropout
+      // This prevents ring accumulation during dropout
       // Phase 4: Simplified - activeParticipants and perUser use same ID scheme
       if (!activeParticipants.has(accKey)) {
         this._log('user_not_active', { userId: accKey, profileId }, 'debug');
@@ -359,11 +359,11 @@ export class FitnessTreasureBox {
       
       if (!acc.currentIntervalStart) { acc.currentIntervalStart = now; continue; }
       const elapsed = now - acc.currentIntervalStart;
-      this._log('interval_check', { accKey, elapsed, coinTimeUnitMs: this.coinTimeUnitMs, hasHighestZone: !!acc.highestZone }, 'debug');
-      if (elapsed >= this.coinTimeUnitMs) {
+      this._log('interval_check', { accKey, elapsed, ringTimeUnitMs: this.ringTimeUnitMs, hasHighestZone: !!acc.highestZone }, 'debug');
+      if (elapsed >= this.ringTimeUnitMs) {
         if (acc.highestZone) {
-          this._log('awarding_coins', { accKey, zone: { id: acc.highestZone.id, name: acc.highestZone.name, coins: acc.highestZone.coins } });
-          this._awardCoins(accKey, acc.highestZone);
+          this._log('awarding_rings', { accKey, zone: { id: acc.highestZone.id, name: acc.highestZone.name, rings: acc.highestZone.rings } });
+          this._awardRings(accKey, acc.highestZone);
         } else {
           this._log('no_highest_zone', { accKey }, 'debug');
         }
@@ -449,7 +449,7 @@ export class FitnessTreasureBox {
     return {
       perColor,
       cumulative: Number.isFinite(cumulative) ? cumulative : null,
-      totalCoins: this.totalCoins
+      totalRings: this.totalRings
     };
   }
 
@@ -563,7 +563,7 @@ export class FitnessTreasureBox {
       accKey,
       profileId,
       hr,
-      zone: zone ? { id: zone.id, name: zone.name, min: zone.min, coins: zone.coins } : null,
+      zone: zone ? { id: zone.id, name: zone.name, min: zone.min, rings: zone.rings } : null,
       hasOverrides,
       overrideKeys: hasOverrides ? Object.keys(userOverrides || {}) : null
     });
@@ -585,10 +585,10 @@ export class FitnessTreasureBox {
     
     // Check interval completion
     const elapsed = now - acc.currentIntervalStart;
-    if (elapsed >= this.coinTimeUnitMs) {
+    if (elapsed >= this.ringTimeUnitMs) {
       this._log('interval_complete', { accKey, elapsed, hasHighestZone: !!acc.highestZone });
       if (acc.highestZone) {
-        this._awardCoins(accKey, acc.highestZone);
+        this._awardRings(accKey, acc.highestZone);
       }
       // Start new interval after awarding (or discard if none)
       acc.currentIntervalStart = now;
@@ -632,16 +632,16 @@ export class FitnessTreasureBox {
   }
 
   // Note: _ensureUserTimelineIndex removed (Priority 5)
-  // Per-user coin timelines are now in main timeline via user:X:coins_total
+  // Per-user ring timelines are now in main timeline via user:X:rings_total
 
-  _awardCoins(accKey, zone) {
-    this._log('award_coins_called', { accKey, zone: zone ? { id: zone.id, name: zone.name, coins: zone.coins } : null, hasActivityMonitor: !!this.activityMonitor });
+  _awardRings(accKey, zone) {
+    this._log('award_rings_called', { accKey, zone: zone ? { id: zone.id, name: zone.name, rings: zone.rings } : null, hasActivityMonitor: !!this.activityMonitor });
     if (!zone) return;
     
     const acc = this.perUser.get(accKey);
     const profileId = acc?.profileId || accKey;
     
-    // PRIORITY 2: Safety check - don't award coins if user is not active
+    // PRIORITY 2: Safety check - don't award rings if user is not active
     // This is a backup to processTick() which also checks activity
     // For entity keys, check activity by profileId (not entityId)
     if (this.activityMonitor) {
@@ -656,19 +656,19 @@ export class FitnessTreasureBox {
     }
     
     if (!(zone.color in this.buckets)) this.buckets[zone.color] = 0;
-    this.buckets[zone.color] += zone.coins;
-    this.totalCoins += zone.coins;
+    this.buckets[zone.color] += zone.rings;
+    this.totalRings += zone.rings;
     const start = this.sessionRef?.startTime || this.sessionRef?.timebase?.startAbsMs || Date.now();
-    const intervalMs = this.coinTimeUnitMs > 0 ? this.coinTimeUnitMs : 5000;
+    const intervalMs = this.ringTimeUnitMs > 0 ? this.ringTimeUnitMs : 5000;
     const now = Date.now();
     const intervalIndex = Math.floor(Math.max(0, now - start) / intervalMs);
     this._ensureTimelineIndex(intervalIndex, zone.color);
     const colorSeries = this._timeline.perColor.get(zone.color);
     if (colorSeries) {
-      colorSeries[intervalIndex] += zone.coins;
+      colorSeries[intervalIndex] += zone.rings;
     }
     if (this._timeline.cumulative.length > intervalIndex) {
-      this._timeline.cumulative[intervalIndex] += zone.coins;
+      this._timeline.cumulative[intervalIndex] += zone.rings;
     }
     this._timeline.lastIndex = Math.max(this._timeline.lastIndex, intervalIndex);
     if (this.sessionRef?.timebase && intervalIndex + 1 > this.sessionRef.timebase.intervalCount) {
@@ -676,26 +676,26 @@ export class FitnessTreasureBox {
     }
     // acc already retrieved above for profileId lookup
     if (acc) {
-      acc.totalCoins = (acc.totalCoins || 0) + zone.coins;
+      acc.totalRings = (acc.totalRings || 0) + zone.rings;
       acc.lastAwardedAt = now;
-      this._log('coins_awarded', {
+      this._log('rings_awarded', {
         accKey,
         profileId,
         zone: zone.id || zone.name,
-        coinsAwarded: zone.coins,
-        newTotal: acc.totalCoins,
-        globalTotal: this.totalCoins
+        ringsAwarded: zone.rings,
+        newTotal: acc.totalRings,
+        globalTotal: this.totalRings
       });
     } else {
       this._log('no_accumulator', { accKey });
     }
     
     // Note: Per-user timeline tracking removed (Priority 5)
-    // Coins are written to main timeline via FitnessSession.assignMetric('user:X:coins_total')
+    // Rings are written to main timeline via FitnessSession.assignMetric('user:X:rings_total')
     
     // Log event in session if available
     try {
-      this.sessionRef._log('coin_award', { user: accKey, profileId, zone: zone.id || zone.name, coins: zone.coins, color: zone.color });
+      this.sessionRef._log('ring_award', { user: accKey, profileId, zone: zone.id || zone.name, rings: zone.rings, color: zone.color });
     } catch (_) { /* ignore */ }
     this._notifyMutation();
   }
@@ -703,8 +703,8 @@ export class FitnessTreasureBox {
   get summary() {
     // Derive session timing from owning sessionRef (if available and started)
     return {
-      coinTimeUnitMs: this.coinTimeUnitMs,
-      totalCoins: this.totalCoins,
+      ringTimeUnitMs: this.ringTimeUnitMs,
+      totalRings: this.totalRings,
       buckets: { ...this.buckets }
     };
   }
@@ -722,29 +722,29 @@ export class FitnessTreasureBox {
         entityId: null,
         color: currentColor || lastColor || null,
         zoneId: data.lastZoneId || null,
-        totalCoins: data.totalCoins || 0
+        totalRings: data.totalRings || 0
       });
     });
     return snapshot;
   }
 
   /**
-   * Get per-participant coin totals.
-    * @returns {Map<string, number>} Map of userId -> total coins
+   * Get per-participant ring totals.
+    * @returns {Map<string, number>} Map of userId -> total rings
    */
   getPerUserTotals() {
     const totals = new Map();
     this.perUser.forEach((data, key) => {
       if (!key || !data) return;
-      const coins = Number.isFinite(data.totalCoins) ? data.totalCoins : 0;
-      totals.set(key, coins);
+      const rings = Number.isFinite(data.totalRings) ? data.totalRings : 0;
+      totals.set(key, rings);
     });
     return totals;
   }
 
   /**
    * Phase 2: Get totals by entity ID only (excludes legacy userId entries)
-   * @returns {Map<string, number>} Map of entityId -> total coins
+   * @returns {Map<string, number>} Map of entityId -> total rings
    */
   getEntityTotals() {
     // Strict userId mode: entities are not tracked.
@@ -752,21 +752,21 @@ export class FitnessTreasureBox {
   }
 
   /**
-   * DEPRECATED: getUserCoinsTimeSeries removed (Priority 5)
-   * Chart now uses main timeline directly via getSeries('user:X:coins_total')
+   * DEPRECATED: getUserRingsTimeSeries removed (Priority 5)
+   * Chart now uses main timeline directly via getSeries('user:X:rings_total')
    * This method is kept for backward compatibility but returns empty array.
-   * @deprecated Use getSeries('user:X:coins_total') from FitnessTimeline instead
+   * @deprecated Use getSeries('user:X:rings_total') from FitnessTimeline instead
    * @param {string} userId - The user slug/id
    * @returns {number[]} - Empty array (deprecated)
    */
-  getUserCoinsTimeSeries(userId) {
-    getLogger().warn('treasurebox.deprecated_method_called', { method: 'getUserCoinsTimeSeries' });
+  getUserRingsTimeSeries(userId) {
+    getLogger().warn('treasurebox.deprecated_method_called', { method: 'getUserRingsTimeSeries' });
     return [];
   }
 
   /**
    * Get the cumulative total timeline (all users combined).
-   * @returns {number[]} - Array of cumulative total coin values
+   * @returns {number[]} - Array of cumulative total ring values
    */
   getCumulativeTimeline() {
     return [...this._timeline.cumulative];
@@ -798,33 +798,33 @@ export class FitnessTreasureBox {
    * Used by chart for live edge rendering and governance for responsive evaluation.
    *
    * @param {string} userId - User ID
-   * @returns {Object} Progress data including pending coins and current zone
+   * @returns {Object} Progress data including pending rings and current zone
    */
   getIntervalProgress(userId) {
     const acc = this.perUser.get(userId);
     if (!acc || !acc.currentIntervalStart) {
-      return { progress: 0, pendingCoins: 0, zone: null, zoneId: null, zoneColor: null, totalCoins: 0, projectedTotal: 0 };
+      return { progress: 0, pendingRings: 0, zone: null, zoneId: null, zoneColor: null, totalRings: 0, projectedTotal: 0 };
     }
 
     const elapsed = Date.now() - acc.currentIntervalStart;
-    const progress = Math.min(1, elapsed / this.coinTimeUnitMs);
+    const progress = Math.min(1, elapsed / this.ringTimeUnitMs);
     const zone = acc.highestZone;
-    const pendingCoins = zone ? zone.coins * progress : 0;
+    const pendingRings = zone ? zone.rings * progress : 0;
 
     return {
       progress,              // 0-1 through interval
-      pendingCoins,          // interpolated coins earned so far in this interval
+      pendingRings,          // interpolated rings earned so far in this interval
       zone,                  // current zone object (null if no HR)
       zoneId: acc.lastZoneId,
       zoneColor: acc.lastColor,
-      totalCoins: acc.totalCoins || 0,
-      projectedTotal: (acc.totalCoins || 0) + pendingCoins
+      totalRings: acc.totalRings || 0,
+      projectedTotal: (acc.totalRings || 0) + pendingRings
     };
   }
 
   /**
    * Get live snapshot of all users for governance and chart.
-   * Single source of truth for current zone/coin state.
+   * Single source of truth for current zone/ring state.
    *
    * @returns {Array<Object>} Snapshot of all users with real-time state
    */
@@ -837,8 +837,8 @@ export class FitnessTreasureBox {
         userId,
         zoneId: acc.lastZoneId,
         zoneColor: acc.lastColor,
-        totalCoins: acc.totalCoins || 0,
-        projectedCoins: progress.projectedTotal,
+        totalRings: acc.totalRings || 0,
+        projectedRings: progress.projectedTotal,
         intervalProgress: progress.progress,
         isActive: acc.highestZone !== null,
         lastHR: acc.lastHR

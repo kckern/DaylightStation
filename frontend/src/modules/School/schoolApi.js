@@ -18,7 +18,32 @@ async function req(path, body, method, headers = {}) {
   }
 }
 
+/**
+ * Same never-throws `{ok, status, data}` contract as `req`, but for a path
+ * OUTSIDE `/api/v1/school`. Weekly measures are not a school resource — they
+ * are a view over what fitness recorded — so they live under `/api/v1/measures`
+ * and the school board merely consumes them.
+ */
+async function reqAbsolute(path) {
+  try {
+    const r = await fetch(path, { method: 'GET', credentials: 'same-origin' });
+    const data = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
 export const schoolApi = {
+  /**
+   * Roster-wide weekly measures. One request for the whole board — the same
+   * shape as `teacherDay`, and for the same reason: four cards must not mean
+   * four round trips on a panel that repaints every five minutes.
+   */
+  measuresWeekly: (week = null) => reqAbsolute(
+    `/api/v1/measures/weekly${week ? `?${new URLSearchParams({ week })}` : ''}`,
+  ),
+
   rubiksCubePreview: () => req('/rubiks-cube/preview'),
   rubiksCubeOpen: ({ userId, courseId, grant, lessonId = null }) => req(
     `/rubiks-cube/users/${encodeURIComponent(userId)}/courses/${encodeURIComponent(courseId)}${lessonId ? '/open' : ''}`,

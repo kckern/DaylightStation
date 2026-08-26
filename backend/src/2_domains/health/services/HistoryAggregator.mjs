@@ -50,8 +50,8 @@ function aggregateBucket(period, entries) {
     },
     sessions: {
       count: sum(entries.map(e => e.sessions?.length || 0)),
-      totalCoins: sum(entries.map(e =>
-        (e.sessions || []).reduce((t, s) => t + (s.totalCoins || 0), 0)
+      totalRings: sum(entries.map(e =>
+        (e.sessions || []).reduce((t, s) => t + (s.totalRings || 0), 0)
       )),
     },
   };

@@ -220,10 +220,10 @@ const buildParticipantsForPersist = (roster, deviceAssignments, options = {}) =>
  * - user:user_4:heart_rate -> user_4:hr
  * - user:user_4:zone_id -> user_4:zone
  * - user:user_4:heart_beats -> user_4:beats
- * - user:user_4:coins_total -> user_4:coins
+ * - user:user_4:rings_total -> user_4:rings
  * - device:7138:rpm -> bike:7138:rpm (equipment metrics)
  * - device:device_7138:rpm -> bike:7138:rpm (fix double-prefix)
- * - global:coins-total -> global:coins
+ * - global:rings-total -> global:rings
  *
  * @param {Object} series
  * @returns {Object}
@@ -238,8 +238,8 @@ const mapSeriesKeysForPersist = (series) => {
     'zone-id': 'zone',
     'heart_beats': 'beats',
     'heart-beats': 'beats',
-    'coins_total': 'coins',
-    'coins-total': 'coins'
+    'rings_total': 'rings',
+    'rings-total': 'rings'
   };
 
   const EQUIPMENT_METRICS = new Set(['rpm', 'rotations', 'power', 'distance']);
@@ -276,7 +276,7 @@ const mapSeriesKeysForPersist = (series) => {
         mappedKey = `device:${id}:${compactMetric}`;
       }
     } else if (parts[0] === 'global' && parts.length >= 2) {
-      // global:coins-total -> global:coins
+      // global:rings-total -> global:rings
       const metric = parts.slice(1).join(':');
       const compactMetric = METRIC_MAP[metric] || metric.replace(/_/g, '-');
       mappedKey = `global:${compactMetric}`;
@@ -623,14 +623,14 @@ export class PersistenceManager {
   /**
    * W1.C — Set the effort-insignificance config used by the session-end
    * backfill pass to decide whether a sub-effort occupant is a "ghost"
-   * (near-zero coins/active-zone-time/HR-samples) that should be folded
+   * (near-zero rings/active-zone-time/HR-samples) that should be folded
    * into a neighboring segment regardless of its duration.
    *
    * Sourced upstream from fitness.yml -> governance.insignificant_usage.
    * When absent/undefined, runSessionBackfill falls back to its own
    * DEFAULT_INSIGNIFICANT_USAGE default.
    *
-   * @param {Object} cfg  - { maxCoins, maxActiveZoneSeconds, maxHrSamples }-shaped
+   * @param {Object} cfg  - { maxRings, maxActiveZoneSeconds, maxHrSamples }-shaped
    */
   setInsignificantUsageConfig(cfg) {
     if (cfg && typeof cfg === 'object') this._insignificantUsage = cfg;
@@ -1102,7 +1102,7 @@ export class PersistenceManager {
           startTime: entity.startTime || null,
           endTime: entity.endTime || null,
           status: entity.status || 'active',
-          coins: entity.coins || 0
+          rings: entity.rings || 0
         };
       }).filter(Boolean);
     }
@@ -1283,7 +1283,7 @@ export class PersistenceManager {
 
     // W1.C — Task 4: feed the raw timeline series + effort/alias config into
     // the backfill pass so it takes the effort-based path (near-zero
-    // coins/active-zone-time/HR-samples ghosts, plus cross-device known-user
+    // rings/active-zone-time/HR-samples ghosts, plus cross-device known-user
     // merges) instead of the legacy duration-only path. See sessionBackfill.js
     // runSessionBackfill doc comment for the branch this selects.
     const series = sessionData.timeline?.series;
