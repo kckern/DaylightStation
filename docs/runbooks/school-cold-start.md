@@ -1,5 +1,9 @@
 # School cold start — from empty data volume to a working homeschool
 
+> Already running and something's broken? See the
+> [day-to-day operations runbook](./school/README.md) instead — this file is
+> the one-time installer's sequence.
+
 This is the installer's sequence. It exists because the School app spans four
 config surfaces, two content trees, and three hardware integrations, and until
 now the order lived only in code and past sessions. Follow it top to bottom; each
