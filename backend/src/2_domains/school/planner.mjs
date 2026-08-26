@@ -341,6 +341,11 @@ export function planLearnerWork({ learnerId = null, assignment = null, units = [
       sequence: Number.isInteger(unit.sequence) ? unit.sequence : null,
       module: unit.module ?? null,
       profile: enrollmentByCourse.get(unit.courseId)?.profile ?? null,
+      // The enrollment's frozen school-day calendar, carried onto the entry so
+      // the agenda can excuse a weekend or a vacation without reaching back
+      // into enrollment state it does not otherwise see. Absent = every day is
+      // a school day.
+      schedule: enrollmentByCourse.get(unit.courseId)?.enrollment?.schedule ?? null,
       timing: datedKey
         ? { ...(isPlainObject(rawTiming) ? rawTiming : {}), mode: datedState === 'catch_up' ? 'catch_up' : 'dated' }
         : (timingDecision?.timing ?? rawTiming),

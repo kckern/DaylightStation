@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
+import { resolveDayCompletion } from '#domains/school/completion.mjs';
 
 const NOW = '2026-07-29T16:00:00Z'; // 09:00 PDT
 const TZ = 'America/Los_Angeles';
@@ -302,6 +303,79 @@ describe('obligation', () => {
     const { sections } = planDailyAgenda(args({
       plan: plan([entry({ unitId: 'w1', subject: 'writing', timing: urgentTiming, timingState: 'urgent', timingPriority: 1 })]),
     }));
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+});
+
+describe('the school-day calendar', () => {
+  // 09:00 PDT on each; the study day is the calendar key those resolve to.
+  const SATURDAY = '2026-08-29T16:00:00Z';
+  const WEDNESDAY = '2026-08-26T16:00:00Z';
+  const WEEKDAYS = { daysOfWeek: [1, 2, 3, 4, 5] };
+  const on = (now, over = {}) => planDailyAgenda(args({ now, ...over }));
+
+  it('excuses an obligated section on a non-school day', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', schedule: WEEKDAYS })]),
+    });
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+  });
+
+  it('still obligates on a school day', () => {
+    const { sections } = on(WEDNESDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', schedule: WEEKDAYS })]),
+    });
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('honours a makeup day over the weekend rule', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', schedule: { ...WEEKDAYS, also: ['2026-08-29'] } })]),
+    });
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('a whole day of non-school sections rolls up to no_work_today, not incomplete', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([
+        entry({ unitId: 'u1', subject: 'math', schedule: WEEKDAYS }),
+        entry({ unitId: 'u2', subject: 'language', courseId: 'c2', schedule: WEEKDAYS }),
+      ]),
+    });
+    expect(resolveDayCompletion({ sections }).state).toBe('no_work_today');
+  });
+
+  it('a non-school day never HIDES completed work — a child who read anyway still shows served', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', status: 'completed', schedule: WEEKDAYS })]),
+      sessions: [{ sessionId: 's1', unitId: 'u1', state: 'closed', terminal: true,
+        outcome: { result: 'passed', at: '2026-08-29T15:00:00Z' }, gradedPercent: 90, updatedAt: '2026-08-29T15:00:00Z' }],
+    });
+    expect(sections[0].obligation).toEqual({ state: 'served', reason: null });
+    expect(resolveDayCompletion({ sections }).state).toBe('complete');
+  });
+
+  it('an unscheduled sibling keeps the section obligated — one course off does not excuse another', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([
+        entry({ unitId: 'u1', subject: 'math', schedule: WEEKDAYS }),
+        entry({ unitId: 'u2', subject: 'math', courseId: 'c2', sequence: 2 }),
+      ]),
+    });
+    expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('an elective-only subject still reads elective_only, not not_a_school_day', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', elective: true, schedule: WEEKDAYS })]),
+    });
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'elective_only' });
+  });
+
+  it('a malformed schedule leaves the obligation intact — it never excuses a term', () => {
+    const { sections } = on(SATURDAY, {
+      plan: plan([entry({ unitId: 'u1', subject: 'math', schedule: { daysOfWeek: 'weekdays' } })]),
+    });
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 });

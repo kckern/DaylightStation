@@ -434,3 +434,36 @@ describe('dated_modules gating', () => {
     expect(byId(result, 'cfm.w2.d3').unlocks).toBeNull();
   });
 });
+
+describe('the enrollment school-day calendar', () => {
+  const SCHEDULE = { daysOfWeek: [1, 2, 3, 4, 5], except: [{ from: '2026-12-21', to: '2027-01-01' }] };
+  const enrolled = (now) => planLearnerWork({
+    learnerId: 'learner-a',
+    assignment: { courses: [{ courseId: 'math-fractions', enrollment: { schedule: SCHEDULE } }] },
+    units: course(), sessions: [], now,
+  });
+
+  it('carries the enrollment schedule onto every entry of that course', () => {
+    expect(byId(enrolled(NOW), 'math-fractions.01').schedule).toEqual(SCHEDULE);
+  });
+
+  it('leaves an unenrolled course entry unscheduled — every day is a school day', () => {
+    expect(byId(plan(), 'math-fractions.01').schedule).toBeNull();
+  });
+
+  it('reaches the agenda: a Saturday is excused, the Wednesday before is not', () => {
+    const saturday = planDailyAgenda({ plan: enrolled('2026-08-29T16:00:00Z'), now: '2026-08-29T16:00:00Z' });
+    expect(saturday.sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+    expect(resolveDayCompletion({ sections: saturday.sections }).state).toBe('no_work_today');
+
+    const wednesday = planDailyAgenda({ plan: enrolled('2026-08-26T16:00:00Z'), now: '2026-08-26T16:00:00Z' });
+    expect(wednesday.sections[0].obligation).toEqual({ state: 'obligated', reason: null });
+  });
+
+  it('reaches the agenda: a vacation weekday is excused too', () => {
+    const { sections } = planDailyAgenda({
+      plan: enrolled('2026-12-23T16:00:00Z'), now: '2026-12-23T16:00:00Z',
+    });
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+  });
+});
