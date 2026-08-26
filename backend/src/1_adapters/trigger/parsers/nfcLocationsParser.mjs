@@ -1,21 +1,21 @@
 /**
  * Parser for triggers/nfc/locations.yml. Each top-level key is an NFC reader
- * location ID. Reserved fields (target, action, auth_token, notify_unknown,
- * end, end_location) are extracted as first-class config; all other top-level
- * keys become the location's `defaults` object, which inherits into every
- * tag scanned at this reader.
+ * location ID. Reserved fields (target, action, learner_action, auth_token,
+ * notify_unknown, end, end_location) are extracted as first-class config; all
+ * other top-level keys become the location's `defaults` object, which inherits
+ * into every tag scanned at this reader.
  *
  * Layer: ADAPTER (1_adapters/trigger).
  *
  * Output shape:
- *   { [locationId]: { target, action, auth_token, notify_unknown, end, end_location, defaults: { ...rest } } }
+ *   { [locationId]: { target, action, learner_action, auth_token, notify_unknown, end, end_location, defaults: { ...rest } } }
  *
  * @module adapters/trigger/parsers/nfcLocationsParser
  */
 
 import { ValidationError } from '#domains/core/errors/ValidationError.mjs';
 
-const RESERVED = new Set(['target', 'action', 'auth_token', 'notify_unknown', 'end', 'end_location']);
+const RESERVED = new Set(['target', 'action', 'auth_token', 'notify_unknown', 'end', 'end_location', 'learner_action']);
 export const ALLOWED_END_BEHAVIORS = new Set(['tv-off', 'clear', 'nothing']);
 
 function isPlainObject(v) {
@@ -59,6 +59,12 @@ export function parseNfcLocations(raw) {
     out[locationId] = {
       target: locConfig.target,
       action: locConfig.action ?? null,
+      // What a SCHOOL LEARNER CARD means at this reader. The card names the
+      // person; the reader decides what happens to them — print an agenda in
+      // the study, open a reading session in the living room. Null means a
+      // learner card is simply not actionable here, which resolves to the
+      // ordinary unknown-tag capture rather than a silent wrong action.
+      learner_action: locConfig.learner_action ?? null,
       auth_token: locConfig.auth_token ?? null,
       notify_unknown: locConfig.notify_unknown ?? null,
       end: locConfig.end ?? null,
