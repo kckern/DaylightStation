@@ -74,8 +74,9 @@ const IconAgenda = () => (
   </svg>
 );
 
-// `reviewStatus` is 'pending' | 'complete' on the wire; accept the historical
-// 'pending_review' spelling too so a backend rename can't silence the label.
+// `reviewStatus` is 'pending' | 'complete' | null on the wire — null until the
+// session has something reviewable. Accept the historical 'pending_review'
+// spelling too, so a backend rename can't silence the label.
 const AWAITING = new Set(['pending', 'pending_review']);
 
 // The agenda sheet is 580px of receipt tape, and a full browser tab gives it a

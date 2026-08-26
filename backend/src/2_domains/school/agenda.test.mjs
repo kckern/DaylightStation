@@ -16,6 +16,29 @@ describe('planDailyAgenda once-only programs', () => {
   });
 });
 
+describe('gradeFor scale', () => {
+  // A program `score` arrives ALREADY as a percent: the piano launcher
+  // computes `(completed / total) * 100`, the flashcard launcher passes the
+  // same figure it prints as "N% mastered". This used to be multiplied by 100
+  // a second time, which is how a live arts section came back reporting
+  // `gradePercent: 1000`.
+  it('treats a program score as the percent it already is', () => {
+    const agenda = planDailyAgenda({
+      plan: { entries: [reel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: { 'language-reels::10': { doneToday: true, progressLabel: 'Done', score: 10 } },
+    });
+    expect(agenda.sections[0].gradePercent).toBe(10);
+  });
+
+  it('never reports a grade above 100 from a program alone', () => {
+    const agenda = planDailyAgenda({
+      plan: { entries: [reel] }, now: '2026-08-25T18:00:00.000Z',
+      programStatuses: { 'language-reels::10': { doneToday: true, progressLabel: 'Done', score: 100 } },
+    });
+    expect(agenda.sections[0].gradePercent).toBe(100);
+  });
+});
+
 // --- blocked-but-reachable vs blocked-by-nothing-reachable -------------------
 // 2026-08-25 incident: a learner's only remaining subject was scripture, its
 // enrollment had materialised without anything that could open, and the whole

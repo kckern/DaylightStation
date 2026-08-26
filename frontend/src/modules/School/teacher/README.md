@@ -60,19 +60,29 @@ Client wrappers: `schoolApi.teacherToday()` and `schoolApi.agendaPreview()` in
 
 ### Field cheat-sheet (the ones that drive what renders)
 
-**Digest session** — `state` (`created` = issued but unworked · `rewarded` =
-finished), `effectiveScore` (`null` when nothing was machine-scored),
-`reviewStatus`, `outcome` (`null` until it lands), `artifacts.worksheet
-.originalPdfUrl` / `artifacts.receipt.originalUrl` (both `null` ⇒ no paper icons).
+**Digest session** — `state` is the progress source of truth (`created` =
+minted, never worked · `issued` = paper is out · `submitted` = awaiting a mark ·
+`rewarded`/`graded` = finished); `effectiveScore` (`null` when nothing was
+machine-scored — a score outranks a missing `state`); `reviewStatus`
+(`pending` | `complete` | `null`, null until there is something reviewable);
+`outcome` (`null` until it lands); `artifacts.worksheet.originalPdfUrl` /
+`artifacts.receipt.originalUrl` (both `null` ⇒ no paper icons — and a missing
+`artifacts` key is not the same as an empty one).
 
 **Agenda section** — `next` (the offer: `taxonomy`, `posterUrl`, `unitId`;
 **`null` once the subject is served**), `servedToday`, `servedWork[]`,
 `progressLabel`, `progressRows[]`, `suppressed`, `lockedRemedy`, `obligation.state`.
 
 `joinLearnerDay` matches a session to a section by `unitId` first, subject
-second. `LessonCard` reads its title/course/poster from `session` first, then
-`row.offer` (= `section.next`) — so a **served** section, whose `next` is
-`null`, has no identity to fall back to.
+second, then decides progress from `servedToday` → score → `state`. `status` is
+always progress (`done` | `in-progress` | `planned` | `deferred` | `blocked`);
+provenance rides beside it as the `unplanned` / `carriedOver` flags. The join
+also authors the footer's explanatory sentences, so the card places copy it
+does not write.
+
+`LessonCard` reads its title/course/poster from `session` first, then
+`row.offer` (= `section.next`, which is `null` once a subject is served), then
+`row.served` (`servedWork` / `progressLabel` / the module `progressRows` label).
 
 ---
 

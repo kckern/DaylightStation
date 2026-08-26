@@ -67,3 +67,54 @@ describe('GetTeacherToday v2', () => {
     expect(august24.learners[0].processedToday[0].artifacts.worksheet.artifactId).toBe('art_1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// `reviewStatus` is a REVIEW verdict, and a session that was never worked has
+// nothing to render one about. The two-way form answered 'complete' for a
+// session minted at agenda-build time — a clean bill of health on work nobody
+// had touched — which is what let a dashboard card ask for a grade on an
+// untouched lesson.
+// ---------------------------------------------------------------------------
+function useCaseFor(sessionEvents) {
+  return new GetTeacherToday({
+    learnerDirectory: { listLearners: async () => [{ id: 'test-learner', name: 'Test Learner' }] },
+    datastore: { readAttemptDay: () => [] },
+    sessions: {
+      listForLearner: async () => [{ sessionId: 'ses_t', updatedAt: sessionEvents.at(-1).at }],
+      readEvents: async () => sessionEvents,
+    },
+    curriculum: {
+      listUnits: async () => [{ unitId: 'lesson-1', title: 'Lesson One', subject: 'math', courseId: 'course-1', module: 'unit-a' }],
+      listWorks: async () => [{ work: 'course-1', title: 'Course One', subject: 'math', modules: [{ module: 'unit-a', title: 'Unit A' }] }],
+    },
+    timezone: 'UTC', boundaryHour: 4,
+    clock: () => new Date('2026-08-24T18:00:00.000Z'), logger: { debug() {} },
+  });
+}
+
+const created = { type: 'created', at: '2026-08-24T15:00:00.000Z', sessionId: 'ses_t', seq: 1,
+  learnerId: 'test-learner', unitId: 'lesson-1', studyDay: '2026-08-24' };
+
+describe('GetTeacherToday reviewStatus', () => {
+  it('reports no review verdict for a session that was only minted', async () => {
+    const result = await useCaseFor([created]).execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(result.learners[0].sessions[0]).toMatchObject({ state: 'created', reviewStatus: null });
+  });
+
+  it('reports no review verdict while the worksheet is merely out', async () => {
+    const result = await useCaseFor([
+      created,
+      { type: 'issued', at: '2026-08-24T15:01:00.000Z', sessionId: 'ses_t', seq: 2, artifactId: 'art_1' },
+    ]).execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(result.learners[0].sessions[0]).toMatchObject({ state: 'issued', reviewStatus: null });
+  });
+
+  it('reports complete once the work has been submitted and nothing is queued', async () => {
+    const result = await useCaseFor([
+      created,
+      { type: 'issued', at: '2026-08-24T15:01:00.000Z', sessionId: 'ses_t', seq: 2, artifactId: 'art_1' },
+      { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_t', seq: 3, transport: 'paper' },
+    ]).execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(result.learners[0].sessions[0].reviewStatus).toBe('complete');
+  });
+});
