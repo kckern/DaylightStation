@@ -104,3 +104,25 @@ describe('parseNfcLocations', () => {
     expect(out.office.learner_action).toBeNull();
   });
 });
+
+describe('parseNfcLocations — learner_action validation', () => {
+  // An empty string is the dangerous one: it reads as "declared" to a human
+  // scanning the YAML but is falsy to the resolver, so the reader silently
+  // behaves as if it had no learner_action at all. Refuse it here so
+  // `!learner_action` downstream can only ever mean "not declared".
+  it.each([
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+    ['a number', 7],
+    ['a list', ['print-agenda']],
+    ['a map', { action: 'print-agenda' }],
+  ])('throws INVALID_LEARNER_ACTION when learner_action is %s', (_label, value) => {
+    expect(() => parseNfcLocations({ study: { target: 'portal', learner_action: value } }))
+      .toThrow(/learner_action/i);
+  });
+
+  it('accepts an explicit null as "no learner action here"', () => {
+    const out = parseNfcLocations({ study: { target: 'portal', learner_action: null } });
+    expect(out.study.learner_action).toBeNull();
+  });
+});
