@@ -1,13 +1,28 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createPianoRouter } from './piano.mjs';
+import { PianoContainer } from '#apps/piano/PianoContainer.mjs';
 
 const MOCK_USER = 'test-user';
 const MOCK_SHOW = '12345';
 
+/**
+ * The course endpoints reach their algorithms through PianoContainer's use
+ * cases, so the container is REAL here and only the adapters below it are
+ * faked. Faking the container instead would leave the router's wiring — the
+ * 503 gate, the invalid_user→400 mapping, the `ids` parsing — asserted against
+ * a shape nothing in production builds.
+ *
+ * `studioDatastore` is required by the container but untouched by /courses;
+ * the roster stub is the whole of what these routes ask of it.
+ */
+const stubDatastore = { getRoster: () => [], isKnownUser: (id) => id === MOCK_USER };
+
 const mockConfigService = {
   getUserProfile: (id) => id === MOCK_USER ? { id, name: 'Test' } : null,
+  getHouseholdUsers: () => [MOCK_USER],
   getUserDir: () => '/tmp/piano-test-user',
   getMediaDir: () => '/tmp/piano-test-media',
   getHouseholdAppConfig: () => ({
@@ -46,17 +61,30 @@ const mockStore = {
   })),
 };
 
-const makeApp = (withService = true) => {
+const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+/** Mount the piano router over a real container wired to the given fakes. */
+const mount = ({ configService, fitnessPlayableService, userVideoProgressStore }) => {
   const app = express();
   app.use(express.json());
   app.use('/api/v1/piano', createPianoRouter({
-    configService: mockConfigService,
-    fitnessPlayableService: withService ? mockPlayableService : null,
-    userVideoProgressStore: mockStore,
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    pianoContainer: new PianoContainer({
+      studioDatastore: stubDatastore,
+      configService,
+      fitnessPlayableService,
+      userVideoProgressStore,
+      logger: silentLogger,
+    }),
+    logger: silentLogger,
   }));
   return app;
 };
+
+const makeApp = (withService = true) => mount({
+  configService: mockConfigService,
+  fitnessPlayableService: withService ? mockPlayableService : null,
+  userVideoProgressStore: mockStore,
+});
 
 describe('GET /api/v1/piano/courses/:courseId/playable', () => {
   beforeEach(() => { mockPlayableService.getPlayableEpisodes.mockClear(); });
@@ -185,15 +213,11 @@ const makeAppWith = ({ config, store, items, parents } = {}) => {
         }),
       }
     : mockPlayableService;
-  const app = express();
-  app.use(express.json());
-  app.use('/api/v1/piano', createPianoRouter({
+  return mount({
     configService: configSvc,
     fitnessPlayableService: svc,
     userVideoProgressStore: store || mockStore,
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  }));
-  return app;
+  });
 };
 
 describe('co-progress lock', () => {
@@ -333,9 +357,12 @@ describe('GET /api/v1/piano/courses/progress', () => {
   const RECENT = new Date(Date.now() - 2 * 86400000).toISOString(); // 2 days ago
   const STALE = new Date(Date.now() - 60 * 86400000).toISOString(); // 60 days ago
 
-  // Roster of two; only test-user has recent, qualifying progress.
+  // Roster of two; only test-user has recent, qualifying progress. The roster
+  // and its display names come from the HOUSEHOLD (getHouseholdUsers +
+  // profile.display_name), not from a restatement in piano.yml.
   const rosterConfig = {
-    getUserProfile: (id) => (['test-user', 'other-user'].includes(id) ? { id, name: id === 'test-user' ? 'Test' : 'Other' } : null),
+    getUserProfile: (id) => (['test-user', 'other-user'].includes(id) ? { id, display_name: id === 'test-user' ? 'Test' : 'Other' } : null),
+    getHouseholdUsers: () => ['test-user', 'other-user'],
     getUserDir: () => '/tmp/piano-test-user',
     getMediaDir: () => '/tmp/piano-test-media',
     getHouseholdAppConfig: () => ({
@@ -356,17 +383,11 @@ describe('GET /api/v1/piano/courses/progress', () => {
     },
   };
 
-  const progressApp = (playable = mockPlayableService) => {
-    const app = express();
-    app.use(express.json());
-    app.use('/api/v1/piano', createPianoRouter({
-      configService: rosterConfig,
-      fitnessPlayableService: playable,
-      userVideoProgressStore: summarizeStore,
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    }));
-    return app;
-  };
+  const progressApp = (playable = mockPlayableService) => mount({
+    configService: rosterConfig,
+    fitnessPlayableService: playable,
+    userVideoProgressStore: summarizeStore,
+  });
 
   it('returns a course map with isSequential, total, and qualifying users', async () => {
     const res = await request(progressApp()).get(`/api/v1/piano/courses/progress?ids=plex:${MOCK_SHOW}`);
