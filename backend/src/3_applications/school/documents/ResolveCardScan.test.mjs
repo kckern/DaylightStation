@@ -672,6 +672,29 @@ describe('execute — scan confidence diagnostics (review wave M4)', () => {
       expect.objectContaining({ documentId: 'quiz-a', rowRange: { start: 1, end: 1 } }),
     ]);
   });
+
+  it('a completely blank card still reports its live record as unmarked', async () => {
+    // 2026-08-26 follow-up. A card with a live worksheet and NO marks anywhere
+    // used to fall through every diagnostic: `unknownCard` and `deadCard` both
+    // require answers, and `silentLiveRecords` required them too, so the one
+    // outcome that could name the rows to fill in was never populated.
+    const repository = fakeRepository();
+    const allocationStore = fakeAllocationStore({ rng: Math.random });
+    const source = sourceDoc('blank-quiz', [
+      mcQuestion('bq-q1', 1, { choices: ['X', 'Y'], answer: 'X' }),
+    ]);
+    const { allocation } = await publishAndAllocate({
+      repository, allocationStore, source, context: { freshCard: true },
+    });
+
+    const result = await useCaseExecute({ allocationStore, repository }, {
+      testId: allocation.cardId, answers: {},
+    });
+
+    expect(result.results).toEqual([]);
+    expect(result.silentLiveRecords).toHaveLength(1);
+    expect(result.silentLiveRecords[0].rowRange).toEqual(allocation.rowRange);
+  });
 });
 
 describe('execute — row ownership on reuse: newest claimant wins (spec §5.4 review fix, Critical)', () => {

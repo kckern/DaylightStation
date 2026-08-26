@@ -594,7 +594,13 @@ export class ResolveCardScan {
       // a stale answer key, or both) would be exactly the double-grading /
       // phantom-result risk this rule exists to close off.
       if (!ownedRows.some((row) => answeredRows.has(row))) {
-        if (record.status === 'live' && ownedRows.length > 0 && answeredRows.size > 0) {
+        // `answeredRows.size > 0` used to gate this (the "wrong-rows
+        // signature": marks on the card, none in this record's rows). A
+        // COMPLETELY blank card is the same fact with a smaller sample — the
+        // live record got nothing — and it is the case where naming the rows
+        // helps most, because the child has not started. Dropping the clause
+        // routes both into the same `scan-rows-unmarked` ceremony.
+        if (record.status === 'live' && ownedRows.length > 0) {
           silentLiveRecords.push({
             recordId: record.recordId,
             documentId: record.documentId,
