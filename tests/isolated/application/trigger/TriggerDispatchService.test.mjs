@@ -962,3 +962,88 @@ describe('TriggerDispatchService — content interceptors reach the content hand
     expect(options).toMatchObject({ endBehavior: 'tv-off' });
   });
 });
+
+/**
+ * D9 — the unknown-tag path gets an observer.
+ *
+ * A tag that resolves to nothing never becomes a content `Response`, so the
+ * content-interceptor seam never sees it. This is the only place in the
+ * pipeline that knows a tap happened at a reader and meant nothing — and until
+ * now the only things it told were the observed registry and a phone in
+ * another room. The screen in front of the child was told nothing.
+ *
+ * The hook ADDS. Neither the registry write nor the push may be traded for it.
+ */
+describe('TriggerDispatchService — the unknown-tag observer', () => {
+  const registry = {
+    nfc: {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv', action: 'play-next',
+          auth_token: null, notify_unknown: 'mobile_app_phone', defaults: {},
+        },
+      },
+      tags: {
+        // Named, but mapping to nothing — the "state 2" branch that returns
+        // early from the registry write and still has a child at the reader.
+        'aa11bb22': { global: { note: 'a book somebody named and never mapped' }, overrides: {} },
+      },
+    },
+  };
+
+  function service({ onUnknownTag, tagWriter, haGateway } = {}) {
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService: { execute: vi.fn() },
+      haGateway: haGateway ?? { callService: vi.fn().mockResolvedValue({ ok: true }) },
+      deviceService: { get: vi.fn() },
+      tagWriter: tagWriter ?? { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
+      onUnknownTag,
+      broadcast: vi.fn(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  }
+
+  it('names the reader and the tag for an unregistered tap', async () => {
+    const seen = [];
+    await service({ onUnknownTag: (info) => seen.push(info) })
+      .handleTrigger('livingroom', 'nfc', '04deadbeef');
+    expect(seen).toEqual([{ location: 'livingroom', uid: '04deadbeef', modality: 'nfc' }]);
+  });
+
+  it('and STILL writes the observed registry and sends the push', async () => {
+    const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({ onUnknownTag: () => {}, tagWriter, haGateway })
+      .handleTrigger('livingroom', 'nfc', '04deadbeef');
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
+    expect(haGateway.callService).toHaveBeenCalledWith('notify', 'mobile_app_phone', expect.any(Object));
+  });
+
+  // A tag with a note but no mapping takes the early return out of the
+  // registry write — and there is still a child at the reader who tapped it.
+  it('fires for a NAMED tag that maps to nothing, which writes no registry entry', async () => {
+    const seen = [];
+    const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
+    await service({ onUnknownTag: (info) => seen.push(info), tagWriter })
+      .handleTrigger('livingroom', 'nfc', 'aa11bb22');
+    expect(seen).toHaveLength(1);
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+  });
+
+  it('an observer that THROWS cannot break the tap, or the registry write', async () => {
+    const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
+    const result = await service({
+      onUnknownTag: () => { throw new Error('boom'); }, tagWriter,
+    }).handleTrigger('livingroom', 'nfc', '04deadbeef');
+    expect(result.code).toBe('TRIGGER_NOT_REGISTERED');
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
+  });
+
+  it('no observer wired at all changes nothing', async () => {
+    const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
+    await service({ tagWriter }).handleTrigger('livingroom', 'nfc', '04deadbeef');
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
+  });
+});

@@ -132,6 +132,29 @@ describe('ReadingSessionScreen', () => {
   });
 
   /**
+   * `living-room.yml` runs the ArtMode screensaver with `showOnLoad: true`,
+   * and a screensaver is a fullscreen overlay — so the prompt this widget
+   * renders into the LAYOUT would be painted straight over by a framed
+   * Rembrandt, and the child would tap their card and watch nothing happen.
+   * The screensaver suppresses itself for active content and for a mounted
+   * overlay, and a session is neither.
+   */
+  it('clears the screensaver when a session opens, so the prompt is actually visible', async () => {
+    render(<ReadingSessionScreen />);
+    expect(h.overlay.dismissed).toBe(0);
+    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
+    expect(h.overlay.dismissed).toBe(1);
+  });
+
+  it('and does not keep clearing it for every event inside the session', async () => {
+    render(<ReadingSessionScreen />);
+    await deliver({ event: 'session-open', learnerId: 'learner-c', location: 'livingroom' });
+    await deliver({ event: 'session-open', learnerId: 'learner-d', location: 'livingroom' });
+    await deliver({ event: 'session-error', learnerId: 'learner-d', reason: 'obligation-unreadable' });
+    expect(h.overlay.dismissed).toBe(1);
+  });
+
+  /**
    * D2 — a card tapped while a movie is on. The backend refuses it: no session
    * opens and nothing touches the TV. What must NOT also happen is nothing on
    * screen. This is the one acknowledgement that has to render with no session

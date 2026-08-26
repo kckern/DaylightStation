@@ -55,6 +55,7 @@
 | How can a School course execute in Fitness and return evidence? | [School-owned Fitness courses](../fitness/school-course-contract.md) |
 | How does the sentence sequence work? | [Sentence Ladder](./sentence-ladder.md) |
 | What happens when content or a collaborator is missing? | [Failure policy](./failure-policy.md) |
+| What happens when a preschooler taps their card on the living-room reader? | [Reading sessions](./reading-sessions.md) |
 
 The remainder of this file is the detailed subsystem inventory. The focused
 pages above are authoritative for lifecycle vocabulary and current behavior;
@@ -1555,6 +1556,24 @@ is an actionable field in `NfcResolver`, and the reader location's `learner_acti
 turns it into an op — `print-agenda` in the study, `reading-session` in the living
 room, the same physical card either way. See
 [Learner cards](../trigger/schema.md#learner-cards) for the resolution table.
+
+`reading-session` is the second op, and it does something quite different with
+the same card: it opens a **living-room reading session** — a screen scoped to
+that child, on which they pick a book by tapping a sticker, and finishing it
+counts toward the day's story-time target. Its whole state machine, every event
+on `reading:<location>`, and the three HTTP routes the screen calls are in
+[Reading sessions](./reading-sessions.md). Four rules from it are worth knowing
+before touching anything in this area:
+
+- **A reading session never seizes the TV.** A card tapped while unrelated
+  content plays is refused, visibly, and nothing touches the TV (D2).
+- **Attribution is decided at pick time** and travels with the pick. A sibling
+  wandering past mid-story swaps the context and does not inherit the read (D4).
+- **The session suppresses the reader location's `end: tv-off` while it is
+  open** and owns teardown itself — otherwise the TV powers off the instant a
+  story ends, before the ceremony can render (D8).
+- **An idle session tears itself down** after ~2 minutes at the prompt, which is
+  the only thing that ever turns that TV off again (D6).
 
 This replaced a fork inside `nfcTapIngress` that decided card-vs-book at the bus,
 which is why a learner card used to work at exactly **one** reader in the house —
