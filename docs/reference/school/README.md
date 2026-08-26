@@ -1542,10 +1542,27 @@ no preconditions.
 
 ```text
 NFC tap (omr-relay)                        emits {type:'nfc', uid} on the `omr` bus topic
-  -> canonicalizeNfcUid                    one card = one identity, whatever the reader spells
-  -> config/triggers/bindings/nfc/cards.yml  uid -> school_learner
+  -> nfcTapIngress                         TRANSPORT ONLY: canonicalize, reader id -> location
+  -> TriggerDispatchService                the same pipeline every other reader uses
+  -> NfcResolver                           bindings/nfc/cards.yml: uid -> school_learner
+                                           reader's `learner_action` -> the op
+  -> learnerActions['print-agenda']        registered at composition (learnerCardActions.mjs)
   -> ResolvePersonalCard                   -> BuildAgenda -> thermal receipt
 ```
+
+**The card names the child; the READER decides what happens to them.** `school_learner`
+is an actionable field in `NfcResolver`, and the reader location's `learner_action`
+turns it into an op — `print-agenda` in the study, `reading-session` in the living
+room, the same physical card either way. See
+[Learner cards](../trigger/schema.md#learner-cards) for the resolution table.
+
+This replaced a fork inside `nfcTapIngress` that decided card-vs-book at the bus,
+which is why a learner card used to work at exactly **one** reader in the house —
+the only one whose taps arrive over that bus. It also silently diverged from the
+HTTP door in two ways: it read `tag.global.school_learner` only, ignoring a
+per-reader override, and it passed the raw YAML value where the resolver coerces
+and validates it. An op with no registered handler is a **named refusal**
+(`no_handler`), never a fallback to whichever learner action happens to be wired.
 
 **The tag registry, not School, owns the uid → learner mapping.** One registry
 answers *what a tag is* for the whole house; the owning domain decides what
@@ -1581,17 +1598,20 @@ Four traps worth knowing before editing any of that:
   (62 entries in a stale path, 58 in the live one) with nothing to say which was
   authoritative.
 
-An **unregistered** tag still falls through to the trigger pipeline rather than
-being swallowed here, because that is where the unknown-tag notify fires and that
-notify is how a new card gets enrolled. A card that IS enrolled while the school
-lifecycle is off logs at ERROR: a child tapping their own card and getting nothing
+An **unregistered** tag reaches the trigger pipeline like every other tag, because
+that is where the unknown-tag notify fires and that notify is how a new card gets
+enrolled. A card that IS enrolled while the school lifecycle is off gets the same
+named refusal any unhandled op gets — `no_handler`, logged with the op and the
+reader — rather than silence: a child tapping their own card and getting nothing
 is the failure the spec calls worse than having no card at all.
 
-`lifecycle.nfcLocation` is intentionally **unset**. It would route non-school tags
-tapped on the school reader into the trigger pipeline, which needs that location
-registered in `triggers/sources.yml` with a target and action. Until there is an
-answer to "what should a book sticker do in the school room", such a tap is logged
-and does nothing.
+`lifecycle.nfcReaderLocations` maps each relay reader id to a trigger location
+(`{ 'study-omr': 'study' }` is the built-in fallback, and the only reader on the
+bus today). It replaced the single `lifecycle.nfcLocation`, which assumed every
+reader on that bus was in one room. The location it names must be registered in
+`triggers/sources.yml` with a target and an action — and, for a learner card to do
+anything there, a `learner_action`. A reader missing from the map answers
+`unmapped_reader` and logs the reader ids that would have fixed it.
 
 ### An assigned course, not a catalog, is what prints
 

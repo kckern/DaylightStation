@@ -18,6 +18,20 @@ describe('Response', () => {
     expect(r.endLocation).toBe('living_room');
   });
 
+  // An interceptor scopes itself to a READER. Without the location on the
+  // response there is nothing to scope by, and a book tap in the living room
+  // is indistinguishable from one anywhere else in the house.
+  it('content carries the reader location it was triggered from', () => {
+    const r = Response.content({ target: 'livingroom-tv', location: 'livingroom', expression: { action: 'play-next', contentId: 'plex:3', options: {} } });
+    expect(r.location).toBe('livingroom');
+    expect(Object.isFrozen(r)).toBe(true);
+  });
+
+  it('content location is undefined rather than absent when nothing supplied one', () => {
+    const r = Response.content({ target: 't', expression: { action: 'play', contentId: 'plex:4', options: {} } });
+    expect(r.location).toBeUndefined();
+  });
+
   it('device requires a valid op', () => {
     expect(Response.device({ target: 't', op: 'open', path: '/x' }).kind).toBe('device');
     expect(() => Response.device({ target: 't', op: 'frobnicate' })).toThrow();

@@ -178,7 +178,11 @@ export class NfcResolver {
       params[k] = v;
     }
 
-    const intent = { action, target, params };
+    // The reader rides along on a CONTENT intent too, not only on a learner
+    // one. The living-room reading session claims a book tap by the room it
+    // happened in, and `target` cannot stand in for that: it is the screen the
+    // content loads on, and two readers can point at one screen.
+    const intent = { action, target, location, params };
     if (content !== undefined) intent.content = content;
     if (merged.scene !== undefined) intent.scene = merged.scene;
     if (merged.service !== undefined) intent.service = merged.service;
