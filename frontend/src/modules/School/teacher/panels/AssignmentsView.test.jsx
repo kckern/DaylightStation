@@ -31,7 +31,7 @@ const ENROLLED = {
   profile: 'upper',
   enrollment: {
     schema: 'school.course-enrollment/v1',
-    enrollmentId: 'enr-felix-young-peoples-atlas-us',
+    enrollmentId: 'enr-learner-a-young-peoples-atlas-us',
     courseId: 'young-peoples-atlas-us',
     profile: 'upper',
     moduleOrder: ['united-states', 'midwest'],
@@ -77,7 +77,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
       data: { courses: [ENROLLED], units: [], assignedBy: 'kckern', updatedAt: '2026-08-13T00:00:00Z' },
     });
     schoolApi.curriculumUnits.mockResolvedValue({ ok: true, status: 200, data: { units: [] } });
-    render(<AssignmentsView learnerId="felix" learnerName="Felix" />);
+    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
     await waitFor(() => expect(screen.getByText('Assigned by KC')).toBeTruthy());
     expect(screen.queryByText('Assigned by kckern')).toBeNull();
   });
@@ -111,7 +111,7 @@ describe('AssignmentsView — the rendered component preserves enrollments on sa
       data: null,
     });
 
-    render(<AssignmentsView learnerId="felix" learnerName="Felix" />);
+    render(<AssignmentsView learnerId="learner-a" learnerName="Learner A" />);
 
     // Wait for data to load
     await waitFor(() => {

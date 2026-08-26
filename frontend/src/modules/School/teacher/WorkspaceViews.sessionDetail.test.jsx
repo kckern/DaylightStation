@@ -36,13 +36,13 @@ vi.mock('./TeacherProfileContext.jsx', () => ({
 }));
 import { teacherWorkspaceApi } from './teacherWorkspaceApi.js';
 
-const KIDS = [{ id: 'milo', name: 'Milo' }];
+const KIDS = [{ id: 'learner-b', name: 'Learner B' }];
 
 const SESSION = {
   schema: 'school.teacher-session/v4',
   sessionId: 'ses_1',
   revision: 4,
-  state: { learnerId: 'milo', state: 'closed', outcome: { result: 'passed' } },
+  state: { learnerId: 'learner-b', state: 'closed', outcome: { result: 'passed' } },
   taxonomy: { subject: 'civilization', courseTitle: 'United States Regions and States', lessonTitle: 'Illinois', posterUrl: null },
   scores: { machine: { percent: 100 }, effective: { percent: 100 } },
   assignment: {
@@ -58,7 +58,7 @@ const SESSION = {
       { itemId: 'q-year', questionNumber: 20, prompt: 'Statehood year?', given: '1808', expected: ['1818'], verdict: 'incorrect' },
     ],
   },
-  artifacts: [],
+  artifacts: [{ artifactId: 'art_1', kind: 'worksheet', availability: 'exact', originalPdfUrl: '/worksheet.pdf', thumbnailUrl: '/worksheet.png' }],
   events: [],
 };
 
@@ -69,31 +69,78 @@ describe('SessionInspector detail coherence', () => {
   });
 
   it('numbers answers with worksheet-local numbers, not bank-global ones', async () => {
-    render(<SessionInspector learnerId="milo" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getAllByText('Question 1').length).toBeGreaterThan(0));
-    expect(screen.queryByText('Question 19')).toBeNull();
-    expect(screen.queryByText('Question 20')).toBeNull();
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('1.')).toBeTruthy());
+    expect(screen.queryByText('19.')).toBeNull();
+    expect(screen.queryByText('20.')).toBeNull();
   });
 
   it('letters worksheet choices', async () => {
-    render(<SessionInspector learnerId="milo" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
     await waitFor(() => expect(screen.getByText(/A\. Hotels/)).toBeTruthy());
     expect(screen.getByText(/C\. Factories and stockyards/)).toBeTruthy();
   });
 
-  it('writes an honest answer line — letter derived, no redundant clause when correct', async () => {
-    render(<SessionInspector learnerId="milo" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText(/Their answer: Factories and stockyards/)).toBeTruthy());
-    // Correct answer clause suppressed when the verdict is correct.
-    expect(screen.getByText(/Their answer: Factories and stockyards/).textContent).not.toMatch(/Correct answer/);
-    // Incorrect answer shows the expected with its derived letter.
-    expect(screen.getByText(/Their answer: 1808 · Correct answer: 1818 \(A\) · Incorrect/)).toBeTruthy();
+  it('states the recorded answer as words, and the right answer only when wrong', async () => {
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
+    await waitFor(() => expect(screen.getByText('Factories and stockyards', { selector: '.teacher-graded-q__given' })).toBeTruthy());
+    // The right answer is repeated only for the question the child got wrong.
+    const corrections = screen.getAllByText(/Correct answer:/);
+    expect(corrections).toHaveLength(1);
+    expect(corrections[0]).toHaveTextContent('Correct answer: 1818');
   });
 
-  it('labels the two scores', async () => {
-    render(<SessionInspector learnerId="milo" sessionId="ses_1" kids={KIDS} onBack={() => {}} />);
-    await waitFor(() => expect(screen.getByText('As graded by the machine')).toBeTruthy());
-    expect(screen.getByText('After teacher corrections')).toBeTruthy();
+  it('states one score when the machine and the teacher agree', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Score')).toBeInTheDocument());
+    expect(screen.queryByText('Marked score')).not.toBeInTheDocument();
+    expect(screen.queryByText('Current score')).not.toBeInTheDocument();
+    expect(screen.queryByText(/corrected from/i)).not.toBeInTheDocument();
+  });
+
+  it('shows the correction provenance only when the scores differ', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, scores: { machine: { percent: 80 }, effective: { percent: 100 } },
+    } });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText(/corrected from 80%/i)).toBeInTheDocument());
+  });
+
+  it('prints the questions once, under one heading', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Questions and answers')).toBeInTheDocument());
+    expect(screen.queryByText('Worksheet and questions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Answers and result')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Where did unions form?')).toHaveLength(1);
+  });
+
+  it('folds the answer card and the event log away by default', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: {
+      ...SESSION, answerSheets: [{ cardId: 'c1', studentNumber: '2487270', usedRows: 16, capacity: 50, remainingContiguousSlots: 34, nextRow: 17 }],
+    } });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('Answer card')).toBeInTheDocument());
+    expect(screen.getByText('Answer card').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('Event history').closest('details')).not.toHaveAttribute('open');
+  });
+
+  it('offers repair options in the teacher’s words, weighted by importance', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const fix = await screen.findByRole('button', { name: 'Fix a marked answer' });
+    expect(fix).toHaveClass('teacher-btn--primary');
+    const credit = screen.getByRole('link', { name: /Give credit for work you saw/ });
+    expect(credit).toHaveAttribute('href', '/school/teacher/students/learner-b/operations');
+    expect(credit).not.toHaveClass('teacher-back');
+  });
+
+  it('puts the reprint control inside the card it reprints', async () => {
+    teacherWorkspaceApi.session.mockResolvedValue({ ok: true, status: 200, data: SESSION });
+    render(<SessionInspector learnerId="learner-b" sessionId="ses_1" kids={KIDS} onBack={vi.fn()} />);
+    const reprint = await screen.findByRole('button', { name: /Print another copy/i });
+    expect(reprint.closest('.teacher-issued-artifact')).not.toBeNull();
   });
 });
 
@@ -104,8 +151,9 @@ describe('LearnerOverview study day', () => {
     vi.useFakeTimers();
     // 9:30pm PDT on Aug 24 is already Aug 25 UTC — the input must say Aug 24.
     vi.setSystemTime(new Date('2026-08-24T21:30:00-07:00'));
-    render(<LearnerOverview learnerId="milo" learnerName="Milo" onOpenSession={() => {}} />);
-    const input = document.getElementById('agenda-study-day-milo');
+    render(<LearnerOverview learnerId="learner-b" learnerName="Learner B" onOpenSession={() => {}} />);
+    // Overview now aliases the day record, whose picker is labelled "Jump to".
+    const input = screen.getByLabelText('Jump to');
     const expected = (() => {
       const now = new Date();
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

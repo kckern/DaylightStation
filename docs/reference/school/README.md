@@ -1918,6 +1918,31 @@ math shared with `GetTeacherToday`.
 
 **Design spec:** [`2026-08-06-school-teacher-console-design.md`](../../superpowers/specs/2026-08-06-school-teacher-console-design.md) — includes the full use-case catalog, wave decomposition (mutations, planning domains, renderers, repair), and the placeholder registry future waves work from.
 
+### The teacher workspace's organizing unit: the Learner Day
+
+`/school/teacher/students/:learnerId/day/:studyDay` is the canonical record of
+one child on one school day. It joins two side-effect-free reads —
+`GET /lifecycle/learners/:id/agenda/preview?format=json&studyDay=…` (the plan)
+and `GET /teacher/day?studyDay=…` (the record) — through the pure function
+`learnerDay.js#joinLearnerDay`, which classifies each subject as done,
+not started, deferred, blocked, or extra. Previewing a day never writes.
+
+- It also carries the **printed-agenda dry run**: the exact thermal-printer PNG
+  for the selected day, from the same GET route, on demand. `previewAgenda` is
+  `BuildAgenda` with `previewOnly: true`, which emits `token: null,
+  tokenClass: 'preview'` and relabels every offer "Preview only — ask a
+  grown-up to start this lesson" — so the QR and digit codes on a previewed
+  sheet are inert by construction. Nothing is minted, for today or any day.
+- The dashboard and the History tab both LINK here; neither re-renders it.
+- `/students/:id` and `/students/:id/overview` both resolve to the day record.
+- Paper records (worksheet PDF, result receipt) are fetched lazily per lesson
+  via `SessionPaperRecord`, never eagerly for a whole day.
+- Repair tooling is indexed in `interventions.js`; each tool has exactly one
+  home, and `InterventionsIndex` is the only thing that lists them.
+- The plan-to-record match is by **unit id**, not subject: the planner buckets
+  non-canonical subjects into `'other'` while the projection keeps the raw
+  subject, so a subject-keyed join double-counted one activity as two rows.
+
 ### Student advocacy (wave 7)
 
 The kid-facing surfaces hold up their end of the same contract the teacher

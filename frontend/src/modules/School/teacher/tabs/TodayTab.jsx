@@ -29,7 +29,10 @@ function BacklogStrip({ onOpenQueue }) {
     printJobs != null ? `${printJobs} print${printJobs === 1 ? '' : 's'}` : null,
     quizAsks != null ? `${quizAsks} quiz request${quizAsks === 1 ? '' : 's'}` : null,
   ].filter(Boolean);
-  if (!parts.length) return null;
+  // An empty queue advertised twice (heading CTA + this strip) was the
+  // emptiest possible state shouting for attention (UX audit IA5).
+  const waiting = (reviews ?? 0) + (printJobs ?? 0) + (quizAsks ?? 0);
+  if (!parts.length || waiting === 0) return null;
   return (
     <button type="button" className="teacher-backlog-strip" data-testid="backlog-strip" onClick={onOpenQueue}>
       {parts.join(' · ')} →

@@ -7,11 +7,13 @@
 export const TEACHER_BASE = '/school/teacher';
 
 export const SECTIONS = ['dashboard', 'queue', 'curriculum', 'operations'];
-export const LEARNER_SECTIONS = ['overview', 'courses', 'history', 'reports', 'operations'];
+export const LEARNER_SECTIONS = ['day', 'overview', 'courses', 'history', 'reports', 'operations'];
 
 const decode = (value) => {
   try { return decodeURIComponent(value); } catch { return value; }
 };
+
+const STUDY_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function teacherBaseFor(pathname = '') {
   return TEACHER_BASE;
@@ -25,7 +27,16 @@ export function parseTeacherPath(pathname) {
 
   if (segments[0] === 'students' && segments[1]) {
     const learnerId = segments[1];
-    if (segments.length === 2) return { kind: 'learner', section: 'overview', learnerId, courseId: null, sessionId: null, base };
+    if (segments.length === 2) return { kind: 'learner', section: 'day', learnerId, courseId: null, sessionId: null, base };
+    if (segments[2] === 'day') {
+      if (segments.length === 3) {
+        return { kind: 'learner', section: 'day', learnerId, courseId: null, sessionId: null, studyDay: null, base };
+      }
+      if (segments.length === 4 && STUDY_DAY.test(segments[3])) {
+        return { kind: 'learner', section: 'day', learnerId, courseId: null, sessionId: null, studyDay: segments[3], base };
+      }
+      return notFound();
+    }
     if (segments[2] === 'history' && segments[3] === 'sessions' && segments.length === 5) {
       return { kind: 'session', section: 'history', learnerId, courseId: null, sessionId: segments[4], base };
     }
@@ -64,6 +75,13 @@ export function teacherLearnerPath(learnerId, section = 'overview', detailId = n
   const safe = LEARNER_SECTIONS.includes(section) ? section : 'overview';
   const suffix = detailId && safe === 'courses' ? `/${encodeURIComponent(detailId)}` : '';
   return `${base}/students/${encodeURIComponent(learnerId)}/${safe}${suffix}`;
+}
+
+/** The day record for one learner. An omitted day means "today" to the view. */
+export function teacherDayPath(learnerId, studyDay = null, base = TEACHER_BASE) {
+  if (!learnerId) return teacherSectionPath('dashboard', base);
+  const suffix = studyDay ? `/${encodeURIComponent(studyDay)}` : '';
+  return `${base}/students/${encodeURIComponent(learnerId)}/day${suffix}`;
 }
 
 export function teacherSessionPath(learnerId, sessionId, base = TEACHER_BASE, { from = null } = {}) {

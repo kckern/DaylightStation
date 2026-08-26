@@ -25,7 +25,7 @@ vi.mock('../TeacherProfileContext.jsx', () => ({
   }),
 }));
 
-const LEARNER = { id: 'felix', name: 'Felix' };
+const LEARNER = { id: 'learner-a', name: 'Learner A' };
 const SYLLABI = [
   { syllabusId: 'atlas-upper', title: 'Atlas — upper', courseId: 'history-capitals' },
   { syllabusId: 'atlas-lower', title: 'Atlas — lower', courseId: 'history-capitals' },
@@ -87,7 +87,7 @@ describe('EnrollmentDrawer — unenrolled cell', () => {
     expect(schoolApi.enroll).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() => expect(schoolApi.enroll).toHaveBeenCalled());
-    expect(schoolApi.enroll).toHaveBeenCalledWith('felix', {
+    expect(schoolApi.enroll).toHaveBeenCalledWith('learner-a', {
       syllabusId: 'atlas-upper',
       rematerialize: false,
       enrolledBy: 'kckern',
@@ -198,7 +198,7 @@ describe('EnrollmentDrawer — enrolled, managed cell', () => {
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Unenroll' }));
-    expect(screen.getByText(/Remove History Capitals from Felix/)).toBeInTheDocument();
+    expect(screen.getByText(/Remove History Capitals from Learner A/)).toBeInTheDocument();
     expect(schoolApi.unenroll).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByRole('button', { name: 'Unenroll' })).toBeInTheDocument();

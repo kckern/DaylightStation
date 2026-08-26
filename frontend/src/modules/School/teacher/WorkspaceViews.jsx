@@ -23,9 +23,12 @@ import FeedbackNotes, { NoteComposer } from './panels/FeedbackNotes.jsx';
 import AttestationPanel from './panels/AttestationPanel.jsx';
 import ReassignPanel from './panels/ReassignPanel.jsx';
 import StaleSessions from './panels/StaleSessions.jsx';
+import InterventionsIndex from './panels/InterventionsIndex.jsx';
 import IssuedArtifactCard from './panels/IssuedArtifactCard.jsx';
+import GradedWorksheet from './panels/GradedWorksheet.jsx';
+import LearnerDayView from './panels/LearnerDayView.jsx';
 import { LessonIdentity, SubjectIdentity } from './CurriculumIdentity.jsx';
-import { teacherBaseFor } from './teacherUrl.js';
+import { teacherBaseFor, teacherDayPath } from './teacherUrl.js';
 import { curriculumTitles } from './curriculumTitles.js';
 import { localDay, humanDate, humanDateTime } from './teacherDates.js';
 
@@ -34,7 +37,11 @@ const dateOf = (session) => session?.updatedAt ?? session?.closedAt ?? session?.
 const stateOf = (session) => session?.state ?? session?.status ?? session?.outcome?.result ?? session?.result ?? 'unknown';
 const scoreLine = (session) => {
   const score = session?.effectiveScore ?? session?.machineScore;
-  if (!score || score.correctCount == null || score.totalCount == null) return null;
+  if (!score || score.correctCount == null || score.totalCount == null) {
+    // Timeline rows carry only `gradedPercent`, so History showed no score at
+    // all until this fallback existed.
+    return typeof session?.gradedPercent === 'number' ? `${Math.round(session.gradedPercent)}%` : null;
+  }
   return `${score.correctCount} of ${score.totalCount} correct${score.percent == null ? '' : ` · ${score.percent}%`}`;
 };
 const outcomeLabel = (sessionState) => {
@@ -42,20 +49,6 @@ const outcomeLabel = (sessionState) => {
   if (outcome === 'passed' || ['closed', 'completed'].includes(sessionState?.state)) return 'Completed';
   if (outcome === 'needs_remediation') return 'Needs review';
   return labelize(sessionState?.state ?? outcome ?? 'Recorded');
-};
-const choiceLetter = (index) => String.fromCharCode(65 + index);
-// The honest answer line: "Their answer: X · Correct answer: Y (C) · Incorrect".
-// The letter is derived from the worksheet's own choice order; when the child
-// was right, repeating the correct answer is redundant and is omitted.
-const recordedAnswerLine = (item, question = null) => {
-  const answer = item.given ?? 'No recorded answer';
-  const verdict = item.verdict ? ` · ${labelize(item.verdict)}` : '';
-  if (item.verdict === 'correct' || !item.expected?.length) return `Their answer: ${answer}${verdict}`;
-  const letterOf = (text) => {
-    const index = (question?.choices ?? []).findIndex((choice) => (choice.text ?? choice.label ?? choice) === text);
-    return index >= 0 ? ` (${choiceLetter(index)})` : '';
-  };
-  return `Their answer: ${answer} · Correct answer: ${item.expected.map((expected) => `${expected}${letterOf(expected)}`).join(', ')}${verdict}`;
 };
 
 function CapabilityNotice({ children }) {
@@ -71,91 +64,41 @@ function useAuthorizedTeacherRead() {
 
 const newIdempotencyKey = (prefix) => `${prefix}:${typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `${Date.now()}:${Math.random().toString(36).slice(2)}`}`;
 
-function AgendaPreview({ learnerId, learnerName, studyDay, onStudyDayChange }) {
-  const plan = usePanelFetch(() => schoolApi.agendaPreview(learnerId, studyDay), {
-    deps: [learnerId, studyDay], panel: 'workspace-agenda', notFoundAs: 'unavailable',
-    isEmpty: (data) => !(data?.sections ?? []).length,
-  });
-  const [imageOpen, setImageOpen] = useState(false);
-  const day = usePanelFetch(() => (schoolApi.teacherDay
-    ? schoolApi.teacherDay(studyDay)
-    : Promise.resolve({ ok: true, status: 200, data: { learners: [] } })), {
-    deps: [learnerId, studyDay], panel: 'workspace-agenda-day', notFoundAs: 'unavailable',
-  });
-  const completedBySubject = useMemo(() => {
-    const learner = (day.data?.learners ?? []).find((row) => row.learnerId === learnerId);
-    return new Map((learner?.sessions ?? [])
-      .filter((session) => session.outcome?.result === 'passed')
-      .map((session) => [session.subject, session]));
-  }, [day.data, learnerId]);
-  const pngUrl = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({ studyDay })}`;
-
-  return (
-    <section className="teacher-agenda-preview-panel" aria-label="Agenda planning preview">
-      <div className="teacher-action-row teacher-agenda-preview__day-picker">
-        <label htmlFor={`agenda-study-day-${learnerId}`}>Study day</label>
-        <input id={`agenda-study-day-${learnerId}`} type="date" value={studyDay} onChange={(event) => onStudyDayChange(event.target.value)} />
-      </div>
-      <p className="teacher-caption">Planning preview only — this never creates a session, agenda artifact, print record, working QR, or digit code.</p>
-      <PanelFrame
-        title={`Agenda preview for ${humanDate(studyDay) ?? 'selected day'}`}
-        state={plan.state}
-        retry={plan.retry}
-        emptyCopy="Nothing is scheduled for this study day."
-        unavailableCopy="Agenda planning is not enabled on this install."
-      >
-      {(plan.data?.errors ?? []).length > 0 && (
-        <ul className="teacher-workspace__alerts">
-          {plan.data.errors.map((error, index) => (
-            <li key={index}>{typeof error === 'string' ? error : error?.message ?? 'The planner refused an item.'}</li>
-          ))}
-        </ul>
-      )}
-      <ol className="teacher-agenda-list">
-        {(plan.data?.sections ?? []).map((section) => (
-          <li key={section.subject ?? section.id}>
-            <SubjectIdentity subject={section.subject} />
-            <span>{section.servedToday
-              ? (() => {
-                const completed = completedBySubject.get(section.subject);
-                return completed
-                  ? `${completed.lessonTitle ?? 'Lesson'} completed on this study day${scoreLine(completed) ? ` · ${scoreLine(completed)}` : ''}`
-                  : 'This study day is complete';
-              })()
-              : section.suppressed
-                ? `Deferred for ${section.suppressed.bySubject} focus`
-                : section.next?.title ?? section.next?.label ?? section.lockedRemedy ?? section.timingNotice ?? 'No work offered'}</span>
-          </li>
-        ))}
-      </ol>
-      <div className="teacher-action-row">
-        <button type="button" onClick={() => setImageOpen((open) => !open)}>{imageOpen ? 'Hide print preview' : 'View print preview'}</button>
-        <a href={pngUrl} target="_blank" rel="noreferrer">Open preview image</a>
-      </div>
-      {imageOpen && <img className="teacher-agenda-preview" src={pngUrl} alt="Rendered agenda preview" />}
-      </PanelFrame>
-    </section>
-  );
+/**
+ * Timeline rows name their study day `day`; day-projection rows name it
+ * `studyDay`. Reading only `studyDay` silently fell through to `updatedAt`,
+ * so a Monday lesson rescanned on Friday filed itself under Friday.
+ */
+function studyDayOf(session) {
+  return session.studyDay ?? session.day ?? (dateOf(session) ?? '').slice(0, 10) ?? 'undated';
 }
 
-function SessionList({ learnerId, onOpenSession, window = null, studyDay = null }) {
+function groupSessionsByDay(rows) {
+  const groups = new Map();
+  for (const session of rows) {
+    const day = studyDayOf(session) || 'undated';
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(session);
+  }
+  return [...groups.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+}
+
+/**
+ * The learner's whole session history, grouped by study day. It was once
+ * also the day-scoped list (a `window`/`studyDay` mode); the day record owns
+ * that view now, so History is the only caller and the only mode.
+ */
+function SessionList({ learnerId, onOpenSession }) {
   const authorizedRead = useAuthorizedTeacherRead();
   const [additional, setAdditional] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const sessions = usePanelFetch(async () => {
-    if (window === 'today' || studyDay) {
-      if (!schoolApi.teacherDay) return schoolApi.learnerSessions(learnerId, { window });
-      const response = await schoolApi.teacherDay(studyDay);
-      if (!response.ok) return response;
-      const learner = (response.data?.learners ?? []).find((row) => row.learnerId === learnerId);
-      return { ...response, data: { sessions: learner?.sessions ?? [] } };
-    }
     const timeline = await authorizedRead(() => teacherWorkspaceApi.timeline(learnerId));
     if (timeline.status !== 404) return { ...timeline, data: timeline.data ? { sessions: timeline.data.items ?? [], nextCursor: timeline.data.nextCursor } : null };
     return schoolApi.learnerSessions(learnerId);
   }, {
-    deps: [learnerId, window, studyDay], panel: 'workspace-sessions', notFoundAs: 'unavailable',
+    deps: [learnerId], panel: 'workspace-sessions', notFoundAs: 'unavailable',
     isEmpty: (data) => !(data?.sessions ?? []).length,
   });
   useEffect(() => { setAdditional([]); setNextCursor(sessions.data?.nextCursor ?? null); }, [learnerId, sessions.data]);
@@ -171,21 +114,33 @@ function SessionList({ learnerId, onOpenSession, window = null, studyDay = null 
   };
   const rows = [...(sessions.data?.sessions ?? []), ...additional];
   return (
-    <PanelFrame title={studyDay ? `Sessions for ${humanDate(studyDay) ?? 'selected day'}` : window === 'today' ? 'Today’s sessions' : 'Session history'} state={sessions.state} retry={sessions.retry} emptyCopy="No sessions recorded." unavailableCopy="Session history is not enabled on this install.">
-      <ul className="teacher-session-list">
-        {rows.map((session, index) => {
-          const id = sessionIdOf(session);
-          return (
-            <li key={id ?? index}>
-              <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
-                <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact /><small>{humanDate(session.studyDay ?? dateOf(session)) ?? 'No date'}{scoreLine(session) ? ` · ${scoreLine(session)}` : ''}</small></span>
-                <span className={`teacher-status teacher-status--${stateOf(session)}`}>{session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {!window && nextCursor && <button type="button" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load older sessions'}</button>}
+    <PanelFrame title="Session history" state={sessions.state} retry={sessions.retry} emptyCopy="No sessions recorded." unavailableCopy="Session history is not enabled on this install.">
+      {groupSessionsByDay(rows).map(([day, daySessions]) => (
+        <section className="teacher-history-day" key={day}>
+          <h3 className="teacher-history-day__heading">
+            <a href={teacherDayPath(learnerId, day === 'undated' ? null : day)}>{humanDate(day) ?? 'Undated'}</a>
+          </h3>
+          <ul className="teacher-session-list">
+            {daySessions.map((session, index) => {
+              const id = sessionIdOf(session);
+              return (
+                <li key={id ?? index}>
+                  <button type="button" onClick={() => id && onOpenSession(id)} disabled={!id}>
+                    <span><LessonIdentity subject={session.subject} courseTitle={session.courseTitle}
+                      moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title ?? 'Lesson title unavailable'}
+                      posterUrl={session.posterUrl} compact />
+                      {/* No per-row date: the group heading owns the day (IA2). */}
+                      {scoreLine(session) && <small>{scoreLine(session)}</small>}</span>
+                    <span className={`teacher-status teacher-status--${stateOf(session)}`}>
+                      {session.outcome?.result === 'passed' ? 'Completed' : labelize(stateOf(session))}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      {nextCursor && <button type="button" disabled={loadingMore} onClick={loadMore}>{loadingMore ? 'Loading…' : 'Load older sessions'}</button>}
     </PanelFrame>
   );
 }
@@ -220,16 +175,36 @@ export function QueueView({ kids }) {
   );
 }
 
-export function LearnerOverview({ learnerId, learnerName, onOpenSession }) {
-  const [studyDay, setStudyDay] = useState(() => localDay());
+/**
+ * `studyDay` defaults here rather than only in the shell so the screen is
+ * correct when rendered directly — and so the default stays LOCAL, never the
+ * UTC date, which flips to tomorrow every evening.
+ */
+export function LearnerDayScreen({ learnerId, learnerName, studyDay = localDay(), onChangeStudyDay, onOpenSession }) {
   return (
     <div className="teacher-view">
-      <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student workspace</p><h2>{learnerName}&rsquo;s workspace</h2><p>Preview a chosen day, then inspect its progress, blockers, and useful teacher actions.</p></div></div>
-      <AgendaPreview learnerId={learnerId} learnerName={learnerName} studyDay={studyDay} onStudyDayChange={setStudyDay} />
-      <SessionList learnerId={learnerId} studyDay={studyDay} onOpenSession={onOpenSession} />
-      <MilestonesPanel learnerId={learnerId} />
+      <div className="teacher-view__heading"><div>
+        <p className="teacher-view__eyebrow">Day record</p>
+        <h2>{learnerName}&rsquo;s day</h2>
+        <p>What was planned, what got done, and what is still open — for any school day.</p>
+      </div></div>
+      <LearnerDayView
+        learnerId={learnerId}
+        learnerName={learnerName}
+        studyDay={studyDay}
+        onChangeStudyDay={onChangeStudyDay}
+        onOpenSession={onOpenSession}
+      />
     </div>
   );
+}
+
+export function LearnerOverview({ learnerId, learnerName, onOpenSession, studyDay, onChangeStudyDay }) {
+  // Overview WAS a second, weaker day view — the plan under a "planning
+  // preview" disclaimer plus a day-scoped session list (UX audit IA3). The
+  // day record owns that now; this alias keeps old bookmarks working.
+  return <LearnerDayScreen learnerId={learnerId} learnerName={learnerName} studyDay={studyDay}
+    onChangeStudyDay={onChangeStudyDay} onOpenSession={onOpenSession} />;
 }
 
 function CourseContext({ courseId, lessonId = null, learnerId = null }) {
@@ -378,9 +353,9 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
   return (
     <div className="teacher-view">
       <div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Student operations</p><h2>Repair {learnerName}’s record</h2><p>Use the narrowest intervention that matches what actually happened. Every write is attributed and auditable.</p></div></div>
+      <InterventionsIndex learnerId={learnerId} />
       <AttestationPanel learnerId={learnerId} learnerName={learnerName} />
       <ReassignPanel learnerId={learnerId} learnerName={learnerName} kids={kids} />
-      <StaleSessions kids={kids} />
     </div>
   );
 }
@@ -388,23 +363,24 @@ export function LearnerOperationsView({ learnerId, learnerName, kids }) {
 export function CurriculumView({ kids, courseId = null, lessonId = null }) {
   // Landing state = the course catalog (cards, one per course). Lessons and
   // per-lesson pass bars live on the drill-in page only (UX audit C10).
+  // Curriculum INSPECTS; the repair tools live once, on School Operations,
+  // and this page links to them instead of re-rendering the form (IA4).
   return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">Published curriculum</p><h2>{courseId ? 'Course curriculum' : 'Courses, units, and policy'}</h2><p>Inspect and operate published curriculum. Authoring remains in reviewed source files.</p></div></div>
     {courseId ? <>
       <CourseContext courseId={courseId} lessonId={lessonId} />
       <CurriculumBrowser courseId={courseId} />
-      <CurriculumExceptionPanel kids={kids} courseId={courseId} lessonId={lessonId ?? ''} />
+      <InterventionsIndex scopes={['school']} />
     </> : <>
       <CurriculumCatalog />
       <SchoolMatrix kids={kids} />
-      <CurriculumExceptionPanel kids={kids} courseId="" lessonId="" />
-      <PeriodsTimeline />
       <EnrichmentPanel kids={kids} />
+      <InterventionsIndex scopes={['school']} />
     </>}
   </div>;
 }
 
 export function OperationsView({ kids }) {
-  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
+  return <div className="teacher-view"><div className="teacher-view__heading"><div><p className="teacher-view__eyebrow">School operations</p><h2>Health, gates, and exceptions</h2><p>Find systematic blockers before changing a student record.</p></div></div><InterventionsIndex scopes={['school']} /><CurriculumExceptionPanel kids={kids} /><StaleSessions kids={kids} /><ActiveOverrides kids={kids} /><PeriodsTimeline /><BulkRegradePanel /><CapabilityNotice>Device health and retained-artifact audit will appear here when their teacher read models are available.</CapabilityNotice></div>;
 }
 
 function BulkRegradePanel() {
@@ -467,7 +443,7 @@ function GradeCorrection({ sessionId, revision, currentPercent, items = [], onAp
     onSuccess: () => { setPreview(null); setOpen(false); onApplied?.(); },
     stepUp: { action: 'sessions.grade-adjust', resource: sessionId },
   });
-  if (!open) return <button type="button" onClick={() => setOpen(true)}>Correct grade…</button>;
+  if (!open) return <button type="button" className="teacher-btn teacher-btn--primary" onClick={() => setOpen(true)}>Fix a marked answer</button>;
   return (
     <div className="teacher-grade-correction">
       {!itemLevel && <label>Effective percent <input aria-label="Effective percent" type="number" min="0" max="100" value={percent} onChange={(event) => { setPercent(event.target.value); setPreview(null); }} /></label>}
@@ -594,47 +570,68 @@ export function SessionInspector({ learnerId, sessionId, kids, onBack }) {
             <h3 className="teacher-panel__title">Outcome</h3>
             <dl>
               <div><dt>Lesson status</dt><dd>{outcomeLabel(sessionState)}</dd></div>
-              <div><dt>Marked score<small>As graded by the machine</small></dt><dd>{typeof machineGrade === 'number' ? `${Math.round(machineGrade)}%` : 'Not graded'}</dd></div>
-              <div><dt>Current score<small>After teacher corrections</small></dt><dd>{typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}</dd></div>
+              {/* One score, stated once. "Marked" and "current" are the same
+                  number unless a teacher corrected it — and when they differ,
+                  the correction is provenance on the one score, not a rival
+                  score beside it (UX audit IA1). */}
+              <div><dt>Score</dt><dd>
+                {typeof effectiveGrade === 'number' ? `${Math.round(effectiveGrade)}%` : 'Not graded'}
+                {typeof machineGrade === 'number' && typeof effectiveGrade === 'number'
+                  && Math.round(machineGrade) !== Math.round(effectiveGrade)
+                  && <small className="teacher-score-provenance">corrected from {Math.round(machineGrade)}% as marked</small>}
+              </dd></div>
               <div><dt>Last recorded</dt><dd>{humanDateTime(updatedAt) ?? 'Unknown'}</dd></div>
             </dl>
-            <div className="teacher-action-row">{canOfferRetake && <button type="button" disabled={busy === sessionId} onClick={offerRetake}>Offer retake</button>}<GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade} items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} /><a className="teacher-back" href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>Completion credit — Student operations</a></div>
+            {/* One button vocabulary (UX audit IA4/IA5): the repair you came
+                here for is primary, the conditional retake is a peer, and the
+                cross-page tool is navigation — not a back link, and not a
+                noun-dash-noun label that reads as a form caption. */}
+            <div className="teacher-action-row">
+              <GradeCorrection sessionId={sessionId} revision={session?.revision} currentPercent={effectiveGrade}
+                items={session?.reviewEvidence ?? []} onApplied={() => setAttempt((n) => n + 1)} />
+              {canOfferRetake && <button type="button" className="teacher-btn" disabled={busy === sessionId}
+                onClick={offerRetake}>Offer another try</button>}
+              <a className="teacher-btn teacher-btn--quiet"
+                 href={`${teacherBaseFor(globalThis.location?.pathname ?? '')}/students/${encodeURIComponent(result.ownerId ?? learnerId ?? '')}/operations`}>
+                Give credit for work you saw →
+              </a>
+            </div>
             {errors[sessionId] && <p className="teacher-panel__error">{errors[sessionId]}</p>}
           </section>
-          {session?.assignment && <section className="teacher-panel">
-            <h3 className="teacher-panel__title">Worksheet and questions</h3>
-            <p className="teacher-muted">Issued {humanDateTime(session.assignment.createdAt) ?? 'at session start'}.</p>
-            <ol className="teacher-event-list teacher-question-list">
-              {session.assignment.questions.map((question) => <li key={question.itemId ?? question.number}>
-                <strong>{question.number}. {question.prompt ?? 'Question text unavailable'}</strong>
-                {question.choices?.length > 0 && <span>{question.choices.map((choice, index) => `${choiceLetter(index)}. ${choice.text ?? choice.label ?? choice}`).join('  ·  ')}</span>}
-              </li>)}
-            </ol>
-          </section>}
-          {session?.assessment?.items?.length > 0 && <section className="teacher-panel">
-            <h3 className="teacher-panel__title">Answers and result</h3>
-            {/* Numbered by the worksheet the teacher just read above, never by
-                the bank-global questionNumber — one page, one numbering. */}
-            <ol className="teacher-event-list teacher-question-list">
-              {session.assessment.items.map((item, index) => {
-                const question = (session.assignment?.questions ?? []).find((candidate) => candidate.itemId != null && candidate.itemId === item.itemId) ?? null;
-                return <li key={item.itemId ?? item.questionNumber}>
-                  <strong>Question {question?.number ?? index + 1}</strong><span>{item.prompt ?? 'Recorded answer'}</span><small>{recordedAnswerLine(item, question)}</small>
-                </li>;
-              })}
-            </ol>
-          </section>}
-          {session?.answerSheets?.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Answer card</h3>{session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}</section>}
+          {(session?.assignment || session?.assessment?.items?.length > 0) && (
+            <section className="teacher-panel">
+              <h3 className="teacher-panel__title">Questions and answers</h3>
+              {session.assignment?.createdAt && (
+                <p className="teacher-muted">Worksheet issued {humanDateTime(session.assignment.createdAt) ?? 'at session start'}.</p>
+              )}
+              <GradedWorksheet assignment={session.assignment} assessment={session.assessment} />
+            </section>
+          )}
+          {session?.answerSheets?.length > 0 && (
+            <details className="teacher-panel teacher-fold">
+              <summary><h3 className="teacher-panel__title">Answer card</h3><span>Bubble-sheet capacity and mapping</span></summary>
+              {session.answerSheets.map((card) => <dl className="teacher-answer-sheet" key={card.cardId}><div><dt>Student No.</dt><dd>{card.studentNumber}</dd></div><div><dt>Mapped learner</dt><dd>{card.mappedLearnerId ?? 'Unmapped'}</dd></div><div><dt>Capacity</dt><dd>{card.usedRows} of {card.capacity} rows used</dd></div><div><dt>Remaining</dt><dd>{card.remainingContiguousSlots} contiguous slots · next row {card.nextRow ?? 'full'}</dd></div>{card.warnings?.map((warning) => <p role="alert" key={warning}>{warning}</p>)}</dl>)}
+            </details>
+          )}
           <section className="teacher-panel teacher-session-materials">
             <h3 className="teacher-panel__title">Issued materials and results</h3>
             <p className="teacher-muted">These are the paper records from this lesson.</p>
-            {session?.artifacts?.length ? <div className="teacher-session-materials__cards">{session.artifacts.map((artifact) => <div className="teacher-session-materials__card" key={artifact.artifactId}>
-              <IssuedArtifactCard artifact={artifact} lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'} />
-              {artifact.availability === 'exact' && <div className="teacher-session-materials__print"><ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} /></div>}
-            </div>)}</div> : <CapabilityNotice>No issued worksheet or result receipt is linked to this session.</CapabilityNotice>}
+            {session?.artifacts?.length ? <div className="teacher-session-materials__cards">{session.artifacts.map((artifact) => (
+              <IssuedArtifactCard
+                key={artifact.artifactId}
+                artifact={artifact}
+                lessonTitle={session.taxonomy?.lessonTitle ?? session.assignment?.title ?? 'Lesson'}
+                action={artifact.availability === 'exact'
+                  ? <ArtifactReprint artifactId={artifact.artifactId} kind={artifact.kind} onPrinted={() => setAttempt((n) => n + 1)} />
+                  : null}
+              />
+            ))}</div> : <CapabilityNotice>No issued worksheet or result receipt is linked to this session.</CapabilityNotice>}
           </section>
           {gradeAdjustments.length > 0 && <section className="teacher-panel"><h3 className="teacher-panel__title">Grade corrections</h3><ol className="teacher-event-list">{gradeAdjustments.map((adjustment) => <li key={adjustment.adjustmentId}><strong>{adjustment.percent == null ? 'Evidence correction' : `${adjustment.percent}% correction`}</strong><span>{adjustment.reason}</span><small>{adjustment.adjustedBy}{adjustment.at ? ` · ${humanDateTime(adjustment.at)}` : ''}</small><GradeAdjustmentRetraction sessionId={sessionId} adjustment={adjustment} revision={session.revision} onApplied={() => setAttempt((n) => n + 1)} /></li>)}</ol></section>}
-          <section className="teacher-panel"><h3 className="teacher-panel__title">Event history</h3>{events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}</section>
+          <details className="teacher-panel teacher-fold">
+            <summary><h3 className="teacher-panel__title">Event history</h3><span>{events.length} recorded step{events.length === 1 ? '' : 's'}</span></summary>
+            {events.length ? <ol className="teacher-event-list">{events.map((event, index) => <li key={event.id ?? `${event.type}:${index}`}><strong>{labelize(event.type ?? event.kind)}</strong><span>{humanDateTime(event.at) ?? ''}</span><small>{event.by ?? event.actorId ?? event.gradedBy ?? ''}</small></li>)}</ol> : <p className="teacher-panel__empty">Detailed lifecycle events require the session-detail read model.</p>}
+          </details>
         </>
       )}
     </div>
