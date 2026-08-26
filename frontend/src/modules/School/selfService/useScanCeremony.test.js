@@ -175,6 +175,77 @@ describe('useScanCeremony', () => {
     expect(result.current.current.tone).not.toBe('error');
   });
 
+  // 2026-08-26. A child fed his cumulative card four times over two and a half
+  // minutes. Today's worksheet was rows 34-39 and he had not bubbled them, so
+  // the only marks on the card were the older, already-graded ones. The backend
+  // returned early and broadcast nothing at all, so this panel showed nothing
+  // and the speaker stayed quiet. He gave up and tapped his NFC card instead.
+  it('maps scan-rows-unmarked to an error ceremony naming the rows still to fill in', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr',
+        event: 'scan-rows-unmarked',
+        testId: '0123456',
+        learnerId: 'milo',
+        rowRange: { start: 34, end: 39 },
+      });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Nothing filled in yet',
+      detail: 'Your new questions are rows 34–39. Fill them in, then scan again.',
+    });
+  });
+
+  it('rings the error tone for unmarked rows — the buzz is the whole point', () => {
+    // `error`, deliberately, over `warn`: this is the low double-buzz that says
+    // "that did not work". The child glancing away from the screen has to be
+    // able to tell from the SOUND alone that feeding the card achieved nothing.
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-rows-unmarked', testId: '0123456', rowRange: { start: 7, end: 12 } });
+    });
+    expect(result.current.current.tone).toBe('error');
+  });
+
+  // A cumulative card can carry more than one unmarked live worksheet
+  // (final review MINOR 4) — naming only the first left the child unaware
+  // of the second.
+  it('names every unmarked live worksheet, not just the first, when rowRanges carries more than one', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr',
+        event: 'scan-rows-unmarked',
+        testId: '0123456',
+        learnerId: 'milo',
+        rowRange: { start: 34, end: 39 },
+        rowRanges: [{ start: 34, end: 39 }, { start: 40, end: 45 }],
+      });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Nothing filled in yet',
+      detail: 'Your new questions are rows 34–39 and rows 40–45. Fill them in, then scan again.',
+    });
+  });
+
+  it('still speaks when the row range is missing, rather than falling silent again', () => {
+    // Never let a malformed payload reproduce the exact bug this event was
+    // added for. Losing the row numbers costs precision; losing the ceremony
+    // costs the child any feedback at all.
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-rows-unmarked', testId: '0123456' });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Nothing filled in yet',
+    });
+    expect(result.current.current.detail).toContain('scan again');
+  });
+
   it('maps reader-error to an error ceremony', () => {
     const { result } = mount();
     act(() => {

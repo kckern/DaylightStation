@@ -4,7 +4,7 @@
  * the SAME `omr` topic `schoolPrintScanConsumer.mjs` (Slice C) already
  * re-broadcasts the terminal scan outcomes on — `scan-graded`,
  * `scan-review`, `scan-unresolved`, `scan-refused`, `scan-stale-sheet`,
- * `scan-not-recorded` — plus `reader-error`, which `omrRelay.mjs` broadcasts
+ * `scan-not-recorded`, `scan-rows-unmarked` — plus `reader-error`, which `omrRelay.mjs` broadcasts
  * on the same topic for a reader-level failure (a sheet that never made it to
  * grading at all).
  *
@@ -86,6 +86,7 @@ function logger() {
  *   scan-unresolved   → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
  *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
  *   scan-not-recorded → error    "Already done"             "I read that sheet, but there was nothing new to mark."
+ *   scan-rows-unmarked→ error    "Nothing filled in yet"    "Your new questions are rows {start}–{end}. Fill them in, then scan again."
  *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
  *   agenda-suppressed → warn     "Already printed"          "You already have today's agenda — check your desk."
  *
@@ -151,6 +152,43 @@ function buildCeremony(payload) {
         detail: 'I read that sheet, but there was nothing new to mark.',
         at,
       };
+    case 'scan-rows-unmarked': {
+      // The child's live worksheet got zero marks while the card's older,
+      // already-graded rows still carry theirs — a cumulative card fed before
+      // today's rows were filled in (2026-08-26, four sheets, silent room).
+      //
+      // `error`, not `warn`: this is the low double-buzz that says "that did
+      // not work". A child glancing away from the screen has to be able to
+      // tell from the SOUND alone that feeding the card achieved nothing —
+      // that audible half is the entire reason this event exists, because the
+      // backend used to return without broadcasting and the room stayed quiet.
+      //
+      // NOT `scan-refused`, whose copy sends the child to find a grown-up:
+      // there is nothing wrong here and nothing an adult needs to resolve. The
+      // fix is entirely the child's, and naming the row range is what makes it
+      // actionable — on a cumulative card there is no other way to tell which
+      // block of rows is this morning's.
+      // A cumulative card can carry more than one unmarked live worksheet
+      // (final review MINOR 4) — `rowRanges` names every one of them;
+      // `rowRange` (the first) is kept as the fallback for a payload from an
+      // older backend that never learned the plural shape.
+      const ranges = Array.isArray(payload.rowRanges) && payload.rowRanges.length
+        ? payload.rowRanges
+        : (payload.rowRange ? [payload.rowRange] : []);
+      const rowsText = ranges
+        .filter((r) => typeof r?.start === 'number' && typeof r?.end === 'number')
+        .map((r) => `rows ${r.start}–${r.end}`)
+        .join(' and ');
+      // A missing or malformed range must never cost the ceremony itself —
+      // that would reproduce the silence this event was added to end.
+      const rows = rowsText ? `Your new questions are ${rowsText}. ` : '';
+      return {
+        tone: 'error',
+        title: 'Nothing filled in yet',
+        detail: `${rows}Fill them in, then scan again.`,
+        at,
+      };
+    }
     case 'scan-stale-sheet':
       // Every allocation on this card is retired — the paper in the child's
       // hand is an old printout, not a broken one. `warn` rather than
