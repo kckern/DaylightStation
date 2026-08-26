@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // =============================================================================
 // gen-config.mjs — generate firmware include/config.h from the household SSOT
-// (data/household/config/omr-readers.yml). Keeps Wi-Fi creds + instance values OUT
+// (data/household/hardware/omr/readers.yml). Keeps Wi-Fi creds + instance values OUT
 // of the repo: the output config.h is gitignored.
 //
 // Usage:
-//   node tools/gen-config.mjs <path-to>/config/omr-readers.yml [reader-id]
+//   node tools/gen-config.mjs <dataDir>/household/hardware/omr/readers.yml [reader-id]
 //   DAYLIGHT_OMR_CONFIG=<path> node tools/gen-config.mjs [reader-id]
 //
 // reader-id defaults to the first key under `scanners:`.
