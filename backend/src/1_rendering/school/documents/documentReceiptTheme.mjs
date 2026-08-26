@@ -23,6 +23,34 @@ export const documentReceiptTheme = Object.freeze({
   fonts: {
     family: 'Roboto Condensed',
     fontPath: 'roboto-condensed/RobotoCondensed-Regular.ttf',
+    /**
+     * THE BOLD FACE, which was never registered.
+     *
+     * Only the Regular was ever handed to `registerFont`, so every `bold ...px
+     * "Roboto Condensed"` in this theme — the header, the lesson title, the
+     * rail, the taxonomy — resolved to the one weight available. The hierarchy
+     * this file carefully describes in its comments was not actually printing.
+     * The SemiBold has been sitting in `assets/fonts/roboto-condensed/` unused.
+     */
+    boldFontPath: 'roboto-condensed/RobotoCondensed-SemiBold.ttf',
+    /**
+     * The panel code is not prose — it is a value a child TYPES into a machine,
+     * and it deserves to look like one. Kongtext is a fixed-width arcade face:
+     * every digit the same width, unmistakably "input", and its heavy square
+     * pixels survive 58mm thermal better than a proportional face at the same
+     * size.
+     *
+     * This is the one deliberate exception to Roboto Condensed being the only
+     * face on the page. It is scoped to the code cell and nothing else — the
+     * moment it appears anywhere prose is set, that rule is gone.
+     *
+     * codeman38 / zone38.net; bundled under the licence in
+     * `backend/assets/fonts/kongtext/LICENSE.txt`, which permits bundling in
+     * free and commercial projects and forbids only resale as a font
+     * collection.
+     */
+    codeFamily: 'Kongtext',
+    codeFontPath: 'kongtext/kongtext.ttf',
     heading: 'bold 34px "Roboto Condensed"',
     header: 'bold 34px "Roboto Condensed"',
     body: '24px "Roboto Condensed"',
@@ -44,7 +72,15 @@ export const documentReceiptTheme = Object.freeze({
     code: '22px "Roboto Condensed"',
     // The six-digit panel code under a QR: bigger and bolder than the fallback
     // token, because it is read off paper and typed on a wall panel by a child.
-    panelCode: 'bold 30px "Roboto Condensed"',
+    // Kongtext is already fixed-width and heavy; it needs no bold, and asking
+    // for one node-canvas cannot synthesise from a single-weight face is how
+    // you silently get a substituted system font instead.
+    //
+    // 18px is the CEILING, not a taste call: Kongtext advances exactly 1em per
+    // glyph, so a six-digit code measures 6x the size — 108px inside a 132px
+    // cell. At 20px it is 120px and the digits touch the border; at 24px they
+    // print straight through it.
+    panelCode: '18px "Kongtext"',
     breadcrumb: '18px "Roboto Condensed"',
     breadcrumbStrong: 'bold 20px "Roboto Condensed"',
     identityLabel: 'bold 18px "Roboto Condensed"',
@@ -102,6 +138,22 @@ export const documentReceiptTheme = Object.freeze({
     codeAreaPx: 132,
     labelGap: 10,
     codeGap: 8,
+    /** Height of the panel-code cell that hangs under the QR box, sharing its
+     *  bottom border so the two read as one stacked control rather than a
+     *  number adrift beneath a picture. */
+    codeCellHeight: 36,
+    /** Progress bars inside a lesson card: a label/position row, then the bar. */
+    progressLabelHeight: 24,
+    progressBarHeight: 12,
+    progressRowGap: 8,
+    /**
+     * Above this many items the per-item ticks are dropped and the bar is drawn
+     * plain. The result receipt puts ONE TICK PER ITEM so the filled edge lands
+     * exactly on the `completed`-th tick — correct, and unreadable at 366
+     * lessons, where each tick would be a third of a pixel. A bar with no ticks
+     * still reads "how far along"; a bar with 366 of them reads as a smudge.
+     */
+    progressTickMax: 40,
     /** Subject shelf icon drawn left of the label (58mm tape, so keep it bold). */
     iconPx: 56,
     /** Taxonomy gutter icon (globe etc.) — sized to sit beside ONE line of
@@ -113,8 +165,11 @@ export const documentReceiptTheme = Object.freeze({
     eyebrowLineHeight: 24,
     // Was 22 — grown alongside `fonts.description` (18px -> 21px).
     descriptionLineHeight: 26,
-    /** Line height for the lesson-card title (`fonts.lessonTitle`, 30px). */
-    titleLineHeight: 36,
+    /** Line height for the lesson-card title (`fonts.lessonTitle`, 30px). A
+     *  wrapped title is ONE name, not two sentences: at 36 the two halves of
+     *  "Rhythm Improvisation with / Chords" read as separate lines. Tighter
+     *  than the body leading on purpose. */
+    titleLineHeight: 32,
     /** Line heights for the two (now independently wrappable) taxonomy rows. */
     taxonomyTopLineHeight: 26,
     taxonomyBottomLineHeight: 28,

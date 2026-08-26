@@ -65,6 +65,28 @@ function progressLabelFor(list, statuses) {
 }
 
 /**
+ * Structured progress rows for the printed card — `[{ label, completed, total }]`,
+ * course-level first, then the unit inside it.
+ *
+ * Program launchers have been BUILDING these all along (see
+ * `PianoCourseProgramLauncher#progress`) and nothing on the agenda path ever
+ * read them: the card got `progressLabel`, a pre-formatted string, and printed
+ * that. For the piano course that string is `34/366 · next: <title>` — a raw
+ * tally a child does not act on, ending in a verbatim repeat of the card's own
+ * title. The result receipt already proves the better answer for the same data:
+ * a bar with a position marker. This is what feeds it.
+ *
+ * Curriculum (non-program) work has no equivalent per-lesson denominator here,
+ * so it keeps its label and gets no bar rather than a fabricated one.
+ */
+function progressRowsFor(statuses) {
+  const rows = statuses.find((status) => !status.error && Array.isArray(status.progress))?.progress;
+  return Array.isArray(rows)
+    ? rows.filter((row) => row && Number.isInteger(row.total) && row.total > 0)
+    : [];
+}
+
+/**
  * Blended grade: mean of the latest graded% for each ATTEMPTED curriculum
  * unit (unattempted units are simply absent, never a zero) plus each
  * non-error program's `score * 100`. Null when there is no evidence at all.
@@ -256,6 +278,7 @@ export function planDailyAgenda({
       lockedRemedy,
       timingNotice,
       progressLabel: progressLabelFor(list, statuses),
+      progressRows: progressRowsFor(statuses),
       gradePercent: gradeFor(list, latestBySessionUnit, statuses),
       programUnavailable,
       focus: next && isFocus ? {
