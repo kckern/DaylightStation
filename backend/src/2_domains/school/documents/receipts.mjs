@@ -164,6 +164,35 @@ function plainScanAction(token, label, accessCode) {
 }
 
 /**
+ * The agenda's bulk "print all sheets" card — the THIRD and last designated
+ * construction site for a `scan_action` block.
+ *
+ * It was written inline when bulk print landed, which is how the structural
+ * guard below started failing: the bulk port was authored before the guard
+ * existed on this branch and merged after it, so neither side was wrong and
+ * the merged result bypassed a helper anyway. It pairs its own code correctly
+ * — that was never the defect — but "pairs correctly today" is exactly what
+ * the guard refuses to take on trust.
+ *
+ * It is a separate helper rather than a `plainScanAction` option because its
+ * code contract is genuinely different: the caller only ever builds this block
+ * when it already holds a WELL-FORMED code, so there is deliberately no
+ * `codeAbsenceBlocks` fallback here. No code means no card at all — a bad
+ * bulk code is worse than no bulk button.
+ */
+function bulkPrintAction({ token, label, subjects, accessCode }) {
+  return {
+    type: 'scan_action',
+    action: token,
+    presentation: 'bulk_print',
+    label,
+    hideCode: true,
+    subjects,
+    ...panelCodeField(accessCode),
+  };
+}
+
+/**
  * The printed time, as a person says it: `Mon 27 Jul, 9:05 am`.
  *
  * A raw ISO timestamp on a child's paper is machine notation, and the agenda
@@ -493,15 +522,12 @@ export function agendaDocument({
   // which card it belonged to. `hideCode` still suppresses the raw TOKEN
   // under the QR — the six digits are the only thing a child should read.
   if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
-    blocks.push({
-      type: 'scan_action',
-      action: bulkToken,
-      presentation: 'bulk_print',
+    blocks.push(bulkPrintAction({
+      token: bulkToken,
       label: 'Print all sheets',
-      hideCode: true,
       subjects: cardSubjects,
-      ...panelCodeField(bulkAccessCode),
-    });
+      accessCode: bulkAccessCode,
+    }));
   }
 
   if (doneSubjects.length) {
