@@ -18,6 +18,14 @@ describe('mapIntentToResponse', () => {
     expect(r.endLocation).toBe('living_room');
   });
 
+  // The interceptor seam scopes itself by reader. The location has to survive
+  // the whole way from the resolver to the response or a book tap arrives with
+  // no room attached and nothing can claim it.
+  it('carries the reader location onto content', () => {
+    const r = mapIntentToResponse({ action: 'play-next', target: 'livingroom-tv', location: 'livingroom', content: 'plex:1', params: {} });
+    expect(r.location).toBe('livingroom');
+  });
+
   it('maps open/clear to device', () => {
     expect(mapIntentToResponse({ action: 'open', target: 'office-tv', params: { path: '/videocall', room: 'x' } }))
       .toEqual({ kind: 'device', target: 'office-tv', op: 'open', path: '/videocall', params: { room: 'x' } });
@@ -87,6 +95,25 @@ describe('mapIntentToResponse — learner cards', () => {
     });
     expect(mapIntentToResponse(intent)).toMatchObject({
       kind: 'learner', op: 'print-agenda', learnerId: 'learner-a', location: 'study', target: 'portal',
+    });
+  });
+});
+
+// Pin the RESOLVER's real content intent against this mapper. The learner pair
+// below already does this for learner cards; content needed the same guard,
+// because the resolver was not putting `location` on a content intent at all —
+// the mapper could read it faithfully and still hand the interceptor undefined.
+describe('mapIntentToResponse — content location, end to end from the resolver', () => {
+  it('a book tap resolved at a reader maps to a content Response carrying that reader', () => {
+    const registry = {
+      locations: { livingroom: { target: 'livingroom-tv', action: 'play-next', defaults: {} } },
+      tags: { '048ba600cc2a81': { global: { content: 'plex:620681' }, overrides: {} } },
+    };
+    const intent = NfcResolver.resolve({
+      location: 'livingroom', value: '04:8B:A6:00:CC:2A:81', registry,
+    });
+    expect(mapIntentToResponse(intent)).toMatchObject({
+      kind: 'content', target: 'livingroom-tv', location: 'livingroom',
     });
   });
 });

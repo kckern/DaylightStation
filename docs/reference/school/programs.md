@@ -149,6 +149,27 @@ BOOK: a retried request or a remounted player credits the child twice.
 return the existing row rather than appending a second — and a `null` pickId is
 not a key, so two hand-recorded reads of the same book stay two reads.
 
+### One finish is one row — `pickId`
+
+`append` is **idempotent on `pickId`**, scoped to the study day. The caller
+mints one id per finish (the living-room screen mints it when playback starts
+and sends it back on `ended`) and may send it more than once — a retried POST,
+a player that remounts mid-story and fires `ended` twice. Because `doneToday`
+is `rows.length >= target`, a duplicate row is a duplicate **book**: the same
+child credited twice for one story.
+
+So a repeat returns the row **already on disk** — not the one handed in — and
+writes nothing at all. Two consequences worth knowing:
+
+- **A `null` pickId is not a key and never dedupes.** Two hand-recorded reads
+  of the same book are two reads; `school ops read` sends no pickId, so it can
+  always record a genuine second reading.
+- **The scope is the shard.** The same pickId tomorrow is a new row, because
+  the same story finished tomorrow is a new obligation.
+
+The scan runs over recognised rows only, so an unrecognised entry can neither
+match a key nor be disturbed by a repeat.
+
 ### Recording a read by hand
 
 Evidence normally arrives when the audiobook FINISHES (a story abandoned two

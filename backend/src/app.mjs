@@ -4032,23 +4032,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // a printer start up two rooms away is worse than nothing happening.
   const learnerActions = createLearnerActions({ logger: rootLogger.child({ module: 'trigger-learner' }) });
   if (schoolLifecycle.useCases?.resolvePersonalCard) {
-    learnerActions.register('print-agenda', async ({ learnerId }) => {
-      const result = await schoolLifecycle.useCases.resolvePersonalCard.execute({ learnerId });
-      // `print_failed` is the one status that tells the child to scan again —
-      // ResolvePersonalCard REPORTS it rather than throwing, so nothing else
-      // would release the 30s trigger debounce and the retry it asked for would
-      // be swallowed with the handler never invoked. Every other status is a
-      // finished answer: a printed agenda and a cooldown suppression both WANT
-      // the lockout, and an unknown learner is no more known on the next tap.
-      return result?.status === 'print_failed' ? { ...result, retryable: true } : result;
-    });
+    // The handler lives in `learnerCardActions.mjs` rather than inline here so
+    // its contract — the retryable `print_failed`, and the `agenda-suppressed`
+    // acknowledgement that is a cooldown tap's only feedback — is testable
+    // without booting the app.
+    const { makePrintAgendaHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    learnerActions.register('print-agenda', makePrintAgendaHandler({
+      resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
+      eventBus,
+      logger: rootLogger.child({ module: 'trigger-learner' }),
+    }));
   } else {
     rootLogger.warn('trigger.learner.school-unwired', { reason: 'no resolvePersonalCard' });
   }
 
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
     listDir,
     learnerActions,
     deviceServices,
@@ -4109,19 +4109,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
-  // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
-  // owns the tag: a personal card goes to School and prints an agenda, anything
-  // else falls through to the normal trigger pipeline like any other reader.
+  // Unit NFC alongside the bubble-sheet reader). TRANSPORT ONLY: every tap —
+  // book sticker, learner card, unknown tag — goes to the same pipeline every
+  // other reader in the house uses. What a learner card MEANS is the reader
+  // location's `learner_action`, resolved in NfcResolver.
   const { createNfcTapIngress } = await import('#composition/modules/nfcTapIngress.mjs');
   const nfcTapIngress = createNfcTapIngress({
     eventBus,
     topics: ['omr'],
-    triggerConfig,
     triggerDispatchService,
-    resolvePersonalCard: schoolLifecycle.useCases?.resolvePersonalCard ?? null,
     shutdownService,
     getShutdownConfig: readShutdownConfig,
-    location: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcLocation ?? null,
+    // Reader id -> trigger location. Was a single global `location`, which
+    // assumed every reader on this bus was in one room. The fallback names the
+    // one reader that exists today so the study card keeps working without a
+    // config edit; add a key here (or in school.yml) for each new relay reader.
+    readerLocations: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcReaderLocations
+      ?? { 'study-omr': 'study' },
     logger: rootLogger.child({ module: 'nfc-tap' }),
   });
 

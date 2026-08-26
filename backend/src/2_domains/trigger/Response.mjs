@@ -15,16 +15,24 @@ const HA_OPS = new Set(['scene', 'service']);
 export const Response = {
   /**
    * @param {Object} a
+   * `location` is the READER the tap came from, and it is distinct from
+   * `endLocation` (the room a tv-off applies to) and from `target` (the screen
+   * the content loads on). It rides along for the same reason the learner
+   * response carries one: an interceptor scopes itself to a reader, so a book
+   * tapped in the living room can be claimed by the session open there and a
+   * tap anywhere else in the house cannot.
+   *
    * @param {string} a.target
    * @param {{action:string, contentId:string, options:Object}} a.expression
    * @param {'authoritative'|'optimistic'} [a.posture='authoritative']
+   * @param {string} [a.location]  the reader this tap came from
    * @param {string} [a.end]
    * @param {string} [a.endLocation]
    */
-  content({ target, expression, posture, end, endLocation } = {}) {
+  content({ target, expression, posture, location, end, endLocation } = {}) {
     if (!target) throw new ValidationError('Response.content target required', { code: 'RESPONSE_CONTENT_TARGET' });
     if (!expression || !expression.contentId) throw new ValidationError('Response.content expression.contentId required', { code: 'RESPONSE_CONTENT_EXPR' });
-    return Object.freeze({ kind: 'content', target, expression, posture: posture || 'authoritative', end, endLocation });
+    return Object.freeze({ kind: 'content', target, expression, posture: posture || 'authoritative', location, end, endLocation });
   },
 
   /** @param {{target:string, op:'open'|'clear', path?:string, params?:Object}} a */
