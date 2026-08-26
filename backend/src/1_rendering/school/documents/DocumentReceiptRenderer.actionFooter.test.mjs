@@ -44,9 +44,12 @@ describe('lesson card footer', () => {
   it('grows the card when the footer halves cannot share a row', async () => {
     const short = await heightOf(card({ meta: SHORT }));
     const long = await heightOf(card({ meta: LONG }));
-    // The long footer wraps to two extra rows; if the box did not grow, that
-    // text was drawn straight through the bottom border.
-    expect(long).toBeGreaterThanOrEqual(short + 2 * theme.text.codeLineHeight);
+    // At least one extra row — the invariant is that the box GREW to hold the
+    // wrapped text, not that it grew by a specific amount. Pinning an exact row
+    // count made this fail the moment the footer became a full-width band and
+    // the same string needed one wrapped row instead of two, which is the fix
+    // working better rather than a regression.
+    expect(long).toBeGreaterThanOrEqual(short + theme.text.codeLineHeight);
   });
 
   it('keeps a footer that DOES fit on a single row', async () => {

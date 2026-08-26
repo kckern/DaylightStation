@@ -149,7 +149,9 @@ export function createDocumentReceiptRenderer({
    * it read as belonging to neither ("Unit 0" line has no icon of its own;
    * see `drawTaxonomy`).
    */
-  function taxonomyOp(ctx, taxonomy, maxWidth, { icon = null, includeLesson = true } = {}) {
+  function taxonomyOp(ctx, taxonomy, maxWidth, {
+    icon = null, includeLesson = true, includeUnit = true,
+  } = {}) {
     if (!taxonomy) return null;
     const iconSize = icon ? theme.action.subjectIconPx : 0;
     const textOffset = icon ? iconSize + theme.action.iconGap : 0;
@@ -163,7 +165,9 @@ export function createDocumentReceiptRenderer({
       : 0;
 
     ctx.font = theme.fonts.taxonomyBottom;
-    const unitLines = wrapTight(ctx, taxonomy.unit, textWidth - theme.action.taxonomyBottomIndent);
+    const unitLines = includeUnit
+      ? wrapTight(ctx, taxonomy.unit, textWidth - theme.action.taxonomyBottomIndent)
+      : [];
     const lessonLines = includeLesson && taxonomy.lesson
       ? wrapTight(ctx, `›  ${taxonomy.lesson}`, textWidth - theme.action.taxonomyLessonIndent)
       : [];
@@ -225,12 +229,30 @@ export function createDocumentReceiptRenderer({
     ctx.font = titleFont;
     const labelWidth = contentWidth - 2 * theme.action.padding - theme.action.codeAreaPx
       - (lesson ? theme.action.lessonTextGap : theme.action.labelGap) - iconSpan;
+    // FULL CARD WIDTH, not the title column. The breadcrumb is the longest
+    // string on the card, and giving it the narrow column beside the QR is what
+    // made it wrap to two and three lines while the wide half of the card sat
+    // empty. It is a header band across the top now, with the QR and the title
+    // sharing the band beneath it.
+    const fullWidth = contentWidth - 2 * theme.action.padding;
     const taxonomy = lesson && block.taxonomy
-      ? taxonomyOp(ctx, block.taxonomy, labelWidth, { icon, includeLesson: false })
+      ? taxonomyOp(ctx, block.taxonomy, fullWidth, {
+        icon, includeLesson: false,
+        // Subject > Course ONLY. The unit used to trail the breadcrumb as a
+        // second, bolder line, which made the header band two lines deep and
+        // filed the unit with the course path rather than with the lesson it
+        // actually introduces. It is drawn above the title instead.
+        includeUnit: !lesson,
+      })
       : null;
     // taxonomyOp leaves ctx.font on whatever it last measured with — reset to
     // the title font before wrapping the title, so its line breaks are
     // computed against the font it is actually drawn in.
+    ctx.font = theme.fonts.unitLabel;
+    const unitIndent = theme.action.unitMarkerSize + theme.action.unitMarkerGap;
+    const unitLines = lesson && typeof block.unit === 'string' && block.unit.trim()
+      ? wrapTight(ctx, block.unit.trim(), labelWidth - unitIndent)
+      : [];
     ctx.font = titleFont;
     const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.eyebrow;
@@ -273,9 +295,11 @@ export function createDocumentReceiptRenderer({
       } else {
         const leadWidth = META_ICON_SPAN + ctx.measureText(metaLead).width;
         const restWidth = ctx.measureText(metaRest).width;
-        metaLayout = leadWidth + META_MIN_GAP + restWidth <= labelWidth
+        // Measured against the FULL card width: the footer is a full-width
+        // band under the QR/title row, not part of the title column.
+        metaLayout = leadWidth + META_MIN_GAP + restWidth <= fullWidth
           ? { mode: 'inline', lead: metaLead, restLines: [metaRest] }
-          : { mode: 'stacked', lead: metaLead, restLines: wrapTight(ctx, metaRest, labelWidth) };
+          : { mode: 'stacked', lead: metaLead, restLines: wrapTight(ctx, metaRest, fullWidth) };
       }
     }
     const metaRowCount = metaLayout
@@ -304,6 +328,14 @@ export function createDocumentReceiptRenderer({
     const rail = lesson && typeof block.rail === 'string' && block.rail.trim()
       ? block.rail.trim().toUpperCase()
       : null;
+    // Course/unit progress, drawn as bars inside the card. Same row shape the
+    // result receipt consumes, so the two surfaces cannot disagree about what
+    // "how far along" looks like.
+    const progressRows = lesson && Array.isArray(block.progress)
+      ? block.progress.filter((row) => row && Number.isInteger(row.total) && row.total > 0)
+      : [];
+    const progressHeight = progressRows.length
+      * (theme.action.progressLabelHeight + theme.action.progressBarHeight + theme.action.progressRowGap);
     const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
       ? block.panelCode.trim()
       : null;
@@ -313,20 +345,39 @@ export function createDocumentReceiptRenderer({
     // Row gaps mirror the draw loop's spacing exactly (rowGap between each
     // populated row-group) so the measured box height never runs short of
     // what actually gets drawn into it.
-    const textHeight = lesson
-      // Each row-group contributes its gap only when the group exists — the
-      // eyebrow's gap used to be unconditional, which reserved a blank row on a
-      // card that has no eyebrow at all.
-      ? eyebrowLines.length * theme.action.eyebrowLineHeight
-        + (eyebrowLines.length ? theme.action.rowGap : 0)
-        + (taxonomy?.heightPx ?? 0) + (taxonomy ? theme.action.rowGap : 0)
-        + labelLines.length * titleLineHeight + (descriptionLines.length ? theme.action.rowGap : 0)
-        + descriptionLines.length * theme.action.descriptionLineHeight + (metaLines.length ? theme.action.rowGap : 0)
-        + metaLines.length * theme.text.codeLineHeight + 10
-      : labelLines.length * titleLineHeight;
     const iconHeight = icon ? theme.action.iconPx : 0;
-    const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
-      + codeLines.length * theme.text.codeLineHeight;
+    // A panel code is a CELL hung off the QR box (shared border, no gap); a raw
+    // token is loose lines under it. Different shapes, so different heights.
+    const codeBlockHeight = theme.action.codeAreaPx + (panelCode
+      ? theme.action.codeCellHeight
+      : (codeLines.length ? theme.action.codeGap + codeLines.length * theme.text.codeLineHeight : 0));
+    // A LESSON CARD IS STACKED BANDS, not one tall text column beside a QR:
+    //
+    //   [ breadcrumb — full width                    ]
+    //   [ QR + code cell | title + description       ]
+    //   [ progress bars — full width                 ]
+    //   [ footer rule + action label                 ]
+    //
+    // Measuring band by band is what lets the breadcrumb have the whole width
+    // without colliding with the title, and guarantees the QR column is never
+    // clipped by the code cell hanging off it — the old model took a single
+    // `max(text, icon, code)` and any band that grew past it printed through
+    // the floor.
+    const headerBand = (eyebrowLines.length
+      ? eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap
+      : 0)
+      + (taxonomy ? taxonomy.heightPx + theme.action.rowGap : 0);
+    const titleColumn = unitLines.length * theme.action.unitLineHeight
+      + labelLines.length * titleLineHeight
+      + (descriptionLines.length ? theme.action.rowGap : 0)
+      + descriptionLines.length * theme.action.descriptionLineHeight;
+    const mainBand = Math.max(codeBlockHeight, titleColumn);
+    const progressBand = progressRows.length ? theme.action.rowGap + progressHeight : 0;
+    // 14 is the footer rule and its breathing room, matching the draw.
+    const footerBand = metaRowCount
+      ? theme.action.rowGap + 14 + metaRowCount * theme.text.codeLineHeight
+      : 0;
+
     return {
       kind: 'action',
       blockType: block.type,
@@ -336,6 +387,8 @@ export function createDocumentReceiptRenderer({
       lesson,
       eyebrowLines,
       labelLines,
+      unitLines,
+      unitIndent,
       descriptionLines,
       descriptionIndent,
       metaLines,
@@ -344,10 +397,17 @@ export function createDocumentReceiptRenderer({
       metaRowCount,
       rail,
       taxonomy,
+      progressRows,
+      headerBand,
+      mainBand,
+      progressBand,
+      footerBand,
       codeLines,
       panelCode,
-      heightPx: Math.max(textHeight, iconHeight, codeBlockHeight) + 2 * theme.action.padding
-        + (metaLines.length ? 14 : 0)
+      heightPx: (lesson
+        ? headerBand + mainBand + progressBand + footerBand
+        : Math.max(labelLines.length * titleLineHeight, iconHeight, codeBlockHeight))
+        + 2 * theme.action.padding
         + (rail ? theme.action.railHeight : 0),
     };
   }
@@ -373,6 +433,7 @@ export function createDocumentReceiptRenderer({
           else ops.push({
             ...textOps(ctx, part.text, { font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight }),
             compactReview: /^-\s+\d+:/.test(block.md),
+            align: block.align ?? null,
           });
         }
         break;
@@ -457,6 +518,16 @@ export function createDocumentReceiptRenderer({
   async function createCanvas(document, { tokens = null } = {}) {
     const fontConfig = {
       fontDir, fontFile: theme.fonts.fontPath, fontFamily: theme.fonts.family,
+      extraFonts: [
+        // Same family, bold weight — this is what makes every `bold` in the
+        // theme actually bold rather than silently resolving to the Regular.
+        ...(theme.fonts.boldFontPath
+          ? [{ file: theme.fonts.boldFontPath, family: theme.fonts.family, weight: 'bold' }]
+          : []),
+        ...(theme.fonts.codeFontPath
+          ? [{ file: theme.fonts.codeFontPath, family: theme.fonts.codeFamily }]
+          : []),
+      ],
     };
     const { ctx: scratch } = await initCanvas({ width: 1, height: 1, ...fontConfig });
 
@@ -653,7 +724,15 @@ export function createDocumentReceiptRenderer({
       }
       if (op.kind === 'text') {
         ctx.font = op.font;
-        op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
+        if (op.align === 'center') {
+          ctx.textAlign = 'center';
+          op.lines.forEach((line, index) => ctx.fillText(
+            line, x + contentWidth / 2, op.yPx + index * op.lineHeight,
+          ));
+          ctx.textAlign = 'left';
+        } else {
+          op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
+        }
         continue;
       }
       if (op.kind === 'math') {
@@ -904,7 +983,12 @@ export function createDocumentReceiptRenderer({
       if (op.rail) {
         ctx.save();
         ctx.fillStyle = theme.colors.text;
-        ctx.fillRect(x, op.yPx, contentWidth, railHeight);
+        // Flush with the box's OUTER edge, not its path. `strokeRect` straddles
+        // the path it is given, so a `borderWidth: 3` box actually reaches half
+        // a stroke beyond `x` on each side — a rail filled at exactly `x` sits
+        // visibly inset from the border it is supposed to cap.
+        const halfBorder = theme.action.borderWidth / 2;
+        ctx.fillRect(x - halfBorder, op.yPx, contentWidth + 2 * halfBorder, railHeight);
         ctx.fillStyle = theme.colors.headerText;
         ctx.font = theme.fonts.rail;
         ctx.textAlign = 'left';
@@ -916,13 +1000,36 @@ export function createDocumentReceiptRenderer({
       ctx.strokeStyle = theme.colors.border;
       ctx.strokeRect(x, boxTop, contentWidth, boxHeight);
 
-      const codeX = op.lesson
-        ? x + theme.action.padding
-        : x + contentWidth - theme.action.padding - theme.action.codeAreaPx;
-      const codeY = boxTop + theme.action.padding;
+      // Band cursor. Every lesson band advances this; nothing is positioned
+      // from a running text baseline any more, which is what let the old layout
+      // drift when one band grew.
+      let bandY = boxTop + theme.action.padding;
+      const innerX = x + theme.action.padding;
+      const innerRight = x + contentWidth - theme.action.padding;
+
+      if (op.lesson) {
+        if (op.eyebrowLines.length) {
+          const eyebrowText = op.eyebrowLines[0];
+          const eyebrowCenterY = bandY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
+          drawActionIndicator(eyebrowText, innerX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
+          ctx.font = theme.fonts.eyebrow;
+          op.eyebrowLines.forEach((line, index) => ctx.fillText(
+            line, innerX + 24, bandY + index * theme.action.eyebrowLineHeight,
+          ));
+          bandY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        }
+        if (op.taxonomy) {
+          // eslint-disable-next-line no-await-in-loop
+          await drawTaxonomy(op.taxonomy, innerX, bandY);
+          bandY += op.taxonomy.heightPx + theme.action.rowGap;
+        }
+      }
+
+      const codeX = op.lesson ? innerX : innerRight - theme.action.codeAreaPx;
+      const codeY = op.lesson ? bandY : boxTop + theme.action.padding;
       let labelX = op.lesson
         ? codeX + theme.action.codeAreaPx + theme.action.lessonTextGap
-        : x + theme.action.padding;
+        : innerX;
       if (op.icon && !op.lesson) {
         // eslint-disable-next-line no-await-in-loop
         const iconImage = await loadImage(op.icon);
@@ -935,26 +1042,19 @@ export function createDocumentReceiptRenderer({
         );
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
-      let labelY = boxTop + theme.action.padding;
-      if (op.lesson) {
-        // No eyebrow, no row and NO INDICATOR. The indicator used to be drawn
-        // unconditionally against `eyebrowLines[0] ?? ''`, so a card without an
-        // eyebrow got a sun floating beside nothing.
-        if (op.eyebrowLines.length) {
-          // Sun optically centered on the eyebrow text's own cap-height, not the
-          // font's line box — see textOpticalCenter. Was a flat "+11" that
-          // landed the sun visibly below the word (printed-copy feedback).
-          const eyebrowText = op.eyebrowLines[0];
-          const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
-          drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
-          ctx.font = theme.fonts.eyebrow;
-          op.eyebrowLines.forEach((line, index) => ctx.fillText(
-            line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
-          ));
-          labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
-        }
-        await drawTaxonomy(op.taxonomy, labelX, labelY);
-        labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? theme.action.rowGap : 0);
+      let labelY = op.lesson ? bandY : boxTop + theme.action.padding;
+      if (op.unitLines?.length) {
+        // Marker on the first line only — it labels the run, and repeating it
+        // per wrapped line would read as a bulleted list of units.
+        ctx.fillStyle = theme.colors.text;
+        const markerY = labelY + textOpticalCenter(ctx, theme.fonts.unitLabel, op.unitLines[0])
+          - theme.action.unitMarkerSize / 2;
+        ctx.fillRect(labelX, markerY, theme.action.unitMarkerSize, theme.action.unitMarkerSize);
+        ctx.font = theme.fonts.unitLabel;
+        op.unitLines.forEach((line, index) => ctx.fillText(
+          line, labelX + op.unitIndent, labelY + index * theme.action.unitLineHeight,
+        ));
+        labelY += op.unitLines.length * theme.action.unitLineHeight;
       }
       const titleFont = op.lesson ? theme.fonts.lessonTitle : theme.fonts.label;
       const titleLineHeight = op.lesson ? theme.action.titleLineHeight : theme.text.bodyLineHeight;
@@ -966,7 +1066,67 @@ export function createDocumentReceiptRenderer({
         op.descriptionLines.forEach((line, index) => ctx.fillText(
           line, labelX + op.descriptionIndent, labelY + index * theme.action.descriptionLineHeight,
         ));
-        labelY += op.descriptionLines.length * theme.action.descriptionLineHeight + (op.metaLines.length ? theme.action.rowGap : 0);
+        // Past the whole QR/title band — the taller of the two columns, not
+        // whichever one this code path happened to walk down.
+        bandY += op.mainBand;
+
+        if (op.progressRows.length) {
+          bandY += theme.action.rowGap;
+          for (const row of op.progressRows) {
+            const complete = row.completed >= row.total;
+            ctx.fillStyle = theme.colors.text;
+            ctx.font = theme.fonts.eyebrow;
+            ctx.textAlign = 'left';
+            ctx.fillText(`${String(row.label).toUpperCase()}${complete ? ' COMPLETE' : ''}`, innerX, bandY);
+            ctx.textAlign = 'right';
+            ctx.font = theme.fonts.code;
+            // POSITION, not a tally: "35 of 366" is where the child IS. The
+            // agenda used to print `34/366` — how many are behind them, which
+            // is not the thing they act on.
+            ctx.fillText(`${activeProgressPosition(row)} of ${row.total}`, innerRight, bandY);
+            ctx.textAlign = 'left';
+            const barY = bandY + theme.action.progressLabelHeight;
+            const barW = innerRight - innerX;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(innerX, barY, barW, theme.action.progressBarHeight);
+            const filled = Math.max(0, Math.min(1, row.completed / row.total)) * barW;
+            if (filled > 0) ctx.fillRect(innerX, barY, filled, theme.action.progressBarHeight);
+            // THE PRESENT TENSE. Solid is finished and empty is untouched; the
+            // unit a child is actually inside is neither, and filing it with
+            // "never opened" is what this hatch fixes. Vertical stripes, not an
+            // outline — the empty track is already an outline.
+            const active = Number.isInteger(row.inProgress) ? row.inProgress : 0;
+            if (active > 0 && row.completed + active <= row.total) {
+              const hatchEnd = innerX + ((row.completed + active) / row.total) * barW;
+              ctx.save();
+              ctx.lineWidth = theme.result.progressHatchWidth;
+              for (let hx = innerX + filled + theme.result.progressHatchPitch / 2; hx < hatchEnd;
+                hx += theme.result.progressHatchPitch) {
+                ctx.beginPath();
+                ctx.moveTo(hx, barY);
+                ctx.lineTo(hx, barY + theme.action.progressBarHeight);
+                ctx.stroke();
+              }
+              ctx.restore();
+            }
+            // Ticks only while they can still be told apart — see
+            // `progressTickMax`. At 366 lessons each tick is a third of a pixel
+            // and the bar prints as a smudge.
+            if (row.total <= theme.action.progressTickMax) {
+              ctx.lineWidth = 2;
+              for (let i = 1; i < row.total; i += 1) {
+                const tx = innerX + (i / row.total) * barW;
+                ctx.beginPath();
+                ctx.moveTo(tx, barY);
+                ctx.lineTo(tx, barY + theme.action.progressBarHeight);
+                ctx.stroke();
+              }
+            }
+            bandY += theme.action.progressLabelHeight + theme.action.progressBarHeight
+              + theme.action.progressRowGap;
+          }
+        }
+
         if (op.metaParts.length) {
           // Bottom-pinned, but pinned by the WHOLE footer group rather than by
           // one assumed row — a stacked footer that only reserved one row would
@@ -975,8 +1135,8 @@ export function createDocumentReceiptRenderer({
             - op.metaRowCount * theme.text.codeLineHeight;
           ctx.beginPath();
           ctx.lineWidth = 2;
-          ctx.moveTo(labelX, footerY - 7);
-          ctx.lineTo(x + contentWidth - theme.action.padding, footerY - 7);
+          ctx.moveTo(innerX, footerY - 7);
+          ctx.lineTo(innerRight, footerY - 7);
           ctx.stroke();
           ctx.font = theme.fonts.code;
           ctx.textAlign = 'left';
@@ -988,32 +1148,36 @@ export function createDocumentReceiptRenderer({
           const scanIconY = scanCenterY - SCAN_ICON_CENTER_Y;
           const layout = op.metaLayout;
           if (layout.mode === 'single') {
-            const footerRight = x + contentWidth - theme.action.padding;
+            const footerRight = innerRight;
             const groupWidth = 17 + 8 + ctx.measureText(layout.lead).width;
-            const groupX = labelX + (footerRight - labelX - groupWidth) / 2;
+            const groupX = innerX + (footerRight - innerX - groupWidth) / 2;
             drawScanIndicator(groupX, scanIconY);
             ctx.fillText(layout.lead, groupX + 25, footerY);
           } else if (layout.mode === 'inline') {
             // Both halves measured as fitting — the original two-ends layout.
-            drawScanIndicator(labelX, scanIconY);
-            ctx.fillText(layout.lead, labelX + 25, footerY);
+            drawScanIndicator(innerX, scanIconY);
+            ctx.fillText(layout.lead, innerX + 25, footerY);
             ctx.textAlign = 'right';
-            ctx.fillText(layout.restLines[0], x + contentWidth - theme.action.padding, footerY);
+            ctx.fillText(layout.restLines[0], innerRight, footerY);
           } else {
             // Too long to share a row. The action label keeps the icon row; the
             // progress text drops underneath, left-aligned to the same column
             // rather than right-aligned, so a wrapped second line does not read
             // as a separate ragged column.
-            drawScanIndicator(labelX, scanIconY);
-            ctx.fillText(layout.lead, labelX + 25, footerY);
+            drawScanIndicator(innerX, scanIconY);
+            ctx.fillText(layout.lead, innerX + 25, footerY);
             layout.restLines.forEach((line, index) => ctx.fillText(
-              line, labelX, footerY + (index + 1) * theme.text.codeLineHeight,
+              line, innerX, footerY + (index + 1) * theme.text.codeLineHeight,
             ));
           }
           ctx.textAlign = 'left';
         }
       }
 
+      // Same stroke as the code cell hanging beneath it — these two share an
+      // edge, and a 2px box above a 3px cell reads as a misprint.
+      ctx.lineWidth = theme.action.borderWidth;
+      ctx.strokeStyle = theme.colors.border;
       ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
 
       if (scanCodes === 'qr') {
@@ -1034,17 +1198,34 @@ export function createDocumentReceiptRenderer({
         ctx.restore();
       }
 
-      // A six-digit panel code is something a child reads off the paper and
-      // types on a wall panel — it gets the larger, centred treatment under
-      // its QR, where a chunked fallback token stays small and left-aligned.
-      const centredCode = Boolean(op.panelCode);
-      ctx.font = centredCode ? theme.fonts.panelCode : theme.fonts.code;
-      ctx.textAlign = centredCode ? 'center' : 'left';
-      const codeTextX = centredCode ? codeX + theme.action.codeAreaPx / 2 : codeX;
-      op.codeLines.forEach((line, index) => ctx.fillText(
-        line, codeTextX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
-      ));
-      ctx.textAlign = 'left';
+      if (op.panelCode) {
+        // The code is the QR's FALLBACK, so it is drawn as the QR's second
+        // row: a cell hung directly off the box, sharing its bottom border, so
+        // the pair reads as one stacked control. It used to float in open space
+        // below the box, which on a multi-offer agenda made it a bare number
+        // with no visible referent — a child could not tell which card's code
+        // it was.
+        const cellY = codeY + theme.action.codeAreaPx;
+        ctx.lineWidth = theme.action.borderWidth;
+        ctx.strokeStyle = theme.colors.border;
+        ctx.strokeRect(codeX, cellY, theme.action.codeAreaPx, theme.action.codeCellHeight);
+        ctx.fillStyle = theme.colors.text;
+        ctx.font = theme.fonts.panelCode;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(op.panelCode, codeX + theme.action.codeAreaPx / 2, cellY + theme.action.codeCellHeight / 2);
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+      } else {
+        // A chunked raw token is not a thing anyone types — it is there so a
+        // grown-up can read the ticket off the tape. Small and left-aligned,
+        // exactly as before.
+        ctx.font = theme.fonts.code;
+        ctx.textAlign = 'left';
+        op.codeLines.forEach((line, index) => ctx.fillText(
+          line, codeX, codeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
+        ));
+      }
     }
 
     return { canvas, width: theme.canvas.width, height, cutPoints, codes, drawnMath };

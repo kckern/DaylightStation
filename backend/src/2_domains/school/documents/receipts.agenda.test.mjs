@@ -31,6 +31,37 @@ describe('agendaDocument lesson cards', () => {
     expect(lessonCard(build([section()])).eyebrow).toBeNull();
   });
 
+  it('prints the offer\'s OWN action label, never a wording of its own', () => {
+    // This is what makes the wording configurable per course — "Learn at the
+    // Piano" reaches the paper only because the card prints `actionLabel`
+    // verbatim rather than deciding for itself. It is pinned because the
+    // failure mode is silent: a card that quietly substitutes its own words
+    // still prints, and looks fine, and is wrong.
+    const doc = build([section({
+      next: { unitId: 'u1', title: 'Rhythm', actionLabel: 'learn at the piano' },
+    })]);
+    expect(lessonCard(doc).meta).toBe('LEARN AT THE PIANO');
+  });
+
+  it('falls back to SCAN TO PRINT when an offer names no action', () => {
+    // The fallback describes what scanning DOES — it prints a worksheet. (It
+    // was briefly changed to "scan to start" on the theory that the child is
+    // already holding printed paper, which confuses the agenda with what the
+    // scan produces.)
+    expect(lessonCard(build([section()])).meta).toBe('SCAN TO PRINT');
+  });
+
+  it('keeps progress off the action row', () => {
+    // The progress label used to ride here as `<action> · 34/366 · next:
+    // <title>`, which is what collided with itself in the footer and repeated
+    // the card's own title. Progress belongs to the bars now.
+    const doc = build([section({
+      progressLabel: '34/366 · next: Rhythm',
+      next: { unitId: 'u1', title: 'Rhythm', actionLabel: 'learn at the piano' },
+    })]);
+    expect(lessonCard(doc).meta).not.toMatch(/34\/366|next:/);
+  });
+
   it('rails a catch-up offer', () => {
     expect(lessonCard(build([section({ catchUp: true })])).rail).toBe('Catch-up');
   });

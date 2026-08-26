@@ -287,9 +287,11 @@ describe('PianoCourseProgramLauncher progress rows', () => {
     ), '2026-08-25T20:00:00Z');
 
     const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    // `inProgress` is `progressRows.mjs`'s hatch — the segment the learner is
+    // standing in, which is NOT counted in `completed`. The location a surface
+    // renders is the two added together (`activeProgressPosition`): unit 2 of 4.
     expect(course).toMatchObject({
-      scope: 'course', label: 'Course', measures: 'unit',
-      completed: 1, total: 4, position: 2,
+      scope: 'course', label: 'Course', completed: 1, total: 4, inProgress: 1,
     });
   });
 
@@ -301,8 +303,8 @@ describe('PianoCourseProgramLauncher progress rows', () => {
 
     const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
     expect(rows[1]).toMatchObject({
-      scope: 'module', label: 'Unit 2 · Chords & the Grand Staff', measures: 'lesson',
-      completed: 4, total: 10, position: 5,
+      scope: 'module', label: 'Unit 2 · Chords & the Grand Staff',
+      completed: 4, total: 10, inProgress: 1,
     });
   });
 
@@ -317,20 +319,50 @@ describe('PianoCourseProgramLauncher progress rows', () => {
     ), '2026-08-25T20:00:00Z');
 
     const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
-    expect(rows[0]).toMatchObject({ measures: 'unit', completed: 1, total: 3, position: 2 });
-    expect(rows[1]).toMatchObject({ measures: 'lesson', completed: 12, total: 23, position: 13 });
+    expect(rows[0]).toMatchObject({ completed: 1, total: 3, inProgress: 1 });
+    expect(rows[1]).toMatchObject({ completed: 12, total: 23, inProgress: 1 });
   });
 
-  it('marks the deepest row as the one holding the learner right now', async () => {
+  it('hatches the segment the learner is in, on every scale at once', async () => {
     const launcher = launcherFor(courseOf(
       unit(1, 'Unit 1', 4, 4),
       unit(2, 'Unit 2', 4, 1),
     ), '2026-08-25T20:00:00Z');
 
     const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
-    // The unit row is where the learner stands; the course row is its context.
-    expect(rows[0].current).toBeUndefined();
-    expect(rows[1].current).toBe(true);
+    // Both scales hatch, because both are true at once: the learner is inside
+    // unit 2 of the course AND inside a lesson of that unit. An earlier draft
+    // marked only the deepest row, which read as though the course bar had no
+    // opinion about where they were.
+    expect(rows[0]).toMatchObject({ completed: 1, total: 2, inProgress: 1 });
+    expect(rows[1]).toMatchObject({ completed: 1, total: 4, inProgress: 1 });
+  });
+
+  it('hatches the first unfinished unit, not the last finished one', async () => {
+    // Two units done and a third untouched does NOT mean "no present tense":
+    // the learner's next lesson lives in unit 3, so unit 3 is where they are
+    // standing. Solid 2, hatched 1 — a location of "unit 3 of 3".
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1', 4, 4),
+      unit(2, 'Unit 2', 4, 4),
+      unit(3, 'Unit 3', 4),
+    ), '2026-08-25T20:00:00Z');
+
+    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(course).toMatchObject({ completed: 2, total: 3, inProgress: 1 });
+  });
+
+  it('drops the hatch entirely once the course is finished', async () => {
+    // A finished course is all past tense — `inProgressSegments` returns 0 when
+    // `completed` meets `total`, so nothing is left to be standing in.
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1', 4, 4),
+      unit(2, 'Unit 2', 4, 4),
+    ), '2026-08-25T20:00:00Z');
+
+    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(course).toMatchObject({ completed: 2, total: 2 });
+    expect(course.inProgress).toBe(0);
   });
 
   it('does not count a reference unit the learner never advances through', async () => {
@@ -346,7 +378,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
     }, '2026-08-25T20:00:00Z');
 
     const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
-    expect(course).toMatchObject({ measures: 'unit', total: 2, position: 2 });
+    expect(course).toMatchObject({ completed: 1, total: 2, inProgress: 1 });
   });
 
   it('keeps the lesson reading for a course with no units at all', async () => {
@@ -364,7 +396,7 @@ describe('PianoCourseProgramLauncher progress rows', () => {
     const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      scope: 'course', measures: 'lesson', completed: 1, total: 3, position: 2, current: true,
+      scope: 'course', completed: 1, total: 3, inProgress: 1,
     });
   });
 
