@@ -344,7 +344,61 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
     inputRef.current = input;
   }, [pickInput]);
 
+  // True when the piano-bridge APK is the OUT path AND we are not the note-in
+  // path — i.e. the browser needs Web MIDI for nothing at all.
+  //
+  // 2026-08-26: Android exposes ONE BluetoothGatt for the JamCorder, shared by the
+  // APK and Chromium, and it permits one outstanding GATT operation at a time. A
+  // Web MIDI acquisition racing a BLE reconnect stalls an operation and blocks the
+  // queue behind it, so every ATT Write Command (all MIDI OUT) is silently dropped
+  // while notifications (MIDI IN) keep flowing — inbound data doesn't use that
+  // queue. That is the one-way outage, and it survived 104 reconnects, a radio
+  // bounce, and reboots of BOTH endpoints. Parking Chromium so it held no Web MIDI
+  // let the SAME radio bounce recover the link on the first try.
+  //
+  // So the fix is not another recovery rung: it is to stop being the second GATT
+  // client. Since 2026-08-23 nothing here needs Web MIDI — notes arrive over the
+  // bridge WebSocket, sends go out through the bridge.
+  const bridgeOwnsOut = useCallback(() => !acquireInput && bridgeOutUp(), [acquireInput]);
+
+  // Give back every Web MIDI handle we hold. Closing the PORTS is the part that
+  // matters: Android reference-counts the device, so an unclosed port keeps the
+  // shared GATT client alive (observed: Chromium holding 9 listeners / 6 device
+  // connections to a one-device list, with the same device listed twice).
+  const relinquishWebMidi = useCallback(() => {
+    const access = accessRef.current;
+    const inp = inputRef.current;
+    const out = outputRef.current;
+    if (!access && !inp && !out) return false;
+    if (rebindTimerRef.current) { clearTimeout(rebindTimerRef.current); rebindTimerRef.current = null; }
+    try { if (access) access.onstatechange = null; } catch { /* ignore */ }
+    if (inp) {
+      try { inp.onmidimessage = null; } catch { /* ignore */ }
+      try { const p = inp.close?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+    }
+    if (out) {
+      try { const p = out.close?.(); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+    }
+    accessRef.current = null;
+    inputRef.current = null;
+    outputRef.current = null;
+    setInputName(null);
+    setOutputName(null);
+    logger().info('midi.webmidi-released', { reason: 'bridge-owns-out' });
+    return true;
+  }, []);
+
   const connect = useCallback(async () => {
+    // Bridge owns OUT → never create the second GATT client. Report connected so
+    // the provider's idle→connect trigger settles and OUT-gated consumers re-assert.
+    if (bridgeOwnsOut()) {
+      relinquishWebMidi();
+      setStatus('connected');
+      setOutputConnected(true);
+      setBindingGeneration((generation) => generation + 1);
+      logger().info('midi.webmidi-skipped', { reason: 'bridge-owns-out' });
+      return { ok: true, via: 'bridge' };
+    }
     if (typeof navigator === 'undefined' || !navigator.requestMIDIAccess) {
       setStatus('unsupported');
       logger().warn('midi.unsupported', {});
@@ -398,7 +452,7 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
       setBindingGeneration((generation) => generation + 1);
       return { ok: false, reason: 'denied', error: err?.message };
     }
-  }, [bindInput, bindOutput, acquireInput, holdInputForOutput]);
+  }, [bindInput, bindOutput, acquireInput, holdInputForOutput, bridgeOwnsOut, relinquishWebMidi]);
 
   // Manual recover: drop the current bindings and re-request MIDI access from
   // scratch, so a broken/half link (e.g. input bound but output missing) is
@@ -458,6 +512,15 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   useEffect(() => {
     if (status !== 'connected') return undefined;
     const t = setInterval(() => {
+      // Bridge owns OUT → hold no Web MIDI at all, and police nothing here (the
+      // APK's loopback is the OUT verdict). This is also the boot-race catch:
+      // bridgeOutUp() only turns true after the first successful probe, which is
+      // not a React signal, so a page that grabbed Web MIDI before then gives it
+      // back on the next tick rather than keeping the shared GATT client alive.
+      if (bridgeOwnsOut()) {
+        if (relinquishWebMidi()) setOutputConnected(true);
+        return;
+      }
       // Re-bind when the output is missing OR not delivering (a stale flapped
       // port, or a handle stuck pending), so a silently-dead output self-heals
       // instead of swallowing sends.
@@ -512,7 +575,8 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
       }
     }, 2000);
     return () => clearInterval(t);
-  }, [status, bindOutput, armInput, handleRawMidi, acquireInput, holdInputForOutput, resetLink]);
+  }, [status, bindOutput, armInput, handleRawMidi, acquireInput, holdInputForOutput, resetLink,
+    bridgeOwnsOut, relinquishWebMidi]);
 
   // ── Outbound (timbre + studio playback) ──────────────────────────────
   const sendProgramChange = useCallback((program, channel = 0) => {
