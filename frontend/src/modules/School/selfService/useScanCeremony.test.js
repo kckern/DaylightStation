@@ -356,4 +356,36 @@ describe('useScanCeremony', () => {
     });
     expect(result.current.current).toBeNull();
   });
+  // A story finished at the living-room TV. Same requirement as the piano
+  // ceremony it follows: a child working away from this panel must still see
+  // that it counted on the board that tracks their day.
+  it('shows a story read, naming the book', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'school', event: 'story-read', learnerId: 'learner-c',
+        title: 'Frog and Toad', contentId: 'plex:620681', studyDay: '2026-08-26', pickId: 'pick_1',
+      });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Story read!' });
+    expect(result.current.current.detail).toContain('Frog and Toad');
+  });
+
+  it('shows a story read with no title at all rather than nothing', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'school', event: 'story-read', learnerId: 'learner-c', title: null });
+    });
+    expect(result.current.current).toMatchObject({ tone: 'success', title: 'Story read!' });
+  });
+
+  // The read is the evidence; the banner is the courtesy. `printed` belongs to
+  // graded sheets and must not silence an event that never touches a printer.
+  it('is never suppressed by a printed flag riding along', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'school', event: 'story-read', title: 'Corduroy', printed: true });
+    });
+    expect(result.current.current).not.toBeNull();
+  });
 });
