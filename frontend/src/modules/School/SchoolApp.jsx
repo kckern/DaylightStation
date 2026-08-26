@@ -1044,8 +1044,17 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
             mode omits the whole header, apple included), so without this there
             is NO way back to the keypad — the never-dead-end rule, broken by
             the one action that opens a section rather than a runner. Runners
-            carry their own onExit; a section does not. */}
-        {lock.locked && section && !active && !courseId && (
+            carry their own onExit; a section does not.
+
+            NOT ON A PREVIEW. `launch-preview:<payload>` is a section like any
+            other as far as the router is concerned, so a locked Portal drew
+            this over the preview card — a live, full-strength "Done" sitting on
+            a screen whose own banner says nothing here is live, and the THIRD
+            way off one screen after "Leave preview" and the card's "Go back".
+            The preview already carries its exit in the band above the card,
+            deliberately outside it, so the never-dead-end rule is satisfied
+            without this: the honest fix is not to draw it. */}
+        {lock.locked && section && !launchPreviewLink && !active && !courseId && (
           <button
             type="button"
             className="school-selfservice-card__action school-selfservice-card__action--exit school-app__locked-exit"
