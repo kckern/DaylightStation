@@ -36,6 +36,9 @@
  * @module applications/school/PianoCourseProgramLauncher
  */
 import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+// The present-tense rule (what counts as "the one you are inside") lives in the
+// domain so the agenda card and the result receipt cannot disagree about it.
+import { inProgressSegments, activeProgressPosition } from '#domains/school/progressRows.mjs';
 
 /** The household's study day rolls at 4am, same as the rest of the agenda. */
 const BOUNDARY_HOUR = 4;
@@ -361,68 +364,82 @@ export class PianoCourseProgramLauncher {
   }
 
   /**
+  /**
    * WHERE THE LEARNER IS, NOT HOW BIG THE COURSE IS.
    *
    * This used to report "34 of 366" — every lesson in Hoffman Academy as the
-   * denominator. True, and useless to a seven-year-old: the number barely moves
-   * from one week to the next and names nothing they recognise. The card now
-   * reports the two facts a child can actually place themselves by — which UNIT
-   * of the course they are in, and which LESSON of that unit they are on.
+   * denominator. True, and useless to a seven-year-old: 366 of anything is a
+   * wall rather than a journey, and one lesson moves the bar by a quarter of a
+   * pixel. The course row counts UNITS instead — the scale the course is
+   * actually organised in, and the scale progress is felt at.
    *
-   * Both readings ship on every row rather than one replacing the other:
-   * `position` is where the learner stands (the item in progress), `completed`
-   * is how much is genuinely behind them. They differ — you are ON unit 2 with
-   * only unit 1 finished — and collapsing them would make one of the two a lie.
-   * `measures` names the unit of account so no surface has to infer it from
-   * `scope`.
+   * PAST / PRESENT / FUTURE IS NOT DECIDED HERE. `progressRows.mjs` is the
+   * house's single rule for what a hatched segment means, already shared with
+   * the result receipt, the agenda and all three renderers. A launcher that
+   * decided it privately would be a second surface answering a question that
+   * already has one answer — the exact defect class this file has paid for
+   * before. `inProgress` is that rule's output, not a local opinion.
    *
-   * A course whose lessons carry no unit at all keeps the old lesson-count
-   * reading: inventing a single synthetic "Unit 1 of 1" would be noise, and most
-   * courses in the house are not unit-structured.
+   * A unit is complete only when every crediting item in it is watched; a
+   * partly-done unit is the hatched one, never a solid one.
+   *
+   * A course whose lessons carry NO unit keeps the lesson-count reading.
+   * `orderedUnits` drops parentless items, so an unstructured course yields no
+   * units at all — and a synthetic "1 of 1" that sits at zero until the entire
+   * course is finished tells a child less than the honest lesson count does.
    */
   #progress({ focus, credit, parents, completed, total }) {
+    // One row, built to the house's shared convention. `position` is
+    // `activeProgressPosition`'s answer rather than a second derivation of it:
+    // the screen words a location ("Unit 2 of 18") where paper draws a bar, and
+    // both must mean the same thing. `measures` names the unit of account,
+    // because "Unit 2 of 18" and "13 of 23" are not the same sentence and
+    // `scope` alone cannot tell them apart on an un-unitised course.
+    const row = ({ scope, label, measures, completed: done, total: all, currentComplete }) => {
+      const inProgress = inProgressSegments({ completed: done, total: all, currentComplete });
+      return {
+        scope,
+        label,
+        measures,
+        completed: done,
+        total: all,
+        inProgress,
+        position: activeProgressPosition({ completed: done, total: all, inProgress }),
+      };
+    };
     const units = orderedUnits(credit, parents);
-    const unitIndex = focus?.parentId != null
-      ? units.findIndex((unit) => unit.id === String(focus.parentId))
-      : -1;
-    const rows = units.length
-      ? [{
-        scope: 'course',
-        label: 'Course',
-        measures: 'unit',
-        completed: units.filter((unit) => unit.lessons.every((item) => item.userWatched)).length,
-        total: units.length,
-        ...(unitIndex >= 0 ? { position: unitIndex + 1 } : {}),
-      }]
-      : [{
-        scope: 'course',
-        label: 'Course',
-        measures: 'lesson',
-        completed,
-        total,
-        ...(focus ? { position: credit.indexOf(focus) + 1 } : {}),
-      }];
+    const focusDone = focus?.userWatched === true;
 
-    const unit = unitIndex >= 0 ? units[unitIndex] : null;
-    if (unit) {
-      const lessonIndex = unit.lessons.indexOf(focus);
-      rows.push({
-        scope: 'module',
-        label: unit.title,
-        measures: 'lesson',
-        completed: unit.lessons.filter((item) => item.userWatched).length,
-        total: unit.lessons.length,
-        ...(lessonIndex >= 0 ? { position: lessonIndex + 1 } : {}),
-      });
+    if (!units.length) {
+      return [row({
+        scope: 'course', label: 'Course', measures: 'lesson',
+        completed, total, currentComplete: focusDone,
+      })].filter((entry) => entry.total > 0);
     }
 
-    const kept = rows.filter((row) => row.total > 0);
-    // The DEEPEST surviving row is the one holding the learner's immediate
-    // focus; its ancestors are context. Marking it here saves every surface
-    // from re-deriving "which row is live" out of row order.
-    const deepest = kept[kept.length - 1];
-    if (deepest && focus) deepest.current = true;
-    return kept;
+    const focusId = focus?.parentId == null ? null : String(focus.parentId);
+    const unit = focusId ? (units.find((entry) => entry.id === focusId) ?? null) : null;
+    const unitsDone = units.filter((entry) => entry.lessons.every((item) => item.userWatched)).length;
+    const unitComplete = !!unit && unit.lessons.every((item) => item.userWatched);
+
+    const rows = [row({
+      scope: 'course', label: 'Course', measures: 'unit',
+      completed: unitsDone, total: units.length, currentComplete: unitComplete,
+    })];
+
+    if (unit) {
+      const lessonsDone = unit.lessons.filter((item) => item.userWatched).length;
+      rows.push(row({
+        scope: 'module', label: unit.title, measures: 'lesson',
+        completed: lessonsDone, total: unit.lessons.length, currentComplete: focusDone,
+      }));
+    }
+
+    // `completed`/`total` (whole-course lessons) stay in the signature: the
+    // sentence labels above still build from them, and `progressLabel` is a
+    // paper artifact whose whole-course measure is deliberately unchanged.
+    void completed; void total;
+    return rows.filter((entry) => entry.total > 0);
   }
 
   #nowMs() {
