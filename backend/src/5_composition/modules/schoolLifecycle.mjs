@@ -115,7 +115,7 @@ import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mj
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
-import { shortId } from '#domains/core/utils/id.mjs';
+import { shortId, shortIdLower } from '#domains/core/utils/id.mjs';
 import { createSchoolLifecycleRouter } from '#api/v1/routers/schoolLifecycle.mjs';
 import { createSchoolVirtualDevicesRouter } from '#api/v1/routers/schoolVirtualDevices.mjs';
 import { createSchoolSelfServiceRouter } from '#api/v1/routers/school.selfservice.mjs';
@@ -549,7 +549,12 @@ export async function createSchoolLifecycle({
   const draw = rng ?? cryptoRng(globalThis.crypto);
   // Shared by BuildAgenda and ResolveSubjectNext so a curriculum entry opened
   // by either one gets the same shape of session id.
-  const newSessionId = () => `ses_${shortId(8)}`;
+  // LOWERCASE, and 10 chars rather than 8. `slugify` lowercases session ids to
+  // build document ids, so a mixed-case mint spelled one session two ways
+  // across the tree (`ses_hmSsHlJR` vs `ws-ses-hmsshljr`) and made that fold
+  // lossy. A lowercase alphabet makes it the identity, and 10 chars keeps the
+  // entropy above what the mixed-case 8 gave. Existing ids stay valid.
+  const newSessionId = () => `ses_${shortIdLower(10)}`;
   const curriculum = new CurriculumAccess({
     catalog: stores.catalog,
     // Read per call, never captured: banks warm asynchronously after boot, and
