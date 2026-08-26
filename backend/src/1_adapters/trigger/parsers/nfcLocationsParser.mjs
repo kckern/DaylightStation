@@ -1,9 +1,13 @@
 /**
- * Parser for triggers/nfc/locations.yml. Each top-level key is an NFC reader
- * location ID. Reserved fields (target, action, learner_action, auth_token,
- * notify_unknown, end, end_location) are extracted as first-class config; all
- * other top-level keys become the location's `defaults` object, which inherits
- * into every tag scanned at this reader.
+ * Parser for the NFC reader locations of triggers/sources.yml — the `modality:
+ * nfc` entries, handed here keyed by location by sourcesParser.parseSources.
+ * There is no triggers/nfc/locations.yml; that path predates the sources.yml
+ * layout and nothing loads it, so don't go editing one.
+ *
+ * Each key is an NFC reader location ID. Reserved fields (target, action,
+ * learner_action, auth_token, notify_unknown, end, end_location) are extracted
+ * as first-class config; all other keys become the location's `defaults`
+ * object, which inherits into every tag scanned at this reader.
  *
  * Layer: ADAPTER (1_adapters/trigger).
  *
@@ -25,7 +29,7 @@ function isPlainObject(v) {
 export function parseNfcLocations(raw) {
   if (!raw) return {};
   if (!isPlainObject(raw)) {
-    throw new ValidationError('nfc/locations.yml root must be an object', { code: 'INVALID_CONFIG_ROOT' });
+    throw new ValidationError('nfc locations must be an object', { code: 'INVALID_CONFIG_ROOT' });
   }
 
   const out = {};
@@ -62,8 +66,11 @@ export function parseNfcLocations(raw) {
       // What a SCHOOL LEARNER CARD means at this reader. The card names the
       // person; the reader decides what happens to them — print an agenda in
       // the study, open a reading session in the living room. Null means a
-      // learner card is simply not actionable here, which resolves to the
-      // ordinary unknown-tag capture rather than a silent wrong action.
+      // learner card is simply not actionable here — the intent is that it then
+      // falls to the ordinary unknown-tag capture rather than a wrong action.
+      // NfcResolver honours that today for taps arriving over HTTP; the bus
+      // ingress still forks on `school_learner` ahead of the resolver, so this
+      // holds on both paths only once that fork is deleted (Task 8).
       learner_action: locConfig.learner_action ?? null,
       auth_token: locConfig.auth_token ?? null,
       notify_unknown: locConfig.notify_unknown ?? null,
