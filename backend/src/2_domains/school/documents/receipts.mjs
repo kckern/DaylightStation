@@ -51,11 +51,13 @@ const text = (md) => ({ type: 'rich_text', md });
  * to remember, and therefore no way to separate the two.
  */
 function lessonAction({
-  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null, accessCode,
+  token, eyebrow, title, description = null, icon = null, meta = null, taxonomy = null,
+  rail = null, accessCode,
 } = {}) {
   const block = {
     type: 'scan_action', action: token, label: title,
     presentation: 'lesson', eyebrow, hideCode: true,
+    ...(isNonEmptyString(rail) ? { rail } : {}),
     ...(isNonEmptyString(description) ? { description } : {}),
     ...(isNonEmptyString(icon) ? { icon } : {}),
     ...(isNonEmptyString(meta) ? { meta } : {}),
@@ -367,7 +369,21 @@ export function agendaDocument({
     if (isNonEmptyString(token)) {
       blocks.push(...lessonAction({
         token,
-        eyebrow: `Today · ${section.subject}`,
+        // NO EYEBROW. It used to read `Today · <subject>`, which the renderer
+        // truncates at the first `·` — so it printed the single word "TODAY" on
+        // every card. Every card on this page is today's (the page IS the day),
+        // so that line restated the masthead and nothing else.
+        //
+        // Replacing it with the bare subject was no better: the taxonomy
+        // breadcrumb directly beneath already reads "Arts › Hoffman Academy
+        // Piano › Unit 3", with the subject's own SVG in the gutter. That
+        // breadcrumb is the meaningful line — it says where in the curriculum
+        // this lesson sits — and an eyebrow above it repeating the first word
+        // is duplication that costs a row and pushes the title down.
+        eyebrow: null,
+        // Catch-up work is offered exactly like today's; only this says which
+        // is which. See `agenda.mjs`'s `catchUp`.
+        rail: section.catchUp ? 'Catch-up' : null,
         title: nextTitle,
         description: next.description,
         icon: section.subject,

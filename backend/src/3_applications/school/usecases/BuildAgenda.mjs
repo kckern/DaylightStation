@@ -45,6 +45,20 @@ const HOUR_MS = 3_600_000;
 // note" and "served today" roll over on the exact same instant.
 const BOUNDARY_HOUR = 4;
 
+/**
+ * Stand-ins that let `previewOnly` render a real-shaped lesson card — QR box and
+ * code panel included — without minting anything.
+ *
+ * The token is INERT BY CONSTRUCTION: it is not in the `sch:` scheme the scan
+ * resolver accepts, so scanning a preview QR cannot match a live ticket even
+ * accidentally. The code keeps a real code's digit shape — it has to, or the
+ * panel it sits in measures differently from the printed one and the preview
+ * stops being representative — and is safe because codes RESOLVE BY LOOKUP in
+ * the registry: one that was never minted simply matches nothing.
+ */
+const PREVIEW_TOKEN = 'preview:not-a-ticket';
+const PREVIEW_ACCESS_CODE = '000000';
+
 
 export class BuildAgenda {
   // `curriculum`, `assignments`, `attestations` and `curriculumExceptions` are
@@ -287,6 +301,21 @@ export class BuildAgenda {
 
       if (this.#previewOnly) {
         actionLabelBySubject.set(section.subject, 'Preview only — ask a grown-up to start this lesson.');
+        // A PREVIEW HAS TO LOOK LIKE THE PRINT. Without a token in
+        // `tokensBySubject`, `agendaDocument` falls through to its plain
+        // "## SUBJECT / label" text branch — so the preview rendered no card,
+        // no QR and no code panel, and was useless for exactly the thing a
+        // preview is for: seeing what will come out of the printer. (Verified
+        // the hard way 2026-08-25: a layout bug in the card footer could not be
+        // reproduced through the preview endpoint at all.)
+        //
+        // The placeholders are deliberately INERT and self-describing: the
+        // token resolves to nothing, the code is not a mintable value, and the
+        // action label on the card still says "Preview only". Nothing here
+        // touches the token store or the code registry, so a preview still
+        // opens no session and burns no code.
+        tokensBySubject[section.subject] = PREVIEW_TOKEN;
+        accessCodesByToken[PREVIEW_TOKEN] = PREVIEW_ACCESS_CODE;
         offers.push({
           subject: section.subject, unitId: entry.unitId, sessionId,
           token: null, tokenClass: 'preview',

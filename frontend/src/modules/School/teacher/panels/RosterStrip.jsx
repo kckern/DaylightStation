@@ -1,21 +1,29 @@
 /**
  * RosterStrip — one card per learner from GET /teacher/today, joined with the
  * kids' roster for names (digest rows carry learnerId only, by design).
- * Tapping a card expands the LearnerDay drill-in beneath it.
+ *
+ * Tapping a card expands a COMPACT drill-in: today's sessions, and one link
+ * into the learner's day record. It deliberately does not re-render the day
+ * (UX audit IA1) — the paper records, the plan, and the earlier-day grading
+ * all live on the day record, which owns them once.
  */
 import { useState } from 'react';
 import ProfileAvatar from '../../../../lib/identity/ProfileAvatar.jsx';
-import LearnerDay from './LearnerDay.jsx';
-import { teacherBaseFor, teacherSessionPath } from '../teacherUrl.js';
+import { teacherBaseFor, teacherDayPath, teacherSessionPath } from '../teacherUrl.js';
 import { LessonIdentity } from '../CurriculumIdentity.jsx';
-import { teacherDate, humanDate, teacherTime } from '../teacherDates.js';
+import { humanDate } from '../teacherDates.js';
 
+// `reviewStatus` is 'pending' | 'complete' on the wire; this file tested for a
+// 'pending_review' that never arrives, so an unmarked session read "Not
+// graded". Accept both spellings so the fix survives a backend rename.
+const AWAITING = new Set(['pending', 'pending_review']);
 function outcomeLine(session) {
   const score = session.effectiveScore;
   if (score?.correctCount != null && score?.totalCount != null) {
-    return `${score.correctCount} of ${score.totalCount} correct${score.percent == null ? '' : ` · ${Math.round(score.percent)}%`}`;
+    // No trailing percent: "5 of 5 correct · 100%" states one fact twice.
+    return `${score.correctCount} of ${score.totalCount} correct`;
   }
-  return session.reviewStatus === 'pending_review' ? 'Awaiting review' : 'Not graded';
+  return AWAITING.has(session.reviewStatus) ? 'Awaiting review' : 'Not graded';
 }
 
 const SELF_LABEL = {
@@ -62,6 +70,14 @@ export default function RosterStrip({ rows, kids }) {
             )}
           </button>
           <span className="teacher-roster__disclosure" aria-hidden="true">{openId === row.learnerId ? '▾' : '▸'}</span>
+          {/* A learner with nothing recorded is not a dead end: the plan for
+              the day is the next thing a teacher wants to see. */}
+          {!((row.effectiveScoreTotals?.total ?? row.attemptsToday) > 0) && (
+            <a className="teacher-btn teacher-btn--quiet teacher-roster__plan-link"
+               href={teacherDayPath(row.learnerId, row.studyDay ?? undefined, base)}>
+              See today’s plan →
+            </a>
+          )}
           {/* The kid's own words about today's work (advocacy wave 7):
               reflections used to be written and read by nobody. */}
           {(row.reflectionsToday ?? []).length > 0 && (
@@ -80,11 +96,10 @@ export default function RosterStrip({ rows, kids }) {
               <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? session.title} posterUrl={session.posterUrl} compact />
               <small className="teacher-day-session__outcome">{[humanDate(session.studyDay), outcomeLine(session)].filter(Boolean).join(' · ')}</small>
             </a>)}</div>}
-            {(row.processedToday ?? []).length > 0 && <section className="teacher-processed"><h3>Processed today</h3>{row.processedToday.map((session) => <a key={session.sessionId} href={teacherSessionPath(row.learnerId, session.sessionId, base, { from: 'today' })}>
-              <LessonIdentity subject={session.subject} courseTitle={session.courseTitle} moduleTitle={session.moduleTitle} lessonTitle={session.lessonTitle ?? 'Lesson title unavailable'} posterUrl={session.posterUrl} compact />
-              <span>Work from {teacherDate(session.studyDay)} · processed {teacherTime(session.processedAt) ?? 'today'}</span>
-            </a>)}</section>}
-            <LearnerDay sessions={sessions} />
+            <a className="teacher-btn teacher-btn--quiet teacher-roster__day-link"
+               href={teacherDayPath(row.learnerId, row.studyDay ?? undefined, base)}>
+              Open the full day record →
+            </a>
           </div>}
           </>; })()}
         </div>
