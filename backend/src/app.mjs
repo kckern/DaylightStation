@@ -4163,6 +4163,12 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // D8 half: while one IS open, the location's `end: tv-off` is suppressed
     // so the ceremony gets to render before the room goes dark.
     contentInterceptors: readingSessionInterceptor ? [readingSessionInterceptor] : [],
+    // D9 — a tag that resolves to nothing never becomes a content Response, so
+    // the interceptor seam above never sees it. This is the only point that
+    // can tell the screen in front of the child "I don't know that book yet",
+    // and it runs IN ADDITION to the observed-registry write and the phone
+    // push that actually get the book enrolled.
+    onUnknownTag: (info) => readingSessionInterceptor?.noteUnknownTag(info),
     screenBroadcast: barcodeScreenBroadcast,
     commandResolver: resolveCommand,
     logger: rootLogger.child({ module: 'trigger' }),

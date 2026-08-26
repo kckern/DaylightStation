@@ -37,6 +37,7 @@ export class TriggerDispatchService {
   #contentIdResolver;
   #deps;
   #tagWriter;
+  #onUnknownTag;
   #broadcast;
   #logger;
   #debounce;
@@ -74,6 +75,12 @@ export class TriggerDispatchService {
     commandResolver = null,
     endpointGateway = null,
     learnerActions = null,
+    // D9 — told about every NFC tap that resolved to nothing, alongside the
+    // observed-registry write and the `notify_unknown` push. It ADDS to those
+    // and replaces neither: an unresolvable tag never becomes a content
+    // Response, so this is the only point in the pipeline that can tell the
+    // screen in front of the child that the book is not known yet.
+    onUnknownTag = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -85,6 +92,7 @@ export class TriggerDispatchService {
     // a dep that is not named here never reaches responseHandlers.
     this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, contentInterceptors, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
     this.#tagWriter = tagWriter;
+    this.#onUnknownTag = onUnknownTag;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
     this.#debounceWindowMs = debounceWindowMs;
@@ -378,6 +386,20 @@ export class TriggerDispatchService {
    * State 3 is unreachable here — the resolver would have produced an intent.
    */
   async #handleUnknownNfc(location, uid, locationConfig) {
+    // FIRST, and above every early return below. The "named but unmapped" tag
+    // returns out of the registry write two lines down, and there is still a
+    // child standing at the reader who tapped a book. Wrapped because this
+    // runs on the tap path with nothing to await it, and the observer is a
+    // courtesy — the registry write and the push are the part that gets the
+    // book enrolled, and neither may be lost to it.
+    try {
+      this.#onUnknownTag?.({ location, uid, modality: 'nfc' });
+    } catch (err) {
+      this.#logger.warn?.('trigger.unknown_tag.observer_failed', {
+        location, uid, error: err?.message ?? String(err),
+      });
+    }
+
     const entry = this.#config?.nfc?.tags?.[uid];
     const hasNote = typeof entry?.global?.note === 'string' && entry.global.note.length > 0;
     if (entry && hasNote) return;

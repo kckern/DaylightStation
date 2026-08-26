@@ -31,6 +31,7 @@ import { broadcastEvent, createDeviceServices, createWakeAndLoadService } from '
  * @param {Function} config.loadFile - Helper that loads YAML files relative to household dir
  * @param {Function} [config.listDir] - Lists *.yml in a household-relative dir (grouped NFC tag files)
  * @param {Object} [config.contentDispatcher] - ContentDispatcher instance (optimistic content posture; shared with barcode ingress)
+ * @param {Function} [config.onUnknownTag] - Told about every NFC tap that resolved to nothing ({location, uid, modality}), alongside the observed-registry write and the notify_unknown push (D9). Adds to them; replaces neither.
  * @param {Object[]} [config.contentInterceptors] - First refusal on a content dispatch, in order (the living-room reading session). Each may also suppress the reader location's `end` behaviour — see responseHandlers.content.
  * @param {Function} [config.screenBroadcast] - Screen-targeted broadcast helper (targetScreen, payload) used by contentDispatcher-driven flows
  * @param {Function} [config.commandResolver] - Resolves a raw scan/value string to a known command (e.g. resolveCommand)
@@ -51,6 +52,7 @@ export function createTriggerApiRouter(config) {
     saveFile,
     contentDispatcher = null,
     contentInterceptors = [],
+    onUnknownTag = null,
     screenBroadcast = null,
     commandResolver = null,
     learnerActions = null,
@@ -77,6 +79,7 @@ export function createTriggerApiRouter(config) {
     haGateway,
     deviceService: deviceServices.deviceService,
     tagWriter: triggerConfigRepository,
+    onUnknownTag,
     contentDispatcher,
     contentInterceptors,
     screenBroadcast,
