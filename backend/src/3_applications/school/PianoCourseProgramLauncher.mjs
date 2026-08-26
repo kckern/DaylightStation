@@ -71,6 +71,36 @@ const orderedCreditItems = (result) => (result?.items ?? [])
   .sort((left, right) => numericOrder(left.parentIndex) - numericOrder(right.parentIndex)
     || numericOrder(left.itemIndex) - numericOrder(right.itemIndex));
 
+/**
+ * The course's units, AS THE COURSE IS ACTUALLY WALKED.
+ *
+ * Deliberately derived from the credit items rather than from `result.parents`:
+ * that map also carries reference/practice units, which give no progression
+ * credit and which a child therefore never advances THROUGH. Counting them
+ * would put a denominator on the card the learner can never reach — "Unit 2 of
+ * 19" when only 18 units are ever in play. A unit with no creditable lesson is
+ * not a step in the sequence, so it is not a step on the card.
+ *
+ * `credit` arrives sorted by parentIndex then itemIndex, so first appearance is
+ * curriculum order and no second sort is needed.
+ */
+const orderedUnits = (credit, parents = {}) => {
+  const byId = new Map();
+  for (const item of credit) {
+    if (item.parentId == null) continue;
+    const id = String(item.parentId);
+    if (!byId.has(id)) {
+      byId.set(id, {
+        id,
+        title: item.parentTitle ?? parents?.[id]?.title ?? `Unit ${item.parentIndex ?? ''}`.trim(),
+        lessons: [],
+      });
+    }
+    byId.get(id).lessons.push(item);
+  }
+  return [...byId.values()];
+};
+
 export class PianoCourseProgramLauncher {
   #getPlayableUnits; #donow; #timezone; #clock; #logger;
 
@@ -145,6 +175,12 @@ export class PianoCourseProgramLauncher {
         timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR,
       }));
 
+    // Course-wide lesson counts, kept DELIBERATELY for `progressLabel` even
+    // though the card's progress rows no longer speak in them. The label is
+    // printed on a paper slip and read by the adult reviewing the agenda, where
+    // "34/366" is the useful figure — a stable measure of the whole course. The
+    // card is a child's kiosk panel and wants a different question answered; the
+    // two surfaces disagreeing here is the point, not an oversight.
     const total = credit.length;
     const completed = credit.filter((item) => item.userWatched).length;
     const score = total ? Math.round((completed / total) * 100) : null;
@@ -157,7 +193,7 @@ export class PianoCourseProgramLauncher {
     const common = {
       score,
       context: projection,
-      progress: this.#progress({ focus, credit, completed, total }),
+      progress: this.#progress({ focus, credit, parents: result?.parents, completed, total }),
       completedLessons,
       completedLessonsToday: completedLessons.filter((row) => row.completedAt
         && isSameStudyDay(Date.parse(row.completedAt), nowMs, {
@@ -281,18 +317,69 @@ export class PianoCourseProgramLauncher {
     return { course, unit, lesson };
   }
 
-  #progress({ focus, credit, completed, total }) {
-    const rows = [{ scope: 'course', label: 'Course', completed, total }];
-    if (focus?.parentId != null) {
-      const inUnit = credit.filter((item) => String(item.parentId) === String(focus.parentId));
+  /**
+   * WHERE THE LEARNER IS, NOT HOW BIG THE COURSE IS.
+   *
+   * This used to report "34 of 366" — every lesson in Hoffman Academy as the
+   * denominator. True, and useless to a seven-year-old: the number barely moves
+   * from one week to the next and names nothing they recognise. The card now
+   * reports the two facts a child can actually place themselves by — which UNIT
+   * of the course they are in, and which LESSON of that unit they are on.
+   *
+   * Both readings ship on every row rather than one replacing the other:
+   * `position` is where the learner stands (the item in progress), `completed`
+   * is how much is genuinely behind them. They differ — you are ON unit 2 with
+   * only unit 1 finished — and collapsing them would make one of the two a lie.
+   * `measures` names the unit of account so no surface has to infer it from
+   * `scope`.
+   *
+   * A course whose lessons carry no unit at all keeps the old lesson-count
+   * reading: inventing a single synthetic "Unit 1 of 1" would be noise, and most
+   * courses in the house are not unit-structured.
+   */
+  #progress({ focus, credit, parents, completed, total }) {
+    const units = orderedUnits(credit, parents);
+    const unitIndex = focus?.parentId != null
+      ? units.findIndex((unit) => unit.id === String(focus.parentId))
+      : -1;
+    const rows = units.length
+      ? [{
+        scope: 'course',
+        label: 'Course',
+        measures: 'unit',
+        completed: units.filter((unit) => unit.lessons.every((item) => item.userWatched)).length,
+        total: units.length,
+        ...(unitIndex >= 0 ? { position: unitIndex + 1 } : {}),
+      }]
+      : [{
+        scope: 'course',
+        label: 'Course',
+        measures: 'lesson',
+        completed,
+        total,
+        ...(focus ? { position: credit.indexOf(focus) + 1 } : {}),
+      }];
+
+    const unit = unitIndex >= 0 ? units[unitIndex] : null;
+    if (unit) {
+      const lessonIndex = unit.lessons.indexOf(focus);
       rows.push({
         scope: 'module',
-        label: focus.parentTitle ?? `Unit ${focus.parentIndex ?? ''}`.trim(),
-        completed: inUnit.filter((item) => item.userWatched).length,
-        total: inUnit.length,
+        label: unit.title,
+        measures: 'lesson',
+        completed: unit.lessons.filter((item) => item.userWatched).length,
+        total: unit.lessons.length,
+        ...(lessonIndex >= 0 ? { position: lessonIndex + 1 } : {}),
       });
     }
-    return rows.filter((row) => row.total > 0);
+
+    const kept = rows.filter((row) => row.total > 0);
+    // The DEEPEST surviving row is the one holding the learner's immediate
+    // focus; its ancestors are context. Marking it here saves every surface
+    // from re-deriving "which row is live" out of row order.
+    const deepest = kept[kept.length - 1];
+    if (deepest && focus) deepest.current = true;
+    return kept;
   }
 
   #nowMs() {

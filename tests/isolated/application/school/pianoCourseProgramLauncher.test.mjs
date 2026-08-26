@@ -247,3 +247,137 @@ describe('PianoCourseProgramLauncher launch contract', () => {
     });
   });
 });
+
+/**
+ * WHAT THE CARD'S PROGRESS ROWS MEASURE.
+ *
+ * These pin the fix for a card that told a child "34 of 366" — a number that
+ * moves by one a day out of a denominator they will never reach. The rows now
+ * answer "which unit am I in" and "which lesson of it am I on", which is the
+ * only reading a seven-year-old can place themselves by.
+ */
+describe('PianoCourseProgramLauncher progress rows', () => {
+  /** A unit of `count` lessons, the first `watched` of them already seen. */
+  const unit = (index, title, count, watched = 0) => Array.from({ length: count }, (_, i) => ({
+    id: `plex:u${index}e${i + 1}`,
+    title: `${title} — Lesson ${i + 1}`,
+    parentId: `season-${index}`,
+    parentTitle: title,
+    parentIndex: index,
+    itemIndex: i + 1,
+    isReference: false,
+    userWatched: i < watched,
+    userCompletedAt: null,
+  }));
+
+  const courseOf = (...units) => ({
+    compoundId: COURSE,
+    info: { title: 'Hoffman Academy' },
+    items: units.flat(),
+  });
+
+  it('counts UNITS on the course row, not every lesson in the course', async () => {
+    // Unit 1 finished, unit 2 half done, units 3-4 untouched: the learner is in
+    // unit 2 of 4. The old row would have said 8 of 40.
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1 · Getting Started', 10, 10),
+      unit(2, 'Unit 2 · Chords & the Grand Staff', 10, 4),
+      unit(3, 'Unit 3', 10),
+      unit(4, 'Unit 4', 10),
+    ), '2026-08-25T20:00:00Z');
+
+    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(course).toMatchObject({
+      scope: 'course', label: 'Course', measures: 'unit',
+      completed: 1, total: 4, position: 2,
+    });
+  });
+
+  it('counts LESSONS within the unit the learner is actually in', async () => {
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1 · Getting Started', 10, 10),
+      unit(2, 'Unit 2 · Chords & the Grand Staff', 10, 4),
+    ), '2026-08-25T20:00:00Z');
+
+    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(rows[1]).toMatchObject({
+      scope: 'module', label: 'Unit 2 · Chords & the Grand Staff', measures: 'lesson',
+      completed: 4, total: 10, position: 5,
+    });
+  });
+
+  it('measures each unit against its OWN length, not an average', async () => {
+    // Real courses are lumpy — Hoffman's units run from a handful of lessons to
+    // two dozen. A denominator borrowed from a sibling unit would misreport
+    // every one of them.
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1', 3, 3),
+      unit(2, 'Unit 2', 23, 12),
+      unit(3, 'Unit 3', 7),
+    ), '2026-08-25T20:00:00Z');
+
+    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(rows[0]).toMatchObject({ measures: 'unit', completed: 1, total: 3, position: 2 });
+    expect(rows[1]).toMatchObject({ measures: 'lesson', completed: 12, total: 23, position: 13 });
+  });
+
+  it('marks the deepest row as the one holding the learner right now', async () => {
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1', 4, 4),
+      unit(2, 'Unit 2', 4, 1),
+    ), '2026-08-25T20:00:00Z');
+
+    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    // The unit row is where the learner stands; the course row is its context.
+    expect(rows[0].current).toBeUndefined();
+    expect(rows[1].current).toBe(true);
+  });
+
+  it('does not count a reference unit the learner never advances through', async () => {
+    // Reference/practice units give no progression credit, so they are not
+    // steps in the sequence and must not inflate the denominator.
+    const launcher = launcherFor({
+      compoundId: COURSE,
+      items: [
+        ...unit(1, 'Unit 1', 4, 4),
+        ...unit(2, 'Unit 2', 4, 1),
+        ...unit(9, 'Practice & Reference', 6).map((item) => ({ ...item, isReference: true })),
+      ],
+    }, '2026-08-25T20:00:00Z');
+
+    const [course] = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(course).toMatchObject({ measures: 'unit', total: 2, position: 2 });
+  });
+
+  it('keeps the lesson reading for a course with no units at all', async () => {
+    // Most courses in the house are a flat list. A synthetic "Unit 1 of 1"
+    // would be noise, so the course row stays a lesson count there.
+    const launcher = launcherFor({
+      compoundId: COURSE,
+      items: [
+        { id: 'plex:1', title: 'One', itemIndex: 1, userWatched: true },
+        { id: 'plex:2', title: 'Two', itemIndex: 2, userWatched: false },
+        { id: 'plex:3', title: 'Three', itemIndex: 3, userWatched: false },
+      ],
+    }, '2026-08-25T20:00:00Z');
+
+    const rows = (await launcher.status({ userId: 'milo', programInstance: COURSE })).progress;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      scope: 'course', measures: 'lesson', completed: 1, total: 3, position: 2, current: true,
+    });
+  });
+
+  it('leaves the printed slip speaking in course-wide lesson counts', async () => {
+    // The slip is an adult-facing paper artifact; "4/40" is the useful figure
+    // there. The card asking a different question must not rewrite it.
+    const launcher = launcherFor(courseOf(
+      unit(1, 'Unit 1', 20, 4),
+      unit(2, 'Unit 2', 20),
+    ), '2026-08-25T20:00:00Z');
+
+    const status = await launcher.status({ userId: 'milo', programInstance: COURSE });
+    expect(status.progressLabel).toContain('4/40');
+    expect(status.score).toBe(10);
+  });
+});
