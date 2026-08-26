@@ -81,6 +81,9 @@ export const documentReceiptTheme = Object.freeze({
     // cell. At 20px it is 120px and the digits touch the border; at 24px they
     // print straight through it.
     panelCode: '18px "Kongtext"',
+    /** The unit line above a lesson title. NOT bold — it introduces the title,
+     *  it does not compete with it; the marker block is what makes it distinct. */
+    unitLabel: '20px "Roboto Condensed"',
     breadcrumb: '18px "Roboto Condensed"',
     breadcrumbStrong: 'bold 20px "Roboto Condensed"',
     identityLabel: 'bold 18px "Roboto Condensed"',
@@ -142,6 +145,13 @@ export const documentReceiptTheme = Object.freeze({
      *  bottom border so the two read as one stacked control rather than a
      *  number adrift beneath a picture. */
     codeCellHeight: 36,
+    /** The unit line above the lesson title, and its leading marker block. A
+     *  solid square rather than a chevron glyph: at 203dpi a filled rectangle
+     *  is the one small mark that always survives, where a thin glyph can drop
+     *  a stroke and read as dirt. */
+    unitLineHeight: 26,
+    unitMarkerSize: 12,
+    unitMarkerGap: 10,
     /** Progress bars inside a lesson card: a label/position row, then the bar. */
     progressLabelHeight: 24,
     progressBarHeight: 12,
