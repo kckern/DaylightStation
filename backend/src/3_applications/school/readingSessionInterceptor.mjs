@@ -22,11 +22,19 @@
  * itself the moment the last required story finishes. A session field would
  * have to be invalidated by something, and nothing is watching.
  *
- * AN UNKNOWN MODE IS BROWSING. A mode source that throws, or is not wired,
- * answers relaxed — because relaxed IS today's behaviour, and the failure mode
- * of this whole seam must be "the old behaviour", never "the TV does nothing".
- * The same reason a non-enrolled card needs no special case: it is simply
- * always browsing.
+ * AN UNKNOWN MODE IS BROWSING, BUT IT IS NOT SILENT. A mode source that throws,
+ * or answers `error`, still relaxes — because relaxed IS today's behaviour, and
+ * the failure mode of this whole seam must be "the old behaviour", never "the
+ * TV does nothing" — but it also broadcasts `session-error` so the screen can
+ * SAY the obligation could not be read (§9: never silently downgraded).
+ *
+ * NOT ENROLLED IS A DIFFERENT ANSWER FROM UNREADABLE, and telling them apart is
+ * why `StoryTimeProgramLauncher.status()` carries `enrolled`. A child with no
+ * story-time enrollment is browsing and nothing is wrong — no banner, no noise
+ * (D1). A child whose log went unreadable is ALSO browsing, because refusing
+ * their book on a guess would be worse, but that one is a fault and it shows.
+ * While the two shared one answer, an unreadable log switched a mid-assignment
+ * child's hardening off with nothing anywhere to say so.
  *
  * A CLAIM IS A PROMISE THAT THE SCREEN WILL HANDLE IT. So the broadcast that
  * tells the screen goes out FIRST, and if it cannot be made the tap is handed
@@ -45,6 +53,12 @@ export const CLAIMED_BY = 'reading-session';
 /** The states in which a story is on screen and the mode split applies. */
 const MID_STORY = new Set(['reading']);
 
+/**
+ * Neither `assignment` nor `browsing`: the obligation could not be READ. It is
+ * played like browsing and reported like a fault — see `#modeFor`.
+ */
+const MODE_UNREADABLE = 'unreadable';
+
 export class ReadingSessionInterceptor {
   #sessions; #storyTime; #eventBus; #clock; #logger;
 
@@ -52,8 +66,9 @@ export class ReadingSessionInterceptor {
    * @param {object} config
    * @param {import('./ReadingSessionService.mjs').ReadingSessionService} config.sessions
    * @param {{status: (a:{userId:string}) => Promise<object>}} [config.storyTime]
-   *   the story-time launcher, asked for `{error, count, target}`. Absent or
-   *   throwing means browsing.
+   *   the story-time launcher, asked for `{error, enrolled, count, target}`.
+   *   Absent means browsing, silently; `error` (or a throw) means browsing WITH
+   *   a `session-error` on screen. See `#modeFor`.
    */
   constructor({ sessions, storyTime = null, eventBus = null, clock = () => new Date(), logger = console } = {}) {
     if (!sessions) throw new Error('ReadingSessionInterceptor requires a sessions store');
@@ -80,6 +95,17 @@ export class ReadingSessionInterceptor {
 
     if (MID_STORY.has(session.state)) {
       const mode = await this.#modeFor(learnerId);
+      if (mode === MODE_UNREADABLE) {
+        // Relaxed, like browsing — but said out loud. The book is handed back
+        // to the ordinary dispatch either way; the difference is only whether
+        // the room is told that the obligation could not be read.
+        this.#broadcast(location, {
+          event: 'session-error', reason: 'obligation-unreadable', learnerId, location,
+          contentId, at: this.#clock().toISOString(),
+        });
+        this.#log('warn', 'school.reading.obligation-unreadable', { location, learnerId, contentId });
+        return null;
+      }
       if (mode !== 'assignment') {
         this.#log('info', 'school.reading.book-unclaimed', { location, learnerId, contentId, mode });
         return null;
@@ -103,23 +129,33 @@ export class ReadingSessionInterceptor {
   }
 
   /**
-   * `assignment` only when the obligation is READABLE and UNMET. An `error`
-   * status means the enrollment or the log could not be read — which is not
-   * the same as "nothing is owed", but it is the only answer that leaves the
-   * TV behaving the way it did yesterday.
+   * THREE answers, not two. `assignment` only when the obligation is READABLE
+   * and UNMET; `browsing` when it is readable and there is nothing owed —
+   * including a learner with no enrollment at all, which is an ordinary state
+   * and not a fault; `unreadable` when nobody can say. That last one behaves
+   * like browsing and is REPORTED like a fault, which is the only combination
+   * that neither refuses a child's book on a guess nor lies about the state of
+   * their obligation.
+   *
+   * No mode source wired at all is browsing, silently: a household composed
+   * without a story-time launcher is not a household with a broken one.
    */
   async #modeFor(learnerId) {
+    if (!this.#storyTime?.status) return 'browsing';
     try {
-      const status = await this.#storyTime?.status?.({ userId: learnerId });
-      if (!status || status.error) return 'browsing';
+      const status = await this.#storyTime.status({ userId: learnerId });
+      if (!status) return MODE_UNREADABLE;
+      if (status.error) return MODE_UNREADABLE;
+      // Enrolled in nothing owes nothing. Asked and answered — not a fault.
+      if (status.enrolled === false) return 'browsing';
       const { count, target } = status;
-      if (!Number.isFinite(count) || !Number.isFinite(target)) return 'browsing';
+      if (!Number.isFinite(count) || !Number.isFinite(target)) return MODE_UNREADABLE;
       return count < target ? 'assignment' : 'browsing';
     } catch (err) {
       this.#log('warn', 'school.reading.mode-undeterminable', {
         learnerId, error: err?.message ?? String(err),
       });
-      return 'browsing';
+      return MODE_UNREADABLE;
     }
   }
 
