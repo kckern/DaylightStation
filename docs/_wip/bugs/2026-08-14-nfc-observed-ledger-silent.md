@@ -104,6 +104,6 @@ file's mtime.
 ## Related
 
 Card registry (corrected 2026-08-14, colours verified by scan order):
-`data/household/config/triggers/bindings/nfc/cards.yml` — red/felix, yellow/milo,
-green/alan, blue/soren. Note that `loadRegistry` runs once at boot
+`data/household/config/triggers/bindings/nfc/cards.yml` — red/learner4, yellow/learner3,
+green/learner2, blue/learner1. Note that `loadRegistry` runs once at boot
 (`triggerApi.mjs:61`), so edits to that file need a container restart.

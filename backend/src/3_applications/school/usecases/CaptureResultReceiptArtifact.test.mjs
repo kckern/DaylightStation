@@ -9,7 +9,7 @@ describe('CaptureResultReceiptArtifact', () => {
       renderReceipt: vi.fn(async (document) => ({ bytes: Buffer.from('png'), width: 384, height: 200 })) });
     const document = { schema: 'school.document-source/v1', id: 'result-ses-1', target: ['receipt'], blocks: [] };
     const result = await capture.execute({ artifactId: 'receipt/ses_1/out:ses_1', sessionId: 'ses_1',
-      learnerId: 'milo', unitId: 'illinois', issuedAt: '2026-08-24T10:00:00.000Z', document });
+      learnerId: 'learner3', unitId: 'illinois', issuedAt: '2026-08-24T10:00:00.000Z', document });
     expect(result.created).toBe(true);
     expect(artifacts.put).toHaveBeenCalledWith(expect.objectContaining({ kind: 'result-receipt', sourceDocument: document,
       representation: expect.objectContaining({ mediaType: 'image/png', width: 384 }) }));

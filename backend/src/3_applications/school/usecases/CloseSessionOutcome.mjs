@@ -84,7 +84,7 @@ export class CloseSessionOutcome {
    *   `selfService` block `BuildAgenda` reads. With `enabled: true`, the
    *   "next up" QR on a PASSED result receipt also gets a six-digit panel
    *   code, minted the same way the agenda's own subject_next tokens are
-   *   (Slice H, 2026-08-22 — this is what Milo's receipt was missing).
+   *   (Slice H, 2026-08-22 — this is what Learner-Three's receipt was missing).
    *   Absent or falsy: no code is minted, and the QR prints with an explicit
    *   "Scanning is the only way in." line instead of a silent gap.
    * @param {object} [deps.logger]
@@ -311,7 +311,7 @@ export class CloseSessionOutcome {
       // (spec self-service, Slice H 2026-08-22). Before this the result
       // receipt never threaded a code at all: `resultDocument` had no
       // parameter for one, so this QR printed with nothing typeable beneath
-      // it (Milo, 2026-08-22) even on a household where self-service is on.
+      // it (Learner-Three, 2026-08-22) even on a household where self-service is on.
       const accessCode = await this.#mintNextSubjectAccessCode({ sessionId, nowIso });
       const record = mintToken({
         tokenClass: 'subject_next',

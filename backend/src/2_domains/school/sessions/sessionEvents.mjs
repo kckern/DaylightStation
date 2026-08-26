@@ -450,7 +450,7 @@ const emptyState = () => ({
   lastPrintedAt: null,
   // When this session's work was FIRST handed out, which `lastPrintedAt`
   // cannot answer: every reprint moves that forward, so a week-old session
-  // reprinted this morning looks like this morning's work. Felix's session
+  // reprinted this morning looks like this morning's work. Learner-Four's session
   // was created 2026-08-14, sat unsubmitted, and resumed eight days later
   // presenting itself as fresh — a different student number and a sheet
   // starting at question 7, with nothing on the paper explaining why. Set

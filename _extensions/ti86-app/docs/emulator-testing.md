@@ -73,7 +73,7 @@ were rerun for that release.
 
 On 2026-08-03, release `56ac632a8a5f` passed the owned-ROM,
 virtual-Graph-Link `creature-identification-quiz` scenario. It captures the
-full generic route for Soren: Arts & Culture → auto-collapsed Course/Unit/
+full generic route for Learner1: Arts & Culture → auto-collapsed Course/Unit/
 Lesson → Modules → all six locally scored questions → durable offline result
 → Version-5/M QR presenter. Each normal question shows its compact prompt and
 labelled `A)`–`D)` choices in the same body, with the answer letters on F1–F4;
@@ -81,7 +81,7 @@ there is no intermediate `ANS` state. The 25 captured PNG/ASCII frames and
 report are in the scenario output directory selected for that run.
 
 On 2026-08-03, the exact-release CLI independently completed the six-question
-Creature flow for bundle `fc89608f8385`: fresh picker → Soren → Arts & Culture
+Creature flow for bundle `fc89608f8385`: fresh picker → Learner1 → Arts & Culture
 → one-transition Course/Unit/Lesson collapse → Creature Identification → Q1–Q6
 → locally queued result → Version-5/M result QR → `MARK`/`LATER`. The real
 TI-OS/MAME transcript contains every authored prompt and answer—including
@@ -92,9 +92,9 @@ the actual crowded compact assessment framebuffer.
 ### Cross-surface continuation-code evidence
 
 On 2026-08-04, complete 24-variable release `7f9e19d5a4be` passed the owned
-TI-86 1.4 exact CLI route from a real TI-OS `ASCHL` launch: first boot → Soren
+TI-86 1.4 exact CLI route from a real TI-OS `ASCHL` launch: first boot → Learner1
 → Subjects → Home → `CODE` → typed `123456` → Creature Identification Q1/6.
-`123456` is the deliberately reversible pairing of Milo's configured stable
+`123456` is the deliberately reversible pairing of Learner3's configured stable
 slot and the authored Creature module route `098765`; the installed `SCCO`
 index resolves it locally before the normal learning runtime receives the
 target. The captured LCD proves each numeral, the `CODE` screen, and the

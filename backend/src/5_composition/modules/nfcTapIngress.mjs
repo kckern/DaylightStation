@@ -1,58 +1,57 @@
 /**
- * nfcTapIngress — routes an NFC tap arriving on a hardware-relay bus topic to
- * whoever owns that tag.
+ * nfcTapIngress — TRANSPORT ONLY. Turns an NFC tap arriving on a hardware-relay
+ * bus topic into a trigger event and hands it to the one pipeline every other
+ * reader in the house already uses.
  *
- * Layer: COMPOSITION (5_composition/modules). Wires existing pieces; contains no
- * policy of its own beyond "who owns this tag".
+ * Layer: COMPOSITION (5_composition/modules). Wires existing pieces and holds
+ * no policy at all: canonicalize the uid, map the reader id to a location, call
+ * `handleEvent`.
  *
- * WHY THIS EXISTS: the household has two kinds of NFC tag on identical hardware.
- * A book sticker means "play this audiobook" — its meaning IS an action, and the
- * trigger pipeline already handles it. A personal card means "this is a learner", and
- * what happens next is School's planner decision, not a fixed action.
+ * It used to hold the "who owns this tag" decision as an if-chain, which meant
+ * a learner card worked at exactly one reader in the house — the only one whose
+ * taps arrive over this bus. That decision now lives where both ingress doors
+ * already converge: `school_learner` is an actionable field in `NfcResolver`,
+ * and the reader location's `learner_action` decides what it means. Two
+ * divergences died with the fork: this module read `tag.global.school_learner`
+ * only (ignoring a per-reader override the HTTP door honoured), and it passed
+ * the raw YAML value where the resolver coerces and validates it.
  *
- * So the split follows the rule the school roadmap already states for barcode:
- * the relay stays transport-only, and School is a resolver namespace downstream
- * of it. One tag registry answers WHAT a tag is; the owning domain decides what
- * happens.
+ * The `agenda-suppressed` acknowledgement moved with the fork, into the
+ * `print-agenda` learner action (`learnerCardActions.mjs`) — where the
+ * suppression is actually known. Transport has no opinion to broadcast.
  *
- *   tag has `school_learner`  -> School ResolvePersonalCard (prints the agenda)
- *   anything else             -> TriggerDispatchService (books, lights, …)
- *
- * The registry is shared, not copied: `triggerConfig.nfc.tags` is the same object
- * the trigger repository mutates when a tag is renamed, so a card enrolled at
- * runtime is visible here without a reload.
+ * THE SHUTDOWN TAG IS THE ONE EXCEPTION AND IT STAYS. Its UID lives in
+ * `shutdown.yml` rather than the tag registry, it is a household safety command
+ * rather than a media or identity tag, and it must outrank everything —
+ * including the reader map, so a reader missing from that map cannot turn the
+ * safety command into `unmapped_reader`. Moving it into the registry is a config
+ * migration on a safety path — separate work, deliberately not taken here.
  *
  * @module composition/modules/nfcTapIngress
  */
 import { canonicalizeNfcUid } from '#domains/trigger/nfcUid.mjs';
 
-/** Tag field naming the learner a personal card belongs to. */
-export const SCHOOL_LEARNER_FIELD = 'school_learner';
-
 /**
  * @param {object} deps
- * @param {{subscribe: Function, broadcast?: Function}} deps.eventBus - `broadcast`
- *   is optional (`?.()` at every call site): a bus double that only
- *   implements `subscribe` — every existing test harness for this module —
- *   still works, it just never gets to acknowledge a cooldown-suppressed tap
- *   on the wire (Slice G).
+ * @param {{subscribe: Function}} deps.eventBus
  * @param {string[]} [deps.topics] bus topics carrying relay `nfc` events
- * @param {object} deps.triggerConfig the live unified registry ({ nfc: { tags } })
  * @param {{handleEvent: Function}} [deps.triggerDispatchService]
- * @param {{execute: Function}} [deps.resolvePersonalCard] School use case
- * @param {string} [deps.location] NFC reader location for non-school tags
+ * @param {{activate: Function}} [deps.shutdownService]
+ * @param {Function} [deps.getShutdownConfig] re-read on every tap, so a tag
+ *   change in `shutdown.yml` takes effect without a restart
+ * @param {Record<string,string>} [deps.readerLocations] reader id -> trigger
+ *   location. Was a single global `location`, which assumed every reader on
+ *   this bus was in one room.
  * @param {object} [deps.logger]
  * @returns {{ wired: boolean, dispose: Function, handleTap: Function }}
  */
 export function createNfcTapIngress({
   eventBus,
   topics = ['omr'],
-  triggerConfig = null,
   triggerDispatchService = null,
-  resolvePersonalCard = null,
   shutdownService = null,
   getShutdownConfig = null,
-  location = null,
+  readerLocations = {},
   logger = console,
 } = {}) {
   if (!eventBus?.subscribe) {
@@ -61,7 +60,7 @@ export function createNfcTapIngress({
 
   /**
    * @param {{uid: string, id?: string}} tap
-   * @returns {Promise<{status: string, learnerId?: string|null}>}
+   * @returns {Promise<{status: string, reader?: string|null}>}
    */
   async function handleTap({ uid, id = null } = {}) {
     const canonical = canonicalizeNfcUid(uid);
@@ -70,61 +69,27 @@ export function createNfcTapIngress({
       return { status: 'no_uid' };
     }
 
-    const tag = triggerConfig?.nfc?.tags?.[canonical] ?? null;
-    // This deliberately precedes the learner-card branch: the shutdown tag is
-    // a household safety command, not a learner identity or media trigger.
     const shutdown = getShutdownConfig?.() ?? null;
     const shutdownUid = typeof shutdown?.nfc?.tag_uid === 'string'
       ? canonicalizeNfcUid(shutdown.nfc.tag_uid) : null;
     const shutdownReaderId = shutdown?.nfc?.reader_id ?? null;
     if (shutdownService?.activate && shutdownUid === canonical && (!shutdownReaderId || shutdownReaderId === id)) {
       const state = await shutdownService.activate({ readerId: id, tagUid: canonical });
-      logger.info?.('nfc.tap.shutdown', { reader: id, uid: canonical, lockedUntil: state.lockedUntil });
-      return { status: 'shutdown_locked', lockedUntil: state.lockedUntil };
-    }
-    const learnerId = tag?.global?.[SCHOOL_LEARNER_FIELD] ?? null;
-
-    if (learnerId) {
-      if (!resolvePersonalCard?.execute) {
-        // A card IS enrolled but School is not wired. Reported, not swallowed:
-        // a child tapping a registered card and getting nothing is the exact
-        // failure the school spec calls out as worse than no card at all.
-        logger.error?.('nfc.tap.school_unwired', { reader: id, uid: canonical, learnerId });
-        return { status: 'school_unwired', learnerId };
-      }
-      const result = await resolvePersonalCard.execute({ learnerId });
-      logger.info?.('nfc.tap.school_card', {
-        reader: id, uid: canonical, learnerId, status: result?.status, printed: result?.printed,
-      });
-      // Rule 3 (Slice G, 2026-08-22-omr-grading-integrity): a cooldown-suppressed
-      // tap still gets ACKNOWLEDGED — no paper, but the panel must say
-      // something, or a child who taps and gets nothing at all just taps
-      // harder, which is the exact behaviour the cooldown exists to stop.
-      // Broadcast on the SAME `omr` topic Slice D's `useScanCeremony.js`
-      // already subscribes to (via `schoolPrintScanConsumer.mjs`'s own
-      // `scan-graded`/`scan-review`/... precedent) — no new transport.
-      if (result?.status === 'agenda_suppressed') {
-        eventBus.broadcast?.('omr', {
-          event: 'agenda-suppressed',
-          learnerId,
-          sinceMinutes: result.sinceMinutes ?? null,
-          cooldownMinutes: result.cooldownMinutes ?? null,
-          timestamp: Date.now(),
-        });
-      }
-      return { status: result?.status ?? 'unknown', learnerId };
+      logger.info?.('nfc.tap.shutdown', { reader: id, uid: canonical, lockedUntil: state?.lockedUntil });
+      return { status: 'shutdown_locked', lockedUntil: state?.lockedUntil };
     }
 
-    // Not a school card. Hand it to the normal trigger pipeline so a book
-    // sticker tapped on this reader behaves as it does on every other reader —
-    // including the unknown-tag notify path that makes enrolment possible.
+    const location = readerLocations?.[id] ?? null;
     if (!triggerDispatchService?.handleEvent || !location) {
-      logger.debug?.('nfc.tap.unrouted', { reader: id, uid: canonical, hasLocation: !!location });
-      return { status: 'unrouted' };
+      // Named rather than silent: a reader nobody mapped is a config gap, and
+      // the log line carries the ids that would have fixed it.
+      logger.warn?.('nfc.tap.unmapped_reader', {
+        reader: id, uid: canonical, known: Object.keys(readerLocations ?? {}),
+      });
+      return { status: 'unmapped_reader', reader: id };
     }
-    const outcome = await triggerDispatchService.handleEvent({
-      location, source: 'nfc', value: canonical,
-    });
+
+    const outcome = await triggerDispatchService.handleEvent({ location, source: 'nfc', value: canonical });
     logger.info?.('nfc.tap.trigger', {
       reader: id, uid: canonical, location, ok: outcome?.ok, code: outcome?.code ?? null,
     });
@@ -140,7 +105,7 @@ export function createNfcTapIngress({
   }));
 
   logger.info?.('nfc.tap.ingress.ready', {
-    topics, location, school: !!resolvePersonalCard?.execute, trigger: !!triggerDispatchService?.handleEvent,
+    topics, readers: Object.keys(readerLocations ?? {}), trigger: !!triggerDispatchService?.handleEvent,
   });
 
   return {

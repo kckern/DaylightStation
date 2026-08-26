@@ -21,7 +21,7 @@
   ],
   "timeline": {
     "series": {
-      "user:learner-one:heart_beats": [
+      "user:learner1:heart_beats": [
         9.7,
         19.3,
         null,
@@ -669,7 +669,7 @@
         null,
         null
       ],
-      "user:learner-one:heart_rate": [
+      "user:learner1:heart_rate": [
         116,
         116,
         null,
@@ -1317,7 +1317,7 @@
         null,
         null
       ],
-      "user:learner-one:zone_id": [
+      "user:learner1:zone_id": [
         "c",
         "c",
         null,
@@ -1965,7 +1965,7 @@
         null,
         null
       ],
-      "user:learner-one:coins_total": [
+      "user:learner1:coins_total": [
         0,
         0,
         1,
@@ -7167,7 +7167,7 @@
           "hot": 0.67
         }
       },
-      "learner-one": {
+      "learner1": {
         "coins": 1,
         "hr_avg": 116,
         "hr_max": 116,

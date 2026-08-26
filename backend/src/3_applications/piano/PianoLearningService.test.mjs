@@ -18,7 +18,7 @@ function subject({ attempts = [], enrollments = [], assignment = null, pending =
   const attemptStore = { list: vi.fn(() => attempts) };
   const learningStore = {
     getEnrollments: vi.fn(() => enrollments),
-    getAssignment: vi.fn(() => assignment ?? { learnerId: 'felix', programs: [], updatedAt: null }),
+    getAssignment: vi.fn(() => assignment ?? { learnerId: 'learner4', programs: [], updatedAt: null }),
     getPendingCheckpoints: vi.fn(() => pending),
     enroll: vi.fn(() => [{ programId: 'hanon' }]),
     unenroll: vi.fn(() => []),
@@ -45,31 +45,31 @@ function passingAttempt() {
 
 describe('PianoLearningService', () => {
   it('projects the next enrolled step and advances it from portable attempt evidence', () => {
-    const first = subject({ enrollments: [{ programId: 'hanon' }] }).service.summary('felix');
+    const first = subject({ enrollments: [{ programId: 'hanon' }] }).service.summary('learner4');
     expect(first.next_up).toMatchObject({ program_id: 'hanon', step: { id: 'hanon-01', state: 'current' } });
 
-    const completed = subject({ attempts: [passingAttempt()], enrollments: [{ programId: 'hanon' }] }).service.summary('felix');
+    const completed = subject({ attempts: [passingAttempt()], enrollments: [{ programId: 'hanon' }] }).service.summary('learner4');
     expect(completed.programs[0]).toMatchObject({ passed_steps: 1, complete: true });
     expect(completed.next_up).toBeNull();
   });
 
   it('puts an unfinished video checkpoint ahead of a program and clears it from evidence', () => {
     const checkpoint = { contentId: 'plex:lesson-1', title: 'Lesson 1', requirement };
-    expect(subject({ enrollments: [{ programId: 'hanon' }], pending: [checkpoint] }).service.summary('felix').next_up)
+    expect(subject({ enrollments: [{ programId: 'hanon' }], pending: [checkpoint] }).service.summary('learner4').next_up)
       .toMatchObject({ type: 'video-checkpoint', title: 'Lesson 1' });
-    expect(subject({ attempts: [passingAttempt()], pending: [checkpoint] }).service.summary('felix').pending_checkpoints)
+    expect(subject({ attempts: [passingAttempt()], pending: [checkpoint] }).service.summary('learner4').pending_checkpoints)
       .toEqual([]);
   });
 
   it('prevents learners from removing a teacher-assigned program', () => {
     const { service, learningStore } = subject({ assignment: { programs: ['hanon'] } });
-    expect(() => service.unenroll('felix', 'hanon')).toThrow(/required program/);
+    expect(() => service.unenroll('learner4', 'hanon')).toThrow(/required program/);
     expect(learningStore.unenroll).not.toHaveBeenCalled();
   });
 
   it('projects a course worth of checkpoint statuses from one attempt-ledger read', () => {
     const { service, attemptStore } = subject({ attempts: [passingAttempt()] });
-    expect(service.requirementStatuses('felix', [requirement, { ...requirement, exercise_id: 'another' }])
+    expect(service.requirementStatuses('learner4', [requirement, { ...requirement, exercise_id: 'another' }])
       .map((status) => status.passed)).toEqual([true, false]);
     expect(attemptStore.list).toHaveBeenCalledTimes(1);
   });
@@ -77,10 +77,10 @@ describe('PianoLearningService', () => {
   it('requires teacher authorization before replacing ordered assignments', () => {
     const { service, learningStore } = subject();
     const record = service.putAssignment({
-      learnerId: 'felix', programs: ['hanon'], assignedBy: 'parent', pin: '1234', baseUpdatedAt: null,
+      learnerId: 'learner4', programs: ['hanon'], assignedBy: 'parent', pin: '1234', baseUpdatedAt: null,
     });
     expect(service.teacherGate.assert).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'parent', action: 'piano.program-assignments.put', context: { learnerId: 'felix' },
+      userId: 'parent', action: 'piano.program-assignments.put', context: { learnerId: 'learner4' },
     }));
     expect(learningStore.putAssignment).toHaveBeenCalledWith(expect.objectContaining({ programs: ['hanon'] }));
     expect(record.programs).toEqual(['hanon']);

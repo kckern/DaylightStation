@@ -481,7 +481,7 @@ Every card-backed render writes (or reuses) an **allocation record** at
   rev: 632002966
   seed: 80426
   variant: 2
-  learnerId: felix
+  learnerId: learner4
   sessionId: ws_abc123        # when issued by a tracked-quiz session
   rowItems:                   # the row→item mapping ACTUALLY printed
     - {row: 1, itemId: sneasel-evolution, itemType: multiple_choice}

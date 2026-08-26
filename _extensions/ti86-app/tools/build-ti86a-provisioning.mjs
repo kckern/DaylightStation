@@ -12,16 +12,16 @@ const codec = new Ti86SchoolCalcCodec();
 const deviceId = 'TI86A';
 const generation = 'sha256:ti86a-household-roster-v1';
 const profiles = [
-  { learnerKey: 1, label: 'Soren' },
-  { learnerKey: 2, label: 'Alan' },
-  { learnerKey: 3, label: 'Milo' },
-  { learnerKey: 4, label: 'Felix' },
+  { learnerKey: 1, label: 'Learner1' },
+  { learnerKey: 2, label: 'Learner2' },
+  { learnerKey: 3, label: 'Learner3' },
+  { learnerKey: 4, label: 'Learner4' },
 ];
 const progressProfiles = [
-  progressProfile({ learnerKey: 1, learnerId: 'soren', scorePercent: 80, correct: 4, total: 5, history: true }),
-  progressProfile({ learnerKey: 2, learnerId: 'alan', scorePercent: 100, correct: 3, total: 3 }),
-  progressProfile({ learnerKey: 3, learnerId: 'milo', scorePercent: 67, correct: 2, total: 3 }),
-  progressProfile({ learnerKey: 4, learnerId: 'felix', scorePercent: 75, correct: 3, total: 4 }),
+  progressProfile({ learnerKey: 1, learnerId: 'learner1', scorePercent: 80, correct: 4, total: 5, history: true }),
+  progressProfile({ learnerKey: 2, learnerId: 'learner2', scorePercent: 100, correct: 3, total: 3 }),
+  progressProfile({ learnerKey: 3, learnerId: 'learner3', scorePercent: 67, correct: 2, total: 3 }),
+  progressProfile({ learnerKey: 4, learnerId: 'learner4', scorePercent: 75, correct: 3, total: 4 }),
 ];
 
 mkdirSync(OUT, { recursive: true });

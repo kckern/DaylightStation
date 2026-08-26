@@ -23,16 +23,16 @@ const attemptsDir = (u) => path.join(root, 'users', u, 'apps', 'school', 'attemp
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'shard-'));
   warns = [];
-  fs.mkdirSync(attemptsDir('felix'), { recursive: true });
+  fs.mkdirSync(attemptsDir('learner4'), { recursive: true });
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 describe('attempt shard integrity (readiness Blocker 1)', () => {
   it('a CORRUPT day file refuses the append — never clobbered to a one-row list', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    const file = path.join(attemptsDir('felix'), '2026-08-06.yml');
+    const file = path.join(attemptsDir('learner4'), '2026-08-06.yml');
     fs.writeFileSync(file, '{ this is: [not, yaml');
-    expect(() => ds.appendAttempt('felix', {
+    expect(() => ds.appendAttempt('learner4', {
       id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
     }))
       .toThrow(/corrupt/i);
@@ -41,32 +41,32 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 
   it('a corrupt read is LOUD (logged) and returns [], a missing file is quiet []', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    const file = path.join(attemptsDir('felix'), '2026-08-06.yml');
+    const file = path.join(attemptsDir('learner4'), '2026-08-06.yml');
     fs.writeFileSync(file, '{ nope: [');
-    expect(ds.readAttemptDay('felix', '2026-08-06')).toEqual([]);
+    expect(ds.readAttemptDay('learner4', '2026-08-06')).toEqual([]);
     expect(warns.some(([evt]) => evt === 'school.attempts.shard-corrupt')).toBe(true);
     warns = [];
-    expect(ds.readAttemptDay('felix', '2026-08-05')).toEqual([]); // missing: no log
+    expect(ds.readAttemptDay('learner4', '2026-08-05')).toEqual([]); // missing: no log
     expect(warns).toEqual([]);
   });
 
   it('a healthy append survives and rewrites ATOMICALLY (no partial file on interrupt is testable as: tmp is renamed, not written in place)', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    ds.appendAttempt('felix', {
+    ds.appendAttempt('learner4', {
       id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
     });
-    ds.appendAttempt('felix', {
+    ds.appendAttempt('learner4', {
       id: 'att_2', at: '2026-08-06T10:01:00.000Z', bankId: 'b', itemId: 'q2', correct: false,
     });
-    expect(ds.readAttemptDay('felix', '2026-08-06')).toHaveLength(2);
+    expect(ds.readAttemptDay('learner4', '2026-08-06')).toHaveLength(2);
     // No leftover staging file from the atomic rename.
-    expect(fs.readdirSync(attemptsDir('felix')).filter((f) => f.includes('.tmp-'))).toEqual([]);
+    expect(fs.readdirSync(attemptsDir('learner4')).filter((f) => f.includes('.tmp-'))).toEqual([]);
   });
 
   it('moveAttempts refuses a CORRUPT destination shard — never clobbers it down to just the moved rows', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
     fs.mkdirSync(attemptsDir('penny'), { recursive: true });
-    const fromFile = path.join(attemptsDir('felix'), '2026-08-06.yml');
+    const fromFile = path.join(attemptsDir('learner4'), '2026-08-06.yml');
     fs.writeFileSync(fromFile, [
       '- id: att_1',
       '  at: \'2026-08-06T10:00:00.000Z\'',
@@ -79,7 +79,7 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
     const toFile = path.join(attemptsDir('penny'), '2026-08-06.yml');
     fs.writeFileSync(toFile, '{ nope: [');
     expect(() => ds.moveAttempts({
-      fromUserId: 'felix', toUserId: 'penny', day: '2026-08-06', assessmentId: 'sess_1',
+      fromUserId: 'learner4', toUserId: 'penny', day: '2026-08-06', assessmentId: 'sess_1',
     })).toThrow(/corrupt/i);
     // Destination bytes untouched — not overwritten with just the moved row.
     expect(fs.readFileSync(toFile, 'utf8')).toContain('nope');
@@ -89,14 +89,14 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 
   it('readAttemptsInRange logs a corrupt day and still returns the healthy days around it', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    ds.appendAttempt('felix', {
+    ds.appendAttempt('learner4', {
       id: 'att_1', at: '2026-08-05T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
     });
-    fs.writeFileSync(path.join(attemptsDir('felix'), '2026-08-06.yml'), '{ nope: [');
-    ds.appendAttempt('felix', {
+    fs.writeFileSync(path.join(attemptsDir('learner4'), '2026-08-06.yml'), '{ nope: [');
+    ds.appendAttempt('learner4', {
       id: 'att_3', at: '2026-08-07T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true,
     });
-    const rows = ds.readAttemptsInRange('felix', '2026-08-05', '2026-08-07');
+    const rows = ds.readAttemptsInRange('learner4', '2026-08-05', '2026-08-07');
     expect(rows.map((a) => a.id)).toEqual(['att_1', 'att_3']);
     expect(warns.some(([evt]) => evt === 'school.attempts.shard-corrupt')).toBe(true);
   });

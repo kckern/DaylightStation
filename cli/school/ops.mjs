@@ -26,7 +26,8 @@ Read-only:
 
 Writes to the household reading log directly, no server needed (dry-run by
 default, add --apply):
-  school ops read <learner> [--title TEXT] [--content ID] [--location ROOM] [--apply]
+  school ops read <learner> [--title TEXT] [--content ID] [--location ROOM]
+                            [--pick ID] [--apply]
 
 Dry-run/preview by default; add --apply to write:
   school ops assign <learner> --file plan.yml --teacher ID --pin-env NAME [--apply]
@@ -41,7 +42,10 @@ Dry-run/preview by default; add --apply to write:
   school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID --pin-env NAME [--to-day YYYY-MM-DD] [--apply]
   school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID --pin-env NAME [--apply]
 
-read is the MANUAL path for a story a child finished — a book read on a lap,
+read refuses a learner id that is not in school.yml students: a typo is a
+well-formed id, and appending under it would print success while counting the
+read against nobody. --pick is an idempotency key: the same one twice records
+one read. read is the MANUAL path for a story a child finished — a book read on a lap,
 a mis-scanned sticker. It needs no PIN and no running server: it appends
 straight to the study-day-sharded reading log the story-time launcher counts,
 which the server re-reads on every status call. Because there is no bus, it
@@ -63,10 +67,10 @@ const VALUE_OPTIONS = new Set([
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
   '--from-day', '--to-day', '--from', '--to', '--day',
-  '--subject', '--origin', '--path', '--title', '--content', '--location',
+  '--subject', '--origin', '--path', '--title', '--content', '--location', '--pick',
 ]);
 
-function option(argv, name, fallback = null) {
+export function option(argv, name, fallback = null) {
   const at = argv.indexOf(name);
   if (at >= 0) return argv[at + 1] ?? fallback;
   // `--title="The Jungle Book"` is what a person actually types, and what the
@@ -191,7 +195,12 @@ async function teacherProof({ fetchImpl, school, teacher, pin }) {
   } };
 }
 
-export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process.env, stdout = process.stdout } = {}) {
+export async function runOps({
+  argv, fetchImpl = globalThis.fetch, env = process.env, stdout = process.stdout,
+  // Injected by tests only; production resolves the real singleton lazily, so
+  // no command that never touches the data tree pays for loading it.
+  configService = null,
+} = {}) {
   const [command, ...rest] = argv ?? [];
   if (!command || ['help', '--help', '-h'].includes(command)) { stdout.write(HELP); return 0; }
   const args = positionals(rest);
@@ -260,7 +269,7 @@ export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process
       learnerId, subject, continueToday: rest.includes('--continue'),
     });
     // Defaults to the origin the API base already names, so the common case is
-    // `school ops launch-preview felix --subject arts` and nothing else.
+    // `school ops launch-preview learner4 --subject arts` and nothing else.
     const origin = option(rest, '--origin') ?? new URL(base.school).origin;
     const appPath = String(option(rest, '--path', '/school')).replace(/\/+$/, '');
     const previewApi = `${base.school}/self-service/preview/${enc(link)}`;
@@ -291,32 +300,67 @@ export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process
   if (command === 'read') {
     const learnerId = args[0];
     if (!learnerId) throw new Error('read requires a learner id');
-    const { getConfigService } = await import('../_bootstrap.mjs');
-    const [{ YamlReadingLogStore }, { RecordStoryRead }] = await Promise.all([
+    const [{ YamlReadingLogStore }, { YamlAssignmentStore }, { RecordStoryRead }, { StoryTimeProgramLauncher }] = await Promise.all([
       import('#adapters/persistence/yaml/YamlReadingLogStore.mjs'),
+      import('#adapters/persistence/yaml/YamlAssignmentStore.mjs'),
       import('#apps/school/usecases/RecordStoryRead.mjs'),
+      import('#apps/school/StoryTimeProgramLauncher.mjs'),
     ]);
-    const configService = await getConfigService();
+    const config = configService ?? await (await import('../_bootstrap.mjs')).getConfigService();
+
+    // RESOLVE THE ID, DO NOT TRUST IT. `append` validates only the SHAPE of a
+    // learner id, so a typo is a perfectly well-formed id: it creates a fresh
+    // directory, prints success, and the read is never counted against anyone.
+    // This is the manual-correction command, which makes a typo its single
+    // most likely input. Fail closed on an unreadable roster too — silently
+    // accepting anything is the exact failure being closed off here.
+    const roster = config.getHouseholdAppConfig?.(null, 'school')?.students ?? [];
+    if (!roster.length) throw new Error('school.yml lists no students: cannot check the learner id');
+    if (!roster.includes(learnerId)) {
+      throw new Error(`unknown learner '${learnerId}' — school.yml students: ${roster.join(', ')}`);
+    }
+
+    const silent = { info() {}, warn() {}, error() {}, debug() {} };
+    const store = new YamlReadingLogStore({ configService: config, logger: console });
+    // The launcher is built for its `studyDay()` — the ONE place the
+    // household's 4am boundary is applied — and then answers "is the day done
+    // now" off the same enrollment the board reads.
+    const launcher = new StoryTimeProgramLauncher({
+      readingLog: store,
+      assignments: new YamlAssignmentStore({ configService: config, logger: silent }),
+      timezone: config.getTimezone?.() || null,
+      logger: silent,
+    });
     // The row goes through the SAME use case either way, and the store is
     // wrapped rather than swapped — so a dry run prints exactly what an
     // --apply would write, study-day stamp included, instead of a second guess
     // at it. The use case's own logger is silenced because this command emits
     // one stable JSON document on stdout and nothing else.
     const captured = [];
-    const store = new YamlReadingLogStore({ configService, logger: console });
     await new RecordStoryRead({
       readingLog: { append: async (row) => { captured.push(row); return apply ? store.append(row) : row; } },
-      timezone: configService.getTimezone?.() || null,
-      logger: { info() {}, warn() {}, error() {}, debug() {} },
+      studyDay: () => launcher.studyDay(),
+      logger: silent,
     }).execute({
       learnerId,
       title: option(rest, '--title'),
       contentId: option(rest, '--content'),
       location: option(rest, '--location'),
+      pickId: option(rest, '--pick'),
     });
-    print(apply
-      ? { schema: 'school.story-read/v1', ...captured[0] }
-      : { schema: 'school.ops-dry-run/v1', dryRun: true, write: { kind: 'story-read', row: captured[0] } }, stdout);
+    if (!apply) {
+      print({ schema: 'school.ops-dry-run/v1', dryRun: true, write: { kind: 'story-read', row: captured[0] } }, stdout);
+      return 0;
+    }
+    // What a parent actually wants to know after recording it by hand: is the
+    // child done now. Read back through the launcher rather than counting
+    // here, so this cannot disagree with the board.
+    const after = await launcher.status({ userId: learnerId });
+    print({
+      schema: 'school.story-read/v1',
+      ...captured[0],
+      status: { count: after.count, target: after.target, doneToday: after.doneToday, progressLabel: after.progressLabel },
+    }, stdout);
     return 0;
   }
   if (command === 'audit') {

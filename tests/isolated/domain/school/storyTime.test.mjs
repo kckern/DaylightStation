@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateStoryTimeEnrollment } from '#domains/school/storyTime.mjs';
+import { validateStoryTimeEnrollment, MAX_STORY_TARGET } from '#domains/school/storyTime.mjs';
 
 describe('validateStoryTimeEnrollment', () => {
   it('accepts a bare enrollment and applies the default target', () => {
@@ -23,6 +23,13 @@ describe('validateStoryTimeEnrollment', () => {
 
   it('refuses an absurd target rather than storing an unmeetable obligation', () => {
     expect(validateStoryTimeEnrollment({ programId: 'story-time', target: 100 }).errors[0]).toMatch(/target/);
+  });
+
+  // A ceiling with no boundary test can move by one without anything noticing.
+  it('pins the ceiling exactly — 20 is a target, 21 is a mistake', () => {
+    expect(validateStoryTimeEnrollment({ programId: 'story-time', target: MAX_STORY_TARGET }).errors).toEqual([]);
+    expect(validateStoryTimeEnrollment({ programId: 'story-time', target: MAX_STORY_TARGET + 1 }).errors[0]).toMatch(/target/);
+    expect(MAX_STORY_TARGET).toBe(20);
   });
 
   it('refuses an unknown subject', () => {

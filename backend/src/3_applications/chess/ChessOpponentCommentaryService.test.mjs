@@ -31,7 +31,7 @@ describe('ChessOpponentCommentaryService', () => {
     const { service, chat } = serviceWith();
     const game = gameAfter('e4', 'Nf6');
     const result = await service.react({
-      userId: 'felix', gameId: 'g1', ply: 2, level: 0, playerColor: 'w', game,
+      userId: 'learner4', gameId: 'g1', ply: 2, level: 0, playerColor: 'w', game,
     });
     expect(result).toEqual({ eventId: 'g1:2:Nf6', quip: 'That knight has plans.', source: 'ai' });
     expect(chat).toHaveBeenCalledWith(expect.arrayContaining([

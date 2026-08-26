@@ -1,7 +1,7 @@
 /**
  * A MISS NAMED IN A BOX MUST BE NAMED IN WORDS TOO.
  *
- * Felix scored 9 of 10 (2026-08-23). The score panel correctly drew question
+ * Learner-Four scored 9 of 10 (2026-08-23). The score panel correctly drew question
  * 15 as the miss — and the receipt then said nothing at all about it, because
  * `reviewHints` was gated on `!passed`. He was shown WHICH question he got
  * wrong and denied the one line telling him what to go read about it. The

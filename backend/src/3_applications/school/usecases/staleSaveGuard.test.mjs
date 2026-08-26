@@ -57,7 +57,7 @@ describe('SetAssignments stale-save guard integration', () => {
   it('does not call assignments.get() when baseUpdatedAt is omitted (opts out of guard)', async () => {
     const store = { get: vi.fn(), put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps: { assert: () => true } });
-    await uc.execute({ learnerId: 'milo', courses: ['math'], units: [], assignedBy: 'kckern' });
+    await uc.execute({ learnerId: 'learner3', courses: ['math'], units: [], assignedBy: 'kckern' });
     // No baseUpdatedAt provided — the guard is not active, so get() must not be called
     expect(store.get).not.toHaveBeenCalled();
     expect(store.put).toHaveBeenCalled();
@@ -66,8 +66,8 @@ describe('SetAssignments stale-save guard integration', () => {
   it('calls assignments.get() when baseUpdatedAt is provided', async () => {
     const store = { get: vi.fn(async () => ({ updatedAt: '2026-09-01T00:00:00.000Z' })), put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps: { assert: () => true } });
-    await uc.execute({ learnerId: 'milo', courses: ['math'], units: [], assignedBy: 'kckern', baseUpdatedAt: '2026-09-01T00:00:00.000Z' });
-    expect(store.get).toHaveBeenCalledWith('milo');
+    await uc.execute({ learnerId: 'learner3', courses: ['math'], units: [], assignedBy: 'kckern', baseUpdatedAt: '2026-09-01T00:00:00.000Z' });
+    expect(store.get).toHaveBeenCalledWith('learner3');
     expect(store.put).toHaveBeenCalled();
   });
 });

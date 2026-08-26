@@ -17,13 +17,22 @@ arts          | Done         | passed(green)   | Rhythm Improvisation with Chord
 ROW SUMMARY: "2 of 3 lessons done"      "Not graded" anywhere: no
 ```
 
-Two notes for whoever deploys this. The arts card renders the clean lesson
-name only once B2's backend change is live; until then the frontend chain
-falls back to `progressLabel` and shows the whole "Done today — … · 35/366"
-sentence, which is correct-but-clunky rather than wrong. And three
-`rubiksCube` test files fail to load on this branch for unrelated reasons
-(no test suite in the file) — they fail identically with these changes
-stashed.
+**Deploy ordering: a non-issue, verified.** An earlier note here warned that
+the arts card needs B2's backend change before it renders the clean lesson
+name. It does, but the two cannot arrive apart: `deploy-daylight` runs ONE
+container from ONE image that serves the API and the built frontend together.
+The only skew possible is a browser holding a stale bundle against a newer
+backend, and that direction is safe — an old frontend never reads `servedWork`.
+The card's fallback chain (session → offer → served.work → progressLabel) is
+what makes it order-independent, which is the right shape regardless of how
+the two happen to ship.
+
+**The three `rubiksCube` "failures" were a reporting artefact**, not broken
+tests: they are `node:test` files, and a directory-glob vitest run collects
+them, finds no vitest suite, and calls that a failure. All nine pass under
+`node --test`. `vitest.config.mjs` now decides runner ownership by what a file
+imports — the rule `scripts/gate-vitest.mjs` already applied — instead of by a
+hand-maintained exclude list.
 
 Deviations from the plan as written, all discovered while implementing:
 

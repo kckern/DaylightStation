@@ -61,8 +61,8 @@ anchors:
     kind: annual_date
     month: 7
     day: 4
-  - anchorId: milo-birthday-2026
-    label: Milo's birthday
+  - anchorId: learner3-birthday-2026
+    label: Learner3's birthday
     kind: fixed_date
     date: '2026-10-18'
   - anchorId: world-cup-final-2026
@@ -265,3 +265,92 @@ The implemented behavior is covered by focused domain/application tests for:
 4. A missed firm birthday target goes dormant without creating a failure or
    altering past paper evidence.
 5. An in-progress worksheet remains resumable even when its timing window ends.
+
+## 7. The school-day calendar
+
+Timing windows answer *"is this unit open yet?"* with one continuous
+`opensOn`/`closesOn` span. That cannot say "weekdays only", "not Thanksgiving
+week", or "we're making Thursday up on Saturday" — so before the schedule
+block, a Saturday still read as an unmet obligation on the status board.
+
+An enrollment may declare which days are school days:
+
+```yaml
+schedule:
+  daysOfWeek: [1, 2, 3, 4, 5]   # ISO-8601: 1=Monday .. 7=Sunday. Omitted = every day.
+  except:                        # never a school day, whatever daysOfWeek says
+    - '2026-11-26'
+    - { from: '2026-12-21', to: '2027-01-02' }   # inclusive at both ends
+  also:                          # always a school day, even if daysOfWeek excludes it
+    - '2026-11-28'               #   -> the makeup day
+```
+
+**Precedence is fixed: `also` beats `except` beats `daysOfWeek`.** A makeup day
+named explicitly has to win over the vacation range containing it, or "we'll
+make it up on Saturday" is inexpressible. Naming one date in both `also` and
+`except` is therefore a school day, not an error.
+
+`schoolCalendar.mjs` is pure: it compares calendar keys and never reads a
+clock, a timezone or a `Date` in local time. The day it is handed is a study-day
+key that `studyDay.mjs` already resolved at the 4am boundary.
+
+### It fails open, and it is strict about keys
+
+An absent, unparseable or invalid schedule is a **school day**. The failure
+mode must be "the child is asked to do their work", never "a typo excused the
+entire term and nobody noticed until June".
+
+Because failing open is silent, the validator refuses **unknown keys** as well
+as bad values — `daysofweek`, `exept` and `holidays` are errors, not ignored
+extras — and `agenda.mjs` emits `school.agenda.invalid-schedule` carrying the
+validator's own messages whenever it meets a schedule it had to ignore. An
+empty block normalizes to no schedule at all.
+
+A weekday list may not be empty: that is a term with no school days, which
+nobody means and which would otherwise raise nothing.
+
+### Where it lives, and why it is a snapshot
+
+The block is authored on a **syllabus** and snapshotted onto the **enrollment**
+by `createCourseEnrollment`, deep-copied, exactly like `progression`,
+`display` and `moduleSchedule`. Different children have different school years,
+and the enrollment is the frozen statement a later syllabus edit cannot reach
+into. The consequence is deliberate: **a vacation added mid-year needs an
+explicit re-materialize**, the same as every other frozen field.
+
+```bash
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize <learner> \
+  --syllabus <id> --teacher <teacher> --pin-env SCHOOL_PIN --apply
+```
+
+Re-materialize is refused while any session on that course is open, and it
+re-shuffles a `shuffle_once` order — do it when nobody is mid-worksheet.
+
+A shared household calendar layered *under* this is a reasonable future
+addition. It is not a substitute: the per-learner statement has to win.
+
+### What a non-school day does to the agenda
+
+`planLearnerWork` carries the enrollment's schedule onto every entry of that
+course; `planDailyAgenda` consults it at exactly one place, where it decides
+`obligation`.
+
+- The section resolves to the existing `excused` state with the reason
+  `not_a_school_day`, so `completion.mjs`, the status board and the report card
+  need no change. A whole day of them rolls up to `no_work_today`, not
+  `incomplete`.
+- A section is off only when **every** non-elective entry in it says so. One
+  unscheduled course beside a weekday-only one keeps the section obligated
+  rather than borrowing its vacation.
+- **`served` outranks it.** A child who does the work on a Saturday has done
+  it; the excuse applies to what is left, never to what was finished.
+- **`next` is still offered.** The obligation is excused, not forbidden —
+  optional work on a Saturday is fine. A presenter therefore has a lesson to
+  render on a day that is off, and must read the obligation reason rather than
+  the presence of `next` to decide whether to say "no school today".
+- A focus day cannot displace a section that is not in session: there is
+  nothing to hold back, and the extra block stays available for a subject that
+  was open.
+- The obligation ladder still runs underneath the override, so
+  `school.agenda.blocked-unreachable` and the other diagnostics keep firing on
+  a Saturday. Only the verdict softens.

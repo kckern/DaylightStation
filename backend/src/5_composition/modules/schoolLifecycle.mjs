@@ -68,7 +68,7 @@ import { FlashcardProgramLauncher } from '#apps/school/FlashcardProgramLauncher.
 import { RubiksCubeProgramLauncher } from '#apps/school/RubiksCubeProgramLauncher.mjs';
 import { RUBIKS_CUBE_COURSE_ID } from '#apps/school/rubiksCube/courseCatalog.mjs';
 import { SurfaceProgramLauncher } from '#apps/school/SurfaceProgramLauncher.mjs';
-import { StoryTimeProgramLauncher, STORY_TIME_PROGRAM_ID } from '#apps/school/StoryTimeProgramLauncher.mjs';
+import { StoryTimeProgramLauncher } from '#apps/school/StoryTimeProgramLauncher.mjs';
 import { transcribeEscPosItems } from '#system/utils/escposTranscript.mjs';
 import { codesFrom as receiptCodesFrom } from '#rendering/school/documents/DocumentReceiptRasterRenderer.mjs';
 import { PianoCourseProgramLauncher } from '#apps/school/PianoCourseProgramLauncher.mjs';
@@ -114,7 +114,7 @@ import { EnrollLearner } from '#apps/school/usecases/EnrollLearner.mjs';
 import { UnenrollLearner } from '#apps/school/usecases/UnenrollLearner.mjs';
 import { validateSyllabus } from '#domains/school/curriculum/syllabus.mjs';
 import { validateFlashcardEnrollment } from '#domains/school/flashcards/index.mjs';
-import { validateStoryTimeEnrollment } from '#domains/school/storyTime.mjs';
+import { validateStoryTimeEnrollment, STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
 import { validateFitnessActivityDescriptor } from '#domains/school/fitnessCourse.mjs';
 import { ValidationError } from '#domains/core/errors/index.mjs';
 import { isSchoolToken } from '#domains/school/sessions/tokens.mjs';
@@ -1102,7 +1102,7 @@ export async function createSchoolLifecycle({
       }]] : []),
       // Unconditional, matching the launcher registration: story-time has no
       // service behind it that could be missing.
-      ['story-time', (raw) => validateStoryTimeEnrollment(raw)],
+      [STORY_TIME_PROGRAM_ID, (raw) => validateStoryTimeEnrollment(raw)],
       // Same RUBIKS_CUBE_COURSE_ID gate as the launcher registration above:
       // no course.yml authored means no valid courseId ever exists, so don't
       // offer the validator at all rather than have it reject every attempt.
@@ -1346,6 +1346,15 @@ export async function createSchoolLifecycle({
     getLearnerDayCompletion,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
+    // The story-time launcher by name, for the living-room reading session.
+    // Exposed rather than reached for through `launchers` because two callers
+    // need DIFFERENT things off it and both must have the SAME instance: the
+    // interceptor asks `status()` to derive the assignment/browsing mode, and
+    // `RecordStoryRead` takes `studyDay()` as its shard key. A second launcher
+    // wired with its own timezone would file a 10pm read under tomorrow while
+    // this one still read today — the count would never rise and nothing would
+    // error. One instance is what makes that impossible.
+    storyTimeLauncher: launchers.get(STORY_TIME_PROGRAM_ID) ?? null,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without

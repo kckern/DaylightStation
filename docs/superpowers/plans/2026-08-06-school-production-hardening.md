@@ -66,33 +66,33 @@ const cs = () => ({
 });
 const dayDir = (u) => path.join(root, 'users', u, 'apps', 'school');
 
-beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'shard-')); warns = []; fs.mkdirSync(dayDir('felix'), { recursive: true }); });
+beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), 'shard-')); warns = []; fs.mkdirSync(dayDir('learner4'), { recursive: true }); });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 
 describe('attempt shard integrity (readiness Blocker 1)', () => {
   it('a CORRUPT day file refuses the append — never clobbered to a one-row list', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    const file = path.join(dayDir('felix'), 'attempts-2026-08-06.yml'); // match the real shard filename — read the datastore's #attemptFile first and adjust
+    const file = path.join(dayDir('learner4'), 'attempts-2026-08-06.yml'); // match the real shard filename — read the datastore's #attemptFile first and adjust
     fs.writeFileSync(file, '{ this is: [not, yaml');
-    expect(() => ds.appendAttempt('felix', { id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true }))
+    expect(() => ds.appendAttempt('learner4', { id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true }))
       .toThrow(/corrupt/i);
     expect(fs.readFileSync(file, 'utf8')).toContain('this is'); // original bytes untouched
   });
   it('a corrupt read is LOUD (logged) and returns [], a missing file is quiet []', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    const file = path.join(dayDir('felix'), 'attempts-2026-08-06.yml');
+    const file = path.join(dayDir('learner4'), 'attempts-2026-08-06.yml');
     fs.writeFileSync(file, '{ nope: [');
-    expect(ds.readAttemptDay('felix', '2026-08-06')).toEqual([]);
+    expect(ds.readAttemptDay('learner4', '2026-08-06')).toEqual([]);
     expect(warns.some(([evt]) => evt === 'school.attempts.shard-corrupt')).toBe(true);
     warns = [];
-    expect(ds.readAttemptDay('felix', '2026-08-05')).toEqual([]); // missing: no log
+    expect(ds.readAttemptDay('learner4', '2026-08-05')).toEqual([]); // missing: no log
     expect(warns).toEqual([]);
   });
   it('a healthy append survives and rewrites ATOMICALLY (no partial file on interrupt is testable as: tmp is renamed, not written in place)', () => {
     const ds = new YamlSchoolDatastore({ configService: cs(), logger });
-    ds.appendAttempt('felix', { id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true });
-    ds.appendAttempt('felix', { id: 'att_2', at: '2026-08-06T10:01:00.000Z', bankId: 'b', itemId: 'q2', correct: false });
-    expect(ds.readAttemptDay('felix', '2026-08-06')).toHaveLength(2);
+    ds.appendAttempt('learner4', { id: 'att_1', at: '2026-08-06T10:00:00.000Z', bankId: 'b', itemId: 'q', correct: true });
+    ds.appendAttempt('learner4', { id: 'att_2', at: '2026-08-06T10:01:00.000Z', bankId: 'b', itemId: 'q2', correct: false });
+    expect(ds.readAttemptDay('learner4', '2026-08-06')).toHaveLength(2);
   });
 });
 ```
@@ -148,7 +148,7 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 
 **Interfaces:** `GET /learners/:id/agenda` becomes side-effect-free: it executes `previewAgenda` (dry-run twin, identical PNG) instead of `buildAgenda`. `POST /learners/:id/agenda` is added for any caller that truly needs the minting build (none known over HTTP — the NFC path calls `handleScan` in-process). Both routes keep the `?name=` override.
 
-- [ ] **Step 1: failing test** — router test with `buildAgenda: vi.fn()`, `previewAgenda: {execute: vi.fn(async () => ({document:{id:'agenda-x'}, sections:[], plan:{entries:[],errors:[]}}))}` + a stub `receiptPngRenderer`: `GET /learners/felix/agenda` → previewAgenda called, buildAgenda NOT called; `POST /learners/felix/agenda` → buildAgenda called.
+- [ ] **Step 1: failing test** — router test with `buildAgenda: vi.fn()`, `previewAgenda: {execute: vi.fn(async () => ({document:{id:'agenda-x'}, sections:[], plan:{entries:[],errors:[]}}))}` + a stub `receiptPngRenderer`: `GET /learners/learner4/agenda` → previewAgenda called, buildAgenda NOT called; `POST /learners/learner4/agenda` → buildAgenda called.
 - [ ] **Step 2: verify fail.** **Step 3: implement** (move the existing GET handler body to POST; GET delegates to the preview handler logic — reuse, don't duplicate the PNG plumbing: extract a local `sendAgendaPng(res, result)` helper inside the router factory).
 - [ ] **Step 4: pass** + `tests/isolated/e2e/school/agendaPreview.e2e.test.mjs`.
 - [ ] **Step 5: Commit** — `fix(school): GET agenda is a dry run; the minting build moves to POST (readiness punch 5)`
@@ -179,7 +179,7 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 
 - [ ] **Step 1: failing tests** — in `getMaterialUnits.test.mjs`: a unit `plex:u1` whose TRACKS `plex:t1..t3` are backlinked by three banks; attempts pass banks 1-2 only → `completed:false`, `quiz:{bankId:<bank3>, banksTotal:3, banksPassed:2}`; pass all three → `gateSatisfied` true. And: a WORK-level direct backlink (today's only working shape) still binds (`banks:[one]`).
 - [ ] **Step 2: verify fail.** **Step 3: implement** per Interfaces. **Step 4: pass** + frontend materials suites.
-- [ ] **Step 5: Live verification (content untouched — the roll-up makes the EXISTING 382 track backlinks bind):** after the wave's deploy step, `curl -s 'localhost:3111/api/v1/school/materials/plex:619778/units?userId=felix' | python3 -c "..."` must show ≥1 unit with `quiz.bankId` non-null and `banksTotal > 1`. Record the count in the wave notes.
+- [ ] **Step 5: Live verification (content untouched — the roll-up makes the EXISTING 382 track backlinks bind):** after the wave's deploy step, `curl -s 'localhost:3111/api/v1/school/materials/plex:619778/units?userId=learner4' | python3 -c "..."` must show ≥1 unit with `quiz.bankId` non-null and `banksTotal > 1`. Record the count in the wave notes.
 - [ ] **Step 6: Commit** — `feat(school): chapter banks gate their parent unit — all must pass (readiness Blocker 2)`
 
 ### Task 7: Print Center restoration (punch 4)
@@ -203,7 +203,7 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 - [ ] **Step 1: failing test** — fake `getMaterialUnits.execute` that records concurrent in-flight count (increment on entry, decrement after `await sleep(5)`); 20 materials → max in-flight ≤ 6 AND result order preserved.
 - [ ] **Step 2: verify fail** (today max in-flight is 1 — assert ≥2 fails… invert: assert the SUMMARY total runtime < sequential; simplest honest pin: assert `maxInFlight > 1 && maxInFlight <= 6`).
 - [ ] **Step 3: implement.** **Step 4: pass.**
-- [ ] **Step 5: after deploy, measure live**: `time curl -s 'localhost:3111/api/v1/school/report-card?learnerId=felix&periodId=2026-fall&format=pdf' -o /dev/null` twice (cold container, then warm). Record both; target cold < 8s, warm < 1s.
+- [ ] **Step 5: after deploy, measure live**: `time curl -s 'localhost:3111/api/v1/school/report-card?learnerId=learner4&periodId=2026-fall&format=pdf' -o /dev/null` twice (cold container, then warm). Record both; target cold < 8s, warm < 1s.
 - [ ] **Step 6: Commit** — `perf(school): materials summary fans out bounded-parallel; units cache 1h (readiness punch 1)`
 
 ### Task 9: Green the operator gates — school:smoke + receipts test (punch 3)
@@ -308,7 +308,7 @@ describe('attempt shard integrity (readiness Blocker 1)', () => {
 
 ### Task 20: Ops close-out + ledger update
 
-- [ ] **Step 1 (MANUAL — the teacher, not a script):** resolve `ses_JBbf4vrc` on the Repair tab (resume it with felix, or Abandon with a reason). Recorded here as the operator step; the wave does NOT script it.
+- [ ] **Step 1 (MANUAL — the teacher, not a script):** resolve `ses_JBbf4vrc` on the Repair tab (resume it with learner4, or Abandon with a reason). Recorded here as the operator step; the wave does NOT script it.
 - [x] **Step 2:** Update `docs/superpowers/plans/2026-08-06-school-teacher-console.md` with the Wave 10 shipped record and the 2026-08-24 software-only follow-up that closes the five previously open choices.
 - [x] **Step 3:** Update `docs/reference/school/README.md` (sittings, identity ceremony, POST render/agenda, PIN lanes, and software-only follow-up) and `docs/runbooks/school-cold-start.md` (Print Center capability requirement).
 - [ ] **Step 4:** Automated software subset completed 2026-08-24: School-focused coverage, full Jest/Vitest gates with exclusions classified, layer/refactor gates, Vite production build, and local Docker image build. Intentionally not performed here: deploy gate, deploy, live installation verification, M10 human/Fable review, merge/branch deletion, record, or push.

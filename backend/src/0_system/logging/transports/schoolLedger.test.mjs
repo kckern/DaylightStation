@@ -21,11 +21,11 @@ afterEach(() => { fs.rmSync(base, { recursive: true, force: true }); });
 describe('school ledger transport', () => {
   it('writes school events as JSONL into a dated file', () => {
     const t = createSchoolLedgerTransport({ baseDir: base });
-    t.send({ ts: 'x', level: 'info', event: 'school.enrollment.materialized', data: { learnerId: 'milo' } });
+    t.send({ ts: 'x', level: 'info', event: 'school.enrollment.materialized', data: { learnerId: 'learner3' } });
     const { files, lines } = read();
     expect(files[0]).toMatch(/^\d{4}-\d{2}-\d{2}\.jsonl$/);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ event: 'school.enrollment.materialized', data: { learnerId: 'milo' } });
+    expect(lines[0]).toMatchObject({ event: 'school.enrollment.materialized', data: { learnerId: 'learner3' } });
   });
 
   it('ignores events belonging to other subsystems', () => {

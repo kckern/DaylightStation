@@ -93,7 +93,7 @@ The remediation was implemented and merged the same day via the plan [docs/super
 - **MEDIUM — `trust_level` is a fictional feature.** Referenced in the prompt (`system.mjs:13-17`) and read in `CadenceCheck.mjs:53`, but never written anywhere — permanently `'new'`.
 - **MEDIUM — Dead household config override.** `data/household/config/agents.yml`'s `lifeplan-guide` memory override never loads (`loadAgentConfig.mjs:51` reads `data/system/config/agents.yml` — the known household-accessor gotcha). Non-fatal; system defaults do enable memory (verified recall in a July 9 transcript).
 - **MEDIUM — Single channel, dead action buttons.** Coach is reachable only at `/life/coach`; no Telegram/inbound routing. `CadenceCheck` emits `actions` arrays with no handler for the action strings.
-- **Housekeeping — prod polluted by tests.** The real user's plan purpose is currently `"Playwright audit purpose test"`; test-user `learner-one`'s July 10 plan has since vanished. Keep Playwright off prod user files.
+- **Housekeeping — prod polluted by tests.** The real user's plan purpose is currently `"Playwright audit purpose test"`; test-user `learner1`'s July 10 plan has since vanished. Keep Playwright off prod user files.
 
 ---
 

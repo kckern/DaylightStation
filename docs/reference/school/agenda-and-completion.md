@@ -33,8 +33,15 @@ A section receives one obligation state:
 | `faulted` | School cannot determine the required program or plan reliably |
 
 Common excused reasons include elective-only work, already caught up, work that
-opens later, optional dated-module backlog, and temporary focus-day
-suppression. Catch-up remains excused even when its worksheet is already open.
+opens later, optional dated-module backlog, temporary focus-day suppression,
+and `not_a_school_day` — a weekend, holiday or vacation declared by the
+enrollment's [school-day calendar](./timing-and-priority.md#7-the-school-day-calendar).
+Catch-up remains excused even when its worksheet is already open.
+
+`not_a_school_day` is applied as an override after the ladder, so it never
+downgrades a section that was already `served`, and the diagnostics below it
+keep firing on a day that is off. The section still offers a `next`: the
+obligation is excused, not forbidden.
 
 ## Focus days and chaining
 

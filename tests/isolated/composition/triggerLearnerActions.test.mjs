@@ -1,0 +1,349 @@
+import { describe, it, expect, vi } from 'vitest';
+import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
+import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
+import { makePrintAgendaHandler, makeReadingSessionHandler } from '#composition/modules/learnerCardActions.mjs';
+import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
+
+const silent = { warn() {}, info() {}, error() {}, debug() {} };
+
+// The registry shape composition actually hands the dispatcher, with the two
+// readers this plan cares about: the study prints, the living room opens a
+// reading session that nothing implements yet.
+const registry = {
+  nfc: {
+    locations: {
+      study: { target: 'portal', action: 'play-next', learner_action: 'print-agenda', auth_token: null, notify_unknown: null, defaults: {} },
+      livingroom: { target: 'livingroom-tv', action: 'play-next', learner_action: 'reading-session', auth_token: null, notify_unknown: null, defaults: {} },
+    },
+    tags: {
+      '048ba600cc2a81': { global: { note: 'learner-b personal card', school_learner: 'learner-b' }, overrides: {} },
+    },
+  },
+};
+
+function makeService(learnerActions, tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) }) {
+  return new TriggerDispatchService({
+    config: registry,
+    contentIdResolver: { resolve: (id) => /^plex:/.test(id) ? { source: 'plex' } : null },
+    wakeAndLoadService: { execute: vi.fn() },
+    haGateway: { callService: vi.fn().mockResolvedValue({ ok: true }) },
+    deviceService: { get: vi.fn() },
+    tagWriter,
+    learnerActions,
+    broadcast: vi.fn(),
+    logger: silent,
+  });
+}
+
+describe('trigger learner actions — composition contract', () => {
+  it('print-agenda calls ResolvePersonalCard and reports its status', async () => {
+    const calls = [];
+    const resolvePersonalCard = {
+      execute: async ({ learnerId }) => { calls.push(learnerId); return { status: 'agenda_printed', printed: true }; },
+    };
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', ({ learnerId }) => resolvePersonalCard.execute({ learnerId }));
+
+    const result = await learnerActions.get('print-agenda')({ learnerId: 'learner-b', location: 'study' });
+    expect(calls).toEqual(['learner-b']);
+    expect(result.status).toBe('agenda_printed');
+  });
+
+  it('a learner card at the study reader reaches print-agenda, learner and all', async () => {
+    const seen = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async (args) => { seen.push(args); return { status: 'agenda_printed' }; });
+
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '04:8B:A6:00:CC:2A:81');
+
+    expect(result.ok).toBe(true);
+    expect(result.action).toBe('print-agenda');
+    expect(seen).toEqual([{ learnerId: 'learner-b', location: 'study', target: 'portal' }]);
+    expect(result.dispatch.status).toBe('agenda_printed');
+  });
+
+  // THE NON-NEGOTIABLE, NOW THAT `reading-session` IS WIRED. The failure mode
+  // being guarded has never been "nothing happens" — it is the SAME card
+  // silently running print-agenda because that was the only learner action
+  // wired, so a child taps in the living room and a printer starts up in the
+  // study two rooms away. That refusal used to be a `no_handler`; it is now a
+  // session, and the thing that must stay true either way is that the living
+  // room does NOT reach the study's handler.
+  //
+  // This assertion was inverted deliberately (it pinned `no_handler` through
+  // six agents while the action was withheld) rather than deleted, because
+  // what it actually guards is the routing, not the refusal.
+  it('the SAME card in the living room opens a reading session and never prints', async () => {
+    const printed = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async (args) => { printed.push(args); return { status: 'agenda_printed' }; });
+    const sessions = new ReadingSessionService({ logger: silent });
+    learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
+
+    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+
+    expect(result.dispatch).toMatchObject({ status: 'reading_session_open', learnerId: 'learner-b' });
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'learner-b', state: 'prompt' });
+    expect(printed).toEqual([]);
+  });
+
+  // And the study is unmoved by any of it: one card, two readers, two
+  // different answers, decided by the reader's `learner_action` and nothing
+  // else.
+  it('the same card in the STUDY still prints, and opens no session', async () => {
+    const printed = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async (args) => { printed.push(args); return { status: 'agenda_printed' }; });
+    const sessions = new ReadingSessionService({ logger: silent });
+    learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
+
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(result.dispatch).toMatchObject({ status: 'agenda_printed' });
+    expect(printed).toHaveLength(1);
+    expect(sessions.list()).toEqual([]);
+  });
+
+  // The withheld refusal is still the right answer for a household that has no
+  // story-time launcher — app.mjs registers the action only when the sessions
+  // store it needs actually exists.
+  it('an unwired reading session degrades to the same named refusal', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'reading-session' });
+  });
+
+  it('and changes nothing in Home Assistant either', async () => {
+    // The refused path ran the zombie-wake-guard suppression on its way past —
+    // `livingroom-tv` is the one guarded target — so the tap that promises to
+    // change nothing disabled a TV safety automation for 90 seconds. Only
+    // content wakes a target; only content needs the guard out of the way.
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    const learnerActions = createLearnerActions({ logger: silent });
+    const service = new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: { resolve: () => null },
+      wakeAndLoadService: { execute: vi.fn() },
+      haGateway,
+      deviceService: { get: vi.fn() },
+      tagWriter: { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
+      learnerActions,
+      broadcast: vi.fn(),
+      logger: silent,
+    });
+
+    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+
+    expect(haGateway.callService).not.toHaveBeenCalled();
+  });
+
+  it('a no_handler refusal does not file the card as an unknown tag', async () => {
+    // The tag IS registered and named — it is the ACTION that has no owner. A
+    // placeholder write and a phone push would misname the problem.
+    const tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }) };
+    const learnerActions = createLearnerActions({ logger: silent });
+    await makeService(learnerActions, tagWriter).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+  });
+
+  it('an unwired School degrades to the same named refusal, not a crash', async () => {
+    // What app.mjs does when `schoolLifecycle.useCases.resolvePersonalCard` is
+    // absent: register nothing, log it, and let the tap answer for itself.
+    const learnerActions = createLearnerActions({ logger: silent });
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+    expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'print-agenda' });
+  });
+});
+
+// The debounce exists to collapse HA's 2-3 fires per physical tap and to stop a
+// child re-tapping through a 25s wake. It must not also swallow the retry that
+// a FAILED action explicitly asks for: the receipt in the child's hand says
+// "Try scanning again", and the bus path this replaces had no debounce at all.
+describe('trigger learner actions — a failed action must be retryable', () => {
+  it('lets the very next tap through when the action failed', async () => {
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      throw new Error('printer offline');
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBeUndefined();
+    expect(attempts).toEqual(['tap', 'tap']);
+  });
+
+  it('a handler that reports its own failure gets the same release', async () => {
+    // The print-agenda wrapper marks School's `print_failed` retryable — the
+    // use case reports it rather than throwing, so nothing else would.
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      return { status: 'print_failed', printed: false, retryable: true };
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(attempts).toEqual(['tap', 'tap']);
+  });
+
+  it('still debounces a SUCCESSFUL action — that lockout is the whole cooldown', async () => {
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      return { status: 'agenda_printed', printed: true };
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBe(true);
+    expect(attempts).toEqual(['tap']);
+  });
+
+  it('still debounces a named refusal — retrying it changes nothing', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBe(true);
+  });
+
+  // The REAL wrapper, imported. This used to reconstruct the expression from
+  // app.mjs by hand, which pinned a copy rather than the code — editing the
+  // registration could not have failed it.
+  it('the print-agenda wrapper marks print_failed retryable and nothing else', async () => {
+    const statuses = [
+      { status: 'print_failed', printed: false },
+      { status: 'agenda_printed', printed: true },
+      { status: 'agenda_suppressed', sinceMinutes: 3 },
+      { status: 'unknown_learner' },
+    ];
+    const results = [];
+    for (const result of statuses) {
+      const handler = makePrintAgendaHandler({
+        resolvePersonalCard: { execute: async () => result },
+        eventBus: { broadcast() {} },
+        logger: silent,
+      });
+      results.push(await handler({ learnerId: 'learner-d', location: 'study' }));
+    }
+    expect(results[0]).toMatchObject({ status: 'print_failed', retryable: true });
+    expect(results[1].retryable).toBeUndefined();
+    expect(results[2].retryable).toBeUndefined();
+    expect(results[3].retryable).toBeUndefined();
+  });
+});
+
+// Slice G, 2026-08-22-omr-grading-integrity, Rule 3. This broadcast used to live
+// in `nfcTapIngress`; the fork deletion moved it here, to the one place that
+// knows a print was suppressed. It is the ONLY feedback a child gets for a tap
+// that produces no paper — `useScanCeremony.js` renders it — so losing it means
+// the child taps harder, which is the exact behaviour the cooldown exists to
+// stop. It rides the `omr` topic because `useScanCeremony.js` already subscribes
+// there; no new transport.
+describe('print-agenda — the cooldown acknowledgement', () => {
+  const suppressed = {
+    status: 'agenda_suppressed', printed: false, sinceMinutes: 3, cooldownMinutes: 15,
+  };
+
+  it('broadcasts agenda-suppressed so a cooldown tap is still acknowledged on screen', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+
+    await handler({ learnerId: 'learner-d', location: 'study' });
+
+    expect(broadcasts).toEqual([{
+      topic: 'omr',
+      payload: expect.objectContaining({
+        event: 'agenda-suppressed', learnerId: 'learner-d', sinceMinutes: 3, cooldownMinutes: 15,
+      }),
+    }]);
+  });
+
+  it('does NOT broadcast on an ordinary agenda_printed tap', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => ({ status: 'agenda_printed', printed: true }) },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+    await handler({ learnerId: 'learner-d', location: 'study' });
+    expect(broadcasts).toEqual([]);
+  });
+
+  it('reaches the panel through the whole pipeline, not just when called directly', async () => {
+    const broadcasts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    }));
+
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(result.dispatch.status).toBe('agenda_suppressed');
+    expect(broadcasts.map((b) => b.payload.event)).toEqual(['agenda-suppressed']);
+  });
+
+  it('carries nulls rather than dropping the acknowledgement when the use case omits the timings', async () => {
+    const broadcasts = [];
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => ({ status: 'agenda_suppressed' }) },
+      eventBus: { broadcast: (topic, payload) => broadcasts.push({ topic, payload }) },
+      logger: silent,
+    });
+    await handler({ learnerId: 'learner-d', location: 'study' });
+    expect(broadcasts[0].payload).toMatchObject({ sinceMinutes: null, cooldownMinutes: null });
+  });
+
+  it('never lets a missing or throwing broadcast turn a real outcome into a failure', async () => {
+    // `responseHandlers.learner` catches a throw and answers `failed, retryable`
+    // — so a broken bus would report a SUCCESSFUL suppression as a failed tap
+    // AND release the debounce, printing on the very next tap. The
+    // acknowledgement is best-effort; the outcome is not.
+    for (const eventBus of [undefined, {}, { broadcast() { throw new Error('bus is gone'); } }]) {
+      const handler = makePrintAgendaHandler({
+        resolvePersonalCard: { execute: async () => suppressed },
+        eventBus,
+        logger: silent,
+      });
+      await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+        .resolves.toMatchObject({ status: 'agenda_suppressed' });
+    }
+  });
+
+  it('a throwing logger cannot break the tap either', async () => {
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => suppressed },
+      eventBus: { broadcast() {} },
+      logger: { info() { throw new Error('log transport down'); } },
+    });
+    await expect(handler({ learnerId: 'learner-d', location: 'study' }))
+      .resolves.toMatchObject({ status: 'agenda_suppressed' });
+  });
+
+  it('a use case that answers nothing at all is named, not silently ok', async () => {
+    const handler = makePrintAgendaHandler({
+      resolvePersonalCard: { execute: async () => undefined },
+      eventBus: { broadcast() {} },
+      logger: silent,
+    });
+    expect(await handler({ learnerId: 'learner-d', location: 'study' })).toEqual({ status: 'unknown' });
+  });
+});

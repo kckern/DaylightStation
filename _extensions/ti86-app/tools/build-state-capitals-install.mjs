@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Build the audited TI86A Adaptive Study install requested for Felix. */
+/** Build the audited TI86A Adaptive Study install requested for Learner4. */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
@@ -25,7 +25,7 @@ const DIST = path.join(EXTENSION, 'dist');
 const GENERATED_BANKS = path.join(ROOT, 'data', 'content', 'school', 'generated-banks');
 
 const DEVICE_ID = 'TI86A';
-const LEARNER_ID = 'felix';
+const LEARNER_ID = 'learner4';
 const LEARNER_KEY = 4;
 const SESSION_CODE = '000000';
 const PRESCRIPTION_ID = 'FELIXCAP1';
@@ -93,7 +93,7 @@ if (decodedPrescription.deviceId !== DEVICE_ID
     || decodedPrescription.sessionCode !== SESSION_CODE
     || decodedPrescription.cardCount !== 12
     || decodedPrescription.itemCount !== 10) {
-  throw new Error('Felix state-capitals prescription binding is invalid');
+  throw new Error('Learner4 state-capitals prescription binding is invalid');
 }
 
 const fixtureFiles = [
@@ -102,7 +102,7 @@ const fixtureFiles = [
     bytes: createTi86StringFile({
       name: artifact.variableName,
       record: artifact.bytes,
-      comment: 'Felix state capitals artifact',
+      comment: 'Learner4 state capitals artifact',
     }),
   },
   {
@@ -110,7 +110,7 @@ const fixtureFiles = [
     bytes: createTi86StringFile({
       name: 'DSSTUDY',
       record: prescription,
-      comment: 'Felix state capitals prescription',
+      comment: 'Learner4 state capitals prescription',
     }),
   },
 ];
@@ -130,7 +130,7 @@ const ordered = [...sourceEntries, ...fixtureFiles, launcher].map((entry, transf
 }));
 const transfer = ordered.map(({ bytes, ...entry }) => entry);
 const releaseId = digest(Buffer.from(JSON.stringify(transfer))).slice(0, 12);
-const output = path.join(DIST, `state-capitals-felix-${releaseId}`);
+const output = path.join(DIST, `state-capitals-learner4-${releaseId}`);
 mkdirSync(output, { recursive: true });
 ordered.forEach(({ fileName, bytes }) => writeFileSync(path.join(output, fileName), bytes));
 const manifest = {
@@ -155,7 +155,7 @@ const manifest = {
   },
 };
 writeFileSync(path.join(output, 'complete-install.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-process.stdout.write(`[ti86] Felix state-capitals install ${releaseId}: ${output}\n`);
+process.stdout.write(`[ti86] Learner4 state-capitals install ${releaseId}: ${output}\n`);
 process.stdout.write(`[ti86] code ${SESSION_CODE}; ${cardIds.length} cards; ${quizIds.length} quiz items; artifact ${artifact.variableName}\n`);
 
 function digest(bytes) { return createHash('sha256').update(bytes).digest('hex'); }

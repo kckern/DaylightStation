@@ -34,8 +34,8 @@
  * That file's full single-run lifecycle proof (agenda -> scan -> issue ->
  * grade -> close -> rescan -> answer-sheet reuse) still runs, unmodified in
  * shape, as the `proof` command below — same in-memory doubles, same
- * invariants, just fed a learner/course/subject instead of Milo/Felix/
- * civilization baked in as constants. `proof felix young-peoples-atlas-us`
+ * invariants, just fed a learner/course/subject instead of Learner3/Learner4/
+ * civilization baked in as constants. `proof learner4 young-peoples-atlas-us`
  * reproduces the original atlas run.
  *
  * TWO KINDS OF STATE, ON PURPOSE:
@@ -47,7 +47,7 @@
  *  - `card`/`scan`/`lesson`/`flow` persist sessions/tokens/worksheet-
  *    instances/form-maps/print-documents/allocations to a `--state-dir`
  *    scratch root (default under the OS tmp dir) using the REAL `Yaml*`
- *    adapters the backend itself uses — so `card felix` in one process and
+ *    adapters the backend itself uses — so `card learner4` in one process and
  *    `scan sch:XXXX` in a LATER process see the same minted token, the way a
  *    printed QR code and a scanner really would. This is what makes `scan`
  *    and `lesson` independently reproducible commands rather than only
@@ -122,7 +122,7 @@ const ENTRYPOINT = fileURLToPath(import.meta.url);
 // exactly this reason. Without it, `resolveScanSimPaths` below fell through
 // to the Docker-only default (`/usr/src/app/data`) on any host where
 // `DAYLIGHT_BASE_PATH` wasn't ALREADY exported in the calling shell — which a
-// plain `node cli/barcode-scan-sim.cli.mjs card felix` never does. The
+// plain `node cli/barcode-scan-sim.cli.mjs card learner4` never does. The
 // nonexistent directory then fed every Yaml adapter down the line, each of
 // which treats a missing directory as "legitimately nothing here yet" (an
 // empty shelf is valid data — see `YamlCurriculumDatastore#curriculumWorks`),
@@ -186,7 +186,7 @@ Commands:
                                reuse. Leaves no learner history — sessions,
                                tokens, worksheet instances and attempts stay
                                in memory for this one process only.
-                               'proof felix young-peoples-atlas-us' reproduces
+                               'proof learner4 young-peoples-atlas-us' reproduces
                                the original atlas run.
   printer-status                read-only IPP ping + Get-Printer-Attributes
                                against the configured laser printer. Never
@@ -257,7 +257,7 @@ export function resolveScanSimPaths({ flags = {}, env = process.env } = {}) {
  * dotenv gap this file just fixed) produces the SAME shape as "nothing
  * assigned today": `sections: 0, offers: [], errors: []`. That shape is
  * indistinguishable from truth without this check — which is precisely the
- * failure that sent an operator down a wrong path trusting `card felix`'s
+ * failure that sent an operator down a wrong path trusting `card learner4`'s
  * "empty agenda" as fact. This function is what makes "no data reachable"
  * fail LOUD instead of quietly resolving to "nothing to do".
  */
@@ -343,8 +343,8 @@ function buildReadConfigService(dataDir) {
  * Write-side config shim for sessions/tokens/worksheet-instances/form-maps:
  * `getHouseholdPath` resolves inside `--state-dir`, never inside the real
  * `data/household` tree — this is the whole mechanism that keeps `card`/
- * `scan`/`lesson`/`flow` runnable against a REAL learner (felix) without
- * ever writing to felix's real session/attempt/worksheet-instance history.
+ * `scan`/`lesson`/`flow` runnable against a REAL learner (learner4) without
+ * ever writing to learner4's real session/attempt/worksheet-instance history.
  */
 function buildWriteConfigService(stateDir) {
   const root = path.join(stateDir, 'household');
@@ -444,7 +444,7 @@ function buildIssueDocument({
     // never reached by a bank-only (worksheet-instance) unit — see
     // `IssueDocument#execute`'s branch order. A unit whose `document` field
     // names a legacy catalog document WOULD reach it; this simulator has
-    // none among felix's atlas lessons, so a throwing stub surfaces that
+    // none among learner4's atlas lessons, so a throwing stub surfaces that
     // mismatch loudly instead of silently rendering nothing.
     renderer: { async render() { throw new Error('legacy document renderer reached — this unit is not a bank-only or print/ lesson'); } },
     printer: capture.printer,
@@ -1214,7 +1214,7 @@ export async function runBarcodeScanSim(argv = [], deps = {}) {
   // `flow`'s own return has no top-level `pdf` — the render lives one level
   // down, at `result.scan.pdf` (that IS what `flow` calls the generic `scan`
   // primitive for) — so this reads `result.pdf ?? result.scan?.pdf` rather
-  // than `result.pdf` alone. Without the fallback, `flow felix --print`
+  // than `result.pdf` alone. Without the fallback, `flow learner4 --print`
   // silently never reached the printer: the pdf existed, but this whole
   // block short-circuited on an always-undefined top-level field, so
   // `--print` was accepted, produced no error, and nothing came out of the

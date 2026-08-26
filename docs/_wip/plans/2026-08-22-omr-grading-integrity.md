@@ -38,13 +38,13 @@
 
 Several separate defects surfaced in one school session. All are evidenced below from logs, session records and on-device probes; do not re-derive them. Where a first-draft finding was later corrected, the correction is marked inline — trust the correction, not the original claim.
 
-### Incident 1 — Milo's sheet graded 5/6 then went silent
+### Incident 1 — Learner3's sheet graded 5/6 then went silent
 
 Log chain (local time):
 
 ```
 15:15:40  quiz.decode.sheet            testId 4071314, answered 6
-15:15:40  school.print.scan-resolved   learner milo, 5/6, cardIdInferred null
+15:15:40  school.print.scan-resolved   learner learner3, 5/6, cardIdInferred null
 15:15:40  school.print.scan-awaiting-review  pendingReview 1
           → nothing printed, no signal in the room
 ```
@@ -63,9 +63,9 @@ Resolved manually in prod via `POST /api/v1/school/lifecycle/sessions/ses_5yGnmu
 
 `omrRelay.mjs:187` logs it and broadcasts it; nothing in the UI consumes it. From the room it is indistinguishable from Incident 1.
 
-### Incident 3 — Felix's reprint changed physical identity
+### Incident 3 — Learner4's reprint changed physical identity
 
-Felix's session `ses_f6Buxumv` was **created 2026-08-14** and never submitted. On 2026-08-22 it was reprinted an 8-day-old artifact. Session events (all carrying the *same* `artifactId`):
+Learner4's session `ses_f6Buxumv` was **created 2026-08-14** and never submitted. On 2026-08-22 it was reprinted an 8-day-old artifact. Session events (all carrying the *same* `artifactId`):
 
 ```
 2026-08-14T16:28  created
@@ -81,7 +81,7 @@ The real defect is that **an 8-day-old session resumed silently**. His one live 
 
 A sweep of `artifacts/print/cards/` confirms only **one** allocation is `live` for that record; a rows 1–10 card (`3598689`) exists but is `released`. See Slice E for the full table and the correction it supersedes. **There is no data corruption here and no migration to write.**
 
-Also confirmed working and **not** to be changed: Milo (`profile` 6-item set) and Felix (`profile: upper`, 10 items) correctly received different content for the same unit.
+Also confirmed working and **not** to be changed: Learner3 (`profile` 6-item set) and Learner4 (`profile: upper`, 10 items) correctly received different content for the same unit.
 
 ### Cross-cutting: the logs actively misled
 
@@ -609,7 +609,7 @@ Commit each task separately.
 ## Slice E — Stale session resumption
 
 > **CORRECTION (verified 2026-08-22, after the first draft of this plan).** An
-> earlier version of this slice claimed Felix's worksheet had *two conflicting
+> earlier version of this slice claimed Learner4's worksheet had *two conflicting
 > live card allocations* and called it a mis-scoring hazard. **That was wrong.**
 > Card records carry a `status` field and only one allocation is live:
 >
@@ -625,7 +625,7 @@ Commit each task separately.
 
 ### What actually went wrong
 
-Felix's session `ses_f6Buxumv` was **created 2026-08-14 and never submitted**,
+Learner4's session `ses_f6Buxumv` was **created 2026-08-14 and never submitted**,
 then silently resumed eight days later. Everything he saw follows from that:
 
 - The **student number changed** because his one live allocation is card
@@ -671,7 +671,7 @@ PRINT IT AGAIN · Unit 0 · 1/1
 Started Thu 14 Aug · questions 7-16
 ```
 
-Naming the row range is what would have made Felix's sheet legible without
+Naming the row range is what would have made Learner4's sheet legible without
 anyone reading a log. Add a `school.session.stale-resume` `info` log with
 `{ sessionId, learnerId, ageDays, rowRange }` so the household can see how often
 this happens.
@@ -713,10 +713,10 @@ Every part of that is unsafe:
 
 1. **The flush callback is discarded.** `escpos-network` defines `write(data, callback)` and passes the callback straight to `net.Socket.write` — it is available and ignored.
 2. **`close()` is a hard destroy.** The library's `close` calls `this.device.destroy()`, not `end()`. Destroying a socket discards whatever is still queued in userspace.
-3. **1000 ms is a guess, not a completion signal.** A thermal printer applies TCP backpressure — it accepts bytes at printing speed. A raster receipt (Felix's laser equivalent was 255 KB; the School receipt path renders `{type:'image'}`) cannot flush in a second, so `socket.write` queues the remainder and the timer destroys it.
+3. **1000 ms is a guess, not a completion signal.** A thermal printer applies TCP backpressure — it accepts bytes at printing speed. A raster receipt (Learner4's laser equivalent was 255 KB; the School receipt path renders `{type:'image'}`) cannot flush in a second, so `socket.write` queues the remainder and the timer destroys it.
 4. **`resolve(true)` is unconditional.** `thermalPrinter.job.complete` is emitted even when the paper is half-printed, which is why every logged `duration` clusters at ~1.2 s regardless of job size. The success signal in the logs is meaningless today.
 
-**Why the next receipt prints shifted.** Truncation lands mid-`GS v 0` raster, with the printer still counting down an expected byte total. The following job's `ESC @` initialise bytes are consumed as bitmap payload instead of being parsed as a command, so the parser stays desynchronised and rows render horizontally rotated — the reported "left 15% cut off, printing on the right". This is why the corruption appeared on Milo's *agenda*, the job after the long one. It is not a printer memory fault; it is our contract.
+**Why the next receipt prints shifted.** Truncation lands mid-`GS v 0` raster, with the printer still counting down an expected byte total. The following job's `ESC @` initialise bytes are consumed as bitmap payload instead of being parsed as a command, so the parser stays desynchronised and rows render horizontally rotated — the reported "left 15% cut off, printing on the right". This is why the corruption appeared on Learner3's *agenda*, the job after the long one. It is not a printer memory fault; it is our contract.
 
 ### Task F1: Wait for the flush, close cleanly
 
@@ -821,7 +821,7 @@ Commit as `fix(thermal): print the check mark instead of dropping it`.
 
 **Requirement (KC):** children tap the NFC card repeatedly and the printer fires every time. Suppress a repeat agenda print within a configurable window; **15 minutes** is the starting value.
 
-The logs show the pattern plainly — Soren at 15:02:33, 15:04:00, 15:05:29, 15:07:09 (four prints in under five minutes), Alan at 15:06:22 and 15:08:03, every one of them printing the same "Nothing is assigned right now."
+The logs show the pattern plainly — Learner1 at 15:02:33, 15:04:00, 15:05:29, 15:07:09 (four prints in under five minutes), Learner2 at 15:06:22 and 15:08:03, every one of them printing the same "Nothing is assigned right now."
 
 ### Task G1: Config-driven cooldown
 
@@ -864,7 +864,7 @@ Rule 4 is what keeps this from being a blunt instrument — without it, a child 
 
 ### What is actually wrong
 
-The agenda already pairs them per section (`receipts.mjs:306` pushes `panelCodeBlocks` immediately after the tokened `lessonAction`), which is why Felix's single-offer slip looked right:
+The agenda already pairs them per section (`receipts.mjs:306` pushes `panelCodeBlocks` immediately after the tokened `lessonAction`), which is why Learner4's single-offer slip looked right:
 
 ```
 PRINT IT AGAIN · Unit 0 · 1/1
@@ -874,7 +874,7 @@ PANEL CODE 579078
 
 Two real defects sit underneath that:
 
-1. **The result receipt emits QR tokens with no code at all.** `resultReceipt` pushes `lessonAction({ token })` and `{type:'scan_action', action: token}` and never calls `panelCodeBlocks`. Milo's printed receipt carried `sch:XAXYT6X849DUPEVX` under "Scan to print the next worksheet" with nothing to type. On a panel where scanning is awkward, that QR is a dead end.
+1. **The result receipt emits QR tokens with no code at all.** `resultReceipt` pushes `lessonAction({ token })` and `{type:'scan_action', action: token}` and never calls `panelCodeBlocks`. Learner3's printed receipt carried `sch:XAXYT6X849DUPEVX` under "Scan to print the next worksheet" with nothing to type. On a panel where scanning is awkward, that QR is a dead end.
 2. **The pairing is keyed to the wrong thing.** `accessCodesBySubject?.[section.subject]` maps codes by *subject*, while QRs are minted per *token*. Two offers in one subject cannot each get their own code, and nothing structurally prevents a QR from rendering codeless — it is a convention, not an invariant.
 
 ### Task H1: Make the pairing structural
@@ -901,7 +901,7 @@ function assertEveryQrHasAdjacentCode(blocks) {
 }
 
 describe('QR / panel-code pairing', () => {
-  it('pairs them on a result receipt (regression: Milo, 2026-08-22)', () => {
+  it('pairs them on a result receipt (regression: Learner3, 2026-08-22)', () => {
     const r = resultReceipt({
       sessionId: 'ses_x', unitTitle: 'The United States', result: 'passed', percent: 100,
       actions: [{ token: 'XAXYT6X849DUPEVX', label: 'Scan to print the next worksheet',
@@ -946,9 +946,9 @@ agenda codes were keyed by subject while QRs are minted per token."
 
 ## Out of scope, worth fixing separately
 
-**The result receipt prints a literal `undefined · undefined of undefined`.** Observed in Milo's slip between "Passing is 80%" and "NOTES FOR YOU". A template hole in the receipt renderer that reaches every child. Trace from `CloseSessionOutcome.#printed` (`:351`) into the receipt document builder.
+**The result receipt prints a literal `undefined · undefined of undefined`.** Observed in Learner3's slip between "Passing is 80%" and "NOTES FOR YOU". A template hole in the receipt renderer that reaches every child. Trace from `CloseSessionOutcome.#printed` (`:351`) into the receipt document builder.
 
-**Reviewer notes are child-facing.** The note written for the record ("Two bubbles marked (B, D)…") printed to Milo under "NOTES FOR YOU". Anything Slice B auto-generates will land in front of a child — either keep such notes machine-only or word them for the reader.
+**Reviewer notes are child-facing.** The note written for the record ("Two bubbles marked (B, D)…") printed to Learner3 under "NOTES FOR YOU". Anything Slice B auto-generates will land in front of a child — either keep such notes machine-only or word them for the reader.
 
 ---
 
@@ -959,10 +959,10 @@ real use cases against throwaway state, so six of the seven were verified from
 a terminal on 2026-08-23 — see each line. The commands:
 
 ```
-node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --self-service
-node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --double-bubble
-node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --triple-bubble
-node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower milo --lesson atlas-us-p006-united-states.yml --tap
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower learner3 --lesson atlas-us-p006-united-states.yml --self-service
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower learner3 --lesson atlas-us-p006-united-states.yml --double-bubble
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower learner3 --lesson atlas-us-p006-united-states.yml --triple-bubble
+node cli/school.mjs sim --subject civilization --course young-peoples-atlas-us --lower learner3 --lesson atlas-us-p006-united-states.yml --tap
 ```
 
 Getting there needed the sim repaired first: it had a hardcoded macOS data
@@ -1005,7 +1005,7 @@ That covers B, C, D, F and G against real hardware in one visit.
 - [ ] A resumed session older than a day prints its issue date and row range
 - [x] 👤 A long receipt prints to completion, and the job printed **immediately after** it is not shifted — DONE, verified on paper 2026-08-22
 - [x] `thermalPrinter.job.complete` logs real `bytes` and only after the flush callback — DONE
-- [x] ✅ A correct answer prints a visible check glyph, not `[]` — VERIFIED 2026-08-23 on paper (Felix's and Milo's reprinted result cards) and in `school sim`'s rendered receipt
+- [x] ✅ A correct answer prints a visible check glyph, not `[]` — VERIFIED 2026-08-23 on paper (Learner4's and Learner3's reprinted result cards) and in `school sim`'s rendered receipt
 - [x] ✅ A second card tap inside the cooldown prints nothing but still says something — VERIFIED 2026-08-23 via `school sim --tap`: `agenda_suppressed`, zero paper, message "You already have today's agenda — check your desk."
 - [x] ✅ A tap after new work is assigned still prints, cooldown notwithstanding — VERIFIED 2026-08-23 via `school sim --tap`: a changed agenda fingerprint prints again inside the window
 - [x] ✅ Every printed QR — agenda **and** result receipt — has its own code beside it — VERIFIED 2026-08-23 via `school sim --self-service` (agenda QR + next-up QR each carry their own six digits) and on paper. NOTE: the code is drawn UNDER the QR inside the card, not as a text block after it (6642037b5)

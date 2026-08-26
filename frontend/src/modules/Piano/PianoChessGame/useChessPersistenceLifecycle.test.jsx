@@ -25,7 +25,7 @@ const game = (gameOver = false) => ({
 const props = (currentGame, overrides = {}) => ({
   game: currentGame,
   gameId: 'game-1',
-  userId: 'felix',
+  userId: 'learner4',
   rungId: 'learner',
   ladderLevel: 2,
   addressing: 'chords',

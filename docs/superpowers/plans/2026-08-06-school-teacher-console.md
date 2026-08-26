@@ -114,16 +114,16 @@ describe('ListLearnerSessions', () => {
     const uc = new ListLearnerSessions({ sessions: repo([
       mk('old', '2026-08-05T12:00:00Z'), mk('now', '2026-08-06T09:00:00Z'),
     ]), clock });
-    const rows = await uc.execute({ learnerId: 'felix', window: 'today' });
+    const rows = await uc.execute({ learnerId: 'learner4', window: 'today' });
     expect(rows.map((r) => r.id)).toEqual(['now']);
   });
   it('no window returns everything', async () => {
     const uc = new ListLearnerSessions({ sessions: repo([mk('a', '2026-01-01T00:00:00Z')]), clock });
-    expect((await uc.execute({ learnerId: 'felix' })).length).toBe(1);
+    expect((await uc.execute({ learnerId: 'learner4' })).length).toBe(1);
   });
   it('falls back to created when updatedAt is absent', async () => {
     const uc = new ListLearnerSessions({ sessions: repo([{ id: 'c', created: '2026-08-06T05:00:00Z' }]), clock });
-    expect((await uc.execute({ learnerId: 'felix', window: 'today' })).map((r) => r.id)).toEqual(['c']);
+    expect((await uc.execute({ learnerId: 'learner4', window: 'today' })).map((r) => r.id)).toEqual(['c']);
   });
 });
 ```
@@ -200,7 +200,7 @@ import { GetTeachers } from './GetTeachers.mjs';
 
 const roster = () => [
   { id: 'kckern', name: 'KC', birthyear: 1984 },
-  { id: 'felix', name: 'Felix', birthyear: 2014 },
+  { id: 'learner4', name: 'Learner4', birthyear: 2014 },
   { id: 'nan', name: 'Nan' }, // no birthyear
 ];
 const logger = { warn: vi.fn() };
@@ -211,10 +211,10 @@ describe('GetTeachers', () => {
     expect(await uc.execute()).toEqual({ configured: false, teachers: [] });
   });
   it('resolves ids at request time, dropping non-adults and unknowns with a warning', async () => {
-    const uc = new GetTeachers({ teachers: () => ['kckern', 'felix', 'ghost'], roster, logger });
+    const uc = new GetTeachers({ teachers: () => ['kckern', 'learner4', 'ghost'], roster, logger });
     const out = await uc.execute();
     expect(out).toEqual({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] });
-    expect(logger.warn).toHaveBeenCalledWith('school.teachers.unresolved', expect.objectContaining({ id: 'felix' }));
+    expect(logger.warn).toHaveBeenCalledWith('school.teachers.unresolved', expect.objectContaining({ id: 'learner4' }));
   });
   it('a blank birthyear costs a picker entry, never a throw', async () => {
     const uc = new GetTeachers({ teachers: () => ['nan'], roster, logger });
@@ -242,7 +242,7 @@ describe('GetTeachers', () => {
 **Interfaces:**
 - Produces: `TABS = ['today','planning','records','repair']`; `parseTeacherPath(pathname) -> {tab, learnerId}` (unknown tab → `{tab:'today', learnerId:null}`); `teacherPathFor(tab, learnerId=null) -> '/school/teacher/<tab>[/<learnerId>]'`; `teacherLog` = child logger facade `{nav, fetch, claim}` each `(event, data)`.
 
-- [ ] **Step 1: Failing tests** — round-trips: `parseTeacherPath('/school/teacher') → {tab:'today', learnerId:null}`; `/school/teacher/records/felix → {tab:'records', learnerId:'felix'}`; `teacherPathFor('records','felix') → '/school/teacher/records/felix'`; unknown tab normalizes to today; learnerId is URI-decoded/encoded.
+- [ ] **Step 1: Failing tests** — round-trips: `parseTeacherPath('/school/teacher') → {tab:'today', learnerId:null}`; `/school/teacher/records/learner4 → {tab:'records', learnerId:'learner4'}`; `teacherPathFor('records','learner4') → '/school/teacher/records/learner4'`; unknown tab normalizes to today; learnerId is URI-decoded/encoded.
 - [ ] **Step 2–4: Implement, pass.** `teacherLog` mirrors `schoolLog.js`'s facade shape (`getLogger().child({component:'school-teacher'})`, lazy).
 - [ ] **Step 5: Commit** `feat(school): teacher console url model + log facade`
 
@@ -301,7 +301,7 @@ describe('GetTeachers', () => {
 - `TeacherConsole` renders: header (title, teacher chip/picker via `ProfilePicker` with `title="Who's teaching?"`), learner selector (kid faces from `schoolApi.roster()`, horizontal scroll, selected persisted in URL), bottom tab bar, active tab. URL sync via `teacherUrl` + `popstate`. No-teachers card replaces the chip area when `!configured || teachers.length===0`.
 - `main.jsx`: add above the `/school` routes: `<Route path="/school/teacher" element={<TeacherConsoleRoute />} />`, `<Route path="/school/teacher/*" element={<TeacherConsoleRoute />} />`, and `<Route path="/app/school/teacher/*" element={<TeacherRedirect />} />` + `<Route path="/app/school/teacher" element={<TeacherRedirect />} />` where `TeacherRedirect` mirrors `SchoolDeepLinkRedirect` (preserves sub-path + query, `replace`). `TeacherConsoleRoute` lazy-imports the module (keep the kids' bundle unaffected).
 
-- [ ] **Step 1: Failing tests:** renders four tabs; tab click updates URL (`/school/teacher/planning`); learner select appends id (`/school/teacher/planning/felix`); popstate re-parses; every `TODO` value appears in the document exactly once across tabs (`data-todo` scan — the registry/stub drift test from the spec); no-teachers card when `configured:false`; StubCard renders no `<button>`.
+- [ ] **Step 1: Failing tests:** renders four tabs; tab click updates URL (`/school/teacher/planning`); learner select appends id (`/school/teacher/planning/learner4`); popstate re-parses; every `TODO` value appears in the document exactly once across tabs (`data-todo` scan — the registry/stub drift test from the spec); no-teachers card when `configured:false`; StubCard renders no `<button>`.
 - [ ] **Steps 2–5:** implement, pass (mock schoolApi), commit `feat(school): teacher console shell — tabs, claim, learner selector, stub registry`.
 
 ### Task 10: Today tab panels
@@ -564,7 +564,7 @@ Full sweep → build → gate → deploy → live probes (periods PUT wrong-pin 
 
 **Goal extension (2026-08-06):** after the three role advocates (teacher, student, administrator), a fourth reviewer joins the cycle — a high-fashion UX/editorial designer auditing every VISUAL surface: the kiosk JSX (wall, rail, subject/library/catalog, runners), the teacher console at phone width, the Admin school screens, every PDF (report card, syllabus, transcript, certificate, worksheet, OMR sheet), and the thermal receipts (agenda, notice slip). Scope is strictly visual/UX — style, layout, design system, typography, spacing, color, iconography, flow — no code or logic critique. The audit works from actual screenshots and renders, and its ranked top-10 becomes Wave 9's remediation contract under the same cycle (implement → sweep → deploy → Fable M9 review → merge).
 
-**Wave 9 contract (authored at start):** the designer's top-10, plus the teardown's named micro-sins. Batch A: (1)+(2)+(8) practice discoverability — a Practice tile on the wall, a PRACTICE shelf per subject, the Library shows every generic bank grouped by subject, and ONE shared kiosk empty-state pattern (icon + what + how + action) replacing the stranded sentences; (3) names-never-slugs — display titles on the claimed rail, My Progress, report card ("Learner: Felix"), syllabus subtitle, and the thermal notice slip greets instead of printing the raw id; (5) the quiz runner gets a TV layout — centered, display-size question, tile options, green reserved for correct, neutral advance, guest chip instead of a banner, and a summary with ceremony (display score, per-question dots, Try again); (6)+(7) teacher console — planning unit rows become two-line cells with an unwrappable control cluster, the desktop page background inherits the cream, Records' run-on and triple PDF idiom unified; (4)+(9)+(10) print — the report card becomes a ruled table with a humane date and footnoted policy, the certificate gets a border/centering/40pt name/signature line, the worksheet drops its duplicate title and QR plumbing labels, the thermal code caption chunks, and the quiz sheet keeps ONE answer surface. Batch B: the micro-sweep (WATCH-count spacing, poster skeletons, interpunct orphans, Pending-sync hidden on the kid board, Today zero-rows copy, 'created since' copy, Abandon truncation, CURRENT badge hierarchy, Catalog double-heading, transcript copy, timestamp formats). M9 review re-audits VISUALLY from fresh screenshots/renders.
+**Wave 9 contract (authored at start):** the designer's top-10, plus the teardown's named micro-sins. Batch A: (1)+(2)+(8) practice discoverability — a Practice tile on the wall, a PRACTICE shelf per subject, the Library shows every generic bank grouped by subject, and ONE shared kiosk empty-state pattern (icon + what + how + action) replacing the stranded sentences; (3) names-never-slugs — display titles on the claimed rail, My Progress, report card ("Learner: Learner4"), syllabus subtitle, and the thermal notice slip greets instead of printing the raw id; (5) the quiz runner gets a TV layout — centered, display-size question, tile options, green reserved for correct, neutral advance, guest chip instead of a banner, and a summary with ceremony (display score, per-question dots, Try again); (6)+(7) teacher console — planning unit rows become two-line cells with an unwrappable control cluster, the desktop page background inherits the cream, Records' run-on and triple PDF idiom unified; (4)+(9)+(10) print — the report card becomes a ruled table with a humane date and footnoted policy, the certificate gets a border/centering/40pt name/signature line, the worksheet drops its duplicate title and QR plumbing labels, the thermal code caption chunks, and the quiz sheet keeps ONE answer surface. Batch B: the micro-sweep (WATCH-count spacing, poster skeletons, interpunct orphans, Pending-sync hidden on the kid board, Today zero-rows copy, 'created since' copy, Abandon truncation, CURRENT badge hierarchy, Catalog double-heading, transcript copy, timestamp formats). M9 review re-audits VISUALLY from fresh screenshots/renders.
 
 **Shipped (Wave 9):** A1 practice discoverability (wall Practice tile + SVG print icon, grouped BankBrowser with per-subject Show-all, Library truth, subject Practice shelves with bounded expansion, ONE EmptyState/LoadingState pattern rolled out, 'for everyone', count chips); A2 names-for-humans (labelized rail course, humane score titles, no 'a while ago', Pending-sync off the kid board, thermal masthead greets, chunked QR captions); A3 the TV quiz runner (centered 860px, 2rem question, 84px tiles, neutral advance — green is CORRECT's alone — guest corner chip, display-size score + per-question dots + Try again); A4 the console (two-line planning cells with nowrap control clusters, no-bank dot, cream desktop page at 980px, unified PDF pill idiom, flexed materials rows, destructive costume on Close-this-period, 'nothing yet today', humane stale copy, single narrowest CURRENT badge); A5 print (ruled report-card table + name lead + humane date + footnoted policy + no plex ids, certificate ceremony, labelized syllabus subtitle, plain-words transcript empty, dropped echo titles, no internal-id captions on proof renders, Catalog single heading, shimmer skeletons).
 

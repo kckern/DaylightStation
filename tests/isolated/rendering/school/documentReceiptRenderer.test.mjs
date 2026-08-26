@@ -142,7 +142,7 @@ describe('the standard header', () => {
   };
 
   it('a titled document opens with a full-bleed black band', async () => {
-    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Felix' });
+    const titled = await renderer.createCanvas({ ...doc([{ type: 'rich_text', md: 'Body.' }]), title: 'Learner-Four' });
     // The band bleeds edge to edge at the very top of the tape; the knocked-out
     // name keeps it from being 100% dark.
     expect(rowDarkness(titled.canvas, 2)).toBeGreaterThan(0.8);
@@ -229,6 +229,53 @@ describe('subject icons on scan_action blocks', () => {
     const out = await withSpy.createCanvas(iconDoc('../../auth/plex'), { tokens: {} });
     expect(out.codes).toHaveLength(1);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('bulk_print presentation', () => {
+  const bulkDoc = doc([{
+    type: 'scan_action',
+    presentation: 'bulk_print',
+    action: 'bulk:all-sheets',
+    label: 'Print everything',
+    subjects: ['Math', 'Reading', 'Science'],
+  }]);
+
+  it('draws the PRINT ALL SHEETS heading and a code area for the bulk token', async () => {
+    const { canvas, codes } = await renderer.createCanvas(bulkDoc, { tokens: { 'bulk:all-sheets': 'sch:BULK1234' } });
+    expect(canvas.toBuffer('image/png').subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
+    expect(codes).toMatchObject([{ action: 'bulk:all-sheets', code: 'sch:BULK1234', kind: 'scan_action' }]);
+  });
+
+  it('grows taller with more subjects in the list', async () => {
+    const few = doc([{
+      type: 'scan_action', presentation: 'bulk_print', action: 'bulk:a', label: 'x', subjects: ['Math'],
+    }]);
+    const many = doc([{
+      type: 'scan_action',
+      presentation: 'bulk_print',
+      action: 'bulk:b',
+      label: 'x',
+      subjects: ['Math', 'Reading', 'Science', 'History', 'Art', 'Music'],
+    }]);
+    const a = await renderer.createCanvas(few, { tokens: { 'bulk:a': 'sch:A' } });
+    const b = await renderer.createCanvas(many, { tokens: { 'bulk:b': 'sch:B' } });
+    expect(b.height).toBeGreaterThan(a.height);
+  });
+
+  it('draws a real QR for the bulk action token when scanCodes is qr', async () => {
+    const qr = createDocumentReceiptRenderer({ theme, texToSvg, scanCodes: 'qr' });
+    const box = createDocumentReceiptRenderer({ theme, texToSvg });
+    const withQr = await qr.createCanvas(bulkDoc, { tokens: { 'bulk:all-sheets': 'sch:BULK1234' } });
+    const withBox = await box.createCanvas(bulkDoc, { tokens: { 'bulk:all-sheets': 'sch:BULK1234' } });
+    const darkness = (canvas) => {
+      const ctx = canvas.getContext('2d');
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let dark = 0;
+      for (let i = 0; i < img.length; i += 4) if (img[i] < 96) dark += 1;
+      return dark;
+    };
+    expect(darkness(withQr.canvas)).toBeGreaterThan(darkness(withBox.canvas));
   });
 });
 

@@ -68,7 +68,7 @@ describe('GET /api/v1/school/print/:id', () => {
     const doc = { id: 'arts/quiz-1', seed: 1, rev: 'abcdef123', blocks: [] };
     const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
     const record = {
-      documentId: 'arts/quiz-1', cardId: '9251793', learnerId: 'felix', status: 'live',
+      documentId: 'arts/quiz-1', cardId: '9251793', learnerId: 'learner4', status: 'live',
       rev: 'abcdef123', variant: 2, rowRange: { start: 1, end: 6 }, renderedAt: 't1',
     };
     const allocations = { findByCard: vi.fn().mockResolvedValue([record]), findByDocument: vi.fn() };
@@ -77,7 +77,7 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(res.status).toBe(200);
     expect(allocations.findByCard).toHaveBeenCalledWith('9251793');
     // Adopted: the record's identity governs, filename comes from the doc slug.
-    expect(render.calls[0].context).toMatchObject({ cardId: '9251793', startRow: 1, learnerId: 'felix' });
+    expect(render.calls[0].context).toMatchObject({ cardId: '9251793', startRow: 1, learnerId: 'learner4' });
     expect(render.calls[0].document).toMatchObject({ variant: 2 });
     expect(res.headers['content-disposition']).toBe('inline; filename="quiz-1.pdf"');
   });
@@ -127,12 +127,12 @@ describe('GET /api/v1/school/print/:id', () => {
   it('hand variety renders a PDF with no card context and filters the no-allocation warning', async () => {
     const render = renderFake({ warnings: ["quiz 'creature-quiz-1' rendered without card allocation"] });
     const res = await request(appWith({ render }))
-      .get('/api/v1/school/print/creature-quiz-1?variety=hand&learnerName=Milo');
+      .get('/api/v1/school/print/creature-quiz-1?variety=hand&learnerName=Learner3');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
     expect(res.headers['content-disposition']).toBe('inline; filename="creature-quiz-1.pdf"');
     expect(res.headers['x-school-print-warnings']).toBeUndefined();
-    expect(render.calls[0]).toEqual({ id: 'creature-quiz-1', context: { learnerName: 'Milo' } });
+    expect(render.calls[0]).toEqual({ id: 'creature-quiz-1', context: { learnerName: 'Learner3' } });
     expect(Buffer.from(res.body).subarray(0, 4).toString()).toBe('%PDF');
   });
 
@@ -218,14 +218,14 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(fabricatedCard.status).toBe(400);
     // With a learner, or in teacher mode (neither one a card-minting param),
     // a plain GET still renders.
-    for (const q of ['learnerId=felix', 'teacher=1']) {
+    for (const q of ['learnerId=learner4', 'teacher=1']) {
       const res = await request(appWith({ render, repo, allocations }))
         .get(`/api/v1/school/print/creature-quiz-1?variety=omr&${q}`);
       expect(res.status).toBe(200);
     }
     // An explicit card with a learner also renders — via the POST route.
     const withLearner = await postRender(appWith({ render, repo, allocations }), {
-      id: 'creature-quiz-1', variety: 'omr', card: '1234567', startRow: 1, learnerId: 'felix',
+      id: 'creature-quiz-1', variety: 'omr', card: '1234567', startRow: 1, learnerId: 'learner4',
     });
     expect(withLearner.status).toBe(200);
   });
@@ -253,17 +253,17 @@ describe('GET /api/v1/school/print/:id', () => {
     const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(doc) };
     const allocations = {
       findByDocument: vi.fn().mockResolvedValue([
-        { documentId: 'creature-quiz-1', learnerId: 'felix', status: 'satisfied', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
-        { documentId: 'creature-quiz-1', learnerId: 'felix', status: 'satisfied', variant: 1, rowRange: { start: 1, end: 6 }, renderedAt: 't2' },
-        { documentId: 'creature-quiz-1', learnerId: 'soren', status: 'live', variant: 7, rowRange: { start: 1, end: 6 }, renderedAt: 't3' },
+        { documentId: 'creature-quiz-1', learnerId: 'learner4', status: 'satisfied', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+        { documentId: 'creature-quiz-1', learnerId: 'learner4', status: 'satisfied', variant: 1, rowRange: { start: 1, end: 6 }, renderedAt: 't2' },
+        { documentId: 'creature-quiz-1', learnerId: 'learner1', status: 'live', variant: 7, rowRange: { start: 1, end: 6 }, renderedAt: 't3' },
       ]),
     };
     const res = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/creature-quiz-1?variety=omr&retake=1&learnerId=felix');
+      .get('/api/v1/school/print/creature-quiz-1?variety=omr&retake=1&learnerId=learner4');
     expect(res.status).toBe(200);
-    // Felix's max variant is 1 (soren's 7 is not his) → retake is variant 2,
+    // Learner4's max variant is 1 (learner1's 7 is not his) → retake is variant 2,
     // riding the PUBLISHED doc so the allocation pins a resolvable rev.
-    expect(render.calls[0].context).toMatchObject({ freshCard: true, learnerId: 'felix' });
+    expect(render.calls[0].context).toMatchObject({ freshCard: true, learnerId: 'learner4' });
     expect(render.calls[0].document).toMatchObject({ variant: 2, rev: 'abcdef123' });
   });
 
@@ -329,12 +329,12 @@ describe('GET /api/v1/school/print/:id', () => {
     const render = renderFake();
     const allocations = {
       findByDocument: vi.fn().mockResolvedValue([
-        { documentId: 'creature-quiz-1', cardId: '2222222', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, learnerId: 'soren', renderedAt: '2026-08-05T01:00:00Z' },
+        { documentId: 'creature-quiz-1', cardId: '2222222', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, learnerId: 'learner1', renderedAt: '2026-08-05T01:00:00Z' },
       ]),
     };
     await request(appWith({ render, allocations }))
-      .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=milo');
-    expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'milo' });
+      .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=learner3');
+    expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'learner3' });
   });
 
   it('freshCard=1 forces a new card even when a sheet exists', async () => {
@@ -349,10 +349,10 @@ describe('GET /api/v1/school/print/:id', () => {
     const allocation = { cardId: '4829306', rowRange: { start: 1, end: 6 }, recordId: 'r1', status: 'live' };
     const render = renderFake({ allocation });
     const res = await postRender(appWith({ render }), {
-      id: 'creature-quiz-1', variety: 'omr', freshCard: true, learnerId: 'milo',
+      id: 'creature-quiz-1', variety: 'omr', freshCard: true, learnerId: 'learner3',
     });
     expect(res.status).toBe(200);
-    expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'milo' });
+    expect(render.calls[0].context).toEqual({ freshCard: true, learnerId: 'learner3' });
     expect(JSON.parse(res.headers['x-school-print-allocation'])).toEqual(allocation);
   });
 
@@ -459,7 +459,7 @@ describe('GET /api/v1/school/print/:id', () => {
       findByCard: vi.fn().mockResolvedValue([
         { documentId: 'other-doc', status: 'live', rev: '111111111', variant: 0, rowRange: { start: 1, end: 4 }, renderedAt: '2026-08-05T01:00:00Z' },
         { documentId: 'creature-quiz-1', status: 'superseded', rev: '000000000', variant: 0, rowRange: { start: 5, end: 10 }, renderedAt: '2026-08-05T02:00:00Z' },
-        { documentId: 'creature-quiz-1', status: 'satisfied', rev: 'abcdef123', variant: 2, rowRange: { start: 5, end: 10 }, learnerId: 'milo', renderedAt: '2026-08-05T03:00:00Z' },
+        { documentId: 'creature-quiz-1', status: 'satisfied', rev: 'abcdef123', variant: 2, rowRange: { start: 5, end: 10 }, learnerId: 'learner3', renderedAt: '2026-08-05T03:00:00Z' },
       ]),
     };
     const res = await postRender(appWith({ render, repo, allocations }), {
@@ -469,7 +469,7 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(repo.getPublished).toHaveBeenCalledWith('creature-quiz-1', 'abcdef123');
     expect(render.calls[0].document).toMatchObject({ variant: 2 });
     expect(render.calls[0].context).toEqual({
-      teacher: true, cardId: '4829306', startRow: 5, learnerId: 'milo',
+      teacher: true, cardId: '4829306', startRow: 5, learnerId: 'learner3',
     });
   });
 
@@ -543,7 +543,7 @@ describe('GET /api/v1/school/print/:id', () => {
     const repo = { get: vi.fn().mockResolvedValue(source), getPublished: vi.fn().mockResolvedValue(published) };
     const allocations = { findByCard: vi.fn(), findByDocument: vi.fn().mockResolvedValue([]) };
     const res = await request(appWith({ render, repo, allocations }))
-      .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=felix');
+      .get('/api/v1/school/print/creature-quiz-1?variety=omr&learnerId=learner4');
     expect(res.status).toBe(200);
     // The render receives the PUBLISHED document (rev field intact), never the source.
     expect(render.calls[0].document).toMatchObject({ rev: 'abcdef123' });
@@ -582,7 +582,7 @@ describe('GET /api/v1/school/print/:id', () => {
     expect(fabricatedWithStartRow.body.error).toMatch(/learnerId/);
     // With a learner, attach-new on an explicit card stays legal.
     const ok = await postRender(appWith({ render, repo, allocations }), {
-      id: 'creature-quiz-1', variety: 'omr', card: '1111111', learnerId: 'felix',
+      id: 'creature-quiz-1', variety: 'omr', card: '1111111', learnerId: 'learner4',
     });
     expect(ok.status).toBe(200);
   });
@@ -593,12 +593,12 @@ describe('GET /api/v1/school/print/:id', () => {
     const repo = { get: vi.fn().mockResolvedValue(doc), getPublished: vi.fn().mockResolvedValue(doc) };
     const allocations = {
       findByCard: vi.fn().mockResolvedValue([
-        { documentId: 'creature-quiz-1', cardId: '4829306', learnerId: 'felix', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
+        { documentId: 'creature-quiz-1', cardId: '4829306', learnerId: 'learner4', status: 'live', rev: 'abcdef123', variant: 0, rowRange: { start: 1, end: 6 }, renderedAt: 't1' },
       ]),
       findByDocument: vi.fn(),
     };
     const res = await postRender(appWith({ render, repo, allocations }), {
-      id: 'creature-quiz-1', variety: 'omr', card: '4829306', learnerId: 'soren',
+      id: 'creature-quiz-1', variety: 'omr', card: '4829306', learnerId: 'learner1',
     });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');
@@ -616,7 +616,7 @@ describe('GET /api/v1/school/print/:id', () => {
       findByDocument: vi.fn(),
     };
     const res = await postRender(appWith({ render, repo, allocations }), {
-      id: 'creature-quiz-1', variety: 'omr', card: '4829306', learnerId: 'soren',
+      id: 'creature-quiz-1', variety: 'omr', card: '4829306', learnerId: 'learner1',
     });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('CARD_LEARNER_MISMATCH');

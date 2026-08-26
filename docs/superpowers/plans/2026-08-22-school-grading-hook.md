@@ -164,7 +164,7 @@ function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) 
 }
 
 const GRADED = {
-  result: 'graded', learnerId: 'felix', testId: '4071314',
+  result: 'graded', learnerId: 'learner4', testId: '4071314',
   sessionId: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
 };
 
@@ -177,7 +177,7 @@ describe('SchoolGradingHookAdapter', () => {
     expect(calls[0].domain).toBe('script');
     expect(calls[0].service).toBe('school_graded');
     expect(calls[0].data).toEqual({
-      result: 'graded', learner_id: 'felix', test_id: '4071314',
+      result: 'graded', learner_id: 'learner4', test_id: '4071314',
       session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
       pending_review: null, reasons: [], items: [], code: null,
     });
@@ -196,7 +196,7 @@ describe('SchoolGradingHookAdapter', () => {
   it('passes review reasons and items through', async () => {
     const { adapter, calls } = makeAdapter();
     await adapter.fire({
-      result: 'review', learnerId: 'milo', testId: '4071314', sessionId: 'ses_x',
+      result: 'review', learnerId: 'learner3', testId: '4071314', sessionId: 'ses_x',
       pendingReview: 1, reasons: ['ambiguous'], items: ['q1'],
     });
     expect(calls[0].data.pending_review).toBe(1);

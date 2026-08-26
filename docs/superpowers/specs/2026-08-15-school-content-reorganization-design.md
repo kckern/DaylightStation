@@ -23,9 +23,9 @@ three are still mounted:
 | Course packages — `school.course/v2`, units → lessons → artifacts | Aug 12–14 | 1,196 | atlas + elements conform (341); six Big Fat Notebook attempts (855) never got a `course.yml` |
 
 Of ~5,900 files under `content/school/`, the **125 atlas files are the only
-ones a learner is assigned to.** Both learners (`felix`, `milo`) are enrolled in
+ones a learner is assigned to.** Both learners (`learner4`, `learner3`) are enrolled in
 `young-peoples-atlas-us` and nothing else; `math-fractions` is commented out of
-`felix.yml`.
+`learner4.yml`.
 
 Each era ended by starting the next one rather than by closing itself out. This
 spec closes out the first two.

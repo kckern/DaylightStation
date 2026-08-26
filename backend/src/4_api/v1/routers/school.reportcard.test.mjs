@@ -62,12 +62,12 @@ describe('GET /api/v1/school/report-card', () => {
     const getReportCard = { execute: vi.fn(async () => CARD) };
     const renderReportCardPdf = vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.4 fake'), pageCount: 1, mode: 'draft' }));
     const res = await request(appWith({ getReportCard, renderReportCardPdf }))
-      .get('/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026&format=pdf&learnerName=Milo');
+      .get('/api/v1/school/report-card?learnerId=kid1&periodId=fall-2026&format=pdf&learnerName=Learner-Three');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/application\/pdf/);
     expect(res.headers['content-disposition']).toBe('inline; filename="report-card-kid1-fall-2026.pdf"');
     expect(res.body.toString('latin1')).toContain('%PDF-1.4 fake');
-    expect(renderReportCardPdf).toHaveBeenCalledWith(CARD, { learnerName: 'Milo' });
+    expect(renderReportCardPdf).toHaveBeenCalledWith(CARD, { learnerName: 'Learner-Three' });
   });
 
   it('format=pdf sanitizes a hostile learnerId out of the filename header', async () => {

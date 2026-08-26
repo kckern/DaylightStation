@@ -29,7 +29,7 @@ vi.mock('../../PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ connected: true }),
   usePianoMidiNotes: () => ({ activeNotes: h.activeNotes }),
 }));
-vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'felix' }) }));
+vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'learner4' }) }));
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({ PianoKeyboard: () => <div data-testid="keyboard" /> }));
 vi.mock('./ExerciseNotation.jsx', () => ({ default: ({ eventIndex }) => <div data-testid="notation">{eventIndex}</div> }));
 vi.mock('./pianoLearningApi.js', () => ({
@@ -65,7 +65,7 @@ describe('ExerciseRun shared assessment wiring', () => {
     expect(await screen.findByText('Passed')).toBeInTheDocument();
     await waitFor(() => expect(h.record).toHaveBeenCalledTimes(1));
     const [userId, evidence] = h.record.mock.calls[0];
-    expect(userId).toBe('felix');
+    expect(userId).toBe('learner4');
     expect(evidence).toMatchObject({
       status: 'completed',
       purpose: 'practice',

@@ -761,11 +761,11 @@ the chord map is seeded and re-deals.
 ```javascript
 // PianoChessGame.test.jsx
 it('keeps the starting player for the whole game, ignoring a mid-game switch', async () => {
-  const { rerender, container } = render(<PianoChessGame currentUser="felix" />);
+  const { rerender, container } = render(<PianoChessGame currentUser="learner4" />);
   await playChord(rerender, notesFor('a movable square'));
-  rerender(<PianoChessGame currentUser="milo" />);
+  rerender(<PianoChessGame currentUser="learner3" />);
   await act(async () => { await vi.advanceTimersByTimeAsync(50); });
-  expect(container.querySelector('.piano-chess__locked-user').textContent).toContain('felix');
+  expect(container.querySelector('.piano-chess__locked-user').textContent).toContain('learner4');
 });
 ```
 
@@ -972,7 +972,7 @@ it. Screenshots and green suites were both present the last time this shipped un
 
 ## Out of scope, and why
 
-**Milo's reading level** — bass-clef ranks and treble-clef files — is not in this plan. It is not a
+**Learner3's reading level** — bass-clef ranks and treble-clef files — is not in this plan. It is not a
 setting on this board: it replaces chord addressing with two-note addressing, which needs its own
 addresser, its own axis rendering built on `components/ActionStaff.jsx`, and a per-user switch
 between the two. It gets its own spec and plan immediately after this one. Recording it here so it

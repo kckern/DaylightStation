@@ -19,16 +19,16 @@ function appWith(previewAgenda) {
 describe('agenda preview study-day contract', () => {
   it('passes an explicit study day only to the dry-run builder and marks the response non-recording', async () => {
     const previewAgenda = { execute: vi.fn(async () => ({
-      document: { id: 'agenda-milo' }, sections: [{ subject: 'civilization' }],
+      document: { id: 'agenda-learner3' }, sections: [{ subject: 'civilization' }],
       plan: { entries: [{ unitId: 'illinois' }], errors: [] },
     })) };
     const response = await request(appWith(previewAgenda))
-      .get('/api/v1/school/lifecycle/learners/milo/agenda/preview?format=json&studyDay=2026-08-25');
+      .get('/api/v1/school/lifecycle/learners/learner3/agenda/preview?format=json&studyDay=2026-08-25');
 
     expect(response.status).toBe(200);
     expect(response.headers['x-school-preview']).toBe('agenda-non-recording');
     expect(response.headers['cache-control']).toBe('private, no-store');
-    expect(response.body).toMatchObject({ learnerId: 'milo', studyDay: '2026-08-25' });
-    expect(previewAgenda.execute).toHaveBeenCalledWith({ learnerId: 'milo', learnerName: null, studyDay: '2026-08-25' });
+    expect(response.body).toMatchObject({ learnerId: 'learner3', studyDay: '2026-08-25' });
+    expect(previewAgenda.execute).toHaveBeenCalledWith({ learnerId: 'learner3', learnerName: null, studyDay: '2026-08-25' });
   });
 });

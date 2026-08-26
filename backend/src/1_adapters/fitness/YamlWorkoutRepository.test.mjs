@@ -50,7 +50,11 @@ function makeRepo() {
 
 /** Where a workout file is expected to land, spelled out rather than asked of the code. */
 function expectedFile(id, household = 'household') {
-  return path.join(dataDir, household, 'apps', 'fitness', 'workouts', `${id}.yml`);
+  // FLAT, no `apps/` segment: `getHouseholdPath` joins its argument straight
+  // onto `<dataDir>/<household>`, and the household data reorg moved the tree
+  // to that shape. This helper kept the old nesting and so asserted a path
+  // nothing writes to.
+  return path.join(dataDir, household, 'fitness', 'workouts', `${id}.yml`);
 }
 
 const SAMPLE = {

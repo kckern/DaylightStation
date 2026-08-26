@@ -34,7 +34,7 @@ Established by inspection, not assumed:
 | Capability | Where | State |
 |---|---|---|
 | Roster + current player | `PianoKiosk/PianoUserContext.jsx:16` | Works. Persists per-piano in `localStorage`; Guest fallback in `pianoUser.js:2`. |
-| Roster config | `piano.yml` → `users.primary` | Flat id list: `[kckern, parent-two, learner-two, learner-three, learner-four, learner-one]`. |
+| Roster config | `piano.yml` → `users.primary` | Flat id list: `[kckern, parent-two, learner2, learner3, learner4, learner1]`. |
 | Chord identification | `theory/chordNaming.js:139` | Strong. Inversion-aware, tolerant of a dropped 5th, 26 qualities, well tested. |
 | Chord display stability | `components/useStableChord.js` | 80ms onset settle, 500ms release linger. |
 | Staff prompt rendering | `components/ActionStaff.jsx` | Renders target pitches. |
@@ -47,9 +47,9 @@ It already renders inside `PianoUserProvider`, so this part is a `usePianoUser()
 
 **Plumbing gap 2 (backend) — this one is load-bearing and was missed:**
 - `UserService.hydrateUsers` (`backend/src/0_system/config/UserService.mjs:56`) returns
-  object-form entries **as-is**. So `{ id: learner-two, tier: chords }` skips profile hydration
+  object-form entries **as-is**. So `{ id: learner2, tier: chords }` skips profile hydration
   entirely — no `display_name`, no `group_label`. Adopting the YAML below without fixing
-  this *breaks learner-two's user chip*.
+  this *breaks learner2's user chip*.
 - `getRoster` (`backend/src/1_adapters/piano/YamlPianoStudioDatastore.mjs:87`) maps to
   `{ id, name, group_label }`. `tier` is dropped before it ever reaches the API.
 
@@ -70,9 +70,9 @@ tagged with the tier it belongs to.
 ```yaml
 users:
   primary:
-    - learner-three                            # bare string still valid — defaults to first tier
-    - learner-four
-    - { id: learner-two, tier: chords }
+    - learner3                            # bare string still valid — defaults to first tier
+    - learner4
+    - { id: learner2, tier: chords }
     - { id: parent-two, tier: chords }
 
 games:
@@ -88,7 +88,7 @@ games:
 
 A user's tier selects their **starting index** — the first level carrying that tier — and
 they continue upward through every level after it. One ordered array, no duplicated level
-definitions; adding a tier is one line. learner-three starts at "Note Names"; learner-two skips straight
+definitions; adding a tier is one line. learner3 starts at "Note Names"; learner2 skips straight
 to triads and never re-grinds single notes. Guest gets the first tier.
 
 **Rejected alternative:** separate `tiers: { beginner: { levels: [...] } }` blocks. Cleaner

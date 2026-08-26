@@ -685,7 +685,7 @@ describe('screen and program', () => {
       await build({
         ...programUnit({
           surface: 'garage-fitness',
-          launch: { decision: 'denied', message: 'Waiting for Milo to catch up' },
+          launch: { decision: 'denied', message: 'Waiting for Learner-Three to catch up' },
         }),
         wire: { logger },
       });
@@ -702,7 +702,7 @@ describe('screen and program', () => {
           surface: 'garage-fitness',
           decision: 'denied',
           outcome: 'refused',
-          message: 'Waiting for Milo to catch up',
+          message: 'Waiting for Learner-Three to catch up',
         }),
       });
     });

@@ -41,7 +41,7 @@ describe('YamlWorkSessionDatastore transition enforcement', () => {
     await withStore(async (store) => {
       await store.appendEvent('ses_x', built({
         type: 'created', at: '2026-08-25T17:00:00.000Z', sessionId: 'ses_x',
-        learnerId: 'felix', unitId: 'math.01',
+        learnerId: 'learner4', unitId: 'math.01',
       }));
       // Confirmed against the table: TRANSITIONS.created is
       // issued|media_dispatched|launch_dispatched|program_dispatched|abandoned.
@@ -58,7 +58,7 @@ describe('YamlWorkSessionDatastore transition enforcement', () => {
     await withStore(async (store) => {
       await store.appendEvent('ses_y', built({
         type: 'created', at: '2026-08-25T17:00:00.000Z', sessionId: 'ses_y',
-        learnerId: 'felix', unitId: 'math.01',
+        learnerId: 'learner4', unitId: 'math.01',
       }));
       const err = await store.appendEvent('ses_y', built({
         type: 'graded', at: '2026-08-25T17:05:00.000Z', sessionId: 'ses_y',
@@ -77,7 +77,7 @@ describe('YamlWorkSessionDatastore transition enforcement', () => {
     await withStore(async (store) => {
       await store.appendEvent('ses_z', built({
         type: 'created', at: '2026-08-25T17:00:00.000Z', sessionId: 'ses_z',
-        learnerId: 'felix', unitId: 'math.01',
+        learnerId: 'learner4', unitId: 'math.01',
       }));
       const stored = await store.appendEvent('ses_z', built({
         type: 'issued', at: '2026-08-25T17:01:00.000Z', sessionId: 'ses_z', artifactId: 'art_1',
@@ -91,7 +91,7 @@ describe('YamlWorkSessionDatastore transition enforcement', () => {
     await withStore(async (store) => {
       await store.appendEvent('ses_q', built({
         type: 'created', at: '2026-08-25T17:00:00.000Z', sessionId: 'ses_q',
-        learnerId: 'felix', unitId: 'math.01',
+        learnerId: 'learner4', unitId: 'math.01',
       }));
       await expect(store.appendEvent('ses_q', built({
         type: 'graded', at: '2026-08-25T17:02:00.000Z', sessionId: 'ses_q',

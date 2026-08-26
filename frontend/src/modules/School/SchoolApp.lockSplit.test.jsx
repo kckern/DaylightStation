@@ -4,13 +4,13 @@ import SchoolApp from './SchoolApp.jsx';
 
 vi.mock('./schoolApi.js', () => ({
   schoolApi: {
-    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'milo', name: 'Milo', birthyear: 2016 }] })),
+    roster: vi.fn(async () => ({ ok: true, status: 200, data: [{ id: 'learner3', name: 'Learner3', birthyear: 2016 }] })),
     wallet: vi.fn(async () => ({ ok: false, status: 503, data: null })),
     surfaceProfile: vi.fn(async () => ({ ok: true, status: 200, data: { surfaceId: 'screen-browser' } })),
     materials: vi.fn(async () => ({ ok: true, status: 200, data: { materials: [] } })),
     banks: vi.fn(async () => ({ ok: true, status: 200, data: [] })),
     agendaPreview: vi.fn(async () => ({ ok: true, status: 200, data: { sections: [{ subject: 'math' }, { subject: 'reading' }] } })),
-    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ learnerId: 'milo', sessions: [{ subject: 'math', outcome: { result: 'passed' } }] }] } })),
+    teacherDay: vi.fn(async () => ({ ok: true, status: 200, data: { learners: [{ learnerId: 'learner3', sessions: [{ subject: 'math', outcome: { result: 'passed' } }] }] } })),
   },
 }));
 vi.mock('./Programs/SentenceLadder/languageApi.js', () => ({
@@ -70,7 +70,7 @@ describe('locked kiosk split home', () => {
     const split = document.querySelector('.school-lock-split');
     expect(split).toBeTruthy();
     expect(split.getAttribute('data-side')).toBe('keypad-left');
-    expect(screen.getByText('Milo')).toBeInTheDocument();
+    expect(screen.getByText('Learner3')).toBeInTheDocument();
     expect(screen.getByText('1 of 2')).toBeInTheDocument();
   });
 

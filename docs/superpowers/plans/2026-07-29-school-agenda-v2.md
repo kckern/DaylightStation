@@ -225,7 +225,7 @@ it('a program unit flows through: always available, never locked or completed', 
     { unitId: 'language-daily', title: 'Language', subject: 'language', program: 'language', cadence: 'daily' },
   ];
   const plan = planLearnerWork({
-    learnerId: 'felix',
+    learnerId: 'learner4',
     assignment: { units: ['language-daily'] },
     units,
     sessions: [],
@@ -267,24 +267,24 @@ describe('subject_next tokens', () => {
   it('mints with a learnerId + subject and no session', () => {
     const rec = mintToken({
       tokenClass: 'subject_next',
-      subject: { learnerId: 'felix', subject: 'math' },
+      subject: { learnerId: 'learner4', subject: 'math' },
       at, rng, expiresAt: '2026-08-05T16:00:00Z',
     });
     expect(rec.token.startsWith('sch:')).toBe(true);
-    expect(rec.subject).toEqual({ learnerId: 'felix', subject: 'math' });
+    expect(rec.subject).toEqual({ learnerId: 'learner4', subject: 'math' });
   });
   it('requires learnerId and subject', () => {
-    expect(() => mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix' }, at, rng }))
+    expect(() => mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'learner4' }, at, rng }))
       .toThrow(/subject/);
     expect(() => mintToken({ tokenClass: 'subject_next', subject: { subject: 'math' }, at, rng }))
       .toThrow(/learnerId/);
   });
   it('resolves actionable without any sessionState', () => {
-    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix', subject: 'math' }, at, rng, expiresAt: '2026-08-05T16:00:00Z' });
+    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'learner4', subject: 'math' }, at, rng, expiresAt: '2026-08-05T16:00:00Z' });
     expect(resolveTokenState(rec, { now: '2026-07-30T16:00:00Z' }).status).toBe('actionable');
   });
   it('still expires', () => {
-    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'felix', subject: 'math' }, at, rng, expiresAt: '2026-07-30T16:00:00Z' });
+    const rec = mintToken({ tokenClass: 'subject_next', subject: { learnerId: 'learner4', subject: 'math' }, at, rng, expiresAt: '2026-07-30T16:00:00Z' });
     expect(resolveTokenState(rec, { now: '2026-08-01T00:00:00Z' }).status).toBe('expired');
   });
 });
@@ -803,7 +803,7 @@ The adapter prints NO label line for `qrcode` items — the renderer already emi
 - [ ] **Step 4: Update `docs/reference/school/README.md`** — rewrite the "NFC personal cards — tap to agenda" + "An assigned course, not a catalog, is what prints" sections to describe the sectioned daily agenda, the program unit kind, the `subject_next` token, the daily serving rule, and Portal launch. Present tense, endstate, no class names in prose beyond the layer table (per the household's reference-docs convention). Add the new files to the layer table.
 - [ ] **Step 5: Commit** (`feat(school): agenda v2 e2e proof, seed fixture, reference docs`)
 
-**Deployment note (post-merge, on this host):** production needs the real `data/content/school/curriculum/units/language-daily.yml` written via `sudo docker exec` (heredoc — never sed), `felix.yml` assignment gaining `units: [language-daily]` via the assignments API with a grown-up `assignedBy`, then build + deploy-gate check + `sudo deploy-daylight`, then a hardware tap test. The deploy gate and kiosk-reload rules in `CLAUDE.local.md` apply; deploy is NOT part of any task above.
+**Deployment note (post-merge, on this host):** production needs the real `data/content/school/curriculum/units/language-daily.yml` written via `sudo docker exec` (heredoc — never sed), `learner4.yml` assignment gaining `units: [language-daily]` via the assignments API with a grown-up `assignedBy`, then build + deploy-gate check + `sudo deploy-daylight`, then a hardware tap test. The deploy gate and kiosk-reload rules in `CLAUDE.local.md` apply; deploy is NOT part of any task above.
 
 ---
 

@@ -27,11 +27,11 @@ describe('SchoolRetentionSweep (admin advocacy A5)', () => {
 
   it('drops aged FULFILLED quiz requests but NEVER a retake or flag — those are a child\'s voice', async () => {
     let requests = [
-      { at: daysAgo(60), userId: 'felix', unitId: 'plex:1' },          // fulfilled + old -> drop
-      { at: daysAgo(5), userId: 'felix', unitId: 'plex:2' },           // fulfilled + fresh -> keep
-      { at: daysAgo(400), userId: 'milo', unitId: 'plex:9' },          // NOT fulfilled -> keep forever
-      { at: daysAgo(400), kind: 'retake', userId: 'felix', bankId: 'b' }, // kind -> never swept
-      { at: daysAgo(400), kind: 'flag', userId: 'milo', bankId: 'b' },    // kind -> never swept
+      { at: daysAgo(60), userId: 'learner4', unitId: 'plex:1' },          // fulfilled + old -> drop
+      { at: daysAgo(5), userId: 'learner4', unitId: 'plex:2' },           // fulfilled + fresh -> keep
+      { at: daysAgo(400), userId: 'learner3', unitId: 'plex:9' },          // NOT fulfilled -> keep forever
+      { at: daysAgo(400), kind: 'retake', userId: 'learner4', bankId: 'b' }, // kind -> never swept
+      { at: daysAgo(400), kind: 'flag', userId: 'learner3', bankId: 'b' },    // kind -> never swept
     ];
     const ds = {
       readPrintPending: () => [],
@@ -42,9 +42,9 @@ describe('SchoolRetentionSweep (admin advocacy A5)', () => {
     const schoolService = {
       warmBanks: vi.fn(async () => {}),
       listQuizRequests: () => [
-        { at: daysAgo(60), userId: 'felix', unitId: 'plex:1', fulfilled: true },
-        { at: daysAgo(5), userId: 'felix', unitId: 'plex:2', fulfilled: true },
-        { at: daysAgo(400), userId: 'milo', unitId: 'plex:9', fulfilled: false },
+        { at: daysAgo(60), userId: 'learner4', unitId: 'plex:1', fulfilled: true },
+        { at: daysAgo(5), userId: 'learner4', unitId: 'plex:2', fulfilled: true },
+        { at: daysAgo(400), userId: 'learner3', unitId: 'plex:9', fulfilled: false },
       ],
     };
     const sweep = new SchoolRetentionSweep({ datastore: ds, schoolService, now: () => NOW, logger: silent });

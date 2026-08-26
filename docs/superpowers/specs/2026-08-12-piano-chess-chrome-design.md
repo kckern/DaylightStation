@@ -244,8 +244,8 @@ rather than building bass-aware matching from nothing.
 Together these make the vocabulary a ladder — read two notes, spell triads, spell inversions — which
 is the axis the per-user calibration should move along.
 
-**The calibration is already assigned.** Milo plays the reading level: bass clef on the left for the
-ranks, treble clef along the bottom for the files. Felix plays chord spelling, which is the board as
+**The calibration is already assigned.** Learner-Three plays the reading level: bass clef on the left for the
+ranks, treble clef along the bottom for the files. Learner-Four plays chord spelling, which is the board as
 it stands today. That lives in each player's own `users/{id}/apps/chess/config.yml`, the override
 layer the chess config already reads.
 

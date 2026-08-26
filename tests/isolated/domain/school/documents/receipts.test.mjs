@@ -342,6 +342,91 @@ describe('agendaDocument', () => {
       expect(flat).toContain('Scanning is the only way in.');
     });
   });
+
+  /**
+   * The bulk-print block: one extra card, printed after every per-subject
+   * lesson card, that scans as "print all of today's sheets in one job."
+   * Same absent-means-unchanged and malformed-code-prints-nothing rules as
+   * the per-subject panel code above.
+   */
+  describe('the bulk-print block', () => {
+    const bulkSections = [
+      { subject: 'maths', servedToday: false, next: { unitId: 'u1', title: 'Fractions' } },
+      { subject: 'reading', servedToday: false, next: { unitId: 'u2', title: 'Chapter 5' } },
+    ];
+    const bulkTokens = { maths: 'sch:AAAA', reading: 'sch:BBBB' };
+    // Keyed by TOKEN (Slice H), matching `agendaDocument`'s `accessCodesByToken`.
+    const bulkCodes = { 'sch:AAAA': '111111', 'sch:BBBB': '222222' };
+
+    it('emits a bulk_print scan_action when bulkToken and bulkAccessCode are present', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user',
+        sections: bulkSections,
+        tokensBySubject: bulkTokens,
+        accessCodesByToken: bulkCodes,
+        bulkToken: 'sch:BULK1234',
+        bulkAccessCode: '999999',
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeDefined();
+      expect(bulkBlock.action).toBe('sch:BULK1234');
+      expect(bulkBlock.subjects).toEqual(['maths', 'reading']);
+      // The six digits ride ON the block (`panelCodeField`), not in a loose
+      // `rich_text` after it. Slice H moved every panel code onto its own
+      // card because a detached block of digits drew adrift below the card it
+      // belonged to; the bulk card follows the same contract.
+      expect(bulkBlock.panelCode).toBe('999999');
+      expect(doc.blocks.find((b) => b.type === 'rich_text' && b.md?.includes('999999'))).toBeUndefined();
+    });
+
+    it('omits the bulk block when bulkToken is absent', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user',
+        sections: [{ subject: 'maths', servedToday: false, next: { unitId: 'u1', title: 'Fractions' } }],
+        tokensBySubject: { maths: 'sch:AAAA' },
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeUndefined();
+    });
+
+    /**
+     * Scoped to the bulk block ON PURPOSE. A plain agenda is currently
+     * INVALID on main for an unrelated reason — every lesson card trips
+     * `scan_action eyebrow must be a non-empty string when present`, which is
+     * why `agendaDocument > is a valid receipt-target document` above is red
+     * too. Asserting `errors === []` here would just re-report that defect and
+     * say nothing about bulk. Asserting that adding the bulk block introduces
+     * NO NEW error is the thing this test is actually for, and it starts
+     * passing for the right reason the day the eyebrow defect is fixed.
+     */
+    it('adds no validation error of its own to the agenda it rides on', () => {
+      const args = {
+        learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens,
+        accessCodesByToken: bulkCodes,
+      };
+      const without = validateDocument(agendaDocument(args)).errors;
+      const withBulk = validateDocument(agendaDocument({
+        ...args, bulkToken: 'sch:BULK1234', bulkAccessCode: '999999',
+      })).errors;
+      expect(withBulk).toEqual(without);
+    });
+
+    it('drops a malformed bulk code rather than printing digits a child cannot type', () => {
+      const doc = agendaDocument({
+        learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens,
+        bulkToken: 'sch:BULK1234', bulkAccessCode: '4819',
+      });
+      const bulkBlock = doc.blocks.find((b) => b.presentation === 'bulk_print');
+      expect(bulkBlock).toBeUndefined();
+      expect(JSON.stringify(doc.blocks)).not.toContain('4819');
+    });
+
+    it('changes nothing at all when bulk args are absent — feature-off is byte-identical', () => {
+      const withoutBulk = { learnerId: 'test-user', sections: bulkSections, tokensBySubject: bulkTokens, accessCodesByToken: bulkCodes };
+      const baseline = JSON.stringify(agendaDocument(withoutBulk));
+      expect(JSON.stringify(agendaDocument({ ...withoutBulk, bulkToken: null, bulkAccessCode: null }))).toBe(baseline);
+    });
+  });
 });
 
 describe('resultDocument', () => {
@@ -355,7 +440,7 @@ describe('resultDocument', () => {
   });
 
   it('makes the learner the receipt title while retaining the generic fallback', () => {
-    expect(resultDocument({ ...pass, learnerName: 'Felix' }).title).toBe('Felix’s Result');
+    expect(resultDocument({ ...pass, learnerName: 'Learner-Four' }).title).toBe('Learner-Four’s Result');
     expect(resultDocument(pass).title).toBe('Worksheet Result');
   });
 

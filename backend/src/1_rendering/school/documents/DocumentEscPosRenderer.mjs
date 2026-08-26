@@ -196,7 +196,7 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
         // an array always is, then read `.label`/`.completed`/`.total`
         // straight off the array itself rather than an element of it —
         // always `undefined`, printing the literal "undefined · undefined of
-        // undefined" onto Milo's receipt. A single-object shape is still
+        // undefined" onto Learner-Three's receipt. A single-object shape is still
         // accepted defensively (matching `DocumentReceiptRenderer.mjs`'s own
         // array/object normalisation), and a row missing any of its three
         // fields prints NOTHING rather than a garbled line — a guard on the
@@ -214,7 +214,14 @@ export function createDocumentEscPosRenderer({ width = 32, symbology = 'CODE128'
       }
 
       const code = tokens?.[block.action] ?? block.action;
-      if (block.presentation === 'lesson') {
+      if (block.presentation === 'bulk_print') {
+        items.push({ type: 'space', lines: 1 });
+        items.push({ type: 'text', content: '─'.repeat(width), align: 'center' });
+        items.push({ type: 'text', content: 'PRINT ALL SHEETS', align: 'left', style: { bold: true } });
+        for (const subj of (block.subjects ?? [])) {
+          items.push({ type: 'text', content: `• ${subj}`, align: 'left' });
+        }
+      } else if (block.presentation === 'lesson') {
         if (block.eyebrow) items.push({ type: 'text', content: block.eyebrow.toUpperCase(), align: 'left', style: { bold: true } });
         if (block.taxonomy) {
           items.push({ type: 'text', content: `Course · ${block.taxonomy.course}`, align: 'left' });

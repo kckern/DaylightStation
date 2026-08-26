@@ -76,7 +76,7 @@ describe('useEngagementGate', () => {
     // ~4x/second on timeupdate. If callback identity churn resets the poll
     // interval, the 1s tick never fires and the gate silently dies — a full
     // watch-through then records engaged:false and the next lecture never
-    // unlocks (Felix, 2026-07-30, plex:683799).
+    // unlocks (Learner-Four, 2026-07-30, plex:683799).
     const pause = vi.fn();
     const { result, rerender } = renderHook(() =>
       useEngagementGate({

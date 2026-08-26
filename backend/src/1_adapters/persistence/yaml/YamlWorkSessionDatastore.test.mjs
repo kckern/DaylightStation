@@ -12,13 +12,13 @@ describe('YamlWorkSessionDatastore', () => {
         configService: { getHouseholdPath: (suffix) => path.join(root, suffix) },
       });
       await store.appendEvent('ses-one', {
-        type: 'created', at: '2026-08-14T17:00:00.000Z', learnerId: 'felix', unitId: 'math.01',
+        type: 'created', at: '2026-08-14T17:00:00.000Z', learnerId: 'learner4', unitId: 'math.01',
       });
       const file = path.join(root, 'school/records/sessions/2026-08/ses-one.yml');
       expect(await store.readEvents('ses-one')).toHaveLength(1);
       expect((await fs.readFile(file, 'utf8'))).toContain('events:');
       await expect(fs.access(path.join(root, 'school/records/sessions/2026-08/index.yml'))).rejects.toThrow();
-      expect(await store.listOpenForLearner('felix')).toMatchObject([{ sessionId: 'ses-one', day: '2026-08-14' }]);
+      expect(await store.listOpenForLearner('learner4')).toMatchObject([{ sessionId: 'ses-one', day: '2026-08-14' }]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

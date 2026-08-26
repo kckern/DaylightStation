@@ -11,7 +11,7 @@ describe('ReprintIssuedArtifact', () => {
     const bytes = Buffer.from('%PDF-1.7\nimmutable worksheet bytes');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const events = [
-      { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'milo', unitId: 'lesson-1' },
+      { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId: 'ses_1', seq: 1, learnerId: 'learner3', unitId: 'lesson-1' },
       { type: 'issued', at: '2026-08-23T15:01:00.000Z', sessionId: 'ses_1', seq: 2, artifactId: 'art_1' },
     ];
     const sessions = {
@@ -59,7 +59,7 @@ describe('ReprintIssuedArtifact against the real work-session datastore', () => 
   };
 
   const seed = async (sessions, sessionId, extra = []) => {
-    await sessions.appendEvent(sessionId, { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId, learnerId: 'milo', unitId: 'lesson-1' });
+    await sessions.appendEvent(sessionId, { type: 'created', at: '2026-08-23T15:00:00.000Z', sessionId, learnerId: 'learner3', unitId: 'lesson-1' });
     await sessions.appendEvent(sessionId, { type: 'issued', at: '2026-08-23T15:01:00.000Z', sessionId, artifactId: ART });
     for (const event of extra) {
       // eslint-disable-next-line no-await-in-loop

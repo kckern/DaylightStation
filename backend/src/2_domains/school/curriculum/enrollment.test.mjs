@@ -13,8 +13,8 @@ const policy = { mode: 'module_blocks', required_opening_module: 'opening', one_
 
 describe('course enrollment ordering', () => {
   it('keeps required opening first and freezes shuffled module/lesson order', () => {
-    const enrollment = createCourseEnrollment({ enrollmentId: 'enr-felix-atlas', courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
-    expect(enrollment.enrollmentId).toBe('enr-felix-atlas');
+    const enrollment = createCourseEnrollment({ enrollmentId: 'enr-learner4-atlas', courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
+    expect(enrollment.enrollmentId).toBe('enr-learner4-atlas');
     expect(enrollment.moduleOrder[0]).toBe('opening');
     expect(enrollment.lessonOrder.north[0]).toBe('atlas.02');
     expect(enrollment.moduleOrder).not.toContain('bonus');
@@ -27,7 +27,7 @@ describe('course enrollment ordering', () => {
   it('gates later modules until the opening module passes', () => {
     const enrollment = createCourseEnrollment({ courseId: 'atlas', profile: 'lower', units, policy, rng: () => 0 });
     const plan = planLearnerWork({
-      learnerId: 'milo', units, coursePolicies: { atlas: policy },
+      learnerId: 'learner3', units, coursePolicies: { atlas: policy },
       assignment: { courses: [{ courseId: 'atlas', profile: 'lower', enrollment }] }, sessions: [],
     });
     expect(plan.entries.find((x) => x.unitId === 'atlas.01').status).toBe('available');
@@ -36,9 +36,9 @@ describe('course enrollment ordering', () => {
 
   it('unlocks optional bonus after opening without putting it in the required chain', () => {
     const enrollment = createCourseEnrollment({ courseId: 'atlas', profile: 'upper', units, policy, rng: () => 0 });
-    const sessions = [{ learnerId: 'felix', unitId: 'atlas.01', terminal: true, outcome: { result: 'passed' } }];
+    const sessions = [{ learnerId: 'learner4', unitId: 'atlas.01', terminal: true, outcome: { result: 'passed' } }];
     const plan = planLearnerWork({
-      learnerId: 'felix', units, coursePolicies: { atlas: policy },
+      learnerId: 'learner4', units, coursePolicies: { atlas: policy },
       assignment: { courses: [{ courseId: 'atlas', profile: 'upper', enrollment }] }, sessions,
     });
     expect(plan.entries.find((x) => x.unitId === 'atlas.05').status).toBe('available');
@@ -53,7 +53,7 @@ describe('course enrollment ordering', () => {
       },
     };
     const plan = planLearnerWork({
-      learnerId: 'milo', units, coursePolicies: { atlas: policy },
+      learnerId: 'learner3', units, coursePolicies: { atlas: policy },
       assignment: { courses: [{ courseId: 'atlas', profile: 'lower', enrollment }] }, sessions: [],
     });
     expect(plan.entries.find((x) => x.unitId === 'atlas.01').unlocks).toBe('atlas.04');
@@ -114,7 +114,7 @@ describe('dated module schedules', () => {
       courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-09-08',
     });
     const plan = planLearnerWork({
-      learnerId: 'milo', units: datedUnits,
+      learnerId: 'learner3', units: datedUnits,
       assignment: { courses: [{ courseId: 'cfm', enrollment }] },
       sessions: [], now: '2026-09-08T09:00:00.000Z',
       coursePolicies: { cfm: datedPolicy },
@@ -130,7 +130,7 @@ describe('dated module schedules', () => {
       courseId: 'cfm', units: datedUnits, modules, policy: datedPolicy, today: '2026-08-23',
     });
     const plan = planLearnerWork({
-      learnerId: 'milo', units: datedUnits,
+      learnerId: 'learner3', units: datedUnits,
       assignment: { courses: [{ courseId: 'cfm', enrollment }] },
       sessions: [], now: '2026-08-24T09:00:00.000Z',
       coursePolicies: { cfm: { mode: 'sequential' } },
@@ -149,7 +149,7 @@ describe('dated module schedules', () => {
       },
     };
     const plan = planLearnerWork({
-      learnerId: 'milo', units: datedUnits,
+      learnerId: 'learner3', units: datedUnits,
       assignment: { courses: [{ courseId: 'cfm', enrollment }] }, sessions: [],
       now: '2026-08-24T09:00:00.000Z', coursePolicies: { cfm: { mode: 'sequential' } },
     });

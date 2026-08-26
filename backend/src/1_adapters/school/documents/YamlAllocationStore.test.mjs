@@ -100,11 +100,11 @@ describe('findReusableCard', () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T00:00:00.000Z' });
     const first = await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', rowRange: { start: 1, end: 6 } }),
     });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6 })).toBeNull();
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 6 })).toBeNull();
     await store.updateStatus({ cardId: first.cardId, recordId: first.recordId, status: 'satisfied' });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6 })).toEqual({
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 6 })).toEqual({
       cardId: '1234567', startRow: 7,
     });
   });
@@ -113,21 +113,21 @@ describe('findReusableCard', () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io });
     const record = await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 45, end: 50 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', rowRange: { start: 45, end: 50 } }),
     });
     await store.updateStatus({ cardId: record.cardId, recordId: record.recordId, status: 'satisfied' });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 1 })).toBeNull();
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 1 })).toBeNull();
   });
 
   it('until_full appends another live worksheet for the same learner', async () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T10:00:00.000Z' });
     await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', rowRange: { start: 1, end: 6 } }),
     });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 8, reuse: 'until_full' }))
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 8, reuse: 'until_full' }))
       .toEqual({ cardId: '1234567', startRow: 7 });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 8, reuse: 'after_scan' }))
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 8, reuse: 'after_scan' }))
       .toBeNull();
   });
 
@@ -136,17 +136,17 @@ describe('findReusableCard', () => {
     let now = '2026-08-04T23:59:00.000Z';
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => now });
     await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', rowRange: { start: 1, end: 6 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', rowRange: { start: 1, end: 6 } }),
     });
     now = '2026-08-05T00:01:00.000Z';
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 6, reuse: 'school_day' })).toBeNull();
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 6, reuse: 'school_day' })).toBeNull();
   });
 
   it('never always requests a fresh card', async () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io });
-    await store.allocate({ cardId: '1234567', request: request({ learnerId: 'milo' }) });
-    expect(await store.findReusableCard({ learnerId: 'milo', rowsNeeded: 1, reuse: 'never' })).toBeNull();
+    await store.allocate({ cardId: '1234567', request: request({ learnerId: 'learner3' }) });
+    expect(await store.findReusableCard({ learnerId: 'learner3', rowsNeeded: 1, reuse: 'never' })).toBeNull();
   });
 });
 
@@ -213,7 +213,7 @@ describe('allocate — satisfied-record reprint (post-scan reprint / teacher key
   it('an identical render context against a SATISFIED record returns it unchanged (idempotent reprint)', async () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
-    const req = request({ learnerId: 'felix', rowItems: [{ row: 1, itemId: 'q1', itemType: 'multiple_choice' }] });
+    const req = request({ learnerId: 'learner4', rowItems: [{ row: 1, itemId: 'q1', itemType: 'multiple_choice' }] });
     const original = await store.allocate({ cardId: '1234567', request: req });
     await store.updateStatus({ cardId: '1234567', recordId: original.recordId, status: 'satisfied' });
 
@@ -227,24 +227,24 @@ describe('allocate — satisfied-record reprint (post-scan reprint / teacher key
   it('still refuses when the same recordId carries a DIFFERENT context (seed/learner/mapping)', async () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
-    const original = await store.allocate({ cardId: '1234567', request: request({ learnerId: 'felix' }) });
+    const original = await store.allocate({ cardId: '1234567', request: request({ learnerId: 'learner4' }) });
     await store.updateStatus({ cardId: '1234567', recordId: original.recordId, status: 'satisfied' });
 
-    for (const overrides of [{ learnerId: 'soren' }, { learnerId: 'felix', seed: 999 }]) {
+    for (const overrides of [{ learnerId: 'learner1' }, { learnerId: 'learner4', seed: 999 }]) {
       await expect(store.allocate({ cardId: '1234567', request: request(overrides) }))
         .rejects.toMatchObject({ code: 'ALLOCATION_RECORD_ID_CONFLICT' });
     }
 
     // The refusal message names WHICH check failed, so a teacher's bug
     // report (or the dev reading it) doesn't have to guess.
-    await expect(store.allocate({ cardId: '1234567', request: request({ learnerId: 'soren' }) }))
+    await expect(store.allocate({ cardId: '1234567', request: request({ learnerId: 'learner1' }) }))
       .rejects.toThrow(/learner differs/);
   });
 
   it('a released record never reprints — its rows are recycled, not reproducible', async () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
-    const req = request({ learnerId: 'felix' });
+    const req = request({ learnerId: 'learner4' });
     await store.allocate({ cardId: '1234567', request: req });
     await store.release({ cardId: '1234567' });
     await expect(store.allocate({ cardId: '1234567', request: req }))
@@ -376,10 +376,10 @@ describe('lost answer-sheet lineage', () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => '2026-08-04T10:00:00.000Z' });
     const live = await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', documentId: 'doc-a', rowRange: { start: 1, end: 6 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', documentId: 'doc-a', rowRange: { start: 1, end: 6 } }),
     });
     const settled = await store.allocate({
-      cardId: '1234567', request: request({ learnerId: 'milo', documentId: 'doc-b', rowRange: { start: 7, end: 12 } }),
+      cardId: '1234567', request: request({ learnerId: 'learner3', documentId: 'doc-b', rowRange: { start: 7, end: 12 } }),
     });
     await store.updateStatus({ cardId: '1234567', recordId: settled.recordId, status: 'satisfied' });
     const result = await store.markRecordLost({
@@ -437,17 +437,17 @@ describe('describeCard', () => {
     const { io } = fakeIo();
     const store = new YamlAllocationStore({ directory: '/docs', io, now: () => 'ts' });
     const old = await store.allocate({ cardId: '1234567', request: request({
-      learnerId: 'milo', documentId: 'doc-old', rowRange: { start: 1, end: 20 },
+      learnerId: 'learner3', documentId: 'doc-old', rowRange: { start: 1, end: 20 },
     }) });
     await store.updateStatus({ cardId: '1234567', recordId: old.recordId, status: 'satisfied' });
     const latest = await store.allocate({ cardId: '1234567', request: request({
-      learnerId: 'milo', documentId: 'doc-latest', rowRange: { start: 21, end: 26 },
+      learnerId: 'learner3', documentId: 'doc-latest', rowRange: { start: 21, end: 26 },
     }) });
     await store.updateStatus({ cardId: '1234567', recordId: latest.recordId, status: 'released' });
 
-    expect(await store.describeCard('1234567', { expectedLearnerId: 'milo' })).toMatchObject({
+    expect(await store.describeCard('1234567', { expectedLearnerId: 'learner3' })).toMatchObject({
       capacity: 50, usedRows: 26, remainingContiguousSlots: 24, nextRow: 27,
-      mappedLearnerId: 'milo', warnings: [],
+      mappedLearnerId: 'learner3', warnings: [],
     });
   });
 });

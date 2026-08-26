@@ -4,7 +4,7 @@ import { ReplaceLostAnswerSheet } from './ReplaceLostAnswerSheet.mjs';
 const live = (overrides = {}) => ({
   recordId: 'civilization/doc@abcdef123:v0:1-6', cardId: '1234567',
   rowRange: { start: 1, end: 6 }, documentId: 'civilization/doc', rev: 'abcdef123',
-  seed: 1, variant: 0, learnerId: 'milo', sessionId: 'ws-1', status: 'live',
+  seed: 1, variant: 0, learnerId: 'learner3', sessionId: 'ws-1', status: 'live',
   ...overrides,
 });
 
@@ -47,7 +47,7 @@ describe('ReplaceLostAnswerSheet', () => {
     expect(h.allocationStore.markRecordLost).toHaveBeenCalledWith(expect.objectContaining({
       cardId: '1234567', replacementCardId: '7654321', replacementRecordId: 'new-record',
     }));
-    expect(result).toMatchObject({ status: 'replaced', replacementCardId: '7654321', learnerId: 'milo' });
+    expect(result).toMatchObject({ status: 'replaced', replacementCardId: '7654321', learnerId: 'learner3' });
   });
 
   // The replacement sheet has to be folded the way it was DRAWN. A quiz's

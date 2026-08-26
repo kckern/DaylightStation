@@ -150,10 +150,10 @@ head: kckern
 users:
   - kckern
   - elizabeth
-  - felix
-  - milo
-  - alan
-  - soren
+  - learner4
+  - learner3
+  - learner2
+  - learner1
 EOF"
 sudo docker exec daylight-station sh -c 'chown node:node data/household/household.yml'
 ```

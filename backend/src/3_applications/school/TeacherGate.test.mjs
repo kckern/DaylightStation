@@ -5,7 +5,7 @@ import { GuestForbiddenError } from '#domains/school/errors.mjs';
 const roster = () => [
   { id: 'kckern', name: 'KC', birthyear: 1984 },
   { id: 'liz', name: 'Elizabeth', birthyear: 1986 },
-  { id: 'felix', name: 'Felix', birthyear: 2014 },
+  { id: 'learner4', name: 'Learner4', birthyear: 2014 },
 ];
 
 let logger;
@@ -21,8 +21,8 @@ describe('TeacherGate', () => {
   });
 
   it('a child is refused even if listed', () => {
-    const g = gate({ teachers: () => ['felix'] });
-    expect(() => g.assert({ userId: 'felix', pin: '4321', action: 'x' })).toThrow(GuestForbiddenError);
+    const g = gate({ teachers: () => ['learner4'] });
+    expect(() => g.assert({ userId: 'learner4', pin: '4321', action: 'x' })).toThrow(GuestForbiddenError);
   });
 
   it('an unlisted adult is refused only when the teachers key exists', () => {

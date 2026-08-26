@@ -17,9 +17,9 @@ function appWith(over = {}) {
   app.use('/api/v1/school', createSchoolRouter({
     schoolErrors: { GuestForbiddenError },
     schoolService: { listBankSourceSummaries: () => [], listBanks: () => [{ id: 'creature-quiz-1', title: 'Creature Quiz 1' }] },
-    attestationLog: { list: vi.fn(() => [{ id: 'att_1', learnerId: 'felix', unitId: 'u1' }]) },
+    attestationLog: { list: vi.fn(() => [{ id: 'att_1', learnerId: 'learner4', unitId: 'u1' }]) },
     recordAttestation: { execute: vi.fn(async (args) => ({ entry: { id: 'att_2', ...args } })) },
-    teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'felix', note: 'Hi', from: 'kckern', at: 't' }]) },
+    teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'learner4', note: 'Hi', from: 'kckern', at: 't' }]) },
     recordTeacherNote: { execute: vi.fn(async (args) => ({ entry: { id: 'note_2', ...args } })) },
     reassignEvidence: { execute: vi.fn(async (args) => {
       if (args.pin !== '7410') throw new GuestForbiddenError('The teacher PIN is missing or wrong.');
@@ -42,23 +42,23 @@ function appWith(over = {}) {
 describe('wave-5 repair routes', () => {
   it('GET/POST /attestations round-trip', async () => {
     const app = appWith();
-    expect((await request(app).get('/api/v1/school/attestations?learnerId=felix')).body.entries.length).toBe(1);
+    expect((await request(app).get('/api/v1/school/attestations?learnerId=learner4')).body.entries.length).toBe(1);
     const res = await request(app).post('/api/v1/school/attestations')
-      .send({ learnerId: 'felix', unitId: 'u1', reason: 'r', attestedBy: 'kckern', pin: '7410' });
+      .send({ learnerId: 'learner4', unitId: 'u1', reason: 'r', attestedBy: 'kckern', pin: '7410' });
     expect(res.status).toBe(201);
-    expect(res.body.entry.learnerId).toBe('felix');
+    expect(res.body.entry.learnerId).toBe('learner4');
   });
 
   it('GET/POST /teacher-notes round-trip', async () => {
     const app = appWith();
-    expect((await request(app).get('/api/v1/school/teacher-notes?learnerId=felix')).body.entries.length).toBe(1);
+    expect((await request(app).get('/api/v1/school/teacher-notes?learnerId=learner4')).body.entries.length).toBe(1);
     const res = await request(app).post('/api/v1/school/teacher-notes')
-      .send({ learnerId: 'felix', note: 'Hello', from: 'kckern', pin: '7410' });
+      .send({ learnerId: 'learner4', note: 'Hello', from: 'kckern', pin: '7410' });
     expect(res.status).toBe(201);
   });
 
   it('GET /attempts-summary groups by assessment (sessionId ?? provenance.recordId)', async () => {
-    const res = await request(appWith()).get('/api/v1/school/attempts-summary?learnerId=felix&day=2026-08-06');
+    const res = await request(appWith()).get('/api/v1/school/attempts-summary?learnerId=learner4&day=2026-08-06');
     expect(res.status).toBe(200);
     expect(res.body.assessments).toEqual(expect.arrayContaining([
       expect.objectContaining({ assessmentId: 'ses_1', count: 2, bankId: 'creature-quiz-1', title: 'Creature Quiz 1' }),
@@ -69,18 +69,18 @@ describe('wave-5 repair routes', () => {
   it('POST /reassign forwards the pin and maps a refusal to 403', async () => {
     const app = appWith();
     const okRes = await request(app).post('/api/v1/school/reassign')
-      .send({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
+      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '7410' });
     expect(okRes.status).toBe(200);
     expect(okRes.body.moved).toBe(3);
     const badRes = await request(app).post('/api/v1/school/reassign')
-      .send({ fromLearnerId: 'felix', toLearnerId: 'milo', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '0' });
+      .send({ fromLearnerId: 'learner4', toLearnerId: 'learner3', day: '2026-08-06', assessmentId: 'ses_1', reassignedBy: 'kckern', pin: '0' });
     expect(badRes.status).toBe(403);
   });
 
   it('GET /review/learner merges standalone notes as kind:note, newest first', async () => {
     const res = await request(appWith({
-      teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'felix', note: 'Great week!', from: 'kckern', at: '2026-08-06T12:00:00Z' }]) },
-    })).get('/api/v1/school/review/learner/felix');
+      teacherNotesStore: { list: vi.fn(() => [{ id: 'note_1', learnerId: 'learner4', note: 'Great week!', from: 'kckern', at: '2026-08-06T12:00:00Z' }]) },
+    })).get('/api/v1/school/review/learner/learner4');
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ kind: 'note', note: 'Great week!' });
     expect(res.body[1]).toMatchObject({ itemId: 'q3', verdict: 'correct' });

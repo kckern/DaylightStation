@@ -51,11 +51,12 @@
 import { programStatusFor } from '#domains/school/agenda.mjs';
 import { PlanProjection } from '../PlanProjection.mjs';
 import { reduceSession, createEvent } from '#domains/school/sessions/sessionEvents.mjs';
-import { resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
+import { offeredActions, resumeAgeDays } from '#domains/school/selfService/offeredActions.mjs';
 import { buildContextualLaunchCard } from '#domains/school/selfService/contextualLaunchCard.mjs';
 import { decodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
 import { lessonProgressRows } from '#domains/school/lessonProgress.mjs';
 import { courseDisplay, moduleDisplay } from '#domains/school/curriculum/display.mjs';
+import { resolveTokenState } from '#domains/school/sessions/tokens.mjs';
 import { nextMove } from './offerSession.mjs';
 import { pausedExceptionFor } from '../curriculumExceptionProjection.mjs';
 import { projectProgramEntry } from '../assignedProgramPlan.mjs';
@@ -220,6 +221,24 @@ export class ResolveAccessCode {
         };
       }
     }
+
+    // Bulk agenda_print tokens carry a list of per-subject refs, not a single
+    // subject — route to the bulk resolver before the single-subject guard.
+    if (record?.tokenClass === 'agenda_print') {
+      const nowIso = this.#clock().toISOString();
+      try {
+        return await this.#resolveBulk(record, { now: nowIso });
+      } catch (error) {
+        return {
+          card: this.#faulted('bulk-resolve', {
+            learnerId: record.subject?.learnerId,
+            error: error?.message ?? String(error),
+          }),
+          resolution: null,
+        };
+      }
+    }
+
     const learnerId = record?.subject?.learnerId ?? null;
     const subject = record?.subject?.subject ?? null;
     if (!record || !learnerId || !subject) {
@@ -260,7 +279,7 @@ export class ResolveAccessCode {
         offered: projection.actions.map((a) => a.kind),
       });
       // How often a child picks up work from a previous day, which is the
-      // question Felix's eight-day resume raised and nothing could answer:
+      // question Learner-Four's eight-day resume raised and nothing could answer:
       // the ordinary `code.resolved` line above says `state: 'reprinted'`
       // without saying reprinted from WHEN. Logged whenever the card decided
       // the work was old enough to name a date, so the log and the paper
@@ -482,6 +501,127 @@ export class ResolveAccessCode {
       });
       return false;
     }
+  }
+
+  /**
+   * Bulk resolution for `agenda_print` tokens: fan out over the per-subject
+   * refs, run each through the same planner + `offeredActions` check that a
+   * single-subject resolve uses, and collect those that would offer a `print`
+   * action. The result is a single bulk card (one "Print all sheets" button)
+   * plus a `resolution` carrying every ref the action handler needs.
+   *
+   * When all refs are exhausted or none are printable, returns a friendly
+   * all-done card with only an exit action — never `TRY_AGAIN`.
+   */
+  async #resolveBulk(record, { now }) {
+    const { learnerId, tokenRefs } = record.subject;
+    this.#logger.info?.('school.selfservice.bulk.resolve-start', {
+      learnerId, totalRefCount: tokenRefs.length,
+    });
+
+    // Fetch every per-subject token referenced by the bulk envelope.
+    let refs;
+    try {
+      refs = await Promise.all(tokenRefs.map((t) => this.#tokens.get(t)));
+    } catch (error) {
+      this.#logger.error?.('school.selfservice.bulk.registry-error', { error: error.message });
+      return { card: NOT_ANSWERING, resolution: null };
+    }
+
+    // Keep only refs that are still actionable (not expired/revoked).
+    const liveRefs = refs.filter((r) => r && resolveTokenState(r, { now }).status === 'actionable');
+    if (!liveRefs.length) {
+      this.#logger.info?.('school.selfservice.bulk.exhausted', { learnerId });
+      return { card: this.#bulkAllDone(learnerId), resolution: null };
+    }
+
+    // One plan computation for the learner, through the SAME assembly the
+    // agenda printed from and `#resolve` reads — every ref resolves against
+    // it. (Before `PlanProjection` this file grew its own `#planForLearner`
+    // copy of the planner fan-out; sharing the assembly is exactly what that
+    // refactor exists to guarantee, so bulk resolves through it too.)
+    const {
+      plan, sections, activeExceptions, projection,
+    } = await this.#planProjection.project({
+      learnerId,
+      planErrorEvent: 'school.selfservice.plan-errors',
+      launcherFailedEvent: 'school.selfservice.launcher-failed',
+    });
+    const { units, nowIso } = projection;
+    const unitMap = new Map(units.map((u) => [u.unitId, u]));
+    const printableRefs = [];
+
+    for (const ref of liveRefs) {
+      const subject = ref.subject?.subject;
+      if (!subject) continue;
+      const section = sections.find((s) => s.subject === subject);
+      if (!section || section.servedToday || !section.next) continue;
+
+      const entry = plan.entries?.find((e) => e.unitId === section.next.unitId);
+      if (!entry) continue;
+      // Paused content is not printable on the single-subject path either
+      // (`#resolve` answers `locked`), and bulk is an alias for scanning each
+      // lesson card in turn — never a way around the same gate.
+      if (pausedExceptionFor(activeExceptions, entry.unitId)) continue;
+
+      // eslint-disable-next-line no-await-in-loop
+      const { sessionId, state } = await this.#readState({ entry, learnerId, nowIso });
+      const unit = unitMap.get(entry.unitId) ?? {};
+      const move = nextMove(unit, state);
+      const actions = offeredActions(
+        { kind: 'move', move, sessionId, state, unit, entry },
+        { mediaSurface: this.#mediaSurface, bankPrintable: this.#bankPrintable(unit) },
+      );
+      const isPrint = actions.some((a) => a.kind === 'print');
+      if (!isPrint) continue;
+
+      printableRefs.push({
+        token: ref.token, subject, sessionId,
+        entry, title: entry.title ?? section.next.title ?? subject,
+      });
+    }
+
+    if (!printableRefs.length) {
+      this.#logger.info?.('school.selfservice.bulk.exhausted', { learnerId });
+      return { card: this.#bulkAllDone(learnerId), resolution: null };
+    }
+
+    this.#logger.info?.('school.selfservice.bulk.resolved', {
+      learnerId, liveRefCount: printableRefs.length, totalRefCount: tokenRefs.length,
+    });
+
+    return {
+      card: {
+        ok: true, learner: learnerId, subject: null,
+        title: 'Print all sheets',
+        bulk: true,
+        items: printableRefs.map((r) => ({ subject: r.subject, title: r.title })),
+        sentence: null,
+        actions: [
+          { kind: 'print', label: 'Print all sheets' },
+          { kind: 'exit', label: 'Go back' },
+        ],
+      },
+      resolution: {
+        kind: 'bulk_print',
+        learnerId,
+        refs: printableRefs,
+      },
+    };
+  }
+
+  /**
+   * Nothing left to bulk-print: every ref is spent, served, or not a print.
+   * A friendly card with an exit and no `TRY_AGAIN` — the panel must never
+   * tell a child who has finished that they typed the code wrong.
+   */
+  #bulkAllDone(learnerId) {
+    return {
+      ok: true, learner: learnerId, subject: null, title: null,
+      bulk: true, items: [],
+      sentence: "You're all done for today!",
+      actions: [{ kind: 'exit', label: 'Go back' }],
+    };
   }
 
   /**

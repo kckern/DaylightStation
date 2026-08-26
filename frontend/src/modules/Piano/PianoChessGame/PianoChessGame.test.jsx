@@ -391,12 +391,12 @@ describe('PianoChessGame opponent effect', () => {
       persisted: true,
     });
     requestOpponentMove.mockResolvedValueOnce({ from: 'e2', to: 'e4', san: 'e4', engine: 'stockfish' });
-    render(<PianoChessGame playerColor="b" seed={1} currentUser="felix" />);
+    render(<PianoChessGame playerColor="b" seed={1} currentUser="learner4" />);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(OPPONENT_DELAY_MS); });
 
     expect(requestOpponentMove).toHaveBeenCalledWith(expect.objectContaining({
-      userId: 'felix', rung: 'learner', level: 0,
+      userId: 'learner4', rung: 'learner', level: 0,
     }));
   });
 });
@@ -852,7 +852,7 @@ describe('the game is archived once, on the way out', () => {
   // `difficulty` is one of the mount-effect's dependencies, so changing it
   // reproduces exactly what the config load used to do to that effect.
   const makeElement = (difficulty = 'learner') => (
-    <PianoChessGame currentUser="milo" difficulty={difficulty} gameConfig={{ addressing: { shuffle: 'never' } }} />
+    <PianoChessGame currentUser="learner3" difficulty={difficulty} gameConfig={{ addressing: { shuffle: 'never' } }} />
   );
   const playChord = async (rerender, notes, difficulty) => {
     holdNotes(notes);
@@ -938,16 +938,16 @@ describe('the player is locked for the whole game', () => {
     // Shared mocks across this file — clear so the assertion sees only this game.
     fetchChessConfig.mockClear();
     fetchLadder.mockClear();
-    const { rerender } = render(makeElement('felix'));
-    await playChord(rerender, 'felix', notesFor('e2'));
-    rerender(makeElement('milo'));
+    const { rerender } = render(makeElement('learner4'));
+    await playChord(rerender, 'learner4', notesFor('e2'));
+    rerender(makeElement('learner3'));
     await act(async () => { await vi.advanceTimersByTimeAsync(50); });
     // The rail no longer prints the player — the kiosk breadcrumb does, with an
     // avatar — so the lock is asserted where it actually bites: every per-user
     // call still belongs to whoever started the game.
     const users = [...fetchChessConfig.mock.calls, ...fetchLadder.mock.calls].map(([user]) => user);
-    expect(users).toContain('felix');
-    expect(users, 'a mid-game switch must not re-scope the game').not.toContain('milo');
+    expect(users).toContain('learner4');
+    expect(users, 'a mid-game switch must not re-scope the game').not.toContain('learner3');
   });
 });
 

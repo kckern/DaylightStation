@@ -56,7 +56,7 @@ const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 const singleCard = (over = {}) => ({
   cardId: '0123456', recordId: 'r1', documentId: 'civilization/atlas/ws-one',
-  rev: 'rev1', variant: 0, learnerId: 'milo', sessionId: 'ses-one',
+  rev: 'rev1', variant: 0, learnerId: 'learner3', sessionId: 'ses-one',
   revisionSuperseded: false, results: [], totalPoints: 6, earnedPoints: 5,
   ...over,
 });

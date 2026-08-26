@@ -33,7 +33,7 @@ describe('RubiksCubeProgram', () => {
     schoolApi.rubiksCubeOpen.mockResolvedValue({ ok: true, data: assigned });
     schoolApi.rubiksCubeTurn.mockResolvedValue({ ok: true, data: assigned });
     schoolApi.rubiksCubeRestart.mockResolvedValue({ ok: true, data: assigned });
-    render(<RubiksCubeProgram userId="milo" cubeGrant="grant" />);
+    render(<RubiksCubeProgram userId="learner3" cubeGrant="grant" />);
     expect(await screen.findByRole('heading', { name: 'Turn practice' })).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'R' })); });
     await waitFor(() => expect(schoolApi.rubiksCubeTurn).toHaveBeenCalledWith(expect.objectContaining({ lessonId: 'turn-practice', move: 'R', expectedRevision: 0 })));

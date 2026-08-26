@@ -22,7 +22,12 @@ const isObject = (value) => Boolean(value) && typeof value === 'object' && !Arra
  */
 function isoWeekday(day) {
   const [year, month, date] = day.split('-').map(Number);
-  const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+  const at = new Date(Date.UTC(year, month - 1, date));
+  // Date.UTC maps a year under 100 into the 1900s, so year 26 would be read as
+  // 1926 — a different weekday. `isStudyDay` accepts '0026-11-26', so this
+  // function has to too.
+  at.setUTCFullYear(year);
+  const weekday = at.getUTCDay();
   return weekday === 0 ? 7 : weekday;
 }
 
@@ -62,10 +67,19 @@ function readSpanList(raw, field, errors) {
  * `errors` is non-empty, and callers must read `errors` rather than infer a
  * verdict from the null.
  */
+const SCHEDULE_KEYS = ['daysOfWeek', 'except', 'also'];
+
 export function validateSchedule(raw) {
   if (raw === undefined || raw === null) return { errors: [], schedule: null };
   if (!isObject(raw)) return { errors: ['schedule must be a mapping'], schedule: null };
   const errors = [];
+
+  // A key this file does not read is not a harmless extra: `daysofweek`,
+  // `exept` or `holidays` would be dropped, leaving a schedule that excuses
+  // nothing while its author believes a vacation is in force. Bad VALUES are
+  // caught below; only this catches a bad KEY.
+  const unknown = Object.keys(raw).filter((key) => !SCHEDULE_KEYS.includes(key));
+  if (unknown.length) errors.push(`schedule has unknown keys: ${unknown.join(', ')}`);
 
   let daysOfWeek = null;
   if (raw.daysOfWeek !== undefined && raw.daysOfWeek !== null) {
@@ -86,37 +100,50 @@ export function validateSchedule(raw) {
   const also = readSpanList(raw.also, 'also', errors);
 
   if (errors.length) return { errors, schedule: null };
-  return {
-    errors,
-    schedule: {
-      ...(daysOfWeek ? { daysOfWeek } : {}),
-      ...(except.length ? { except } : {}),
-      ...(also.length ? { also } : {}),
-    },
+  const schedule = {
+    ...(daysOfWeek ? { daysOfWeek } : {}),
+    ...(except.length ? { except } : {}),
+    ...(also.length ? { also } : {}),
   };
+  // An empty block constrains nothing. Returning it anyway would propagate a
+  // meaningless `schedule: {}` into the syllabus record, the enrollment
+  // snapshot and every planner entry built from it.
+  return { errors, schedule: Object.keys(schedule).length ? schedule : null };
 }
 
 const covers = (spans, day) => spans.some((span) => day >= span.from && day <= span.to);
 
 /**
- * Is `day` a school day under `schedule`?
+ * The full verdict for one day under one schedule: whether it is a school day,
+ * and whatever the schedule was refused for.
+ *
+ * Both halves come from a single validation pass because the caller that logs
+ * a bad schedule is the same caller that has to decide the day, and running
+ * the validator twice per entry per agenda build is waste.
  *
  * Precedence is fixed: `also` beats `except` beats `daysOfWeek`. A makeup day
  * named explicitly has to win over the vacation range containing it, or
  * "we'll make it up on Saturday" is inexpressible.
  *
- * FAILS OPEN. An absent, unparseable or invalid schedule is a school day. The
- * failure mode of this module must be "the child is asked to do their work",
- * never "a typo excused the entire term and nobody noticed until June".
+ * FAILS OPEN. An absent, unparseable or invalid schedule is a school day — the
+ * failure mode here must be "the child is asked to do their work", never "a
+ * typo excused the entire term and nobody noticed until June". `errors` is how
+ * a caller turns that silent-but-safe verdict into something findable.
+ *
+ * @returns {{schoolDay: boolean, errors: string[]}}
  */
-export function isSchoolDay(day, schedule) {
-  if (!isStudyDay(day)) return true;
+export function scheduleVerdict(day, schedule) {
   const { errors, schedule: normalized } = validateSchedule(schedule);
-  if (errors.length || !normalized) return true;
-  if (covers(normalized.also ?? [], day)) return true;
-  if (covers(normalized.except ?? [], day)) return false;
-  if (!normalized.daysOfWeek) return true;
-  return normalized.daysOfWeek.includes(isoWeekday(day));
+  if (errors.length || !normalized || !isStudyDay(day)) return { schoolDay: true, errors };
+  if (covers(normalized.also ?? [], day)) return { schoolDay: true, errors };
+  if (covers(normalized.except ?? [], day)) return { schoolDay: false, errors };
+  if (!normalized.daysOfWeek) return { schoolDay: true, errors };
+  return { schoolDay: normalized.daysOfWeek.includes(isoWeekday(day)), errors };
+}
+
+/** `scheduleVerdict` without the diagnostics. */
+export function isSchoolDay(day, schedule) {
+  return scheduleVerdict(day, schedule).schoolDay;
 }
 
 export default isSchoolDay;

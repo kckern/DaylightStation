@@ -1,5 +1,5 @@
 # Golden-parity fixture: real session 20260627195941, trimmed to the 3 human
-# occupants (grannie, learner-one, parent-two) on shared HR-strap device 10001.
+# occupants (grannie, learner1, parent-two) on shared HR-strap device 10001.
 # On-disk shape (flat RLE <id>:hr|zone|coins|beats keys) — the shape planHeal() consumes.
 # Source: data/household/history/fitness/2026-06-27/20260627195941.yml (captured 2026-07-16).
 version: 3
@@ -17,18 +17,18 @@ participants:
     hr_device: '10001'
     is_primary: true
     base_user: Grannie
-  learner-one:
-    display_name: learner-one
+  learner1:
+    display_name: learner1
     is_primary: true
   parent-two:
     display_name: parent-two
     is_primary: true
 timeline:
   series:
-    learner-one:beats: '[9.7,19.3,[null,644]]'
-    learner-one:hr: '[[116,2],[null,644]]'
-    learner-one:zone: '[["c",2],[null,644]]'
-    learner-one:coins: '[[0,2],[1,644]]'
+    learner1:beats: '[9.7,19.3,[null,644]]'
+    learner1:hr: '[[116,2],[null,644]]'
+    learner1:zone: '[["c",2],[null,644]]'
+    learner1:coins: '[[0,2],[1,644]]'
     parent-two:beats: '[[null,2],9.7,[null,643]]'
     parent-two:hr: '[[null,2],116,[null,643]]'
     parent-two:zone: '[[null,2],"a",[null,643]]'
@@ -51,7 +51,7 @@ summary:
         cool: 1.5
         active: 21.42
         hot: 0.67
-    learner-one:
+    learner1:
       coins: 1
       hr_avg: 116
       hr_max: 116

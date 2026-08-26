@@ -328,14 +328,14 @@ test.describe('Group Label Fallback', () => {
       // Verify required device configs exist (not active devices)
       const devices = await sim.getDevices();
       const hasKckern = devices.some(d => String(d.deviceId) === KCKERN_DEVICE_ID);
-      const hasFelix = devices.some(d => String(d.deviceId) === LEARNER_TWO_DEVICE_ID);
+      const hasLearner4 = devices.some(d => String(d.deviceId) === LEARNER_TWO_DEVICE_ID);
 
       console.log(`  Configured devices: ${devices.length}`);
       console.log(`  user_1 (${KCKERN_DEVICE_ID}): ${hasKckern ? 'found' : 'MISSING'}`);
-      console.log(`  user_2 (${LEARNER_TWO_DEVICE_ID}): ${hasFelix ? 'found' : 'MISSING'}`);
+      console.log(`  user_2 (${LEARNER_TWO_DEVICE_ID}): ${hasLearner4 ? 'found' : 'MISSING'}`);
 
       expect(hasKckern, `user_1 device (${KCKERN_DEVICE_ID}) must exist`).toBe(true);
-      expect(hasFelix, `user_2 device (${LEARNER_TWO_DEVICE_ID}) must exist`).toBe(true);
+      expect(hasLearner4, `user_2 device (${LEARNER_TWO_DEVICE_ID}) must exist`).toBe(true);
 
       // ═══════════════════════════════════════════════════════════════
       // PHASE 1: Single device - should show display_name

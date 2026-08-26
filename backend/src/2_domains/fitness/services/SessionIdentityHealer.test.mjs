@@ -157,7 +157,7 @@ describe('planHeal — series-only occupant discovery + successor fallback', () 
       timeline: {
         interval_seconds: 5,
         series: {
-          'learner-one:hr': [116, 116, null],
+          'learner1:hr': [116, 116, null],
           'grannie:hr': [null, null, 80],
           'grannie:coins': [1, 2, 10]
         }
@@ -166,8 +166,8 @@ describe('planHeal — series-only occupant discovery + successor fallback', () 
 
     const result = planHeal(session);
 
-    expect(result.removedOccupants).toEqual(['learner-one']);
-    expect(result.transfers).toContainEqual({ from: 'learner-one', to: 'grannie', reason: expect.stringMatching(/insignificant-/) });
+    expect(result.removedOccupants).toEqual(['learner1']);
+    expect(result.transfers).toContainEqual({ from: 'learner1', to: 'grannie', reason: expect.stringMatching(/insignificant-/) });
   });
 });
 

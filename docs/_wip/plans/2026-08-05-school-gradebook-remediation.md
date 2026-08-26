@@ -60,7 +60,7 @@ it('attempts carry course and unit context when the session and taxonomy know th
   });
   card.results[0].concepts = ['fraction-add'];
   await useCase.execute({ testId: '1234567', card });
-  const attempt = datastore.readAllAttempts('felix')[0];
+  const attempt = datastore.readAllAttempts('learner4')[0];
   expect(attempt.learning).toMatchObject({
     subjectId: 'math', courseId: 'fractions', unitId: 'unit-frac-3', conceptIds: ['fraction-add'],
   });
@@ -69,7 +69,7 @@ it('attempts carry course and unit context when the session and taxonomy know th
 it('a URL-printed sheet (no session) still files subject + course from the taxonomy', async () => {
   const card = gradedCard({ documentId: 'math/fractions/quiz-3', recordId: 'math/fractions/quiz-3@abcdef123:v0:1-2' });
   await new RecordCardScanOutcome({ datastore, logger: quietLogger }).execute({ testId: '1234567', card });
-  const attempt = datastore.readAllAttempts('felix')[0];
+  const attempt = datastore.readAllAttempts('learner4')[0];
   expect(attempt.learning).toMatchObject({ subjectId: 'math', courseId: 'fractions' });
   expect(attempt.learning.unitId ?? null).toBeNull();
 });

@@ -45,7 +45,7 @@ import { deriveLearnerName, deriveIssueDate, buildReprintContext } from './repri
 
 describe('deriveLearnerName', () => {
   it('title-cases a plain learner id', () => {
-    expect(deriveLearnerName('felix')).toBe('Felix');
+    expect(deriveLearnerName('learner4')).toBe('Learner4');
   });
 
   it('title-cases each word of a hyphenated/underscored id', () => {
@@ -64,7 +64,7 @@ describe('buildReprintContext', () => {
   const instance = () => ({
     id: 'civilization/young-peoples-atlas-us/ws-ses-f6buxumv',
     sessionId: 'ses_f6Buxumv',
-    learnerId: 'felix',
+    learnerId: 'learner4',
     issuedAt: '2026-08-14T17:55:20.033Z',
     omr: { cardId: '5922785', recordId: 'x:v0:7-16', rowRange: { start: 7, end: 16 } },
   });
@@ -73,8 +73,8 @@ describe('buildReprintContext', () => {
     expect(buildReprintContext(instance())).toEqual({
       cardId: '5922785',
       startRow: 7,
-      learnerId: 'felix',
-      learnerName: 'Felix',
+      learnerId: 'learner4',
+      learnerName: 'Learner4',
       date: '14 Aug 2026',
       sessionId: 'ses_f6Buxumv',
     });
@@ -242,7 +242,7 @@ describe('reprint <instanceId>', () => {
     // Mint the card the instance will point at, exactly as a real issuance would.
     const minted = await runSchoolDocs([
       'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
-      '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+      '--fresh-card', '--learner-id', 'learner4', '--learner-name', 'Learner4', '--date', '14 Aug 2026',
     ]);
     expect(minted.exitCode).toBe(0);
     const cardId = minted.report.allocation.cardId;
@@ -252,7 +252,7 @@ describe('reprint <instanceId>', () => {
     await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
       id: 'ws-fixture',
       sessionId: 'ses_fixture',
-      learnerId: 'felix',
+      learnerId: 'learner4',
       documentId: 'teacher-cli-fixture',
       documentRevision: published.report.rev,
       issuedAt: '2026-08-14T17:55:20.033Z',
@@ -270,7 +270,7 @@ describe('reprint <instanceId>', () => {
     expect(report.allocation).toMatchObject({ cardId, status: 'live' });
 
     const text = await pdfText(path.join(root, 'reprinted.pdf'));
-    expect(text).toContain('Felix');
+    expect(text).toContain('Learner4');
     expect(text).toContain('14 Aug 2026');
     expect(text).toContain(cardId);
   }));
@@ -284,7 +284,7 @@ describe('reprint <instanceId>', () => {
     const publishedFile = path.join(contentRoot, 'published', `teacher-cli-fixture@${published.report.rev}.yml`);
     const minted = await runSchoolDocs([
       'render', publishedFile, '--out', path.join(root, 'first.pdf'), '--data-dir', dataDir,
-      '--fresh-card', '--learner-id', 'felix', '--learner-name', 'Felix', '--date', '14 Aug 2026',
+      '--fresh-card', '--learner-id', 'learner4', '--learner-name', 'Learner4', '--date', '14 Aug 2026',
     ]);
     const cardId = minted.report.allocation.cardId;
     const instancesDir = path.join(dataDir, 'household/apps/school/worksheet-instances');
@@ -292,7 +292,7 @@ describe('reprint <instanceId>', () => {
     await writeFile(path.join(instancesDir, 'ws-fixture.yml'), dump({
       id: 'ws-fixture',
       sessionId: 'ses_fixture',
-      learnerId: 'felix',
+      learnerId: 'learner4',
       documentId: 'teacher-cli-fixture',
       documentRevision: published.report.rev,
       issuedAt: '2026-08-14T17:55:20.033Z',
@@ -1386,7 +1386,7 @@ This is the document that started all three fixes (`civilization/young-peoples-a
 3. Confirm the JSON report shows `allocation.status: "live"` and no unexpected warnings.
 4. `pdftoppm -png -r 150 /tmp/qa-facsimile.pdf /tmp/qa-page` then read both PNGs (Read tool supports images).
 5. Check against all three fixes:
-   - **Track A:** Name "Felix", Date "14 Aug 2026", Student No. 5922785 all present without having been passed manually.
+   - **Track A:** Name "Learner4", Date "14 Aug 2026", Student No. 5922785 all present without having been passed manually.
    - **Track B:** Page 2's footer reads "Page 2 of 2 · 5922785" (or similar) — no title/blank "Name: ___" line anywhere on page 2.
    - **Track C:** Questions split roughly evenly (aim for 5 on page 1, 5 on page 2, given 10 total) rather than 7/3; no single gap between questions looks dramatically larger than the others; any genuine leftover space sits as blank space at the bottom of page 2, not stretched into the middle.
 6. If the balance or gap cap looks off in practice (e.g., `maxFillGrowthPt: 32` still looks too loose or too tight), adjust the constant in `workbookTheme.mjs`'s new `pagination` section — it's a single number, tune and re-render rather than re-deriving the algorithm.

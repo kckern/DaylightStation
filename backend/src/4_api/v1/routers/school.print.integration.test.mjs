@@ -96,14 +96,14 @@ describe('print route + real store + real renderer', () => {
 
   it('mints on first bare omr, reuses on refresh, and STILL RENDERS after the scan satisfies the record', async () => {
     const first = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=felix');
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=learner4');
     expect(first.status).toBe(200);
     const minted = JSON.parse(first.headers['x-school-print-allocation']);
     expect(minted.status).toBe('live');
 
     // Refresh: same URL, same sheet — no card burned.
     const second = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=felix');
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=learner4');
     expect(second.status).toBe(200);
     expect(JSON.parse(second.headers['x-school-print-allocation']).recordId).toBe(minted.recordId);
 
@@ -115,7 +115,7 @@ describe('print route + real store + real renderer', () => {
     // The bookmarked URL — and the teacher's grading reprint — must keep
     // reproducing the sheet, not 500 on a recordId conflict.
     const reprint = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=felix');
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&learnerId=learner4');
     expect(reprint.status).toBe(200);
     const adopted = JSON.parse(reprint.headers['x-school-print-allocation']);
     expect(adopted).toMatchObject({ recordId: minted.recordId, status: 'satisfied' });
@@ -127,7 +127,7 @@ describe('print route + real store + real renderer', () => {
 
   it('/print/<cardId> alone reproduces the sheet the card was printed for', async () => {
     const minted = await postRender(app, {
-      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'alan',
+      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'learner2',
     });
     expect(minted.status).toBe(200);
     const { cardId, recordId } = JSON.parse(minted.headers['x-school-print-allocation']);
@@ -142,7 +142,7 @@ describe('print route + real store + real renderer', () => {
 
   it('a retake pins the PUBLISHED rev — the record a scan must later resolve', async () => {
     const retake = await request(app)
-      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&retake=1&learnerId=milo');
+      .get('/api/v1/school/print/arts/integration/quiz-1?variety=omr&retake=1&learnerId=learner3');
     expect(retake.status).toBe(200);
     const allocation = JSON.parse(retake.headers['x-school-print-allocation']);
     // recordId embeds the rev: it must be a rev getPublished can actually
@@ -154,7 +154,7 @@ describe('print route + real store + real renderer', () => {
 
   it('a genuine allocation conflict surfaces as 409 with its invariant code, not a 500', async () => {
     const minted = await postRender(app, {
-      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'soren',
+      id: 'arts/integration/quiz-1', variety: 'omr', freshCard: true, learnerId: 'learner1',
     });
     expect(minted.status).toBe(200);
     const { cardId } = JSON.parse(minted.headers['x-school-print-allocation']);
@@ -164,8 +164,8 @@ describe('print route + real store + real renderer', () => {
     // supplied here on purpose: the quiz gate still does not fire, because
     // this card already carries a usable (live) record for this document —
     // the gate only exists to reject a FABRICATED card, and this one is
-    // real. Adding learnerId=soren here would instead make the request
-    // supersede soren's own prior live record (YamlAllocationStore.allocate's
+    // real. Adding learnerId=learner1 here would instead make the request
+    // supersede learner1's own prior live record (YamlAllocationStore.allocate's
     // `supersedes` match on documentId+learnerId excludes the supersede
     // target from the collision pool), turning this into a 200 and defeating
     // the very conflict this test exists to exercise.

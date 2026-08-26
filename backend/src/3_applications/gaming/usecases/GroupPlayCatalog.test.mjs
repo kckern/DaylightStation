@@ -5,7 +5,7 @@ import { GroupPlayCatalog } from './GroupPlayCatalog.mjs';
 const NOOP = { info() {}, warn() {}, error() {}, debug() {} };
 const HOUSEHOLD_CFG = {
   buzzers: [{ id: 'living_room', mqtt_topic: 'zigbee2mqtt/Group Play Buzzers', buttons: { '1_single': 'slot_1' } }],
-  team_presets: [{ id: 'family', teams: [{ name: 'One', members: ['learner-two'] }, { name: 'Two', members: ['kckern', 'ghost_user'] }] }],
+  team_presets: [{ id: 'family', teams: [{ name: 'One', members: ['learner2'] }, { name: 'Two', members: ['kckern', 'ghost_user'] }] }],
   defaults: { timer_seconds: 15 }, sounds: { pack: 'classic' },
 };
 
@@ -39,7 +39,7 @@ function makeService({ cfg = HOUSEHOLD_CFG } = {}) {
 describe('GroupPlayCatalog', () => {
   it('hydrates environment-owned members and defaults', () => {
     const config = makeService().getConfig();
-    expect(config.team_presets[0].teams[0].members[0]).toEqual({ id: 'learner-two', name: 'LEARNER-TWO', avatar: '/api/v1/static/users/learner-two' });
+    expect(config.team_presets[0].teams[0].members[0]).toEqual({ id: 'learner2', name: 'LEARNER2', avatar: '/api/v1/static/users/learner2' });
     expect(config.team_presets[0].teams[1].members[0].name).toBe('Dad');
     expect(config.team_presets[0].teams[1].members[1]).toEqual({ id: 'ghost_user', name: 'ghost_user', avatar: null });
     expect(config.defaults).toEqual({ timer_seconds: 15, mute: false });

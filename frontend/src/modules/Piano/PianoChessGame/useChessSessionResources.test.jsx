@@ -14,12 +14,12 @@ describe('useChessSessionResources', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('hides the previous player immediately and ignores late session responses', async () => {
-    const felixConfig = deferred();
-    const felixLadder = deferred();
-    const alanConfig = deferred();
-    const alanLadder = deferred();
-    const readConfig = vi.fn((user) => (user === 'felix' ? felixConfig.promise : alanConfig.promise));
-    const readLadder = vi.fn((user) => (user === 'felix' ? felixLadder.promise : alanLadder.promise));
+    const learner4Config = deferred();
+    const learner4Ladder = deferred();
+    const learner2Config = deferred();
+    const learner2Ladder = deferred();
+    const readConfig = vi.fn((user) => (user === 'learner4' ? learner4Config.promise : learner2Config.promise));
+    const readLadder = vi.fn((user) => (user === 'learner4' ? learner4Ladder.promise : learner2Ladder.promise));
 
     const { result, rerender } = renderHook(
       ({ sessionId, userId }) => useChessSessionResources({
@@ -31,25 +31,25 @@ describe('useChessSessionResources', () => {
         writeConfig: vi.fn(),
         logger,
       }),
-      { initialProps: { sessionId: 'game-1', userId: 'felix' } },
+      { initialProps: { sessionId: 'game-1', userId: 'learner4' } },
     );
 
     await act(async () => {
-      felixConfig.resolve({ default_rung: 'sharp', marker: 'felix' });
-      felixLadder.resolve({ unlocked_through: 8, current: { name: 'Felix opponent' } });
+      learner4Config.resolve({ default_rung: 'sharp', marker: 'learner4' });
+      learner4Ladder.resolve({ unlocked_through: 8, current: { name: 'Learner4 opponent' } });
     });
     await waitFor(() => expect(result.current.ladderReady).toBe(true));
-    expect(result.current.chessConfig.marker).toBe('felix');
+    expect(result.current.chessConfig.marker).toBe('learner4');
 
-    rerender({ sessionId: 'game-2', userId: 'alan' });
+    rerender({ sessionId: 'game-2', userId: 'learner2' });
     expect(result.current.chessConfig).toBe(null);
     expect(result.current.ladder).toBe(null);
     expect(result.current.ladderReady).toBe(false);
     expect(result.current.rungId).toBe('learner');
 
     await act(async () => {
-      alanConfig.resolve(null);
-      alanLadder.resolve(null);
+      learner2Config.resolve(null);
+      learner2Ladder.resolve(null);
     });
     await waitFor(() => expect(result.current.ladderReady).toBe(true));
     expect(result.current.chessConfig).toBe(null);
@@ -59,8 +59,8 @@ describe('useChessSessionResources', () => {
   it('never lets a late old-player response overwrite the active session', async () => {
     const oldConfig = deferred();
     const oldLadder = deferred();
-    const readConfig = vi.fn((user) => (user === 'felix' ? oldConfig.promise : Promise.resolve(null)));
-    const readLadder = vi.fn((user) => (user === 'felix' ? oldLadder.promise : Promise.resolve(null)));
+    const readConfig = vi.fn((user) => (user === 'learner4' ? oldConfig.promise : Promise.resolve(null)));
+    const readLadder = vi.fn((user) => (user === 'learner4' ? oldLadder.promise : Promise.resolve(null)));
     const { result, rerender } = renderHook(
       ({ sessionId, userId }) => useChessSessionResources({
         sessionId,
@@ -71,13 +71,13 @@ describe('useChessSessionResources', () => {
         writeConfig: vi.fn(),
         logger,
       }),
-      { initialProps: { sessionId: 'game-1', userId: 'felix' } },
+      { initialProps: { sessionId: 'game-1', userId: 'learner4' } },
     );
 
-    rerender({ sessionId: 'game-2', userId: 'alan' });
+    rerender({ sessionId: 'game-2', userId: 'learner2' });
     await waitFor(() => expect(result.current.ladderReady).toBe(true));
     await act(async () => {
-      oldConfig.resolve({ marker: 'felix' });
+      oldConfig.resolve({ marker: 'learner4' });
       oldLadder.resolve({ unlocked_through: 19 });
     });
     expect(result.current.chessConfig).toBe(null);
@@ -98,20 +98,20 @@ describe('useChessSessionResources', () => {
         writeConfig,
         logger,
       }),
-      { initialProps: { sessionId: 'game-1', userId: 'felix', historyLength: 0 } },
+      { initialProps: { sessionId: 'game-1', userId: 'learner4', historyLength: 0 } },
     );
     await waitFor(() => expect(logger.info).toHaveBeenCalledWith(
       'config-loaded', expect.objectContaining({ sessionId: 'game-1' }),
     ));
-    rerender({ sessionId: 'game-1', userId: 'felix', historyLength: 1 });
-    await waitFor(() => expect(writeConfig).toHaveBeenCalledWith('felix', { seen_intro: true }));
+    rerender({ sessionId: 'game-1', userId: 'learner4', historyLength: 1 });
+    await waitFor(() => expect(writeConfig).toHaveBeenCalledWith('learner4', { seen_intro: true }));
 
-    rerender({ sessionId: 'game-2', userId: 'alan', historyLength: 0 });
+    rerender({ sessionId: 'game-2', userId: 'learner2', historyLength: 0 });
     await waitFor(() => expect(logger.info).toHaveBeenCalledWith(
       'config-loaded', expect.objectContaining({ sessionId: 'game-2' }),
     ));
-    rerender({ sessionId: 'game-2', userId: 'alan', historyLength: 1 });
-    await waitFor(() => expect(writeConfig).toHaveBeenCalledWith('alan', { seen_intro: true }));
+    rerender({ sessionId: 'game-2', userId: 'learner2', historyLength: 1 });
+    await waitFor(() => expect(writeConfig).toHaveBeenCalledWith('learner2', { seen_intro: true }));
     expect(writeConfig).toHaveBeenCalledTimes(2);
   });
 });

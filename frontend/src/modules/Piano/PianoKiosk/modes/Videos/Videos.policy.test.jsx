@@ -82,7 +82,7 @@ describe('LecturePlayerRoute — per-user policy wiring', () => {
   });
 
   it('a default user gets the gate and no auto-advance', () => {
-    state.user = 'milo';
+    state.user = 'learner3';
     renderAt('/videos/c1/plex:100');
     expect(screen.getByTestId('gate-enabled').textContent).toBe('true');
     expect(screen.getByTestId('has-advance').textContent).toBe('false');

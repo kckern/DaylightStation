@@ -23,7 +23,7 @@ const ds = () => ({
   saveQuizRequests: vi.fn((next) => { saved = next; }),
 });
 
-const users = { getProfile: () => ({ id: 'u1' }), getHouseholdRoster: () => [{ id: 'felix' }] };
+const users = { getProfile: () => ({ id: 'u1' }), getHouseholdRoster: () => [{ id: 'learner4' }] };
 const silent = { info() {}, warn() {}, error() {} };
 
 
@@ -33,8 +33,8 @@ const makeService = ({ teacherGate = null, datastore = ds() } = {}) => new Schoo
 
 beforeEach(() => {
   requests = [
-    { at: 't', userId: 'felix', unitId: 'plex:123', materialId: 'm1', unitTitle: 'Ep 1' },
-    { at: 't', userId: 'milo', unitId: 'plex:999', materialId: 'm1', unitTitle: 'Ep 9' },
+    { at: 't', userId: 'learner4', unitId: 'plex:123', materialId: 'm1', unitTitle: 'Ep 1' },
+    { at: 't', userId: 'learner3', unitId: 'plex:999', materialId: 'm1', unitTitle: 'Ep 9' },
   ];
   saved = null;
 });
@@ -122,7 +122,7 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
     const gate = { assert: vi.fn(() => { throw new GuestForbiddenError('no'); }) };
     const store = ds();
     const svc = makeService({ teacherGate: gate, datastore: store });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', pin: 'x', reason: 'r' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', pin: 'x', reason: 'r' }))
       .rejects.toThrow(GuestForbiddenError);
     expect(store.saveQuizRequests).not.toHaveBeenCalled();
     expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: 'x', action: 'quizrequests.dismiss' });
@@ -130,7 +130,7 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
 
   it('a missing reason is refused — the child is told why, always', async () => {
     const svc = makeService({ teacherGate: { assert: () => {} } });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern' }))
       .rejects.toThrow(/reason/);
   });
 
@@ -140,28 +140,28 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
       datastore: ds(), userService: users, logger: silent, now: () => 1000,
       teacherGate: { assert: () => {} }, teacherNotesRef: () => noteStore,
     });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', pin: '1', reason: 'We will do this one together next week' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', pin: '1', reason: 'We will do this one together next week' }))
       .resolves.toEqual({ dismissed: true });
     expect(saved).toEqual([requests[1]]);
     expect(noteStore.append).toHaveBeenCalledWith(expect.objectContaining({
-      learnerId: 'felix', from: 'kckern',
+      learnerId: 'learner4', from: 'kckern',
       note: expect.stringContaining('We will do this one together next week'),
     }));
   });
 
   it('dismisses EXACTLY the addressed row — a retake and a flag on the same bank survive (M7 fix)', async () => {
     requests = [
-      { at: 't', userId: 'felix', unitId: 'plex:123', materialId: 'm1', unitTitle: 'Ep 1' },
-      { at: 't', kind: 'retake', userId: 'felix', bankId: 'caps' },
-      { at: 't', kind: 'flag', userId: 'felix', bankId: 'caps', sessionId: 'ses_1', note: 'marked wrong' },
+      { at: 't', userId: 'learner4', unitId: 'plex:123', materialId: 'm1', unitTitle: 'Ep 1' },
+      { at: 't', kind: 'retake', userId: 'learner4', bankId: 'caps' },
+      { at: 't', kind: 'flag', userId: 'learner4', bankId: 'caps', sessionId: 'ses_1', note: 'marked wrong' },
     ];
     const svc = makeService({ teacherGate: { assert: () => {} } });
-    await expect(svc.dismissQuizRequest({ kind: 'flag', bankId: 'caps', sessionId: 'ses_1', userId: 'felix', dismissedBy: 'kckern', reason: 'Checked — the key is right' }))
+    await expect(svc.dismissQuizRequest({ kind: 'flag', bankId: 'caps', sessionId: 'ses_1', userId: 'learner4', dismissedBy: 'kckern', reason: 'Checked — the key is right' }))
       .resolves.toEqual({ dismissed: true });
     expect(saved.map((r) => r.kind ?? 'quiz')).toEqual(['quiz', 'retake']); // ONLY the flag went
     // …and the legacy quiz row (no kind field) is addressable with kind:null.
     requests = saved; saved = null;
-    await svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', reason: 'r' });
+    await svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', reason: 'r' });
     expect(saved.map((r) => r.kind)).toEqual(['retake']);
   });
 
@@ -172,7 +172,7 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
       datastore: store, userService: users, logger: silent, now: () => 1000,
       teacherGate: { assert: () => {} }, teacherNotesRef: () => broken,
     });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'felix', dismissedBy: 'kckern', reason: 'r' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:123', userId: 'learner4', dismissedBy: 'kckern', reason: 'r' }))
       .rejects.toThrow('notes volume offline');
     expect(store.saveQuizRequests).not.toHaveBeenCalled(); // the child's row survives
   });
@@ -180,7 +180,7 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
   it('an unknown entry answers dismissed:false without writing', async () => {
     const store = ds();
     const svc = makeService({ teacherGate: { assert: () => {} }, datastore: store });
-    await expect(svc.dismissQuizRequest({ unitId: 'plex:404', userId: 'felix', dismissedBy: 'kckern', reason: 'r' }))
+    await expect(svc.dismissQuizRequest({ unitId: 'plex:404', userId: 'learner4', dismissedBy: 'kckern', reason: 'r' }))
       .resolves.toEqual({ dismissed: false });
     expect(store.saveQuizRequests).not.toHaveBeenCalled();
   });
@@ -189,11 +189,11 @@ describe('dismissQuizRequest (reason delivered as a note — advocacy A5)', () =
 describe('flagConcern (kid-safe "this seems wrong" — advocacy wave 7)', () => {
   it('files a kind:flag row with the kid\'s words; dedupes; guests refused', () => {
     const svc = makeService();
-    expect(svc.flagConcern({ userId: 'felix', bankId: 'caps', sessionId: 'ses_1', title: 'Caps', note: 'It marked Olympia wrong!' }))
+    expect(svc.flagConcern({ userId: 'learner4', bankId: 'caps', sessionId: 'ses_1', title: 'Caps', note: 'It marked Olympia wrong!' }))
       .toEqual({ flagged: true, duplicate: false });
-    expect(saved.at(-1)).toMatchObject({ kind: 'flag', userId: 'felix', bankId: 'caps', note: 'It marked Olympia wrong!' });
+    expect(saved.at(-1)).toMatchObject({ kind: 'flag', userId: 'learner4', bankId: 'caps', note: 'It marked Olympia wrong!' });
     requests = saved;
-    expect(svc.flagConcern({ userId: 'felix', bankId: 'caps', sessionId: 'ses_1' }))
+    expect(svc.flagConcern({ userId: 'learner4', bankId: 'caps', sessionId: 'ses_1' }))
       .toEqual({ flagged: true, duplicate: true });
     expect(() => svc.flagConcern({ userId: null, bankId: 'x' })).toThrow(GuestForbiddenError);
   });
@@ -202,11 +202,11 @@ describe('flagConcern (kid-safe "this seems wrong" — advocacy wave 7)', () => 
 describe('requestRetake (kid-safe — advocacy A2)', () => {
   it('a signed-in kid files a retake row; guests are refused; dedupe holds', () => {
     const svc = makeService();
-    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' }))
+    expect(svc.requestRetake({ userId: 'learner4', bankId: 'science/creature-basics/01-quiz', title: 'Creature Basics Quiz' }))
       .toEqual({ requested: true, duplicate: false });
-    expect(saved.at(-1)).toMatchObject({ kind: 'retake', userId: 'felix', bankId: 'science/creature-basics/01-quiz' });
+    expect(saved.at(-1)).toMatchObject({ kind: 'retake', userId: 'learner4', bankId: 'science/creature-basics/01-quiz' });
     requests = saved;
-    expect(svc.requestRetake({ userId: 'felix', bankId: 'science/creature-basics/01-quiz' }))
+    expect(svc.requestRetake({ userId: 'learner4', bankId: 'science/creature-basics/01-quiz' }))
       .toEqual({ requested: true, duplicate: true });
     expect(() => svc.requestRetake({ userId: null, bankId: 'x' })).toThrow(GuestForbiddenError);
   });

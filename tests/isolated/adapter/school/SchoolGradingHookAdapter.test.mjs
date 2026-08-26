@@ -11,11 +11,11 @@ function makeAdapter({ script = 'script.school_graded', failWith = null } = {}) 
     },
   };
   const loadSchoolConfig = () => (script ? { grading_hook: { script } } : {});
-  return { adapter: new SchoolGradingHookAdapter({ gateway, loadSchoolConfig, resolveStudent: (id) => id === 'felix' ? 'Felix' : id }), calls };
+  return { adapter: new SchoolGradingHookAdapter({ gateway, loadSchoolConfig, resolveStudent: (id) => id === 'learner4' ? 'Learner4' : id }), calls };
 }
 
 const GRADED = {
-  result: 'graded', learnerId: 'felix', testId: '4071314',
+  result: 'graded', learnerId: 'learner4', testId: '4071314',
   sessionId: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
 };
 
@@ -28,7 +28,7 @@ describe('SchoolGradingHookAdapter', () => {
     expect(calls[0].domain).toBe('script');
     expect(calls[0].service).toBe('school_graded');
     expect(calls[0].data).toEqual({
-      result: 'graded', learner_id: 'felix', student: 'Felix', test_id: '4071314',
+      result: 'graded', learner_id: 'learner4', student: 'Learner4', test_id: '4071314',
       session_id: 'ses_f6Buxumv', percent: 83, earned: 5, total: 6,
       pending_review: null, reasons: [], items: [], code: null,
       subject: null, course: null, unit: null, lesson: null,
@@ -49,7 +49,7 @@ describe('SchoolGradingHookAdapter', () => {
   it('passes review reasons and items through', async () => {
     const { adapter, calls } = makeAdapter();
     await adapter.fire({
-      result: 'review', learnerId: 'milo', testId: '4071314', sessionId: 'ses_x',
+      result: 'review', learnerId: 'learner3', testId: '4071314', sessionId: 'ses_x',
       pendingReview: 1, reasons: ['ambiguous'], items: ['q1'],
     });
     expect(calls[0].data.pending_review).toBe(1);
@@ -60,10 +60,10 @@ describe('SchoolGradingHookAdapter', () => {
   it('passes student, curriculum, and authoritative score metadata to Home Assistant', async () => {
     const { adapter, calls } = makeAdapter();
     await adapter.fire({
-      ...GRADED, student: 'Felix', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
+      ...GRADED, student: 'Learner4', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
     });
     expect(calls[0].data).toMatchObject({
-      student: 'Felix', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
+      student: 'Learner4', subject: 'math', course: 'fractions', unit: 'unit-3', lesson: 'equivalent-fractions',
       earned: 5, total: 6, percent: 83,
     });
   });

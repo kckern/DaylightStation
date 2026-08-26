@@ -247,16 +247,16 @@ Add to `frontend/src/modules/Piano/PianoKiosk/modes/Videos/usePianoCoursePlayabl
 
 ```javascript
   it('exposes coProgressLock from response', async () => {
-    const lock = { locked: true, aheadBy: 5, waitingForId: 'felix', buffer: 5 };
+    const lock = { locked: true, aheadBy: 5, waitingForId: 'learner4', buffer: 5 };
     api.mockResolvedValue({ items: [], info: {}, isSequential: true, coProgressLock: lock });
-    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'learner3'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.coProgressLock).toEqual(lock);
   });
 
   it('exposes coProgressLock: null when not present in response', async () => {
     api.mockResolvedValue({ items: [], info: {}, isSequential: true });
-    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'milo'));
+    const { result } = renderHook(() => usePianoCoursePlayable('12345', 'learner3'));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.coProgressLock).toBeNull();
   });
@@ -276,11 +276,11 @@ let hookReturn;
 vi.mock('./usePianoCoursePlayable.js', () => ({ usePianoCoursePlayable: () => hookReturn }));
 vi.mock('../../PianoUserContext.jsx', () => ({
   usePianoUser: () => ({
-    currentUser: 'milo',
-    currentProfile: { name: 'Milo' },
+    currentUser: 'learner3',
+    currentProfile: { name: 'Learner3' },
     users: [
-      { id: 'milo', name: 'Milo' },
-      { id: 'felix', name: 'Felix' },
+      { id: 'learner3', name: 'Learner3' },
+      { id: 'learner4', name: 'Learner4' },
     ],
   }),
 }));
@@ -302,7 +302,7 @@ describe('co-progress lock', () => {
     hookReturn = {
       ...baseHook,
       isSequential: true,
-      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'felix', buffer: 5 },
+      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'learner4', buffer: 5 },
       items: [
         { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
         { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
@@ -321,7 +321,7 @@ describe('co-progress lock', () => {
     hookReturn = {
       ...baseHook,
       isSequential: true,
-      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'felix', buffer: 5 },
+      coProgressLock: { locked: true, aheadBy: 5, waitingForId: 'learner4', buffer: 5 },
       items: [
         { plex: '1', label: 'A', itemIndex: 1, userWatched: true },
         { plex: '2', label: 'B', itemIndex: 2, userWatched: false },
@@ -331,7 +331,7 @@ describe('co-progress lock', () => {
     render(<CourseDetail course={{ id: 'plex:99' }} onPlay={onPlay} />);
     fireEvent.click(screen.getByText('B').closest('button'));
     expect(onPlay).not.toHaveBeenCalled();
-    expect(screen.getByRole('status').textContent).toContain('Felix');
+    expect(screen.getByRole('status').textContent).toContain('Learner4');
     expect(screen.getByRole('status').textContent).toContain('5 episodes ahead');
   });
 

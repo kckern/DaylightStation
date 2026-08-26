@@ -56,8 +56,8 @@ scenarios:
       - { key: F1, settle_frames: 18, expect_text: [MONTGOMERY, KNOW] }
       - { key: F5, capture: next-card, settle_frames: 30, expect_text: [ALASKA, FLIP] }
 
-  - id: felix-code-entry
-    description: Code entry updates cleanly and digit six automatically opens Felix's local prescription.
+  - id: learner4-code-entry
+    description: Code entry updates cleanly and digit six automatically opens Learner4's local prescription.
     boot_settle_frames: 300
     settle_frames: 30
     steps:
@@ -68,8 +68,8 @@ scenarios:
       - { key: '0', capture: code-5, expect_text: [CONTINUE ON CALC, ENTER 6 DIGITS] }
       - { key: '0', capture: card-01-front, settle_frames: 300, expect_text: [ADAPTIVE STUDY, ALABAMA, FLIP] }
 
-  - id: felix-state-capitals
-    description: Felix completes the exact code 000000 state-capitals prescription and queues a perfect result.
+  - id: learner4-state-capitals
+    description: Learner4 completes the exact code 000000 state-capitals prescription and queues a perfect result.
     boot_settle_frames: 300
     settle_frames: 90
     steps:

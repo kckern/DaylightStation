@@ -82,6 +82,7 @@ import { createCostApiRouter } from '#composition/modules/costApi.mjs';
 import { createHomeAutomationApiRouter, createHomeDashboardApiRouter } from '#composition/modules/homeApi.mjs';
 import { createDeviceApiRouter } from '#composition/modules/deviceApi.mjs';
 import { createTriggerApiRouter } from '#composition/modules/triggerApi.mjs';
+import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { createScanDispatch, errText } from '#composition/modules/scanDispatch.mjs';
 import { createSchoolCalc } from '#composition/modules/schoolCalc.mjs';
 import { createSchoolCatalog } from '#composition/modules/schoolCatalog.mjs';
@@ -4020,10 +4021,135 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // after startup — so we bind the reference instead.
   let scaleNutribotBridge = null;
 
+  // ==========================================================================
+  // Living-room reading sessions.
+  // Authority on behaviour: docs/reference/school/reading-sessions.md.
+  //
+  // Four pieces, and they must all be built from the SAME two instances or the
+  // feature is wrong in ways nothing errors on:
+  //   sessions       who is standing at each reader, in memory, per location
+  //   interceptor    first refusal on a book tap there, and the D8 teardown
+  //                  suppression that stops `end: tv-off` killing the ceremony
+  //   recordStoryRead  the evidence a finished story becomes
+  //   reading router the screen's three HTTP calls
+  //
+  // `storyTimeLauncher` is the shared one: the interceptor asks it `status()`
+  // for the assignment/browsing mode, and `RecordStoryRead` takes its
+  // `studyDay()` as the shard key. A second launcher with its own timezone
+  // would file a 10pm read under tomorrow while this one still read today.
+  // ==========================================================================
+  let readingSessions = null;
+  let readingSessionInterceptor = null;
+  if (schoolLifecycle.wired && schoolLifecycle.storyTimeLauncher) {
+    const readingLogger = rootLogger.child({ module: 'school-reading' });
+    const { ReadingSessionService } = await import('#apps/school/ReadingSessionService.mjs');
+    const { ReadingSessionInterceptor } = await import('#apps/school/readingSessionInterceptor.mjs');
+    const { RecordStoryRead } = await import('#apps/school/usecases/RecordStoryRead.mjs');
+    const { createReadingRouter } = await import('#api/v1/routers/reading.mjs');
+
+    readingSessions = new ReadingSessionService({
+      eventBus,
+      logger: readingLogger,
+      // D6 — the session owns teardown, and this is it. The location's own
+      // `end: tv-off` is suppressed while a session is open (D8), so nothing
+      // else will ever turn this TV off: an abandoned prompt would leave the
+      // living room lit all night and the next card tap would land in a
+      // session belonging to a child who left.
+      onTimeout: async (session) => {
+        const tv = homeAutomationAdapters.tvAdapter;
+        if (!tv?.turnOff) return;
+        await tv.turnOff(session.location);
+      },
+    });
+    readingSessions.start();
+    server?.once?.('close', () => readingSessions.stop());
+
+    readingSessionInterceptor = new ReadingSessionInterceptor({
+      sessions: readingSessions,
+      storyTime: schoolLifecycle.storyTimeLauncher,
+      eventBus,
+      logger: readingLogger,
+    });
+
+    v1Routers.school.use('/reading', createReadingRouter({
+      recordStoryRead: new RecordStoryRead({
+        readingLog: schoolLifecycle.stores.readingLog,
+        // A FUNCTION, not a timezone, and deliberately so: this is the ONE
+        // place the household's 4am study-day boundary is applied, and a
+        // second independently-configured source of the shard key would drift
+        // from the launcher's own "how many today" without erroring.
+        studyDay: () => schoolLifecycle.storyTimeLauncher.studyDay(),
+        eventBus,
+        logger: readingLogger,
+      }),
+      sessions: readingSessions,
+      storyTime: schoolLifecycle.storyTimeLauncher,
+      readingLog: schoolLifecycle.stores.readingLog,
+      // Optional: without it the prompt falls back to the learner id, which is
+      // a worse greeting and not a broken one.
+      resolveLearner: (id) => configService.getUserProfile?.(id) ?? null,
+      logger: readingLogger,
+    }));
+  } else {
+    rootLogger.warn('school.reading.unwired', {
+      reason: schoolLifecycle.wired ? 'no story-time launcher' : 'school lifecycle not wired',
+    });
+  }
+
+  // What a school learner card DOES, per reader. Registered here rather than
+  // inside the trigger module so the trigger pipeline keeps no School import:
+  // it knows op names and nothing about School.
+  const learnerActions = createLearnerActions({ logger: rootLogger.child({ module: 'trigger-learner' }) });
+  if (schoolLifecycle.useCases?.resolvePersonalCard) {
+    // The handler lives in `learnerCardActions.mjs` rather than inline here so
+    // its contract — the retryable `print_failed`, and the `agenda-suppressed`
+    // acknowledgement that is a cooldown tap's only feedback — is testable
+    // without booting the app.
+    const { makePrintAgendaHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    learnerActions.register('print-agenda', makePrintAgendaHandler({
+      resolvePersonalCard: schoolLifecycle.useCases.resolvePersonalCard,
+      eventBus,
+      logger: rootLogger.child({ module: 'trigger-learner' }),
+    }));
+  } else {
+    rootLogger.warn('trigger.learner.school-unwired', { reason: 'no resolvePersonalCard' });
+  }
+
+  // `reading-session` — the registration plan 01 deliberately withheld through
+  // six agents, so that a card tapped in the living room answered `no_handler`
+  // by name rather than printing an agenda in the study two rooms away because
+  // that was the only learner action wired. It is registered now, and only
+  // when the sessions store it needs actually exists: the refusal it replaces
+  // is still the right answer for a household with no story-time launcher.
+  if (readingSessions) {
+    const { makeReadingSessionHandler } = await import('#composition/modules/learnerCardActions.mjs');
+    learnerActions.register('reading-session', makeReadingSessionHandler({
+      sessions: readingSessions,
+      // D2 — the one question that can refuse a tap: is unrelated content
+      // already up on this reader's TV? The SAME tracker the presence
+      // publisher feeds, so "is something playing" has one answer in the house.
+      isPlaying: (target) => (target ? screenContentTracker.isPlaying(target) === true : false),
+      // Power on and bring the kiosk forward. NOT a content load and NOT a
+      // `clearContent()`: the reading widget is already mounted on that
+      // screen, and reloading the page would drop the very WebSocket that
+      // carried the `session-open` this tap just produced.
+      wakeScreen: async ({ target }) => {
+        const device = target ? deviceServices.deviceService.get(target) : null;
+        if (!device) return { ok: false, error: `unknown target: ${target}` };
+        const power = await device.powerOn();
+        const foreground = await device.prepareForContent({ skipCameraCheck: true });
+        return { ok: power?.ok !== false && foreground?.ok !== false, power, foreground };
+      },
+      eventBus,
+      logger: rootLogger.child({ module: 'trigger-learner' }),
+    }));
+  }
+
   // Trigger dispatch (NFC modality source: apps/nfc/config.yml; barcode modality
   // shares this same dispatch core — see the barcode-relay wiring just below).
-  const { router: triggerRouter, triggerDispatchService, triggerConfig } = createTriggerApiRouter({
+  const { router: triggerRouter, triggerDispatchService } = createTriggerApiRouter({
     listDir,
+    learnerActions,
     deviceServices,
     wakeAndLoadService,
     haGateway: homeAutomationAdapters.haGateway,
@@ -4033,6 +4159,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     loadFile,
     saveFile,
     contentDispatcher: barcodeContentDispatcher,
+    // First refusal on a book tap at a reader with a session open — and the
+    // D8 half: while one IS open, the location's `end: tv-off` is suppressed
+    // so the ceremony gets to render before the room goes dark.
+    contentInterceptors: readingSessionInterceptor ? [readingSessionInterceptor] : [],
     screenBroadcast: barcodeScreenBroadcast,
     commandResolver: resolveCommand,
     logger: rootLogger.child({ module: 'trigger' }),
@@ -4082,19 +4212,23 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   }
 
   // NFC taps arriving on a hardware-relay topic (the omr-relay carries an M5
-  // Unit NFC alongside the bubble-sheet reader). One tag registry decides who
-  // owns the tag: a personal card goes to School and prints an agenda, anything
-  // else falls through to the normal trigger pipeline like any other reader.
+  // Unit NFC alongside the bubble-sheet reader). TRANSPORT ONLY: every tap —
+  // book sticker, learner card, unknown tag — goes to the same pipeline every
+  // other reader in the house uses. What a learner card MEANS is the reader
+  // location's `learner_action`, resolved in NfcResolver.
   const { createNfcTapIngress } = await import('#composition/modules/nfcTapIngress.mjs');
   const nfcTapIngress = createNfcTapIngress({
     eventBus,
     topics: ['omr'],
-    triggerConfig,
     triggerDispatchService,
-    resolvePersonalCard: schoolLifecycle.useCases?.resolvePersonalCard ?? null,
     shutdownService,
     getShutdownConfig: readShutdownConfig,
-    location: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcLocation ?? null,
+    // Reader id -> trigger location. Was a single global `location`, which
+    // assumed every reader on this bus was in one room. The fallback names the
+    // one reader that exists today so the study card keeps working without a
+    // config edit; add a key here (or in school.yml) for each new relay reader.
+    readerLocations: configService.getHouseholdAppConfig?.(householdId, 'school')?.lifecycle?.nfcReaderLocations
+      ?? { 'study-omr': 'study' },
     logger: rootLogger.child({ module: 'nfc-tap' }),
   });
 

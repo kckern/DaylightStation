@@ -14,7 +14,7 @@ function played(moves, options = {}) {
 const inputs = (game, extra = {}) => ({
   game,
   gameId: 'g-1',
-  userId: 'milo',
+  userId: 'learner3',
   rungId: 'learner',
   hints: 1,
   bestMoves: 0,

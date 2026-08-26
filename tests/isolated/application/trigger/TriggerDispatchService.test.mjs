@@ -768,3 +768,197 @@ describe('TriggerDispatchService — barcode (frozen Response) through handleEve
     expect(optimistic).not.toHaveBeenCalled();
   });
 });
+
+// An action nothing can dispatch is, from the tap's point of view, exactly a
+// tag nobody registered: nothing happens. Before this, it was WORSE than that —
+// the UNKNOWN_ACTION return sits below the `if (!intent)` branch, so it skipped
+// the placeholder write and the notify_unknown push. (Not the debounce: that
+// key is set before resolution, so repeat taps were collapsing either way.)
+// The arming event for that gap is a one-line YAML edit to a reader, which no
+// test observes and no code comment reaches, so the degradation lives here.
+describe('TriggerDispatchService — an unmappable action degrades to the unknown-tag path', () => {
+  let haGateway; let tagWriter; let broadcast; let logger; let now;
+
+  beforeEach(() => {
+    haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    tagWriter = { recordObserved: vi.fn().mockResolvedValue({ created: true }), setNfcNote: vi.fn() };
+    broadcast = vi.fn();
+    logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    now = 1714137138000;
+  });
+
+  const registry = (modality = 'nfc') => ({
+    [modality]: {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv', action: 'launch-rocket', auth_token: null,
+          notify_unknown: 'mobile_app_kc_phone', defaults: {},
+        },
+      },
+      tags: { '04a1b2c3': { global: { plex: 620707 }, overrides: {} } },
+    },
+  });
+
+  const makeService = (config) => new TriggerDispatchService({
+    config,
+    contentIdResolver: makeResolver(),
+    wakeAndLoadService: { execute: vi.fn() },
+    haGateway,
+    deviceService: { get: vi.fn() },
+    tagWriter,
+    broadcast,
+    logger,
+    clock: () => now,
+  });
+
+  it('writes the placeholder and pushes notify_unknown, as an unregistered tag would', async () => {
+    const service = makeService(registry());
+    const result = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(result.code).toBe('UNKNOWN_ACTION');
+    expect(tagWriter.recordObserved).toHaveBeenCalledWith('04a1b2c3', expect.any(String));
+    expect(haGateway.callService).toHaveBeenCalledWith('notify', 'mobile_app_kc_phone', expect.any(Object));
+  });
+
+  it('one physical tap is one placeholder and one push, however many times HA fires it', async () => {
+    const service = makeService(registry());
+    await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+    const second = await service.handleTrigger('livingroom', 'nfc', '04a1b2c3');
+
+    expect(second.debounced).toBe(true);
+    expect(tagWriter.recordObserved).toHaveBeenCalledTimes(1);
+    expect(haGateway.callService).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a non-NFC modality alone — there is no tag registry to place it in', async () => {
+    const service = makeService({
+      state: {
+        locations: {
+          livingroom: { target: 'livingroom-tv', auth_token: null, states: { off: { action: 'launch-rocket' } } },
+        },
+      },
+    });
+    const result = await service.handleTrigger('livingroom', 'state', 'off');
+
+    expect(result.code).toBe('UNKNOWN_ACTION');
+    expect(tagWriter.recordObserved).not.toHaveBeenCalled();
+  });
+});
+
+// The guard suppression is scoped to content, so it needs a test that content
+// still gets it — otherwise scoping it reads as removing it.
+describe('TriggerDispatchService — zombie-wake-guard suppression is content-only', () => {
+  const guardedRegistry = (action, extra = {}) => ({
+    nfc: {
+      locations: { livingroom: { target: 'livingroom-tv', action, auth_token: null, notify_unknown: null, defaults: {} } },
+      tags: { '838e6806': { global: { plex: 620707, ...extra }, overrides: {} } },
+    },
+  });
+
+  function makeService(config, haGateway) {
+    return new TriggerDispatchService({
+      config,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService: { execute: vi.fn().mockResolvedValue({ ok: true }) },
+      haGateway,
+      deviceService: { get: vi.fn().mockReturnValue({ loadContent: vi.fn().mockResolvedValue({ ok: true }), clearContent: vi.fn().mockResolvedValue({ ok: true }) }) },
+      tagWriter: { recordObserved: vi.fn().mockResolvedValue({ created: true }) },
+      broadcast: vi.fn(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  }
+
+  it('disables the guard for a content play, which is what wakes the TV', async () => {
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    await makeService(guardedRegistry('play-next'), haGateway).handleTrigger('livingroom', 'nfc', '838e6806');
+    expect(haGateway.callService).toHaveBeenCalledWith('automation', 'turn_off', {
+      entity_id: 'automation.living_room_tv_zombie_wake_guard', stop_actions: true,
+    });
+  });
+
+  it('leaves it alone for a clear, which wakes nothing', async () => {
+    const haGateway = { callService: vi.fn().mockResolvedValue({ ok: true }) };
+    await makeService(guardedRegistry('clear'), haGateway).handleTrigger('livingroom', 'nfc', '838e6806');
+    expect(haGateway.callService).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The interceptor seam is only real if the dispatcher actually CARRIES it.
+ *
+ * `#deps` is an explicit whitelist — "a dep that is not named here never
+ * reaches responseHandlers" — so a seam built in `responseHandlers.content` and
+ * an interceptor handed to `createTriggerApiRouter` can both be perfectly
+ * correct while nothing whatsoever is connected between them. That is a failure
+ * with no symptom in either unit: every claim test passes, every interceptor
+ * test passes, and in the field the book just plays.
+ */
+describe('TriggerDispatchService — content interceptors reach the content handler', () => {
+  const registry = {
+    nfc: {
+      locations: {
+        livingroom: {
+          target: 'livingroom-tv', action: 'play-next', end: 'tv-off',
+          auth_token: null, defaults: {},
+        },
+      },
+      tags: { '838e6806': { global: { plex: 620707 }, overrides: {} } },
+    },
+  };
+
+  function service({ contentInterceptors, wakeAndLoadService }) {
+    return new TriggerDispatchService({
+      config: registry,
+      contentIdResolver: makeResolver(),
+      wakeAndLoadService,
+      haGateway: { callService: vi.fn().mockResolvedValue({ ok: true }) },
+      deviceService: { get: vi.fn() },
+      contentInterceptors,
+      broadcast: vi.fn(),
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+  }
+
+  it('a claimed book tap never reaches wake-and-load', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    const result = await service({
+      contentInterceptors: [{ claim: async () => ({ claimed: true, by: 'reading-session' }) }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    expect(wakeAndLoadService.execute).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+  });
+
+  it('an unclaimed book tap plays exactly as it does today', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({
+      contentInterceptors: [{ claim: async () => null }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    expect(wakeAndLoadService.execute).toHaveBeenCalledTimes(1);
+  });
+
+  // D8, end to end through the dispatcher: the reader is configured
+  // `end: tv-off`, and a suppressing interceptor must take it off the dispatch.
+  it('a suppressing interceptor strips the reader s tv-off from the load options', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => true }],
+      wakeAndLoadService,
+    }).handleTrigger('livingroom', 'nfc', '838e6806');
+
+    const [, , options] = wakeAndLoadService.execute.mock.calls[0];
+    expect(options.endBehavior).toBeUndefined();
+  });
+
+  it('and without one, the reader s tv-off still rides along', async () => {
+    const wakeAndLoadService = { execute: vi.fn().mockResolvedValue({ ok: true }) };
+    await service({ contentInterceptors: [], wakeAndLoadService })
+      .handleTrigger('livingroom', 'nfc', '838e6806');
+
+    const [, , options] = wakeAndLoadService.execute.mock.calls[0];
+    expect(options).toMatchObject({ endBehavior: 'tv-off' });
+  });
+});

@@ -93,7 +93,7 @@ describe('PianoConnectFour address rail', () => {
     connectFourClient.readConfig.mockResolvedValueOnce({
       addressing: { ladder: { unlocked_through: 13 } },
     });
-    const { container } = render(<PianoConnectFour currentUser="alan" activeNotes={new Map()} />);
+    const { container } = render(<PianoConnectFour currentUser="learner2" activeNotes={new Map()} />);
 
     await act(async () => { await Promise.resolve(); });
 

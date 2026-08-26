@@ -173,7 +173,7 @@ describe('what a child is told', () => {
 });
 
 /**
- * Regression: Milo's result receipt (2026-08-22) printed the literal
+ * Regression: Learner-Three's result receipt (2026-08-22) printed the literal
  * `undefined · undefined of undefined` between "Passing is 80%" and "NOTES
  * FOR YOU". `block.progress` is the ARRAY `CloseSessionOutcome#learningProgress`
  * always returns (one row for the course, one for the unit) — the old
@@ -181,7 +181,7 @@ describe('what a child is told', () => {
  * read `.label`/`.completed`/`.total` off the ARRAY itself, which has none of
  * those properties.
  */
-describe('the progress line on a result summary (regression: Milo, 2026-08-22)', () => {
+describe('the progress line on a result summary (regression: Learner-Three, 2026-08-22)', () => {
   const withProgress = (progress) => resultDocument({
     sessionId: 'ses_1', unitTitle: 'Unit Two', result: 'passed', percent: 90, progress,
   });
@@ -284,6 +284,46 @@ describe('which questions were missed, on the text receipt', () => {
     const text = textOf(renderer.render(scored({ marks: [false, true, true, true, true, true] })));
     expect(text).not.toContain('✓');
     expect(text).not.toContain('×');
+  });
+});
+
+describe('bulk_print presentation', () => {
+  const bulkDoc = {
+    id: 'bulk-sheet', seed: 0, variant: 0, target: ['receipt'],
+    blocks: [{
+      type: 'scan_action',
+      presentation: 'bulk_print',
+      action: 'bulk:all-sheets',
+      label: 'Print everything',
+      subjects: ['Math', 'Reading', 'Science'],
+    }],
+  };
+
+  it('emits the heading, a bullet per subject, and a barcode carrying the bulk token', () => {
+    const job = renderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const text = textOf(job);
+    expect(text).toContain('PRINT ALL SHEETS');
+    expect(text).toContain('• Math');
+    expect(text).toContain('• Reading');
+    expect(text).toContain('• Science');
+    const barcodes = barcodesOf(job);
+    expect(barcodes).toHaveLength(1);
+    expect(barcodes[0].content).toBe(TOKEN);
+  });
+
+  it('prints the heading BOLD', () => {
+    const job = renderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const heading = job.items.find((i) => i.type === 'text' && i.content === 'PRINT ALL SHEETS');
+    expect(heading).toMatchObject({ style: { bold: true } });
+  });
+
+  it("with symbology:'QR' emits a qrcode item instead of a barcode", () => {
+    const qrRenderer = createDocumentEscPosRenderer({ symbology: 'QR' });
+    const job = qrRenderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const qrcodes = qrcodesOf(job);
+    expect(qrcodes).toHaveLength(1);
+    expect(qrcodes[0].content).toBe(TOKEN);
+    expect(barcodesOf(job)).toHaveLength(0);
   });
 });
 

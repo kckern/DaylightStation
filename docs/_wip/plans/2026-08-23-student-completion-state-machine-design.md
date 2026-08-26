@@ -16,7 +16,7 @@ finishes their agenda for the day they are "done," which is meant to unlock
 rewards elsewhere in the house (games on the piano kiosk, coins). Today there
 is no learner-level "done" fact — only a per-section `servedToday` boolean
 computed inside `planDailyAgenda` (`agenda.mjs:150`), a function whose job is
-printing paper, not answering "is Milo done?" Nothing rolls it up, persists
+printing paper, not answering "is Learner-Three done?" Nothing rolls it up, persists
 it, or announces it.
 
 This doc designs that roll-up: the **student completion state machine** — what
@@ -358,7 +358,7 @@ lesson a day earns nightly. Restricting coins to `complete` only closes the
 matching farm case: nobody earns money for a day with nothing assigned.
 
 The `caught_up` reason surfacing in `excused` is itself an actionable signal
-for the console — "Milo has run out of assigned work" — distinct from
+for the console — "Learner-Three has run out of assigned work" — distinct from
 `awaiting_grown_up`, which means a plan entry is frozen and blocking
 progress.
 

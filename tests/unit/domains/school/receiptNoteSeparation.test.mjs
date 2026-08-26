@@ -1,6 +1,6 @@
 /**
  * Slice H (2026-08-22) — audit-only notes must never reach a child's
- * receipt. A grown-up's sign-off note printed to Milo under "NOTES FOR YOU"
+ * receipt. A grown-up's sign-off note printed to Learner-Three under "NOTES FOR YOU"
  * read "Eraser signature: A erased, B (Kansas) chosen. Credited per the
  * leniency rule deployed in 0aed55c94." — a sentence written for the
  * RECORD, including a git SHA, landed in front of a 3rd-grader.
@@ -58,7 +58,7 @@ describe('reviewNoteLines reads only the child-facing note', () => {
   });
 });
 
-describe('the result receipt never carries an audit-only note (regression: Milo, 2026-08-22)', () => {
+describe('the result receipt never carries an audit-only note (regression: Learner-Three, 2026-08-22)', () => {
   it('builds "NOTES FOR YOU" from reviewNoteLines\' pre-filtered output — an internalNote could not reach it even if handed in raw', () => {
     // This is exactly how CloseSessionOutcome wires it: `notes` on the
     // document is the ALREADY-FILTERED string array reviewNoteLines
@@ -70,7 +70,7 @@ describe('the result receipt never carries an audit-only note (regression: Milo,
       },
     ]);
     const doc = resultDocument({
-      sessionId: 'ses_milo', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
+      sessionId: 'ses_learner3', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
     });
     const text = doc.blocks.filter((b) => b.type === 'rich_text').map((b) => b.md).join('\n');
     expect(text).not.toContain(AUDIT_TEXT);
@@ -86,7 +86,7 @@ describe('the result receipt never carries an audit-only note (regression: Milo,
       },
     ]);
     const doc = resultDocument({
-      sessionId: 'ses_milo', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
+      sessionId: 'ses_learner3', unitTitle: 'The United States', result: 'passed', percent: 100, notes,
     });
     const text = doc.blocks.filter((b) => b.type === 'rich_text').map((b) => b.md).join('\n');
     expect(text).toContain('NOTES FOR YOU');

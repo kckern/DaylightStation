@@ -21,7 +21,7 @@ Two live defects violate this. They look unrelated and are the same bug.
 Printed on the thermal receipt at 2026-08-25 11:12 local:
 
 ```
- MILO
+ LEARNER-THREE
 Tue 25 Aug, 11:12 am
 CIVILIZATION — done today
 SCRIPTURE — Unit 1 of 85
@@ -237,7 +237,7 @@ The two are **not** mutually exclusive by construction, and assuming so prints c
 
 Day-completion comes from `resolveDayCompletion` over section obligations
 (`GetLearnerDayCompletion.mjs:56`). "Nothing available" is a different predicate — a learner can be
-`complete` while entries remain (as Milo was this morning: `complete` with scripture
+`complete` while entries remain (as Learner-Three was this morning: `complete` with scripture
 `excused: blocked_no_offer`), and can be `incomplete` while nothing is currently offerable.
 
 **Rule: completion state wins.** If the day is complete, print the done-for-the-day card and **no

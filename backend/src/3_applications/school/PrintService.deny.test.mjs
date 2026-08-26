@@ -26,7 +26,7 @@ function makeService({ pending }) {
     pdfReader: null,
     userService: {
       getProfile: (id) => ({ id, birthyear: id === 'dad' ? 1980 : 2016 }),
-      getHouseholdRoster: () => [{ id: 'dad', birthyear: 1980 }, { id: 'felix', birthyear: 2016 }, { id: 'milo', birthyear: 2018 }],
+      getHouseholdRoster: () => [{ id: 'dad', birthyear: 1980 }, { id: 'learner4', birthyear: 2016 }, { id: 'learner3', birthyear: 2018 }],
     },
     logger: { info() {}, warn() {}, error() {} },
     now: () => NOW,
@@ -37,20 +37,20 @@ function makeService({ pending }) {
 describe('PrintService.deny keeps a denied record', () => {
   it('marks the row denied with provenance instead of deleting it', async () => {
     const { svc, rows } = makeService({ pending: [
-      { id: 'pr_1', at: '2026-08-06T17:00:00.000Z', userId: 'felix', label: 'Maze', status: 'pending' },
+      { id: 'pr_1', at: '2026-08-06T17:00:00.000Z', userId: 'learner4', label: 'Maze', status: 'pending' },
     ] });
     await expect(svc.deny({ requestId: 'pr_1', approver: 'dad' })).resolves.toEqual({ decision: 'denied' });
     expect(rows()).toEqual([{
-      id: 'pr_1', at: '2026-08-06T17:00:00.000Z', userId: 'felix', label: 'Maze',
+      id: 'pr_1', at: '2026-08-06T17:00:00.000Z', userId: 'learner4', label: 'Maze',
       status: 'denied', deniedBy: 'dad', deniedAt: new Date(NOW).toISOString(),
     }]);
   });
 
   it('prunes denied rows older than 30 days on the same write; pending rows never age out', async () => {
     const { svc, rows } = makeService({ pending: [
-      { id: 'pr_old', at: '2026-06-01T00:00:00.000Z', userId: 'felix', status: 'denied', deniedAt: '2026-06-02T00:00:00.000Z' },
-      { id: 'pr_stale', at: '2026-05-01T00:00:00.000Z', userId: 'milo', status: 'pending' },
-      { id: 'pr_2', at: '2026-08-06T17:30:00.000Z', userId: 'felix', status: 'pending' },
+      { id: 'pr_old', at: '2026-06-01T00:00:00.000Z', userId: 'learner4', status: 'denied', deniedAt: '2026-06-02T00:00:00.000Z' },
+      { id: 'pr_stale', at: '2026-05-01T00:00:00.000Z', userId: 'learner3', status: 'pending' },
+      { id: 'pr_2', at: '2026-08-06T17:30:00.000Z', userId: 'learner4', status: 'pending' },
     ] });
     await svc.deny({ requestId: 'pr_2', approver: 'dad' });
     const ids = rows().map((r) => r.id);
@@ -59,10 +59,10 @@ describe('PrintService.deny keeps a denied record', () => {
 
   it('listRequestsFor answers only that learner, newest first', () => {
     const { svc } = makeService({ pending: [
-      { id: 'pr_a', at: '2026-08-01T00:00:00.000Z', userId: 'felix', status: 'denied', deniedAt: '2026-08-01T01:00:00.000Z' },
-      { id: 'pr_b', at: '2026-08-06T00:00:00.000Z', userId: 'felix', status: 'pending' },
-      { id: 'pr_c', at: '2026-08-05T00:00:00.000Z', userId: 'milo', status: 'pending' },
+      { id: 'pr_a', at: '2026-08-01T00:00:00.000Z', userId: 'learner4', status: 'denied', deniedAt: '2026-08-01T01:00:00.000Z' },
+      { id: 'pr_b', at: '2026-08-06T00:00:00.000Z', userId: 'learner4', status: 'pending' },
+      { id: 'pr_c', at: '2026-08-05T00:00:00.000Z', userId: 'learner3', status: 'pending' },
     ] });
-    expect(svc.listRequestsFor('felix').map((r) => r.id)).toEqual(['pr_b', 'pr_a']);
+    expect(svc.listRequestsFor('learner4').map((r) => r.id)).toEqual(['pr_b', 'pr_a']);
   });
 });

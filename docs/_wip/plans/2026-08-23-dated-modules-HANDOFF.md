@@ -3,7 +3,7 @@
 **Written:** 2026-08-23; updated after merge into `main`.
 
 **Status:** Runtime framework merged. The Come Follow Me course and lower/upper
-syllabi are authored and domain-validated. Live Milo/Felix enrollment remains
+syllabi are authored and domain-validated. Live Learner-Three/Learner-Four enrollment remains
 pending because it requires explicit teacher authority.
 
 **Merged branch:** `feat/school-dated-modules`
@@ -17,7 +17,7 @@ pending because it requires explicit teacher authority.
 
 ## Goal, in one paragraph
 
-Come Follow Me is a **dated** course: 17 weekly modules each pinned to a real week, where being in sync is most of the value. Today's runtime only knows how to gate strictly (`module_blocks` + `one_active_module`), so a learner who skips a week is pinned to that week for the rest of the year. We are adding a `dated_modules` progression mode where the **clock** picks the current module, unfinished earlier modules stay available as catch-up ranked **newest-first**, and future modules never open early. Then enrolling Milo and Felix.
+Come Follow Me is a **dated** course: 17 weekly modules each pinned to a real week, where being in sync is most of the value. Today's runtime only knows how to gate strictly (`module_blocks` + `one_active_module`), so a learner who skips a week is pinned to that week for the rest of the year. We are adding a `dated_modules` progression mode where the **clock** picks the current module, unfinished earlier modules stay available as catch-up ranked **newest-first**, and future modules never open early. Then enrolling Learner-Three and Learner-Four.
 
 ## Final delivery status
 
@@ -31,7 +31,7 @@ Come Follow Me is a **dated** course: 17 weekly modules each pinned to a real we
 | 5 — planner stops gating across dated modules | ✅ `10efe41a2`; frozen membership fix `b165d96e4` |
 | 6 — agenda honors `timingRank` | ✅ `10efe41a2` |
 | 7 — full suite green, then author the CFM course | ✅ runtime and external course data validated |
-| 8 — author two syllabi, enroll Milo and Felix | Syllabi ✅; live enrollments ⬜ |
+| 8 — author two syllabi, enroll Learner-Three and Learner-Four | Syllabi ✅; live enrollments ⬜ |
 | 9 — docs | ✅ canonical lifecycle references and this rollout status updated |
 
 The remaining work is the teacher-authorized learner enrollment operation, not
@@ -76,7 +76,7 @@ The hardened predicate guards both and now lives in `timing.mjs` as `export cons
 
 **`ICurriculumCatalog.getWork(id)` already exists** (`ports/ICurriculumCatalog.mjs:89`) and `schoolLifecycle.mjs:794` already injects that catalog as `curriculum`. Task 4 needs no port or adapter change.
 
-**A syllabus carries `profile`** (`syllabus.mjs:64-69`), and `EnrollLearner` has no override. Task 8 therefore needs **two** syllabus files, `-lower` for Milo and `-upper` for Felix, matching their atlas enrollments. Both are written out in the plan.
+**A syllabus carries `profile`** (`syllabus.mjs:64-69`), and `EnrollLearner` has no override. Task 8 therefore needs **two** syllabus files, `-lower` for Learner-Three and `-upper` for Learner-Four, matching their atlas enrollments. Both are written out in the plan.
 
 **`syllabus.mjs` refuses a `modules:` key** — scope subsetting is not built. Do not add one.
 

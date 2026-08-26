@@ -27,7 +27,7 @@ logical key.
 For operations:
 
 ```bash
-node cli/school.mjs ops completion milo
-node cli/school.mjs ops status milo
-node cli/school.mjs ops monitor milo felix --watch --interval 15
+node cli/school.mjs ops completion learner3
+node cli/school.mjs ops status learner3
+node cli/school.mjs ops monitor learner3 learner4 --watch --interval 15
 ```

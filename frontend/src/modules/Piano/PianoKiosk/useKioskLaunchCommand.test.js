@@ -192,10 +192,10 @@ describe('useKioskLaunchCommand', () => {
       mount({ onPianoCourseOpen });
       await deliver({
         deviceId: 'yellow-room-tablet', type: 'piano.course-lesson.launch',
-        learnerId: 'felix', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
+        learnerId: 'learner4', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
       });
       expect(onPianoCourseOpen).toHaveBeenCalledWith(expect.objectContaining({
-        learnerId: 'felix', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
+        learnerId: 'learner4', courseId: 'plex:675689', unitId: 'season-4', lessonId: 'plex:9001',
       }));
       expect(h.DaylightAPI).not.toHaveBeenCalled();
       expect(h.launchIntent).not.toHaveBeenCalled();

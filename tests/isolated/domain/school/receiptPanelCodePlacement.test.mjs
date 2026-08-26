@@ -33,8 +33,8 @@ const scanActions = (document) => (document.blocks ?? []).filter((b) => b.type =
 
 describe('agenda receipts', () => {
   const agenda = (over = {}) => agendaDocument({
-    learnerId: 'milo',
-    learnerName: 'Milo',
+    learnerId: 'learner3',
+    learnerName: 'Learner3',
     generatedAt: '2026-08-23T16:00:00.000Z',
     timeZone: 'UTC',
     sections: [
@@ -118,8 +118,8 @@ describe('notice receipts', () => {
 
 describe('the renderers put it under the QR and nowhere else', () => {
   const twoOfferAgenda = () => agendaDocument({
-    learnerId: 'milo',
-    learnerName: 'Milo',
+    learnerId: 'learner3',
+    learnerName: 'Learner3',
     generatedAt: '2026-08-23T16:00:00.000Z',
     timeZone: 'UTC',
     sections: [

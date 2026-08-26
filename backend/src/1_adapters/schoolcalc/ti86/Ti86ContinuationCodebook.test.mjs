@@ -16,8 +16,8 @@ const artifacts = [{
   source: { address: 'schoolcalc-starter/arts/culture/creature/identify' },
 }];
 const learnerSlots = {
-  soren: { slot: 0, learnerKey: 1 }, alan: { slot: 1, learnerKey: 2 },
-  milo: { slot: 2, learnerKey: 3 }, felix: { slot: 3, learnerKey: 4 },
+  learner1: { slot: 0, learnerKey: 1 }, learner2: { slot: 1, learnerKey: 2 },
+  learner3: { slot: 2, learnerKey: 3 }, learner4: { slot: 3, learnerKey: 4 },
 };
 
 describe('TI-86 continuation-codebook adapter', () => {

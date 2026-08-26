@@ -36,8 +36,8 @@ describe('question-bank/v2', () => {
   });
 
   it('issues lower and upper profiles while retaining every correct option', () => {
-    const lower = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
-    const upper = issueWorksheet({ bank, learnerId: 'felix', enrollmentId: 'e2', lessonId: 'kansas', profile: 'upper', seed: 'two' });
+    const lower = issueWorksheet({ bank, learnerId: 'learner3', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
+    const upper = issueWorksheet({ bank, learnerId: 'learner4', enrollmentId: 'e2', lessonId: 'kansas', profile: 'upper', seed: 'two' });
     expect(lower.items).toHaveLength(6);
     expect(lower.items.every((entry) => [3, 4].includes(entry.options.length))).toBe(true);
     expect(upper.items).toHaveLength(10);
@@ -47,11 +47,11 @@ describe('question-bank/v2', () => {
   });
 
   it('reissues only the missed ids, freshly shuffled', () => {
-    const issued = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
+    const issued = issueWorksheet({ bank, learnerId: 'learner3', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'one' });
     // The missed set as a caller derives it — every item but the first.
     const missedItemIds = issued.items.slice(1).map((entry) => entry.itemId);
     expect(missedItemIds).toHaveLength(5);
-    const retry = issueWorksheet({ bank, learnerId: 'milo', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'retry', itemIds: missedItemIds });
+    const retry = issueWorksheet({ bank, learnerId: 'learner3', enrollmentId: 'e1', lessonId: 'kansas', profile: 'lower', seed: 'retry', itemIds: missedItemIds });
     expect(new Set(retry.itemIds)).toEqual(new Set(missedItemIds));
     expect(retry.items[0].options).not.toEqual(issued.items.find((entry) => entry.itemId === retry.items[0].itemId)?.options);
   });
@@ -59,11 +59,11 @@ describe('question-bank/v2', () => {
   it('creates a publishable immutable enrollment-bound OMR instance', () => {
     const instance = createWorksheetInstance({
       id: 'civilization/atlas/ws-one', sessionId: 'ses-one', bank,
-      learnerId: 'milo', enrollmentId: 'enr-milo-atlas', lessonId: 'kansas',
+      learnerId: 'learner3', enrollmentId: 'enr-learner3-atlas', lessonId: 'kansas',
       profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     expect(Object.isFrozen(instance)).toBe(true);
-    expect(instance).toMatchObject({ learnerId: 'milo', enrollmentId: 'enr-milo-atlas' });
+    expect(instance).toMatchObject({ learnerId: 'learner3', enrollmentId: 'enr-learner3-atlas' });
     const result = publishDocument(worksheetInstanceDocument(instance, { title: 'Kansas' }));
     expect(result.errors).toBeUndefined();
     expect(result.published.blocks[0]).toMatchObject({ type: 'inset', layout: 'lesson_card' });
@@ -75,7 +75,7 @@ describe('question-bank/v2', () => {
 
   it('never emits a book-only or placeholder reading instruction', () => {
     const instance = createWorksheetInstance({
-      id: 'ws-reading', sessionId: 'session-reading', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-reading', sessionId: 'session-reading', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'kansas', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     expect(worksheetInstanceDocument(instance, { title: 'Kansas', sourceTitle: 'Atlas', printedPages: [] }).header.reading)
@@ -90,7 +90,7 @@ describe('question-bank/v2', () => {
 
   it('prints a lesson-companion panel code in the semantic lesson card', () => {
     const instance = createWorksheetInstance({
-      id: 'ws-companion', sessionId: 'session-companion', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-companion', sessionId: 'session-companion', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'psalms', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     const result = publishDocument(worksheetInstanceDocument(instance, { title: 'Psalms', companionCode: '123456' }));
@@ -100,7 +100,7 @@ describe('question-bank/v2', () => {
 
   it('uses an authored printed range on a composed card without an empty Read line', () => {
     const instance = createWorksheetInstance({
-      id: 'ws-page-range', sessionId: 'session-range', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-page-range', sessionId: 'session-range', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'range', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     const composed = composedWorksheetDocument({
@@ -111,7 +111,7 @@ describe('question-bank/v2', () => {
 
   it('pairs a composed worksheet page range with the printed reading source', () => {
     const instance = createWorksheetInstance({
-      id: 'ws-source-range', sessionId: 'session-source', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-source-range', sessionId: 'session-source', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'psalms', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     const composed = composedWorksheetDocument({
@@ -128,11 +128,11 @@ describe('question-bank/v2', () => {
 
   it('composes immutable lesson instances with scoped item identities and attribution', () => {
     const first = createWorksheetInstance({
-      id: 'ws-first', sessionId: 'session-first', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-first', sessionId: 'session-first', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'first', profile: 'lower', seed: 'one', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     const second = createWorksheetInstance({
-      id: 'ws-second', sessionId: 'session-second', bank, learnerId: 'milo', enrollmentId: 'enr',
+      id: 'ws-second', sessionId: 'session-second', bank, learnerId: 'learner3', enrollmentId: 'enr',
       lessonId: 'second', profile: 'lower', seed: 'two', issuedAt: '2026-08-13T00:00:00.000Z',
     });
     const composed = composedWorksheetDocument({

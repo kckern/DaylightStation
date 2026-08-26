@@ -41,7 +41,7 @@ courses:
     enrolledAt: '2026-08-23T20:00:00.000Z'
     enrollment:
       schema: school.course-enrollment/v2
-      enrollmentId: enr_milo_come_follow_me
+      enrollmentId: enr_learner3_come_follow_me
       courseId: come-follow-me-ot-2026
       profile: lower
       progression:
@@ -74,6 +74,7 @@ courses:
 - the once-only lesson order inside every module;
 - dated module windows, when the course uses `dated_modules`.
 - learner-facing course/module titles, compact titles, and displayed numbers.
+- the school-day `schedule`, when the syllabus declares one.
 
 That snapshot prevents later catalog edits from reordering an active learner or
 moving their calendar or silently relabeling their existing course. A module
@@ -97,8 +98,11 @@ policy:
   lesson_order: shuffle_once
 ```
 
-A syllabus may also carry a `timingTemplate`; see
-[timing and priority](./timing-and-priority.md). The current syllabus validator
+A syllabus may also carry a `timingTemplate` and a `schedule` — which days are
+school days, so a weekend or a vacation stops reading as unmet work. Both are
+described in [timing and priority](./timing-and-priority.md); `schedule` is
+snapshotted onto the enrollment, so adding a vacation mid-year is a
+re-materialize, not a syllabus edit. The current syllabus validator
 does not accept a `modules` subset, a per-learner passing threshold, or a term
 that creates a separate grading scope. Those are future model changes, not
 hidden YAML features.
@@ -133,11 +137,11 @@ evidence.
 CLI writes are dry-run unless `--apply` is present:
 
 ```bash
-SCHOOL_PIN=... node cli/school.mjs ops enroll milo \
+SCHOOL_PIN=... node cli/school.mjs ops enroll learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN
 
-SCHOOL_PIN=... node cli/school.mjs ops rematerialize milo \
+SCHOOL_PIN=... node cli/school.mjs ops rematerialize learner3 \
   --syllabus come-follow-me-ot-2026-lower \
   --teacher kckern --pin-env SCHOOL_PIN --apply
 ```

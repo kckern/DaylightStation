@@ -34,7 +34,7 @@ describe('GuestAssignmentService — close-on-reassign', () => {
   it('closes the first occupant entity (endTime + non-active status) when device 10001 is reassigned', () => {
     const { session, service } = makeService();
 
-    const first = service.assignGuest(DEVICE_ID, { name: 'learner-one', profileId: 'learner-one' });
+    const first = service.assignGuest(DEVICE_ID, { name: 'learner1', profileId: 'learner1' });
     expect(first.ok).toBe(true);
     const learnerOneEntityId = first.data.entityId;
     expect(learnerOneEntityId).toBeTruthy();
@@ -50,7 +50,7 @@ describe('GuestAssignmentService — close-on-reassign', () => {
     expect(grannieEntityId).toBeTruthy();
     expect(grannieEntityId).not.toBe(learnerOneEntityId);
 
-    // The superseded (learner-one) entity must now be closed with a finite endTime
+    // The superseded (learner1) entity must now be closed with a finite endTime
     // and a non-active status — not left dangling as the parent-two bug did.
     const learnerOneEntityAfter = session.entityRegistry.get(learnerOneEntityId);
     expect(learnerOneEntityAfter.status).not.toBe('active');
@@ -72,7 +72,7 @@ describe('GuestAssignmentService — close-on-reassign', () => {
     // well under it, so this exercises the isSegmentAbsorbed branch instead.
     const service = new GuestAssignmentService({ session, ledger });
 
-    const first = service.assignGuest(DEVICE_ID, { name: 'learner-one', profileId: 'learner-one' });
+    const first = service.assignGuest(DEVICE_ID, { name: 'learner1', profileId: 'learner1' });
     const learnerOneEntityId = first.data.entityId;
 
     const second = service.assignGuest(DEVICE_ID, { name: 'parent-two', profileId: 'parent-two' });

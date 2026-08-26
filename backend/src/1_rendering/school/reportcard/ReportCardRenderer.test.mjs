@@ -81,7 +81,7 @@ const FROZEN_REPORT = Object.freeze({
 describe('renderReportCardPdf', () => {
   it('renders a fixture live report to a parseable, single-or-more-page PDF, tagged draft', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
-    const { pdf, pageCount, mode } = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
+    const { pdf, pageCount, mode } = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Learner-Three K.' });
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pageCount).toBeGreaterThanOrEqual(1);
     expect(mode).toBe('draft');
@@ -89,7 +89,7 @@ describe('renderReportCardPdf', () => {
 
   it('renders a frozen report tagged frozen', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
-    const { pdf, pageCount, mode } = await renderReportCardPdf(FROZEN_REPORT, { learnerName: 'Milo K.' });
+    const { pdf, pageCount, mode } = await renderReportCardPdf(FROZEN_REPORT, { learnerName: 'Learner-Three K.' });
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pageCount).toBeGreaterThanOrEqual(1);
     expect(mode).toBe('frozen');
@@ -103,14 +103,14 @@ describe('renderReportCardPdf', () => {
 
   it('produces a deterministic byte stream across two renders of the same report', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
-    const first = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
-    const second = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
+    const first = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Learner-Three K.' });
+    const second = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Learner-Three K.' });
     expect(first.pdf.equals(second.pdf)).toBe(true);
   });
 
   it('renders the units section but OMITS the Concepts section when report.concepts is absent (pre-Task-10 shape)', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
-    const { pdf } = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Milo K.' });
+    const { pdf } = await renderReportCardPdf(LIVE_REPORT, { learnerName: 'Learner-Three K.' });
     const text = pdfText(pdf);
     expect(text).toContain('Units — passed / needs remediation');
     expect(text).not.toContain('Concepts —');
@@ -118,7 +118,7 @@ describe('renderReportCardPdf', () => {
 
   it('renders a true Concepts section ALONGSIDE the units section when report.concepts has entries', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
-    const { pdf } = await renderReportCardPdf(REPORT_WITH_CONCEPTS, { learnerName: 'Milo K.' });
+    const { pdf } = await renderReportCardPdf(REPORT_WITH_CONCEPTS, { learnerName: 'Learner-Three K.' });
     const text = pdfText(pdf);
     // The units section must STILL be present (Task 7 ruling: never replaced).
     expect(text).toContain('Units — passed / needs remediation');
@@ -130,7 +130,7 @@ describe('renderReportCardPdf', () => {
   it('omits the Concepts section when concepts is present but both lists are empty', async () => {
     const renderReportCardPdf = createReportCardPdfRenderer();
     const emptyConcepts = { ...LIVE_REPORT, concepts: { mastered: [], developing: [] } };
-    const { pdf } = await renderReportCardPdf(emptyConcepts, { learnerName: 'Milo K.' });
+    const { pdf } = await renderReportCardPdf(emptyConcepts, { learnerName: 'Learner-Three K.' });
     const text = pdfText(pdf);
     expect(text).not.toContain('Concepts —');
   });
@@ -147,7 +147,7 @@ describe('renderReportCardPdf', () => {
         unitOutcomes: [{ unitId: `unit-${i}`, result: 'passed', gradedPercent: 80, sessionId: `s-${i}` }],
       })),
     };
-    const { pageCount } = await renderReportCardPdf(manyCourses, { learnerName: 'Milo K.' });
+    const { pageCount } = await renderReportCardPdf(manyCourses, { learnerName: 'Learner-Three K.' });
     expect(pageCount).toBeGreaterThan(1);
   });
 });

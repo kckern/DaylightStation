@@ -23,8 +23,8 @@ describe('buildChessArchiveFilename', () => {
   it('puts the game facts needed for a directory listing in the filename', () => {
     const name = buildChessArchiveFilename({
       opponent: { level: 0 }, duration_ms: 3_499_621, move_count: 94, result: 'loss', outcome: 'checkmate',
-    }, 'milo', new Date('2026-08-13T17:03:53.612Z'));
-    expect(name).toMatch(/^milo_level0_58m19s_94ply_loss_checkmate_2026-08-13T17-03-53-612Z-/);
+    }, 'learner3', new Date('2026-08-13T17:03:53.612Z'));
+    expect(name).toMatch(/^learner3_level0_58m19s_94ply_loss_checkmate_2026-08-13T17-03-53-612Z-/);
   });
 
   it('honestly marks an archive made before opponent telemetry resolved', () => {

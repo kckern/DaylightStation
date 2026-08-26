@@ -320,6 +320,15 @@ export const schoolApi = {
   approvePrint: (requestId, approver) => req(`/print/${encodeURIComponent(requestId)}/approve`, { approver }),
   denyPrint: (requestId, approver) => req(`/print/${encodeURIComponent(requestId)}/deny`, { approver }),
   unitProgress: (materialId, unitId, body = {}) => req(`/materials/${encodeURIComponent(materialId)}/units/${encodeURIComponent(unitId)}/progress`, body, 'PUT'),
+
+  // ── Living-room reading session (backend/src/4_api/v1/routers/reading.mjs) ──
+  // `readingPlaying` reports the first frame, NOT the countdown expiring: the
+  // backend's session state cannot see playback, and until it is told, the
+  // mid-story branch of the state machine never fires.
+  readingSummary: (learnerId) => req(`/reading/summary?learnerId=${encodeURIComponent(learnerId)}`),
+  readingPlaying: (body) => req('/reading/playing', body),
+  // `pickId` is the idempotency key: the same one twice is ONE read.
+  readingRead: (body) => req('/reading/read', body),
 };
 
 export default schoolApi;

@@ -53,7 +53,7 @@ const flush = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 const singleCard = (over = {}) => ({
   cardId: '0123456', recordId: 'r1', documentId: 'civilization/atlas/ws-one',
-  rev: 'rev1', variant: 0, learnerId: 'milo', sessionId: 'ses-one',
+  rev: 'rev1', variant: 0, learnerId: 'learner3', sessionId: 'ses-one',
   revisionSuperseded: false, results: [], totalPoints: 6, earnedPoints: 5,
   ...over,
 });
@@ -95,7 +95,7 @@ describe('createSchoolPrintScanConsumer: broadcasts the four terminal scan outco
     expect(topic).toBe('omr');
     expect(payload).toMatchObject({
       event: 'scan-graded',
-      learnerId: 'milo',
+      learnerId: 'learner3',
       correctCount: 5,
       totalCount: 6,
       percent: 83.33,
@@ -178,7 +178,7 @@ describe('createSchoolPrintScanConsumer: broadcasts the four terminal scan outco
     expect(topic).toBe('omr');
     expect(payload).toMatchObject({
       event: 'scan-review',
-      learnerId: 'milo',
+      learnerId: 'learner3',
       pendingReview: 2,
       reasons: ['ambiguous', 'free_response'],
       items: ['q3', 'q7'],
@@ -215,7 +215,7 @@ describe('createSchoolPrintScanConsumer: broadcasts the four terminal scan outco
         execute: async () => ({
           results: [
             {
-              cardId: '0123456', recordId: 'r1', documentId: 'd1', rev: 'a', variant: 0, learnerId: 'milo',
+              cardId: '0123456', recordId: 'r1', documentId: 'd1', rev: 'a', variant: 0, learnerId: 'learner3',
               error: { code: 'ALLOCATION_ROW_MAPPING_DRIFT' },
             },
           ],

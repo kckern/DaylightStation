@@ -2,8 +2,8 @@
  * Agenda print cooldown (Slice G, 2026-08-22-omr-grading-integrity).
  *
  * THE BUG: a child tapping their NFC card repeatedly got a fresh "Nothing is
- * assigned right now" slip on every single tap — real logs show Soren
- * printing four times in under five minutes, Alan twice in two. Nothing
+ * assigned right now" slip on every single tap — real logs show Learner1
+ * printing four times in under five minutes, Learner2 twice in two. Nothing
  * deduplicated a REPEAT print of the SAME agenda the way `IssueDocument`
  * already deduplicates a repeat print of the same worksheet
  * (`IssueDocument.printDebounce.test.mjs`).
@@ -82,12 +82,12 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    const result = await card.execute({ learnerId: 'soren' });
+    const result = await card.execute({ learnerId: 'learner1' });
 
     expect(result.status).toBe('agenda_printed');
     expect(result.printed).toBe(true);
     expect(receipts.jobs).toHaveLength(1);
-    expect(cooldown.records.get('soren')).toMatchObject({ learnerId: 'soren' });
+    expect(cooldown.records.get('learner1')).toMatchObject({ learnerId: 'learner1' });
   });
 
   it('suppresses a second tap inside the window with IDENTICAL content — but still acknowledges it', async () => {
@@ -98,9 +98,9 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' }); // 15:02:33
-    clock.advanceMinutes(1.5); // 15:04:00 — matches the real Soren log gap
-    const second = await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' }); // 15:02:33
+    clock.advanceMinutes(1.5); // 15:04:00 — matches the real Learner1 log gap
+    const second = await card.execute({ learnerId: 'learner1' });
 
     expect(second.status).toBe('agenda_suppressed');
     expect(second.printed).toBe(false);
@@ -121,11 +121,11 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' }); // 15:02:33
+    await card.execute({ learnerId: 'learner1' }); // 15:02:33
     clock.advanceMinutes(1.45); // 15:04:00
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(1.48); // 15:05:29
-    const third = await card.execute({ learnerId: 'soren' });
+    const third = await card.execute({ learnerId: 'learner1' });
 
     expect(third.status).toBe('agenda_suppressed');
     expect(receipts.jobs).toHaveLength(1);
@@ -139,9 +139,9 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(16);
-    const outside = await card.execute({ learnerId: 'soren' });
+    const outside = await card.execute({ learnerId: 'learner1' });
 
     expect(outside.status).toBe('agenda_printed');
     expect(receipts.jobs).toHaveLength(2);
@@ -156,10 +156,10 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(() => agendaFixture(unitId)), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     unitId = 'math-lesson-2'; // finished lesson 1 between taps; genuinely new work
     clock.advanceMinutes(1);
-    const second = await card.execute({ learnerId: 'soren' });
+    const second = await card.execute({ learnerId: 'learner1' });
 
     expect(second.status).toBe('agenda_printed');
     expect(receipts.jobs).toHaveLength(2);
@@ -174,12 +174,12 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(() => agendaFixture(unitId)), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     unitId = 'math-lesson-2';
     clock.advanceMinutes(1);
-    await card.execute({ learnerId: 'soren' }); // bypass, prints lesson 2
+    await card.execute({ learnerId: 'learner1' }); // bypass, prints lesson 2
     clock.advanceMinutes(1);
-    const third = await card.execute({ learnerId: 'soren' }); // same lesson 2 again
+    const third = await card.execute({ learnerId: 'learner1' }); // same lesson 2 again
 
     expect(third.status).toBe('agenda_suppressed');
     expect(receipts.jobs).toHaveLength(2);
@@ -193,9 +193,9 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 0, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(1);
-    const second = await card.execute({ learnerId: 'soren' });
+    const second = await card.execute({ learnerId: 'learner1' });
 
     expect(second.status).toBe('agenda_printed');
     expect(receipts.jobs).toHaveLength(2);
@@ -209,13 +209,13 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(10);
-    const stillInside = await card.execute({ learnerId: 'soren' });
+    const stillInside = await card.execute({ learnerId: 'learner1' });
     expect(stillInside.status).toBe('agenda_suppressed');
 
     clock.advanceMinutes(6); // total 16 minutes
-    const outside = await card.execute({ learnerId: 'soren' });
+    const outside = await card.execute({ learnerId: 'learner1' });
     expect(outside.status).toBe('agenda_printed');
   });
 
@@ -234,11 +234,11 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(1);
-    const alan = await card.execute({ learnerId: 'alan' });
+    const learner2 = await card.execute({ learnerId: 'learner2' });
 
-    expect(alan.status).toBe('agenda_printed');
+    expect(learner2.status).toBe('agenda_printed');
   });
 
   it('does not arm the cooldown when the printer refuses — a failed print must not silence the retry', async () => {
@@ -249,10 +249,10 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now,
     });
 
-    const result = await card.execute({ learnerId: 'soren' });
+    const result = await card.execute({ learnerId: 'learner1' });
 
     expect(result.status).toBe('print_failed');
-    expect(cooldown.records.get('soren')).toBeUndefined();
+    expect(cooldown.records.get('learner1')).toBeUndefined();
   });
 
   it('logs school.card.agenda-suppressed with {learnerId, sinceMinutes, cooldownMinutes}', async () => {
@@ -266,12 +266,12 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown, cooldownMinutes: 15, clock: clock.now, logger,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(3);
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
 
     expect(logger.info).toHaveBeenCalledWith('school.card.agenda-suppressed', {
-      learnerId: 'soren', sinceMinutes: 3, cooldownMinutes: 15,
+      learnerId: 'learner1', sinceMinutes: 3, cooldownMinutes: 15,
     });
   });
 
@@ -286,13 +286,13 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
     const beforeRestart = new ResolvePersonalCard({
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown: fakeCooldownStore(backing), cooldownMinutes: 15, clock: clock.now,
     });
-    await beforeRestart.execute({ learnerId: 'soren' });
+    await beforeRestart.execute({ learnerId: 'learner1' });
 
     clock.advanceMinutes(2);
     const afterRestart = new ResolvePersonalCard({
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldown: fakeCooldownStore(backing), cooldownMinutes: 15, clock: clock.now,
     });
-    const result = await afterRestart.execute({ learnerId: 'soren' });
+    const result = await afterRestart.execute({ learnerId: 'learner1' });
 
     expect(result.status).toBe('agenda_suppressed');
   });
@@ -304,9 +304,9 @@ describe('ResolvePersonalCard — agenda print cooldown (Slice G)', () => {
       buildAgenda: fakeBuildAgenda(agendaFixture), receipts, cooldownMinutes: 15, clock: clock.now,
     });
 
-    await card.execute({ learnerId: 'soren' });
+    await card.execute({ learnerId: 'learner1' });
     clock.advanceMinutes(1);
-    const second = await card.execute({ learnerId: 'soren' });
+    const second = await card.execute({ learnerId: 'learner1' });
 
     expect(second.status).toBe('agenda_printed');
     expect(receipts.jobs).toHaveLength(2);

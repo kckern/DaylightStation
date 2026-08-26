@@ -4,7 +4,7 @@ import { ReprintResultReceiptArtifact } from './ReprintResultReceiptArtifact.mjs
 const sessionId = 'ses_1';
 const artifactId = 'receipt/ses_1/out:ses_1';
 const events = [
-  { type: 'created', at: '2026-08-24T10:00:00.000Z', sessionId, seq: 1, learnerId: 'milo', unitId: 'illinois' },
+  { type: 'created', at: '2026-08-24T10:00:00.000Z', sessionId, seq: 1, learnerId: 'learner3', unitId: 'illinois' },
   { type: 'issued', at: '2026-08-24T10:01:00.000Z', sessionId, seq: 2, artifactId: 'worksheet/ses_1' },
   { type: 'submitted', at: '2026-08-24T10:02:00.000Z', sessionId, seq: 3, transport: 'paper' },
   { type: 'graded', at: '2026-08-24T10:03:00.000Z', sessionId, seq: 4, attemptIds: ['att_1'], percent: 100 },

@@ -40,10 +40,10 @@ describe('POST /api/v1/piano-games/chess/quip', () => {
       game: { initial_fen: START, fen: START, moves: ['e4'] },
     };
     const res = await request(appWith({ engine: {}, configService: stubConfig(), commentaryService }))
-      .post('/api/v1/piano-games/chess/quip?user=felix').send(body);
+      .post('/api/v1/piano-games/chess/quip?user=learner4').send(body);
     expect(res.status).toBe(200);
     expect(res.body.quip).toBe('A bold first step.');
-    expect(commentaryService.react).toHaveBeenCalledWith({ userId: 'felix', ...body });
+    expect(commentaryService.react).toHaveBeenCalledWith({ userId: 'learner4', ...body });
   });
 
   it('maps an invalid replay to 400', async () => {
@@ -77,7 +77,7 @@ describe('POST /api/v1/piano-games/chess/move', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/v1/piano-games/chess', createChessRouter({ engine, configService: stubConfig(), ladderService, logger }));
-    const res = await request(app).post('/api/v1/piano-games/chess/move?user=felix')
+    const res = await request(app).post('/api/v1/piano-games/chess/move?user=learner4')
       .send({ fen: START, rung: 'learner', level: 0, gameId: 'g1' });
     expect(res.body.opponent).toEqual({
       source: 'ladder', level: 0, name: 'Caterpie',
@@ -116,7 +116,7 @@ describe('POST /api/v1/piano-games/chess/move', () => {
 describe('/api/v1/piano-games/chess/config', () => {
   it('serves the merged config', async () => {
     const res = await request(appWith({ engine: {}, configService: stubConfig() }))
-      .get('/api/v1/piano-games/chess/config?user=felix');
+      .get('/api/v1/piano-games/chess/config?user=learner4');
     expect(res.status).toBe(200);
     expect(res.body.default_rung).toBe('learner');
   });
@@ -124,9 +124,9 @@ describe('/api/v1/piano-games/chess/config', () => {
   it('writes the user layer on PUT', async () => {
     const configService = stubConfig();
     const res = await request(appWith({ engine: {}, configService }))
-      .put('/api/v1/piano-games/chess/config?user=felix').send({ default_rung: 'steady' });
+      .put('/api/v1/piano-games/chess/config?user=learner4').send({ default_rung: 'steady' });
     expect(res.status).toBe(200);
-    expect(configService.writeUserLayer).toHaveBeenCalledWith('felix', { default_rung: 'steady' });
+    expect(configService.writeUserLayer).toHaveBeenCalledWith('learner4', { default_rung: 'steady' });
   });
 
   it('refuses to write without a user', async () => {
@@ -175,7 +175,7 @@ describe('user id validation (path traversal)', () => {
   it('rejects a slash-bearing user even without dot-dot', async () => {
     const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
     const res = await request(appWith({ engine: {}, configService }))
-      .get('/api/v1/piano-games/chess/config').query({ user: 'felix/evil' });
+      .get('/api/v1/piano-games/chess/config').query({ user: 'learner4/evil' });
     expect(res.status).toBe(400);
     expect(configService.read).not.toHaveBeenCalled();
   });
@@ -183,9 +183,9 @@ describe('user id validation (path traversal)', () => {
   it('still serves a plain user id', async () => {
     const configService = stubConfig({ read: vi.fn(async () => CONFIG) });
     const res = await request(appWith({ engine: {}, configService }))
-      .get('/api/v1/piano-games/chess/config').query({ user: 'felix' });
+      .get('/api/v1/piano-games/chess/config').query({ user: 'learner4' });
     expect(res.status).toBe(200);
-    expect(configService.read).toHaveBeenCalledWith('felix');
+    expect(configService.read).toHaveBeenCalledWith('learner4');
   });
 });
 
@@ -193,10 +193,10 @@ describe('POST /api/v1/piano-games/chess/games', () => {
   it('stores a record for a real user', async () => {
     const writes = [];
     const app = appWith({ engine: {}, configService: stubConfig(), recordStore: { save: (u, r) => writes.push([u, r]) } });
-    const res = await request(app).post('/api/v1/piano-games/chess/games?user=felix')
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4')
       .send({ result: 'win', moves: 24, hints: 3, best_moves: 1, rung: 'steady', duration_ms: 60000 });
     expect(res.status).toBe(201);
-    expect(writes[0][0]).toBe('felix');
+    expect(writes[0][0]).toBe('learner4');
     expect(writes[0][1]).toMatchObject({ result: 'win', moves: 24 });
   });
 
@@ -223,7 +223,7 @@ describe('POST /api/v1/piano-games/chess/games', () => {
       recordStore: { save: async () => false }, // e.g. EACCES writing the .yml
       logger,
     });
-    const res = await request(app).post('/api/v1/piano-games/chess/games?user=felix').send({ result: 'win', moves: 24 });
+    const res = await request(app).post('/api/v1/piano-games/chess/games?user=learner4').send({ result: 'win', moves: 24 });
     expect(res.status).toBeGreaterThanOrEqual(500);
     expect(res.status).toBeLessThan(600);
     expect(res.body).not.toMatchObject({ saved: true });

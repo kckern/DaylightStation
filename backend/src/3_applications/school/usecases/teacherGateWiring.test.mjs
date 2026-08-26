@@ -31,8 +31,8 @@ describe('TeacherGate wiring', () => {
     const gate = passingGate();
     const store = { put: vi.fn(async (r) => r) };
     const uc = new SetAssignments({ assignments: store, grownUps, teacherGate: gate });
-    await uc.execute({ learnerId: 'felix', courses: ['math'], units: [], assignedBy: 'kckern', pin: '4321' });
-    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put', context: { learnerId: 'felix' } });
+    await uc.execute({ learnerId: 'learner4', courses: ['math'], units: [], assignedBy: 'kckern', pin: '4321' });
+    expect(gate.assert).toHaveBeenCalledWith({ userId: 'kckern', pin: '4321', action: 'assignments.put', context: { learnerId: 'learner4' } });
     expect(store.put).toHaveBeenCalled();
   });
 
@@ -40,7 +40,7 @@ describe('TeacherGate wiring', () => {
     const gate = refusingGate();
     const getReportCard = { execute: vi.fn() };
     const uc = new CloseAcademicPeriod({ getReportCard, datastore: {}, grownUps, teacherGate: gate });
-    await expect(uc.execute({ learnerId: 'felix', periodId: 'p', closedBy: 'kckern', pin: 'x' }))
+    await expect(uc.execute({ learnerId: 'learner4', periodId: 'p', closedBy: 'kckern', pin: 'x' }))
       .rejects.toThrow(GuestForbiddenError);
     expect(getReportCard.execute).not.toHaveBeenCalled();
   });

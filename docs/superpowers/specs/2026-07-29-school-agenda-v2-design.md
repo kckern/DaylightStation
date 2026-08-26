@@ -17,7 +17,7 @@ the child is doing.
 Agenda v2 turns the tape into a **daily, per-subject checklist**:
 
 ```
-            FELIX
+            LEARNER-FOUR
      Wed 30 Jul, 9:05 am
 --------------------------------
 MATH               Unit 2 of 4

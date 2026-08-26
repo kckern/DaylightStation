@@ -134,7 +134,7 @@ export function PianoVisualizer({ onClose, onSessionEnd, initialGame = null }) {
   // Enabled by `rosterNeeded` alone, this listened whenever nobody was selected
   // — so any white key between C4 and G5 silently picked a user with no roster
   // visible and nothing to say it had happened. Verified live: a note chose
-  // "Felix" while the launcher was closed.
+  // "Learner-Four" while the launcher was closed.
   const rosterVisible = launcherOpen && rosterNeeded;
   useNoteSelection({
     activeNotes, slots: userSlots, enabled: rosterVisible,

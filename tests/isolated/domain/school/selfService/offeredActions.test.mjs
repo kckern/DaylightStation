@@ -514,7 +514,7 @@ describe('purity', () => {
 });
 
 /**
- * Resumed work (Slice E, 2026-08-22-omr-grading-integrity). Felix's session was
+ * Resumed work (Slice E, 2026-08-22-omr-grading-integrity). Learner-Four's session was
  * created 2026-08-14, never submitted, and picked up eight days later: the card
  * said "Print it again" and the sheet that came out had a different student
  * number and started at question 7. Every part of that was correct for an

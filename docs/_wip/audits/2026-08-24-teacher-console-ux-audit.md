@@ -13,7 +13,7 @@
 
 ## A. Broken or information-free surfaces (highest priority)
 
-1. **HIGH — Session history is unidentifiable.** Every row on the student History tab renders "Lesson title unavailable / Course unavailable" (all four of Milo's sessions). The teacher's only distinguishing signal is the date; two same-day sessions are indistinguishable. The completed-session detail page *can* resolve the title ("Illinois"), so the list view's resolution path is broken, not the data.
+1. **HIGH — Session history is unidentifiable.** Every row on the student History tab renders "Lesson title unavailable / Course unavailable" (all four of Learner-Three's sessions). The teacher's only distinguishing signal is the date; two same-day sessions are indistinguishable. The completed-session detail page *can* resolve the title ("Illinois"), so the list view's resolution path is broken, not the data.
 2. **HIGH — "Feedback delivered" is a noise wall.** 20+ visually identical rows: `Correct · Lesson feedback · Aug 23, 2026 — engine`. No lesson name, no feedback content, no way to tell any row from another. "engine" is an internal source id shown as if it were a person.
 3. **MED — Legacy artifact URLs die badly.** `…/sessions/:id/results/machine.png` → 404 `Not Found`; `…/sessions/:id/worksheet.thumbnail.png` → **500** `{"error":"internal"}`. Both routes were deliberately removed at `ea19b453f` (replaced by `/api/v1/school/teacher/artifacts/:artifactId/{original.pdf,thumbnail.png,original}`), but the old thumbnail path 500s instead of 404ing. Adjacent live risk: the new thumbnail route (`school.mjs:1360-1394`) calls `renderPdfFirstPagePng` with no try/catch — a corrupt retained PDF becomes a 500 — and **no `<img>` in the module has an `onError` handler** (5 usages), so failures degrade to the browser's broken-image glyph.
 4. **MED — "Original print was not archived" is a dead end.** The Issued-materials card explains nothing (why not? will future ones be?) and offers no action; text wraps awkwardly ("was not / archived").
@@ -23,7 +23,7 @@
 5. **HIGH — Unit codes as titles.** Reports → Curriculum history shows "Atlas Us P044 Illinois", "Atlas Us P062 Michigan", "Atlas Us P012 Midwest", "Atlas Us P006 United States" — internal page/unit codes plus "Us" mis-casing. Course title renders as "Young Peoples Atlas Us" (mangled: missing apostrophe, "US" downcased).
 6. **HIGH — Question ids as item names.** Tutor insights lists items literally named "Q1"–"Q10" alongside real titles ("Illinois Labor Unions"). "Q2 · Review instruction" is unactionable — review instruction for *what*?
 7. **MED — Internal policy/algorithm ids in UI copy.** "scored by best-of-unit-mean-v1", "Policy school.instructional-review/v1 · reassess when evidence changes".
-8. **MED — Raw slug in a warning.** Courses-page pink alert: "**Felix**: come-follow-me-ot-2026" — un-labelized course slug, and a *Felix* warning shown on *Milo's* page.
+8. **MED — Raw slug in a warning.** Courses-page pink alert: "**Learner-Four**: come-follow-me-ot-2026" — un-labelized course slug, and a *Learner-Four* warning shown on *Learner-Three's* page.
 9. **LOW — "Assigned by kckern"** — raw username, not a display name.
 
 ## C. Scale & layout failures

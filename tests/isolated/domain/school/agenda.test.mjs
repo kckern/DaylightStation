@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { planDailyAgenda } from '#domains/school/agenda.mjs';
 import { resolveDayCompletion } from '#domains/school/completion.mjs';
 
@@ -365,11 +365,93 @@ describe('the school-day calendar', () => {
     expect(sections[0].obligation).toEqual({ state: 'obligated', reason: null });
   });
 
+  it('a focus day does not spend a block on a section that was not in session at all', () => {
+    const urgentTiming = {
+      schema: 'school.timing/v1', availability: {}, target: { dueOn: '2026-08-31', strength: 'firm' },
+      basePriority: 'high', flexibility: 'protected', agenda: { normalBlocks: 1, urgentBlocks: 2 }, urgencyLeadDays: 7,
+    };
+    const flexibleTiming = {
+      schema: 'school.timing/v1', availability: {}, basePriority: 'low', flexibility: 'flexible',
+      agenda: { normalBlocks: 1, urgentBlocks: 1 }, urgencyLeadDays: 7,
+    };
+    const { sections } = on(SATURDAY, {
+      plan: plan([
+        entry({ unitId: 'focus1', subject: 'math', timing: urgentTiming, timingState: 'urgent', timingPriority: 1 }),
+        // Lowest priority, so it is the FIRST thing a focus block would reach
+        // for — and it is a course that is not in session today.
+        entry({ unitId: 'off1', subject: 'science', courseId: 'c-sci', timing: flexibleTiming, timingPriority: 5, schedule: WEEKDAYS }),
+        entry({ unitId: 'flex1', subject: 'arts', courseId: 'c-art', timing: flexibleTiming, timingPriority: 4 }),
+      ]),
+    });
+    const science = sections.find((s) => s.subject === 'science');
+    expect(science.obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+    expect(science.suppressed).toBeNull();
+    // The single extra block lands on the subject that WAS in session.
+    const arts = sections.find((s) => s.subject === 'arts');
+    expect(arts.obligation).toEqual({ state: 'excused', reason: 'suppressed_by_focus' });
+  });
+
   it('an elective-only subject still reads elective_only, not not_a_school_day', () => {
     const { sections } = on(SATURDAY, {
       plan: plan([entry({ unitId: 'u1', subject: 'math', elective: true, schedule: WEEKDAYS })]),
     });
     expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'elective_only' });
+  });
+
+  it('warns with the validator errors when a schedule is malformed — a typo must be findable', () => {
+    const logger = { warn: vi.fn() };
+    on(SATURDAY, {
+      logger,
+      plan: { learnerId: 'learner-a', entries: [entry({ unitId: 'u1', subject: 'math', courseId: 'c1', schedule: { except: ['Christmas'] } })], errors: [] },
+    });
+    expect(logger.warn).toHaveBeenCalledWith('school.agenda.invalid-schedule', {
+      learnerId: 'learner-a',
+      subject: 'math',
+      unitId: 'u1',
+      courseId: 'c1',
+      errors: ['except has an invalid date: Christmas'],
+    });
+  });
+
+  it('warns once per unit per build', () => {
+    const logger = { warn: vi.fn() };
+    const broken = { schedule: { daysofweek: [1, 2, 3, 4, 5] } };
+    on(SATURDAY, {
+      logger,
+      plan: plan([
+        entry({ unitId: 'u1', subject: 'math', ...broken }),
+        entry({ unitId: 'u1', subject: 'math', ...broken }),
+      ]),
+    });
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns about an ELECTIVE entry too — an inert schedule is still a typo', () => {
+    const logger = { warn: vi.fn() };
+    on(SATURDAY, {
+      logger,
+      plan: plan([entry({ unitId: 'u1', subject: 'math', elective: true, schedule: { holidays: [] } })]),
+    });
+    expect(logger.warn).toHaveBeenCalledWith('school.agenda.invalid-schedule', expect.objectContaining({ unitId: 'u1' }));
+  });
+
+  it('still reports a broken curriculum on a non-school day — an excuse is not a silence', () => {
+    const logger = { warn: vi.fn() };
+    const { sections } = on(SATURDAY, {
+      logger,
+      plan: plan([entry({
+        unitId: 'u2', subject: 'math', status: 'locked',
+        lockReason: 'Finish “ghost” first',
+        remedy: { unitId: 'ghost', title: 'ghost', action: 'start' },
+        schedule: WEEKDAYS,
+      })]),
+    });
+    // The verdict is right — a Saturday must not fault — but the diagnostic
+    // that detects a broken unlock chain has to keep firing.
+    expect(sections[0].obligation).toEqual({ state: 'excused', reason: 'not_a_school_day' });
+    expect(logger.warn).toHaveBeenCalledWith('school.agenda.blocked-unreachable', expect.objectContaining({
+      subject: 'math', unitIds: ['u2'],
+    }));
   });
 
   it('a malformed schedule leaves the obligation intact — it never excuses a term', () => {

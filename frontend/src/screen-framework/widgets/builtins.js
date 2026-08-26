@@ -13,6 +13,7 @@ import WeeklyReview from '../../modules/WeeklyReview/WeeklyReview.jsx';
 import CameraOverlay from '../../modules/CameraFeed/CameraOverlay.jsx';
 import GroupPlayApp from '../../modules/Gaming/environments/group-play/app/GroupPlayApp.jsx';
 import SchoolApp from '../../modules/School/SchoolApp.jsx';
+import ReadingSessionScreen from '../../modules/School/reading/ReadingSessionScreen.jsx';
 
 export function registerBuiltinWidgets() {
   const registry = getWidgetRegistry();
@@ -33,5 +34,9 @@ export function registerBuiltinWidgets() {
   // school device, the way living-room is the TV. Rendered without `clear`,
   // so its exit affordance is omitted (see SchoolApp.jsx).
   registry.register('school', SchoolApp);
+  // The living-room reading session. A PANEL, not a whole screen: it renders
+  // nothing at all unless a child has tapped their card at that room's reader,
+  // so the screen's own menu and screensaver are untouched by its presence.
+  registry.register('school-reading', ReadingSessionScreen);
   return registry;
 }
