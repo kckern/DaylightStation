@@ -308,6 +308,111 @@ describe('WorkPlacard — one media item is not a container', () => {
 });
 
 /* ========================================================================== */
+/* THE PERFORMER LINE — the recording, not the work                            */
+/* ========================================================================== */
+
+describe('WorkPlacard — performer credit', () => {
+  const WITH_PERF = {
+    piece: {
+      title: 'Symphony No. 3 in E-flat major, "Eroica"',
+      opus: 'Op. 55', composed: '1803-04', premiered: 'Vienna, 1805',
+      performance: 'hr-Sinfonieorchester . Andres Orozco-Estrada . Alte Oper Frankfurt, 11 February 2016',
+    },
+  };
+
+  it('renders the performer line when piece.performance is present', () => {
+    const { getByTestId } = render(<WorkPlacard data={WITH_PERF} position={0} />);
+    const perf = getByTestId('surround-placard-performer');
+    expect(perf.textContent).toContain('hr-Sinfonieorchester');
+    expect(perf.textContent).toContain('Andres Orozco-Estrada');
+    expect(perf.textContent).toContain('Alte Oper Frankfurt');
+  });
+
+  it('splits on interpuncts and renders separator elements', () => {
+    const { getByTestId } = render(<WorkPlacard data={WITH_PERF} position={0} />);
+    const seps = getByTestId('surround-placard-performer')
+      .querySelectorAll('.surround-work-placard__sep');
+    expect(seps).toHaveLength(2);
+  });
+
+  it('applies the compressed modifier when performance is present', () => {
+    const { getByTestId } = render(<WorkPlacard data={WITH_PERF} position={0} />);
+    expect(getByTestId('surround-work-placard').classList.contains('surround-work-placard--has-performer'))
+      .toBe(true);
+  });
+
+  it('renders no performer line and no modifier when performance is absent', () => {
+    const { container, getByTestId } = render(<WorkPlacard data={EROICA} position={0} />);
+    expect(container.querySelector('.surround-work-placard__performer')).toBeNull();
+    expect(getByTestId('surround-work-placard').classList.contains('surround-work-placard--has-performer'))
+      .toBe(false);
+  });
+
+  it('handles a single-part performance string with no separators', () => {
+    const data = { piece: { title: 'Étude', performance: 'Martha Argerich, piano' } };
+    const { getByTestId } = render(<WorkPlacard data={data} position={0} />);
+    expect(getByTestId('surround-placard-performer').textContent).toBe('Martha Argerich, piano');
+    expect(getByTestId('surround-placard-performer')
+      .querySelectorAll('.surround-work-placard__sep')).toHaveLength(0);
+  });
+});
+
+describe('WorkPlacard — per-segment performance override on a container', () => {
+  const SET_WITH_PERF = {
+    ...SET,
+    piece: { ...SET.piece, performance: 'Default Ensemble' },
+    segments: [
+      { ...SET.segments[0], performance: 'Krystian Zimerman' },
+      { ...SET.segments[1] },
+    ],
+  };
+
+  it('uses segment performance when present, piece performance when not', () => {
+    const { getByTestId, unmount } = render(
+      <WorkPlacard data={{ ...SET_WITH_PERF, contentId: 'plex:696238' }} position={100} duration={449} playing region={{ slot: 'top' }} />,
+    );
+    expect(getByTestId('surround-placard-performer').textContent).toBe('Krystian Zimerman');
+    unmount();
+
+    const { getByTestId: get2 } = render(
+      <WorkPlacard data={SET_WITH_PERF} position={200} duration={449} playing region={{ slot: 'top' }} />,
+    );
+    expect(get2('surround-placard-performer').textContent).toBe('Default Ensemble');
+  });
+});
+
+describe('WorkPlacard — per-segment performer on a single work', () => {
+  const RECITAL = {
+    contentId: 'plex:696230',
+    piece: {
+      title: 'Nocturnes', short_title: "Chopin's Nocturnes",
+      performance: 'Klasse Michail Lifits . Festsaal Fürstenhaus, Weimar . 15 December 2023',
+    },
+    timeline: { totalSounding: 7100, parts: [{ contentId: 'plex:696230', index: 0, sounding: 7100 }] },
+    segments: [
+      { n: 1, label: 'In B-flat minor', contentId: 'plex:696230', part: 0, offset: 0, duration: 317, start: 30, end: 347, performance: 'Artemy Sokolovsky' },
+      { n: 2, label: 'In E-flat major', contentId: 'plex:696230', part: 0, offset: 317, duration: 231, start: 347, end: 578, performance: 'Artemy Sokolovsky' },
+      { n: 4, label: 'In F major', contentId: 'plex:696230', part: 0, offset: 548, duration: 259, start: 1007, end: 1266, performance: 'Tiankai Yu' },
+    ],
+  };
+
+  it('shows the segment performer, not the piece default, at the right position', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={RECITAL} position={100} duration={7139} playing region={{ slot: 'top' }} />,
+    );
+    expect(getByTestId('surround-placard-performer').textContent).toBe('Artemy Sokolovsky');
+  });
+
+  it('falls back to piece.performance between segments (dead time)', () => {
+    const { getByTestId } = render(
+      <WorkPlacard data={RECITAL} position={800} duration={7139} playing region={{ slot: 'top' }} />,
+    );
+    const text = getByTestId('surround-placard-performer').textContent;
+    expect(text).toContain('Klasse Michail Lifits');
+  });
+});
+
+/* ========================================================================== */
 /* plateText — the decision, on its own                                        */
 /* ========================================================================== */
 

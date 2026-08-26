@@ -300,12 +300,20 @@ function appendNoteLines(blocks, noteLines) {
  *   `reviewNoteLines`) — informational only, printed with no `scan_action`,
  *   so a grown-up's feedback reaches the child without pretending to be a
  *   thing to scan.
+ * @param {string} [args.bulkToken] opaque scan token that prints every offered
+ *   subject's sheet in one job (self-service, bulk-print access code). Absent,
+ *   the receipt is byte-identical to one built before the feature existed.
+ * @param {string} [args.bulkAccessCode] six-digit panel code aliasing
+ *   `bulkToken`, formatted the same way as a per-token `accessCodesByToken`
+ *   entry — see `panelCodeBlocks`.
  * @param {string} [args.footer]
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
   learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
-  sections = [], tokensBySubject = {}, accessCodesByToken = {}, footer = null, notes = [],
+  sections = [], tokensBySubject = {}, accessCodesByToken = {},
+  bulkToken = null, bulkAccessCode = null,
+  footer = null, notes = [],
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -343,6 +351,12 @@ export function agendaDocument({
   // one of them. Collected here instead and emitted as a single strip at the
   // foot of the sheet, where a tally belongs.
   const doneSubjects = [];
+  // The subjects that actually emit a scannable lesson card. The bulk-print
+  // card below lists these, not every entry in `offered` — `offered` also
+  // carries the subjects already served today (a tally, not a card) and the
+  // ones a focus day suppressed, and naming those on a "print all sheets"
+  // card promises paper that scan would never produce.
+  const cardSubjects = [];
   offered.forEach((section) => {
     // A focus day deliberately removes flexible work from the CHILD'S paper;
     // the parent preview retains the suppression reason.
@@ -402,6 +416,7 @@ export function agendaDocument({
     }
     const token = tokensBySubject?.[section.subject];
     if (isNonEmptyString(token)) {
+      cardSubjects.push(section.subject);
       blocks.push(...lessonAction({
         token,
         // NO EYEBROW. It used to read `Today · <subject>`, which the renderer
@@ -461,17 +476,42 @@ export function agendaDocument({
     }
   });
 
+  // Whether anything is still open decides the wording of the done tally
+  // below: with work left it is a footnote to the page above it; with nothing
+  // left it is the whole answer. Read BEFORE the bulk card goes on, so that
+  // card — which only exists when there IS work — cannot change the verdict.
+  const nothingLeft = blocks.length === 0;
+
+  // One extra card at the end, printing every offered subject in one job: an
+  // alias for "scan each lesson card in turn," not a fourth kind of session.
+  // Same malformed-code-prints-nothing rule as a per-subject panel code
+  // (`panelCodeField`) — a bad code is worse than no code.
+  //
+  // The code rides ON the block, not in a loose block after it. That is the
+  // per-subject contract too since Slice H: a separate `rich_text` of digits
+  // drew adrift BELOW the card on the canvas renderer, with nothing saying
+  // which card it belonged to. `hideCode` still suppresses the raw TOKEN
+  // under the QR — the six digits are the only thing a child should read.
+  if (isNonEmptyString(bulkToken) && typeof bulkAccessCode === 'string' && PANEL_CODE.test(bulkAccessCode)) {
+    blocks.push({
+      type: 'scan_action',
+      action: bulkToken,
+      presentation: 'bulk_print',
+      label: 'Print all sheets',
+      hideCode: true,
+      subjects: cardSubjects,
+      ...panelCodeField(bulkAccessCode),
+    });
+  }
+
   if (doneSubjects.length) {
-    // Whether anything is still open decides the wording: with work left this
-    // is a footnote to the page above it; with nothing left it is the whole
-    // answer, and saying so plainly beats a bare list under a small heading.
-    const nothingLeft = blocks.length === 0;
     blocks.push({
       type: 'done_summary',
       label: nothingLeft ? 'All done today' : 'Done today',
       entries: doneSubjects,
     });
   }
+
   appendNoteLines(blocks, noteLines);
   const hasCalculator = offered.some((section) => section.next?.schoolcalcHandoff?.eligible);
   if (footer || hasCalculator) blocks.push(text(footer || 'Enter the calculator code to start.'));
