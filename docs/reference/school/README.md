@@ -1913,6 +1913,11 @@ did.
 
 ### The teacher console
 
+> **Code map:** [`frontend/src/modules/School/teacher/README.md`](../../../frontend/src/modules/School/teacher/README.md)
+> — screen-element → file table, the two API reads behind the Today tab with
+> curl examples, and how to tell which tree the running container was built
+> from. Read that first when a question starts from something on screen.
+
 The grown-up side of the desk is the responsive workspace at
 **`/school/teacher`** (with **`/school/teacher-next`** as an additive alias),
 never a Portal widget and never in kiosk navigation. Its URL is the complete
