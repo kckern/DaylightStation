@@ -23,6 +23,12 @@ These records are related but not interchangeable:
 A syllabus is a template. An enrollment is the runtime contract. Editing or
 archiving a syllabus never silently changes an existing learner.
 
+There is a fourth shape that is NOT a course enrollment: a **program** — an
+enrollment with `courseId: null`, living in `assignment.programs[]`, whose
+evidence and progress belong to a registered `IProgramLauncher` rather than to
+any published curriculum. `story-time` is the plainest example (a daily count,
+no units at all). See [School programs](./programs.md).
+
 ## Enrollment v2
 
 An enrolled course is an object in the learner's `courses` assignment list:
