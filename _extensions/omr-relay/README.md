@@ -366,6 +366,18 @@ how the last life ended; the sequence tells you whether the board is cycling.
 | `SW` | a clean software reset. An OTA delivery ends this way. |
 | `TASK_WDT` | the loop hung and the watchdog rebooted it. **Not a power fault — stop looking at the brick.** See below. |
 
+> **`/health` is the only authority on what firmware is running. The bus
+> message is not.** `relay-status` carries a deliberate SUBSET, and the
+> steady-state broadcast is smaller still — an ordinary one is just
+> `{clientId, dropped, id, queued, truncated}`. A field's ABSENCE from the bus
+> therefore proves nothing about the image on the board.
+>
+> On 2026-08-25 this cost real time: `boot_count`/`last_reset` were missing from
+> a sampled `relay-status`, which was read as "four firmware commits never
+> reached the reader." `curl http://10.0.0.19/health` showed `boot_count: 2,
+> last_reset: "SW"` — they had shipped; only the watchdog (`wdt_s`) had not.
+> **Ask the board, not the bus.** One curl answers it; inference does not.
+
 Both fields are also pushed on the `relay-status` message the relay sends on
 every (re)connect — see [Bus message](../../docs/reference/omr/README.md#bus-message).
 **That is the channel that matters during a fault:** when this board is
@@ -508,6 +520,15 @@ Two things that are easy to get wrong:
 - `--upload-protocol` and `--upload-flags` are **not** CLI options. The protocol
   comes from the `m5-atom-ota` env; the auth flag has to arrive via
   `PLATFORMIO_UPLOAD_FLAGS`.
+- **The OTA invitation port 3232 is UDP.** A TCP probe (`echo >/dev/tcp/ip/3232`)
+  always fails and means nothing. Do not read it as "OTA is off"; it cost a
+  wrong diagnosis on 2026-08-25. Ask `/health` instead.
+- **Do not hunt for the board by scanning the LAN.** The address is written down
+  here (10.0.0.19) and in the household SSOT. An ARP sweep on 2026-08-25 turned
+  up an unrelated device with 3232 open and nearly had firmware pushed at it.
+  A box that answers on a port is not an identity — `/health` returns
+  `"id":"study-omr"`, and that is the identity check.
+
 - **The first delivery after switching partition tables is still USB.** The
   partition table sits at 0x8000, outside any app slot, so it cannot be written
   over the air. A board still running a `huge_app.csv` image cannot receive an
