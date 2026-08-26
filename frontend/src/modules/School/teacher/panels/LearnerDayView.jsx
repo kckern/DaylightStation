@@ -67,7 +67,7 @@ function DayNav({ studyDay, onChangeStudyDay }) {
  * Loaded on demand — a printer-resolution PNG is not worth fetching for a
  * teacher who only wanted to read the list.
  */
-function PrintedAgenda({ learnerId, studyDay }) {
+export function PrintedAgenda({ learnerId, studyDay }) {
   const [open, setOpen] = useState(false);
   const src = `/api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/agenda/preview?${new URLSearchParams({ studyDay })}`;
   return (

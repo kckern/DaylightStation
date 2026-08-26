@@ -8,6 +8,8 @@ const events = [
   { type: 'submitted', at: '2026-08-24T16:00:00.000Z', sessionId: 'ses_felix', seq: 3, transport: 'paper' },
   { type: 'graded', at: '2026-08-24T16:01:00.000Z', sessionId: 'ses_felix', seq: 4,
     attemptIds: ['att_1', 'att_2'], percent: 50, passingPercent: 80, correctCount: 1, totalCount: 2 },
+  { type: 'result_receipt_captured', at: '2026-08-24T16:02:00.000Z', sessionId: 'ses_felix', seq: 5,
+    artifactId: 'receipt_1', kind: 'result-receipt', printed: true },
 ];
 
 function useCase() {
@@ -44,5 +46,24 @@ describe('GetTeacherToday v2', () => {
       sessionId: 'ses_felix', studyDay: '2026-08-23', processedAt: '2026-08-24T16:01:00.000Z',
       processedEventTypes: ['submitted', 'graded'],
     });
+  });
+
+  it('carries the paper-record references the drill-in used to pay a per-session fetch for', async () => {
+    const digest = await useCase().execute({ studyDay: '2026-08-23', version: 'v2' });
+    expect(digest.learners[0].sessions[0].artifacts).toEqual({
+      worksheet: {
+        artifactId: 'art_1',
+        originalPdfUrl: '/api/v1/school/teacher/artifacts/art_1/original.pdf',
+        thumbnailUrl: '/api/v1/school/teacher/artifacts/art_1/thumbnail.png',
+      },
+      receipt: {
+        artifactId: 'receipt_1',
+        originalUrl: '/api/v1/school/teacher/artifacts/receipt_1/original',
+      },
+    });
+    // The carried-over lane keeps the same references — the dashboard shows
+    // yesterday's sheet scanned today without any extra fetch either.
+    const august24 = await useCase().execute({ studyDay: '2026-08-24', version: 'v2' });
+    expect(august24.learners[0].processedToday[0].artifacts.worksheet.artifactId).toBe('art_1');
   });
 });

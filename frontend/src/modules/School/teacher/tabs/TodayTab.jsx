@@ -64,7 +64,8 @@ export default function TodayTab({ kids = [], onOpenQueue = null }) {
         unavailableCopy="The daily digest isn't available on this install."
         suppressUnavailable={lifecycleDown}
       >
-        <RosterStrip rows={Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])} kids={kids} />
+        <RosterStrip rows={Array.isArray(today.data) ? today.data : (today.data?.learners ?? [])} kids={kids}
+          studyDay={Array.isArray(today.data) ? null : (today.data?.studyDay ?? null)} />
       </PanelFrame>
       {onOpenQueue && <BacklogStrip onOpenQueue={onOpenQueue} />}
     </div>

@@ -283,10 +283,62 @@
 }
 .teacher-roster__entry { position: relative; }
 .teacher-roster__disclosure { position: absolute; top: 20px; right: 12px; color: #66543c; pointer-events: none; }
-.teacher-roster__details { padding: 8px 10px 14px; }
-.teacher-day-sessions { display: grid; gap: 8px; }
-.teacher-day-session { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px; border: 1px solid #e5dccb; border-radius: 9px; color: inherit; text-decoration: none;
-  &:hover { border-color: #ae8d5a; background: #fffdf8; } &__outcome { color: #675f53; text-align: right; }
+.teacher-roster__chevron { width: 14px; height: 14px; display: block; transition: transform 140ms ease;
+  &--open { transform: rotate(90deg); }
+}
+.teacher-roster__details { padding: 8px 10px 14px; display: grid; gap: 12px; justify-items: start; }
+.teacher-roster__plan-notice { margin: 0; color: #8a5a2a; font-size: 13px; }
+
+// ---------------------------------------------------------------------------
+// The day as a grid of lesson cards — side by side, roughly square (~16:19),
+// every lesson at a glance. Cards may grow taller than the ratio when a title
+// needs the room; they never clip content to keep the shape.
+// ---------------------------------------------------------------------------
+.teacher-lesson-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 10px; width: 100%; justify-self: stretch;
+}
+.teacher-lesson-card {
+  display: flex; flex-direction: column; gap: 6px;
+  aspect-ratio: 16 / 19; min-width: 0; padding: 10px;
+  border: 1px solid #e5dccb; border-radius: 10px; background: #fff;
+  .teacher-day-chip { align-self: flex-start; }
+  &--planned { border-style: dashed; background: #fbf8f1; }
+  &--deferred, &--blocked { background: #fdf6e8; }
+  &__open { color: inherit; text-decoration: none; display: block; min-width: 0;
+    &:hover .teacher-lesson-card__title { color: #604521; text-decoration: underline; } }
+  &__identity { display: grid; gap: 3px; min-width: 0; }
+  &__poster { width: 100%; height: 52px; border-radius: 6px; object-fit: cover; background: #e9e1d3; }
+  &__title { color: #302a22; font-size: 15px; line-height: 1.2; overflow-wrap: break-word; }
+  &__course { color: #756b5d; font-size: 12px; }
+  &__foot { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; }
+  &__score { display: grid; gap: 2px; }
+  &__marks { display: flex; flex-wrap: wrap; align-items: center; gap: 1px; max-width: 100%; }
+  &__mark-count { font-size: 13px; font-weight: 700; color: #4a4436; margin-right: 5px; }
+  &__percent { font-size: 15px; font-weight: 800; color: #2e6b34;
+    &--low { color: #8a3627; } }
+  &__pending { color: #877d6c; font-size: 12.5px; }
+}
+.teacher-mark { width: 13px; height: 13px; flex: none;
+  &--check { color: #2e8b3d; } &--cross { color: #c0392b; }
+}
+// Square tap targets (touch UI: discrete, ≥40px).
+.teacher-lesson-card__artifacts { display: flex; gap: 5px; flex: none; }
+.teacher-artifact-btn {
+  display: grid; place-items: center; width: 40px; height: 40px;
+  border: 1px solid #ddd2bd; border-radius: 8px; background: #fcfaf5; color: #66543c; cursor: pointer;
+  svg { width: 20px; height: 20px; }
+  &:hover { border-color: #ae8d5a; background: #fffdf8; }
+}
+// The artifact, right there: an overlay above the dashboard, not a route away.
+.teacher-artifact-peek {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  padding: 24px; background: rgba(38, 30, 18, 0.55);
+  &__panel { position: relative; width: min(560px, 100%); max-height: 90vh; overflow-y: auto;
+    padding: 18px; border-radius: 12px; background: #fffdf8; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35); }
+  &__close { position: absolute; top: 10px; right: 10px; z-index: 1; display: grid; place-items: center;
+    width: 44px; height: 44px; border: 1px solid #ddd2bd; border-radius: 10px; background: #fff; color: #66543c; cursor: pointer;
+    svg { width: 18px; height: 18px; } &:hover { border-color: #ae8d5a; } }
 }
 .teacher-subject-identity { display: inline-flex; align-items: center; gap: 6px; color: #756b5d; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
   &__icon { width: 18px; height: 18px; opacity: .25; }
