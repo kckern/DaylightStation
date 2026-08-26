@@ -99,3 +99,78 @@ describe('createLearnerActions', () => {
     expect(learnerActions.get('reading-session')).toBeNull();
   });
 });
+
+// "NEVER REJECTS" is only as true as the code OUTSIDE the try — which, in this
+// codebase, is where a never-throw contract has leaked before: at the logger,
+// and at a lookup sitting above the guarded block. Each of these was a real
+// rejection, and a rejection here is a child getting silence.
+describe('responseHandlers.learner — the never-reject contract, at its edges', () => {
+  const learnerResponse = (op) => ({ kind: 'learner', op, learnerId: 'learner-a', location: 'study' });
+
+  it('survives a handler that throws something with no .message', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('throws-null', async () => { throw null; });
+    const result = await responseHandlers.learner(learnerResponse('throws-null'), { learnerActions, logger: silent });
+    expect(result).toMatchObject({ status: 'failed', op: 'throws-null' });
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('survives a registry whose get() throws', async () => {
+    const learnerActions = { get() { throw new Error('registry exploded'); }, list: () => [] };
+    const result = await responseHandlers.learner(learnerResponse('print-agenda'), { learnerActions, logger: silent });
+    expect(result).toMatchObject({ status: 'failed' });
+  });
+
+  it('survives a logger that throws while refusing an unregistered op', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const logger = { ...silent, warn() { throw new Error('log transport down'); } };
+    const result = await responseHandlers.learner(learnerResponse('reading-session'), { learnerActions, logger });
+    expect(result).toMatchObject({ status: 'no_handler', op: 'reading-session' });
+  });
+
+  it('survives a registry whose list() throws while building that refusal', async () => {
+    const learnerActions = { get: () => null, list() { throw new Error('list exploded'); } };
+    const result = await responseHandlers.learner(learnerResponse('reading-session'), { learnerActions, logger: silent });
+    expect(result).toMatchObject({ status: 'no_handler', op: 'reading-session' });
+  });
+
+  it('does not turn a PRINTED agenda into a failure when the success log throws', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => ({ status: 'agenda_printed', printed: true }));
+    const logger = { ...silent, info() { throw new Error('log transport down'); } };
+    const result = await responseHandlers.learner(learnerResponse('print-agenda'), { learnerActions, logger });
+    expect(result).toMatchObject({ status: 'agenda_printed', printed: true });
+  });
+
+  it('survives a logger that throws while reporting a failure', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('boom', async () => { throw new Error('printer on fire'); });
+    const logger = { ...silent, error() { throw new Error('log transport down'); } };
+    const result = await responseHandlers.learner(learnerResponse('boom'), { learnerActions, logger });
+    expect(result).toMatchObject({ status: 'failed' });
+  });
+});
+
+// A handler that answers instead of throwing has no other way to say "let them
+// try again" — the dispatcher's retry path hangs off a thrown error, which a
+// never-rejecting handler can never reach.
+describe('responseHandlers.learner — declaring retryability', () => {
+  it('marks a thrown-handler failure retryable', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('boom', async () => { throw new Error('printer on fire'); });
+    const result = await responseHandlers.learner(
+      { kind: 'learner', op: 'boom', learnerId: 'learner-b', location: 'study' },
+      { learnerActions, logger: silent },
+    );
+    expect(result).toMatchObject({ status: 'failed', retryable: true });
+  });
+
+  it('does NOT mark a named refusal retryable — retrying it changes nothing', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const result = await responseHandlers.learner(
+      { kind: 'learner', op: 'reading-session', learnerId: 'learner-c', location: 'livingroom' },
+      { learnerActions, logger: silent },
+    );
+    expect(result.retryable).toBeUndefined();
+  });
+});

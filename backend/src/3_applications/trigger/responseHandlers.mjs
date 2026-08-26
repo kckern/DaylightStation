@@ -88,30 +88,43 @@ export const responseHandlers = {
   // stop. An unregistered op is refused BY NAME and logged with its reader, so
   // an action configured before its handler shipped is findable in the log
   // rather than doing some other action's job.
+  //
+  // That contract is only as strong as the code OUTSIDE the try, which is
+  // exactly where it has leaked in this codebase before: at the logger, and at
+  // a lookup sitting above the guarded block. So every log call is individually
+  // guarded, the registry lookup happens INSIDE the try, and a throw with no
+  // `.message` (a bare string, `null`) still yields a string.
   learner: async (response, deps) => {
-    const handler = deps.learnerActions?.get?.(response.op) ?? null;
-    if (!handler) {
-      deps.logger?.warn?.('trigger.learner.no_handler', {
-        op: response.op,
-        learnerId: response.learnerId,
-        location: response.location,
-        registered: deps.learnerActions?.list?.() ?? null,
-      });
-      return { status: 'no_handler', op: response.op, learnerId: response.learnerId };
-    }
+    const ctx = { op: response.op, learnerId: response.learnerId, location: response.location };
+    // A broken log transport must not become a broken tap. Never let a logger
+    // decide whether a child's card worked.
+    const log = (level, event, data) => {
+      try { deps.logger?.[level]?.(event, data); } catch { /* the tap outranks the log line */ }
+    };
     try {
+      const handler = deps.learnerActions?.get?.(response.op) ?? null;
+      if (!handler) {
+        let registered = null;
+        try { registered = deps.learnerActions?.list?.() ?? null; } catch { registered = null; }
+        log('warn', 'trigger.learner.no_handler', { ...ctx, registered });
+        // Not retryable: an op with no owner has no owner on the second tap
+        // either, so a retry would only burn another tap on the same refusal.
+        return { status: 'no_handler', op: response.op, learnerId: response.learnerId };
+      }
       const result = await handler({
         learnerId: response.learnerId, location: response.location, target: response.target,
       });
-      deps.logger?.info?.('trigger.learner.dispatched', {
-        op: response.op, learnerId: response.learnerId, location: response.location, status: result?.status ?? null,
-      });
+      log('info', 'trigger.learner.dispatched', { ...ctx, status: result?.status ?? null });
       return result ?? { status: 'ok' };
     } catch (err) {
-      deps.logger?.error?.('trigger.learner.failed', {
-        op: response.op, learnerId: response.learnerId, location: response.location, error: err.message,
-      });
-      return { status: 'failed', op: response.op, error: err.message };
+      const error = err?.message ?? String(err);
+      log('error', 'trigger.learner.failed', { ...ctx, error });
+      // `retryable` is how a handler that ANSWERS instead of throwing tells the
+      // dispatcher to release the debounce. The dispatcher's retry path hangs
+      // off a thrown error, which this handler can never reach by design — so
+      // without this flag a failed tap would lock the child out for 30s while
+      // the receipt in their hand says to scan again.
+      return { status: 'failed', op: response.op, error, retryable: true };
     }
   },
 };
