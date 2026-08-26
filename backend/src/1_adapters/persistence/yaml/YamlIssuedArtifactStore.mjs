@@ -17,20 +17,68 @@ export class YamlIssuedArtifactStore {
     this.#configService = configService;
   }
   #root() { return this.#configService.getHouseholdPath('school/artifacts/issued'); }
-  #stem(id) { return encodeURIComponent(id); }
+
+  /**
+   * Artifact id -> path, per SEGMENT rather than whole-id.
+   *
+   * `encodeURIComponent(id)` flattened a genuinely hierarchical id into one
+   * percent-encoded filename, so a single directory held entries like
+   * `receipt%2Fses_hmSsHlJR%2Fout%3Ases_hmSsHlJR.yml`. The ids were never the
+   * problem — the mapping was. `/` is a real separator here; within a segment,
+   * `[A-Za-z0-9._-]` passes through and anything else percent-encodes, which
+   * keeps the mapping deterministic and injective for every id, old and new,
+   * while leaving no encoding at all on ids written in the new grammar.
+   *
+   * Colons survive as `%3A` inside a leaf name — a bounded, visible legacy tail
+   * on the handful of `out:ses_X` receipt ids already minted. Those ids are
+   * frozen: `out:ses_X` was handed to the economy ledger, so history cannot be
+   * rewritten. Only where the bytes LIVE changes.
+   */
+  #stem(id) {
+    return id.split('/')
+      .map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, (ch) => encodeURIComponent(ch)))
+      .join(path.sep);
+  }
+
+  /** The pre-2026-08-26 flat mapping, still read so nothing already on disk is lost. */
+  #legacyStem(id) { return encodeURIComponent(id); }
+
   #manifest(id) { return path.join(this.#root(), `${this.#stem(id)}.yml`); }
   #payload(id, extension = 'pdf') { return path.join(this.#root(), `${this.#stem(id)}.${extension}`); }
+  #legacyManifest(id) { return path.join(this.#root(), `${this.#legacyStem(id)}.yml`); }
+  #legacyPayload(id, extension = 'pdf') { return path.join(this.#root(), `${this.#legacyStem(id)}.${extension}`); }
+
+  /**
+   * Read a file from the new location, falling back to the legacy flat one.
+   *
+   * DUAL-READ IS THE WHOLE SAFETY STORY of this change: every artifact already
+   * on disk stays exactly where it is and keeps resolving, so no teacher link
+   * can 404 and no migration has to run before this ships. Only NEW writes land
+   * in the new shape.
+   */
+  async #readEither(newPath, legacyPath, encoding) {
+    try {
+      return await fs.readFile(newPath, encoding);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      return fs.readFile(legacyPath, encoding);
+    }
+  }
 
   async get(artifactId) {
     if (!validId(artifactId)) return null;
     try {
-      const raw = await fs.readFile(this.#manifest(artifactId), 'utf8');
+      const raw = await this.#readEither(
+        this.#manifest(artifactId), this.#legacyManifest(artifactId), 'utf8',
+      );
       const manifest = yaml.load(raw);
       // v1/v2 worksheet archives predate typed representations and are always
       // PDFs. v3 makes the retained original explicit so receipts can retain
       // their original raster without pretending to be Letter documents.
       const extension = manifest?.representation?.extension ?? 'pdf';
-      const bytes = await fs.readFile(this.#payload(artifactId, extension));
+      const bytes = await this.#readEither(
+        this.#payload(artifactId, extension), this.#legacyPayload(artifactId, extension), null,
+      );
       if (manifest?.artifactId !== artifactId || manifest?.sha256 !== digest(bytes) || manifest?.byteLength !== bytes.length) {
         throw new DomainInvariantError(`issued artifact ${artifactId} failed integrity verification`, { code: 'ARTIFACT_CORRUPT' });
       }
@@ -55,7 +103,10 @@ export class YamlIssuedArtifactStore {
         }
         return existing;
       }
-      await fs.mkdir(this.#root(), { recursive: true });
+      // The id is hierarchical now, so the leaf's own directory has to exist —
+      // `mkdir(root)` alone was enough only while every artifact was one flat
+      // percent-encoded filename.
+      await fs.mkdir(path.dirname(this.#manifest(artifactId)), { recursive: true });
       const linkedSessionIds = [...new Set([sessionId, ...(Array.isArray(sessionIds) ? sessionIds : [])].filter(Boolean))];
       const typedRepresentation = representation ? {
         mediaType: representation.mediaType ?? 'application/pdf',
