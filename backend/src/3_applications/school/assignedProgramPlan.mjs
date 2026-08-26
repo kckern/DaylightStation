@@ -5,6 +5,8 @@
  * educational projection of that answer.
  */
 
+import { STORY_TIME_PROGRAM_ID } from '#domains/school/storyTime.mjs';
+
 const baseEntry = ({ unitId, title, subject, program, programInstance }) => ({
   unitId,
   title,
@@ -14,6 +16,12 @@ const baseEntry = ({ unitId, title, subject, program, programInstance }) => ({
   sequence: null,
   module: null,
   profile: null,
+  // The school-day calendar a course entry carries from its enrollment. Null
+  // here because a program takes its schedule from the program enrollment, not
+  // a syllabus, and nothing reads it into this entry yet — but the planner
+  // entry now has two construction sites and a field silently missing from one
+  // is how they drift.
+  schedule: null,
   timing: null,
   timingState: 'available',
   timingPriority: 3,
@@ -46,14 +54,14 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: deckId,
       }));
     }
-    if (enrollment?.programId === 'story-time') {
+    if (enrollment?.programId === STORY_TIME_PROGRAM_ID) {
       // One instance per learner — there is no corpus to distinguish, and
       // SetAssignments' dedupe key already refuses a second one.
       plan.entries.push(baseEntry({
-        unitId: 'story-time:daily',
+        unitId: `${STORY_TIME_PROGRAM_ID}:daily`,
         title: enrollment.title ?? 'Story time',
         subject: enrollment.subject ?? 'english',
-        program: 'story-time',
+        program: STORY_TIME_PROGRAM_ID,
         programInstance: 'daily',
       }));
     }

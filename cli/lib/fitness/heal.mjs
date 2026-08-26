@@ -371,7 +371,7 @@ export async function heal(date, sessionId, { apply = false, baseDir } = {}) {
 
   // -------------------------------------------------------------------
   // Apply: fold transfers then merges (order matters — a chain like
-  // learner-one -> parent-two -> grannie must land learner-one's data on parent-two
+  // learner1 -> parent-two -> grannie must land learner1's data on parent-two
   // BEFORE parent-two's (now-combined) series folds into grannie).
   //
   // Transfers (ghost absorption) and merges (known-user device-swap) use

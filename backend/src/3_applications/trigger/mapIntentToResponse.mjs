@@ -29,11 +29,32 @@ export function mapIntentToResponse(intent, { posture = 'authoritative' } = {}) 
   if (!intent) return null;
   const { action } = intent;
 
+  // Discriminated by the PAYLOAD, not by an action allow-list: a learner card
+  // names a person, and what happens to that person comes from the reader's
+  // `learner_action`. A new learner action must therefore be a config key plus
+  // a registered handler — never an edit to this mapper, which would otherwise
+  // become the file every future reader behaviour has to pass through.
+  //
+  // An op with no handler is NOT rejected here. Refusing it by name at
+  // dispatch (`trigger.learner.no_handler`) says which op and which reader;
+  // an UNKNOWN_ACTION thrown here says only that a tap failed.
+  if (intent.learnerId) {
+    return Response.learner({
+      op: action,
+      learnerId: intent.learnerId,
+      location: intent.location,
+      target: intent.target,
+    });
+  }
+
   if (CONTENT_ACTIONS.has(action)) {
     return Response.content({
       target: intent.target,
       expression: { action, contentId: intent.content, options: intent.params || {} },
       posture,
+      // The reader, not the screen. An interceptor claims a book tap by the
+      // room it happened in; without this the whole seam sees `undefined`.
+      location: intent.location,
       end: intent.end,
       endLocation: intent.endLocation,
     });

@@ -19,7 +19,7 @@ async function setup() {
   const sessions = memorySessions();
   const created = createEvent({
     type: 'created', at: '2026-08-10T12:00:00.000Z', sessionId: 'work-one',
-    learnerId: 'learner-one', unitId: 'unit-one',
+    learnerId: 'learner1', unitId: 'unit-one',
   }).event;
   await sessions.appendEvent('work-one', created);
   return { sessions, executor: new SchoolCalcStudyOutcomeExecutor().bind({ sessions }) };

@@ -9,7 +9,7 @@ const artifact = {
   byteLength: 500, byteDigest: 'ab'.repeat(32), bytes: Buffer.alloc(500),
 };
 const study = {
-  studySessionId: 'study-one', learnerId: 'learner-one', code: '001234', status: 'open',
+  studySessionId: 'study-one', learnerId: 'learner1', code: '001234', status: 'open',
   artifact: { ...artifact, requiredClientVersion: 1 },
   curation: {
     bankRevision: '123456789abc',
@@ -25,7 +25,7 @@ function harness({ installed = false, found = study, bindStatus = 'accepted' } =
   };
   const devices = { getDevice: vi.fn(async () => ({
     deviceId: '86A001', platformId: 'ti86', capabilityReport: { shellVersion: '1' },
-    activeLearnerBindings: [{ learnerId: 'learner-one', learnerKey: 7 }],
+    activeLearnerBindings: [{ learnerId: 'learner1', learnerKey: 7 }],
     installedArtifactIds: installed ? [artifact.artifactId] : [],
   })) };
   return {

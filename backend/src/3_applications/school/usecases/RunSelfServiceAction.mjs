@@ -257,6 +257,10 @@ export class RunSelfServiceAction {
       });
     }
 
+    if (resolution?.kind === 'bulk_print' && kind === 'print') {
+      return this.#bulkPrint(resolution);
+    }
+
     if (!NEEDS_SESSION.has(kind) || resolution?.kind !== 'move') {
       // Only reachable if `offeredActions` grows a kind this file has not been
       // taught. Say something rather than fall off the end.
@@ -328,6 +332,78 @@ export class RunSelfServiceAction {
       artifactId: result?.artifactId ?? null,
       pageCount: result?.pageCount ?? null,
     });
+  }
+
+  /**
+   * The bulk-print fan-out (Task 5's `resolution.kind === 'bulk_print'`): one
+   * access code that named several subjects at once, one printer run per
+   * subject. Each `ref` gets its OWN `ensureSession` — rule 1 applies per
+   * subject, not once for the batch, because each `ref.entry` may or may not
+   * already have a real session — and then its own `IssueDocument` call. One
+   * ref's failure must not stop the rest: a sibling code that would have
+   * printed five sheets should not lose four of them because the third's
+   * session could not be opened.
+   *
+   * This does NOT go through `PRINT_RESULTS` / `#report` — those speak for a
+   * single card's outcome. The outcome here is an aggregate over `refs`, so it
+   * is judged separately, per the design's outcome table.
+   */
+  async #bulkPrint(resolution) {
+    const { learnerId, refs } = resolution;
+    this.#logger.info?.('school.selfservice.bulk.print.start', { learnerId, refCount: refs.length });
+
+    const results = [];
+    for (const ref of refs) {
+      try {
+        const session = await ensureSession({
+          entry: ref.entry, learnerId,
+          nowIso: this.#clock().toISOString(),
+          sessions: this.#sessions, newSessionId: this.#newSessionId,
+        });
+        const result = await this.#issue.execute({ sessionId: session.sessionId });
+        const status = result?.status ?? 'unavailable';
+        this.#logger.info?.('school.selfservice.bulk.print.ref', {
+          subject: ref.subject, status, artifactId: result?.artifactId ?? null,
+        });
+        results.push({ subject: ref.subject, status, artifactId: result?.artifactId ?? null, pageCount: result?.pageCount ?? null });
+      } catch (error) {
+        this.#logger.error?.('school.selfservice.bulk.print.ref', {
+          subject: ref.subject, status: 'error', error: error.message,
+        });
+        results.push({ subject: ref.subject, status: 'error', artifactId: null, pageCount: null });
+      }
+    }
+
+    const succeeded = results.filter((r) => r.status === 'issued' || r.status === 'reprinted').length;
+    const debounced = results.filter((r) => r.status === 'debounced').length;
+    const failed = results.length - succeeded - debounced;
+
+    let outcome;
+    let sentence;
+    if (succeeded > 0) {
+      outcome = 'done';
+      sentence = failed > 0
+        ? `${succeeded} of ${results.length} sheets printed — ${failed} could not print.`
+        : `${succeeded} ${succeeded === 1 ? 'sheet' : 'sheets'} printed.`;
+    } else if (debounced === results.length) {
+      outcome = 'debounced';
+      sentence = "They're already on the way — give it a minute.";
+    } else if (results.every((r) => r.status === 'already_done')) {
+      outcome = 'refused';
+      sentence = 'Those are all finished.';
+    } else {
+      outcome = 'failed';
+      sentence = 'The printer did not answer. Try that again in a minute.';
+    }
+
+    this.#logger.info?.('school.selfservice.bulk.print.done', { succeeded, failed, debounced, outcome });
+
+    return {
+      outcome,
+      sentence,
+      sessionId: null,
+      effect: { results },
+    };
   }
 
   /**

@@ -38,7 +38,7 @@ vi.mock('../../../lib/logging/Logger.js', () => ({
 const CURFEW = { enabled: true, start: '19:00', end: '06:00' };
 const ACTIVITY = {
   players: [{
-    userId: 'learner-two', name: 'learner-two', lastPlayedAt: '2026-08-21T10:00:00Z',
+    userId: 'learner2', name: 'learner2', lastPlayedAt: '2026-08-21T10:00:00Z',
     courses: [{
       courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
       completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-08-21T10:00:00Z',

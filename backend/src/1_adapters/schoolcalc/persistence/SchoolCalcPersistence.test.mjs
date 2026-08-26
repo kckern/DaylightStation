@@ -55,7 +55,7 @@ describe('SchoolCalc operational persistence', () => {
     const repository = new YamlSchoolCalcStudySessionRepository({ directory });
     const study = {
       schema: 'school.calc.adaptive-study-session/v1', studySessionId: 'study-one',
-      workSessionId: 'session-one', learnerId: 'learner-one', code: '001234',
+      workSessionId: 'session-one', learnerId: 'learner1', code: '001234',
       unitId: 'unit-one', subject: 'math', topicId: 'unit-one', status: 'open',
       createdAt: '2026-08-10T12:00:00.000Z', curation: { bankRevision: 'revision-one' },
       artifact: { artifactId: 'artifact-one', byteDigest: 'ab'.repeat(32) },

@@ -12,7 +12,7 @@
 
 ## Background: the bug this fixes
 
-Observed on the garage kiosk (2026-07-21): learner-two at 127 BPM sorted **above** Dad at 115 BPM, even though both cards showed the same `ACTIVE` zone badge and Dad's progress bar rendered visibly fuller (≈2/3 through active vs learner-two's ≈1/3). The card display was right; the sort was wrong.
+Observed on the garage kiosk (2026-07-21): learner2 at 127 BPM sorted **above** Dad at 115 BPM, even though both cards showed the same `ACTIVE` zone badge and Dad's progress bar rendered visibly fuller (≈2/3 through active vs learner2's ≈1/3). The card display was right; the sort was wrong.
 
 **Root cause — a name-keyed lookup that misses whenever group labels are active:**
 
@@ -21,7 +21,7 @@ Observed on the garage kiosk (2026-07-21): learner-two at 127 BPM sorted **above
 3. `resolveDisplayName`'s **first** priority rule is the group label — `frontend/src/lib/userDisplayName.js:30-33`, matching when `ctx.preferGroupLabels && ctx.ownership?.groupLabel`.
 4. `preferGroupLabels` is true whenever 2+ HR devices are present (`FitnessContext.jsx:1584`). The context's own comment at `:1933-1934` names the exact case: *"nickname (\"Dad\") only when 2+ HR participants are present, else the given name."*
 
-So with two riders on, the sort asks for `"Dad"`, the map only holds the given name, `lookupZoneProgress` is a bare `Map.get` with no fallback (`:368-371`), and `?? 0` (`:630-631`) silently pins Dad's progress to **0**. learner-two (a kid, no `group_label`) resolves name-to-name and keeps his real 0.33. Zone rank ties, so progress decides: 0.33 > 0 → learner-two on top.
+So with two riders on, the sort asks for `"Dad"`, the map only holds the given name, `lookupZoneProgress` is a bare `Map.get` with no fallback (`:368-371`), and `?? 0` (`:630-631`) silently pins Dad's progress to **0**. learner2 (a kid, no `group_label`) resolves name-to-name and keeps his real 0.33. Zone rank ties, so progress decides: 0.33 > 0 → learner2 on top.
 
 The card display path avoids this only by accident — it tries `participantEntry?.name` **first** through a 5-deep fallback chain (`:912-924`), which hits the given name. Two code paths, two resolution chains, silent disagreement.
 
@@ -91,7 +91,7 @@ import { buildZoneProgressIndex, lookupZoneProgress } from './zoneProgressIndex.
 // name (given name) + displayLabel (group label when preferGroupLabels).
 const VITALS = new Map([
   ['user_1', { name: 'Kevin', displayLabel: 'Dad', progress: 0.66, profileId: 'user_1' }],
-  ['user_4', { name: 'learner-two', displayLabel: 'learner-two', progress: 0.33, profileId: 'user_4' }],
+  ['user_4', { name: 'learner2', displayLabel: 'learner2', progress: 0.33, profileId: 'user_4' }],
 ]);
 
 describe('buildZoneProgressIndex', () => {
@@ -146,7 +146,7 @@ describe('lookupZoneProgress', () => {
 
   it('falls through a missing profileId to the name', () => {
     const index = buildZoneProgressIndex(VITALS);
-    expect(lookupZoneProgress(index, { profileId: 'nope', name: 'learner-two' }).progress).toBe(0.33);
+    expect(lookupZoneProgress(index, { profileId: 'nope', name: 'learner2' }).progress).toBe(0.33);
   });
 
   it('returns null when nothing matches', () => {
@@ -299,12 +299,12 @@ describe('ZONE_RANK_MAP', () => {
 
 describe('sortByZoneRank', () => {
   it('REGRESSION 2026-07-21: within one zone, higher progress wins regardless of raw BPM', () => {
-    // learner-two 127 BPM @ 1/3 through active; Dad 115 BPM @ 2/3 through active.
+    // learner2 127 BPM @ 1/3 through active; Dad 115 BPM @ 2/3 through active.
     // Dad must be on top — the sidebar showed the reverse when Dad's progress
     // lookup missed on his group label and degraded to 0.
-    const learner-two = p({ id: 'user_4', name: 'learner-two', zoneProgress: 0.33, heartRate: 127 });
+    const learner2 = p({ id: 'user_4', name: 'learner2', zoneProgress: 0.33, heartRate: 127 });
     const dad = p({ id: 'user_1', name: 'Kevin', zoneProgress: 0.66, heartRate: 115 });
-    expect(sortByZoneRank([learner-two, dad]).map((x) => x.id)).toEqual(['user_1', 'user_4']);
+    expect(sortByZoneRank([learner2, dad]).map((x) => x.id)).toEqual(['user_1', 'user_4']);
   });
 
   it('ranks a hotter zone above a cooler one regardless of progress', () => {
@@ -913,7 +913,7 @@ Expected: at least one match (the "Dad" case). If none, the reproduction conditi
 
 **Step 3: Live check with two riders**
 
-Per `CLAUDE.local.md`, the fitness app runs in Firefox kiosk on the garage box, not the Shield. Start a session with **two** HR straps — one on a group-labelled user (Dad), one on a non-labelled user (learner-two) — and get both into the same zone at different progress.
+Per `CLAUDE.local.md`, the fitness app runs in Firefox kiosk on the garage box, not the Shield. Start a session with **two** HR straps — one on a group-labelled user (Dad), one on a non-labelled user (learner2) — and get both into the same zone at different progress.
 
 Assert: the rider with the fuller progress bar is on top. That is the exact inversion from the screenshot.
 

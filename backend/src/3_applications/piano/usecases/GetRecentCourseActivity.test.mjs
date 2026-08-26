@@ -15,7 +15,7 @@ function makeDeps({ summaries, itemCounts = {} }) {
   return {
     configService: {
       getHouseholdAppConfig: () => PIANO_CFG,
-      getHouseholdUsers: () => ['kc', 'learner-two'],
+      getHouseholdUsers: () => ['kc', 'learner2'],
       getUserProfile: (id) => ({ display_name: id.toUpperCase() }),
     },
     plexClient: {
@@ -52,7 +52,7 @@ function makeDeps({ summaries, itemCounts = {} }) {
 
 test('default slot: incomplete courses by highest percent, 100% courses dropped', async () => {
   const uc = new GetRecentCourseActivity(makeDeps({ summaries: {
-    'learner-two': {
+    'learner2': {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },  // 50%
       11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },  // 100% — excluded
     },
@@ -114,7 +114,7 @@ test('percent_mode current-module reflects the current unit, not the whole progr
 
 test('menu_activity.slots config overrides the default (recent-courses)', async () => {
   const deps = makeDeps({ summaries: {
-    'learner-two': {
+    'learner2': {
       10: { completed: 1, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' },
       11: { completed: 2, total: 2, lastPlayedAt: '2026-07-25T00:00:00Z' },
     },
@@ -166,7 +166,7 @@ test('duplicate rows from the raw children container collapse to one course', as
   assert.equal(players[0].courses[0].courseId, 'plex:10');
 });
 
-// learner-three shape: intro unit s1 (single lecture, DONE, most recent play) while
+// learner3 shape: intro unit s1 (single lecture, DONE, most recent play) while
 // unit s2 sits at 5/8.
 function learnerThreeDeps() {
   const deps = makeDeps({ summaries: {} });
@@ -174,13 +174,13 @@ function learnerThreeDeps() {
     { plex: 'intro', metadata: { parentId: 's1' } },
     ...Array.from({ length: 8 }, (_, i) => ({ plex: `m${i + 1}`, metadata: { parentId: 's2' } })),
   ] });
-  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'learner-three' ? items : items.map((it) => ({
+  deps.userVideoProgressStore.enrich = (items, userId) => (userId !== 'learner3' ? items : items.map((it) => ({
     ...it,
     userWatched: it.plex === 'intro' || ['m1', 'm2', 'm3', 'm4', 'm5'].includes(it.plex),
     userLastPlayedAt: it.plex === 'intro' ? '2026-07-27T00:00:00Z'
       : (it.plex === 'm5' ? '2026-07-21T00:00:00Z' : null),
   })));
-  deps.configService.getHouseholdUsers = () => ['learner-three'];
+  deps.configService.getHouseholdUsers = () => ['learner3'];
   return deps;
 }
 

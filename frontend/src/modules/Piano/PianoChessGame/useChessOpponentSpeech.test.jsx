@@ -9,7 +9,7 @@ const state = (moves) => ({
 
 function props(overrides = {}) {
   return {
-    gameId: 'g1', game: state([]), level: 0, playerColor: 'w', userId: 'user_2',
+    gameId: 'g1', game: state([]), level: 0, playerColor: 'w', userId: 'learner4',
     fallback: null, requestQuip: vi.fn(async ({ gameId, ply }) => ({
       eventId: `${gameId}:${ply}`, quip: `Quip ${ply}.`, source: 'ai',
     })),

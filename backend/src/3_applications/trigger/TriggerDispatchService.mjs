@@ -64,9 +64,16 @@ export class TriggerDispatchService {
     deviceService,
     tagWriter = null,           // NEW
     contentDispatcher = null,
+    // First refusal on a content dispatch, plus the D8 end-behaviour
+    // suppression. Whitelisted below like everything else — this is the
+    // failure with no symptom: a seam in `responseHandlers.content` and an
+    // interceptor handed to composition can both be right while nothing
+    // connects them, and the book simply plays.
+    contentInterceptors = [],
     screenBroadcast = null,
     commandResolver = null,
     endpointGateway = null,
+    learnerActions = null,
     broadcast,
     logger = console,
     debounceWindowMs = 30000,
@@ -74,7 +81,9 @@ export class TriggerDispatchService {
   }) {
     this.#config = config || {};
     this.#contentIdResolver = contentIdResolver;
-    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, screenBroadcast, commandResolver, endpointGateway, logger };
+    // #deps is an explicit whitelist, not a spread of the constructor args —
+    // a dep that is not named here never reaches responseHandlers.
+    this.#deps = { wakeAndLoadService, haGateway, deviceService, contentDispatcher, contentInterceptors, screenBroadcast, commandResolver, endpointGateway, learnerActions, logger };
     this.#tagWriter = tagWriter;
     this.#broadcast = broadcast || (() => {});
     this.#logger = logger;
@@ -226,6 +235,22 @@ export class TriggerDispatchService {
       response = intent.kind ? intent : mapIntentToResponse(intent);
     } catch (err) {
       const code = err instanceof UnknownActionError ? 'UNKNOWN_ACTION' : 'INVALID_INTENT';
+      // An action nothing can map is, from the tap's point of view, exactly a
+      // tag nobody registered: nothing happens. So give it the same treatment —
+      // placeholder write and notify_unknown push — instead of an error that
+      // reaches only the log. Without this the unmappable case was WORSE than
+      // the unregistered one, because this return sits BELOW the `if (!intent)`
+      // branch that does both. (The debounce key is already set before
+      // resolution, so repeat taps collapse either way; refreshing it here just
+      // keeps the two branches identical.)
+      //
+      // It matters most for an action configured before its handler ships: the
+      // arming event is a one-line YAML edit to a reader in a tree shared with
+      // prod, which no test observes and no code comment reaches.
+      if (modality === 'nfc') {
+        await this.#handleUnknownNfc(location, normalizedValue, locationConfig);
+        this.#debounce.set(debounceKey, this.#clock());
+      }
       this.#logger.error?.('trigger.fired', { ...baseLog, error: err.message, code });
       this.#emit(location, modality, { ...baseLog, ok: false, error: err.message });
       return { ok: false, code, error: err.message, location, modality, value: normalizedValue, dispatchId };
@@ -244,12 +269,26 @@ export class TriggerDispatchService {
 
     // Suppress the Zombie Wake Guard (or any per-target guard) for the duration
     // of the wake-and-load cycle. Fire-and-forget — don't block dispatch on it.
-    this.#suppressGuardForTarget(target, dispatchId);
+    //
+    // CONTENT ONLY. The guard exists because wake-and-load takes ~25s and the
+    // automation would kill the TV mid-wake; nothing else here wakes a target.
+    // Applied unconditionally it fired on the learner refusal too — the living
+    // room's `livingroom-tv` is the one guarded target — so the tap whose whole
+    // promise is that it changes nothing disabled a TV safety automation for 90
+    // seconds. A refusal must not reach Home Assistant.
+    if (response.kind === 'content') this.#suppressGuardForTarget(target, dispatchId);
 
     try {
       const dispatchResult = await dispatchResponse({ ...response, dispatchId }, this.#deps);
       const elapsedMs = this.#clock() - startedAt;
-      this.#debounce.set(debounceKey, this.#clock());
+      // A handler that ANSWERS instead of throwing can still have failed, and
+      // the release-on-failure below is reachable only by a thrown error. So a
+      // handler is allowed to say so: `retryable` releases the same lockout the
+      // catch does. Without it a learner action whose receipt says "Try
+      // scanning again" locks the child out for the full window, and the retry
+      // it asked for is swallowed with the handler never invoked.
+      if (dispatchResult?.retryable) this.#debounce.delete(debounceKey);
+      else this.#debounce.set(debounceKey, this.#clock());
       this.#logger.info?.('trigger.fired', { ...baseLog, action: logAction, target, ok: true, elapsedMs });
       this.#emit(location, modality, { ...summary, ok: true });
       return { ok: true, ...summary, dispatch: dispatchResult, elapsedMs };

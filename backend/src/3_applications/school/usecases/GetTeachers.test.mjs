@@ -4,7 +4,7 @@ import { GetTeachers } from './GetTeachers.mjs';
 const roster = () => [
   { id: 'kckern', name: 'KC', birthyear: 1984 },
   { id: 'liz', name: 'User_9', birthyear: 1986 },
-  { id: 'user_2', name: 'User_2', birthyear: 2014 },
+  { id: 'learner4', name: 'Learner4', birthyear: 2014 },
   { id: 'nan', name: 'Nan' }, // no birthyear — isAdult fails closed
 ];
 
@@ -18,10 +18,10 @@ describe('GetTeachers', () => {
   });
 
   it('resolves ids at request time, dropping unknowns and children with a warning', async () => {
-    const uc = new GetTeachers({ teachers: () => ['kckern', 'user_2', 'ghost'], roster, logger });
+    const uc = new GetTeachers({ teachers: () => ['kckern', 'learner4', 'ghost'], roster, logger });
     expect(await uc.execute()).toEqual({ configured: true, teachers: [{ id: 'kckern', name: 'KC' }] });
     expect(logger.warn).toHaveBeenCalledWith('school.teachers.unresolved',
-      expect.objectContaining({ id: 'user_2', reason: 'not-a-grown-up' }));
+      expect.objectContaining({ id: 'learner4', reason: 'not-a-grown-up' }));
     expect(logger.warn).toHaveBeenCalledWith('school.teachers.unresolved',
       expect.objectContaining({ id: 'ghost', reason: 'not-on-roster' }));
   });

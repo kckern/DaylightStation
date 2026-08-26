@@ -26,8 +26,8 @@ describe('resolveUserDisplayName — abstract family context', () => {
     expect(resolveUserDisplayName(dad).displayName).toBe('User_1');
   });
   it('resolves API-shaped snake_case names instead of falling through to an id', () => {
-    expect(resolveUserDisplayName({ id: 'user_4', display_name: 'User_4' }).displayName).toBe('User_4');
-    expect(resolveUserDisplayName({ id: 'user_2', first_name: 'User_2' }).displayName).toBe('User_2');
+    expect(resolveUserDisplayName({ id: 'learner2', display_name: 'Learner2' }).displayName).toBe('Learner2');
+    expect(resolveUserDisplayName({ id: 'learner4', first_name: 'Learner4' }).displayName).toBe('Learner4');
   });
 });
 

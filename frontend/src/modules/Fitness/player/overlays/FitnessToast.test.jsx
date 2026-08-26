@@ -119,13 +119,13 @@ describe('FitnessToast', () => {
 describe('FitnessToast achievement layout', () => {
   const achievement = {
     id: 900,
-    title: 'User_2 & User_3 reached Hot',
+    title: 'Learner-Four & Learner-Three reached Hot',
     subtitle: 'in 45s',
     variant: 'success',
     achievement: true,
     contributors: [
-      { id: 'a', name: 'User_2', avatarUrl: '/api/v1/static/img/users/a' },
-      { id: 'b', name: 'User_3', avatarUrl: '/api/v1/static/img/users/b' },
+      { id: 'a', name: 'Learner-Four', avatarUrl: '/api/v1/static/img/users/a' },
+      { id: 'b', name: 'Learner-Three', avatarUrl: '/api/v1/static/img/users/b' },
     ],
   };
 
@@ -140,7 +140,7 @@ describe('FitnessToast achievement layout', () => {
 
   it('names both people and the achievement', () => {
     const { container } = render(<FitnessToast toast={achievement} onDone={() => {}} />);
-    expect(container.textContent).toContain('User_2 & User_3 reached Hot');
+    expect(container.textContent).toContain('Learner-Four & Learner-Three reached Hot');
     expect(container.textContent).toContain('in 45s');
   });
 

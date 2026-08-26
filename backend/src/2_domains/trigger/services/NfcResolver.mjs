@@ -144,14 +144,6 @@ export class NfcResolver {
     // can throw AMBIGUOUS_SHORTHAND before we ever reach the learner check.
     // The test 'resolves a learner card at a reader whose defaults carry two
     // content-resolvable keys' pins that ordering.
-    //
-    // INTERIM (Task 6): mapIntentToResponse knows six actions and none of them
-    // is a learner action, so it throws UnknownActionError on what we return —
-    // which ALSO skips the unknown-tag placeholder write and the notify_unknown
-    // push the old null path gave us. Do NOT add learner_action to a live
-    // reader in sources.yml before Task 6 lands; the data tree is shared with
-    // prod, so that one-line YAML edit arms it with no deploy. (The config edit
-    // belongs to Plan 01 Task 7.)
     const schoolLearner = tag.overrides?.[location]?.school_learner ?? tag.global?.school_learner;
     if (schoolLearner !== undefined && schoolLearner !== null) {
       // Validate before consulting the reader: a malformed value is a bug in
@@ -160,7 +152,10 @@ export class NfcResolver {
       const learnerId = coerceLearnerId(schoolLearner, uid);
       const learnerAction = locationConfig.learner_action;
       if (!learnerAction) return null;
-      return { action: learnerAction, target, learnerId, params: {} };
+      // `location` rides along because the reader is part of the answer, not
+      // just the question: the handler logs which reader refused an op, and a
+      // future reading-session action needs to know which room to open in.
+      return { action: learnerAction, target, location, learnerId, params: {} };
     }
 
     // Resolve content. Explicit `content` wins; otherwise expand single-prefix shorthand.
@@ -183,7 +178,11 @@ export class NfcResolver {
       params[k] = v;
     }
 
-    const intent = { action, target, params };
+    // The reader rides along on a CONTENT intent too, not only on a learner
+    // one. The living-room reading session claims a book tap by the room it
+    // happened in, and `target` cannot stand in for that: it is the screen the
+    // content loads on, and two readers can point at one screen.
+    const intent = { action, target, location, params };
     if (content !== undefined) intent.content = content;
     if (merged.scene !== undefined) intent.scene = merged.scene;
     if (merged.service !== undefined) intent.service = merged.service;

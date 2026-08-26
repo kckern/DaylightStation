@@ -45,7 +45,7 @@ const PIANO_CARD = {
   schema: 'school.self-service-card/v2',
   ok: true,
   context: {
-    learner: { id: 'user_3', displayName: 'User_3', avatar: { kind: 'learner', id: 'user_3' } },
+    learner: { id: 'learner3', displayName: 'Learner3', avatar: { kind: 'learner', id: 'learner3' } },
     taxonomy: {
       subject: { id: 'arts', label: 'Arts & Culture' },
       course: { id: 'plex:675689', title: 'Hoffman Academy', artwork: { kind: 'course-poster', courseId: 'plex:675689' } },

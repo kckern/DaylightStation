@@ -81,10 +81,12 @@ export function parseNfcLocations(raw) {
       // the study, open a reading session in the living room. Null means a
       // learner card is simply not actionable here — the intent is that it then
       // falls to the ordinary unknown-tag capture rather than a wrong action.
-      // NfcResolver honours that today for taps arriving over HTTP; the bus
-      // ingress still forks on `school_learner` ahead of the resolver, so this
-      // holds on both paths only once that fork is deleted (Task 8).
-      learner_action: locConfig.learner_action ?? null,
+      // NfcResolver honours that on BOTH ingress doors: the bus ingress
+      // (`nfcTapIngress`) is transport-only and no longer forks on
+      // `school_learner` ahead of the resolver.
+      // Trimmed, because the guard above validated the TRIMMED value: storing
+      // the raw one let ' print-agenda ' pass as declared and then key nothing.
+      learner_action: typeof locConfig.learner_action === 'string' ? locConfig.learner_action.trim() : (locConfig.learner_action ?? null),
       auth_token: locConfig.auth_token ?? null,
       notify_unknown: locConfig.notify_unknown ?? null,
       end: locConfig.end ?? null,

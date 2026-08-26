@@ -2,12 +2,12 @@
  * Golden-parity fixture test — real session 20260627195941 (2026-06-27,
  * Jane Fonda "Complete Workout"), trimmed to the 3 human occupants sharing
  * HR-strap device 10001: grannie (primary, full continuous trace, 966
- * coins), learner-one (2 HR samples then dropped strap), parent-two (1 HR sample
+ * coins), learner1 (2 HR samples then dropped strap), parent-two (1 HR sample
  * then dropped strap — a late re-tag onto the same physical strap grannie
  * wore the rest of the session).
  *
  * This is the motivating real-world case for the identity-reconciliation
- * heal: learner-one and parent-two are near-zero-effort "ghost" occupants that
+ * heal: learner1 and parent-two are near-zero-effort "ghost" occupants that
  * should be folded into grannie, who did the actual workout. The companion
  * frontend test (`frontend/src/hooks/fitness/sessionBackfill.golden.test.js`)
  * asserts the SAME outcome from `runSessionBackfill` on the in-memory form of
@@ -29,11 +29,11 @@ function loadFixture() {
 }
 
 describe('SessionIdentityHealer golden parity — session 20260627195941', () => {
-  it('removes the two ghost occupants (parent-two, learner-one) and keeps grannie', () => {
+  it('removes the two ghost occupants (parent-two, learner1) and keeps grannie', () => {
     const sessionObj = loadFixture();
     const plan = planHeal(sessionObj);
 
-    expect([...plan.removedOccupants].sort()).toEqual(['learner-one', 'parent-two']);
+    expect([...plan.removedOccupants].sort()).toEqual(['learner1', 'parent-two']);
     expect(plan.removedOccupants).not.toContain('grannie');
     expect(plan.needsHeal).toBe(true);
   });

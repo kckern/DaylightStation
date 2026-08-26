@@ -88,7 +88,7 @@ describe('Games mode', () => {
 
   it('blocks a direct game route when the active learner has not completed school', async () => {
     schoolAccess.unlocked = false;
-    renderGames('/games/tetris', 'learner-one');
+    renderGames('/games/tetris', 'learner1');
     expect(await screen.findByText('Games are locked')).toBeTruthy();
     expect(screen.getByText(/Finish today’s schoolwork/)).toBeTruthy();
     expect(document.querySelector('.piano-game-fullscreen')).toBeNull();

@@ -44,11 +44,14 @@
  * make the bus lie about where events come from. It is handled here anyway:
  * the requirement — "a child working alone must SEE that it counted" — is
  * identical, and one banner system is easier to keep honest than two.
+ * `story-read` (broadcast by `RecordStoryRead` when a story finishes on the
+ * living-room TV) joins it on that topic for exactly the same reason.
  *
  * `agenda-suppressed` (Slice G, 2026-08-22-omr-grading-integrity) joins the
  * same five: a repeat NFC card tap inside the agenda print cooldown
- * (`nfcTapIngress.mjs` broadcasting `ResolvePersonalCard`'s
- * `agenda_suppressed` outcome) gets NO paper, but this is that tap's only
+ * (`learnerCardActions.mjs`'s print-agenda handler broadcasting
+ * `ResolvePersonalCard`'s `agenda_suppressed` outcome) gets NO paper, but this
+ * is that tap's only
  * acknowledgement — the exact rule the original five exist for, just off a
  * different source event.
  *
@@ -89,6 +92,7 @@ function logger() {
  *   scan-rows-unmarked→ error    "Nothing filled in yet"    "Your new questions are rows {start}–{end}. Fill them in, then scan again."
  *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
  *   agenda-suppressed → warn     "Already printed"          "You already have today's agenda — check your desk."
+ *   story-read        → success  "Story read!"              "{title} — that's another book today."
  *
  * `scan-review`'s payload (`schoolPrintScanConsumer.mjs`) carries a COUNT
  * (`pendingReview`) and an `itemId` list (`items`), never a friendly question
@@ -219,6 +223,29 @@ function buildCeremony(payload) {
         tone: 'warn',
         title: 'Already printed',
         detail: 'You already have today’s agenda — check your desk.',
+        at,
+      };
+    case 'story-read':
+      // A story finished at the living-room TV and the read is now in the
+      // reading log. It reaches this panel for the same reason
+      // `piano-lesson-complete` does — the work happened in another room, and
+      // the child's day-board lives here — so it shares the same banner rather
+      // than growing a second one.
+      //
+      // It names the BOOK and nothing else: no count, no target, no "1 of 2".
+      // The reading screen in the living room already told the child where they
+      // are, and a wall panel in a shared room announcing how far behind
+      // somebody is on their reading is the same mistake as reading a grade out
+      // loud (see the header). `success` — good news climbs.
+      //
+      // Never suppressed. `printed` is a graded-sheet concept; nothing about a
+      // story read ever reaches paper, so there is no receipt to defer to.
+      return {
+        tone: 'success',
+        title: 'Story read!',
+        detail: payload.title
+          ? `${payload.title} — that's another book today.`
+          : "That's another book today.",
         at,
       };
     case 'piano-lesson-complete':

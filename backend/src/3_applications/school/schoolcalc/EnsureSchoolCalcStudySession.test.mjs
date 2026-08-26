@@ -39,7 +39,7 @@ describe('EnsureSchoolCalcStudySession', () => {
       studies, banks: { getBank: vi.fn(async () => bank) }, artifacts: artifactBuilder(),
       newStudySessionId: () => 'study-one', newCode: vi.fn(() => '001234'),
     });
-    const input = { workSessionId: 'ses-one', learnerId: 'learner-one', unit, at: '2026-08-10T12:00:00.000Z' };
+    const input = { workSessionId: 'ses-one', learnerId: 'learner1', unit, at: '2026-08-10T12:00:00.000Z' };
     await expect(service.ensure(input)).resolves.toMatchObject({ studySessionId: 'study-one', code: '001234' });
     await expect(service.ensure(input)).resolves.toMatchObject({ studySessionId: 'study-one', code: '001234' });
     expect(studies.create).toHaveBeenCalledTimes(1);
@@ -59,7 +59,7 @@ describe('EnsureSchoolCalcStudySession', () => {
     });
     expect(studies.create).not.toHaveBeenCalled();
     await expect(service.ensure({
-      workSessionId: 'new-work', learnerId: 'learner-one', unit, at: '2026-08-10T12:00:00.000Z',
+      workSessionId: 'new-work', learnerId: 'learner1', unit, at: '2026-08-10T12:00:00.000Z',
     })).resolves.toMatchObject({ code: '000002' });
   });
 });

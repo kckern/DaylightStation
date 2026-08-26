@@ -6,24 +6,24 @@ describe('useChessSessionIdentity', () => {
   it('holds one player during a game and relatches both id and name on restart', () => {
     const { result, rerender } = renderHook(
       ({ currentUser }) => useChessSessionIdentity({ currentUser, playerName: null, initialSeed: 41 }),
-      { initialProps: { currentUser: { id: 'user_2', name: 'User_2' } } },
+      { initialProps: { currentUser: { id: 'learner4', name: 'Learner4' } } },
     );
 
-    expect(result.current.lockedUser).toBe('user_2');
-    expect(result.current.playerAvatarId).toBe('user_2');
-    expect(result.current.displayName).toBe('User_2');
+    expect(result.current.lockedUser).toBe('learner4');
+    expect(result.current.playerAvatarId).toBe('learner4');
+    expect(result.current.displayName).toBe('Learner4');
 
-    rerender({ currentUser: { id: 'user_4', name: 'User_4' } });
-    expect(result.current.lockedUser).toBe('user_2');
-    expect(result.current.displayName).toBe('User_2');
+    rerender({ currentUser: { id: 'learner2', name: 'Learner2' } });
+    expect(result.current.lockedUser).toBe('learner4');
+    expect(result.current.displayName).toBe('Learner4');
 
     const firstGameId = result.current.gameId;
     const firstSeed = result.current.gameSeed;
     act(() => result.current.beginNextGame());
-    rerender({ currentUser: { id: 'user_4', name: 'User_4' } });
-    expect(result.current.lockedUser).toBe('user_4');
-    expect(result.current.playerAvatarId).toBe('user_4');
-    expect(result.current.displayName).toBe('User_4');
+    rerender({ currentUser: { id: 'learner2', name: 'Learner2' } });
+    expect(result.current.lockedUser).toBe('learner2');
+    expect(result.current.playerAvatarId).toBe('learner2');
+    expect(result.current.displayName).toBe('Learner2');
     expect(result.current.gameIdRef.current).toBe(result.current.gameId);
     expect(result.current.gameId).not.toBe(firstGameId);
     expect(result.current.gameSeed).toBe(firstSeed + 1);

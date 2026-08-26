@@ -221,7 +221,61 @@ export function createDocumentReceiptRenderer({
     return `${m[1]}${chunks.join('-')}`;
   }
 
+  /**
+   * The bulk-print action card: a full-width "print every sheet" prompt
+   * rather than the single-lesson box. No side-by-side label/code layout —
+   * the subject list needs the full column width, so the code area sits
+   * below it instead of beside it (contrast the `lesson` layout, which keeps
+   * the code area beside a single title because there's no list to make room
+   * for). Returned as its own `kind: 'action'` shape (parallel to `lesson`)
+   * so it still flows through the shared codes-ledger bookkeeping in
+   * `planBlock`.
+   */
+  function bulkPrintActionOp(ctx, block, tokens) {
+    const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
+    ctx.font = theme.fonts.eyebrow;
+    const headingLines = wrapTight(ctx, 'PRINT ALL SHEETS', contentWidth - 2 * theme.action.padding);
+    ctx.font = theme.fonts.body;
+    const subjectLines = (block.subjects ?? []).flatMap(
+      (subject) => wrapTight(ctx, `• ${subject}`, contentWidth - 2 * theme.action.padding - 8),
+    );
+    ctx.font = theme.fonts.code;
+    // Same rule as `actionOp`: a `panelCode` on the block IS what goes under
+    // the code area, and it outranks `hideCode` (which only ever meant "do
+    // not print the raw TOKEN"). Without this the bulk card draws a QR with
+    // nothing typeable beneath it — the defect Slice H closed for the
+    // per-subject cards, one presentation over.
+    const panelCode = typeof block.panelCode === 'string' && block.panelCode.trim()
+      ? block.panelCode.trim()
+      : null;
+    const codeLines = panelCode
+      ? [panelCode]
+      : (block.hideCode ? [] : wrapTight(ctx, chunkCode(code), theme.action.codeAreaPx));
+    const headingHeight = headingLines.length * theme.action.eyebrowLineHeight;
+    const subjectsHeight = subjectLines.length * theme.text.bodyLineHeight;
+    const codeBlockHeight = theme.action.codeAreaPx + (codeLines.length ? theme.action.codeGap : 0)
+      + codeLines.length * theme.text.codeLineHeight;
+    return {
+      kind: 'action',
+      blockType: block.type,
+      action: block.action,
+      code,
+      icon: null,
+      lesson: false,
+      bulkPrint: true,
+      headingLines,
+      subjectLines,
+      codeLines,
+      // top padding + extra separator gap + a rowGap before each of the three
+      // stacked groups (heading, subjects, code area) + bottom padding —
+      // mirrors exactly what the draw loop below advances `by` through.
+      heightPx: 2 * theme.action.padding + theme.layout.blockGap + 3 * theme.action.rowGap
+        + headingHeight + subjectsHeight + codeBlockHeight,
+    };
+  }
+
   function actionOp(ctx, block, tokens, { icon = null } = {}) {
+    if (block.presentation === 'bulk_print') return bulkPrintActionOp(ctx, block, tokens);
     const code = tokens?.[block.action] ?? block.code ?? block.token ?? block.action;
     const lesson = block.presentation === 'lesson';
     const iconSpan = icon && !lesson ? theme.action.iconPx + theme.action.iconGap : 0;
@@ -779,6 +833,32 @@ export function createDocumentReceiptRenderer({
       ctx.fillStyle = theme.colors.text;
     }
 
+    /** The scan code box: border always, QR modules only when `scanCodes:'qr'`. */
+    function drawCodeArea(codeX, codeY, code) {
+      // Same stroke as the code cell hanging beneath it — these two share an
+      // edge, and a 2px box above a 3px cell reads as a misprint.
+      ctx.lineWidth = theme.action.borderWidth;
+      ctx.strokeStyle = theme.colors.border;
+      ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
+      if (scanCodes === 'qr') {
+        ctx.save();
+        const qr = QRCode.create(code, { errorCorrectionLevel: 'M' });
+        const count = qr.modules.size;
+        const quiet = 2; // modules of quiet zone inside the box
+        const cell = Math.floor(theme.action.codeAreaPx / (count + 2 * quiet));
+        const offset = Math.floor((theme.action.codeAreaPx - cell * count) / 2);
+        ctx.fillStyle = '#000';
+        for (let r = 0; r < count; r += 1) {
+          for (let c = 0; c < count; c += 1) {
+            if (qr.modules.get(r, c)) {
+              ctx.fillRect(codeX + offset + c * cell, codeY + offset + r * cell, cell, cell);
+            }
+          }
+        }
+        ctx.restore();
+      }
+    }
+
     for (const op of ops) {
       if (op.kind === 'header') {
         ctx.fillStyle = theme.colors.text;
@@ -1066,6 +1146,45 @@ export function createDocumentReceiptRenderer({
       ctx.strokeStyle = theme.colors.border;
       ctx.strokeRect(x, boxTop, contentWidth, boxHeight);
 
+      if (op.bulkPrint) {
+        // Separator, extra gap above it, then heading -> subject list -> code
+        // area, all full-width and stacked — see bulkPrintActionOp for why
+        // this doesn't share the lesson/plain side-by-side layout below.
+        let by = boxTop + theme.action.padding + theme.layout.blockGap;
+        ctx.save();
+        ctx.strokeStyle = '#CCCCCC';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + theme.action.padding, by);
+        ctx.lineTo(x + contentWidth - theme.action.padding, by);
+        ctx.stroke();
+        ctx.restore();
+        by += theme.action.rowGap;
+
+        ctx.textAlign = 'left';
+        ctx.font = theme.fonts.eyebrow;
+        op.headingLines.forEach((line, index) => ctx.fillText(
+          line, x + theme.action.padding, by + index * theme.action.eyebrowLineHeight,
+        ));
+        by += op.headingLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+
+        ctx.font = theme.fonts.body;
+        op.subjectLines.forEach((line) => {
+          ctx.fillText(line, x + theme.action.padding + 8, by);
+          by += theme.text.bodyLineHeight;
+        });
+        by += theme.action.rowGap;
+
+        const bulkCodeX = x + theme.action.padding;
+        const bulkCodeY = by;
+        drawCodeArea(bulkCodeX, bulkCodeY, op.code);
+        ctx.font = theme.fonts.code;
+        op.codeLines.forEach((line, index) => ctx.fillText(
+          line, bulkCodeX, bulkCodeY + theme.action.codeAreaPx + theme.action.codeGap + index * theme.text.codeLineHeight,
+        ));
+        continue;
+      }
+
       // Band cursor. Every lesson band advances this; nothing is positioned
       // from a running text baseline any more, which is what let the old layout
       // drift when one band grew.
@@ -1197,29 +1316,7 @@ export function createDocumentReceiptRenderer({
         }
       }
 
-      // Same stroke as the code cell hanging beneath it — these two share an
-      // edge, and a 2px box above a 3px cell reads as a misprint.
-      ctx.lineWidth = theme.action.borderWidth;
-      ctx.strokeStyle = theme.colors.border;
-      ctx.strokeRect(codeX, codeY, theme.action.codeAreaPx, theme.action.codeAreaPx);
-
-      if (scanCodes === 'qr') {
-        ctx.save();
-        const qr = QRCode.create(op.code, { errorCorrectionLevel: 'M' });
-        const count = qr.modules.size;
-        const quiet = 2; // modules of quiet zone inside the box
-        const cell = Math.floor(theme.action.codeAreaPx / (count + 2 * quiet));
-        const offset = Math.floor((theme.action.codeAreaPx - cell * count) / 2);
-        ctx.fillStyle = '#000';
-        for (let r = 0; r < count; r += 1) {
-          for (let c = 0; c < count; c += 1) {
-            if (qr.modules.get(r, c)) {
-              ctx.fillRect(codeX + offset + c * cell, codeY + offset + r * cell, cell, cell);
-            }
-          }
-        }
-        ctx.restore();
-      }
+      drawCodeArea(codeX, codeY, op.code);
 
       if (op.panelCode) {
         // The code is the QR's FALLBACK, so it is drawn as the QR's second

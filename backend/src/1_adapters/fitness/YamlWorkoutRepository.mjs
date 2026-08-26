@@ -4,7 +4,7 @@
 //
 // WHY HOUSEHOLD-SCOPED, NOT PER-USER
 // ----------------------------------
-// `<dataDir>/<household>/apps/fitness/workouts/{id}.yml`. The garage screen is shared
+// `<dataDir>/<household>/fitness/workouts/{id}.yml`. The garage screen is shared
 // equipment and session history is already household-wide, so a workout one person
 // builds must be runnable by whoever walks in next; the record carries an `author`
 // field so credit survives without partitioning the shelf. Filing these per-user would

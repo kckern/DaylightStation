@@ -116,7 +116,8 @@ export class ResolvePersonalCard {
    *
    * `execute` is check-then-act — it reads the cooldown, then awaits a build
    * and a print, and only then arms the cooldown. Callers do not await it
-   * (`nfcTapIngress.mjs:138` dispatches with a bare `Promise.resolve`), so on
+   * (`nfcTapIngress.mjs` dispatches each bus tap with a bare
+   * `Promise.resolve`), so on
    * 2026-08-25 five concurrent taps all passed the gate before any armed it:
    * five prints, four duplicate sessions.
    *

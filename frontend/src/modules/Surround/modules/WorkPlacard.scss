@@ -122,6 +122,72 @@
   text-overflow: ellipsis;
 }
 
+/* THE PERFORMER LINE — the recording's identity, below the work's provenance.
+   Same quiet small-caps register as the meta, one shade warmer so the eye can
+   distinguish "what was composed" from "who is playing." */
+.surround-work-placard__performer {
+  margin: 0.35rem 0 0;
+  padding-top: 0.3rem;
+  position: relative;
+  font-family: var(--surround-body, "EB Garamond", Georgia, serif);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  font-variant-caps: small-caps;
+  color: #9fa2ab;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* THE ETCHED RULE — a groove cut into the plate's stone, catching light on
+     its upper lip and falling into shadow beneath. Two hairlines stacked: a
+     bright top edge (the incision catching the overhead light) and a dark
+     bottom edge (the groove's own shadow). The 60% width keeps it from
+     reading as a structural border — it is an engraver's mark, not a box. */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 0;
+    border-top: 1px solid rgba(180, 170, 140, 0.30);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.50);
+  }
+}
+
+/* COMPRESSED PLATE — when a performer credit is present, tighten the internals
+   so the plate keeps the same bounding box it has without one. The budget is
+   the performer line's own height plus its margin; recovered from padding,
+   title leading, and inter-line gaps. */
+.surround-work-placard--has-performer {
+  padding-top: 0.45rem;
+  padding-bottom: 0.5rem;
+
+  .surround-work-placard__title {
+    font-size: var(--plate-size, 1.8rem);
+    line-height: calc(1.8rem * 1.12);
+  }
+
+  .surround-work-placard__set {
+    margin-top: 0.15rem;
+    font-size: 0.82rem;
+  }
+
+  .surround-work-placard__meta {
+    margin-top: 0.12rem;
+    font-size: 0.78rem;
+  }
+
+  .surround-work-placard__performer {
+    margin-top: 0.2rem;
+    padding-top: 0.18rem;
+    font-size: 0.78rem;
+  }
+}
+
 /* THE INTERPUNCT'S AIR. The mark divides three provenance facts on one engraved
    line, and a divider set tight against the words it divides reads as
    punctuation inside a phrase rather than as a separator between claims. The

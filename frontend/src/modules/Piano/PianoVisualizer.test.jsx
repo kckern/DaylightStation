@@ -432,14 +432,14 @@ describe('office game chrome', () => {
   it('passes the roster-resolved player name into the game, never just the id', () => {
     launcherUserState = {
       ...launcherUserState,
-      users: [{ id: 'user_2-kern', group_label: 'User_2', name: 'User_2 Kern' }],
-      currentUser: 'user_2-kern',
+      users: [{ id: 'learner4-kern', group_label: 'Learner4', name: 'Learner4 Kern' }],
+      currentUser: 'learner4-kern',
     };
     launcherState = { ...launcherState, activeGameId: 'chess' };
     render(<PianoVisualizer />);
 
-    expect(gameProps.currentUser).toBe('user_2-kern');
-    expect(gameProps.playerName).toBe('User_2');
+    expect(gameProps.currentUser).toBe('learner4-kern');
+    expect(gameProps.playerName).toBe('Learner4');
   });
 
   it('names the game and the player while one is running', () => {

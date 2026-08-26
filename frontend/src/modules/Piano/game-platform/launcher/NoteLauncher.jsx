@@ -50,7 +50,7 @@ export default function NoteLauncher({
               {/* Its own stack. `__player` is a column, but that only reaches
                   the no-player case — once an avatar sits alongside, the name
                   and its hint are nested a level deeper and ran together as
-                  "Felixtop key to change". */}
+                  "Learner4top key to change". */}
               <span className="note-launcher__player-id">
                 <b>{playerName}</b><i>top key to change</i>
               </span>

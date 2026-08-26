@@ -25,27 +25,27 @@ describe('buildChallengeToast', () => {
     const toast = buildChallengeToast(
       'end',
       { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
-      { resolveUserName: (id) => ({ a: 'User_2', b: 'User_3' }[id]) },
+      { resolveUserName: (id) => ({ a: 'Learner-Four', b: 'Learner-Three' }[id]) },
     );
-    expect(toast.title).toBe('User_2 & User_3 reached Hot');
+    expect(toast.title).toBe('Learner-Four & Learner-Three reached Hot');
   });
 
   it('says how long it took, from the challenge clock', () => {
     const toast = buildChallengeToast(
       'end',
       { zoneLabel: 'Hot', metUsers: ['a'], totalSeconds: 60, remainingSeconds: 15 },
-      { resolveUserName: () => 'User_2' },
+      { resolveUserName: () => 'Learner-Four' },
     );
-    expect(toast.title).toBe('User_2 reached Hot');
+    expect(toast.title).toBe('Learner-Four reached Hot');
     expect(toast.subtitle).toBe('in 45s');
   });
 
   it('drops the count when the names already say it', () => {
-    // "2 of 2" beside "User_2 & User_3" is the same fact twice.
+    // "2 of 2" beside "Learner-Four & Learner-Three" is the same fact twice.
     const toast = buildChallengeToast(
       'end',
       { zoneLabel: 'Hot', requiredCount: 2, actualCount: 2, metUsers: ['a', 'b'] },
-      { resolveUserName: (id) => ({ a: 'User_2', b: 'User_3' }[id]) },
+      { resolveUserName: (id) => ({ a: 'Learner-Four', b: 'Learner-Three' }[id]) },
     );
     expect(toast.subtitle ?? '').not.toContain('of 2');
   });
@@ -62,7 +62,7 @@ describe('buildChallengeToast', () => {
       .toBe('Get 1 person to Hot');
     // The end toast now names the person instead of counting them.
     expect(buildChallengeToast('end', { zoneLabel: 'Hot', metUsers: ['a'] },
-      { resolveUserName: () => 'User_2' }).title).toBe('User_2 reached Hot');
+      { resolveUserName: () => 'Learner-Four' }).title).toBe('Learner-Four reached Hot');
   });
 
   it('falls back to selectionLabel when zoneLabel is absent', () => {
