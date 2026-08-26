@@ -369,6 +369,16 @@ export function planDailyAgenda({
       progressLabel: progressLabelFor(list, statuses),
       progressRows: progressRowsFor(statuses),
       gradePercent: gradeFor(list, latestBySessionUnit, statuses),
+      // WHAT WAS ACTUALLY DONE, not merely that something was. `servedToday`
+      // is a boolean, and a boolean is all the paper could ever say: "SCRIPTURE
+      // — done today" named the shelf and withheld the lesson. These are the
+      // entries this subject passed on this study day, so the agenda's
+      // finished-work tally can name the work. A program subject (piano) owns
+      // its completion outside a work session and contributes no entry here —
+      // the tally then names the subject alone, which is all anything knows.
+      servedWork: list
+        .filter((entry) => passedTodayIds.has(entry.unitId))
+        .map((entry) => ({ unitId: entry.unitId, title: entry.title ?? null })),
       programUnavailable,
       focus: next && isFocus ? {
         blocksCompleted: candidatePasses,

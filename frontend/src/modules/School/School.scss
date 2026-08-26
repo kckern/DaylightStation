@@ -805,8 +805,6 @@
     // Seek strip tall enough for a child's finger (tap-to-seek; the discrete
     // ±15s controls below remain the primary seek affordance).
     .controls { height: 2.75rem; }
-    // The narration marker earns its keep on a read-along surface.
-    .reading-guide { display: block; }
   }
 }
 
@@ -1744,10 +1742,43 @@
   // nothing appears below them, so the pad never moves under a child's finger.
   &.is-shaking { animation: school-selfservice-shake 380ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 }
+/**
+ * KONGTEXT — the code face, shared with paper.
+ *
+ * The six-digit companion code is printed on receipt tape in Kongtext (see
+ * `documentReceiptTheme.mjs`: fixed-width, unmistakably "input", heavy square
+ * pixels that survive 203dpi thermal) and typed here. Setting the slots in the
+ * same face makes the sheet in the child's hand and the pad on the wall
+ * obviously the same object; a proportional face here meant the digits they
+ * were copying and the digits they were entering looked like two systems.
+ *
+ * Scoped to the code slots and the pad's digits — the one deliberate exception
+ * to the app's own type, exactly as it is on the receipt. The moment it appears
+ * anywhere prose is set, that rule is gone.
+ *
+ * codeman38 / zone38.net; licence in `backend/assets/fonts/kongtext/LICENSE.txt`,
+ * which permits bundling in free and commercial projects and forbids only
+ * resale as a font collection.
+ */
+@font-face {
+  font-family: 'Kongtext';
+  src: url('/fonts/kongtext.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  // The pad must be typeable before the face lands — a blank keypad is worse
+  // than a keypad in the wrong font for one paint.
+  font-display: swap;
+}
+
 .school-selfservice__slot {
   flex: 1 1 0; aspect-ratio: 1 / 1; display: grid; place-items: center;
   border: 2px solid var(--school-border); border-radius: 10px;
-  background: var(--school-surface); font-size: clamp(1.8rem, 5vw, 2.8rem); line-height: 1;
+  background: var(--school-surface); line-height: 1;
+  // Kongtext advances exactly 1em per glyph, so it sets noticeably wider than
+  // the proportional face it replaced — sized down to keep six of them inside
+  // the same row.
+  font-family: 'Kongtext', ui-monospace, monospace;
+  font-size: clamp(1.3rem, 3.6vw, 2rem);
   transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
   &.is-filled { border-color: var(--school-accent); }
   // A turned-over slot: red, STAMPED rather than faded in (so six of them in
@@ -1798,13 +1829,18 @@
 .school-selfservice__key {
   min-height: clamp(3.75rem, 8.5vh, 4.5rem); border: 1px solid var(--school-border); border-radius: 14px;
   background: var(--school-surface); color: var(--school-fg);
-  font-size: 2rem; font-weight: 700; cursor: pointer;
+  // The digits a child copies and the digits they press are one alphabet.
+  font-family: 'Kongtext', ui-monospace, monospace;
+  font-size: 1.6rem; font-weight: 400; cursor: pointer;
   // Fires on pointerdown (see Keypad.jsx); `manipulation` drops the browser's
   // 300ms double-tap-to-zoom wait so the press feedback lands with the finger.
   touch-action: manipulation;
   &:active { background: var(--school-surface-2); transform: scale(0.97); }
   &:disabled { opacity: 0.45; }
-  &--clear, &--back { font-size: 1.2rem; color: var(--school-muted); }
+  // Clear/backspace are WORDS, not codes — back to the app's own face.
+  &--clear, &--back {
+    font-family: inherit; font-size: 1.2rem; font-weight: 700; color: var(--school-muted);
+  }
 }
 .school-selfservice__screen-off {
   position: fixed; right: max(1rem, env(safe-area-inset-right));
@@ -2274,16 +2310,33 @@
     padding: clamp(0.7rem, 1.8vh, 1.2rem) clamp(0.9rem, 2vw, 1.5rem);
     border: 1px solid var(--school-border); border-radius: 16px;
     background: var(--school-surface);
+    transition: border-color 400ms ease, background-color 400ms ease;
+  }
+  // WHO, as one block: the name sits over the face and the pair is the card's
+  // left rail. The name used to run along the top of the whole card, which
+  // both split the identity in two and capped how large the avatar could be —
+  // the face had to fit under a line of type it was not attached to.
+  &__rail {
+    flex: 0 0 auto; min-width: 0;
+    display: flex; flex-direction: column; align-items: center;
+    gap: clamp(0.15rem, 0.6vh, 0.35rem);
 
+    // The avatar takes the row's height minus the name and the padding. Four
+    // cards share the pane, so vh is the honest unit here; the rem bounds keep
+    // it sane on a desktop preview.
     .piano-avatar {
-      width: clamp(3.25rem, 9.5vh, 5rem); height: clamp(3.25rem, 9.5vh, 5rem);
-      font-size: clamp(1.1rem, 3vh, 1.6rem);
+      width: clamp(3.5rem, 13vh, 7rem); height: clamp(3.5rem, 13vh, 7rem);
+      font-size: clamp(1.2rem, 4vh, 2rem);
     }
   }
-  &__info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: clamp(0.35rem, 1vh, 0.6rem); }
-  &__line { display: flex; align-items: baseline; gap: 0.75rem; }
+  &__info {
+    flex: 1 1 auto; min-width: 0; align-self: stretch;
+    display: flex; flex-direction: column; justify-content: center;
+    gap: clamp(0.5rem, 1.4vh, 0.9rem);
+  }
   &__name {
-    font-weight: 800; font-size: clamp(1.15rem, 2.8vh, 1.6rem);
+    max-width: clamp(3.5rem, 13vh, 7rem);
+    font-weight: 800; font-size: clamp(0.95rem, 2.2vh, 1.3rem); line-height: 1.1;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   // Discs, one per SUBJECT, each wearing that subject's icon off the wall.
@@ -2323,8 +2376,12 @@
     // day costs a hair of size and never a line. `flex-wrap` stays as the
     // backstop for anything narrower still; nothing here may scroll, because
     // the locked panel accepts no touch.
+    // Grown now that the name has moved into the rail and the count line is
+    // gone: the card's text column is free, so the discs take the height those
+    // two rows used to. Still capped below the avatar — the face is who, the
+    // discs are what, and the discs must not outrank the child.
     --disc: min(
-      clamp(1.6rem, 5.2vh, 2.65rem),
+      clamp(2rem, 8vh, 3.6rem),
       calc((100% - (var(--count, 1) - 1) * var(--disc-gap)) / var(--count, 1))
     );
     flex: 0 0 auto;
@@ -2345,18 +2402,59 @@
       background: var(--school-board-done);
       color: var(--school-board-done-ink);
     }
+
+    // In flight: a disc-shaped hole with a shimmer crossing it. The panel used
+    // to render NOTHING until the slowest learner's plan returned — up to a
+    // second of blank pane with no sign it was working.
+    &--skeleton {
+      background: linear-gradient(
+        100deg,
+        var(--school-board-pending) 40%,
+        color-mix(in srgb, var(--school-board-pending) 55%, var(--school-fg)) 50%,
+        var(--school-board-pending) 60%
+      );
+      background-size: 300% 100%;
+      animation: school-board-shimmer 1.4s ease-in-out infinite;
+    }
   }
-  &__count { font-size: clamp(0.85rem, 1.9vh, 1rem); opacity: 0.75; }
+  // The name is real from the first paint (the roster is known synchronously);
+  // only the day's own facts shimmer.
+  &__row.is-loading .school-status-board__status { opacity: 0.3; }
   &__status {
-    margin-left: auto; flex: 0 0 auto;
-    font-size: clamp(0.8rem, 1.8vh, 0.95rem); font-weight: 700;
+    align-self: flex-end; flex: 0 0 auto;
+    font-size: clamp(0.85rem, 2vh, 1.1rem); font-weight: 700;
     opacity: 0.75; text-transform: uppercase; letter-spacing: 0.05em;
   }
   &__status--none { text-transform: none; letter-spacing: normal; font-weight: 600; opacity: 0.5; }
-  &__row[data-status='Done for the day'] {
-    border-color: color-mix(in srgb, var(--school-board-done) 45%, var(--school-border));
+
+  // A CLEARED DAY, VISIBLE FROM THE DOORWAY. Green card, green rim, and a slow
+  // breath on the rim's glow — the only motion on this panel, and the only
+  // reward it has to give. Two seconds per cycle is a breath, not a blink; a
+  // faster pulse on a wall fixture that is up all day becomes something to
+  // ignore, or to be irritated by.
+  &__row[data-complete='true'] {
+    border-color: var(--school-board-done);
+    background: color-mix(in srgb, var(--school-board-done) 14%, var(--school-surface));
+    animation: school-board-glow 2.4s ease-in-out infinite;
+
     .school-status-board__status { color: var(--school-board-done); opacity: 1; }
   }
+}
+
+@keyframes school-board-shimmer {
+  0% { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+
+@keyframes school-board-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--school-board-done) 40%, transparent); }
+  50% { box-shadow: 0 0 clamp(10px, 2vh, 22px) clamp(1px, 0.4vh, 4px) color-mix(in srgb, var(--school-board-done) 55%, transparent); }
+}
+
+// A wall fixture must not animate at someone who has asked it not to.
+@media (prefers-reduced-motion: reduce) {
+  .school-status-board__row[data-complete='true'],
+  .school-status-board__pill--skeleton { animation: none; }
 }
 /* On a portrait/narrow mount the split stacks; the board hides on very short
  * viewports so the keypad always fits. */

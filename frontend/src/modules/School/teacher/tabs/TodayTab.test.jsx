@@ -100,17 +100,21 @@ describe('TodayTab', () => {
   it('drill-in names the lesson and costs no session fetch', async () => {
     // The grid shows every lesson AND its paper-record icons straight from
     // the digest — the per-session document fetch (the audited N+1) must
-    // never come back. The one extra read is the learner's agenda preview.
+    // never come back. The one extra read is the agenda preview, ONE PER
+    // LEARNER: the collapsed roster card draws the day as dots, so it needs
+    // the plan whether or not anyone expands it. Two learners, two reads —
+    // never one per session, which is the N+1 that stays dead.
     mount(<TodayTab kids={KIDS} />);
     await waitFor(() => expect(screen.getByRole('button', { name: /Learner A/ })).toBeTruthy());
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Learner A/ })); });
     expect(await screen.findByRole('link', { name: /Open the full day record/i })).toBeInTheDocument();
     expect(screen.getByText('Illinois')).toBeTruthy();
-    expect(screen.getByText('United States Regions and States')).toBeTruthy();
+    // The course and unit ride the card's header band as one breadcrumb.
+    expect(screen.getByText('United States Regions and States › Midwest')).toBeTruthy();
     expect(await screen.findByRole('link', { name: /Open the worksheet/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Open the result receipt/i })).toBeInTheDocument();
     expect(teacherWorkspaceApi.session).not.toHaveBeenCalled();
-    expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(1);
+    expect(schoolApi.agendaPreview).toHaveBeenCalledTimes(KIDS.length);
     expect(screen.queryByText(/Print selected worksheets/i)).toBeNull();
     expect(screen.queryByText(/No printable lessons/i)).toBeNull();
     expect(screen.queryByText(/^assessment$/i)).toBeNull();
@@ -121,8 +125,12 @@ describe('TodayTab', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
     const grid = await screen.findByTestId('lesson-grid');
     await waitFor(() => expect(within(grid).getAllByTestId('lesson-card').length).toBe(2));
-    // Done: the recorded Illinois session claims its planned section (unit match).
-    expect(within(grid).getByText('Done')).toBeInTheDocument();
+    // Done: the recorded Illinois session claims its planned section (unit
+    // match). It carries a SCORE, so it carries no "Done" chip — 5 checks, 2
+    // crosses and 71% cannot be the state of unstarted work, and a chip
+    // saying so is a label for something already said.
+    expect(within(grid).getByTestId('score-marks')).toBeInTheDocument();
+    expect(within(grid).queryByText('Done')).not.toBeInTheDocument();
     // Not yet started: the math offer with no session gets its own card.
     expect(within(grid).getByText('Not started')).toBeInTheDocument();
     expect(within(grid).getByText('Fractions Intro')).toBeInTheDocument();
@@ -147,11 +155,19 @@ describe('TodayTab', () => {
 
   it('the agenda is one tap from the roster card, outside the accordion', async () => {
     mount(<TodayTab kids={KIDS} />);
+    const open = vi.spyOn(window, 'open').mockImplementation(() => ({}));
     const link = await screen.findByRole('link', { name: /Open Learner A's printed agenda/i });
-    expect(link).toHaveAttribute('target', '_blank');
     expect(link.getAttribute('href')).toContain('/learners/learner-a/agenda/preview');
     // Not behind the disclosure: it is there before anything is expanded.
     expect(screen.queryByTestId('lesson-grid')).not.toBeInTheDocument();
+    // A window sized to the sheet, not a whole tab for a 580px column.
+    fireEvent.click(link);
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining('/agenda/preview'),
+      'agenda-learner-a',
+      expect.stringContaining('width=620'),
+    );
+    open.mockRestore();
   });
 
   it('a failed agenda read degrades to recorded work, never a dead drill-in', async () => {

@@ -4,6 +4,7 @@
     "@mastra/core": "1.32.1",
     "@mastra/libsql": "1.10.0",
     "@mastra/memory": "1.17.5",
+    "@napi-rs/canvas": "^0.1.93",
     "@resvg/resvg-js": "^2.6.2",
     "@tabler/icons-react": "^3.36.1",
     "@tonejs/midi": "^2.0.28",
