@@ -35,6 +35,11 @@ const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'coverage', '_deleteme',
   '.claude', '.claire', '.worktrees', '.superpowers', 'playwright-report',
   'test-results', '.vite', '.cache', 'venv', '__pycache__',
+  // Firmware build output. `pio run` drops a vendored Arduino/ESP-IDF tree in
+  // here, so a host that has ever built an `_extensions/*/firmware` target
+  // would otherwise have this gate grading Espressif's C — code we neither own
+  // nor can fix, and whose failure would say nothing about this repo.
+  '.pio',
 ]);
 
 const PARSE_EXT = new Set(['.mjs', '.cjs', '.js', '.jsx', '.ts', '.tsx']);
