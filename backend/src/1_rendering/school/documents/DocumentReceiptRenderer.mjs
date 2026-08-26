@@ -314,7 +314,11 @@ export function createDocumentReceiptRenderer({
     // populated row-group) so the measured box height never runs short of
     // what actually gets drawn into it.
     const textHeight = lesson
-      ? eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap
+      // Each row-group contributes its gap only when the group exists — the
+      // eyebrow's gap used to be unconditional, which reserved a blank row on a
+      // card that has no eyebrow at all.
+      ? eyebrowLines.length * theme.action.eyebrowLineHeight
+        + (eyebrowLines.length ? theme.action.rowGap : 0)
         + (taxonomy?.heightPx ?? 0) + (taxonomy ? theme.action.rowGap : 0)
         + labelLines.length * titleLineHeight + (descriptionLines.length ? theme.action.rowGap : 0)
         + descriptionLines.length * theme.action.descriptionLineHeight + (metaLines.length ? theme.action.rowGap : 0)
@@ -933,17 +937,22 @@ export function createDocumentReceiptRenderer({
       }
       let labelY = boxTop + theme.action.padding;
       if (op.lesson) {
-        // Sun optically centered on the TODAY text's own cap-height, not the
-        // font's line box — see textOpticalCenter. Was a flat "+11" that
-        // landed the sun visibly below the word (printed-copy feedback).
-        const eyebrowText = op.eyebrowLines[0] ?? '';
-        const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
-        drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
-        ctx.font = theme.fonts.eyebrow;
-        op.eyebrowLines.forEach((line, index) => ctx.fillText(
-          line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
-        ));
-        labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        // No eyebrow, no row and NO INDICATOR. The indicator used to be drawn
+        // unconditionally against `eyebrowLines[0] ?? ''`, so a card without an
+        // eyebrow got a sun floating beside nothing.
+        if (op.eyebrowLines.length) {
+          // Sun optically centered on the eyebrow text's own cap-height, not the
+          // font's line box — see textOpticalCenter. Was a flat "+11" that
+          // landed the sun visibly below the word (printed-copy feedback).
+          const eyebrowText = op.eyebrowLines[0];
+          const eyebrowCenterY = labelY + textOpticalCenter(ctx, theme.fonts.eyebrow, eyebrowText);
+          drawActionIndicator(eyebrowText, labelX, eyebrowCenterY - TODAY_ICON_CENTER_Y);
+          ctx.font = theme.fonts.eyebrow;
+          op.eyebrowLines.forEach((line, index) => ctx.fillText(
+            line, labelX + 24, labelY + index * theme.action.eyebrowLineHeight,
+          ));
+          labelY += op.eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap;
+        }
         await drawTaxonomy(op.taxonomy, labelX, labelY);
         labelY += (op.taxonomy?.heightPx ?? 0) + (op.taxonomy ? theme.action.rowGap : 0);
       }
