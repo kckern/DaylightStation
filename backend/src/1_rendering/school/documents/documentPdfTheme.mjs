@@ -35,6 +35,12 @@ export const documentPdfTheme = Object.freeze({
     // default). `name` is the pdfkit font alias the styles below refer to.
     regular: { name: 'school-doc-regular', file: 'roboto-condensed/RobotoCondensed-Regular.ttf' },
     bold: { name: 'school-doc-bold', file: 'roboto-condensed/RobotoCondensed-SemiBold.ttf' },
+    // The dedicated machine-code face, the same one the thermal receipt's code
+    // cell uses (`documentReceiptTheme.codeFontPath`). Scoped to printed access
+    // codes and nothing else — the moment it sets prose, that rule is gone.
+    // Registration is lazy in pdfkit, so a document that never prints a code
+    // embeds nothing and stays byte-identical.
+    code: { name: 'school-doc-code', file: 'kongtext/kongtext.ttf' },
   },
 
   /**

@@ -1000,18 +1000,42 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
       completed: Math.max(0, Math.min(row.completed, row.total)),
       inProgress: Math.max(0, Math.min(Number.isInteger(row.inProgress) ? row.inProgress : 0, row.total)),
     }));
-  const railPt = Math.min(92, widthPt * 0.18);
+  // A companion lesson widens the rail instead of stacking below the progress
+  // rows: horizontal room the page has, vertical room it doesn't. Cards
+  // without a companion keep the exact rail they always had.
+  const hasCompanion = Boolean(block.companionCode);
+  const railPt = hasCompanion ? Math.min(112, widthPt * 0.22) : Math.min(92, widthPt * 0.18);
   const iconSizePt = Math.min(46, railPt - 12);
   const subjectLabelHeightPt = 10;
   const progressRowHeightPt = 14;
   const progressGapPt = theme.lessonCard.progressGapPt;
-  const sideRailHeightPt = subjectLabelHeightPt + iconSizePt
+  // The companion QR shares the icon's row, with the six-digit access code
+  // directly under the symbol in the dedicated code font — same order the
+  // thermal receipt prints (heading → QR → code), same bare-code payload, so
+  // a scan and a typed code resolve identically.
+  let companion = null;
+  if (hasCompanion) {
+    const code = String(block.companionCode);
+    const railGapPt = 8;
+    const qrSizePt = Math.min(iconSizePt, railPt - iconSizePt - railGapPt);
+    const maxCodeSizePt = 8;
+    const widthAtMax = stringWidth(ctx.doc, theme, 'code', maxCodeSizePt, code);
+    const codeSizePt = widthAtMax > qrSizePt
+      ? Math.floor(maxCodeSizePt * (qrSizePt / widthAtMax) * 10) / 10
+      : maxCodeSizePt;
+    const codeGapPt = 2;
+    companion = {
+      code, qrSizePt, codeSizePt, codeGapPt,
+      heightPt: qrSizePt + codeGapPt + codeSizePt * 1.15,
+    };
+  }
+  const iconRowHeightPt = Math.max(iconSizePt, companion?.heightPt ?? 0);
+  const sideRailHeightPt = subjectLabelHeightPt + iconRowHeightPt
     + (progress.length ? progressGapPt + progress.length * progressRowHeightPt : 0);
   let breadcrumb;
   let title;
   let reading;
   let citation;
-  let companionCode;
   let success;
   const textWidthPt = widthPt - pad * 2 - railPt - iconGapPt;
   const make = (text, styleKey) => measureTextLines(ctx.doc, theme, [{ text, font: theme.styles[styleKey].font }], {
@@ -1021,9 +1045,8 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
   title = make(String(block.lessonTitle ?? ''), 'heading');
   reading = block.reading ? make(String(block.reading), 'body') : null;
   citation = block.citation ? make(String(block.citation), 'caption') : null;
-  companionCode = block.companionCode ? make(`COMPANION • PANEL CODE ${block.companionCode}`, 'label') : null;
   success = make(successText, 'label');
-  const finalContent = [breadcrumb, title, reading, citation, companionCode].filter(Boolean);
+  const finalContent = [breadcrumb, title, reading, citation].filter(Boolean);
   const finalTopHeight = finalContent.reduce((sum, entry) => sum + entry.heightPt, 0)
     + Math.max(0, finalContent.length - 1) * gap;
   const innerHeight = Math.max(sideRailHeightPt, finalTopHeight + bandGap + success.heightPt);
@@ -1032,7 +1055,7 @@ function measureLessonCardNode(ctx, block, { widthPt, path }) {
     radiusPt: theme.box.radiusPt, borderWidthPt: theme.box.borderWidthPt,
     icon: { svg: resolved.svg, widthPt: iconSizePt, heightPt: iconSizePt }, railPt,
     subjectName: String(block.subjectName ?? block.subjectIcon ?? 'School').toUpperCase(), subjectLabelHeightPt,
-    breadcrumb, title, reading, citation, companionCode, success, progress, progressRowHeightPt,
+    breadcrumb, title, reading, citation, companion, iconRowHeightPt, success, progress, progressRowHeightPt,
     progressGapPt, gap, bandGap,
   };
 }
