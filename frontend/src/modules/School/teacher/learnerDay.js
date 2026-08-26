@@ -32,14 +32,86 @@
 const NO_SUBJECT = '__no-subject__';
 const subjectKey = (subject) => subject ?? NO_SUBJECT;
 
-/** Status vocabulary, in the teacher's words — never an internal state name. */
+/**
+ * Status vocabulary, in the teacher's words — never an internal state name.
+ *
+ * EVERY VALUE HERE DESCRIBES PROGRESS, and nothing else. `extra` used to live
+ * in this map, which made the field mean progress for five values and
+ * provenance for one — so a row could not say both "unplanned" and "finished",
+ * and every consumer had to special-case one value out of six. Provenance
+ * rides beside the status as a flag now (`unplanned`, `carriedOver`), which is
+ * the shape carry-over already used.
+ */
 export const DAY_STATUS_LABEL = {
   done: 'Done',
+  'in-progress': 'In progress',
   planned: 'Not started',
   deferred: 'Deferred',
   blocked: 'Blocked',
-  extra: 'Extra',
 };
+
+/**
+ * Session states that count as progress.
+ *
+ * Source of truth: `backend/src/2_domains/school/sessions/sessionEvents.mjs`
+ * (`TRANSITIONS`). The digest passes that derived state through verbatim
+ * (`GetTeacherToday.mjs`). These sets are a deliberate COPY, not an import —
+ * the frontend has no path into `backend/src` — so a drift test pins them; if
+ * the backend grows a state, that test names this file.
+ */
+const DONE_STATES = new Set([
+  'graded', 'outcome_recorded', 'rewarded', 'media_completed', 'external_activity_assessed',
+]);
+/** The work is out in the world: paper printed, media playing, or awaiting a mark. */
+const IN_FLIGHT_STATES = new Set([
+  'issued', 'reprinted', 'media_dispatched', 'media_stalled',
+  'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'submitted',
+]);
+export const SESSION_PROGRESS_STATES = { DONE_STATES, IN_FLIGHT_STATES };
+
+/**
+ * How far along one session is — the ONLY thing that may produce 'done'.
+ *
+ * The old rule was "a section claimed a session, therefore the lesson is
+ * done", which told a parent a lesson was finished when its session had been
+ * minted at agenda-build time and never touched. `state` and the planner's own
+ * `servedToday` both carry the truth; this reads them.
+ *
+ * `section` is null for the unplanned sweep, where there is no plan to consult.
+ */
+function statusForSession(session, section) {
+  if (section?.servedToday) return 'done';            // the planner's own verdict wins
+  // A RECORDED SCORE OUTRANKS THE STATE FIELD. Marks exist only for work that
+  // was actually done and graded, so a scored session is finished even when
+  // `state` is absent or lags. This cannot resurrect the bug this function
+  // exists to kill: the untouched session that used to read "Done" has no
+  // score at all.
+  if (session?.effectiveScore?.totalCount != null) return 'done';
+  if (DONE_STATES.has(session?.state)) return 'done';
+  if (IN_FLIGHT_STATES.has(session?.state)) return 'in-progress';
+  return 'planned';                                   // created / abandoned / failed / unknown
+}
+
+/**
+ * The footer's answer to "is this a broken link?" when a finished lesson shows
+ * no worksheet and no receipt.
+ *
+ * Only finished work earns it: an issued session HAS paper, and nothing is
+ * expected of work that has not started. The join authors this sentence rather
+ * than the card, so the state slot stays the single explanatory voice.
+ */
+function paperNote(session, status) {
+  if (status !== 'done' || !session) return null;
+  // A MISSING `artifacts` FIELD IS NOT AN EMPTY ONE. The digest reports the
+  // field as an object with null members when a session archived nothing; a
+  // payload that omits it entirely has told us nothing about paper, and
+  // announcing "no worksheet" there would be inventing a fact from silence.
+  const artifacts = session.artifacts ?? null;
+  if (!artifacts || typeof artifacts !== 'object') return null;
+  const worksheet = artifacts.worksheet?.originalPdfUrl ?? null;
+  const receipt = artifacts.receipt?.originalUrl ?? null;
+  return worksheet || receipt ? null : 'No worksheet for this one';
+}
 
 /** Wrap each session so claims are tracked without touching the caller's array. */
 const claimPool = (sessions) => sessions.map((session) => ({ session, claimed: false }));
@@ -112,11 +184,15 @@ export function joinLearnerDay({
     if (matched.length) {
       // The plan is stated once for the subject, not repeated per session —
       // repeating it is the duplication the teachers objected to (IA1).
-      matched.forEach((session, index) => rows.push({
-        key: session.sessionId ?? `${rowKey('done')}:${index}`,
-        subject, status: 'done', planned: index === 0 ? planned : null, offer, session, detail: null,
-        matchedOn: index === 0 ? matchedOn : null,
-      }));
+      matched.forEach((session, index) => {
+        const status = statusForSession(session, section);
+        rows.push({
+          key: session.sessionId ?? `${rowKey('done')}:${index}`,
+          subject, status, planned: index === 0 ? planned : null, offer, session,
+          detail: paperNote(session, status),
+          matchedOn: index === 0 ? matchedOn : null,
+        });
+      });
       return;
     }
     if (section?.suppressed) {
@@ -140,10 +216,12 @@ export function joinLearnerDay({
       // the view answering "no session record" about a session it was holding.
       const { matched: carried, matchedOn: carriedOn } = claimFor(section, carriedPool);
       if (carried.length) {
+        // `done` is guaranteed here by the section's own servedToday, and
+        // carriedOver already flags the provenance.
         carried.forEach((session, index) => rows.push({
           key: session.sessionId ?? `${rowKey('carried')}:${index}`,
           subject, status: 'done', planned: index === 0 ? planned : null, offer, session,
-          detail: null, carriedOver: true,
+          detail: paperNote(session, 'done'), carriedOver: true,
           matchedOn: index === 0 ? carriedOn : null,
         }));
         return;
@@ -167,11 +245,15 @@ export function joinLearnerDay({
   pool.forEach(({ session, claimed }, index) => {
     if (claimed) return;
     const key = subjectKey(session?.subject ?? null);
+    const status = statusForSession(session, null);
     rows.push({
       key: session?.sessionId ?? `${key}:extra:${index}`,
       subject: session?.subject ?? null,
-      status: 'extra', planned: null, session,
-      detail: 'Not on the day’s plan',
+      // Provenance is the FLAG, not the status, and not the detail line
+      // either: freeing `detail` is what lets an unplanned lesson also say it
+      // has no paper, with neither sentence having to win.
+      status, unplanned: true, planned: null, offer: null, session,
+      detail: paperNote(session, status),
     });
   });
 

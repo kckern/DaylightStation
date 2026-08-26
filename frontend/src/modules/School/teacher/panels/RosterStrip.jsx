@@ -165,9 +165,23 @@ function ArtifactButtons({ session, onOpen }) {
   );
 }
 
-const outcomeNote = (session) => {
-  if (session?.effectiveScore?.totalCount != null) return null;
-  return AWAITING.has(session?.reviewStatus) ? 'Awaiting review' : 'Not graded';
+/**
+ * The secondary footer line for work that is under way.
+ *
+ * "Not graded" used to live here, fired by any session with no score — which
+ * covered both "nothing was done yet" and "this lesson type will never have a
+ * score", and read as a chore a grown-up still owed. It is gone. What remains
+ * is news: paper is out, or a submission is waiting on a mark.
+ *
+ * `reviewStatus` is consulted ONLY from `submitted` onward. The digest defaults
+ * it to 'complete' for sessions that were never worked, so asking earlier
+ * answers a different question than the one being posed.
+ */
+const progressNote = (session) => {
+  const state = session?.state ?? null;
+  if (state === 'submitted') return AWAITING.has(session?.reviewStatus) ? 'Awaiting review' : null;
+  if (state === 'issued' || state === 'reprinted') return 'Worksheet out';
+  return null;
 };
 
 /** One lesson on the day — identity, state, score, and its paper, in one square. */
@@ -191,10 +205,14 @@ function LessonCard({ row, learnerId, base, onOpen }) {
   // A SCORE ALREADY SAYS "DONE". Seven green checks and 71% cannot be the
   // state of unstarted work, so a "Done" chip above them is a label for
   // something the reader has already been told. The chip survives only where
-  // it carries news — not started, deferred, blocked, an unplanned extra, or
-  // a done card whose work belongs to an earlier study day.
+  // it carries news — not started, in progress, deferred, blocked, or a done
+  // card whose work belongs to an earlier study day.
   const statusLabel = row.status === 'done' && row.carriedOver ? 'Done (earlier day)' : DAY_STATUS_LABEL[row.status];
   const showChip = !scored || row.carriedOver;
+  // Provenance composes with any status: an unplanned lesson can be finished,
+  // in progress, or untouched, and the tag says so beside the chip rather than
+  // standing in for it.
+  const note = session ? progressNote(session) : null;
   // THE POSTER FRAME IS ALWAYS DRAWN, poster or not.
   //
   // It used to be a conditional full-width 52px band — a letterboxed strip of
@@ -238,13 +256,16 @@ function LessonCard({ row, learnerId, base, onOpen }) {
       <footer className="teacher-lesson-card__foot">
         <span className="teacher-lesson-card__state">
           {scored && <ScoreMarks score={score} />}
-          {showChip && (
-            <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{statusLabel}</span>
-          )}
-          {!scored && (session || row.detail) && (
-            <span className="teacher-lesson-card__pending">
-              {session ? outcomeNote(session) : row.detail}
+          {(showChip || row.unplanned) && (
+            <span className="teacher-lesson-card__chips">
+              {showChip && (
+                <span className={`teacher-day-chip teacher-day-chip--${row.status}`}>{statusLabel}</span>
+              )}
+              {row.unplanned && <span className="teacher-day-chip__tag">not on the plan</span>}
             </span>
+          )}
+          {(note ?? row.detail) && (
+            <span className="teacher-lesson-card__pending">{note ?? row.detail}</span>
           )}
         </span>
         {session && <ArtifactButtons session={session} onOpen={onOpen} />}
@@ -268,10 +289,12 @@ const PASS_PERCENT = 80;
 function dotTone(row) {
   const score = row.session?.effectiveScore;
   if (score?.percent != null) return score.percent >= PASS_PERCENT ? 'passed' : 'failed';
-  // Work that HAPPENED but carries no percent — a media lesson, an unplanned
-  // extra, something still awaiting a grown-up's mark — is done. Only a
-  // recorded shortfall earns amber; grey is reserved for "not touched".
-  if (row.status === 'done' || row.status === 'extra') return 'passed';
+  // Status now means progress for EVERY row, so there is no branch here for
+  // unplanned work — it tones by how far along it is, like anything else, and
+  // the dot's label carries the provenance. Grey is reserved for "not touched",
+  // and a dashed amber ring for "out in the world but not back yet".
+  if (row.status === 'done') return 'passed';
+  if (row.status === 'in-progress') return 'active';
   if (row.status === 'blocked') return 'failed';
   return 'idle';
 }
@@ -287,6 +310,7 @@ function DayDots({ rows }) {
           row.subject ?? 'lesson',
           row.session?.lessonTitle ?? row.planned,
           score?.percent != null ? `${Math.round(score.percent)}%` : DAY_STATUS_LABEL[row.status],
+          row.unplanned ? 'not on the plan' : null,
         ].filter(Boolean).join(' — ');
         return (
           <span key={row.key} className={`teacher-roster__dot teacher-roster__dot--${tone}`} title={label}>
