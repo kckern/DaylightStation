@@ -144,6 +144,21 @@ describe('useScanCeremony', () => {
     });
   });
 
+  it('maps scan-not-recorded to an error ceremony so a re-fed sheet is never met with silence', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({ topic: 'omr', event: 'scan-not-recorded', testId: '0123456', learnerId: 'milo' });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Already done',
+      detail: 'I read that sheet, but there was nothing new to mark.',
+    });
+    // `error` drives the double-buzz (scanCeremonySound.js). It is not a score,
+    // and the operator's rule is that a scan always makes a noise.
+    expect(result.current.current.tone).toBe('error');
+  });
+
   it('maps scan-stale-sheet to a warn ceremony that tells the child how to fix it themselves', () => {
     const { result } = mount();
     act(() => {

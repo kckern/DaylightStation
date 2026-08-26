@@ -3,16 +3,18 @@
  * self-service panel (Slice D, omr-grading-integrity design). Subscribes to
  * the SAME `omr` topic `schoolPrintScanConsumer.mjs` (Slice C) already
  * re-broadcasts the terminal scan outcomes on — `scan-graded`,
- * `scan-review`, `scan-unresolved`, `scan-refused`, `scan-stale-sheet` —
- * plus `reader-error`,
- * which `omrRelay.mjs` broadcasts on the same topic for a reader-level
- * failure (a sheet that never made it to grading at all).
+ * `scan-review`, `scan-unresolved`, `scan-refused`, `scan-stale-sheet`,
+ * `scan-not-recorded` — plus `reader-error`, which `omrRelay.mjs` broadcasts
+ * on the same topic for a reader-level failure (a sheet that never made it to
+ * grading at all).
  *
  * KC's requirement: "a scan must always be acknowledged on screen." Success
  * already prints a receipt, so the failure paths are what matter here — a
  * child scanning alone has no other feedback channel, so every one of these
- * five events must land as plain, child-readable words, never a blame or a
- * bare code.
+ * events must land as plain, child-readable words, never a blame or a bare
+ * code. `scan-not-recorded` is the backstop that makes "every" literal: a
+ * sheet that reaches the consumer and produces no ceremony of its own gets
+ * that one, so no scan can end in silence.
  *
  * THE CEREMONY IS A FALLBACK, NOT A RECEIPT (2026-08-25).
  *
@@ -83,6 +85,7 @@ function logger() {
  *   scan-review       → warn     "Needs a grown-up"         "{count} had two answers filled in. Ask a grown-up to check it."
  *   scan-unresolved   → error    "Couldn't read that sheet" "The student number didn't come through. Try scanning again, slowly."
  *   scan-refused      → error    "That sheet doesn't match" "This paper doesn't line up with what's on file. Ask a grown-up."
+ *   scan-not-recorded → error    "Already done"             "I read that sheet, but there was nothing new to mark."
  *   reader-error      → error    "Scanner hiccup"           "The scanner didn't catch that. Feed the sheet again."
  *   agenda-suppressed → warn     "Already printed"          "You already have today's agenda — check your desk."
  *
@@ -133,6 +136,20 @@ function buildCeremony(payload) {
         detail: "This paper doesn't line up with what's on file. Ask a grown-up.",
         at,
         code: payload.code ?? null,
+      };
+    case 'scan-not-recorded':
+      // The sheet read fine and the child did nothing wrong — it had simply
+      // already been marked, so there was no new work to bank and no score to
+      // report. Before this existed the pipeline just went quiet here, which
+      // is the one thing a scanner may never do (2026-08-25: three sheets fed,
+      // room silent). `error` on the operator's call: it is not a score, and
+      // the double-buzz is what says "that did not add anything" without
+      // pretending a grade happened.
+      return {
+        tone: 'error',
+        title: 'Already done',
+        detail: 'I read that sheet, but there was nothing new to mark.',
+        at,
       };
     case 'scan-stale-sheet':
       // Every allocation on this card is retired — the paper in the child's
