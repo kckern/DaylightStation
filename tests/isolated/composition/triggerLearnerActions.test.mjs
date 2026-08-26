@@ -93,3 +93,79 @@ describe('trigger learner actions — composition contract', () => {
     expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'print-agenda' });
   });
 });
+
+// The debounce exists to collapse HA's 2-3 fires per physical tap and to stop a
+// child re-tapping through a 25s wake. It must not also swallow the retry that
+// a FAILED action explicitly asks for: the receipt in the child's hand says
+// "Try scanning again", and the bus path this replaces had no debounce at all.
+describe('trigger learner actions — a failed action must be retryable', () => {
+  it('lets the very next tap through when the action failed', async () => {
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      throw new Error('printer offline');
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBeUndefined();
+    expect(attempts).toEqual(['tap', 'tap']);
+  });
+
+  it('a handler that reports its own failure gets the same release', async () => {
+    // The print-agenda wrapper marks School's `print_failed` retryable — the
+    // use case reports it rather than throwing, so nothing else would.
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      return { status: 'print_failed', printed: false, retryable: true };
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(attempts).toEqual(['tap', 'tap']);
+  });
+
+  it('still debounces a SUCCESSFUL action — that lockout is the whole cooldown', async () => {
+    const attempts = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async () => {
+      attempts.push('tap');
+      return { status: 'agenda_printed', printed: true };
+    });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBe(true);
+    expect(attempts).toEqual(['tap']);
+  });
+
+  it('still debounces a named refusal — retrying it changes nothing', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const service = makeService(learnerActions);
+
+    await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    const second = await service.handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+
+    expect(second.debounced).toBe(true);
+  });
+
+  // CONTRACT PIN for the expression in app.mjs's print-agenda registration.
+  // It cannot be imported yet — plan 01 Task 9 extracts it into
+  // `learnerCardActions.mjs`; until then this holds the shape it must keep.
+  it('the print-agenda wrapper marks print_failed retryable and nothing else', async () => {
+    const wrap = (result) => (result?.status === 'print_failed' ? { ...result, retryable: true } : result);
+    expect(wrap({ status: 'print_failed', printed: false })).toMatchObject({ status: 'print_failed', retryable: true });
+    expect(wrap({ status: 'agenda_printed', printed: true }).retryable).toBeUndefined();
+    expect(wrap({ status: 'agenda_suppressed', sinceMinutes: 3 }).retryable).toBeUndefined();
+    expect(wrap({ status: 'unknown_learner' }).retryable).toBeUndefined();
+  });
+});
