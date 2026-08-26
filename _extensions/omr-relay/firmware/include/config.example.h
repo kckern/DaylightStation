@@ -1,5 +1,5 @@
 // Example schema for the generated config.h. The REAL config.h is generated
-// from the household SSOT (data/household/config/omr-readers.yml) by
+// from the household SSOT (data/household/hardware/omr/readers.yml) by
 // tools/gen-config.mjs and is gitignored. Do NOT commit config.h.
 #pragma once
 
