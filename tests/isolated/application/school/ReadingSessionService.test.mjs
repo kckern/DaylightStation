@@ -139,3 +139,164 @@ describe('ReadingSessionService', () => {
     expect(Object.isFrozen(s.current('livingroom'))).toBe(true);
   });
 });
+
+/**
+ * D6 — a session that nobody is using times out.
+ *
+ * Without it the failure is not an error anywhere: a child taps their card,
+ * wanders off before picking a book, and the living-room TV stays on all night
+ * — and the next card tapped tomorrow lands in a session belonging to whoever
+ * left the room. Two minutes of quiet at the prompt or the countdown ends it,
+ * through the SAME teardown a finished session runs.
+ *
+ * The clock and the sweep are both injected, so this suite takes milliseconds
+ * rather than the two minutes the field waits.
+ */
+describe('ReadingSessionService — the idle timeout (D6)', () => {
+  /** A hand-cranked clock plus a hand-cranked scheduler: no real time passes. */
+  function rig({ idleTimeoutMs = 120_000, onTimeout = null } = {}) {
+    let now = Date.parse('2026-08-26T18:00:00.000Z');
+    const ticks = [];
+    const cleared = [];
+    const torn = [];
+    const sent = [];
+    const service = new ReadingSessionService({
+      clock: () => new Date(now),
+      idleTimeoutMs,
+      onTimeout: onTimeout ?? (async (session) => { torn.push(session); }),
+      scheduler: {
+        setInterval: (fn, ms) => { ticks.push({ fn, ms }); return ticks.length; },
+        clearInterval: (handle) => cleared.push(handle),
+      },
+      eventBus: { broadcast: (topic, payload) => sent.push({ topic, payload }) },
+      logger: silent,
+    });
+    return {
+      service, torn, sent, cleared, ticks,
+      advance: (ms) => { now += ms; },
+      tick: () => ticks[0]?.fn?.(),
+    };
+  }
+
+  it('leaves a session alone while the clock is still inside the window', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(119_000);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).not.toBeNull();
+    expect(r.torn).toEqual([]);
+  });
+
+  it('tears the session down once the room has been quiet long enough', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(120_001);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).toBeNull();
+    expect(r.torn).toHaveLength(1);
+    expect(r.torn[0]).toMatchObject({ location: 'livingroom', learnerId: 'learner-c' });
+  });
+
+  it('tells the screen the session closed, and says why', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(200_000);
+    await r.service.sweep();
+    const close = r.sent.filter((m) => m.payload.event === 'session-close');
+    expect(close).toHaveLength(1);
+    expect(close[0]).toMatchObject({ topic: 'reading:livingroom', payload: { reason: 'timeout' } });
+  });
+
+  it('every tap resets the clock — a child picking a book is not idle', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(119_000);
+    r.service.update('livingroom', { state: 'confirm', pick: { contentId: 'plex:1' } });
+    r.advance(119_000);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).not.toBeNull();
+  });
+
+  it('times out at CONFIRM too — a pick nobody confirmed is still an empty room', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.update('livingroom', { state: 'confirm', pick: { contentId: 'plex:1' } });
+    r.advance(200_000);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).toBeNull();
+  });
+
+  it('NEVER times out mid-story — a long book is not an idle room', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.update('livingroom', { state: 'reading' });
+    r.advance(45 * 60_000);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).not.toBeNull();
+    expect(r.torn).toEqual([]);
+  });
+
+  it('sweeps every reader, not just the first one it finds', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.service.open({ location: 'study', learnerId: 'learner-d' });
+    r.advance(200_000);
+    await r.service.sweep();
+    expect(r.service.list()).toEqual([]);
+    expect(r.torn.map((s) => s.location).sort()).toEqual(['livingroom', 'study']);
+  });
+
+  it('a teardown that THROWS still closes the session — a stuck TV must not strand it', async () => {
+    const r = rig({ onTimeout: async () => { throw new Error('tv unreachable'); } });
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(200_000);
+    await expect(r.service.sweep()).resolves.toBeDefined();
+    expect(r.service.current('livingroom')).toBeNull();
+  });
+
+  it('tears down only once, however many sweeps run', async () => {
+    const r = rig();
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(200_000);
+    await r.service.sweep();
+    await r.service.sweep();
+    expect(r.torn).toHaveLength(1);
+  });
+
+  it('start() arms a sweep on the injected scheduler, and stop() disarms it', async () => {
+    const r = rig();
+    r.service.start();
+    expect(r.ticks).toHaveLength(1);
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(200_000);
+    await r.tick();
+    expect(r.service.current('livingroom')).toBeNull();
+    r.service.stop();
+    expect(r.cleared).toHaveLength(1);
+  });
+
+  it('start() is idempotent — a second call does not arm a second sweep', () => {
+    const r = rig();
+    r.service.start();
+    r.service.start();
+    expect(r.ticks).toHaveLength(1);
+  });
+
+  it('idleTimeoutMs 0 disables the timeout rather than expiring everything instantly', async () => {
+    const r = rig({ idleTimeoutMs: 0 });
+    r.service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    r.advance(10 * 60_000);
+    await r.service.sweep();
+    expect(r.service.current('livingroom')).not.toBeNull();
+  });
+
+  it('with no onTimeout wired at all, the sweep still closes the session', async () => {
+    const service = new ReadingSessionService({
+      clock: () => new Date(Date.now() - 0), idleTimeoutMs: 1, logger: silent,
+    });
+    service.open({ location: 'livingroom', learnerId: 'learner-c' });
+    await new Promise((r) => { setTimeout(r, 5); });
+    await service.sweep();
+    expect(service.current('livingroom')).toBeNull();
+  });
+});
