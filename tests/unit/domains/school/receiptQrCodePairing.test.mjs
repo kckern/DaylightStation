@@ -269,7 +269,7 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     expect(flat).not.toContain('Scanning is the only way in.');
   });
 
-  it('builds every scan_action block through exactly one of the two designated helpers (structural guard)', () => {
+  it('builds every scan_action block through exactly one of the three designated helpers (structural guard)', () => {
     // Reads the SOURCE of receipts.mjs, not its behaviour: a future branch
     // that pushes `{type: 'scan_action', ...}` directly — bypassing both
     // `lessonAction` and `plainScanAction`, and therefore `codePairingBlocks`
@@ -277,8 +277,16 @@ describe('QR / panel-code pairing on the PLAIN (non-lesson) branch — regressio
     // with a dead QR again. Counting the construction sites makes that
     // impossible to add silently: this fails the moment a THIRD site
     // appears, regardless of whether any test happens to exercise it.
+    //
+    // WENT FROM 2 TO 3 ON 2026-08-26, and the bump is the point rather than a
+    // weakening: bulk print authored its block inline before this guard existed
+    // on that branch and merged after it, so the guard caught a real bypass
+    // that neither side introduced on purpose. The fix was to give bulk print
+    // its own named helper (`bulkPrintAction`), not to raise the number and
+    // leave the inline push standing. Anyone tempted to just increment this
+    // should extract a helper instead — that is the invariant, not the count.
     const src = stripComments(readFileSync(RECEIPTS_SRC_PATH, 'utf8'));
     const constructions = src.match(/type:\s*'scan_action'/g) || [];
-    expect(constructions).toHaveLength(2); // lessonAction, plainScanAction
+    expect(constructions).toHaveLength(3); // lessonAction, plainScanAction, bulkPrintAction
   });
 });
