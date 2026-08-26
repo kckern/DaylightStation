@@ -302,3 +302,77 @@ describe('createSchoolPrintScanConsumer: every terminal outcome makes exactly on
     expect(ceremonies).toHaveLength(1);
   });
 });
+
+// Final review (2026-08-26): the TERMINAL_OUTCOMES table above is
+// structurally blind to these — every row in it is a RESOLVED outcome the
+// `.then` branch of `onPayload` gets to see. These four are the holes one
+// level up: the outer `.catch`, a synchronous throw the funnel didn't wrap,
+// a fire-and-forget hook that doesn't return a promise, and the constructor
+// guard that is supposed to make the funnel's own assumptions true.
+describe('createSchoolPrintScanConsumer: the funnel itself cannot go silent', () => {
+  it('answers a sheet when resolveCardScan.execute REJECTS entirely — the .then branch never runs', async () => {
+    const bus = makeBus();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => { throw new Error('allocation store unreachable'); } },
+      recordCardScanOutcome: duplicateRecorder(),
+      logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-not-recorded')).toHaveLength(1);
+  });
+
+  it('answers a sheet when recordCardScanOutcome.execute throws SYNCHRONOUSLY rather than rejecting', async () => {
+    const bus = build({
+      records: ['r1'],
+      recorder: { execute: () => { throw new Error('sync boom'); } },
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-not-recorded')).toHaveLength(1);
+  });
+
+  it('still reaches the scan-rows-unmarked speak when gradingHook.fire returns a non-promise', async () => {
+    // Before the fix, `gradingHook?.fire(...).catch(() => {})` called
+    // `.catch` on `undefined` and threw SYNCHRONOUSLY, on this exact
+    // incident path, above the `scan-rows-unmarked` speak a few lines below
+    // it — so the sheet fell through to the generic `scan-not-recorded`
+    // backstop (or, before CRITICAL 1a, to nothing at all) instead of the
+    // ceremony that actually tells the child which rows to fill in.
+    const bus = makeBus();
+    createSchoolPrintScanConsumer({
+      eventBus: bus,
+      resolveCardScan: { execute: async () => unmarkedLiveRows() },
+      recordCardScanOutcome: duplicateRecorder(),
+      gradingHook: { fire: () => undefined },
+      logger: silentLogger(),
+    });
+    bus.broadcast('omr', sheetPayload());
+    await flush();
+
+    expect(eventsNamed(bus, 'scan-rows-unmarked')).toHaveLength(1);
+    expect(eventsNamed(bus, 'scan-not-recorded')).toHaveLength(0);
+  });
+
+  it('refuses to construct against a subscribe-only bus — broadcast is not optional', () => {
+    const subs = new Map();
+    const subscribeOnlyBus = {
+      subscribe(topic, fn) {
+        if (!subs.has(topic)) subs.set(topic, new Set());
+        subs.get(topic).add(fn);
+        return () => subs.get(topic)?.delete(fn);
+      },
+      // Deliberately no `broadcast` — the shape the constructor guard used
+      // to accept. `spoke` in `speak()` is set BEFORE the broadcast call
+      // runs, so handing this consumer a subscribe-only bus used to mark
+      // every sheet as answered while broadcasting nothing at all.
+    };
+    expect(() => createSchoolPrintScanConsumer({
+      eventBus: subscribeOnlyBus,
+      resolveCardScan: { execute: async () => ({ results: [] }) },
+    })).toThrow(/broadcast/);
+  });
+});

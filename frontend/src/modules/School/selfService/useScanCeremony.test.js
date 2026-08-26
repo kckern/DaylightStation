@@ -209,6 +209,28 @@ describe('useScanCeremony', () => {
     expect(result.current.current.tone).toBe('error');
   });
 
+  // A cumulative card can carry more than one unmarked live worksheet
+  // (final review MINOR 4) — naming only the first left the child unaware
+  // of the second.
+  it('names every unmarked live worksheet, not just the first, when rowRanges carries more than one', () => {
+    const { result } = mount();
+    act(() => {
+      deliver({
+        topic: 'omr',
+        event: 'scan-rows-unmarked',
+        testId: '0123456',
+        learnerId: 'milo',
+        rowRange: { start: 34, end: 39 },
+        rowRanges: [{ start: 34, end: 39 }, { start: 40, end: 45 }],
+      });
+    });
+    expect(result.current.current).toMatchObject({
+      tone: 'error',
+      title: 'Nothing filled in yet',
+      detail: 'Your new questions are rows 34–39 and rows 40–45. Fill them in, then scan again.',
+    });
+  });
+
   it('still speaks when the row range is missing, rather than falling silent again', () => {
     // Never let a malformed payload reproduce the exact bug this event was
     // added for. Losing the row numbers costs precision; losing the ceremony
