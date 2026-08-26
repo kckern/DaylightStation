@@ -1,12 +1,12 @@
 # Lesson-level pacing and agenda-aware receipts
 
-Status: design, approved 2026-08-26. Supersedes nothing; extends
-[time-sensitive planning](../../reference/school/timing-and-priority.md) and
-[agenda and completion](../../reference/school/agenda-and-completion.md).
+Status: design, rev 2 (2026-08-26). Rev 1 was reviewed against the source and
+failed on four counts; this rewrite fixes them and records what changed in §10.
+
+Extends [time-sensitive planning](../../reference/school/timing-and-priority.md)
+and [agenda and completion](../../reference/school/agenda-and-completion.md).
 
 ## Terminology
-
-The code's three levels, and the words this document uses for them:
 
 | Code | Example | Colloquially |
 | --- | --- | --- |
@@ -18,59 +18,133 @@ The code's three levels, and the words this document uses for them:
 
 ## 1. The problem
 
-Two complaints from 2026-08-26, with one root: **the lesson layer is
-date-blind, and the result receipt is subject-blind.**
+Two complaints from 2026-08-26, one root: **the lesson layer is date-blind and
+the result receipt is subject-blind.**
 
-**Milo was handed Tuesday's lesson on Wednesday.** Time sensitivity exists
-only at the module level. `evaluateDatedModule` answers `upcoming` /
-`available` / `catch_up` for a *window*; lessons inside a module carry no dates
-at all and are ordered purely by `lessonOrder`, gated as strict prerequisites.
-`d1…d5` are the publisher's day labels riding along as text — nothing knows
-`d3` means Wednesday. Milo got `d2` because it was the first unpassed entry,
-which is the system working as built.
+**Milo was handed Tuesday's lesson on Wednesday.** Time sensitivity exists only
+at the module level. `evaluateDatedModule` answers `upcoming` / `available` /
+`catch_up` for a *window*; lessons inside a module carry no dates and are gated
+as strict prerequisites by `blockerFor`. `d1…d5` are the publisher's day labels
+carried as text — nothing knows `d3` means Wednesday. Milo got `d2` because it
+was the first unpassed entry.
 
 The week is 5 lessons in a 7-day window (`opensOn: 2026-08-24`,
 `closesOn: 2026-08-30`), so there is no day-to-lesson mapping to recover.
 
-**The receipt offers "one more of the same course" unconditionally.** On a pass
-`CloseSessionOutcome#settle` mints exactly one forward action, always for
-`unit.subject`, captioned *"Today is already complete. Scan only if you want
-one more."* — printed while other subjects sit untouched. `#projectPlan`
-already returns the agenda `sections`; the receipt has the whole day in hand
-and ignores it.
+**The receipt offers "one more of the same course" unconditionally.** On a pass,
+`CloseSessionOutcome#settle` mints at most one forward action, always for
+`unit.subject`, captioned *"Today is already complete. Scan only if you want one
+more."* — printed while other subjects sit untouched.
 
-## 2. Scope
+## 2. Scope, in two slices
 
-1. Per-lesson due dates, with a cascade from course and module.
-2. A per-course switch between week-level and day-level pacing.
-3. Backlog that is recoverable without ever hard-locking a child.
-4. A result receipt that offers the day's next work, across subjects.
+**Slice 1 — the cross-subject receipt.** Fixes complaint 2. Touches
+`CloseSessionOutcome` and receipt copy only; no planner, no timing, no
+enrollment. Independently shippable and independently valuable.
 
-Out of scope: a timing editor UI; changing how module windows are authored;
-any change to issued paper, scan evidence, or frozen report-card history.
+**Slice 2 — lesson-level pacing.** Fixes complaint 1. Per-lesson due dates, a
+per-course day-level mode, and a backlog ladder.
 
-## 3. The date model
+They are separable and Slice 1 must not wait on Slice 2.
 
-### 3.1 Where dates live
+Out of scope: a timing editor UI; changing how module windows are authored; any
+change to issued paper, scan evidence, or frozen report-card history.
+
+---
+
+# Slice 1 — the cross-subject receipt
+
+## 3. What it does
+
+`#settle` picks its forward action from the agenda `sections` its own
+`#projectPlan` already returns. **Exactly one action, and the tiers are mutually
+exclusive** — the first that matches wins and the others are not minted.
+
+| # | Offer | Token | Eyebrow |
+| --- | --- | --- | --- |
+| 1 | The first unserved **curriculum** subject's next action | that subject, `continueToday: false` | `Next up` |
+| 2 | Overdue backlog in this subject | this subject, `continueToday: true` | `Catch up` |
+| 3 | The next lesson in this subject | this subject, `continueToday: true` | `One more?` |
+
+Tier 1's rule is **"the first unserved subject in the agenda's fixed shelf
+order"** — stated plainly because the agenda has no cross-subject ranking to
+borrow authority from (`agenda.mjs` builds sections in fixed subject order, and
+the focus pass explicitly disclaims being a child-facing priority sort).
+
+Exclusivity matters: tiers 2 and 3 mint the *same shape* of token
+(`subject_next {learnerId, subject, continueToday: true}`), and resolution picks
+one winner from `[...inProgress, ...available]`. If both printed, the "One more?"
+QR would resolve to the catch-up lesson and the label would be a lie.
+
+## 4. Program subjects are skipped in tier 1
+
+`CloseSessionOutcome` builds its `PlanProjection` **with no launchers**, by
+design and by comment, and composition keeps it that way. So program sections in
+this projection have no daily status.
+
+Rev 1 proposed flipping `assignedPrograms: true`. That is wrong: with no
+launchers, `collectProgramStatuses` throws per program and every program section
+reads `programUnavailable` — tier 1 would never offer piano, the opposite of the
+intended fix, plus a warn line per program per settle.
+
+**Tier 1 therefore considers curriculum sections only.** A program subject is
+never offered by the receipt. This is a deliberate, stated limitation, not an
+oversight: the receipt cannot honestly speak about program status without a
+launcher-wired projection, and injecting one is a composition change with wider
+blast radius than this slice earns.
+
+Also unchanged, and also stated: `attested: false, exceptions: false` remain. The
+receipt's projection is therefore *not* identical to the panel's. Rev 1 claimed
+"paper and panel cannot disagree"; that claim is withdrawn. What is true is
+narrower: tier 1 offers a subject the receipt's own projection shows as
+unserved.
+
+## 5. The minting gate must be restructured
+
+Today the forward action is minted only `if (passed && unlocked && ...)`, and
+`unlocks` is null on a module's last lesson (pinned by a planner test).
+
+Tier 2 must fire exactly when there *is* backlog and possibly no next lesson —
+d5 passed on Friday with d2 unfinished is the case that matters most. So the
+gate becomes: `passed && learnerId && unit?.subject`, with the tier ladder
+deciding whether an action exists at all.
+
+`#nextUnlocked` stops being the gate and becomes tier 3's input only.
+
+## 6. Copy
+
+*"Today is already complete"* is printed today while other subjects sit
+untouched. It becomes true only in tier 3. Tiers 1 and 2 get their own lines.
+
+When every subject is served and no backlog exists there is no action: the
+receipt prints the day's tally and no QR — the honest end of a finished day.
+
+A test currently pins the old string; it is updated as part of this slice.
+
+---
+
+# Slice 2 — lesson-level pacing
+
+## 7. The date model
+
+### 7.1 Where dates live
 
 | Level | Today | After |
 | --- | --- | --- |
-| course | `assignment.courses[].timing` → `school.timing/v1`, has `target.dueOn` | unchanged |
+| course | `assignment.courses[].timing`, has `target.dueOn` | unchanged |
 | module | `enrollment.moduleSchedule[id]` → `opensOn`/`closesOn` | unchanged |
 | unit | *nothing* | `enrollment.lessonSchedule[unitId]` → `dueOn` |
 
 `planner.mjs` reads a course unit's timing from the **enrollment**, so every
-lesson in a course shares one timing object. There is no per-lesson slot. This
-adds one.
+lesson in a course shares one timing object. This adds a per-lesson slot.
 
-### 3.2 `lessonSchedule`
+### 7.2 `lessonSchedule`
 
-A sibling of `moduleSchedule`, frozen onto the enrollment the same way, flat
-and keyed by `unitId`:
+A sibling of `moduleSchedule`, frozen onto the enrollment the same way, flat and
+keyed by `unitId`:
 
 ```yaml
 enrollment:
-  schema: school.course-enrollment/v2
   moduleSchedule:
     w35-aug24: { opensOn: '2026-08-24', closesOn: '2026-08-30' }
   lessonSchedule:                          # NEW
@@ -81,242 +155,270 @@ enrollment:
     cfm-w35-d5-psalms-85-86: { dueOn: '2026-08-28' }
 ```
 
-`dueOn` **only**. No per-lesson `opensOn`/`closesOn`: the module window already
-answers "is this offerable", and a second availability source would be a second
-answer to drift from. A lesson never opens before its module or outlives it.
+`dueOn` **only**. The module window already answers "is this offerable", and a
+second availability source would be a second answer to drift from.
 
-Flat rather than nested under the module because every lookup is by `unitId`.
-
-### 3.3 The cascade
-
-Derivation runs downward exactly one step. Validation runs upward.
+### 7.3 The cascade
 
 ```
-course target.dueOn  ──validates──▶  module windows   (last closesOn <= course dueOn)
-module window        ──derives───▶   lesson dueOn     (spread over school days)
+module window  ──derives──▶  lesson dueOn   (spread over the enrollment's school days)
 ```
 
-Spreading N lessons across a module window on a known school calendar is
-deterministic. Deriving 17 week-windows from "done by Christmas" is a
-scheduling problem with many valid answers, so the course date **checks** the
-authored module windows rather than inventing them.
+One direction, one step. Spreading N lessons across a window on a known school
+calendar is deterministic.
 
-### 3.4 The pacing policy
+**Cut from rev 1:** the `explicit` strategy (no motivating course exists) and
+upward validation of a course-level `dueOn` against module windows (it would
+validate a mutable field exactly once, so it does not deliver the guarantee it
+names). Both are YAGNI until something needs them.
 
-On the syllabus, beside the existing `lesson_order`:
+### 7.4 The policy
 
 ```yaml
 policy:
   mode: dated_modules
-  lesson_order: dated              # NEW value; today: fixed | shuffle_once
-  lesson_pacing:
-    schema: school.lesson-pacing/v1
-    strategy: spread               # spread | explicit
+  lesson_order: dated      # NEW value; today fixed | shuffle_once
 ```
 
-- **`spread`** — walk the module window's school days and assign
-  `lessonOrder[n]` to school-day *n*. The calendar is the enrollment's existing
-  `schedule` (`daysOfWeek` / `except` / `also`), read through
-  `schoolCalendar.mjs`. No authoring. For Milo's `w35-aug24` this yields §3.2
-  exactly.
-- **`explicit`** — the course authored its own per-lesson `dueOn`. The cascade
-  validates instead of deriving: inside the module window, monotonic with
-  `lessonOrder`, landing on school days.
+`lesson_order: dated` means **lessons are peers, not prerequisites**: each is
+independently available inside its open module, ordered by date. Correct for a
+calendar-shaped course (Psalms 70–77 does not require Psalms 62–69); wrong for a
+cumulative one, which opts out by doing nothing.
 
-**More lessons than school days is not an error.** The overflow doubles up on
-the last school day rather than spilling past `closesOn`. Two lessons sharing a
-`dueOn` is well-defined downstream: the tiebreak is `lessonOrder` position,
-which is already total.
+No `lesson_pacing` schema wrapper — a single enum value does not need one.
 
-### 3.5 When the cascade runs
+**`ORDERING` must not simply gain `dated`.** `workValidation.mjs` uses one
+`ORDERING` list for *both* `module_order` and `lesson_order`, so adding `dated`
+there would legalize `module_order: dated`. A separate `LESSON_ORDERING` list is
+introduced, and `syllabus.mjs` — which carries its own orderings list through
+which a syllabus can override `lesson_order` — is updated to match. `dated`
+additionally requires `mode: dated_modules`.
 
-At enrollment materialization (`enrollment.mjs`), where `moduleSchedule` and
-`lessonOrder` are already frozen. Cascade errors **reject the enrollment**,
-matching the rule already in force for timing anchors: School never silently
-creates a plan whose dates it could not resolve. Editing a syllabus later never
-moves an active plan.
+### 7.5 Spreading
 
-## 4. Selection
+Walk the module window's school days (from the enrollment's existing `schedule`,
+via `schoolCalendar.mjs`) and assign `lessonOrder[n]` to school-day *n*.
 
-### 4.1 The priority table
+- **More lessons than school days:** the tail doubles up on the last school day.
+  Two lessons sharing a `dueOn` is well-defined; the tiebreak is `lessonOrder`
+  position, which is total.
+- **Zero school days in the window** (a module sitting entirely inside an
+  `except` vacation span — a real case; the planner's own tests use one): fall
+  back to spreading across the window's calendar days. Rev 1 would have rejected
+  the enrollment, meaning one vacation week refuses a 52-week course.
 
-The ladder is expressed as a priority assignment, not a new comparator.
-`byEntryPriority` sorts on `timingPriority` then `timingRank` and does not
-change.
+### 7.6 Migration — how a live enrollment gets paced
 
-Pre-pass per dated course, a sibling of the existing `datedRankByModule` loop:
+Enrollment policy is snapshotted at materialization and `policyFor` prefers the
+snapshot, so an existing enrollment never acquires `lessonSchedule` on its own.
+Rev 1's "no migration needed" meant the fix reached nobody, including Milo.
 
-```
-overdue = unpassed lessons in the OPEN module with dueOn < today, oldest first
-backlogPressure = overdue.length >= 2
-```
+Re-enrolling is **not** an acceptable migration: `createCourseEnrollment` drops
+modules already closed at enrollment time, which would erase exactly the backlog
+this design exists to surface.
 
-Per entry:
+**A re-pacing operation** is therefore part of this slice: for an existing
+enrollment it computes `lessonSchedule` from the enrollment's *existing*
+`moduleSchedule` and `lessonOrder`, and sets `progression.lesson_order: dated`
+on the snapshot. Membership, module order and lesson order are untouched. It is
+idempotent and it is the only supported way to pace a live course.
 
-| Lesson | `timingPriority` | `timingRank` |
-| --- | --- | --- |
-| in progress | `0` in_progress | — (existing rule) |
-| `dueOn < today` | `1` when `backlogPressure`, else `3` | index in `overdue` (0 = oldest) |
-| `dueOn == today` | `2` | 0 |
-| `dueOn > today` | `4` | days until due |
+## 8. Selection
 
-Which produces:
+### 8.1 A dedicated evaluator
 
-- 2+ overdue → oldest backlog beats today's lesson (**threshold 2**)
-- 1 overdue → today's lesson leads; backlog falls to the receipt's second slot
-- nothing due today → 1 overdue beats working ahead
-- module closes → the existing `catch_up` path takes over, ranked newest-first
+Rev 1 said "stop skipping `evaluateTiming` and merge". That cannot work:
+`evaluateTiming`'s default `urgencyLeadDays` is **7**, so every lesson in a
+7-day module is inside the urgency lead and returns state `urgent`, priority 1 —
+flattening the whole ladder and violating §8.2 for every lesson. Three of the
+four rows are unreachable through it besides (priority 2 needs
+`basePriority: high`, priority 4 needs `low`, and an overdue aspirational target
+returns `basePriority` with no path to 1).
 
-### 4.2 Backlog raises priority, never state
+So a **pure `evaluateDatedLesson()`** is added to `timing.mjs` alongside
+`evaluateDatedModule`, and it sets state, priority and rank explicitly:
+
+| Situation | `timingState` | `timingPriority` | `timingRank` |
+| --- | --- | --- | --- |
+| session past `created` | `in_progress` | 0 | 0 |
+| open module, overdue, **≥2 behind** | `missed_target` | 1 | index in overdue (0 = oldest) |
+| open module, due today | `available` | 2 | 0 |
+| open module, overdue, 1 behind | `missed_target` | 3 | index in overdue |
+| open module, due later | `available` | 4 | days until due |
+| **closed** module | `catch_up` | 6 | module recency (1 = newest) |
+
+Every row has a state, because `timingState` is load-bearing in four places.
+Note `due today` is `available`: §8.4's obligation fix depends on it.
+
+Closed-module lessons get their own priority band (**6**) rather than today's
+medium. Two reasons: it keeps `timingRank`'s three incommensurable scales
+(overdue index / days-until-due / module recency) from ever being compared
+across bands, and backlog from a closed week should yield to the current week.
+Relative order *among* closed modules is unchanged, so the pinned newest-first
+test still holds. **This is a deliberate behavioural change and is called out
+because it is one.**
+
+### 8.2 Backlog raises priority, never state
 
 `focusExtras` and `focusBudget` key off `timingState === 'urgent'`, not off
-`timingPriority`. Backlog therefore lifts the **priority number** to 1 while
-leaving `timingState` as `missed_target` — which is what `evaluateTiming`
-already returns for an overdue aspirational target.
+`timingPriority` — verified by grepping every consumer; nothing branches on the
+priority number, it is only ever sorted.
 
-Two consequences, both wanted:
+So backlog pressure lifts the **priority number** to 1 while leaving
+`timingState` at `missed_target`. `focusExtras` returns 0 structurally, so a
+behind subject can never displace another subject, and `focusBudget` stays 1, so
+a subject is still served after one pass. The backlog lesson is reachable only
+through the receipt's tier 2.
 
-- `focusExtras` returns 0 structurally, so a behind subject can never displace
-  another subject. Focus-day displacement remains reserved for work that
-  declares a block budget.
-- `focusBudget` stays 1, so a subject is still served after one pass. The
-  backlog lesson is reachable only through the receipt's continue slot, not by
-  the subject quietly serving itself twice.
+### 8.3 A pre-created session is not work in hand
 
-**Rule: backlog raises priority, never state.** A test pins it.
+**This is what defeated rev 1's acceptance test.** `BuildAgenda` calls
+`ensureSession` for every entry it prints, which appends a `created` event.
+`openByUnit` filters only on `!terminal`, so that bare session makes the entry
+`in_progress` at priority 0 — and Wednesday's panel offers Tuesday's lesson
+again, which is the original complaint.
 
-### 4.3 Planner changes
+The rule's own justification is *"a child holding a printed sheet must be able
+to finish it"*. A `created` session is not a printed sheet; nothing was issued,
+dispatched or answered.
 
-1. `blockerFor` returns `null` for within-module ordering when
-   `lesson_order: dated`. Lessons are peers, not prerequisites. Module-level
-   gating is untouched — a future module is still `upcoming` via
-   `datedStateByModule`, which never went through `blockerFor`.
-2. `rawTiming` gains the lesson's own
-   `target: { dueOn, strength: 'aspirational' }` from `lessonSchedule`.
-3. The `datedKey` branch currently **skips `evaluateTiming` entirely**. It must
-   stop doing that and merge module state with lesson timing.
+**For dated lessons, priority 0 requires the session to have progressed past
+`created`.** A bare `created` session is an agenda placeholder and does not
+preempt the ladder. Non-dated courses keep today's behaviour exactly — this is
+scoped deliberately, because the same argument probably applies globally and
+that is a larger change than this design should make.
 
-**`aspirational`, not `firm`.** A passed firm target becomes `dormant` and
-needs a grown-up to revive it. An overdue lesson must stay offerable, which is
-the entire point; `aspirational` gives `missed_target` — still eligible at base
-priority.
-
-### 4.4 Obligation
+### 8.4 Obligation
 
 `agenda.mjs` excuses a subject as `not_due_yet` when its actionable work is
 `available` and has a `target.dueOn`. The predicate tests whether a due date
-**exists**, not whether it has **arrived**. It is harmless today only because
-nothing populates a per-lesson `dueOn`; the moment §3.2 does, a lesson due
-*today* matches it, the subject stops obligating, and the day reports
-`complete` with the lesson undone.
+**exists**, not whether it has **arrived**.
 
-Fix: compare the date.
+Rev 1 called that branch "effectively dead". It is not: for non-dated entries it
+is currently *sound*, because `evaluateTiming` only returns `available` beside a
+target when today is more than `urgencyLeadDays` before it — so "exists" already
+entails "hasn't arrived". The live hazard is narrower and exists today: a dated
+entry whose course-level timing carries `target.dueOn` is spread onto
+`entry.timing` with `timingState` from the module, hitting the branch already.
+
+Fix either way: compare the date.
 
 ```js
 e.timing?.target?.dueOn > today     // "isn't due yet", not "has a due date"
 ```
 
-Obligation then follows **`dueOn <= today`**: due today or overdue is owed,
-future-dated is available but optional. Working ahead stays voluntary, which
-was the original intent of the branch.
+Obligation then follows **`dueOn <= today`**.
 
-Non-school days need no special case — `noSchoolToday` is checked earlier and
-short-circuits, so the school calendar stays authoritative for whether today
-obligates at all.
+Rev 1 also claimed `noSchoolToday` "is checked earlier and short-circuits". It
+does not — it is applied as an override *after* the ladder, and the code
+documents at length why it deliberately does not short-circuit. The verdict is
+unchanged; the mechanism claim was wrong and is corrected here.
 
-Two neighbouring flags keep their current meanings deliberately:
+Two neighbouring flags:
 
 - `isBacklog` stays **module**-level, so only a closed week excuses as
-  `optional_backlog`. An overdue lesson inside the open week still obligates.
-- `catchUp` widens to include an overdue lesson in the open module, so paper
-  can say the child is backfilling Tuesday rather than showing it as today's
-  work.
+  `optional_backlog`; an overdue lesson inside the open week still obligates.
+- `catchUp` widens to include an overdue lesson in the open module.
 
-## 5. The result receipt
+These two are currently derived from one predicate precisely so paper and policy
+cannot disagree. Splitting them breaks that invariant, so `catchUp` gains its
+own explicit definition and a test pins both.
 
-`CloseSessionOutcome#settle` picks its forward action from the agenda
-`sections` its own `#projectPlan` already returns.
+### 8.5 Sequence dissolution must not swallow a fault
 
-| # | Offer | Token | Eyebrow |
-| --- | --- | --- | --- |
-| 1 | An unserved subject's next action | that subject, `continueToday: false` | `Next up` |
-| 2 | Overdue backlog in this subject | this subject, `continueToday: true` | `Catch up` |
-| 3 | Next in sequence in this subject | this subject, `continueToday: true` | `One more?` |
+Today a dated unit in a module with **no window** produces: locked entry →
+blocker `upcoming` with reason `not_scheduled` → `isTimeHeld` false → chain
+unreachable → **`faulted`**. The code's own words: *"waiting for a date that will
+never exist."*
 
-Tier 1 takes the unserved subject the agenda already ranks first, so paper and
-panel cannot disagree about what is next.
+With `blockerFor` returning null for dated lessons, nothing is ever locked, so
+that fault path is unreachable and the section falls through to `opens_later` →
+**excused**. A broken course would silently read as a legitimate day off.
 
-**No new token class.** `subject_next` already names a learner and a subject. A
-cross-subject offer names a *different* subject and drops the `continueToday`
-override, because that subject is not served and resolves normally.
+So: **a dated lesson whose module carries no window is `faulted`
+(`not_scheduled`) directly**, without needing a locked entry to carry it. A test
+pins it.
 
-**The copy is a correctness fix.** *"Today is already complete"* is printed
-today while other subjects sit untouched. It becomes true only in tier 3.
+### 8.6 Planner changes, summarised
 
-**`#projectPlan` must stop passing `assignedPrograms: false, programStatuses:
-[]`.** Program subjects otherwise have no daily status and tier 1 would offer
-piano to a child who already did piano. The receipt prints a handful of times a
-day, so the launcher fan-out is cheap and a wrong offer is not.
+1. `blockerFor` returns null for within-module ordering when
+   `lesson_order: dated`. Module-level gating is untouched (it never went
+   through `blockerFor`).
+2. Each dated lesson's entry is built from `evaluateDatedLesson`, using its own
+   `lessonSchedule[unitId].dueOn`.
+3. The pre-pass that computes `datedRankByModule` gains an `overdue` list and
+   `backlogPressure` flag per dated course.
+4. The `in_progress` short-circuit consults session state, per §8.3.
 
-Two smaller consequences:
+## 9. Validation and failure
 
-- `#nextUnlocked` stops meaning "next in `lessonOrder`". With
-  `lesson_order: dated` nothing is locked, so tier 3 means the earliest
-  future-dated lesson.
-- When every subject is served and no backlog exists there is no action. The
-  receipt prints the day's tally and no QR — the honest end of a finished day.
+- `LESSON_ORDERING` gains `dated` (separate from `module_order`'s list);
+  `syllabus.mjs` updated to match; `dated` requires `mode: dated_modules`.
+- Re-pacing (§7.6) rejects only on an unusable module window.
+- **Runtime failures fail toward offerable.** A lesson with a missing or
+  unparseable `dueOn` loses its date, sorts last at priority 4, stays available,
+  and logs. The ordinary `evaluateTiming` path would make it `dormant`, which
+  requires a parent to revive — wrong for one lesson.
+- **No silent migration.** `lesson_order` defaults to `fixed`, so every existing
+  enrollment behaves exactly as today until §7.6 is run against it.
 
-## 6. Validation and failure
+## 10. Tests
 
-**Authoring time** (`workValidation.mjs`)
+Slice 1:
+- one test per tier, including exclusivity (tier 1 firing means no tier 2/3 QR)
+- tier 2 fires when `unlocks` is null (the Friday-d5 case)
+- a program subject is never offered by tier 1
+- updated copy assertion (replaces the pinned "Today is already complete")
 
-- `ORDERING` gains `dated`.
-- `lesson_order: dated` requires `mode: dated_modules`; there are no module
-  windows to spread across otherwise.
-- `lesson_pacing` validated as its own schema.
-
-**Enrollment time** — the cascade rejects the enrollment on:
-
-- a course `dueOn` earlier than the last module's `closesOn`
-- `explicit` dates outside their module window, out of order with
-  `lessonOrder`, or off the school calendar
-
-**Runtime failures fail toward offerable, not dormant.** A lesson with a
-missing or unparseable `dueOn` loses its date, sorts last at priority 4, stays
-available, and logs. The ordinary `evaluateTiming` path would make it
-`dormant`, which requires a parent to revive — the wrong outcome for one
-lesson.
-
-**No migration.** `lesson_order` defaults to `fixed`, so every existing
-enrollment behaves exactly as today until a course opts in.
-
-## 7. Tests
-
-Pure domain:
-
-- cascade `spread` reproduces §3.2 from Milo's real `w35-aug24` window
-- cascade `explicit` accepts a valid set and rejects each invalid kind
-- the §4.1 priority table, one case per row
+Slice 2, pure domain:
+- `evaluateDatedLesson`, one case per row of §8.1, open and closed modules
+- the spread reproduces §7.2 from Milo's real `w35-aug24` window
+- spread with zero school days falls back to calendar days
+- spread with more lessons than school days doubles up on the last
 
 Guards:
+- a lesson due **today** still obligates (§8.4)
+- a 2-behind subject suppresses no other subject (§8.2)
+- a bare `created` session does not preempt today's lesson (§8.3)
+- a window-less dated module still faults (§8.5)
+- `catchUp` and `isBacklog` agree where they still should (§8.4)
 
-- a lesson due **today** still obligates (§4.4 regression)
-- a 2-behind subject suppresses no other subject (§4.2)
+Regression:
+- a `fixed` course picks the identical lesson before and after
+- the pinned newest-first closed-module order still holds (§8.1)
 
-Receipt: one test per tier in §5.
-
-Regression: a `fixed` course picks the identical lesson before and after.
-
-**Acceptance — 2026-08-26 replayed.** Milo, Wednesday, `d1` passed:
+**Acceptance — 2026-08-26 replayed.** Milo, Wednesday, `d1` passed, `d2` printed
+Tuesday (so it carries a bare `created` session):
 
 | | Today | After |
 | --- | --- | --- |
-| Panel offers | `d2` (Tuesday's) | **`d3` (Wednesday's)** — due today beats 1-behind |
+| Panel offers | `d2` (Tuesday's) | **`d3`** — the `created` session does not preempt, and due-today outranks 1-behind |
 | After he passes it | "One more?" → `d4` | **"Catch up" → `d2`** |
 
-## 8. Open to a later slice
+## 11. What changed from rev 1
 
-- A timing editor UI. Anchors, windows and pacing stay hand-authored YAML.
-- Deriving module windows from a course due date, rather than validating them.
-- Per-lesson availability, should a course ever genuinely need a lesson to open
-  later than its module.
+| Rev 1 claim | Reality | Now |
+| --- | --- | --- |
+| acceptance test yields `d3` | `BuildAgenda` pre-creates a session → `d2` wins at priority 0 | §8.3 |
+| "merge `evaluateTiming`" produces the table | 7-day urgency lead makes every lesson `urgent`; 3 of 4 rows unreachable | §8.1, dedicated evaluator |
+| "no migration" | frozen policy = fix reaches nobody, including Milo | §7.6 re-pacing |
+| flip `assignedPrograms: true` | projection has no launchers by design → every program faults | §4, skip programs |
+| `not_due_yet` is "effectively dead" | sound for non-dated; the real hazard is narrower | §8.4 |
+| `noSchoolToday` "checked earlier, short-circuits" | applied last as an override, deliberately | §8.4 |
+| tiers implicitly stackable | same token shape → mislabelled QR | §3 exclusivity |
+| no closed-module row | rank scales collide | §8.1 priority band 6 |
+| sequence dissolution harmless | kills the `blocked_unreachable` fault | §8.5 |
+| `ORDERING` gains `dated` | shared enum legalizes `module_order: dated` | §7.4 |
+| cascade validates course `dueOn`; `explicit` strategy | speculative; validates a mutable field once | cut (§7.3) |
+| reject enrollment on zero school days | one vacation week refuses a 52-week course | §7.5 fallback |
+
+## 12. Deferred
+
+- A timing editor UI; anchors, windows and pacing stay hand-authored YAML.
+- Deriving module windows from a course due date.
+- Per-lesson availability, if a course ever needs a lesson to open later than
+  its module.
+- Applying §8.3's "a `created` session is not work in hand" rule globally rather
+  than only to dated lessons.
+- A launcher-wired projection for the receipt, which would let tier 1 speak
+  about program subjects.

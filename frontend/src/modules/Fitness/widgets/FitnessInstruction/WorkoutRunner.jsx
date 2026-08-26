@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import getLogger from '@/lib/logging/Logger.js';
 import { installCueAudioUnlock } from '@/modules/Fitness/player/hooks/audioCuePlayer.js';
+import { FitnessContext } from '@/context/FitnessContext.jsx';
 import RestTimer from './RestTimer.jsx';
 import './WorkoutRunner.scss';
 
@@ -134,6 +135,19 @@ export default function WorkoutRunner({
   onRetryLog = null
 }) {
   const logger = useMemo(() => getLogger().child({ component: 'workout-runner' }), []);
+
+  // Rest-timer cue paths come from the fitness config, never from a constant in
+  // the source (`rest_timer.{tick_sound,go_sound}`). Read through the raw
+  // context rather than `useFitness()` so a mount without a provider degrades
+  // to silent cues instead of throwing. The config is sometimes wrapped in a
+  // `.fitness` key, matching how every other consumer reads it.
+  const fitnessCfg = useContext(FitnessContext)?.fitnessConfiguration;
+  const restCues = useMemo(() => {
+    const root = fitnessCfg?.fitness || fitnessCfg || {};
+    const cues = root.rest_timer || {};
+    const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    return { tickSound: str(cues.tick_sound), goSound: str(cues.go_sound) };
+  }, [fitnessCfg]);
 
   const plan = Array.isArray(steps) ? steps : [];
   const [cursor, setCursor] = useState(0);
@@ -364,6 +378,8 @@ export default function WorkoutRunner({
             seconds={step.seconds}
             afterLabel={step.afterSlug ? resolveExercise(exercises, step.afterSlug).name : null}
             nextLabel={step.nextSlug ? resolveExercise(exercises, step.nextSlug).name : null}
+            tickSound={restCues.tickSound}
+            goSound={restCues.goSound}
             onDone={() => advanceFrom(cursor, 'rest-elapsed')}
           />
         ) : (
