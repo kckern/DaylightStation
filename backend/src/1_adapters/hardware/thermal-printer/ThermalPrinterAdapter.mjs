@@ -120,8 +120,34 @@ const STATUS_REPLY_GRACE_MS = 200;
  */
 export const POST_JOB_STATUS_SETTLE_MS = 1000;
 
-/** Post-job status read attempts (the printer may still be locking us out). */
-const POST_JOB_STATUS_ATTEMPTS = 2;
+/**
+ * Timeout for the post-job status CONNECT only — deliberately NOT
+ * `DEFAULT_CONNECT_TIMEOUT_MS`. That 20s guard exists for a job's own connect,
+ * where a hung connection blocks paper the household is waiting on and must be
+ * given every reasonable chance to land. A post-job status read is different:
+ * it is pure bookkeeping (upgrading `unreadable` to `verified`, or catching a
+ * mid-job paper-out), the caller already has their printed page in hand, and
+ * this read sits directly in front of the next queued job. Probed read-only
+ * 2026-08-25: a status connection that hangs can take up to ~42s to resolve —
+ * with the connect guard reused here (as it originally was), 2 retries of that
+ * could add well over a minute behind one job. Bounding it to a few seconds
+ * caps the worst case near `POST_JOB_STATUS_SETTLE_MS + this value`, not
+ * `DEFAULT_CONNECT_TIMEOUT_MS × POST_JOB_STATUS_ATTEMPTS`.
+ */
+export const POST_JOB_STATUS_TIMEOUT_MS = 2500;
+
+/**
+ * Post-job status read attempts. Was 2; a retry immediately after a refused
+ * connection is unlikely to land (the printer is refusing because of its own
+ * post-`destroy()` lockout, which does not clear inside one settle interval)
+ * and simply doubles the worst-case delay in front of the next queued job. One
+ * attempt, bounded by `POST_JOB_STATUS_TIMEOUT_MS`, is the whole fix: an
+ * unreadable status already resolves to `verified: false` /
+ * `verification: 'unreadable'` — never a fault — so a lone attempt costs
+ * nothing in correctness, only in the rare case where a second try might have
+ * caught a printer that recovered in the interim.
+ */
+const POST_JOB_STATUS_ATTEMPTS = 1;
 
 /**
  * Blocking conditions read out of a parsed status, or `null` for "nothing to
@@ -369,9 +395,16 @@ export class ThermalPrinterAdapter {
    * print path's own pre-flight rides the job's socket instead (see
    * `#executePrintJob`), and its post-job read runs only after `device.close()`.
    *
+   * @param {number} [timeoutMs] - Connect timeout for THIS call only. Defaults
+   *   to the adapter's configured connect timeout (`this.#timeout`, the
+   *   post-destroy-lockout guard) so every caller except the post-job path
+   *   keeps its existing behaviour unchanged. The post-job read passes
+   *   `POST_JOB_STATUS_TIMEOUT_MS` explicitly — that read is bookkeeping after
+   *   paper is already in hand, not a job the household is waiting on, and it
+   *   sits in front of the next queued job.
    * @returns {Promise<{success: boolean, online?: boolean, paperPresent?: boolean, errors?: string[]}>}
    */
-  async getStatus() {
+  async getStatus(timeoutMs = this.#timeout) {
     if (!this.#host) {
       return { success: false, error: 'Printer IP not configured' };
     }
@@ -392,7 +425,7 @@ export class ThermalPrinterAdapter {
 
       timeoutId = setTimeout(
         () => finish({ success: false, error: 'Connection timeout' }),
-        this.#timeout,
+        timeoutMs,
       );
 
       device.open(async (error) => {
@@ -530,15 +563,15 @@ export class ThermalPrinterAdapter {
   /**
    * Ask how the job went — AFTER the job's socket is gone, never during.
    *
-   * Retried once because the printer may still be refusing connections in the
-   * wake of our own `destroy()`; a refusal is not evidence of a fault, only of
-   * a closed door.
+   * Uses `POST_JOB_STATUS_TIMEOUT_MS`, NOT `this.#timeout` (the connect guard
+   * a job's own socket relies on for the post-destroy lockout) — see that
+   * constant's doc comment for why the two must not share a value.
    */
   async #readStatusAfterJob() {
     let last = null;
     for (let attempt = 1; attempt <= POST_JOB_STATUS_ATTEMPTS; attempt += 1) {
       await new Promise((r) => setTimeout(r, this.#statusSettleMs));
-      last = await this.getStatus();
+      last = await this.getStatus(POST_JOB_STATUS_TIMEOUT_MS);
       if (statusIsConclusive(last) || faultsIn(last)) return last;
       this.#logger.warn?.('thermalPrinter.postjob.status-unreadable', {
         attempt, error: last?.error ?? null,
