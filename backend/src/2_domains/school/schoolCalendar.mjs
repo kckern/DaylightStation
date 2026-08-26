@@ -29,43 +29,71 @@ function isoWeekday(day) {
 /**
  * Normalize one `except`/`also` member to a `{ from, to }` span. A bare date
  * is a one-day span, which collapses membership to a single comparison.
- * Returns null for anything unreadable — the caller fails open on that.
  */
-function readSpan(raw) {
-  if (typeof raw === 'string') return isStudyDay(raw) ? { from: raw, to: raw } : null;
-  if (!isObject(raw)) return null;
-  return isStudyDay(raw.from) && isStudyDay(raw.to) ? { from: raw.from, to: raw.to } : null;
+function readSpan(raw, field, errors) {
+  if (typeof raw === 'string') {
+    if (!isStudyDay(raw)) { errors.push(`${field} has an invalid date: ${raw}`); return null; }
+    return { from: raw, to: raw };
+  }
+  if (!isObject(raw)) { errors.push(`${field} entries must be a date or a {from, to} range`); return null; }
+  const { from, to } = raw;
+  if (!isStudyDay(from) || !isStudyDay(to)) {
+    errors.push(`${field} has an invalid range: ${JSON.stringify(raw)}`);
+    return null;
+  }
+  if (to < from) { errors.push(`${field} range ends before it starts: ${from} → ${to}`); return null; }
+  return { from, to };
 }
 
-/** A span list, or null if ANY member is unreadable — see `readSchedule`. */
-function readSpanList(raw) {
+function readSpanList(raw, field, errors) {
   if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw)) return null;
-  const spans = raw.map(readSpan);
-  return spans.some((span) => span === null) ? null : spans;
+  if (!Array.isArray(raw)) { errors.push(`${field} must be a list`); return []; }
+  return raw.map((member) => readSpan(member, field, errors)).filter(Boolean);
 }
 
 /**
- * The readable form of a schedule, or null when any part of it is malformed.
+ * Validate and normalize a `schedule` block, in the `{ errors, x }` shape the
+ * other School validators return.
  *
  * Malformation is judged over the WHOLE block rather than per field on
  * purpose: an unreadable `except` list next to a readable `daysOfWeek` would
  * otherwise still excuse every weekend, which is exactly the silent-excuse
- * failure this module refuses to have.
+ * failure this module refuses to have. So `schedule` is null whenever
+ * `errors` is non-empty, and callers must read `errors` rather than infer a
+ * verdict from the null.
  */
-function readSchedule(raw) {
-  if (raw === undefined || raw === null) return null;
-  if (!isObject(raw)) return null;
+export function validateSchedule(raw) {
+  if (raw === undefined || raw === null) return { errors: [], schedule: null };
+  if (!isObject(raw)) return { errors: ['schedule must be a mapping'], schedule: null };
+  const errors = [];
+
   let daysOfWeek = null;
   if (raw.daysOfWeek !== undefined && raw.daysOfWeek !== null) {
-    if (!Array.isArray(raw.daysOfWeek)) return null;
-    if (raw.daysOfWeek.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) return null;
-    daysOfWeek = raw.daysOfWeek;
+    if (!Array.isArray(raw.daysOfWeek)) {
+      errors.push('daysOfWeek must be a list of ISO weekdays (1=Monday … 7=Sunday)');
+    } else if (!raw.daysOfWeek.length) {
+      // A term with no school days at all is never what anyone meant, and it
+      // would excuse every day from now to June without raising a single error.
+      errors.push('daysOfWeek must name at least one weekday');
+    } else if (raw.daysOfWeek.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) {
+      errors.push(`daysOfWeek must be integers 1..7 (1=Monday … 7=Sunday), got: ${JSON.stringify(raw.daysOfWeek)}`);
+    } else {
+      daysOfWeek = [...new Set(raw.daysOfWeek)].sort((left, right) => left - right);
+    }
   }
-  const except = readSpanList(raw.except);
-  const also = readSpanList(raw.also);
-  if (except === null || also === null) return null;
-  return { daysOfWeek, except, also };
+
+  const except = readSpanList(raw.except, 'except', errors);
+  const also = readSpanList(raw.also, 'also', errors);
+
+  if (errors.length) return { errors, schedule: null };
+  return {
+    errors,
+    schedule: {
+      ...(daysOfWeek ? { daysOfWeek } : {}),
+      ...(except.length ? { except } : {}),
+      ...(also.length ? { also } : {}),
+    },
+  };
 }
 
 const covers = (spans, day) => spans.some((span) => day >= span.from && day <= span.to);
@@ -83,10 +111,10 @@ const covers = (spans, day) => spans.some((span) => day >= span.from && day <= s
  */
 export function isSchoolDay(day, schedule) {
   if (!isStudyDay(day)) return true;
-  const normalized = readSchedule(schedule);
-  if (!normalized) return true;
-  if (covers(normalized.also, day)) return true;
-  if (covers(normalized.except, day)) return false;
+  const { errors, schedule: normalized } = validateSchedule(schedule);
+  if (errors.length || !normalized) return true;
+  if (covers(normalized.also ?? [], day)) return true;
+  if (covers(normalized.except ?? [], day)) return false;
   if (!normalized.daysOfWeek) return true;
   return normalized.daysOfWeek.includes(isoWeekday(day));
 }
