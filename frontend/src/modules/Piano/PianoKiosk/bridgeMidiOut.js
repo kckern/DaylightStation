@@ -31,6 +31,8 @@ function logger() {
 let lastOkAt = 0;
 let probeTimer = null;
 let announced = false;
+/** Latest `outVerified` from the APK: the piano echoed our probe. null = unknown. */
+let lastVerified = null;
 
 function probe() {
   try {
@@ -42,6 +44,25 @@ function probe() {
           announced = true;
           logger().info('bridge-out.available', { bridge: BRIDGE });
         }
+        // The APK computes the only honest OUT verdict there is — the piano's own
+        // echo — and puts it in the very response we just fetched. Until
+        // 2026-08-26 this function read `r.ok` and threw the body away, so
+        // `outVerified:false` sat unread through a 19-hour outage while this
+        // module's own doc comment claimed delivery was "attested by the bridge's
+        // loopback verdict". Read it, and say so when it turns bad.
+        return r.json().then((s) => {
+          const v = s?.outVerified;
+          if (typeof v !== 'boolean') return;
+          if (v !== lastVerified) {
+            lastVerified = v;
+            if (v) logger().info('bridge-out.verified', { bridge: BRIDGE });
+            // NOT a reason to fall back to Web MIDI. Acquiring Web MIDI is what
+            // wedges the shared Android GATT queue (see useWebMidiBLE's
+            // bridgeOwnsOut), so falling back on an unverified link would turn a
+            // recoverable fault into an unrecoverable one. Report, don't reroute.
+            else logger().warn('bridge-out.unverified', { bridge: BRIDGE, note: 'piano not echoing — OUT may be dead' });
+          }
+        }).catch(() => { /* body unreadable — reachability already latched */ });
       })
       .catch(() => { /* no bridge here — Web MIDI carries the sends */ });
   } catch { /* fetch/AbortSignal unavailable — fall back silently */ }
@@ -60,6 +81,21 @@ function ensureProbing() {
 export function bridgeOutUp() {
   ensureProbing();
   return Date.now() - lastOkAt < FRESH_MS;
+}
+
+/**
+ * The APK's loopback verdict: did the PIANO echo our probe note?
+ *
+ * Deliberately separate from bridgeOutUp(). Reachability answers "can I hand
+ * bytes to the bridge"; this answers "did the piano receive them". Routing must
+ * key on the former — see the note in probe() on why an unverified link must not
+ * fall back to Web MIDI. This is for display and alerting.
+ *
+ * @returns {boolean|null} null until the first probe body is read.
+ */
+export function bridgeOutVerified() {
+  ensureProbing();
+  return lastVerified;
 }
 
 /**

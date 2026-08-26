@@ -156,6 +156,13 @@ async function probeBridge() {
     out.outputPortOpenCount = Number(txt.match(/mOutputPortOpenCount=\[(\d+)\]/)?.[1] ?? -1);
     out.deviceConnections = Number(txt.match(/DeviceConnection count:\s*(\d+)/)?.[1] ?? -1);
   } catch (e) { out.dumpsysError = String(e.message || e); }
+  try {
+    // The rolling verdict from the APK's own loopback probe — the piano's echo,
+    // refreshed every heartbeat (~1/min). This is the ONLY read-only signal that
+    // says "OUT delivers NOW" rather than "OUT delivered at some point".
+    const r = await getJson(`http://${PB}/loopback`);
+    out.loopback = r.loopback || null;
+  } catch (e) { out.loopbackError = String(e.message || e); }
   return out;
 }
 
@@ -194,11 +201,32 @@ report.out = {
   bleToDin: report.jamcorder.routing?.bleToDin ?? null,
   sysexFilteringOff: report.jamcorder.routing?.filtering === false,
 };
-// The stale-port failure is precisely: hub has received nothing AND Android says
-// no write handle is open. Either alone is ambiguous (a hub reboot zeroes the
-// counters; a freshly-loaded page opens the port lazily), so require both.
-report.out.healthy = report.out.androidInputPortOpen === true
-  && (report.out.hubReceivedFromTablet ?? 0) > 0;
+// Verdict, in order of what a signal can actually prove.
+//
+// 2026-08-26: this check used to be `androidInputPortOpen && hubReceivedFromTablet > 0`
+// — a LIFETIME cumulative counter thresholded at zero. A counter frozen 19 hours
+// earlier still satisfied it, so this CLI printed "healthy (both directions)"
+// throughout the exact outage it was written to catch. `ble.in > 0` means "the hub
+// received something once", never "OUT works now". Same class of error as trusting
+// port.state: a signal that cannot go false while the fault is present.
+//
+// The APK's loopback verdict IS live — it sends an inaudible probe note and waits
+// for the piano's own echo, once per heartbeat. Prefer it absolutely; fall back to
+// the counter heuristic only when the bridge can't be asked, and say so.
+const lb = report.bridge.loopback;
+report.out.verified = lb?.outVerified ?? null;
+report.out.echoAgoMs = lb?.lastEchoAgoMs ?? null;
+report.out.consecutiveMisses = lb?.consecutiveMisses ?? null;
+report.out.lastRttMs = lb?.lastRttMs ?? null;
+if (lb && typeof lb.outVerified === 'boolean') {
+  report.out.healthy = lb.outVerified;
+  report.out.verdictSource = 'loopback-echo';
+} else {
+  // Weak fallback: cannot distinguish "delivered once, long ago" from "delivering".
+  report.out.healthy = report.out.androidInputPortOpen === true
+    && (report.out.hubReceivedFromTablet ?? 0) > 0;
+  report.out.verdictSource = 'counters-weak';
+}
 
 if (ACTIVE) {
   // A kiosk reload makes the page re-run requestMIDIAccess and fire its control
@@ -238,7 +266,15 @@ if (JSON_OUT) {
   console.log(`  forwarded to tablet  : ${report.in.hubForwardedToTablet}`);
   console.log('');
   console.log(`OUT  screen → piano       ${tick(report.out.healthy)}`);
-  console.log(`  hub RECEIVED from tablet : ${report.out.hubReceivedFromTablet}   <- the decisive number`);
+  console.log(`  piano ECHOED the probe   : ${tick(report.out.verified)}`
+    + `   <- the decisive signal (${report.out.verdictSource})`);
+  if (report.out.verified === false) {
+    console.log(`  unanswered probes        : ${report.out.consecutiveMisses}`
+      + `   (last echo: ${report.out.echoAgoMs === -1 ? 'NEVER' : `${report.out.echoAgoMs}ms ago`})`);
+  } else if (report.out.verified === true) {
+    console.log(`  echo round-trip          : ${report.out.lastRttMs}ms`);
+  }
+  console.log(`  hub received from tablet : ${report.out.hubReceivedFromTablet}   (cumulative — NOT proof of now)`);
   console.log(`  forwarded to piano (USB) : ${report.out.hubForwardedToPianoUsb}`);
   console.log(`  forwarded to piano (DIN) : ${report.out.hubForwardedToPianoDin}`);
   console.log(`  android write port open  : ${tick(report.out.androidInputPortOpen)}`);
