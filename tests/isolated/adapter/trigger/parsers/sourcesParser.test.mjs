@@ -18,6 +18,14 @@ describe('parseSources', () => {
     expect(out.nfc.locations.garage.debounce_ms).toBe(5000);
   });
 
+  // Production never calls parseNfcLocations directly — it always arrives here,
+  // where learner_action survives only by landing in toLegacyEntry's `...rest`.
+  it('carries learner_action through to the nfc location', () => {
+    const r = parseSources({ study: { modality: 'nfc', target: 'portal', learner_action: 'print-agenda' } });
+    expect(r.nfc.locations.study.learner_action).toBe('print-agenda');
+    expect(r.nfc.locations.study.defaults).toEqual({});
+  });
+
   it('throws on non-object root, non-object entry, and unknown modality', () => {
     expect(() => parseSources('x')).toThrow();
     expect(() => parseSources({ a: 'x' })).toThrow();
