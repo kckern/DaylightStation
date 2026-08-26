@@ -46,6 +46,17 @@ export function appendAssignedProgramEntries(plan, assignment) {
         programInstance: deckId,
       }));
     }
+    if (enrollment?.programId === 'story-time') {
+      // One instance per learner — there is no corpus to distinguish, and
+      // SetAssignments' dedupe key already refuses a second one.
+      plan.entries.push(baseEntry({
+        unitId: 'story-time:daily',
+        title: enrollment.title ?? 'Story time',
+        subject: enrollment.subject ?? 'english',
+        program: 'story-time',
+        programInstance: 'daily',
+      }));
+    }
     if (enrollment?.programId === 'piano-course') {
       const courseId = enrollment.courseId ?? enrollment.corpusId;
       if (!courseId) continue;
