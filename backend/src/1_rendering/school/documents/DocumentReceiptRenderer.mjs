@@ -149,7 +149,9 @@ export function createDocumentReceiptRenderer({
    * it read as belonging to neither ("Unit 0" line has no icon of its own;
    * see `drawTaxonomy`).
    */
-  function taxonomyOp(ctx, taxonomy, maxWidth, { icon = null, includeLesson = true } = {}) {
+  function taxonomyOp(ctx, taxonomy, maxWidth, {
+    icon = null, includeLesson = true, includeUnit = true,
+  } = {}) {
     if (!taxonomy) return null;
     const iconSize = icon ? theme.action.subjectIconPx : 0;
     const textOffset = icon ? iconSize + theme.action.iconGap : 0;
@@ -163,7 +165,9 @@ export function createDocumentReceiptRenderer({
       : 0;
 
     ctx.font = theme.fonts.taxonomyBottom;
-    const unitLines = wrapTight(ctx, taxonomy.unit, textWidth - theme.action.taxonomyBottomIndent);
+    const unitLines = includeUnit
+      ? wrapTight(ctx, taxonomy.unit, textWidth - theme.action.taxonomyBottomIndent)
+      : [];
     const lessonLines = includeLesson && taxonomy.lesson
       ? wrapTight(ctx, `›  ${taxonomy.lesson}`, textWidth - theme.action.taxonomyLessonIndent)
       : [];
@@ -232,11 +236,23 @@ export function createDocumentReceiptRenderer({
     // sharing the band beneath it.
     const fullWidth = contentWidth - 2 * theme.action.padding;
     const taxonomy = lesson && block.taxonomy
-      ? taxonomyOp(ctx, block.taxonomy, fullWidth, { icon, includeLesson: false })
+      ? taxonomyOp(ctx, block.taxonomy, fullWidth, {
+        icon, includeLesson: false,
+        // Subject > Course ONLY. The unit used to trail the breadcrumb as a
+        // second, bolder line, which made the header band two lines deep and
+        // filed the unit with the course path rather than with the lesson it
+        // actually introduces. It is drawn above the title instead.
+        includeUnit: !lesson,
+      })
       : null;
     // taxonomyOp leaves ctx.font on whatever it last measured with — reset to
     // the title font before wrapping the title, so its line breaks are
     // computed against the font it is actually drawn in.
+    ctx.font = theme.fonts.unitLabel;
+    const unitIndent = theme.action.unitMarkerSize + theme.action.unitMarkerGap;
+    const unitLines = lesson && typeof block.unit === 'string' && block.unit.trim()
+      ? wrapTight(ctx, block.unit.trim(), labelWidth - unitIndent)
+      : [];
     ctx.font = titleFont;
     const labelLines = wrapTight(ctx, block.label, labelWidth);
     ctx.font = theme.fonts.eyebrow;
@@ -351,7 +367,8 @@ export function createDocumentReceiptRenderer({
       ? eyebrowLines.length * theme.action.eyebrowLineHeight + theme.action.rowGap
       : 0)
       + (taxonomy ? taxonomy.heightPx + theme.action.rowGap : 0);
-    const titleColumn = labelLines.length * titleLineHeight
+    const titleColumn = unitLines.length * theme.action.unitLineHeight
+      + labelLines.length * titleLineHeight
       + (descriptionLines.length ? theme.action.rowGap : 0)
       + descriptionLines.length * theme.action.descriptionLineHeight;
     const mainBand = Math.max(codeBlockHeight, titleColumn);
@@ -370,6 +387,8 @@ export function createDocumentReceiptRenderer({
       lesson,
       eyebrowLines,
       labelLines,
+      unitLines,
+      unitIndent,
       descriptionLines,
       descriptionIndent,
       metaLines,
@@ -414,6 +433,7 @@ export function createDocumentReceiptRenderer({
           else ops.push({
             ...textOps(ctx, part.text, { font: theme.fonts.body, lineHeight: theme.text.bodyLineHeight }),
             compactReview: /^-\s+\d+:/.test(block.md),
+            align: block.align ?? null,
           });
         }
         break;
@@ -704,7 +724,15 @@ export function createDocumentReceiptRenderer({
       }
       if (op.kind === 'text') {
         ctx.font = op.font;
-        op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
+        if (op.align === 'center') {
+          ctx.textAlign = 'center';
+          op.lines.forEach((line, index) => ctx.fillText(
+            line, x + contentWidth / 2, op.yPx + index * op.lineHeight,
+          ));
+          ctx.textAlign = 'left';
+        } else {
+          op.lines.forEach((line, index) => ctx.fillText(line, x, op.yPx + index * op.lineHeight));
+        }
         continue;
       }
       if (op.kind === 'math') {
@@ -1015,6 +1043,19 @@ export function createDocumentReceiptRenderer({
         labelX += theme.action.iconPx + theme.action.iconGap;
       }
       let labelY = op.lesson ? bandY : boxTop + theme.action.padding;
+      if (op.unitLines?.length) {
+        // Marker on the first line only — it labels the run, and repeating it
+        // per wrapped line would read as a bulleted list of units.
+        ctx.fillStyle = theme.colors.text;
+        const markerY = labelY + textOpticalCenter(ctx, theme.fonts.unitLabel, op.unitLines[0])
+          - theme.action.unitMarkerSize / 2;
+        ctx.fillRect(labelX, markerY, theme.action.unitMarkerSize, theme.action.unitMarkerSize);
+        ctx.font = theme.fonts.unitLabel;
+        op.unitLines.forEach((line, index) => ctx.fillText(
+          line, labelX + op.unitIndent, labelY + index * theme.action.unitLineHeight,
+        ));
+        labelY += op.unitLines.length * theme.action.unitLineHeight;
+      }
       const titleFont = op.lesson ? theme.fonts.lessonTitle : theme.fonts.label;
       const titleLineHeight = op.lesson ? theme.action.titleLineHeight : theme.text.bodyLineHeight;
       ctx.font = titleFont;
@@ -1050,6 +1091,24 @@ export function createDocumentReceiptRenderer({
             ctx.strokeRect(innerX, barY, barW, theme.action.progressBarHeight);
             const filled = Math.max(0, Math.min(1, row.completed / row.total)) * barW;
             if (filled > 0) ctx.fillRect(innerX, barY, filled, theme.action.progressBarHeight);
+            // THE PRESENT TENSE. Solid is finished and empty is untouched; the
+            // unit a child is actually inside is neither, and filing it with
+            // "never opened" is what this hatch fixes. Vertical stripes, not an
+            // outline — the empty track is already an outline.
+            const active = Number.isInteger(row.inProgress) ? row.inProgress : 0;
+            if (active > 0 && row.completed + active <= row.total) {
+              const hatchEnd = innerX + ((row.completed + active) / row.total) * barW;
+              ctx.save();
+              ctx.lineWidth = theme.result.progressHatchWidth;
+              for (let hx = innerX + filled + theme.result.progressHatchPitch / 2; hx < hatchEnd;
+                hx += theme.result.progressHatchPitch) {
+                ctx.beginPath();
+                ctx.moveTo(hx, barY);
+                ctx.lineTo(hx, barY + theme.action.progressBarHeight);
+                ctx.stroke();
+              }
+              ctx.restore();
+            }
             // Ticks only while they can still be told apart — see
             // `progressTickMax`. At 366 lessons each tick is a third of a pixel
             // and the bar prints as a smudge.

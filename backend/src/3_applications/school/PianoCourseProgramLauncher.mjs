@@ -29,6 +29,9 @@
  * @module applications/school/PianoCourseProgramLauncher
  */
 import { isSameStudyDay } from '#domains/school/studyDay.mjs';
+// The present-tense rule (what counts as "the one you are inside") lives in the
+// domain so the agenda card and the result receipt cannot disagree about it.
+import { inProgressSegments } from '#domains/school/progressRows.mjs';
 
 /** The household's study day rolls at 4am, same as the rest of the agenda. */
 const BOUNDARY_HOUR = 4;
@@ -251,17 +254,58 @@ export class PianoCourseProgramLauncher {
     return { course, unit, lesson };
   }
 
+  /**
+   * THE COURSE BAR COUNTS UNITS, NOT LESSONS.
+   *
+   * It used to be `completed`/`total` lessons — "34 of 366" on the Hoffman
+   * course. That is a number a child cannot act on or picture: 366 of anything
+   * is not a journey, it is a wall, and one lesson moves the bar by a quarter of
+   * a pixel. Units are the scale the course is actually organised in and the
+   * scale progress is felt at, so the course row is now units done out of units
+   * total, with the unit currently underway carried as `inProgress` for the
+   * hatch — the same past/present/future convention the result receipt uses
+   * (`progressRows.mjs`).
+   *
+   * A unit counts as complete only when every crediting item in it is watched;
+   * a partly-done unit is the hatched one, never a solid one.
+   */
   #progress({ focus, credit, completed, total }) {
-    const rows = [{ scope: 'course', label: 'Course', completed, total }];
-    if (focus?.parentId != null) {
-      const inUnit = credit.filter((item) => String(item.parentId) === String(focus.parentId));
+    const units = new Map();
+    for (const item of credit) {
+      const key = item.parentId == null ? '' : String(item.parentId);
+      if (!units.has(key)) units.set(key, []);
+      units.get(key).push(item);
+    }
+    const unitList = [...units.entries()];
+    const unitsTotal = unitList.length;
+    const unitsDone = unitList.filter(([, items]) => items.every((i) => i.userWatched)).length;
+    const focusKey = focus?.parentId == null ? '' : String(focus.parentId);
+    const focusItems = units.get(focusKey) ?? [];
+    const focusComplete = focusItems.length > 0 && focusItems.every((i) => i.userWatched);
+
+    const rows = [];
+    if (unitsTotal > 0) {
+      rows.push({
+        scope: 'course',
+        label: 'Course',
+        completed: unitsDone,
+        total: unitsTotal,
+        inProgress: inProgressSegments({
+          completed: unitsDone, total: unitsTotal, currentComplete: focusComplete,
+        }),
+      });
+    }
+    if (focus?.parentId != null && focusItems.length) {
       rows.push({
         scope: 'module',
         label: focus.parentTitle ?? `Unit ${focus.parentIndex ?? ''}`.trim(),
-        completed: inUnit.filter((item) => item.userWatched).length,
-        total: inUnit.length,
+        completed: focusItems.filter((item) => item.userWatched).length,
+        total: focusItems.length,
       });
     }
+    // `completed`/`total` (lessons) stay in the signature: the callers above
+    // still build their sentence labels from them.
+    void completed; void total;
     return rows.filter((row) => row.total > 0);
   }
 
