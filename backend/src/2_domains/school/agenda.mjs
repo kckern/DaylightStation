@@ -382,11 +382,17 @@ export function planDailyAgenda({
       // — done today" named the shelf and withheld the lesson. These are the
       // entries this subject passed on this study day, so the agenda's
       // finished-work tally can name the work. A program subject (piano) owns
-      // its completion outside a work session and contributes no entry here —
-      // the tally then names the subject alone, which is all anything knows.
-      servedWork: list
-        .filter((entry) => passedTodayIds.has(entry.unitId))
-        .map((entry) => ({ unitId: entry.unitId, title: entry.title ?? null })),
+      // its completion outside a work session, so its work cannot come from
+      // `list` — it comes from the program's own status, which knows exactly
+      // which lesson it credited today. Without that second source a served
+      // program subject named nothing at all, and a presenter had only the
+      // pre-formatted `progressLabel` to fall back on.
+      servedWork: [
+        ...list
+          .filter((entry) => passedTodayIds.has(entry.unitId))
+          .map((entry) => ({ unitId: entry.unitId, title: entry.title ?? null })),
+        ...statuses.flatMap((status) => (status?.error ? [] : (status.servedWork ?? []))),
+      ],
       programUnavailable,
       focus: next && isFocus ? {
         blocksCompleted: candidatePasses,
