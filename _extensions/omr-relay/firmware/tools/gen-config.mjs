@@ -5,7 +5,7 @@
 // of the repo: the output config.h is gitignored.
 //
 // Usage:
-//   node tools/gen-config.mjs <path-to>/config/omr-readers.yml [reader-id]
+//   node tools/gen-config.mjs <dataDir>/household/hardware/omr/readers.yml [reader-id]
 //   DAYLIGHT_OMR_CONFIG=<path> node tools/gen-config.mjs [reader-id]
 //
 // reader-id defaults to the first key under `scanners:`.

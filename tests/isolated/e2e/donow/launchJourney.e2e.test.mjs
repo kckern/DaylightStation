@@ -102,7 +102,11 @@ describe('the DoNow launch journey — one card, garage-fitness, end to end (Tas
     // -----------------------------------------------------------------------
     await h.scanCard();
     const tapA = h.lastReceiptText();
-    expect(tapA).toContain('SCIENCE');
+    // A LIVE section is named by its lesson card's taxonomy breadcrumb, not by
+    // an uppercase subject heading — that heading survives only for sections
+    // with no card to offer (served/locked/unavailable), which is why the
+    // "SCIENCE … done today" assertions further down still hold.
+    expect(tapA).toContain('A garage fitness break');
 
     const offeredA = h.tokensInLastReceipt();
     // The location hint reads off the whole lesson card printed above the

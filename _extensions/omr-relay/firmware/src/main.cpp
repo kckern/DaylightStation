@@ -320,9 +320,15 @@ static CRGB leds[NUM_LEDS];
 // arriving from the reader — a brief flash per byte burst, then off again.
 // Connectivity state deliberately does NOT drive it; that lives on /health,
 // where it can be read without standing in the room.
+// "Data arriving" means a CARD moving through the reader, not the reader
+// answering our own idle re-arm. That ack is a few bytes once a minute, and
+// flashing for it turned the LED into a metronome — ~480 blinks a night in a
+// room someone sleeps in. downloadMode() mutes the LED across its own ack.
 static const CRGB FLASH_COLOR = CRGB::Purple;
 static const uint32_t LED_FLASH_MS = 120;
+static const uint32_t REARM_ACK_MUTE_MS = 500;  // ack lands within a few ms
 static uint32_t ledOffAtMs = 0;
+static uint32_t ledMuteUntilMs = 0;             // 0 = not muted
 
 static WebSocketsClient ws;
 static bool wsConnected = false;
@@ -755,6 +761,13 @@ static void downloadMode() {
   OMR.write('E');
   OMR.flush();
   cRearms++;
+  // The reader answers this with a "G" ack within a few ms. Those are bytes
+  // like any other, so without this the idle re-arm blinks the LED once a
+  // minute, forever — ~480 flashes over a night in a room someone sleeps in.
+  // The LED means "a card is moving through the reader"; our own housekeeping
+  // is not that. Mute it across the ack only.
+  ledMuteUntilMs = millis() + REARM_ACK_MUTE_MS;
+  if (ledMuteUntilMs == 0) ledMuteUntilMs = 1;   // 0 is the "not muted" sentinel
 }
 
 // ============================ HTTP diagnostics ===============================
@@ -1295,13 +1308,18 @@ void loop() {
     if (b < 0) break;
     lastByteMs = millis();
     cBytesRx++;
-    // The ONLY thing that lights this LED: bytes arriving from the reader.
-    setLed(FLASH_COLOR);
-    ledOffAtMs = millis() + LED_FLASH_MS;
-    // 0 is the "no flash pending" sentinel, so a deadline that lands exactly on
-    // the millis() rollover would strand the LED lit until the next byte. Nudge
-    // it by 1ms — the LED being stuck on is the one outcome this must not have.
-    if (ledOffAtMs == 0) ledOffAtMs = 1;
+    // The ONLY thing that lights this LED: bytes arriving from the reader —
+    // and not the "G" ack to our own idle re-arm, which downloadMode() mutes.
+    // Counting still happens above; muting the lamp must not blind the counters.
+    if (!ledMuteUntilMs || (int32_t)(millis() - ledMuteUntilMs) >= 0) {
+      ledMuteUntilMs = 0;
+      setLed(FLASH_COLOR);
+      ledOffAtMs = millis() + LED_FLASH_MS;
+      // 0 is the "no flash pending" sentinel, so a deadline that lands exactly
+      // on the millis() rollover would strand the LED lit until the next byte.
+      // Nudge by 1ms — a stuck-on LED is the one outcome this must not have.
+      if (ledOffAtMs == 0) ledOffAtMs = 1;
+    }
     if (b == 0x0D) { flushFrame(); continue; }
     // Overrun is FLAGGED, not swallowed. The old code dropped the excess bytes
     // and then flushed the frame as if it were complete, so an over-long record
