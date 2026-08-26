@@ -340,7 +340,7 @@ After this task, a card tapped in the living room stops answering `no_handler` a
 
 **Countdown:** reuse the existing RAF countdown hook rather than a fresh `setInterval` — see `docs/_wip/plans/2026-02-14-raf-countdown-hook.md` and the `confirmRemainingMs`/`confirmTotalMs` pattern `LaunchCard.jsx` already uses for exactly this shape of UI.
 
-**Sound effects:** the living-room display is the Shield WebView. Check whether it is subject to the same autoplay gate documented for the garage Firefox kiosk (`CLAUDE.local.md`, memory `reference_fitness_audio_cue_playback`) — a gesture-less kiosk may never be granted audible autoplay. **Verify before building the sound design**, or the cues will be silent in the field and nobody will know why.
+**Sound effects:** the living-room display is the Shield running Fully Kiosk's Android WebView. There is **no autoplay gate to design around** — book taps already start audible playback there with no user gesture anywhere in the loop (NFC tap to HTTP trigger to content load), so if the WebView enforced one the existing audiobook feature would not work. The only open question is narrower: whether a short programmatic `Audio.play()` cue behaves like the media element the Player mounts. Answer that on the device, not by analogy with any other kiosk in the house.
 
 **Test with vitest + Testing Library**, driving the hook with mocked WS payloads. Commit per state.
 
