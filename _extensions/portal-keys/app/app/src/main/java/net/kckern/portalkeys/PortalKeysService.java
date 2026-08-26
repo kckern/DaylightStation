@@ -2,10 +2,12 @@ package net.kckern.portalkeys;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.hardware.display.DisplayManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.PowerManager;
 import android.util.Log;
+import android.view.Display;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityWindowInfo;
@@ -42,6 +44,7 @@ public class PortalKeysService extends AccessibilityService
     public static final String TAG = "PORTALKEYS";
 
     private PowerManager powerManager;
+    private DisplayManager displayManager;
     private Config config;
     private FkbClient fkb;
     private EventLog eventLog;
@@ -77,6 +80,7 @@ public class PortalKeysService extends AccessibilityService
         super.onServiceConnected();
 
         powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        displayManager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
         config = new Config(this);
         fkb = new FkbClient(config);
         eventLog = new EventLog();
@@ -135,11 +139,42 @@ public class PortalKeysService extends AccessibilityService
      *
      * Hence the volume keys carry the whole interface.
      */
+
+    /**
+     * IS THE PANEL ACTUALLY LIT?
+     *
+     * This used to be `PowerManager.isInteractive()`, and on this Portal that
+     * flag does not track the backlight: FKB reported `screenOn:true` /
+     * `displayState:2` on a panel that was visibly dark, repeatedly, on
+     * 2026-08-25. The consequence was a trap. `onKeyEvent` takes the wake
+     * branch only when it believes the display is off, so with a dark panel
+     * still reporting "interactive" the wake never fired — and control fell
+     * through to the display-ON branch, where two volume presses SLEEP the
+     * display. Pressing a key to wake the panel put it further to sleep, and
+     * the device log shows exactly that:
+     *
+     *   11:56:18 key KEYCODE_VOLUME_DOWN down interactive=true
+     *   11:56:21 double-press-sleep fired
+     *   11:56:21 screen-off ok=true
+     *
+     * `Display.getState()` is the display's own power state — the same thing
+     * FKB surfaces as `displayState` (1 = off, 2 = on) — so it says what the
+     * eye sees. Falls back to the old signal only if the display service is
+     * unavailable, which is strictly better than reporting nothing.
+     */
+    private boolean isPanelLit() {
+        if (displayManager != null) {
+            Display display = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
+            if (display != null) return display.getState() == Display.STATE_ON;
+        }
+        return powerManager != null && powerManager.isInteractive();
+    }
+
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
-        boolean interactive = powerManager != null && powerManager.isInteractive();
+        boolean interactive = isPanelLit();
         String name = KeyEvent.keyCodeToString(code);
 
         boolean isVolume = code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN;
@@ -225,7 +260,7 @@ public class PortalKeysService extends AccessibilityService
     @Override public boolean isServiceBound()   { return bound; }
     @Override public long    connectedAtMillis(){ return connectedAt; }
     @Override public int     keysSeen()         { return keysSeen; }
-    @Override public boolean isDisplayOn()      { return powerManager != null && powerManager.isInteractive(); }
+    @Override public boolean isDisplayOn()      { return isPanelLit(); }
     @Override public String  fkbLastError()     { return fkb == null ? null : fkb.lastError(); }
 
     /** Blocking download+install; the control server already runs off the main thread. */
