@@ -177,6 +177,12 @@ export function createWorkbookTheme({ typeScale = 'standard', density = 'normal'
       bold: { name: 'workbook-bold', file: 'atkinson-hyperlegible/AtkinsonHyperlegible-Bold.ttf' },
       italic: { name: 'workbook-italic', file: 'atkinson-hyperlegible/AtkinsonHyperlegible-Italic.ttf' },
       boldItalic: { name: 'workbook-boldItalic', file: 'atkinson-hyperlegible/AtkinsonHyperlegible-BoldItalic.ttf' },
+      // The dedicated machine-code face, shared with the thermal receipt's code
+      // cell (`documentReceiptTheme.codeFontPath`). Used only for the lesson
+      // card's companion access code — a code must look like a code, not like
+      // body copy. pdfkit registration is lazy, so codeless documents embed
+      // nothing and render byte-identically.
+      code: { name: 'workbook-code', file: 'kongtext/kongtext.ttf' },
     },
 
     styles,

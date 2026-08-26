@@ -491,7 +491,7 @@ export function createDocumentPdfRenderer({
     }
   }
 
-  function drawLessonCard(out, node, { xPt, yPt }) {
+  function drawLessonCard(out, node, { xPt, yPt, codes = null, page = null }) {
     out.save().lineWidth(node.borderWidthPt).strokeColor(theme.ink.box)
       .roundedRect(xPt, yPt, node.widthPt, node.heightPt, node.radiusPt).stroke().restore();
     const innerX = xPt + node.paddingPt;
@@ -500,14 +500,33 @@ export function createDocumentPdfRenderer({
     // The side rail holds the subject mark and the lesson's place in its
     // course, without competing with the reading flow.
     const railX = xPt + node.widthPt - node.paddingPt - node.railPt;
-    const iconX = railX + (node.railPt - node.icon.widthPt) / 2;
+    // With a companion, the icon and the QR share the row: icon flush left,
+    // QR flush right, each captioned in the same muted rail label style.
+    const iconX = node.companion ? railX : railX + (node.railPt - node.icon.widthPt) / 2;
     setFont(out, 'bold', 6.5, 'muted');
-    out.text(node.subjectName, railX, innerY, { width: node.railPt, align: 'center', lineBreak: false });
+    if (node.companion) {
+      out.text(node.subjectName, iconX, innerY, { width: node.icon.widthPt, align: 'center', lineBreak: false });
+    } else {
+      out.text(node.subjectName, railX, innerY, { width: node.railPt, align: 'center', lineBreak: false });
+    }
     // The card mark is supporting context, not the primary lesson label.
     // Subject assets resolve `currentColor` to opaque black for ordinary SVG
     // drawing; tint only this full-height lesson-card rail to 25% black.
     const iconSvg = node.icon.svg.replaceAll('#000000', '#BFBFBF');
     SVGtoPDF(out, iconSvg, iconX, innerY + node.subjectLabelHeightPt, { width: node.icon.widthPt, height: node.icon.heightPt, assumePt: true });
+    if (node.companion) {
+      const { qrSizePt, codeSizePt, codeGapPt, code } = node.companion;
+      const qrX = railX + node.railPt - qrSizePt;
+      const qrY = innerY + node.subjectLabelHeightPt;
+      out.text('COMPANION', qrX, innerY, { width: qrSizePt, align: 'center', lineBreak: false });
+      // The QR is machine-read: unlike the tinted icon beside it, it stays
+      // full black (drawQrCode inks theme.ink.text) — the one thing in the
+      // rail that must not recede. Payload is the bare access code, same as
+      // the receipt's `{ type: 'qrcode', content: code }`.
+      drawQrCode(out, { text: code, xPt: qrX, yPt: qrY, sizePt: qrSizePt, codes, page });
+      setFont(out, 'code', codeSizePt);
+      out.text(code, qrX, qrY + qrSizePt + codeGapPt, { width: qrSizePt, align: 'center', lineBreak: false });
+    }
     let cursorY = innerY;
     const draw = (entry, styleKey) => {
       if (!entry) return;
@@ -518,14 +537,16 @@ export function createDocumentPdfRenderer({
     draw(node.title, 'heading');
     draw(node.reading, 'body');
     draw(node.citation, 'caption');
-    draw(node.companionCode, 'label');
     cursorY += node.bandGap - node.gap;
     out.save().lineWidth(0.6).strokeColor(theme.ink.rule)
       // The divider belongs to the information rail.  It must stop before
       // the full-height subject SVG instead of visually slicing through it.
       .moveTo(textX, cursorY - 4).lineTo(railX - 12, cursorY - 4).stroke().restore();
     drawLines(out, node.success.lines, { xPt: textX, yPt: cursorY, styleKey: 'label' });
-    let progressY = innerY + node.subjectLabelHeightPt + node.icon.heightPt + node.progressGapPt;
+    // `iconRowHeightPt` is the icon row's full height — the icon alone, or
+    // (companion) the taller of icon and QR+code stack — so progress rows
+    // clear the code text instead of overprinting it.
+    let progressY = innerY + node.subjectLabelHeightPt + (node.iconRowHeightPt ?? node.icon.heightPt) + node.progressGapPt;
     for (const progress of node.progress ?? []) {
       setFont(out, 'bold', 6.5, 'muted');
       out.text(progress.label.toUpperCase(), railX, progressY, { width: node.railPt, lineBreak: false });
