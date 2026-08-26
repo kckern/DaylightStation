@@ -184,12 +184,47 @@ beforeEach(() => {
 const actionButton = (kind) => screen.getByTestId(`selfservice-action-${kind}`);
 const findActionButton = (kind) => screen.findByTestId(`selfservice-action-${kind}`);
 
-/** Tap a code into the keypad and submit it. */
-async function typeCode(code) {
-  for (const digit of String(code)) {
+/**
+ * Tap ONE digit and wait for it to land in the slots.
+ *
+ * The pad deliberately DROPS a press that arrives within STRAY_PRESS_MS of the
+ * last verdict (Keypad's stray-press guard): that activation is the tail of the
+ * code that just went out, not the head of the next one. A child whose tap was
+ * swallowed taps again, so this does too — bounded, and it throws if the slot
+ * never fills, which is the only reason it is safe to retry at all.
+ */
+async function tapDigit(digit, expectedFilled) {
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
     fireEvent.click(await screen.findByRole('button', { name: digit }));
+    try {
+      await waitFor(
+        () => expect(screen.getByTestId('selfservice-entry').textContent).toHaveLength(expectedFilled),
+        { timeout: 200 },
+      );
+      return;
+    } catch {
+      // Inside the stray window — the press was dropped on purpose. Tap again.
+    }
   }
-  fireEvent.click(screen.getByRole('button', { name: /^(go|enter)$/i }));
+  throw new Error(`keypad never accepted digit "${digit}" (slot ${expectedFilled})`);
+}
+
+/**
+ * Tap a code into the keypad.
+ *
+ * THERE IS NO GO BUTTON. The sixth digit is the child's finishing gesture: the
+ * pad auto-submits after AUTO_SUBMIT_SETTLE_MS, so the code going out is what
+ * this waits on — never a wall-clock sleep, and never a button that was
+ * removed.
+ */
+async function typeCode(code) {
+  const digits = String(code);
+  const before = resolveMock.mock.calls.length;
+  for (let i = 0; i < digits.length; i += 1) {
+    await tapDigit(digits[i], i + 1);
+  }
+  await waitFor(() => expect(resolveMock.mock.calls.length).toBeGreaterThan(before));
 }
 
 const renderLocked = (props = {}) => render(<SchoolApp mode="locked" {...props} />);
@@ -309,8 +344,14 @@ describe('locked panel — typing a code', () => {
       .toHaveAttribute('src', '/api/v1/static/img/users/kid1?w=192');
     expect(within(card).getByRole('img', { name: 'Fractions cover' }))
       .toHaveAttribute('src', '/api/v1/school/self-service/curriculum/fractions/poster.jpg');
-    expect(screen.getByRole('navigation', { name: /lesson context/i }))
-      .toHaveTextContent('Math & Money›Fractions›Foundations›Fractions 3');
+    // The whole trail is still on the card, but it is no longer said three
+    // times over: the header carries the two levels ABOVE the lesson, the unit
+    // is its own line, and the lesson is the heading asserted at the top of
+    // this test. All four levels present, each of them once.
+    const crumbs = screen.getByRole('navigation', { name: /lesson context/i });
+    expect(crumbs).toHaveTextContent('Math & Money›Fractions');
+    expect(within(crumbs).queryByText('Foundations')).toBeNull();
+    expect(within(card).getByText('Foundations')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: /course: 2 of 6/i })).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: /unit 1: 3 of 8/i })).toBeInTheDocument();
     expect(actionButton('print')).toBeInTheDocument();
