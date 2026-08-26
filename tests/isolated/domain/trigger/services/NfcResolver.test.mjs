@@ -64,6 +64,10 @@ describe('NfcResolver', () => {
     expect(result).toEqual({
       action: 'play-next',
       target: 'livingroom-tv',
+      // The READER, not the screen. Two readers can point at one target, so
+      // the room has to be its own field for the reading-session interceptor
+      // to scope a claim by it.
+      location: 'livingroom',
       content: 'plex:620707',
       params: { shader: 'default', volume: 15 },
     });

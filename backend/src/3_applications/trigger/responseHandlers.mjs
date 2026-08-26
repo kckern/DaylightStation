@@ -38,6 +38,45 @@ export const responseHandlers = {
   // (broadcast + ack + fallback) is provided by an injected contentDispatcher
   // in Plan 3; absent that, fall back to authoritative (real behavior).
   content: async (response, deps) => {
+    // First refusal on a content dispatch. The reading session uses this to
+    // claim a book tap at a location where a child has a session open, so the
+    // screen can confirm the pick before anything plays.
+    //
+    // A THROWING INTERCEPTOR NEVER EATS THE TAP. It is logged and skipped, and
+    // the book plays as it always did — the failure mode of this seam must be
+    // "the old behaviour", never "the TV does nothing".
+    //
+    // That contract is only as strong as the code OUTSIDE the try, which is
+    // where the learner handler leaked twice before: at the logger. So both
+    // log calls are individually guarded, and a throw with no `.message` (a
+    // bare string, `null`) still yields a string.
+    //
+    // It sits ABOVE the posture branch on purpose: a reader configured
+    // `optimistic` must be claimable too, or it silently opts out.
+    const log = (level, event, data) => {
+      try { deps.logger?.[level]?.(event, data); } catch { /* the tap outranks the log line */ }
+    };
+    for (const interceptor of deps.contentInterceptors ?? []) {
+      try {
+        const claim = await interceptor?.claim?.(response);
+        if (claim?.claimed) {
+          log('info', 'trigger.content.claimed', {
+            by: claim.by ?? null,
+            target: response.target,
+            location: response.location ?? null,
+            contentId: response.expression?.contentId,
+          });
+          return claim;
+        }
+      } catch (err) {
+        log('warn', 'trigger.content.interceptor_failed', {
+          error: err?.message ?? String(err),
+          target: response.target,
+          location: response.location ?? null,
+        });
+      }
+    }
+
     const query = buildContentQuery(response.expression);
     const loadOptions = buildLoadOptions(response);
     if (response.posture === 'optimistic' && deps.contentDispatcher?.optimistic) {

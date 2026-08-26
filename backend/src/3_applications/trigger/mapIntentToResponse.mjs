@@ -52,6 +52,9 @@ export function mapIntentToResponse(intent, { posture = 'authoritative' } = {}) 
       target: intent.target,
       expression: { action, contentId: intent.content, options: intent.params || {} },
       posture,
+      // The reader, not the screen. An interceptor claims a book tap by the
+      // room it happened in; without this the whole seam sees `undefined`.
+      location: intent.location,
       end: intent.end,
       endLocation: intent.endLocation,
     });
