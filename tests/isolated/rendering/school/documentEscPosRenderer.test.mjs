@@ -287,6 +287,46 @@ describe('which questions were missed, on the text receipt', () => {
   });
 });
 
+describe('bulk_print presentation', () => {
+  const bulkDoc = {
+    id: 'bulk-sheet', seed: 0, variant: 0, target: ['receipt'],
+    blocks: [{
+      type: 'scan_action',
+      presentation: 'bulk_print',
+      action: 'bulk:all-sheets',
+      label: 'Print everything',
+      subjects: ['Math', 'Reading', 'Science'],
+    }],
+  };
+
+  it('emits the heading, a bullet per subject, and a barcode carrying the bulk token', () => {
+    const job = renderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const text = textOf(job);
+    expect(text).toContain('PRINT ALL SHEETS');
+    expect(text).toContain('• Math');
+    expect(text).toContain('• Reading');
+    expect(text).toContain('• Science');
+    const barcodes = barcodesOf(job);
+    expect(barcodes).toHaveLength(1);
+    expect(barcodes[0].content).toBe(TOKEN);
+  });
+
+  it('prints the heading BOLD', () => {
+    const job = renderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const heading = job.items.find((i) => i.type === 'text' && i.content === 'PRINT ALL SHEETS');
+    expect(heading).toMatchObject({ style: { bold: true } });
+  });
+
+  it("with symbology:'QR' emits a qrcode item instead of a barcode", () => {
+    const qrRenderer = createDocumentEscPosRenderer({ symbology: 'QR' });
+    const job = qrRenderer.render(bulkDoc, { tokens: { 'bulk:all-sheets': TOKEN } });
+    const qrcodes = qrcodesOf(job);
+    expect(qrcodes).toHaveLength(1);
+    expect(qrcodes[0].content).toBe(TOKEN);
+    expect(barcodesOf(job)).toHaveLength(0);
+  });
+});
+
 describe('through the real thermal adapter', () => {
   it('LEAVES A READABLE TRANSCRIPT — an image job left it empty', async () => {
     const captureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'escpos-'));

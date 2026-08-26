@@ -1328,7 +1328,11 @@ export class YamlSurroundStore extends ISurroundStore {
       const spans = toSpans({
         starts: rawStarts, musicEndsAt: doc.musicEndsAt, spans: doc.spans, count: pieceSegments.length
       });
-      segments = withOffsets(pieceSegments.map((m, i) => ({ ...m, ...spans[i], contentId: selfId, part: 0 })));
+      const docPerformers = Array.isArray(doc.performers) ? doc.performers : [];
+      segments = withOffsets(pieceSegments.map((m, i) => ({
+        ...m, ...spans[i], contentId: selfId, part: 0,
+        ...(docPerformers[i] ? { performance: docPerformers[i] } : {}),
+      })));
       timelineParts = [{ contentId: selfId, index: 0, sounding: segments.reduce((n, c) => n + c.duration, 0) }];
     }
 

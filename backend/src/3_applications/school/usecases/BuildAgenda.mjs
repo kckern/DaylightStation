@@ -261,16 +261,29 @@ export class BuildAgenda {
     }
     const actionLabelBySubject = new Map();
     const calculatorBySubject = new Map();
+    // Hoisted out of the loop: `nowIso` and `#ttlMs` never change across
+    // subjects within one `execute()` call, so every subject_next token —
+    // and the bulk agenda_print token minted after the loop — shares this
+    // exact expiry. Computing it once (rather than per-iteration, as before)
+    // is the same value, just without needing to smuggle a loop-scoped
+    // `const` past the loop's closing brace.
+    const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
 
     for (const section of sections) {
       const entry = section.next;
       if (!entry) continue; // served today, locked-with-no-offer, or unavailable
 
       // eslint-disable-next-line no-await-in-loop
-      const { sessionId, suffix, created } = await this.#offerFor({
+      const { sessionId, suffix, created, moveKind } = await this.#offerFor({
         entry, unitsById, learnerId, nowIso, activeExceptions,
       });
       if (created) createdSessions.push(sessionId);
+      // Printable per `nextMove`'s table (offerSession.mjs): only `kind:
+      // 'print'` units — a unit with `.document`, or a printable `.bank`
+      // (e.g. civilization worksheets) — ever route to IssueDocument.
+      // `kind: 'document'` does not exist in that table; checking for it
+      // here would silently exclude every real printable unit.
+      const printable = moveKind === 'print';
 
       if (entry.schoolcalc) {
         if (!this.#schoolCalcStudies || this.#schoolCalcMode === 'off') {
@@ -324,7 +337,6 @@ export class BuildAgenda {
         continue;
       }
 
-      const expiresAt = new Date(Date.parse(nowIso) + this.#ttlMs).toISOString();
       // `mintAccessCode` tests `taken` SYNCHRONOUSLY, so the registry cannot be
       // asked per draw — a Promise is always truthy and every attempt would read
       // as taken, failing as a (wildly misleading) exhausted code space. The
@@ -359,7 +371,51 @@ export class BuildAgenda {
         token: record.token,
         tokenClass: 'subject_next',
         label: `${entry.title} — ${suffix}`,
+        printable,
       });
+    }
+
+    // Bulk print (spec: agenda_print token, Task 4): one code that prints
+    // every printable subject's sheet in one go, minted only when there is
+    // more than one to bother bulking — a single printable subject is
+    // already exactly what its own `subject_next` code does. Self-service
+    // only: without a panel there is nowhere to scan a bulk code either.
+    let bulkToken = null;
+    let bulkAccessCode = null;
+    if (this.#selfService) {
+      const printableOffers = offers.filter((offer) => offer.printable);
+      if (printableOffers.length >= 2) {
+        bulkAccessCode = mintAccessCode({
+          rng: this.#rng,
+          taken: (code) => liveCodes.has(code) || mintedCodes.has(code),
+        });
+        mintedCodes.add(bulkAccessCode);
+        const bulkRecord = mintToken({
+          tokenClass: 'agenda_print',
+          subject: { learnerId, tokenRefs: printableOffers.map((offer) => offer.token) },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt,
+          accessCode: bulkAccessCode,
+          accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, expiresAt),
+        });
+        await this.#tokens.put(bulkRecord);
+        bulkToken = bulkRecord.token;
+        // Same handback rule as every per-subject code above (`mintedTokens`):
+        // this token carries a LIVE access code, so a build that never reaches
+        // the printer — a cooldown-suppressed tap — has to be able to revoke
+        // it. Left out, the bulk code is the one live code nobody hands back.
+        mintedTokens.push(bulkRecord.token);
+        this.#logger.info?.('school.agenda.bulk-print.minted', {
+          learnerId,
+          tokenRefCount: printableOffers.length,
+          subjects: printableOffers.map((offer) => offer.subject),
+        });
+      } else {
+        this.#logger.debug?.('school.agenda.bulk-print.skipped', {
+          learnerId, printableCount: printableOffers.length,
+        });
+      }
     }
 
     // `agendaDocument` composes its own "{title} — {actionLabel}" line, so the
@@ -458,7 +514,9 @@ export class BuildAgenda {
       mintedTokens,
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
-        sections: sectionsForDocument, tokensBySubject, accessCodesByToken, notes,
+        sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
+        bulkToken, bulkAccessCode,
+        notes,
       }),
     };
   }
@@ -574,13 +632,18 @@ export class BuildAgenda {
    * none, e.g. an unconfigured `SurfaceProgramLauncher`) and only falls back
    * to a generic, location-agnostic phrase — never assumes the Portal.
    *
-   * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean}>}
+   * `moveKind` rides along so the caller can decide printability
+   * (`kind === 'print'`, per `nextMove`'s table in `offerSession.mjs`)
+   * without re-deriving it from the unit — a program entry never has a
+   * `move`, so it reports `moveKind: null` (never printable).
+   *
+   * @returns {Promise<{sessionId: string|null, suffix: string, created: boolean, moveKind: string|null}>}
    */
   async #offerFor({ entry, unitsById, learnerId, nowIso, activeExceptions }) {
     if (entry.program) {
       const launcher = this.#launchers.get(entry.program);
       const hint = launcher?.locationHint ?? null;
-      return { sessionId: null, suffix: hint ?? 'go do this', created: false };
+      return { sessionId: null, suffix: hint ?? 'go do this', created: false, moveKind: null };
     }
     // The exceptions `PlanProjection` already read for this projection. Reading
     // them a second time here would let the paused check answer for a different
@@ -593,7 +656,7 @@ export class BuildAgenda {
       timezone: this.#timezone,
     });
     const move = nextMove(unitsById.get(entry.unitId) ?? {}, state);
-    return { sessionId, suffix: move.label, created };
+    return { sessionId, suffix: move.label, created, moveKind: move.kind };
   }
 }
 

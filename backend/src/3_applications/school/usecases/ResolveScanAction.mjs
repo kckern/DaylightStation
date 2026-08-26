@@ -188,6 +188,14 @@ export class ResolveScanAction {
           : this.#unsupported(record.tokenClass, sessionId);
       case 'answer_sheet_lost':
         return this.#replaceLost(record);
+      case 'agenda_print':
+        // Same OPTIONAL-DEGRADING guard as `subject_next` above — bulk print
+        // resolves each ref through the same `resolveSubjectNext`, so a
+        // deployment that has not wired it degrades to the standard
+        // "could not use that ticket" slip rather than crashing.
+        return this.#subjectResolver
+          ? this.#bulkPrint(record)
+          : this.#unsupported(record.tokenClass, sessionId);
       default:
         // Unreachable while TOKEN_CLASSES and this switch agree; a class with no
         // case would be the silent scan the whole file exists to prevent.
@@ -213,6 +221,115 @@ export class ResolveScanAction {
       printed: result.status === 'replaced',
       message: result.message ?? 'That answer sheet no longer needs replacement.',
       effect: result,
+    };
+  }
+
+  /**
+   * The `agenda_print` ticket (bulk-print QR): a household-scanned code that
+   * fans out over every subject the ticket names and prints each one right
+   * now — no launch card, no second scan. Parent scanning the code IS the
+   * authorization, unlike every other class in this file which hands the
+   * child something to act on.
+   *
+   * Each ref in `record.subject.tokenRefs` is a `subject_next` token whose
+   * `subject` is just `{ learnerId, subject }` (BuildAgenda mints it that
+   * way — see `tokens.mjs`'s `agenda_print` validation) — it carries no
+   * `unitId`/`sessionId` of its own. So resolving "what does this subject
+   * mean right now" is re-derived per ref through `this.#subjectResolver`,
+   * the exact same planner call `#subjectNext` makes for a single scan. A
+   * subject that has moved on since the bulk code was minted (served,
+   * locked, mid-video) is simply excluded rather than mis-printed — this
+   * ticket only ever prints, it never explains a subject's state the way a
+   * per-subject scan does.
+   *
+   * A `move.kind === 'print'` result is handed to `#print` rather than
+   * `IssueDocument` directly, so a subject whose unit turns out to be
+   * screen-only (or mid-debounce) gets the SAME handling a single ticket
+   * would — this method only decides which subjects to attempt, not how a
+   * printable subject actually gets printed.
+   */
+  async #bulkPrint(record) {
+    const { learnerId, tokenRefs } = record.subject;
+    const nowIso = this.#clock().toISOString();
+    const refs = await Promise.all(tokenRefs.map((t) => this.#tokens.get(t)));
+    const liveRefs = refs.filter((r) => r && resolveTokenState(r, { now: nowIso }).status === 'actionable');
+
+    if (!liveRefs.length) {
+      return this.#slip({
+        status: 'already_done', tokenClass: 'agenda_print', sessionId: null,
+        id: `agenda-print-done-${learnerId}`,
+        headline: 'All done with that one',
+        lines: ["Everything on today's list is done."],
+        message: "Everything on today's list is done.",
+      });
+    }
+
+    const results = [];
+    for (const ref of liveRefs) {
+      const subject = ref.subject?.subject;
+      if (!subject) continue;
+      let r;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        r = await this.#subjectResolver.execute({ learnerId, subject });
+      } catch (err) {
+        this.#logger.warn?.('school.scan.bulk-print-resolve-failed', { subject, error: err?.message ?? String(err) });
+        results.push({ subject, status: 'error', printed: false });
+        continue;
+      }
+      if (r.kind !== 'move' || r.move.kind !== 'print') {
+        // Moved on since the code was minted — not this ticket's job to
+        // explain that, it just skips it.
+        results.push({ subject, status: 'skipped', printed: false });
+        continue;
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const outcome = await this.#print(r.sessionId, 'agenda_print', r.state);
+        results.push({
+          subject, sessionId: r.sessionId, status: outcome.status, printed: outcome.printed,
+        });
+      } catch (err) {
+        this.#logger.warn?.('school.scan.bulk-print-failed', { subject, error: err?.message ?? String(err) });
+        results.push({ subject, status: 'error', printed: false });
+      }
+    }
+
+    const attempted = results.filter((r) => r.status !== 'skipped').length;
+    const printed = results.filter((r) => r.printed).length;
+
+    if (attempted === 0) {
+      // Every live ref had already moved past "print" by the time this scan
+      // landed — nothing failed, there just wasn't anything left to hand out.
+      return this.#slip({
+        status: 'already_done', tokenClass: 'agenda_print', sessionId: null,
+        id: `agenda-print-done-${learnerId}`,
+        headline: 'All done with that one',
+        lines: ["Everything on today's list is done."],
+        message: "Everything on today's list is done.",
+      });
+    }
+
+    if (printed === 0) {
+      // Attempted and came back with nothing on paper — the invariant this
+      // whole file exists for: never end a scan on silence.
+      return this.#slip({
+        status: 'print_failed', tokenClass: 'agenda_print', sessionId: null,
+        id: `agenda-print-failed-${learnerId}`,
+        headline: 'The printer did not answer',
+        lines: ['Ask a grown-up to check the printer, then scan again.'],
+        message: 'The printer did not answer.',
+      });
+    }
+
+    return {
+      status: 'issued',
+      tokenClass: 'agenda_print',
+      sessionId: null,
+      physical: 'worksheet',
+      printed: true,
+      message: `${printed} ${printed === 1 ? 'sheet' : 'sheets'} printed.`,
+      effect: { results },
     };
   }
 
