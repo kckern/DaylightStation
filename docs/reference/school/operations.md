@@ -16,6 +16,7 @@ node cli/school.mjs ops gates milo
 node cli/school.mjs ops audit --since 2026-08-01T00:00:00Z
 node cli/school.mjs ops agenda-preview milo --output /tmp/milo-agenda.png
 node cli/school.mjs ops artifact art_123 --view manifest --teacher parent --pin-env SCHOOL_PIN
+node cli/school.mjs ops launch-preview milo --subject arts
 ```
 
 `completion` returns the four-state daily projection. `status` joins completion,
@@ -31,6 +32,83 @@ current completion, assignment, milestone, and pass-override projections.
 and original-PDF reads identify the exact issued bytes.
 
 Use `--base-url URL` or `SCHOOL_BASE_URL` to target another lifecycle API.
+
+## Preview a launch card
+
+A launch card is what the school-room panel puts on screen after a child types
+a six-digit code: whose work, where it sits in the course, how far along it is,
+and the one next action. Checking one — a poster that will not resolve, a
+breadcrumb that reads wrong, a button offering the wrong thing — needs no code
+and no paper.
+
+```bash
+node cli/school.mjs ops launch-preview milo --subject arts
+node cli/school.mjs ops launch-preview milo --subject scripture --continue
+node cli/school.mjs ops launch-preview milo --subject arts --resolve
+```
+
+The command prints a link and mints nothing:
+
+```json
+{
+  "schema": "school.launch-preview-link/v1",
+  "learnerId": "milo",
+  "subject": "arts",
+  "continueToday": false,
+  "link": "eyJsZWFybmVySWQiOiJtaWxvIiwic3ViamVjdCI6ImFydHMifQ",
+  "url": "http://localhost:3111/school/launch-preview/eyJsZWFybmVySWQiOiJtaWxvIiwic3ViamVjdCI6ImFydHMifQ",
+  "api": "http://localhost:3111/api/v1/school/self-service/preview/eyJsZWFybmVySWQiOiJtaWxvIiwic3ViamVjdCI6ImFydHMifQ",
+  "mints": "nothing"
+}
+```
+
+`--origin URL` and `--path /screens/portal` retarget the printed link at a
+particular screen; without them it takes the origin from the API base and
+assumes the browser's `/school` mount. `--resolve` also fetches the card into
+the output, which answers most artwork and breadcrumb questions without opening
+a browser at all. `--continue` previews the "one more?" card the result receipt
+offers, which is otherwise unreachable when the subject is already served.
+
+**The route.** `GET {app}/launch-preview/<payload>` in the browser;
+`GET /api/v1/school/self-service/preview/<payload>` for the card as JSON. The
+payload is base64url of `{"learnerId": "...", "subject": "..."}`, optionally
+with `"continueToday": true`. Learner plus subject is the whole payload because
+that is exactly what a live panel token carries — the unit comes from the
+learner's plan, so a payload naming one would describe a card the plan does not
+actually offer.
+
+Generating a link by hand is a one-liner when the CLI is out of reach:
+
+```bash
+node -e 'process.stdout.write(Buffer.from(JSON.stringify({learnerId:"milo",subject:"arts"})).toString("base64url"))'
+```
+
+**It resolves through the panel's own path.** The payload replaces one step and
+one step only: the registry lookup that turns six digits into a learner and a
+subject. Everything after that — the plan projection, the read-only session
+reduction, the card builder — is the code a typed panel code runs. A preview
+that assembled a card any other way would answer questions about a surface the
+house does not run.
+
+**It mints nothing and it grants nothing.** No token is looked up or created,
+no session opens, no cooldown arms, no artifact is issued, nothing prints. The
+link is not a credential: it carries less than the paper a child is already
+holding, expires never because there is nothing in it to expire, and restores
+no learner identity on the panel.
+
+**Nothing on it can be pressed.** The card shows the real buttons a child would
+see — that is the point of looking at it — rendered disabled beneath a band
+reading *Preview — nothing here is live*. The card body is dimmed and
+dash-bordered so a grown-up glancing at the Portal cannot mistake it for a
+child's live work, and the only live control on the screen, *Leave preview*,
+sits in the band outside the card. Acting on a card requires a six-digit code
+the preview does not have, so there is no request it could make even if a
+button were somehow reached.
+
+**A bad link says so.** An unreadable payload, a payload missing a field, or a
+backend that will not answer each render a sentence and a way out — never a
+blank card and never an HTTP status. The panel's never-dead-end rule applies to
+grown-ups too.
 
 ## Teacher workspace authorization
 

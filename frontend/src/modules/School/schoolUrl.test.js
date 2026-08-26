@@ -72,6 +72,39 @@ describe('schoolPathFor — round-trips the chain', () => {
   });
 });
 
+describe('launch-card preview deep link', () => {
+  // Teacher-only, like the sentence-ladder preview beside it: the segment is an
+  // opaque payload the backend decodes, and no learner authority is restored
+  // from it. `parseSchoolPath` must carry it through byte-for-byte — a payload
+  // it re-encoded or truncated would resolve to a different card than the link
+  // that was shared.
+  const PAYLOAD = 'eyJsZWFybmVySWQiOiJmZWxpeCIsInN1YmplY3QiOiJhcnRzIn0';
+
+  it('parses the payload segment into a preview section', () => {
+    at(`${BASE}/launch-preview/${PAYLOAD}`);
+    expect(parseSchoolPath(BASE)).toEqual({ section: `launch-preview:${PAYLOAD}`, materialPath: [] });
+  });
+
+  it('builds the same path back', () => {
+    expect(schoolPathFor(BASE, `launch-preview:${PAYLOAD}`)).toBe(`${BASE}/launch-preview/${PAYLOAD}`);
+  });
+
+  it('round-trips an unreadable payload rather than dropping it — the panel says why', () => {
+    at(`${BASE}/launch-preview/not-a-payload`);
+    expect(parseSchoolPath(BASE)).toEqual({ section: 'launch-preview:not-a-payload', materialPath: [] });
+  });
+
+  it('carries no materials chain', () => {
+    at(`${BASE}/launch-preview/${PAYLOAD}/483194`);
+    expect(parseSchoolPath(BASE).materialPath).toEqual([]);
+  });
+
+  it('a bare /launch-preview with no payload is not a section', () => {
+    at(`${BASE}/launch-preview`);
+    expect(parseSchoolPath(BASE)).toEqual({ section: null, materialPath: [] });
+  });
+});
+
 describe('geography section', () => {
   it('builds the geography section path', () => {
     expect(schoolPathFor(BASE, 'geography')).toBe(`${BASE}/geography`);

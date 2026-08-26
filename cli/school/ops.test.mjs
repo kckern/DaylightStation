@@ -160,6 +160,44 @@ describe('school ops', () => {
     }
   });
 
+  it('generates a launch-card preview link without talking to anything', async () => {
+    const fetchImpl = vi.fn();
+    let output = '';
+    await runOps({
+      argv: ['launch-preview', 'felix', '--subject', 'arts', '--base-url', 'http://host/api/v1/school'],
+      fetchImpl, stdout: { write: (s) => { output += s; } },
+    });
+    const result = JSON.parse(output);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.url).toBe(`http://host/school/launch-preview/${result.link}`);
+    expect(result.api).toBe(`http://host/api/v1/school/self-service/preview/${result.link}`);
+    expect(JSON.parse(Buffer.from(result.link, 'base64url').toString('utf8')))
+      .toEqual({ learnerId: 'felix', subject: 'arts' });
+  });
+
+  it('--continue rides along, and --resolve reads the card back without writing', async () => {
+    const fetchImpl = vi.fn(async () => response({ ok: true, preview: true, actions: [{ kind: 'program', inert: true }] }));
+    let output = '';
+    await runOps({
+      argv: ['launch-preview', 'felix', '--subject', 'arts', '--continue', '--resolve',
+        '--origin', 'https://portal.example', '--path', '/screens/portal', '--base-url', 'http://host/api/v1/school'],
+      fetchImpl, stdout: { write: (s) => { output += s; } },
+    });
+    const result = JSON.parse(output);
+    expect(result.continueToday).toBe(true);
+    expect(result.url.startsWith('https://portal.example/screens/portal/launch-preview/')).toBe(true);
+    expect(fetchImpl.mock.calls[0][0]).toContain('/self-service/preview/');
+    expect(fetchImpl.mock.calls[0][1].method).toBeUndefined();
+    expect(result.card.preview).toBe(true);
+  });
+
+  it('refuses to generate a link that names no subject', async () => {
+    await expect(runOps({
+      argv: ['launch-preview', 'felix', '--base-url', 'http://school'],
+      fetchImpl: vi.fn(), stdout: { write() {} },
+    })).rejects.toThrow(/--subject/);
+  });
+
   it('uses the backend dry-run engine for systematic regrades', async () => {
     const fetchImpl = vi.fn(async (_url, init) => response({ changed: 3, applied: JSON.parse(init.body).apply }));
     let output = '';

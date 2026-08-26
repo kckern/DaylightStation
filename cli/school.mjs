@@ -94,7 +94,7 @@ const NAMESPACES = {
   },
   ops: {
     module: './school/ops.mjs',
-    blurb: 'diagnose, monitor, assign, enroll, rematerialize, and repair live School state',
+    blurb: 'diagnose, monitor, assign, enroll, rematerialize, repair live School state, and generate launch-card preview links',
   },
 };
 

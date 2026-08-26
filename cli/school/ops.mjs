@@ -2,6 +2,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
+// The SAME codec the backend decodes with. A CLI that rolled its own base64
+// would be a second opinion about what a link means, and the first time the
+// payload gains a field the tool would quietly emit links the panel refuses.
+import { encodeLaunchPreviewLink } from '#domains/school/selfService/launchPreviewLink.mjs';
 
 const DEFAULT_BASE = process.env.SCHOOL_BASE_URL || 'http://localhost:3111/api/v1/school';
 
@@ -17,6 +21,8 @@ Read-only:
   school ops audit [--since ISO]
   school ops artifact <artifact> --teacher ID --pin-env NAME [--view manifest|original|postview] [--output FILE]
   school ops agenda-preview <learner> [--name NAME] [--output agenda.png]
+  school ops launch-preview <learner> --subject ID [--continue] [--resolve]
+                                      [--origin URL] [--path /school]
 
 Dry-run/preview by default; add --apply to write:
   school ops assign <learner> --file plan.yml --teacher ID --pin-env NAME [--apply]
@@ -31,6 +37,11 @@ Dry-run/preview by default; add --apply to write:
   school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID --pin-env NAME [--to-day YYYY-MM-DD] [--apply]
   school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID --pin-env NAME [--apply]
 
+launch-preview writes NOTHING and needs no PIN: it is a link generator. The
+URL it prints opens a learner's launch card exactly as the wall panel would
+draw it — same resolver, same card builder — with every button dead. No code is
+minted, no session opens, nothing prints.
+
 Base URLs ending in either /school or /school/lifecycle are accepted. Teacher
 PINs are read only from the named environment variable and are never printed.
 Commands always emit one stable JSON document; PDF/PNG bytes require --output.
@@ -42,6 +53,7 @@ const VALUE_OPTIONS = new Set([
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
   '--from-day', '--to-day', '--from', '--to', '--day',
+  '--subject', '--origin', '--path',
 ]);
 
 function option(argv, name, fallback = null) {
@@ -217,6 +229,41 @@ export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process
       requestJson(fetchImpl, base.school, '/pass-overrides').catch((error) => ({ error: error.message })),
     ]);
     print({ schema: 'school.instructional-gates/v1', learnerId, completion, assignment, milestones, passOverrides }, stdout); return 0;
+  }
+  // A LINK GENERATOR, and deliberately nothing more. Hand-rolling base64url
+  // for a JSON blob is exactly the friction the preview route exists to
+  // remove, so the tool that removes it must not reintroduce ceremony of its
+  // own: no PIN, no teacher unlock, no writes. `--resolve` additionally fetches
+  // the card so the terminal can answer "does this course's poster resolve?"
+  // without opening a browser — still a read, still mints nothing.
+  if (command === 'launch-preview') {
+    const learnerId = args[0];
+    if (!learnerId) throw new Error('launch-preview requires a learner id');
+    const subject = requiredOption(rest, '--subject', '--subject ID is required');
+    const link = encodeLaunchPreviewLink({
+      learnerId, subject, continueToday: rest.includes('--continue'),
+    });
+    // Defaults to the origin the API base already names, so the common case is
+    // `school ops launch-preview felix --subject arts` and nothing else.
+    const origin = option(rest, '--origin') ?? new URL(base.school).origin;
+    const appPath = String(option(rest, '--path', '/school')).replace(/\/+$/, '');
+    const previewApi = `${base.school}/self-service/preview/${enc(link)}`;
+    const result = {
+      schema: 'school.launch-preview-link/v1',
+      learnerId,
+      subject,
+      continueToday: rest.includes('--continue'),
+      link,
+      url: `${origin}${appPath}/launch-preview/${link}`,
+      api: previewApi,
+      mints: 'nothing',
+    };
+    if (rest.includes('--resolve')) {
+      result.card = await requestJson(fetchImpl, base.school, `/self-service/preview/${enc(link)}`)
+        .catch((error) => ({ error: error.message }));
+    }
+    print(result, stdout);
+    return 0;
   }
   if (command === 'audit') {
     print(await requestJson(fetchImpl, base.school, `/audit${query({ since: option(rest, '--since') })}`), stdout); return 0;

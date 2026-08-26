@@ -198,6 +198,13 @@ export const schoolApi = {
   // → 404, or 500) and the panel shows its degraded message instead of "Try
   // again" — the two must not be confused.
   selfServiceResolve: (code) => req('/self-service/resolve', { code }),
+  // The same card, opened from a link a grown-up was handed instead of six
+  // digits a child typed. Same never-errors-for-a-bad-input contract as
+  // `/resolve`: an unreadable link is a 200 carrying `{ ok: false, sentence }`,
+  // so a non-2xx here means the backend itself is unwell. `link` is opaque and
+  // passed through untouched — decoding it is the backend's job, and a link
+  // this client "repaired" would preview a different card than the one shared.
+  selfServicePreview: (link) => req(`/self-service/preview/${encodeURIComponent(link)}`),
   // `action` is the Action's `kind` (`print` | `play` | `launch` | `screen` |
   // `program` | `retry`); `exit` never reaches the wire.
   selfServiceAct: ({ code, action }) => req('/self-service/act', { code, action }),
