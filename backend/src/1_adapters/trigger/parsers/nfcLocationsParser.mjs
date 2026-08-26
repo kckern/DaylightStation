@@ -47,6 +47,19 @@ export function parseNfcLocations(raw) {
         { code: 'INVALID_END_BEHAVIOR', field: locationId }
       );
     }
+    // An empty learner_action is the trap worth catching: it reads as
+    // "declared" to whoever is scanning the YAML, but it is falsy to the
+    // resolver, so the reader behaves as though it had none. Refuse it, and
+    // `!learner_action` downstream can only mean "not declared here".
+    // An explicit null IS that declaration, and stays legal.
+    if (locConfig.learner_action !== undefined && locConfig.learner_action !== null
+        && (typeof locConfig.learner_action !== 'string' || locConfig.learner_action.trim().length === 0)) {
+      throw new ValidationError(
+        `location "${locationId}" learner_action must be a non-empty string (or omitted)`,
+        { code: 'INVALID_LEARNER_ACTION', field: locationId }
+      );
+    }
+
     if (locConfig.end === 'tv-off' && (typeof locConfig.end_location !== 'string' || locConfig.end_location.length === 0)) {
       throw new ValidationError(
         `location "${locationId}" end: tv-off requires end_location (non-empty string)`,

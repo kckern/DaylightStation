@@ -41,6 +41,28 @@ const RESERVED_KEYS = new Set([
 // where a leaked scanned_at was mis-parsed as a content id (2026-07-07 bug).
 const METADATA_KEYS = new Set(['scanned_at', 'note']);
 
+/**
+ * A learner id becomes a URL segment downstream. `String(raw)` would happily
+ * mint "learner-a,learner-b" from a YAML list and "[object Object]" from a map,
+ * and the 404 that follows names neither the tag nor the line that caused it —
+ * so refuse here, where the tag uid is still in hand. A number is allowed
+ * because an unquoted numeric id is an ordinary YAML slip, not a mistake.
+ */
+function coerceLearnerId(raw, uid) {
+  const bad = (why) => new ValidationError(
+    `tag ${uid}: school_learner ${why}`,
+    { code: 'INVALID_SCHOOL_LEARNER', field: 'school_learner' }
+  );
+  if (typeof raw === 'number') {
+    if (!Number.isFinite(raw)) throw bad('must be a finite number or a non-empty string');
+    return String(raw);
+  }
+  if (typeof raw !== 'string') throw bad(`must be a string, got ${Array.isArray(raw) ? 'a list' : typeof raw}`);
+  const trimmed = raw.trim();
+  if (!trimmed) throw bad('must not be empty');
+  return trimmed;
+}
+
 function expandShorthand(merged, contentIdResolver) {
   const candidates = Object.entries(merged).filter(([k]) => !RESERVED_KEYS.has(k) && !METADATA_KEYS.has(k));
   if (candidates.length === 0) return null;
@@ -105,17 +127,40 @@ export class NfcResolver {
     const end = merged.end ?? locationConfig.end;
     const endLocation = merged.end_location ?? locationConfig.end_location;
 
-    // A learner card resolves against the READER, not the tag. No
-    // learner_action at this reader means the card is not actionable here,
-    // and a null intent routes it into the ordinary unknown-tag capture —
-    // which is the honest answer, and lets a mis-tapped card be noticed.
-    // Decided before content resolution: a learner card carries no content
-    // and must not fall into shorthand expansion.
-    const schoolLearner = merged.school_learner;
+    // WHO the card belongs to is a TAG fact, so it is read from the tag layers
+    // alone — deliberately NOT from `merged`. The adapter drops any unknown key
+    // on a source entry into `defaults`, so a stray `school_learner:` on a
+    // READER would otherwise turn every tag at that reader into a learner card
+    // and throw its content away: a book sticker would stop playing its book.
+    //
+    // WHAT happens to that person, in contrast, belongs to the reader — print
+    // an agenda in the study, open a reading session in the living room. No
+    // learner_action here means the card is not actionable at this reader, and
+    // the null intent routes it into the ordinary unknown-tag capture, which
+    // lets a mis-tapped card be noticed.
+    //
+    // This runs BEFORE content resolution and must stay there: a learner card
+    // carries no content, and shorthand expansion over a reader's own defaults
+    // can throw AMBIGUOUS_SHORTHAND before we ever reach the learner check.
+    // The test 'resolves a learner card at a reader whose defaults carry two
+    // content-resolvable keys' pins that ordering.
+    //
+    // INTERIM (Task 6): mapIntentToResponse knows six actions and none of them
+    // is a learner action, so it throws UnknownActionError on what we return —
+    // which ALSO skips the unknown-tag placeholder write and the notify_unknown
+    // push the old null path gave us. Do NOT add learner_action to a live
+    // reader in sources.yml before Task 6 lands; the data tree is shared with
+    // prod, so that one-line YAML edit arms it with no deploy. (The config edit
+    // belongs to Plan 01 Task 7.)
+    const schoolLearner = tag.overrides?.[location]?.school_learner ?? tag.global?.school_learner;
     if (schoolLearner !== undefined && schoolLearner !== null) {
+      // Validate before consulting the reader: a malformed value is a bug in
+      // the tag, true at every reader, and worth surfacing wherever it is
+      // tapped rather than only where a learner_action happens to be declared.
+      const learnerId = coerceLearnerId(schoolLearner, uid);
       const learnerAction = locationConfig.learner_action;
       if (!learnerAction) return null;
-      return { action: learnerAction, target, learnerId: String(schoolLearner), params: {} };
+      return { action: learnerAction, target, learnerId, params: {} };
     }
 
     // Resolve content. Explicit `content` wins; otherwise expand single-prefix shorthand.

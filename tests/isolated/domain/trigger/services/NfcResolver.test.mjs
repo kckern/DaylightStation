@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { NfcResolver } from '#domains/trigger/services/NfcResolver.mjs';
+// Application-layer import in a DOMAIN test, on purpose: the tripwire at the
+// bottom of this file pins a resolver/mapper pair that is currently mismatched.
+import { mapIntentToResponse, UnknownActionError } from '#apps/trigger/mapIntentToResponse.mjs';
 
 const makeContentIdResolver = () => ({
   resolve: (compound) => compound.startsWith('plex:') ? compound : null,
@@ -313,5 +316,140 @@ describe('school learner cards', () => {
       contentIdResolver: makeContentIdResolver(),
     });
     expect(intent.params).not.toHaveProperty('school_learner');
+  });
+});
+
+describe('school learner cards — config-surface guards', () => {
+  const learnerRegistry = (locations, tagGlobal) => ({
+    locations,
+    tags: { '048ba600cc2a81': { global: tagGlobal, overrides: {} } },
+  });
+
+  // A learner card is a TAG fact. Reading it from `merged` would let a
+  // `school_learner` written on the SOURCE entry (which the adapter drops into
+  // `defaults`) hijack every tag at that reader — a book sticker would resolve
+  // as a learner card with its content thrown away.
+  it('ignores school_learner coming from the reader defaults', () => {
+    const registry = {
+      locations: {
+        study: {
+          target: 'portal', action: 'play-next', learner_action: 'print-agenda',
+          defaults: { school_learner: 'learner-b' },
+        },
+      },
+      tags: { 'b00c': { global: { plex: 999 }, overrides: {} } },
+    };
+    const intent = NfcResolver.resolve({
+      location: 'study', value: 'b0_0c', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.content).toBe('plex:999');
+    expect(intent).not.toHaveProperty('learnerId');
+    expect(intent.action).toBe('play-next');
+  });
+
+  it('honours a per-reader override of school_learner on the tag', () => {
+    const registry = {
+      locations: { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
+      tags: {
+        '048ba600cc2a81': {
+          global: { school_learner: 'learner-a' },
+          overrides: { study: { school_learner: 'learner-c' } },
+        },
+      },
+    };
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.learnerId).toBe('learner-c');
+  });
+
+  it('accepts an unquoted numeric learner id as a string', () => {
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81',
+      registry: learnerRegistry(
+        { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
+        { school_learner: 42 }
+      ),
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.learnerId).toBe('42');
+  });
+
+  // String() would mint "a,b" / "[object Object]" / "" and carry them all the
+  // way into a personal-card URL, where the 404 says nothing about the YAML
+  // line that caused it. Refuse at the boundary instead.
+  it.each([
+    ['an array', ['learner-a', 'learner-b']],
+    ['an object', { id: 'learner-a' }],
+    ['a boolean', true],
+    ['an empty string', ''],
+    ['whitespace only', '   '],
+  ])('throws INVALID_SCHOOL_LEARNER for %s', (_label, value) => {
+    const registry = learnerRegistry(
+      { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
+      { school_learner: value }
+    );
+    expect(() => NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    })).toThrow(/school_learner/i);
+  });
+
+  it('trims a padded learner id', () => {
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81',
+      registry: learnerRegistry(
+        { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
+        { school_learner: '  learner-a  ' }
+      ),
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(intent.learnerId).toBe('learner-a');
+  });
+
+  // INVARIANT, and the reason these defaults are deliberately non-empty: the
+  // learner branch must run BEFORE content resolution. Move it below and this
+  // card throws AMBIGUOUS_SHORTHAND out of the reader's own defaults — with a
+  // single-prefix resolver stub the same drift merely passes through silently,
+  // so the stub here resolves both prefixes on purpose.
+  it('resolves a learner card at a reader whose defaults carry two content-resolvable keys', () => {
+    const registry = {
+      locations: {
+        study: {
+          target: 'portal', action: 'play-next', learner_action: 'print-agenda',
+          defaults: { plex: 620707, files: 'chime.mp3' },
+        },
+      },
+      tags: { '048ba600cc2a81': { global: { school_learner: 'learner-a' }, overrides: {} } },
+    };
+    const bothResolve = { resolve: (c) => /^(plex|files):/.test(c) ? c : null };
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81', registry,
+      contentIdResolver: bothResolve,
+    });
+    expect(intent).toMatchObject({ action: 'print-agenda', learnerId: 'learner-a' });
+    expect(intent).not.toHaveProperty('content');
+  });
+});
+
+// TRIPWIRE, not a wish. `print-agenda` / `reading-session` are not among the
+// six actions mapIntentToResponse knows, so a learner card at a reader that
+// declares learner_action currently ends as UNKNOWN_ACTION — which ALSO skips
+// the unknown-tag placeholder write and the notify_unknown push that the old
+// null-intent path gave us. Task 6 registers these actions; when it does, THIS
+// TEST GOES RED and should be replaced by one asserting the real Response.
+describe('school learner cards — interim: no Response kind exists yet', () => {
+  it('a learner intent is not yet mappable to a Response (Task 6 closes this)', () => {
+    const registry = {
+      locations: { study: { target: 'portal', learner_action: 'print-agenda', defaults: {} } },
+      tags: { '048ba600cc2a81': { global: { school_learner: 'learner-a' }, overrides: {} } },
+    };
+    const intent = NfcResolver.resolve({
+      location: 'study', value: '048ba600cc2a81', registry,
+      contentIdResolver: makeContentIdResolver(),
+    });
+    expect(() => mapIntentToResponse(intent)).toThrow(UnknownActionError);
   });
 });
