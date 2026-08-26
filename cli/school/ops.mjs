@@ -24,6 +24,10 @@ Read-only:
   school ops launch-preview <learner> --subject ID [--continue] [--resolve]
                                       [--origin URL] [--path /school]
 
+Writes to the household reading log directly, no server needed (dry-run by
+default, add --apply):
+  school ops read <learner> [--title TEXT] [--content ID] [--location ROOM] [--apply]
+
 Dry-run/preview by default; add --apply to write:
   school ops assign <learner> --file plan.yml --teacher ID --pin-env NAME [--apply]
   school ops enroll <learner> --syllabus ID --teacher ID --pin-env NAME [--apply]
@@ -36,6 +40,12 @@ Dry-run/preview by default; add --apply to write:
   school ops completion-credit-retract <entry> --teacher ID --pin-env NAME [--apply]
   school ops regrade <bank> --from-day YYYY-MM-DD --reason TEXT --teacher ID --pin-env NAME [--to-day YYYY-MM-DD] [--apply]
   school ops reassign <assessment> --from ID --to ID --day YYYY-MM-DD --teacher ID --pin-env NAME [--apply]
+
+read is the MANUAL path for a story a child finished — a book read on a lap,
+a mis-scanned sticker. It needs no PIN and no running server: it appends
+straight to the study-day-sharded reading log the story-time launcher counts,
+which the server re-reads on every status call. Because there is no bus, it
+records the read WITHOUT the on-screen ceremony a real living-room finish gets.
 
 launch-preview writes NOTHING and needs no PIN: it is a link generator. The
 URL it prints opens a learner's launch card exactly as the wall panel would
@@ -53,12 +63,18 @@ const VALUE_OPTIONS = new Set([
   '--output', '--name', '--idempotency-key', '--percent', '--correct', '--total',
   '--missed', '--verdicts', '--base-revision', '--base-seq', '--adjustment',
   '--from-day', '--to-day', '--from', '--to', '--day',
-  '--subject', '--origin', '--path',
+  '--subject', '--origin', '--path', '--title', '--content', '--location',
 ]);
 
 function option(argv, name, fallback = null) {
   const at = argv.indexOf(name);
-  return at >= 0 ? argv[at + 1] ?? fallback : fallback;
+  if (at >= 0) return argv[at + 1] ?? fallback;
+  // `--title="The Jungle Book"` is what a person actually types, and what the
+  // runbooks are written with. Reading only the space-separated form dropped
+  // the value silently — a title-less read is indistinguishable from one that
+  // never carried a title.
+  const joined = argv.find((arg) => arg.startsWith(`${name}=`));
+  return joined === undefined ? fallback : joined.slice(name.length + 1);
 }
 
 function positionals(argv) {
@@ -263,6 +279,44 @@ export async function runOps({ argv, fetchImpl = globalThis.fetch, env = process
         .catch((error) => ({ error: error.message }));
     }
     print(result, stdout);
+    return 0;
+  }
+  // A LOCAL WRITE, deliberately — the only ops command that does not go through
+  // the API. There is no HTTP door for a story read yet (plan 03 brings the
+  // living-room reader), and the manual-correction path must work when the
+  // server is down, which is exactly when a parent is most likely to be
+  // reaching for it. Safe because the reading log is a plain study-day-sharded
+  // file the running server re-reads on every status call — there is no cache
+  // to go stale and no in-process authority to fight.
+  if (command === 'read') {
+    const learnerId = args[0];
+    if (!learnerId) throw new Error('read requires a learner id');
+    const { getConfigService } = await import('../_bootstrap.mjs');
+    const [{ YamlReadingLogStore }, { RecordStoryRead }] = await Promise.all([
+      import('#adapters/persistence/yaml/YamlReadingLogStore.mjs'),
+      import('#apps/school/usecases/RecordStoryRead.mjs'),
+    ]);
+    const configService = await getConfigService();
+    // The row goes through the SAME use case either way, and the store is
+    // wrapped rather than swapped — so a dry run prints exactly what an
+    // --apply would write, study-day stamp included, instead of a second guess
+    // at it. The use case's own logger is silenced because this command emits
+    // one stable JSON document on stdout and nothing else.
+    const captured = [];
+    const store = new YamlReadingLogStore({ configService, logger: console });
+    await new RecordStoryRead({
+      readingLog: { append: async (row) => { captured.push(row); return apply ? store.append(row) : row; } },
+      timezone: configService.getTimezone?.() || null,
+      logger: { info() {}, warn() {}, error() {}, debug() {} },
+    }).execute({
+      learnerId,
+      title: option(rest, '--title'),
+      contentId: option(rest, '--content'),
+      location: option(rest, '--location'),
+    });
+    print(apply
+      ? { schema: 'school.story-read/v1', ...captured[0] }
+      : { schema: 'school.ops-dry-run/v1', dryRun: true, write: { kind: 'story-read', row: captured[0] } }, stdout);
     return 0;
   }
   if (command === 'audit') {
