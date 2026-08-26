@@ -179,6 +179,17 @@ export function joinLearnerDay({
     // recorded one. Dropping all but `title` here is why an unstarted card
     // used to show a bare line where the course, unit, and art belonged.
     const offer = section?.next ?? null;
+    // WHAT A SERVED SECTION STILL KNOWS. `next` is null by construction once a
+    // subject is served (agenda.mjs), so a card built only from `offer` had
+    // nothing to name and fell through to the literal "No work offered" — on a
+    // card that in the same breath said DONE. The section was holding the
+    // answer the whole time: the curriculum work it credited, or, for a
+    // subject a program completes on its own, the program's own progress copy.
+    const served = section?.servedToday ? {
+      work: Array.isArray(section.servedWork) ? section.servedWork : [],
+      progressLabel: section.progressLabel ?? null,
+      moduleLabel: (section.progressRows ?? []).find((row) => row?.scope === 'module')?.label ?? null,
+    } : null;
     const { matched, matchedOn } = claimFor(section, pool);
 
     if (matched.length) {
@@ -188,7 +199,7 @@ export function joinLearnerDay({
         const status = statusForSession(session, section);
         rows.push({
           key: session.sessionId ?? `${rowKey('done')}:${index}`,
-          subject, status, planned: index === 0 ? planned : null, offer, session,
+          subject, status, planned: index === 0 ? planned : null, offer, served, session,
           detail: paperNote(session, status),
           matchedOn: index === 0 ? matchedOn : null,
         });
@@ -197,14 +208,14 @@ export function joinLearnerDay({
     }
     if (section?.suppressed) {
       rows.push({
-        key: rowKey('deferred'), subject, status: 'deferred', planned, offer, session: null,
+        key: rowKey('deferred'), subject, status: 'deferred', planned, offer, served, session: null,
         detail: section.suppressed.bySubject ? `Deferred for ${section.suppressed.bySubject} focus` : 'Deferred',
       });
       return;
     }
     if (section?.lockedRemedy) {
       rows.push({
-        key: rowKey('blocked'), subject, status: 'blocked', planned, offer, session: null,
+        key: rowKey('blocked'), subject, status: 'blocked', planned, offer, served, session: null,
         detail: section.lockedRemedy,
       });
       return;
@@ -220,7 +231,7 @@ export function joinLearnerDay({
         // carriedOver already flags the provenance.
         carried.forEach((session, index) => rows.push({
           key: session.sessionId ?? `${rowKey('carried')}:${index}`,
-          subject, status: 'done', planned: index === 0 ? planned : null, offer, session,
+          subject, status: 'done', planned: index === 0 ? planned : null, offer, served, session,
           detail: paperNote(session, 'done'), carriedOver: true,
           matchedOn: index === 0 ? carriedOn : null,
         }));
@@ -228,14 +239,16 @@ export function joinLearnerDay({
       }
       // Still reachable, and still honest: a subject served by a program that
       // owns its completion outside a work session has no session to show.
+      // "Completed — no session record" read as an error report about our own
+      // bookkeeping; the meaning is that the program owns the completion.
       rows.push({
-        key: rowKey('served'), subject, status: 'done', planned, offer, session: null,
-        detail: 'Completed — no session record',
+        key: rowKey('served'), subject, status: 'done', planned, offer, served, session: null,
+        detail: 'Completed in its own program',
       });
       return;
     }
     rows.push({
-      key: rowKey('planned'), subject, status: 'planned', planned, offer, session: null,
+      key: rowKey('planned'), subject, status: 'planned', planned, offer, served, session: null,
       detail: section?.timingNotice ?? null,
     });
   });

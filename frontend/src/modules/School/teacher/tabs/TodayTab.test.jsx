@@ -209,6 +209,42 @@ describe('TodayTab', () => {
     expect(screen.queryByText(/Not graded/)).not.toBeInTheDocument();
   });
 
+  // The arts card from the reported screenshot: DONE, and in the same breath
+  // "No work offered", above an empty grey frame. Three contradictions on one
+  // card, all from the join discarding what the served section still knew.
+  it('names the work a program completed on its own, instead of saying none was offered', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+      { subject: 'arts', servedToday: true, next: null, servedWork: [],
+        progressLabel: 'Done today — Rhythm Improvisation with Chords · 35/366',
+        progressRows: [{ scope: 'module', label: 'Unit 2 · Chords & the Grand Staff' }] },
+    ] }));
+    schoolApi.teacherDay.mockResolvedValue(ok([
+      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+    ]));
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    expect(await screen.findByText(/Rhythm Improvisation with Chords/)).toBeInTheDocument();
+    expect(screen.queryByText('No work offered')).toBeNull();
+    expect(screen.getByText(/Unit 2 · Chords & the Grand Staff/)).toBeInTheDocument();
+    expect(screen.getByText('Completed in its own program')).toBeInTheDocument();
+    // The reserved frame is not left blank: the subject's mark stands in.
+    expect(document.querySelector('.teacher-lesson-card__poster-glyph')).toBeInTheDocument();
+  });
+
+  it('names the curriculum work a served section credited', async () => {
+    schoolApi.agendaPreview.mockResolvedValue(ok({ sections: [
+      { subject: 'civilization', servedToday: true, next: null,
+        servedWork: [{ unitId: 'atlas-p088', title: 'Ohio' }] },
+    ] }));
+    schoolApi.teacherDay.mockResolvedValue(ok([
+      { learnerId: 'learner-a', effectiveScoreTotals: { correct: 0, total: 0 }, pendingReview: 0, sessions: [] },
+    ]));
+    mount(<TodayTab kids={KIDS} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Learner A/ }));
+    expect(await screen.findByText('Ohio')).toBeInTheDocument();
+    expect(screen.queryByText('No work offered')).toBeNull();
+  });
+
   it('does not ask for a review of work that was never started', async () => {
     // The bug: a session minted at agenda-build time carries state 'created'
     // AND reviewStatus 'complete'. It used to render "DONE / Not graded".

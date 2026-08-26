@@ -346,8 +346,13 @@
     &:hover .teacher-lesson-card__title { color: #604521; text-decoration: underline; } }
   &__identity { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 9px; min-width: 0; }
   // The frame, not the image: it keeps its 2:3 box with or without a poster.
-  &__poster { width: 58px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 5px; background: #ece5d8;
-    img { display: block; width: 100%; height: 100%; object-fit: cover; } }
+  // The frame, not the image: it keeps its 2:3 box with or without a poster,
+  // and the subject glyph sits underneath so an empty frame still says which
+  // shelf this came off rather than reading as a failed load.
+  &__poster { position: relative; display: grid; place-items: center;
+    width: 58px; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 5px; background: #ece5d8;
+    img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; } }
+  &__poster-glyph { width: 24px; height: 24px; opacity: .4; color: #8a8070; }
   &__title { align-self: center; color: #302a22; font-size: 15px; line-height: 1.2; overflow-wrap: break-word; }
   &__foot {
     margin-top: auto; display: flex; align-items: center; justify-content: space-between;

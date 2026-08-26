@@ -57,7 +57,7 @@ describe('joinLearnerDay', () => {
   it('trusts servedToday when the planner says the day is complete but no session is linked', () => {
     const { rows } = joinLearnerDay({ sections: [section('math', { servedToday: true })], sessions: [] });
     expect(rows[0]).toMatchObject({ status: 'done', session: null });
-    expect(rows[0].detail).toMatch(/no session record/i);
+    expect(rows[0].detail).toMatch(/its own program/i);
   });
 
   it('claims the carried-over session that made a section servedToday', () => {
@@ -182,6 +182,50 @@ describe('joinLearnerDay', () => {
   // rendered as "Done" on the teacher dashboard, hiding the one thing the day
   // still owed. Both payloads carried the truth; the join ignored them.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A served subject still knows what it served. The planner drops `next` once
+  // a subject is done, which is why a finished lesson used to render as
+  // "No work offered" beneath its own DONE chip.
+  // -------------------------------------------------------------------------
+  it('carries the curriculum work a served section credited', () => {
+    const { rows } = joinLearnerDay({
+      sections: [{
+        subject: 'civilization', servedToday: true, next: null,
+        servedWork: [{ unitId: 'atlas-p088', title: 'Ohio' }],
+        progressLabel: 'Unit 7 of 58',
+      }],
+      sessions: [],
+    });
+    expect(rows[0].served).toMatchObject({ work: [{ title: 'Ohio' }], progressLabel: 'Unit 7 of 58' });
+  });
+
+  it('carries a program-served subject’s own progress copy and unit label', () => {
+    // Arts/piano complete outside a work session: servedWork is empty and the
+    // only identity in the payload is the program's own wording.
+    const { rows } = joinLearnerDay({
+      sections: [{
+        subject: 'arts', servedToday: true, next: null, servedWork: [],
+        progressLabel: 'Done today — Rhythm Improvisation with Chords · 35/366',
+        progressRows: [
+          { scope: 'course', label: 'Course' },
+          { scope: 'module', label: 'Unit 2 · Chords & the Grand Staff' },
+        ],
+      }],
+      sessions: [],
+    });
+    expect(rows[0]).toMatchObject({ status: 'done', detail: 'Completed in its own program' });
+    expect(rows[0].served).toMatchObject({
+      work: [],
+      progressLabel: 'Done today — Rhythm Improvisation with Chords · 35/366',
+      moduleLabel: 'Unit 2 · Chords & the Grand Staff',
+    });
+  });
+
+  it('leaves `served` null on a subject the day still owes', () => {
+    const { rows } = joinLearnerDay({ sections: [section('math')], sessions: [] });
+    expect(rows[0].served).toBeNull();
+  });
+
   it('does not call a minted-but-untouched session done', () => {
     const { rows } = joinLearnerDay({
       sections: [section('scripture', { servedToday: false })],
