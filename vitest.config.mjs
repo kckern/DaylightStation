@@ -88,6 +88,22 @@ export default {
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
       '**/_deleteme/**',
+      // `node:test` file, not a vitest one. A directory-glob vitest run
+      // collects it and reports "no test suite found", which reads as a
+      // failure and trains everyone to skim past the gate's failing list —
+      // the exact habit that lets a real regression through. It still runs
+      // (and passes) under `node --test`; excluding it here fixes the
+      // reporting, not the coverage. Converting it to vitest is a bigger
+      // change than the noise justifies.
+      //
+      // NOTE: `pianoGames.test.mjs` is a sibling `node:test` file with the
+      // same "no test suite found" symptom, but it is deliberately NOT
+      // excluded here: under `node --test` it fails 3 of 5 real tests
+      // (OpponentLadder normalizeSeriesEntry errors + a 'Level 1' vs
+      // 'Diglett' mismatch). That is a genuine bug, not glob noise — see
+      // task-C2-report.md. Excluding it would hide the failure instead of
+      // just fixing how it's reported.
+      '**/nfcTapIngress.shutdown.test.mjs',
     ],
   },
 };
