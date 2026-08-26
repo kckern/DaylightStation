@@ -156,3 +156,108 @@ describe('responseHandlers.content — interceptor seam', () => {
     expect(seen[0]).toMatchObject({ location: 'livingroom', target: 'livingroom-tv' });
   });
 });
+
+/**
+ * D8 — the live hazard. The `livingroom` source declares `end: tv-off`, which
+ * flows as `endBehavior` into the content query and fires when the content
+ * ends (`WakeAndLoadService.mjs:275` → `sideEffectHandlers['tv-off']`). Left
+ * alone it powers the TV off THE INSTANT A STORY ENDS — before the ceremony
+ * can render, and while a child is still standing at the reader.
+ *
+ * So the seam has a second half: an interceptor that DECLINED to claim a tap
+ * may still say "not that end behaviour, not while I am open". Suppression is
+ * deliberately separate from claiming, because the taps that need it are
+ * exactly the ones the session does NOT claim — a browsing-mode second book,
+ * and a mid-story tap whose obligation could not be read.
+ */
+describe('responseHandlers.content — the end-behaviour suppression half of the seam', () => {
+  const ENDING = { ...RESPONSE, end: 'tv-off', endLocation: 'livingroom' };
+
+  it('passes the end behaviour through when nothing suppresses it', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      logger: silent,
+    });
+    expect(loaded[0]).toMatchObject({ endBehavior: 'tv-off', endLocation: 'livingroom' });
+  });
+
+  it('drops endBehavior AND endLocation when an interceptor suppresses it', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => true }],
+      logger: silent,
+    });
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].endBehavior).toBeUndefined();
+    expect(loaded[0].endLocation).toBeUndefined();
+    // The content still plays. Suppression is about the TEARDOWN, never the book.
+    expect(loaded[0].dispatchId).toBeTruthy();
+  });
+
+  it('suppresses on the optimistic path too — a reader configured optimistic must not opt out', async () => {
+    const dispatched = [];
+    await responseHandlers.content({ ...ENDING, posture: 'optimistic' }, {
+      wakeAndLoadService: { execute: async () => {} },
+      contentDispatcher: { optimistic: async (t, q, o) => { dispatched.push(o); } },
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => true }],
+      logger: silent,
+    });
+    expect(dispatched[0].endBehavior).toBeUndefined();
+  });
+
+  it('keeps the end behaviour when suppressEnd THROWS — a broken guard must not change teardown', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => { throw new Error('boom'); } }],
+      logger: silent,
+    });
+    expect(loaded[0]).toMatchObject({ endBehavior: 'tv-off' });
+  });
+
+  it('a throwing warn logger cannot stop the dispatch either', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [{ claim: async () => null, suppressEnd: () => { throw new Error('boom'); } }],
+      logger: { ...silent, warn() { throw new Error('log transport down'); } },
+    });
+    expect(loaded).toHaveLength(1);
+  });
+
+  it('an interceptor with no suppressEnd at all is simply not asked', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [null, {}, { claim: async () => null }],
+      logger: silent,
+    });
+    expect(loaded[0]).toMatchObject({ endBehavior: 'tv-off' });
+  });
+
+  it('ANY interceptor suppressing is enough — the first no does not settle it', async () => {
+    const loaded = [];
+    await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [
+        { claim: async () => null, suppressEnd: () => false },
+        { claim: async () => null, suppressEnd: () => true },
+      ],
+      logger: silent,
+    });
+    expect(loaded[0].endBehavior).toBeUndefined();
+  });
+
+  it('a claimed tap never reaches the dispatch, so suppression is moot there', async () => {
+    const loaded = [];
+    const result = await responseHandlers.content(ENDING, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [{ claim: async () => ({ claimed: true, by: 'reading-session' }) }],
+      logger: silent,
+    });
+    expect(loaded).toEqual([]);
+    expect(result).toMatchObject({ claimed: true });
+  });
+});

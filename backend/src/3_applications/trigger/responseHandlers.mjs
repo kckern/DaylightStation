@@ -24,9 +24,9 @@ function buildContentQuery(expression) {
   return { ...(options || {}), [action]: contentId };
 }
 
-function buildLoadOptions(response) {
+function buildLoadOptions(response, suppressEnd = false) {
   const opts = { dispatchId: response.dispatchId || randomUUID() };
-  if (response.end) {
+  if (response.end && !suppressEnd) {
     opts.endBehavior = response.end;
     if (response.endLocation) opts.endLocation = response.endLocation;
   }
@@ -77,8 +77,44 @@ export const responseHandlers = {
       }
     }
 
+    // D8 — THE SECOND HALF OF THE SEAM, AND A LIVE HAZARD IF IT IS MISSING.
+    // The `livingroom` source declares `end: tv-off`. That flows as
+    // `endBehavior` into the content query (`WakeAndLoadService.mjs:275`) and
+    // `sideEffectHandlers['tv-off']` powers the TV off the moment the content
+    // ends — which, while a reading session is open, is before the ceremony
+    // can render and with a child still standing at the reader.
+    //
+    // SUPPRESSION IS SEPARATE FROM CLAIMING BECAUSE THE TAPS THAT NEED IT ARE
+    // THE ONES NOBODY CLAIMED: a browsing-mode second book, and a mid-story tap
+    // whose obligation could not be read. Those dispatch normally — they just
+    // must not take the room's lights with them when they finish.
+    //
+    // FAILURE LEANS THE OTHER WAY FROM `claim`. A throwing `claim` falls back
+    // to "the book plays"; a throwing `suppressEnd` falls back to "the end
+    // behaviour stands", because that is the configured behaviour and a guard
+    // nobody can evaluate must not silently rewrite what the YAML says.
+    let suppressEnd = false;
+    if (response.end) {
+      for (const interceptor of deps.contentInterceptors ?? []) {
+        try {
+          if (interceptor?.suppressEnd?.(response) === true) { suppressEnd = true; break; }
+        } catch (err) {
+          log('warn', 'trigger.content.suppress_end_failed', {
+            error: err?.message ?? String(err),
+            target: response.target,
+            location: response.location ?? null,
+          });
+        }
+      }
+      if (suppressEnd) {
+        log('info', 'trigger.content.end_suppressed', {
+          end: response.end, target: response.target, location: response.location ?? null,
+        });
+      }
+    }
+
     const query = buildContentQuery(response.expression);
-    const loadOptions = buildLoadOptions(response);
+    const loadOptions = buildLoadOptions(response, suppressEnd);
     if (response.posture === 'optimistic' && deps.contentDispatcher?.optimistic) {
       return deps.contentDispatcher.optimistic(response.target, query, loadOptions);
     }

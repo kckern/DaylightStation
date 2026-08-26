@@ -329,3 +329,90 @@ describe('ReadingSessionInterceptor — through the real content seam', () => {
     expect(loaded).toHaveLength(1);
   });
 });
+
+/**
+ * D8 — the session owns teardown while it is open.
+ *
+ * `end: tv-off` on the `livingroom` source is not wrong; it is right for every
+ * tap that is NOT part of a reading session. While a child has one open, the
+ * TV going dark the instant a story ends is a ceremony nobody sees and a
+ * four-year-old left in the dark. So the interceptor answers the seam's second
+ * question — "may this dispatch keep its end behaviour?" — with a plain no for
+ * the duration of the session, and the session's own teardown powers the TV
+ * off when there is actually nobody there.
+ */
+describe('ReadingSessionInterceptor — suppressing the location end behaviour (D8)', () => {
+  it('suppresses while a session is open at that location', () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off', endLocation: 'livingroom' }))).toBe(true);
+  });
+
+  it('does NOT suppress when no session is open — the configured teardown stands', () => {
+    const { interceptor } = build();
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off', endLocation: 'livingroom' }))).toBe(false);
+  });
+
+  it('does NOT suppress a tap at another reader', () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'study', learnerId: 'learner-c' });
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(false);
+  });
+
+  it('suppresses in BROWSING mode too — the mode decides claiming, never teardown', () => {
+    const { interceptor, sessions } = build({ storyTime: finished });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(true);
+  });
+
+  it('stops suppressing the moment the session closes', () => {
+    const { interceptor, sessions } = build();
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.close('livingroom');
+    expect(interceptor.suppressEnd(bookTap({ end: 'tv-off' }))).toBe(false);
+  });
+
+  it('is synchronous and never throws on a malformed response', () => {
+    const { interceptor } = build();
+    for (const bad of [null, undefined, {}, { kind: 'ha' }, { kind: 'content' }]) {
+      expect(interceptor.suppressEnd(bad)).toBe(false);
+    }
+  });
+
+  /**
+   * THE ONE THAT ACTUALLY GUARDS THE HAZARD. Everything above tests the
+   * predicate; this drives the REAL seam with the REAL response shape a
+   * `livingroom` book tap produces, in the one mode where the tap is NOT
+   * claimed and therefore really does reach wake-and-load. Without the
+   * suppression, `endBehavior: 'tv-off'` rides along and the TV dies on the
+   * last note of the story.
+   */
+  it('a browsing-mode mid-story book still plays, and no longer carries tv-off with it', async () => {
+    const { interceptor, sessions } = build({ storyTime: finished });
+    sessions.open({ location: 'livingroom', learnerId: 'learner-c' });
+    sessions.update('livingroom', { state: 'reading' });
+
+    const loaded = [];
+    const response = bookTap({ end: 'tv-off', endLocation: 'livingroom' });
+    await responseHandlers.content(response, {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push({ t, q, o }); } },
+      contentInterceptors: [interceptor],
+      logger: silent,
+    });
+
+    expect(loaded).toHaveLength(1);              // the book plays — browsing is relaxed
+    expect(loaded[0].o.endBehavior).toBeUndefined();
+    expect(loaded[0].q.endBehavior).toBeUndefined();
+  });
+
+  it('and the SAME tap with no session open keeps its tv-off, exactly as today', async () => {
+    const { interceptor } = build({ storyTime: finished });
+    const loaded = [];
+    await responseHandlers.content(bookTap({ end: 'tv-off', endLocation: 'livingroom' }), {
+      wakeAndLoadService: { execute: async (t, q, o) => { loaded.push(o); } },
+      contentInterceptors: [interceptor],
+      logger: silent,
+    });
+    expect(loaded[0]).toMatchObject({ endBehavior: 'tv-off', endLocation: 'livingroom' });
+  });
+});
