@@ -1346,6 +1346,15 @@ export async function createSchoolLifecycle({
     getLearnerDayCompletion,
     schoolCompletionBridge,
     pianoLessonCeremonyBridge,
+    // The story-time launcher by name, for the living-room reading session.
+    // Exposed rather than reached for through `launchers` because two callers
+    // need DIFFERENT things off it and both must have the SAME instance: the
+    // interceptor asks `status()` to derive the assignment/browsing mode, and
+    // `RecordStoryRead` takes `studyDay()` as its shard key. A second launcher
+    // wired with its own timezone would file a 10pm read under tomorrow while
+    // this one still read today — the count would never rise and nothing would
+    // error. One instance is what makes that impossible.
+    storyTimeLauncher: launchers.get(STORY_TIME_PROGRAM_ID) ?? null,
     // The SAME gate `gradeSubmission`/`closeSessionOutcome`/`resolveReviewItem`/
     // `setAssignments` already assert through — exposed so `app.mjs` can wire
     // Task 6's `CloseAcademicPeriod` (a parent-only write, same rule) without

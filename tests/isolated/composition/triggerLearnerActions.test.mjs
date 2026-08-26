@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createLearnerActions } from '#apps/trigger/learnerActions.mjs';
 import { TriggerDispatchService } from '#apps/trigger/TriggerDispatchService.mjs';
-import { makePrintAgendaHandler } from '#composition/modules/learnerCardActions.mjs';
+import { makePrintAgendaHandler, makeReadingSessionHandler } from '#composition/modules/learnerCardActions.mjs';
+import { ReadingSessionService } from '#apps/school/ReadingSessionService.mjs';
 
 const silent = { warn() {}, info() {}, error() {}, debug() {} };
 
@@ -61,20 +62,55 @@ describe('trigger learner actions — composition contract', () => {
     expect(result.dispatch.status).toBe('agenda_printed');
   });
 
-  // THE NON-NEGOTIABLE. `reading-session` is deliberately unregistered, and the
-  // failure mode being guarded is not "nothing happens" — it is the SAME card
-  // silently running print-agenda because that is the only learner action
+  // THE NON-NEGOTIABLE, NOW THAT `reading-session` IS WIRED. The failure mode
+  // being guarded has never been "nothing happens" — it is the SAME card
+  // silently running print-agenda because that was the only learner action
   // wired, so a child taps in the living room and a printer starts up in the
-  // study two rooms away.
-  it('the SAME card in the living room answers no_handler and never prints', async () => {
+  // study two rooms away. That refusal used to be a `no_handler`; it is now a
+  // session, and the thing that must stay true either way is that the living
+  // room does NOT reach the study's handler.
+  //
+  // This assertion was inverted deliberately (it pinned `no_handler` through
+  // six agents while the action was withheld) rather than deleted, because
+  // what it actually guards is the routing, not the refusal.
+  it('the SAME card in the living room opens a reading session and never prints', async () => {
     const printed = [];
     const learnerActions = createLearnerActions({ logger: silent });
     learnerActions.register('print-agenda', async (args) => { printed.push(args); return { status: 'agenda_printed' }; });
+    const sessions = new ReadingSessionService({ logger: silent });
+    learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
 
     const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
 
-    expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'reading-session', learnerId: 'learner-b' });
+    expect(result.dispatch).toMatchObject({ status: 'reading_session_open', learnerId: 'learner-b' });
+    expect(sessions.current('livingroom')).toMatchObject({ learnerId: 'learner-b', state: 'prompt' });
     expect(printed).toEqual([]);
+  });
+
+  // And the study is unmoved by any of it: one card, two readers, two
+  // different answers, decided by the reader's `learner_action` and nothing
+  // else.
+  it('the same card in the STUDY still prints, and opens no session', async () => {
+    const printed = [];
+    const learnerActions = createLearnerActions({ logger: silent });
+    learnerActions.register('print-agenda', async (args) => { printed.push(args); return { status: 'agenda_printed' }; });
+    const sessions = new ReadingSessionService({ logger: silent });
+    learnerActions.register('reading-session', makeReadingSessionHandler({ sessions, logger: silent }));
+
+    const result = await makeService(learnerActions).handleTrigger('study', 'nfc', '048ba600cc2a81');
+
+    expect(result.dispatch).toMatchObject({ status: 'agenda_printed' });
+    expect(printed).toHaveLength(1);
+    expect(sessions.list()).toEqual([]);
+  });
+
+  // The withheld refusal is still the right answer for a household that has no
+  // story-time launcher — app.mjs registers the action only when the sessions
+  // store it needs actually exists.
+  it('an unwired reading session degrades to the same named refusal', async () => {
+    const learnerActions = createLearnerActions({ logger: silent });
+    const result = await makeService(learnerActions).handleTrigger('livingroom', 'nfc', '048ba600cc2a81');
+    expect(result.dispatch).toMatchObject({ status: 'no_handler', op: 'reading-session' });
   });
 
   it('and changes nothing in Home Assistant either', async () => {
